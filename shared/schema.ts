@@ -1,0 +1,694 @@
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+export interface AcademyCourseProgramLesson {
+  lessonNumber: number;
+  topic: string;
+  description?: string | null;
+  materials?: string | null;
+}
+
+export interface AcademyScheduleItem {
+  dayOfWeek: number;
+  time: string;
+}
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull(),
+  password: text("password").notNull(),
+  fullName: varchar("full_name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  dateOfBirth: timestamp("date_of_birth"),
+  position: varchar("position", { length: 255 }),
+  role: varchar("role", { length: 50 }).notNull().default("employee"),
+  hasReportAccess: boolean("has_report_access").default(false),
+  isActive: boolean("is_active").default(true),
+  isOnline: boolean("is_online").default(false),
+  lastSeenAt: timestamp("last_seen_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  emailIdx: index("users_email_idx").on(table.email),
+}));
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  type: varchar("type", { length: 50 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  isRead: boolean("is_read").default(false),
+  relatedEntityType: varchar("related_entity_type", { length: 50 }),
+  relatedEntityId: integer("related_entity_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  action: varchar("action", { length: 255 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }).notNull(),
+  entityId: integer("entity_id"),
+  oldValues: jsonb("old_values"),
+  newValues: jsonb("new_values"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const systemSettings = pgTable("system_settings", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 255 }).notNull(),
+  value: text("value"),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  keyUnique: uniqueIndex("system_settings_key_unique").on(table.key),
+}));
+
+export const academyCourses = pgTable("academy_courses", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull(),
+  ageCategory: varchar("age_category", { length: 100 }).notNull(),
+  lessonCount: integer("lesson_count").notNull().default(0),
+  lessonDurationMinutes: integer("lesson_duration_minutes").notNull().default(120),
+  frequency: varchar("frequency", { length: 255 }),
+  basePriceUzs: integer("base_price_uzs").notNull().default(0),
+  discountedPriceUzs: integer("discounted_price_uzs").notNull().default(0),
+  ltvTargetMinUzs: integer("ltv_target_min_uzs").notNull().default(0),
+  ltvTargetMaxUzs: integer("ltv_target_max_uzs").notNull().default(0),
+  program: jsonb("program").$type<AcademyCourseProgramLesson[]>().notNull().default([]),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  slugUnique: uniqueIndex("academy_courses_slug_unique").on(table.slug),
+}));
+
+export const academyLeadSources = pgTable("academy_lead_sources", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 120 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  channel: varchar("channel", { length: 120 }),
+  campaignName: varchar("campaign_name", { length: 255 }),
+  costPerLeadUzs: integer("cost_per_lead_uzs").notNull().default(0),
+  isSystem: boolean("is_system").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  codeUnique: uniqueIndex("academy_lead_sources_code_unique").on(table.code),
+}));
+
+export const academyLeadStatuses = pgTable("academy_lead_statuses", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 80 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  color: varchar("color", { length: 40 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isSystem: boolean("is_system").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  codeUnique: uniqueIndex("academy_lead_statuses_code_unique").on(table.code),
+}));
+
+export const academyTeachers = pgTable("academy_teachers", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  fullName: varchar("full_name", { length: 255 }).notNull(),
+  courseIds: jsonb("course_ids").$type<number[]>().notNull().default([]),
+  schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
+  status: varchar("status", { length: 50 }).notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const academyGroups = pgTable("academy_groups", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "restrict" }).notNull(),
+  teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
+  schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
+  maxStudents: integer("max_students").notNull().default(12),
+  status: varchar("status", { length: 50 }).notNull().default("open"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  courseIdx: index("academy_groups_course_idx").on(table.courseId),
+  teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
+}));
+
+export const academyLeads = pgTable("academy_leads", {
+  id: serial("id").primaryKey(),
+  contactName: varchar("contact_name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }).notNull(),
+  messenger: varchar("messenger", { length: 120 }),
+  studentName: varchar("student_name", { length: 255 }),
+  studentAge: integer("student_age"),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  sourceId: integer("source_id").references(() => academyLeadSources.id, { onDelete: "restrict" }).notNull(),
+  advertisingCampaign: varchar("advertising_campaign", { length: 255 }),
+  acquisitionCostUzs: integer("acquisition_cost_uzs").notNull().default(0),
+  statusCode: varchar("status_code", { length: 80 }).notNull().default("new_request"),
+  managerId: integer("manager_id").references(() => users.id, { onDelete: "set null" }),
+  language: varchar("language", { length: 20 }).notNull().default("ru"),
+  comment: text("comment"),
+  firstContactAt: timestamp("first_contact_at"),
+  firstContactChannel: varchar("first_contact_channel", { length: 80 }),
+  firstContactResult: text("first_contact_result"),
+  demoAt: timestamp("demo_at"),
+  demoCourseId: integer("demo_course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  demoFormat: varchar("demo_format", { length: 50 }),
+  demoLocation: text("demo_location"),
+  demoAttended: boolean("demo_attended").notNull().default(false),
+  demoResult: text("demo_result"),
+  offerCourseId: integer("offer_course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  offerPriceUzs: integer("offer_price_uzs"),
+  offerDiscount: varchar("offer_discount", { length: 120 }),
+  offerAt: timestamp("offer_at"),
+  enrolledGroupId: integer("enrolled_group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  expectedPaymentUzs: integer("expected_payment_uzs"),
+  paymentMethod: varchar("payment_method", { length: 80 }),
+  warmReason: text("warm_reason"),
+  warmMovedAt: timestamp("warm_moved_at"),
+  noMailing: boolean("no_mailing").notNull().default(false),
+  referralCode: varchar("referral_code", { length: 80 }),
+  referrerStudentId: integer("referrer_student_id"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  phoneIdx: index("academy_leads_phone_idx").on(table.phone),
+  statusIdx: index("academy_leads_status_idx").on(table.statusCode),
+  managerIdx: index("academy_leads_manager_idx").on(table.managerId),
+  sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
+}));
+
+export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  fromStatusCode: varchar("from_status_code", { length: 80 }),
+  toStatusCode: varchar("to_status_code", { length: 80 }).notNull(),
+  enteredAt: timestamp("entered_at").defaultNow(),
+  changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+  comment: text("comment"),
+}, (table) => ({
+  leadIdx: index("academy_lead_stage_history_lead_idx").on(table.leadId),
+}));
+
+export const academyStudents = pgTable("academy_students", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  contactName: varchar("contact_name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }).notNull(),
+  messenger: varchar("messenger", { length: 120 }),
+  studentName: varchar("student_name", { length: 255 }),
+  studentAge: integer("student_age"),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  enrollmentDate: timestamp("enrollment_date"),
+  balanceUzs: integer("balance_uzs").notNull().default(0),
+  satisfactionAvg: integer("satisfaction_avg").notNull().default(0),
+  parentFeedback: text("parent_feedback"),
+  nextPaymentAt: timestamp("next_payment_at"),
+  referralCode: varchar("referral_code", { length: 80 }).notNull(),
+  marketingConsent: boolean("marketing_consent").notNull().default(false),
+  riskFlags: jsonb("risk_flags").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  phoneIdx: index("academy_students_phone_idx").on(table.phone),
+  groupIdx: index("academy_students_group_idx").on(table.groupId),
+}));
+
+export const academyStudentStatusHistory = pgTable("academy_student_status_history", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  fromStatus: varchar("from_status", { length: 50 }),
+  toStatus: varchar("to_status", { length: 50 }).notNull(),
+  changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  studentIdx: index("academy_student_status_history_student_idx").on(table.studentId),
+}));
+
+export const academyLessons = pgTable("academy_lessons", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
+  lessonNumber: integer("lesson_number").notNull(),
+  topic: varchar("topic", { length: 255 }).notNull(),
+  materials: text("materials"),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  durationMinutes: integer("duration_minutes").notNull().default(120),
+  status: varchar("status", { length: 50 }).notNull().default("scheduled"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  groupIdx: index("academy_lessons_group_idx").on(table.groupId),
+  teacherIdx: index("academy_lessons_teacher_idx").on(table.teacherId),
+}));
+
+export const academyLessonStatusHistory = pgTable("academy_lesson_status_history", {
+  id: serial("id").primaryKey(),
+  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "cascade" }).notNull(),
+  fromStatus: varchar("from_status", { length: 50 }),
+  toStatus: varchar("to_status", { length: 50 }).notNull(),
+  changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  lessonIdx: index("academy_lesson_status_history_lesson_idx").on(table.lessonId),
+}));
+
+export const academyAttendance = pgTable("academy_attendance", {
+  id: serial("id").primaryKey(),
+  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "cascade" }).notNull(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  status: varchar("status", { length: 30 }).notNull(),
+  projectUrl: text("project_url"),
+  note: text("note"),
+  markedBy: integer("marked_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  lessonStudentUnique: uniqueIndex("academy_attendance_lesson_student_unique").on(table.lessonId, table.studentId),
+}));
+
+export const academyPayments = pgTable("academy_payments", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "set null" }),
+  amountUzs: integer("amount_uzs").notNull(),
+  type: varchar("type", { length: 60 }).notNull().default("full"),
+  method: varchar("method", { length: 60 }).notNull().default("transfer"),
+  paidAt: timestamp("paid_at"),
+  period: varchar("period", { length: 120 }),
+  discount: varchar("discount", { length: 120 }).notNull().default("none"),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  dueAt: timestamp("due_at"),
+  paidUntil: timestamp("paid_until"),
+  comment: text("comment"),
+  receiptUrl: text("receipt_url"),
+  confirmedBy: integer("confirmed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  studentIdx: index("academy_payments_student_idx").on(table.studentId),
+  leadIdx: index("academy_payments_lead_idx").on(table.leadId),
+  statusIdx: index("academy_payments_status_idx").on(table.status),
+}));
+
+export const academyTasks = pgTable("academy_tasks", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  responsibleId: integer("responsible_id").references(() => users.id, { onDelete: "set null" }),
+  deadlineAt: timestamp("deadline_at"),
+  status: varchar("status", { length: 50 }).notNull().default("new"),
+  entityType: varchar("entity_type", { length: 80 }),
+  entityId: integer("entity_id"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  responsibleIdx: index("academy_tasks_responsible_idx").on(table.responsibleId),
+  entityIdx: index("academy_tasks_entity_idx").on(table.entityType, table.entityId),
+}));
+
+export const academyCommunications = pgTable("academy_communications", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }),
+  channel: varchar("channel", { length: 80 }).notNull(),
+  result: text("result"),
+  comment: text("comment"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  leadIdx: index("academy_communications_lead_idx").on(table.leadId),
+  studentIdx: index("academy_communications_student_idx").on(table.studentId),
+}));
+
+export const academyStudentTransfers = pgTable("academy_student_transfers", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  fromGroupId: integer("from_group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  toGroupId: integer("to_group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  reason: text("reason"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  studentIdx: index("academy_student_transfers_student_idx").on(table.studentId),
+}));
+
+export const academyLessonSurveys = pgTable("academy_lesson_surveys", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "cascade" }).notNull(),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  score: integer("score").notNull(),
+  liked: text("liked"),
+  improve: text("improve"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  lessonIdx: index("academy_lesson_surveys_lesson_idx").on(table.lessonId),
+}));
+
+export const academyParentSurveys = pgTable("academy_parent_surveys", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  progressAnswer: varchar("progress_answer", { length: 80 }),
+  joyAnswer: varchar("joy_answer", { length: 80 }),
+  continueAnswer: varchar("continue_answer", { length: 80 }),
+  npsScore: integer("nps_score"),
+  comment: text("comment"),
+  period: varchar("period", { length: 40 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  studentIdx: index("academy_parent_surveys_student_idx").on(table.studentId),
+}));
+
+export const academyPortfolioProjects = pgTable("academy_portfolio_projects", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "set null" }),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
+  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  url: text("url"),
+  fileUrl: text("file_url"),
+  finalStatus: varchar("final_status", { length: 80 }).notNull().default("not_started"),
+  marketingConsent: boolean("marketing_consent").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  studentIdx: index("academy_portfolio_projects_student_idx").on(table.studentId),
+}));
+
+export const academyMarketingExpenses = pgTable("academy_marketing_expenses", {
+  id: serial("id").primaryKey(),
+  sourceId: integer("source_id").references(() => academyLeadSources.id, { onDelete: "set null" }),
+  channel: varchar("channel", { length: 120 }).notNull(),
+  campaignName: varchar("campaign_name", { length: 255 }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  amountUzs: integer("amount_uzs").notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  sourceIdx: index("academy_marketing_expenses_source_idx").on(table.sourceId),
+}));
+
+export const academyReferralRewards = pgTable("academy_referral_rewards", {
+  id: serial("id").primaryKey(),
+  referrerStudentId: integer("referrer_student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  referredLeadId: integer("referred_lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
+  referredStudentId: integer("referred_student_id").references(() => academyStudents.id, { onDelete: "set null" }),
+  rewardType: varchar("reward_type", { length: 80 }).notNull(),
+  rewardValue: varchar("reward_value", { length: 120 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+  appliedAt: timestamp("applied_at"),
+}, (table) => ({
+  referrerIdx: index("academy_referral_rewards_referrer_idx").on(table.referrerStudentId),
+  referredLeadIdx: index("academy_referral_rewards_referred_lead_idx").on(table.referredLeadId),
+}));
+
+export const academyIntegrationLogs = pgTable("academy_integration_logs", {
+  id: serial("id").primaryKey(),
+  provider: varchar("provider", { length: 120 }).notNull(),
+  direction: varchar("direction", { length: 40 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull(),
+  payload: jsonb("payload"),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  providerIdx: index("academy_integration_logs_provider_idx").on(table.provider),
+}));
+
+export const academyNotificationOutbox = pgTable("academy_notification_outbox", {
+  id: serial("id").primaryKey(),
+  channel: varchar("channel", { length: 80 }).notNull(),
+  recipient: varchar("recipient", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").notNull().default(0),
+  entityType: varchar("entity_type", { length: 80 }),
+  entityId: integer("entity_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("academy_notification_outbox_status_idx").on(table.status),
+}));
+
+// Internal staff chat.
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  senderId: integer("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  receiverId: integer("receiver_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+// Insert schemas
+export const insertUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+  fullName: z.string().min(1),
+  phone: z.string().optional(),
+  dateOfBirth: z.coerce.date().optional().nullable(),
+  position: z.string().optional(),
+  role: z.enum(['admin', 'head', 'account_manager', 'teacher', 'operations_director', 'smm_manager', 'employee']).default('employee'),
+  hasReportAccess: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+});
+
+export const insertUserSchemaForAPI = insertUserSchema.omit({ password: true });
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertAcademyCourseSchema = createInsertSchema(academyCourses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyLeadSourceSchema = createInsertSchema(academyLeadSources).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyLeadStatusSchema = createInsertSchema(academyLeadStatuses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyTeacherSchema = createInsertSchema(academyTeachers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyGroupSchema = createInsertSchema(academyGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyLeadSchema = createInsertSchema(academyLeads).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyLeadStageHistorySchema = createInsertSchema(academyLeadStageHistory).omit({
+  id: true,
+});
+
+export const insertAcademyStudentSchema = createInsertSchema(academyStudents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyStudentStatusHistorySchema = createInsertSchema(academyStudentStatusHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyLessonSchema = createInsertSchema(academyLessons).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyLessonStatusHistorySchema = createInsertSchema(academyLessonStatusHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyAttendanceSchema = createInsertSchema(academyAttendance).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyPaymentSchema = createInsertSchema(academyPayments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyTaskSchema = createInsertSchema(academyTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyCommunicationSchema = createInsertSchema(academyCommunications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyStudentTransferSchema = createInsertSchema(academyStudentTransfers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyLessonSurveySchema = createInsertSchema(academyLessonSurveys).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyParentSurveySchema = createInsertSchema(academyParentSurveys).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyPortfolioProjectSchema = createInsertSchema(academyPortfolioProjects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyMarketingExpenseSchema = createInsertSchema(academyMarketingExpenses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyReferralRewardSchema = createInsertSchema(academyReferralRewards).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAcademyIntegrationLogSchema = createInsertSchema(academyIntegrationLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyNotificationOutboxSchema = createInsertSchema(academyNotificationOutbox).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  isRead: true,
+});
+
+// Types
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type AcademyCourse = typeof academyCourses.$inferSelect;
+export type InsertAcademyCourse = z.infer<typeof insertAcademyCourseSchema>;
+export type AcademyLeadSource = typeof academyLeadSources.$inferSelect;
+export type InsertAcademyLeadSource = z.infer<typeof insertAcademyLeadSourceSchema>;
+export type AcademyLeadStatus = typeof academyLeadStatuses.$inferSelect;
+export type InsertAcademyLeadStatus = z.infer<typeof insertAcademyLeadStatusSchema>;
+export type AcademyTeacher = typeof academyTeachers.$inferSelect;
+export type InsertAcademyTeacher = z.infer<typeof insertAcademyTeacherSchema>;
+export type AcademyGroup = typeof academyGroups.$inferSelect;
+export type InsertAcademyGroup = z.infer<typeof insertAcademyGroupSchema>;
+export type AcademyLead = typeof academyLeads.$inferSelect;
+export type InsertAcademyLead = z.infer<typeof insertAcademyLeadSchema>;
+export type AcademyLeadStageHistory = typeof academyLeadStageHistory.$inferSelect;
+export type InsertAcademyLeadStageHistory = z.infer<typeof insertAcademyLeadStageHistorySchema>;
+export type AcademyStudent = typeof academyStudents.$inferSelect;
+export type InsertAcademyStudent = z.infer<typeof insertAcademyStudentSchema>;
+export type AcademyStudentStatusHistory = typeof academyStudentStatusHistory.$inferSelect;
+export type InsertAcademyStudentStatusHistory = z.infer<typeof insertAcademyStudentStatusHistorySchema>;
+export type AcademyLesson = typeof academyLessons.$inferSelect;
+export type InsertAcademyLesson = z.infer<typeof insertAcademyLessonSchema>;
+export type AcademyLessonStatusHistory = typeof academyLessonStatusHistory.$inferSelect;
+export type InsertAcademyLessonStatusHistory = z.infer<typeof insertAcademyLessonStatusHistorySchema>;
+export type AcademyAttendance = typeof academyAttendance.$inferSelect;
+export type InsertAcademyAttendance = z.infer<typeof insertAcademyAttendanceSchema>;
+export type AcademyPayment = typeof academyPayments.$inferSelect;
+export type InsertAcademyPayment = z.infer<typeof insertAcademyPaymentSchema>;
+export type AcademyTask = typeof academyTasks.$inferSelect;
+export type InsertAcademyTask = z.infer<typeof insertAcademyTaskSchema>;
+export type AcademyCommunication = typeof academyCommunications.$inferSelect;
+export type InsertAcademyCommunication = z.infer<typeof insertAcademyCommunicationSchema>;
+export type AcademyStudentTransfer = typeof academyStudentTransfers.$inferSelect;
+export type InsertAcademyStudentTransfer = z.infer<typeof insertAcademyStudentTransferSchema>;
+export type AcademyLessonSurvey = typeof academyLessonSurveys.$inferSelect;
+export type InsertAcademyLessonSurvey = z.infer<typeof insertAcademyLessonSurveySchema>;
+export type AcademyParentSurvey = typeof academyParentSurveys.$inferSelect;
+export type InsertAcademyParentSurvey = z.infer<typeof insertAcademyParentSurveySchema>;
+export type AcademyPortfolioProject = typeof academyPortfolioProjects.$inferSelect;
+export type InsertAcademyPortfolioProject = z.infer<typeof insertAcademyPortfolioProjectSchema>;
+export type AcademyMarketingExpense = typeof academyMarketingExpenses.$inferSelect;
+export type InsertAcademyMarketingExpense = z.infer<typeof insertAcademyMarketingExpenseSchema>;
+export type AcademyReferralReward = typeof academyReferralRewards.$inferSelect;
+export type InsertAcademyReferralReward = z.infer<typeof insertAcademyReferralRewardSchema>;
+export type AcademyIntegrationLog = typeof academyIntegrationLogs.$inferSelect;
+export type InsertAcademyIntegrationLog = z.infer<typeof insertAcademyIntegrationLogSchema>;
+export type AcademyNotificationOutbox = typeof academyNotificationOutbox.$inferSelect;
+export type InsertAcademyNotificationOutbox = z.infer<typeof insertAcademyNotificationOutboxSchema>;
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;

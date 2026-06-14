@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Compiled and build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Local config
+config/app.config.json
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing and coverage
+coverage/
+
+# Node.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads
+uploads/

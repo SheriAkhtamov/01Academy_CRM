@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm_password_2026
+      POSTGRES_DB: crm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  crm:
+    build: .
+    container_name: crm-pro
+    restart: unless-stopped
+    ports:
+      - "8011:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config:ro
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  pgdata:

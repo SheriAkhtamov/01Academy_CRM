@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist"
+  },
+  "include": ["vite.config.ts", "scripts/**/*"]
+}

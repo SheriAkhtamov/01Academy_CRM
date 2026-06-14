@@ -1,0 +1,43 @@
+{
+  "_comment": "Copy this file to app.config.json and fill in all values. This is the ONLY config/secrets file — no .env needed.",
+
+  "database": {
+    "provider": "postgresql",
+    "url": "postgresql://crm:crm_password_2026@postgres:5432/crm",
+    "ssl": false,
+    "pool": {
+      "max": 20,
+      "idleTimeoutMillis": 30000,
+      "connectionTimeoutMillis": 2000
+    }
+  },
+
+  "server": {
+    "environment": "development",
+    "host": "0.0.0.0",
+    "port": 5000,
+    "appUrl": "http://localhost:5000"
+  },
+
+  "session": {
+    "secret": "CHANGE-ME-use-a-long-random-string-here",
+    "cookieSecure": false
+  },
+
+  "superAdmin": {
+    "username": "Sheri",
+    "fullName": "Sheri Super Admin",
+    "password": "Sheri2001"
+  },
+
+  "email": {
+    "resendApiKey": "",
+    "smtp": {
+      "host": "smtp.gmail.com",
+      "port": 587,
+      "user": "",
+      "pass": "",
+      "from": "noreply@example.com"
+    }
+  }
+}

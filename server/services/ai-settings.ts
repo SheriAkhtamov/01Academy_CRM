@@ -3,19 +3,19 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { appConfig } from "../config";
 
-export const workspaceAiProviderSchema = z.enum(["openai", "anthropic", "gemini"]);
+export const aiProviderSchema = z.enum(["openai", "anthropic", "gemini"]);
 
-export type WorkspaceAiProvider = z.infer<typeof workspaceAiProviderSchema>;
+export type AiProvider = z.infer<typeof aiProviderSchema>;
 
-export interface WorkspaceAiSettings {
-  provider: WorkspaceAiProvider;
+export interface AiSettings {
+  provider: AiProvider;
   model: string;
   apiKey: string;
   baseUrl?: string | null;
 }
 
-export interface WorkspaceAiSettingsSummary {
-  provider: WorkspaceAiProvider | null;
+export interface AiSettingsSummary {
+  provider: AiProvider | null;
   model: string | null;
   baseUrl: string | null;
   configured: boolean;
@@ -32,8 +32,8 @@ const AI_SETTING_KEYS = {
 
 const ENCRYPTED_PREFIX = "enc:v1:";
 
-const workspaceAiSettingsInputSchema = z.object({
-  provider: workspaceAiProviderSchema,
+const aiSettingsInputSchema = z.object({
+  provider: aiProviderSchema,
   model: z.string().trim().min(1).max(255),
   baseUrl: z.string().trim().max(500).optional().nullable(),
   apiKey: z.string().trim().max(500).optional(),
@@ -52,7 +52,7 @@ const workspaceAiSettingsInputSchema = z.object({
   }
 });
 
-export type WorkspaceAiSettingsInput = z.infer<typeof workspaceAiSettingsInputSchema>;
+export type AiSettingsInput = z.infer<typeof aiSettingsInputSchema>;
 
 const getEncryptionKey = () =>
   createHash("sha256").update(appConfig.session.secret).digest();
@@ -117,7 +117,7 @@ const maskApiKey = (value?: string | null) => {
   return `${value.slice(0, 4)}${"*".repeat(Math.max(4, value.length - 8))}${value.slice(-4)}`;
 };
 
-export const getWorkspaceAiSettingsSummary = async (): Promise<WorkspaceAiSettingsSummary> => {
+export const getAiSettingsSummary = async (): Promise<AiSettingsSummary> => {
   const [providerSetting, modelSetting, apiKeySetting, baseUrlSetting] = await Promise.all([
     storage.getSystemSetting(AI_SETTING_KEYS.provider),
     storage.getSystemSetting(AI_SETTING_KEYS.model),
@@ -125,7 +125,7 @@ export const getWorkspaceAiSettingsSummary = async (): Promise<WorkspaceAiSettin
     storage.getSystemSetting(AI_SETTING_KEYS.baseUrl),
   ]);
 
-  const provider = workspaceAiProviderSchema.safeParse(providerSetting?.value ?? null);
+  const provider = aiProviderSchema.safeParse(providerSetting?.value ?? null);
   const decryptedApiKey = decryptValue(apiKeySetting?.value);
   const hasApiKey = decryptedApiKey.trim().length > 0;
   const model = modelSetting?.value?.trim() || null;
@@ -141,7 +141,7 @@ export const getWorkspaceAiSettingsSummary = async (): Promise<WorkspaceAiSettin
   };
 };
 
-export const getWorkspaceAiSettings = async (): Promise<WorkspaceAiSettings | null> => {
+export const getAiSettings = async (): Promise<AiSettings | null> => {
   const [providerSetting, modelSetting, apiKeySetting, baseUrlSetting] = await Promise.all([
     storage.getSystemSetting(AI_SETTING_KEYS.provider),
     storage.getSystemSetting(AI_SETTING_KEYS.model),
@@ -149,7 +149,7 @@ export const getWorkspaceAiSettings = async (): Promise<WorkspaceAiSettings | nu
     storage.getSystemSetting(AI_SETTING_KEYS.baseUrl),
   ]);
 
-  const provider = workspaceAiProviderSchema.safeParse(providerSetting?.value ?? null);
+  const provider = aiProviderSchema.safeParse(providerSetting?.value ?? null);
   const model = modelSetting?.value?.trim();
   const apiKey = decryptValue(apiKeySetting?.value).trim();
 
@@ -165,11 +165,11 @@ export const getWorkspaceAiSettings = async (): Promise<WorkspaceAiSettings | nu
   };
 };
 
-export const updateWorkspaceAiSettings = async (
-  input: WorkspaceAiSettingsInput,
-): Promise<WorkspaceAiSettingsSummary> => {
-  const parsedInput = workspaceAiSettingsInputSchema.parse(input);
-  const currentSettings = await getWorkspaceAiSettings();
+export const updateAiSettings = async (
+  input: AiSettingsInput,
+): Promise<AiSettingsSummary> => {
+  const parsedInput = aiSettingsInputSchema.parse(input);
+  const currentSettings = await getAiSettings();
   const nextApiKey = parsedInput.clearApiKey
     ? ""
     : parsedInput.apiKey?.trim() ?? currentSettings?.apiKey ?? "";
@@ -197,7 +197,7 @@ export const updateWorkspaceAiSettings = async (
     }),
   ]);
 
-  return getWorkspaceAiSettingsSummary();
+  return getAiSettingsSummary();
 };
 
-export { workspaceAiSettingsInputSchema };
+export { aiSettingsInputSchema };

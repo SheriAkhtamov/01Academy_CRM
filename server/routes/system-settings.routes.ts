@@ -3,10 +3,10 @@ import { storage } from '../storage';
 import { requireAdmin, requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import {
-    getWorkspaceAiSettingsSummary,
-    updateWorkspaceAiSettings,
-    workspaceAiSettingsInputSchema,
-} from '../services/workspace-ai-settings';
+    getAiSettingsSummary,
+    updateAiSettings,
+    aiSettingsInputSchema,
+} from '../services/ai-settings';
 
 const router = Router();
 
@@ -43,7 +43,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 
 router.get('/ai', requireAuth, requireAdmin, async (req, res) => {
     try {
-        const settings = await getWorkspaceAiSettingsSummary();
+        const settings = await getAiSettingsSummary();
         res.json(settings);
     } catch (error) {
         logger.error('Failed to fetch AI settings', { error });
@@ -53,12 +53,12 @@ router.get('/ai', requireAuth, requireAdmin, async (req, res) => {
 
 router.put('/ai', requireAuth, requireAdmin, async (req, res) => {
     try {
-        const validation = workspaceAiSettingsInputSchema.safeParse(req.body);
+        const validation = aiSettingsInputSchema.safeParse(req.body);
         if (!validation.success) {
             return res.status(400).json({ error: validation.error.message });
         }
 
-        const settings = await updateWorkspaceAiSettings(validation.data);
+        const settings = await updateAiSettings(validation.data);
         res.json(settings);
     } catch (error) {
         logger.error('Failed to update AI settings', { error });

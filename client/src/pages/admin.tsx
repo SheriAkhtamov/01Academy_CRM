@@ -975,7 +975,7 @@ export default function Admin() {
 
           <Card>
             <CardHeader>
-              <CardTitle>{t('aiWorkspaceSettings')}</CardTitle>
+              <CardTitle>{t('aiSettings')}</CardTitle>
             </CardHeader>
             <CardContent>
               {aiSettingsLoading ? (
@@ -988,7 +988,7 @@ export default function Admin() {
               ) : (
                 <Form {...aiSettingsForm}>
                   <form onSubmit={aiSettingsForm.handleSubmit(onSubmitAiSettings)} className="space-y-4">
-                    <p className="text-sm text-slate-500">{t('aiWorkspaceSettingsDescription')}</p>
+                    <p className="text-sm text-slate-500">{t('aiSettingsDescription')}</p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField

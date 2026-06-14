@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1773408907681,
-      "tag": "0000_blue_jean_grey",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1780239600000,
-      "tag": "0002_academy_crm",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1780243200000,
-      "tag": "0003_academy_cleanup",
+      "when": 1781478144780,
+      "tag": "0000_initial_schema",
       "breakpoints": true
     }
   ]

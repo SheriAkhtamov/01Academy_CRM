@@ -29,6 +29,7 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ClipboardCheck,
   Download,
   GraduationCap,
   HeartHandshake,
@@ -40,6 +41,7 @@ import {
   Settings,
   ShieldAlert,
   Sparkles,
+  Star,
   Users,
   UserRoundCheck,
 } from 'lucide-react';
@@ -108,6 +110,8 @@ const emptyForm = {
   studentAge: '',
   courseId: '',
   sourceId: '',
+  advertisingCampaign: '',
+  language: 'ru',
   managerId: '',
   comment: '',
 };
@@ -513,7 +517,19 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             </SelectContent>
           </Select>
         </Field>
-        <div className="md:col-span-3">
+        <Field label="Рекламная кампания">
+          <Input value={leadForm.advertisingCampaign} onChange={(event) => setLeadForm({ ...leadForm, advertisingCampaign: event.target.value })} />
+        </Field>
+        <Field label="Язык общения">
+          <Select value={leadForm.language} onValueChange={(language) => setLeadForm({ ...leadForm, language })}>
+            <SelectTrigger><SelectValue placeholder="Язык" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ru">Русский</SelectItem>
+              <SelectItem value="uz">O'zbekcha</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <div className="md:col-span-2">
           <Field label="Комментарий">
             <Input value={leadForm.comment} onChange={(event) => setLeadForm({ ...leadForm, comment: event.target.value })} />
           </Field>
@@ -1085,7 +1101,15 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
               <SelectContent>{PAYMENT_DISCOUNTS.map((discount) => <SelectItem key={discount} value={discount}>{discount}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          <div className="md:col-span-4 flex items-end">
+          <Field label="Период">
+            <Select value={paymentForm.period} onValueChange={(period) => setPaymentForm({ ...paymentForm, period })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {['month_1', 'month_2', 'month_3', 'month_4', 'month_5', 'referral_bonus'].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div className="md:col-span-3 flex items-end">
             <Button onClick={() => createPayment.mutate()} disabled={createPayment.isPending}>Сохранить оплату</Button>
           </div>
         </CardContent>
@@ -1094,11 +1118,13 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         <CardHeader><CardTitle>История оплат</CardTitle></CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">Клиент</th><th className="p-3 text-left">Сумма</th><th className="p-3 text-left">Статус</th><th className="p-3 text-left">Метод</th><th className="p-3 text-left">Дата</th></tr></thead>
+            <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">Клиент</th><th className="p-3 text-left">Сумма</th><th className="p-3 text-left">Период</th><th className="p-3 text-left">Скидка</th><th className="p-3 text-left">Статус</th><th className="p-3 text-left">Метод</th><th className="p-3 text-left">Дата оплаты</th></tr></thead>
             <tbody>{data.payments.map((payment: any) => (
               <tr key={payment.id} className="border-t border-slate-100">
                 <td className="p-3">{payment.studentName || payment.leadName || 'нет данных'}</td>
                 <td className="p-3">{money(payment.amountUzs)}</td>
+                <td className="p-3">{payment.period || '—'}</td>
+                <td className="p-3">{payment.discount || 'none'}</td>
                 <td className="p-3"><Badge variant={payment.status === 'paid' ? 'default' : payment.status === 'overdue' ? 'destructive' : 'outline'}>{payment.status}</Badge></td>
                 <td className="p-3">{payment.method}</td>
                 <td className="p-3">{dateTime(payment.paidAt || payment.dueAt)}</td>
@@ -1280,16 +1306,76 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       </TabsList>
       <TabsContent value="head" className="mt-5">{renderDashboard()}</TabsContent>
       <TabsContent value="marketing" className="mt-5">
-        <Card><CardHeader><CardTitle>Маркетинг по источникам</CardTitle></CardHeader><CardContent className="space-y-3">
-          {analytics.bySource.map((source: any) => (
-            <div key={source.sourceId} className="rounded-lg border border-slate-200 p-3">
-              <div className="flex justify-between text-sm"><strong>{source.sourceName}</strong><span>{source.leads} лидов → {source.paidStudents} оплат</span></div>
-              <Progress value={source.leads ? (source.paidStudents / source.leads) * 100 : 0} className="mt-2" />
-            </div>
-          ))}
-        </CardContent></Card>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <KpiCard title="Конверсия заявка → демо" value={`${analytics.summary.leadToDemoConversion ?? 0}%`} icon={ArrowRight} tone="blue" />
+            <KpiCard title="Конверсия демо → оплата" value={`${analytics.summary.demoToPaidConversion ?? 0}%`} icon={ArrowRight} tone="green" />
+            <KpiCard title="CPL (стоимость лида)" value={money(analytics.summary.cpl ?? 0)} icon={Megaphone} tone="amber" />
+            <KpiCard title="Средний цикл сделки" value={`${analytics.summary.avgDealCycleDays ?? 0} дн.`} icon={CalendarDays} tone="slate" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <KpiCard title="NPS родителей" value={analytics.summary.nps ?? 0} detail={`цель > ${analytics.targets?.nps ?? 50}`} icon={Sparkles} tone={(analytics.summary.nps ?? 0) >= (analytics.targets?.nps ?? 50) ? 'green' : 'amber'} />
+            <KpiCard title="Тёплая база" value={analytics.summary.warmBaseSize ?? 0} detail={`реактивировано: ${analytics.summary.warmReactivated ?? 0}`} icon={Users} tone="amber" />
+          </div>
+          <Card><CardHeader><CardTitle>Маркетинг по источникам (CPL / CAC / ROAS)</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">Источник</th><th className="p-3 text-left">Лиды</th><th className="p-3 text-left">Оплаты</th><th className="p-3 text-left">CPL</th><th className="p-3 text-left">CAC</th><th className="p-3 text-left">ROAS</th><th className="p-3 text-left">LTV:CAC</th></tr></thead>
+              <tbody>{analytics.bySource.map((source: any) => (
+                <tr key={source.sourceId} className="border-t border-slate-100">
+                  <td className="p-3 font-medium">{source.sourceName}</td>
+                  <td className="p-3">{source.leads}</td>
+                  <td className="p-3">{source.paidStudents}</td>
+                  <td className="p-3">{money(source.cpl)}</td>
+                  <td className="p-3">{money(source.cac)}</td>
+                  <td className="p-3">{source.roas}x</td>
+                  <td className="p-3">{source.ltvCac}:1</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </CardContent></Card>
+        </div>
       </TabsContent>
-      <TabsContent value="operations" className="mt-5">{renderAttendance()}</TabsContent>
+      <TabsContent value="operations" className="mt-5">
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <KpiCard title="Средняя посещаемость" value={`${analytics.summary.avgAttendance ?? 0}%`} detail={`цель > ${analytics.targets?.attendance ?? 70}%`} icon={ClipboardCheck} tone={(analytics.summary.avgAttendance ?? 0) >= (analytics.targets?.attendance ?? 70) ? 'green' : 'red'} />
+            <KpiCard title="Средняя оценка урока" value={`${(analytics.summary.avgLessonScore ?? 0).toFixed(1)} / 5`} icon={Star} tone="blue" />
+            <KpiCard title="NPS родителей" value={analytics.summary.nps ?? 0} detail={`цель > ${analytics.targets?.nps ?? 50}`} icon={Sparkles} tone={(analytics.summary.nps ?? 0) >= (analytics.targets?.nps ?? 50) ? 'green' : 'amber'} />
+            <KpiCard title="Часы преподавателей" value={`${Math.round(analytics.summary.teacherHours ?? 0)} ч`} icon={UserRoundCheck} tone="slate" />
+          </div>
+          {(analytics.byGroupProgress ?? []).length > 0 && (
+            <Card><CardHeader><CardTitle>Заполненность и прогресс групп</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">Группа</th><th className="p-3 text-left">Заполненность</th><th className="p-3 text-left">Посещаемость</th><th className="p-3 text-left">Прогресс</th></tr></thead>
+                <tbody>{(analytics.byGroupProgress ?? []).map((group: any) => (
+                  <tr key={group.groupId} className="border-t border-slate-100">
+                    <td className="p-3 font-medium">{group.groupName}</td>
+                    <td className="p-3">{group.capacity}/{group.maxCapacity}</td>
+                    <td className="p-3"><Progress value={group.attendanceAvg} className="w-24 inline-flex" /></td>
+                    <td className="p-3"><Progress value={group.progressAvg} className="w-24 inline-flex" /></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </CardContent></Card>
+          )}
+          {(analytics.byTeacher ?? []).length > 0 && (
+            <Card><CardHeader><CardTitle>Преподаватели: часы, оценки, тренд</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">Преподаватель</th><th className="p-3 text-left">Часы</th><th className="p-3 text-left">Средняя оценка</th><th className="p-3 text-left">Посещаемость</th><th className="p-3 text-left">Тренд</th></tr></thead>
+                <tbody>{(analytics.byTeacher ?? []).map((teacher: any) => (
+                  <tr key={teacher.teacherId} className="border-t border-slate-100">
+                    <td className="p-3 font-medium">{teacher.teacherName}</td>
+                    <td className="p-3">{Math.round(teacher.hours)} ч</td>
+                    <td className="p-3">{(teacher.avgScore ?? 0).toFixed(1)}</td>
+                    <td className="p-3">{teacher.attendance}%</td>
+                    <td className="p-3">{teacher.trend === 'up' ? '📈 вверх' : teacher.trend === 'down' ? '📉 вниз' : '➡️ стабильно'}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </CardContent></Card>
+          )}
+        </div>
+      </TabsContent>
       <TabsContent value="cohorts" className="mt-5"><Cohorts courses={data.courses} sources={data.sources} users={data.users} /></TabsContent>
     </Tabs>
   );
@@ -1440,7 +1526,18 @@ function Cohorts({ courses, sources, users }: { courses: any[]; sources: any[]; 
       <CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500">
-            <tr><th className="p-3 text-left">Когорта</th><th className="p-3 text-left">Месяц 1</th><th className="p-3 text-left">Месяц 2</th><th className="p-3 text-left">Месяц 3</th><th className="p-3 text-left">Месяц 4</th><th className="p-3 text-left">Revenue retention</th><th className="p-3 text-left">Прогноз дохода</th></tr>
+            <tr>
+              <th className="p-3 text-left">Когорта</th>
+              <th className="p-3 text-left">Мес. 1</th>
+              <th className="p-3 text-left">Мес. 2</th>
+              <th className="p-3 text-left">Retention 2</th>
+              <th className="p-3 text-left">Мес. 3</th>
+              <th className="p-3 text-left">Retention 3</th>
+              <th className="p-3 text-left">Мес. 4</th>
+              <th className="p-3 text-left">Retention 4</th>
+              <th className="p-3 text-left">Revenue</th>
+              <th className="p-3 text-left">Прогноз</th>
+            </tr>
           </thead>
           <tbody>
             {data.map((row: any) => (
@@ -1448,15 +1545,18 @@ function Cohorts({ courses, sources, users }: { courses: any[]; sources: any[]; 
                 <td className="p-3 font-medium">{row.cohort}</td>
                 <td className="p-3">{row.students}</td>
                 <td className="p-3">{row.month2}</td>
+                <td className="p-3">{row.retentionMonth2Percent ?? 0}%</td>
                 <td className="p-3">{row.month3}</td>
+                <td className="p-3">{row.retentionMonth3Percent ?? 0}%</td>
                 <td className="p-3">{row.month4}</td>
+                <td className="p-3">{row.retentionMonth4Percent ?? 0}%</td>
                 <td className="p-3">{money(row.revenue)}</td>
                 <td className="p-3">{money(row.forecastRevenue)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {data.length === 0 && <div className="p-6 text-sm text-slate-500">нет данных</div>}
+        {data.length === 0 && <div className="p-6 text-sm text-slate-500">нет данных — создайте оплаты, чтобы увидеть когортный анализ.</div>}
       </CardContent>
     </Card>
   );

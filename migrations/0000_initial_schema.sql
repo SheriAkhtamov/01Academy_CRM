@@ -291,6 +291,7 @@ CREATE TABLE "academy_student_transfers" (
 --> statement-breakpoint
 CREATE TABLE "academy_students" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"lead_id" integer,
 	"group_id" integer,
 	"contact_name" varchar(255) NOT NULL,
 	"phone" varchar(50) NOT NULL,
@@ -298,12 +299,18 @@ CREATE TABLE "academy_students" (
 	"student_name" varchar(255),
 	"student_age" integer,
 	"course_id" integer,
+	"manager_id" integer,
+	"status" varchar(50) DEFAULT 'studying' NOT NULL,
+	"enrolled_at" timestamp,
 	"enrollment_date" timestamp,
 	"balance_uzs" integer DEFAULT 0 NOT NULL,
+	"attendance_percent" integer DEFAULT 0 NOT NULL,
+	"progress_percent" integer DEFAULT 0 NOT NULL,
 	"satisfaction_avg" integer DEFAULT 0 NOT NULL,
 	"parent_feedback" text,
 	"next_payment_at" timestamp,
 	"referral_code" varchar(80) NOT NULL,
+	"referral_level" varchar(50) DEFAULT 'none' NOT NULL,
 	"marketing_consent" boolean DEFAULT false NOT NULL,
 	"risk_flags" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp DEFAULT now(),
@@ -441,8 +448,10 @@ ALTER TABLE "academy_student_transfers" ADD CONSTRAINT "academy_student_transfer
 ALTER TABLE "academy_student_transfers" ADD CONSTRAINT "academy_student_transfers_from_group_id_academy_groups_id_fk" FOREIGN KEY ("from_group_id") REFERENCES "public"."academy_groups"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "academy_student_transfers" ADD CONSTRAINT "academy_student_transfers_to_group_id_academy_groups_id_fk" FOREIGN KEY ("to_group_id") REFERENCES "public"."academy_groups"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "academy_student_transfers" ADD CONSTRAINT "academy_student_transfers_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "academy_students" ADD CONSTRAINT "academy_students_lead_id_academy_leads_id_fk" FOREIGN KEY ("lead_id") REFERENCES "public"."academy_leads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "academy_students" ADD CONSTRAINT "academy_students_group_id_academy_groups_id_fk" FOREIGN KEY ("group_id") REFERENCES "public"."academy_groups"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "academy_students" ADD CONSTRAINT "academy_students_course_id_academy_courses_id_fk" FOREIGN KEY ("course_id") REFERENCES "public"."academy_courses"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "academy_students" ADD CONSTRAINT "academy_students_manager_id_users_id_fk" FOREIGN KEY ("manager_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "academy_tasks" ADD CONSTRAINT "academy_tasks_responsible_id_users_id_fk" FOREIGN KEY ("responsible_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "academy_teachers" ADD CONSTRAINT "academy_teachers_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -480,6 +489,9 @@ CREATE INDEX "academy_student_status_history_student_idx" ON "academy_student_st
 CREATE INDEX "academy_student_transfers_student_idx" ON "academy_student_transfers" USING btree ("student_id");--> statement-breakpoint
 CREATE INDEX "academy_students_phone_idx" ON "academy_students" USING btree ("phone");--> statement-breakpoint
 CREATE INDEX "academy_students_group_idx" ON "academy_students" USING btree ("group_id");--> statement-breakpoint
+CREATE INDEX "academy_students_lead_idx" ON "academy_students" USING btree ("lead_id");--> statement-breakpoint
+CREATE INDEX "academy_students_manager_idx" ON "academy_students" USING btree ("manager_id");--> statement-breakpoint
+CREATE INDEX "academy_students_status_idx" ON "academy_students" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "academy_tasks_responsible_idx" ON "academy_tasks" USING btree ("responsible_id");--> statement-breakpoint
 CREATE INDEX "academy_tasks_entity_idx" ON "academy_tasks" USING btree ("entity_type","entity_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "system_settings_key_unique" ON "system_settings" USING btree ("key");--> statement-breakpoint

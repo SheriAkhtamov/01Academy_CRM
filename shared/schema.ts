@@ -203,6 +203,7 @@ export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
 
 export const academyStudents = pgTable("academy_students", {
   id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
   groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
   contactName: varchar("contact_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 50 }).notNull(),
@@ -210,12 +211,18 @@ export const academyStudents = pgTable("academy_students", {
   studentName: varchar("student_name", { length: 255 }),
   studentAge: integer("student_age"),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  managerId: integer("manager_id").references(() => users.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 50 }).notNull().default("studying"),
+  enrolledAt: timestamp("enrolled_at"),
   enrollmentDate: timestamp("enrollment_date"),
   balanceUzs: integer("balance_uzs").notNull().default(0),
+  attendancePercent: integer("attendance_percent").notNull().default(0),
+  progressPercent: integer("progress_percent").notNull().default(0),
   satisfactionAvg: integer("satisfaction_avg").notNull().default(0),
   parentFeedback: text("parent_feedback"),
   nextPaymentAt: timestamp("next_payment_at"),
   referralCode: varchar("referral_code", { length: 80 }).notNull(),
+  referralLevel: varchar("referral_level", { length: 50 }).notNull().default("none"),
   marketingConsent: boolean("marketing_consent").notNull().default(false),
   riskFlags: jsonb("risk_flags").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow(),
@@ -223,6 +230,9 @@ export const academyStudents = pgTable("academy_students", {
 }, (table) => ({
   phoneIdx: index("academy_students_phone_idx").on(table.phone),
   groupIdx: index("academy_students_group_idx").on(table.groupId),
+  leadIdx: index("academy_students_lead_idx").on(table.leadId),
+  managerIdx: index("academy_students_manager_idx").on(table.managerId),
+  statusIdx: index("academy_students_status_idx").on(table.status),
 }));
 
 export const academyStudentStatusHistory = pgTable("academy_student_status_history", {

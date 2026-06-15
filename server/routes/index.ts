@@ -13,6 +13,7 @@ import messageRoutes from './message.routes';
 import notificationsRoutes from './notifications.routes';
 import systemSettingsRoutes from './system-settings.routes';
 import academyRoutes from './academy.routes';
+import incomingRoutes from './incoming.routes';
 import { logger } from '../lib/logger';
 import { requireFileAccess } from '../middleware/auth.middleware';
 import { createPresenceTracker } from '../lib/presence';
@@ -78,6 +79,8 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     app.use('/api/notifications', notificationsRoutes);
     app.use('/api/system-settings', systemSettingsRoutes);
     app.use('/api/academy', academyRoutes);
+    // Public inbound webhooks (verified by per-provider secrets, NOT session auth).
+    app.use('/api/incoming', incomingRoutes);
     app.use('/uploads', requireFileAccess, uploadsMiddleware);
 
     const httpServer = createServer(app);

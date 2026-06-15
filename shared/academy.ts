@@ -48,6 +48,27 @@ export const STUDENT_STATUSES = [
   { code: "expelled", name: "Отчислен", color: "#dc2626" },
 ] as const;
 
+export const FINAL_PROJECT_STATUSES = [
+  { code: "not_started", name: "Не начат", color: "#64748b" },
+  { code: "in_progress", name: "В процессе", color: "#f59e0b" },
+  { code: "completed", name: "Завершён", color: "#2563eb" },
+  { code: "presented", name: "Презентован", color: "#16a34a" },
+] as const;
+
+// Referral tier thresholds from TZ 5.1: 1 → 15% discount, 3 → free month, 5+ → AI Ambassador.
+export const REFERRAL_TIERS = [
+  { minReferrals: 5, level: "ai_ambassador", reward: "Бесплатное обучение + статус AI Ambassador" },
+  { minReferrals: 3, level: "free_month", reward: "Бесплатный месяц" },
+  { minReferrals: 1, level: "discount_15", reward: "Скидка 15% на 1 месяц" },
+] as const;
+
+export const REFERRAL_DISCOUNT_PERCENT = 15;
+export const TARGET_NPS = 50;
+export const TARGET_CAC_UZS = 300000;
+export const TARGET_LTV_CAC_RATIO = 10;
+export const TARGET_ROAS = 5;
+export const TARGET_ATTENDANCE_PERCENT = 70;
+
 export const GROUP_STATUSES = [
   { code: "open", name: "Набор открыт", color: "#2563eb" },
   { code: "in_progress", name: "Идут занятия", color: "#16a34a" },
@@ -75,11 +96,11 @@ export const DEFAULT_COURSES = [
     slug: "ai-kids",
     name: "AI Kids",
     ageCategory: "7-10",
-    lessonCount: 24,
-    lessonDurationMinutes: 90,
-    frequency: "2 раза в неделю",
-    basePriceUzs: 1200000,
-    discountedPriceUzs: 960000,
+    lessonCount: 16,
+    lessonDurationMinutes: 120,
+    frequency: "1 раз в неделю",
+    basePriceUzs: 1500000,
+    discountedPriceUzs: 1200000,
     ltvTargetMinUzs: 4800000,
     ltvTargetMaxUzs: 6000000,
     program: [
@@ -92,12 +113,12 @@ export const DEFAULT_COURSES = [
   {
     slug: "ai-creator",
     name: "AI Creator",
-    ageCategory: "11-15",
-    lessonCount: 36,
+    ageCategory: "10-15",
+    lessonCount: 24,
     lessonDurationMinutes: 120,
-    frequency: "2 раза в неделю",
-    basePriceUzs: 1440000,
-    discountedPriceUzs: 1224000,
+    frequency: "1 раз в неделю",
+    basePriceUzs: 1800000,
+    discountedPriceUzs: 1440000,
     ltvTargetMinUzs: 8640000,
     ltvTargetMaxUzs: 10080000,
     program: [
@@ -110,12 +131,12 @@ export const DEFAULT_COURSES = [
   {
     slug: "vibe-coding",
     name: "Vibe Coding",
-    ageCategory: "16+",
-    lessonCount: 32,
+    ageCategory: "15+",
+    lessonCount: 60,
     lessonDurationMinutes: 120,
-    frequency: "2 раза в неделю",
+    frequency: "3 раза в неделю",
     basePriceUzs: 2500000,
-    discountedPriceUzs: 2125000,
+    discountedPriceUzs: 2000000,
     ltvTargetMinUzs: 10000000,
     ltvTargetMaxUzs: 10000000,
     program: [
@@ -155,8 +176,8 @@ export function suggestCourseSlugByAge(age?: number | null): string | null {
 export function suggestAgeGroup(age?: number | null): string | null {
   if (!age || age < 1) return null;
   if (age <= 10) return "7-10";
-  if (age <= 15) return "11-15";
-  return "16+";
+  if (age <= 15) return "10-15";
+  return "15+";
 }
 
 export function requiresQualificationFields(status: string): boolean {
@@ -207,6 +228,34 @@ export function calculateNps(scores: number[]): number | null {
   return Math.round(((promoters - detractors) / scores.length) * 100);
 }
 
+// Trend: compares the average of the last `windowSize` points with the previous window.
+// Returns 'up' | 'down' | 'stable' (stable when the difference is < tolerance).
+export function calculateTrend(
+  values: number[],
+  windowSize = 3,
+  tolerance = 0.1,
+): "up" | "down" | "stable" {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length < windowSize * 2) return "stable";
+
+  const recent = finite.slice(-windowSize);
+  const previous = finite.slice(-windowSize * 2, -windowSize);
+  const recentAvg = recent.reduce((sum, v) => sum + v, 0) / recent.length;
+  const previousAvg = previous.reduce((sum, v) => sum + v, 0) / previous.length;
+
+  if (previousAvg === 0) return recentAvg > 0 ? "up" : "stable";
+  const delta = (recentAvg - previousAvg) / previousAvg;
+  if (delta > tolerance) return "up";
+  if (delta < -tolerance) return "down";
+  return "stable";
+}
+
+// Retention rate as a percentage: cohort size at month N vs month 1.
+export function calculateRetentionPercent(currentCount: number, baseCount: number): number {
+  if (baseCount <= 0) return 0;
+  return Math.round((currentCount / baseCount) * 100);
+}
+
 export function calculateAverage(values: number[]): number | null {
   const validValues = values.filter((value) => Number.isFinite(value));
   if (validValues.length === 0) return null;
@@ -236,6 +285,42 @@ export function buildReferralCode(studentName: string, fallbackId: number | stri
     .slice(0, 8);
 
   return `${normalized || "STUDENT"}${fallbackId}${year}`.slice(0, 24);
+}
+
+// Maps a paid-referral count to the corresponding tier from TZ 5.1.
+export function resolveReferralLevel(paidReferralsCount: number): string {
+  for (const tier of REFERRAL_TIERS) {
+    if (paidReferralsCount >= tier.minReferrals) {
+      return tier.level;
+    }
+  }
+  return "none";
+}
+
+export function calculateDiscountedAmount(amountUzs: number, discount: string): number {
+  if (!amountUzs || amountUzs <= 0) return 0;
+  const map: Record<string, number> = {
+    promo_20: 0.8,
+    family_15: 0.85,
+    referral_15: 0.85,
+    none: 1,
+  };
+  const factor = map[discount] ?? 1;
+  return Math.round(amountUzs * factor);
+}
+
+// Average deal cycle (days) from lead creation to first paid payment.
+export function calculateAvgDealCycleDays(cycleDays: number[]): number | null {
+  const valid = cycleDays.filter((d) => Number.isFinite(d) && d >= 0);
+  if (valid.length === 0) return null;
+  return Math.round((valid.reduce((sum, d) => sum + d, 0) / valid.length) * 10) / 10;
+}
+
+// Average study duration in months from enrollment/first payment until now or completion.
+export function calculateAvgStudyMonths(monthsValues: number[]): number | null {
+  const valid = monthsValues.filter((m) => Number.isFinite(m) && m >= 0);
+  if (valid.length === 0) return null;
+  return Math.round((valid.reduce((sum, m) => sum + m, 0) / valid.length) * 10) / 10;
 }
 
 export function addMinutes(date: Date, minutes: number): Date {

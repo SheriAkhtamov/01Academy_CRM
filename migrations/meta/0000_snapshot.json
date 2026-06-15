@@ -1,5 +1,5 @@
 {
-  "id": "2850d6a1-6c30-4599-9768-8104a82c61fe",
+  "id": "68d8f31e-9eaf-4dbb-9510-8aa12e7f23f2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2826,6 +2826,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "group_id": {
           "name": "group_id",
           "type": "integer",
@@ -2868,6 +2874,25 @@
           "primaryKey": false,
           "notNull": false
         },
+        "manager_id": {
+          "name": "manager_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'studying'"
+        },
+        "enrolled_at": {
+          "name": "enrolled_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "enrollment_date": {
           "name": "enrollment_date",
           "type": "timestamp",
@@ -2876,6 +2901,20 @@
         },
         "balance_uzs": {
           "name": "balance_uzs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "attendance_percent": {
+          "name": "attendance_percent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "progress_percent": {
+          "name": "progress_percent",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -2905,6 +2944,13 @@
           "type": "varchar(80)",
           "primaryKey": false,
           "notNull": true
+        },
+        "referral_level": {
+          "name": "referral_level",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
         },
         "marketing_consent": {
           "name": "marketing_consent",
@@ -2965,9 +3011,67 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "academy_students_lead_idx": {
+          "name": "academy_students_lead_idx",
+          "columns": [
+            {
+              "expression": "lead_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "academy_students_manager_idx": {
+          "name": "academy_students_manager_idx",
+          "columns": [
+            {
+              "expression": "manager_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "academy_students_status_idx": {
+          "name": "academy_students_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
+        "academy_students_lead_id_academy_leads_id_fk": {
+          "name": "academy_students_lead_id_academy_leads_id_fk",
+          "tableFrom": "academy_students",
+          "tableTo": "academy_leads",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "academy_students_group_id_academy_groups_id_fk": {
           "name": "academy_students_group_id_academy_groups_id_fk",
           "tableFrom": "academy_students",
@@ -2987,6 +3091,19 @@
           "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "academy_students_manager_id_users_id_fk": {
+          "name": "academy_students_manager_id_users_id_fk",
+          "tableFrom": "academy_students",
+          "tableTo": "users",
+          "columnsFrom": [
+            "manager_id"
           ],
           "columnsTo": [
             "id"

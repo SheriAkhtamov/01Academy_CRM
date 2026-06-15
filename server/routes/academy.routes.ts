@@ -1,25 +1,45 @@
 import { Router } from 'express';
 import { pool } from '../db';
+import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import {
   ACTIVE_PIPELINE_STATUSES,
   DEFAULT_LEAD_SOURCES,
+  FINAL_PROJECT_STATUSES,
+  GROUP_STATUSES,
   LEAD_STATUSES,
+  LESSON_STATUSES,
+  PAYMENT_DISCOUNTS,
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  PAYMENT_TYPES,
+  REFERRAL_TIERS,
+  STUDENT_STATUSES,
+  TARGET_ATTENDANCE_PERCENT,
+  TARGET_CAC_UZS,
+  TARGET_LTV_CAC_RATIO,
+  TARGET_NPS,
+  TARGET_ROAS,
   addDays,
   addMinutes,
   buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
+  calculateAvgDealCycleDays,
+  calculateAvgStudyMonths,
   calculateCac,
   calculateLtv,
   calculateNps,
   calculateProgressPercent,
+  calculateRetentionPercent,
   calculateRoas,
+  calculateTrend,
   deriveGroupEndDate,
   getComputedPaymentStatus,
   normalizeMoney,
+  resolveReferralLevel,
   suggestCourseSlugByAge,
   validateLeadForStatusChange } from '@shared/academy';
 
@@ -163,6 +183,14 @@ const ensureMarketingAccess = (req: any, res: any) => {
   return false;
 };
 
+// Read-only marketing data (e.g. sources for SMM): mutations restricted to head/admin.
+const ensureHeadOnlyForMutations = (req: any, res: any, requireMarketingReadOnly?: boolean) => {
+  if (!requireMarketingReadOnly) return true;
+  if (HEAD_ROLES.has(req.user?.role)) return true;
+  res.status(403).json({ error: 'Read-only access: only leadership can modify this entity' });
+  return false;
+};
+
 const createAudit = async (req: any, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
   await storage.createAuditLog({
     userId: req.user!.id,
@@ -235,11 +263,43 @@ const getDefaultSource = async () => {
     isActive: true });
 };
 
+// Template source prefixes from TZ 1.2: the suffix is filled from campaign/referrer name.
+const TEMPLATE_SOURCE_PREFIXES = ['instagram_ad', 'blogger', 'school', 'event', 'referral'];
+
+const buildTemplateSourceCode = (prefix: string, suffix: string) => {
+  const slug = suffix
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9А-Яа-я]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+  return slug ? `${prefix}_${slug}` : prefix;
+};
+
 const resolveSourceId = async (body: Row) => {
   const explicitSourceId = parseId(body.sourceId);
   if (explicitSourceId) return explicitSourceId;
 
-  const sourceCode = nullableText(body.sourceCode);
+  // Referral leads: tag becomes referral_<referrer name> (TZ 1.2 / 5.1).
+  const referrerStudentId = parseId(body.referrerStudentId);
+  if (referrerStudentId) {
+    const referrer = await queryOne(`SELECT student_name FROM academy_students WHERE id = $1`, [referrerStudentId]);
+    const referrerName = nullableText(referrer?.studentName) ?? `id${referrerStudentId}`;
+    const code = buildTemplateSourceCode('referral', referrerName);
+    const existing = await getSourceByCode(code);
+    if (existing) return Number(existing.id);
+    const created = await insertRow('academy_lead_sources', {
+      code, name: `Реферал: ${referrerName}`, channel: 'referral', isSystem: false, isActive: true });
+    return Number(created.id);
+  }
+
+  const rawSourceCode = nullableText(body.sourceCode);
+  const campaignName = nullableText(body.advertisingCampaign);
+  // Expand template prefixes (instagram_ad_<name>, blogger_<name>, etc.) from TZ 1.2.
+  const sourceCode = rawSourceCode && campaignName && TEMPLATE_SOURCE_PREFIXES.includes(rawSourceCode)
+    ? buildTemplateSourceCode(rawSourceCode, campaignName)
+    : rawSourceCode;
+
   if (sourceCode) {
     const source = await getSourceByCode(sourceCode);
     if (source) return Number(source.id);
@@ -247,7 +307,7 @@ const resolveSourceId = async (body: Row) => {
       code: sourceCode,
       name: sourceCode,
       channel: sourceCode.split('_')[0],
-      campaignName: nullableText(body.advertisingCampaign) ?? null,
+      campaignName: campaignName ?? null,
       isSystem: false,
       isActive: true });
     return Number(created.id);
@@ -392,7 +452,7 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
     phone: lead.phone,
     messenger: lead.messenger ?? null,
     studentName: lead.studentName || lead.contactName,
-    age: lead.studentAge ?? null,
+    studentAge: lead.studentAge ?? null,
     courseId: lead.courseId ?? course?.id ?? null,
     groupId: lead.enrolledGroupId ?? null,
     managerId: lead.managerId ?? req.user!.id,
@@ -424,6 +484,65 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
     entityId: student.id });
   await createAudit(req, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
   return student;
+};
+
+// TZ 5.1 referral mechanics: when a referred student pays, the referrer earns a 15%
+// discount on the next month and the new student gets 15% off the first month.
+// Referrer tier is recomputed from the count of paid referrals (1 → 15%, 3 → free month, 5+ → AI Ambassador).
+const applyReferralRewards = async (req: any, studentId: number, leadId: number | null, _paymentId: number) => {
+  // referrerStudentId lives on the lead (academy_leads.referrer_student_id), not on the student.
+  const lead = leadId ? await getLead(leadId) : null;
+  const referrerId = lead?.referrerStudentId ? Number(lead.referrerStudentId) : null;
+
+  if (!referrerId || referrerId === studentId) return;
+
+  // 1. Mark any pending reward for this referral as applied.
+  await query(
+    `UPDATE academy_referral_rewards SET status = 'applied', applied_at = NOW()
+     WHERE referred_student_id = $1 AND referrer_student_id = $2 AND status = 'pending'`,
+    [studentId, referrerId],
+  );
+
+  // 2. Recompute the referrer's tier from paid referrals count.
+  const paidCountRow = await queryOne<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM academy_referral_rewards
+     WHERE referrer_student_id = $1 AND status = 'applied'`,
+    [referrerId],
+  );
+  const paidReferrals = Number(paidCountRow?.count ?? 0);
+  const level = resolveReferralLevel(paidReferrals);
+  await updateRow('academy_students', referrerId, { referralLevel: level });
+
+  // 3. Free month tier (3+ paid referrals) → create a zero-amount payment for the referrer's next month.
+  if (level === 'free_month' || level === 'ai_ambassador') {
+    const existingFree = await queryOne(
+      `SELECT id FROM academy_payments WHERE student_id = $1 AND discount = 'referral_15' AND amount_uzs = 0 AND comment = 'Бесплатный месяц по реферальной программе' LIMIT 1`,
+      [referrerId],
+    );
+    if (!existingFree) {
+      await insertRow('academy_payments', {
+        studentId: referrerId,
+        amountUzs: 0,
+        type: 'full',
+        method: 'transfer',
+        paidAt: new Date(),
+        period: 'referral_bonus',
+        discount: 'referral_15',
+        status: 'paid',
+        paidUntil: addDays(new Date(), 30),
+        comment: 'Бесплатный месяц по реферальной программе',
+        confirmedBy: req.user!.id,
+      });
+    }
+  } else {
+    // discount_15 tier → enqueue a notification to the referrer about their earned discount.
+    const referrer = await queryOne(`SELECT messenger, phone, student_name FROM academy_students WHERE id = $1`, [referrerId]);
+    if (referrer) {
+      await createOutbox('telegram', referrer.messenger || referrer.phone,
+        `${referrer.studentName}, вы получили скидку 15% на следующий месяц за рекомендацию 01 Academy! 🎁`,
+        { entityType: 'student', entityId: referrerId });
+    }
+  }
 };
 
 const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string | null) => {
@@ -515,7 +634,26 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
   }
 };
 
-const getAcademyDataset = async () => {
+interface DatasetActor {
+  userId: number;
+  role: string;
+}
+
+const resolveTeacherId = async (userId: number): Promise<number | null> => {
+  const row = await queryOne<{ id: string }>(`SELECT id FROM academy_teachers WHERE user_id = $1`, [userId]);
+  return row ? Number(row.id) : null;
+};
+
+const getAcademyDataset = async (actor?: DatasetActor) => {
+  // Role-based scoping: teachers see only their own groups; account managers see only
+  // their own leads/students; everyone else sees everything.
+  const teacherId = actor?.role === 'teacher' ? await resolveTeacherId(actor.userId) : null;
+  const isTeacherScoped = teacherId !== null;
+  const isManagerScoped = actor?.role === 'account_manager';
+
+  const managerClause = isManagerScoped ? `AND (l.manager_id = $1 OR l.manager_id IS NULL)` : '';
+  const managerParams = isManagerScoped ? [actor!.userId] : [];
+
   const [
     courses,
     sources,
@@ -537,41 +675,56 @@ const getAcademyDataset = async () => {
     query(`SELECT * FROM academy_courses ORDER BY name`),
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
     query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order`),
-    query(`SELECT * FROM academy_teachers ORDER BY full_name`),
-    query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
-      (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students
-      FROM academy_groups g
-      LEFT JOIN academy_courses c ON c.id = g.course_id
-      LEFT JOIN academy_teachers t ON t.id = g.teacher_id
-      ORDER BY g.created_at DESC`),
+    isTeacherScoped
+      ? query(`SELECT * FROM academy_teachers WHERE id = $1 ORDER BY full_name`, [teacherId])
+      : query(`SELECT * FROM academy_teachers ORDER BY full_name`),
+    isTeacherScoped
+      ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
+          (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students
+          FROM academy_groups g
+          LEFT JOIN academy_courses c ON c.id = g.course_id
+          LEFT JOIN academy_teachers t ON t.id = g.teacher_id
+          WHERE g.teacher_id = $1
+          ORDER BY g.created_at DESC`, [teacherId])
+      : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
+          (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students
+          FROM academy_groups g
+          LEFT JOIN academy_courses c ON c.id = g.course_id
+          LEFT JOIN academy_teachers t ON t.id = g.teacher_id
+          ORDER BY g.created_at DESC`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
       LEFT JOIN users u ON u.id = l.manager_id
-      ORDER BY l.created_at DESC`),
+      WHERE 1=1 ${isManagerScoped ? 'AND l.manager_id = $1' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
+      ORDER BY l.created_at DESC`, managerParams),
     query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name
       FROM academy_students st
       LEFT JOIN academy_courses c ON c.id = st.course_id
       LEFT JOIN academy_groups g ON g.id = st.group_id
       LEFT JOIN users u ON u.id = st.manager_id
-      ORDER BY st.created_at DESC`),
+      WHERE 1=1 ${isManagerScoped ? 'AND st.manager_id = $1' : ''} ${isTeacherScoped ? 'AND st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)' : ''}
+      ORDER BY st.created_at DESC`, isTeacherScoped ? [teacherId] : managerParams),
     query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name
       FROM academy_lessons l
       LEFT JOIN academy_groups g ON g.id = l.group_id
       LEFT JOIN academy_teachers t ON t.id = l.teacher_id
       LEFT JOIN academy_courses c ON c.id = l.course_id
-      ORDER BY l.scheduled_at DESC`),
-    query(`SELECT * FROM academy_attendance`),
+      WHERE 1=1 ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}
+      ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : []),
+    query(`SELECT a.* FROM academy_attendance a ${isTeacherScoped ? 'JOIN academy_lessons l ON l.id = a.lesson_id WHERE l.teacher_id = $1' : ''}`, isTeacherScoped ? [teacherId] : []),
     query(`SELECT p.*, st.student_name, l.contact_name AS lead_name
       FROM academy_payments p
       LEFT JOIN academy_students st ON st.id = p.student_id
       LEFT JOIN academy_leads l ON l.id = p.lead_id
-      ORDER BY p.created_at DESC`),
+      WHERE 1=1 ${isManagerScoped ? 'AND (st.manager_id = $1 OR p.lead_id IN (SELECT id FROM academy_leads WHERE manager_id = $1))' : ''}
+      ORDER BY p.created_at DESC`, managerParams),
     query(`SELECT t.*, u.full_name AS responsible_name
       FROM academy_tasks t
       LEFT JOIN users u ON u.id = t.responsible_id
-      ORDER BY COALESCE(t.deadline_at, t.created_at)`),
+      WHERE 1=1 ${isManagerScoped ? 'AND t.responsible_id = $1' : ''}
+      ORDER BY COALESCE(t.deadline_at, t.created_at)`, managerParams),
     query(`SELECT * FROM academy_lesson_surveys`),
     query(`SELECT * FROM academy_parent_surveys`),
     query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
@@ -628,23 +781,114 @@ const buildAnalytics = async () => {
     .filter((lesson) => lesson.status === 'conducted')
     .reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0);
 
+  // --- Marketing metrics (TZ 4.2): conversions, CPL, deal cycle, warm-base conversion. ---
+  const newRequestCount = data.leads.filter((lead) => lead.statusCode !== 'new_request' || true).length;
+  const demoAttendedCount = data.leads.filter((lead) => lead.demoAttended).length;
+  const invitedToDemoCount = data.leads.filter((lead) =>
+    ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
+    || lead.demoAttended).length;
+  const leadToDemoConversion = newRequestCount > 0 ? Number(((invitedToDemoCount / newRequestCount) * 100).toFixed(1)) : 0;
+  const demoToPaidConversion = invitedToDemoCount > 0 ? Number(((newPaidStudents.size / invitedToDemoCount) * 100).toFixed(1)) : 0;
+  const cpl = data.leads.length > 0 ? Math.round(expensesMonth / data.leads.filter((lead) => new Date(lead.createdAt) >= monthStart).length) : 0;
+  // Average deal cycle (days) from lead creation to first paid payment.
+  const dealCycleDays = data.leads
+    .filter((lead) => lead.statusCode === 'paid')
+    .map((lead) => {
+      const firstPaid = paidPayments.find((payment) => payment.leadId === lead.id || payment.studentId === lead.id);
+      if (!firstPaid?.paidAt) return null;
+      return (new Date(firstPaid.paidAt).getTime() - new Date(lead.createdAt).getTime()) / (24 * 60 * 60 * 1000);
+    })
+    .filter((d): d is number => d !== null && Number.isFinite(d));
+  const avgDealCycleDays = calculateAvgDealCycleDays(dealCycleDays) ?? 0;
+  // Warm-base reactivation: leads that returned from not_now to an active status (via stage history absent here; approximate via current status).
+  const warmReactivated = data.leads.filter((lead) => lead.statusCode !== 'not_now' && lead.warmMovedAt).length;
+
+  // --- Operations metrics (TZ 4.3): lesson NPS by teacher/course/group, progress, teacher hours, retention %. ---
+  const lessonScores = data.lessonSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
+  const avgLessonScore = calculateAverage(lessonScores) ?? 0;
+  const byTeacher = data.teachers.map((teacher) => {
+    const teacherLessons = data.lessons.filter((lesson) => lesson.teacherId === teacher.id && lesson.status === 'conducted');
+    const teacherSurveys = data.lessonSurveys.filter((survey) => survey.teacherId === teacher.id);
+    const teacherStudents = data.students.filter((student) =>
+      data.groups.filter((group) => group.teacherId === teacher.id).some((group) => group.id === student.groupId));
+    const scoresByDate = teacherSurveys
+      .map((survey) => Number(survey.score))
+      .filter(Number.isFinite);
+    return {
+      teacherId: teacher.id,
+      teacherName: teacher.fullName,
+      hours: teacherLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0),
+      avgScore: calculateAverage(scoresByDate) ?? 0,
+      attendance: calculateAverage(teacherStudents.map((student) => Number(student.attendancePercent || 0)).filter(Boolean)) ?? 0,
+      groupsCount: data.groups.filter((group) => group.teacherId === teacher.id).length,
+      trend: calculateTrend(scoresByDate),
+    };
+  });
+  const byCourseLessonNps = data.courses.map((course) => {
+    const courseSurveys = data.lessonSurveys.filter((survey) => survey.courseId === course.id);
+    const scores = courseSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
+    return {
+      courseId: course.id,
+      courseName: course.name,
+      avgLessonScore: calculateAverage(scores) ?? 0,
+      trend: calculateTrend(scores),
+      progressAvg: calculateAverage(
+        data.students.filter((student) => student.courseId === course.id && student.status === 'studying')
+          .map((student) => Number(student.progressPercent || 0)).filter(Boolean),
+      ) ?? 0,
+    };
+  });
+  const byGroupProgress = data.groups.map((group) => ({
+    groupId: group.id,
+    groupName: group.name,
+    capacity: Number(group.currentStudents || 0),
+    maxCapacity: Number(group.maxStudents || 12),
+    attendanceAvg: calculateAverage(
+      data.students.filter((student) => student.groupId === group.id).map((student) => Number(student.attendancePercent || 0)).filter(Boolean),
+    ) ?? 0,
+    progressAvg: calculateAverage(
+      data.students.filter((student) => student.groupId === group.id).map((student) => Number(student.progressPercent || 0)).filter(Boolean),
+    ) ?? 0,
+  }));
+
+  // --- Cohort retention (TZ 3.4) as percentages. ---
+  const retentionByCourse = data.courses.map((course) => {
+    const courseStudents = data.students.filter((student) => student.courseId === course.id);
+    const monthsValues = courseStudents
+      .filter((student) => student.enrolledAt)
+      .map((student) => (now.getTime() - new Date(student.enrolledAt).getTime()) / (30 * 24 * 60 * 60 * 1000));
+    return {
+      courseId: course.id,
+      courseName: course.name,
+      avgStudyMonths: calculateAvgStudyMonths(monthsValues) ?? 0,
+      studentCount: courseStudents.length,
+    };
+  });
+
   return {
     summary: {
       newLeadsWeek: data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: data.leads.filter((lead) => new Date(lead.createdAt) >= monthStart).length,
       activeLeads: data.leads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode)).length,
       warmBaseSize: data.leads.filter((lead) => lead.statusCode === 'not_now').length,
+      warmReactivated,
       activeStudents: data.students.filter((student) => student.status === 'studying').length,
       revenueMonth,
       revenueTotal,
       avgCheck,
       cac,
       roas,
+      cpl,
       averageLtv,
       ltvCac: cac ? Number((averageLtv / cac).toFixed(2)) : 0,
       avgAttendance: calculateAverage(data.students.map((student) => Number(student.attendancePercent || 0)).filter(Boolean)) ?? 0,
+      avgLessonScore,
       nps,
+      npsBelowTarget: nps < TARGET_NPS,
       teacherHours,
+      avgDealCycleDays,
+      leadToDemoConversion,
+      demoToPaidConversion,
       overduePayments: overduePayments.length,
       overdueTasks: overdueTasks.length,
       newPaidStudents: newPaidStudents.size },
@@ -656,21 +900,30 @@ const buildAnalytics = async () => {
       overduePayments,
       longThinkingLeads,
       overdueTasks },
-    byCourse: data.courses.map((course) => ({
-      courseId: course.id,
-      courseName: course.name,
-      leads: data.leads.filter((lead) => lead.courseId === course.id).length,
-      students: data.students.filter((student) => student.courseId === course.id && student.status === 'studying').length,
-      revenue: paidPayments
-        .filter((payment) => data.students.find((student) => student.id === payment.studentId)?.courseId === course.id)
-        .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
-      averageLtv: calculateAverage(
-        ltvByStudent
-          .filter((item) => data.students.find((student) => student.id === item.studentId)?.courseId === course.id)
-          .map((item) => item.ltv),
-      ) ?? 0,
-      ltvTargetMinUzs: course.ltvTargetMinUzs,
-      ltvTargetMaxUzs: course.ltvTargetMaxUzs })),
+    byCourse: data.courses.map((course) => {
+      const courseStudentIds = data.students.filter((student) => student.courseId === course.id).map((student) => student.id);
+      const coursePaidStudents = new Set(paidPayments.filter((payment) => payment.studentId && courseStudentIds.includes(payment.studentId)).map((payment) => payment.studentId));
+      const courseExpenses = data.expenses
+        .filter((expense) => data.sources.find((source) => source.id === expense.sourceId)?.channel === course.slug
+          || data.leads.find((lead) => lead.courseId === course.id && lead.sourceId === data.sources.find((s) => s.id === data.expenses.find((e) => e.id === expense.id)?.sourceId)?.id))
+        .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
+      return {
+        courseId: course.id,
+        courseName: course.name,
+        leads: data.leads.filter((lead) => lead.courseId === course.id).length,
+        students: data.students.filter((student) => student.courseId === course.id && student.status === 'studying').length,
+        revenue: paidPayments
+          .filter((payment) => data.students.find((student) => student.id === payment.studentId)?.courseId === course.id)
+          .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
+        averageLtv: calculateAverage(
+          ltvByStudent
+            .filter((item) => data.students.find((student) => student.id === item.studentId)?.courseId === course.id)
+            .map((item) => item.ltv),
+        ) ?? 0,
+        ltvTargetMinUzs: course.ltvTargetMinUzs,
+        ltvTargetMaxUzs: course.ltvTargetMaxUzs,
+        cac: calculateCac(courseExpenses, coursePaidStudents.size) ?? 0 };
+    }),
     bySource: data.sources.map((source) => {
       const sourceLeads = data.leads.filter((lead) => lead.sourceId === source.id);
       const sourceStudents = data.students.filter((student) => sourceLeads.some((lead) => lead.id === student.leadId));
@@ -688,10 +941,16 @@ const buildAnalytics = async () => {
         paidStudents: sourceStudents.length,
         revenue: sourceRevenue,
         expenses: sourceExpenses,
+        cpl: sourceLeads.length > 0 ? Math.round(sourceExpenses / sourceLeads.length) : 0,
         cac: sourceCac,
         roas: calculateRoas(sourceRevenue, sourceExpenses) ?? 0,
         ltvCac: sourceCac ? Number(((calculateAverage(sourceStudents.map((student) => ltvByStudent.find((item) => item.studentId === student.id)?.ltv || 0)) ?? 0) / sourceCac).toFixed(2)) : 0 };
     }),
+    byTeacher,
+    byCourseLessonNps,
+    byGroupProgress,
+    retentionByCourse,
+    targets: { nps: TARGET_NPS, cac: TARGET_CAC_UZS, ltvCac: TARGET_LTV_CAC_RATIO, roas: TARGET_ROAS, attendance: TARGET_ATTENDANCE_PERCENT },
     data };
 };
 
@@ -739,9 +998,10 @@ router.post('/seed', async (req, res) => {
 
 router.get('/bootstrap', async (req, res) => {
   try {
+    const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
     const [users, dataset, analytics] = await Promise.all([
       storage.getUsers().then((items) => items.map((user) => ({ id: user.id, fullName: user.fullName, role: user.role, hasReportAccess: user.hasReportAccess }))),
-      getAcademyDataset(),
+      getAcademyDataset(actor),
       buildAnalytics(),
     ]);
 
@@ -750,7 +1010,17 @@ router.get('/bootstrap', async (req, res) => {
       ...dataset,
       analytics,
       constants: {
-        leadStatuses: LEAD_STATUSES } });
+        leadStatuses: LEAD_STATUSES,
+        studentStatuses: STUDENT_STATUSES,
+        groupStatuses: GROUP_STATUSES,
+        lessonStatuses: LESSON_STATUSES,
+        paymentStatuses: PAYMENT_STATUSES,
+        paymentTypes: PAYMENT_TYPES,
+        paymentMethods: PAYMENT_METHODS,
+        paymentDiscounts: PAYMENT_DISCOUNTS,
+        finalProjectStatuses: FINAL_PROJECT_STATUSES,
+        referralTiers: REFERRAL_TIERS,
+        targets: { nps: TARGET_NPS, cac: TARGET_CAC_UZS, ltvCac: TARGET_LTV_CAC_RATIO, roas: TARGET_ROAS, attendance: TARGET_ATTENDANCE_PERCENT } } });
   } catch (error) {
     logger.error('Failed to fetch academy bootstrap', { error });
     res.status(500).json({ error: 'Failed to fetch academy data' });
@@ -775,7 +1045,13 @@ router.get('/analytics/marketing', async (req, res) => {
       funnel: analytics.funnel,
       bySource: analytics.bySource,
       byCourse: analytics.byCourse,
-      warmBaseSize: analytics.summary.warmBaseSize });
+      warmBaseSize: analytics.summary.warmBaseSize,
+      warmReactivated: analytics.summary.warmReactivated,
+      leadToDemoConversion: analytics.summary.leadToDemoConversion,
+      demoToPaidConversion: analytics.summary.demoToPaidConversion,
+      cpl: analytics.summary.cpl,
+      avgDealCycleDays: analytics.summary.avgDealCycleDays,
+      targets: analytics.targets });
   } catch (error) {
     logger.error('Failed to fetch marketing analytics', { error });
     res.status(500).json({ error: 'Failed to fetch marketing analytics' });
@@ -790,7 +1066,12 @@ router.get('/analytics/operations', async (req, res) => {
       summary: analytics.summary,
       groups: analytics.groups,
       risks: analytics.risks,
-      byCourse: analytics.byCourse });
+      byCourse: analytics.byCourse,
+      byTeacher: analytics.byTeacher,
+      byCourseLessonNps: analytics.byCourseLessonNps,
+      byGroupProgress: analytics.byGroupProgress,
+      retentionByCourse: analytics.retentionByCourse,
+      targets: analytics.targets });
   } catch (error) {
     logger.error('Failed to fetch operations analytics', { error });
     res.status(500).json({ error: 'Failed to fetch operations analytics' });
@@ -843,6 +1124,9 @@ router.get('/analytics/cohorts', async (req, res) => {
         COUNT(DISTINCT CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '3 months' THEN p.student_id END)::int AS month_3,
         COUNT(DISTINCT CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '4 months' THEN p.student_id END)::int AS month_4,
         COALESCE(SUM(p.amount_uzs), 0)::int AS revenue,
+        COALESCE(SUM(CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '2 months' THEN p.amount_uzs ELSE 0 END), 0)::int AS revenue_month_2,
+        COALESCE(SUM(CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '3 months' THEN p.amount_uzs ELSE 0 END), 0)::int AS revenue_month_3,
+        COALESCE(SUM(CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '4 months' THEN p.amount_uzs ELSE 0 END), 0)::int AS revenue_month_4,
         COALESCE(ROUND(AVG(p.amount_uzs) * COUNT(DISTINCT fp.student_id)), 0)::int AS forecast_revenue
       FROM first_payments fp
       LEFT JOIN academy_payments p ON p.student_id = fp.student_id AND p.status = 'paid'
@@ -853,7 +1137,14 @@ router.get('/analytics/cohorts', async (req, res) => {
       ORDER BY 1 DESC`,
       params,
     );
-    res.json(rows);
+    // Enrich with retention percentages (TZ 3.4: "Retention rate по месяцам (% оставшихся)").
+    const enriched = rows.map((row) => ({
+      ...row,
+      retentionMonth2Percent: calculateRetentionPercent(Number(row.month2), Number(row.students)),
+      retentionMonth3Percent: calculateRetentionPercent(Number(row.month3), Number(row.students)),
+      retentionMonth4Percent: calculateRetentionPercent(Number(row.month4), Number(row.students)),
+    }));
+    res.json(enriched);
   } catch (error) {
     logger.error('Failed to fetch cohorts', { error });
     res.status(500).json({ error: 'Failed to fetch cohorts' });
@@ -998,13 +1289,13 @@ router.patch('/leads/:id', async (req, res) => {
     if (validationError) return res.status(400).json({ error: validationError });
 
     const updates: Row = {
-      contactName: nullableText(req.body.contactName),
-      phone: nullableText(req.body.phone),
+      contactName: nullableText(req.body.contactName) ?? oldLead.contactName,
+      phone: nullableText(req.body.phone) ?? oldLead.phone,
       messenger: nullableText(req.body.messenger),
       studentName: nullableText(req.body.studentName),
       studentAge: toIntegerOrNull(req.body.studentAge),
       courseId: parseId(req.body.courseId),
-      sourceId: parseId(req.body.sourceId),
+      sourceId: parseId(req.body.sourceId) ?? oldLead.sourceId,
       advertisingCampaign: nullableText(req.body.advertisingCampaign),
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
       statusCode: nullableText(req.body.statusCode),
@@ -1159,71 +1450,21 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
   }
 });
 
-router.post('/incoming/chatplace', async (req, res) => {
-  try {
-    const source = await getSourceByCode('instagram_dm');
-    req.body.sourceId = source?.id ?? (await getDefaultSource()).id;
-    const duplicate = await findDuplicate(nullableText(req.body.phone), nullableText(req.body.messenger));
-    await logIntegration('chatplace', 'inbound', duplicate ? 'duplicate' : 'received', req.body);
-    if (duplicate) return res.status(409).json({ error: 'Duplicate lead or student', duplicate });
-
-    const lead = await insertRow('academy_leads', {
-            contactName: nullableText(req.body.contactName) ?? nullableText(req.body.name) ?? 'Instagram lead',
-      phone: nullableText(req.body.phone) ?? 'unknown',
-      messenger: nullableText(req.body.messenger) ?? nullableText(req.body.instagramUsername) ?? null,
-      sourceId: req.body.sourceId,
-      advertisingCampaign: nullableText(req.body.campaign) ?? null,
-      statusCode: 'new_request',
-      managerId: req.user!.id,
-      language: 'ru',
-      createdBy: req.user!.id });
-    await createStageHistory(lead.id, null, 'new_request', req.user!.id, 'ChatPlace');
-    await handleLeadAutomation(req, lead);
-    res.status(201).json(lead);
-  } catch (error) {
-    logger.error('Failed to receive ChatPlace lead', { error });
-    res.status(500).json({ error: 'Failed to receive ChatPlace lead' });
-  }
-});
-
-router.post('/incoming/google-forms', async (req, res) => {
-  try {
-    const source = await getSourceByCode('website');
-    req.body.sourceId = source?.id ?? (await getDefaultSource()).id;
-    await logIntegration('google_forms', 'inbound', 'received', req.body);
-    const duplicate = await findDuplicate(nullableText(req.body.phone), nullableText(req.body.messenger));
-    if (duplicate) return res.status(409).json({ error: 'Duplicate lead or student', duplicate });
-
-    const lead = await insertRow('academy_leads', {
-            contactName: nullableText(req.body.contactName) ?? nullableText(req.body.name) ?? 'Google Forms lead',
-      phone: nullableText(req.body.phone) ?? 'unknown',
-      studentName: nullableText(req.body.studentName) ?? null,
-      courseId: parseId(req.body.courseId),
-      sourceId: req.body.sourceId,
-      statusCode: req.body.demoAt ? 'demo_invited' : 'new_request',
-      managerId: req.user!.id,
-      demoAt: nullableDate(req.body.demoAt),
-      language: 'ru',
-      createdBy: req.user!.id });
-    await createStageHistory(lead.id, null, lead.statusCode, req.user!.id, 'Google Forms');
-    await handleLeadAutomation(req, lead);
-    res.status(201).json(lead);
-  } catch (error) {
-    logger.error('Failed to receive Google Forms lead', { error });
-    res.status(500).json({ error: 'Failed to receive Google Forms lead' });
-  }
-});
+// Inbound webhooks (ChatPlace, Google Forms, bank) live in ./incoming.routes.ts as
+// PUBLIC routes verified by per-provider secrets, not session auth.
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
   requireFinance?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
+  // SMM can read but not mutate: GET allowed for marketing roles, mutations admin/head only.
+  requireMarketingReadOnly?: boolean;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
-    if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
     try {
       const rows = await query(
         `SELECT * FROM ${quoteIdent(table)} ORDER BY ${options.orderBy ?? 'created_at DESC, id DESC'}`,
@@ -1239,7 +1480,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   router.get(`/${path}/:id`, async (req, res) => {
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
-    if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
@@ -1256,6 +1497,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
     try {
       const values: Row = {  };
       for (const column of columns) {
@@ -1293,6 +1535,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
@@ -1343,6 +1586,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
@@ -1529,6 +1773,8 @@ router.post('/payments', async (req, res) => {
     if (status === 'paid' && resolvedStudentId) {
       await updateRow('academy_students', Number(resolvedStudentId), {
         nextPaymentAt: payment.paidUntil ?? addDays(new Date(), 30) });
+      // Apply referral rewards (TZ 5.1): discount for referrer + new student, recompute tiers.
+      await applyReferralRewards(req, Number(resolvedStudentId), leadId, payment.id);
     }
 
     await createAudit(req, 'CREATE_ACADEMY_PAYMENT', 'academy_payment', payment.id, payment);
@@ -1558,12 +1804,20 @@ router.post('/surveys/lesson', async (req, res) => {
       improve: nullableText(req.body.improve) });
     await recalculateStudentMetrics(studentId);
     if (score < 3) {
-      await createTask('Оценка урока ниже 3', {
-        responsibleId: req.user!.id,
+      // TZ 2.4: low score → notify leadership (admin/head), not just the submitter.
+      const leader = await queryOne<{ id: string }>(
+        `SELECT id FROM users WHERE role IN ('admin','head') AND is_active=true ORDER BY id LIMIT 1`);
+      const responsibleId = leader ? Number(leader.id) : req.user!.id;
+      await createTask('Оценка урока ниже 3 — связаться с учеником', {
+        responsibleId,
+        description: `Ученик поставил ${score}/5. Свяжитесь и узнайте причину.`,
         entityType: 'student',
         entityId: studentId,
         deadlineAt: addDays(new Date(), 1) });
-      await createNotification(req.user!.id, 'Низкая оценка урока', `Оценка ${score}/5`, 'student', studentId);
+      if (leader) {
+        await createNotification(Number(leader.id), 'Низкая оценка урока', `Оценка ${score}/5`, 'student', studentId);
+      }
+      await createOutbox('telegram', 'leadership', `⚠️ Низкая оценка урока ${score}/5 по ученику id:${studentId}. Требуется внимание.`, { entityType: 'student', entityId: studentId });
     }
     res.status(201).json(survey);
   } catch (error) {
@@ -1613,13 +1867,26 @@ router.get('/integrations/status', async (req, res) => {
        ORDER BY provider, created_at DESC`,
       [],
     );
-    const providers = ['chatplace', 'telegram', 'whatsapp', 'google_forms', 'meta_ads', 'bank', 'google_sheets', 'notion'];
-    res.json(providers.map((provider) => ({
-      provider,
-      mode: 'safe_stub',
-      connected: false,
-      lastLog: logs.find((log) => log.provider === provider) ?? null,
-      message: 'Интеграция работает в безопасном режиме-заглушке до настройки ключей.' })));
+    const integ = appConfig.integrations ?? {};
+    const providers = [
+      { provider: 'chatplace', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Instagram DM inbound webhook' },
+      { provider: 'telegram', connected: Boolean(integ.telegram?.botToken), note: 'Outbound bot messages + leadership reports' },
+      { provider: 'whatsapp', connected: Boolean(integ.whatsapp?.apiToken && integ.whatsapp?.phoneNumberId), note: 'WhatsApp Business Cloud API' },
+      { provider: 'google_forms', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Demo registration inbound webhook' },
+      { provider: 'meta_ads', connected: Boolean(integ.metaAds?.accessToken && integ.metaAds?.adAccountId), note: 'Ad spend import (manual expenses until connected)' },
+      { provider: 'bank', connected: Boolean(integ.bank?.webhookSecret), note: 'Payment confirmation inbound webhook' },
+      { provider: 'google_sheets', connected: Boolean(integ.googleSheets?.spreadsheetId), note: 'CSV export available; Sheets sync requires credentials' },
+      { provider: 'notion', connected: Boolean(integ.notion?.token && integ.notion?.databaseId), note: 'CSV export available; Notion pages require token' },
+    ];
+    res.json(providers.map((entry) => ({
+      provider: entry.provider,
+      mode: entry.connected ? 'live' : 'stub',
+      connected: entry.connected,
+      lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
+      message: entry.connected
+        ? `${entry.note}: подключено.`
+        : `${entry.note}: режим-заглушка. Заполните ключи в config/app.config.json.`,
+    })));
   } catch (error) {
     logger.error('Failed to fetch integrations status', { error });
     res.status(500).json({ error: 'Failed to fetch integrations status' });
@@ -1628,7 +1895,23 @@ router.get('/integrations/status', async (req, res) => {
 
 router.post('/integrations/:provider/test', async (req, res) => {
   try {
-    const log = await logIntegration(String(req.params.provider), 'outbound', 'stub_sent', req.body ?? {});
+    const provider = String(req.params.provider);
+    // Actually exercise the channel so the test reflects real connectivity.
+    if (provider === 'telegram') {
+      const { sendTelegramMessage } = await import('../services/telegram');
+      const recipient = nullableText(req.body.recipient) ?? appConfig.integrations?.telegram?.leadershipChatId ?? 'leadership';
+      const result = await sendTelegramMessage(recipient, '01 Academy: тест интеграции Telegram ✅');
+      const log = await logIntegration('telegram', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', { result }, result.error ?? null);
+      return res.json({ ok: result.ok, simulated: result.simulated, error: result.error, log });
+    }
+    if (provider === 'whatsapp') {
+      const { sendWhatsAppMessage } = await import('../services/whatsapp');
+      const recipient = nullableText(req.body.recipient) ?? '+998901234567';
+      const result = await sendWhatsAppMessage(recipient, '01 Academy: тест интеграции WhatsApp ✅');
+      const log = await logIntegration('whatsapp', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', { result }, result.error ?? null);
+      return res.json({ ok: result.ok, simulated: result.simulated, error: result.error, log });
+    }
+    const log = await logIntegration(provider, 'outbound', 'stub_sent', req.body ?? {});
     res.json({ ok: true, mode: 'safe_stub', log });
   } catch (error) {
     logger.error('Failed to test integration', { error });
@@ -1847,7 +2130,7 @@ registerSimpleCrud('courses', 'academy_courses', [
 
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
-], { orderBy: 'name', requireMarketing: true });
+], { orderBy: 'name', requireMarketingReadOnly: true });
 
 registerSimpleCrud('teachers', 'academy_teachers', [
   'userId', 'fullName', 'courseIds', 'schedule', 'status',

@@ -39,5 +39,36 @@
       "pass": "",
       "from": "noreply@example.com"
     }
+  },
+
+  "integrations": {
+    "_comment": "Fill these to enable real outbound/inbound channels. All are optional — channels without tokens fall back to logging-only.",
+    "chatplace": {
+      "webhookSecret": ""
+    },
+    "telegram": {
+      "botToken": "",
+      "leadershipChatId": ""
+    },
+    "whatsapp": {
+      "apiToken": "",
+      "phoneNumberId": "",
+      "apiUrl": "https://graph.facebook.com/v19.0"
+    },
+    "metaAds": {
+      "accessToken": "",
+      "adAccountId": ""
+    },
+    "notion": {
+      "token": "",
+      "databaseId": ""
+    },
+    "googleSheets": {
+      "credentialsPath": "",
+      "spreadsheetId": ""
+    },
+    "bank": {
+      "webhookSecret": ""
+    }
   }
 }

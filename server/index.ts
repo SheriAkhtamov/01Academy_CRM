@@ -99,6 +99,10 @@ app.use(morgan(':method :url :status :response-time ms', {
 
     const server = await registerModularRoutes(app);
 
+    // Start background scheduler (outbox worker, daily automations, weekly report).
+    const { startScheduler } = await import('./services/scheduler');
+    startScheduler();
+
     // Fix #74/84: Explicit 404 for unknown /api/* routes before SPA fallback
     app.all('/api/*', (req: Request, res: Response) => {
       res.status(404).json({ error: 'API endpoint not found' });

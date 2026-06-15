@@ -19,8 +19,8 @@ describe("01 Academy business rules", () => {
     expect(suggestCourseSlugByAge(13)).toBe("ai-creator");
     expect(suggestCourseSlugByAge(16)).toBe("vibe-coding");
     expect(suggestAgeGroup(8)).toBe("7-10");
-    expect(suggestAgeGroup(13)).toBe("11-15");
-    expect(suggestAgeGroup(16)).toBe("16+");
+    expect(suggestAgeGroup(13)).toBe("10-15");
+    expect(suggestAgeGroup(16)).toBe("15+");
   });
 
   it("requires qualification fields before moving lead to qualified", () => {

@@ -36,6 +36,35 @@ export interface AppConfig {
       from?: string;
     };
   };
+  integrations?: {
+    chatplace?: {
+      webhookSecret?: string;
+    };
+    telegram?: {
+      botToken?: string;
+      leadershipChatId?: string;
+    };
+    whatsapp?: {
+      apiToken?: string;
+      phoneNumberId?: string;
+      apiUrl?: string;
+    };
+    metaAds?: {
+      accessToken?: string;
+      adAccountId?: string;
+    };
+    notion?: {
+      token?: string;
+      databaseId?: string;
+    };
+    googleSheets?: {
+      credentialsPath?: string;
+      spreadsheetId?: string;
+    };
+    bank?: {
+      webhookSecret?: string;
+    };
+  };
 }
 
 const configPath = path.resolve(process.cwd(), 'config', 'app.config.json');

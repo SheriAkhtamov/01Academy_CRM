@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { i18n, translations, type Language } from '@/lib/i18n';
+import { i18n, type Language, type TranslationKey } from '@/lib/i18n';
 
 export function useTranslation() {
   const [currentLanguage, setCurrentLanguage] = useState<Language>(i18n.getCurrentLanguage());
@@ -12,11 +12,8 @@ export function useTranslation() {
     return unsubscribe;
   }, []);
 
-  const t = useCallback((key: string): string => {
-    if (!(key in translations)) {
-      return key;
-    }
-    return i18n.t(key as keyof typeof translations);
+  const t = useCallback((key: TranslationKey): string => {
+    return i18n.t(key);
   }, [currentLanguage]);
 
   const setLanguage = useCallback((lang: Language): void => {

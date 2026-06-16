@@ -8,6 +8,7 @@ import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -36,7 +37,7 @@ import { Switch } from '@/components/ui/switch';
 import { User, Mail, Briefcase, Phone, MapPin, Save } from 'lucide-react';
 import { ACADEMY_ROLE_LABELS, ACADEMY_ROLES, type AcademyRole } from '@shared/academy';
 
-const createSettingsSchema = (t: (key: string) => string) => z.object({
+const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
   email: z.string().email(t('validEmailRequired')),
   position: z.string().min(1, t('positionRequired')),

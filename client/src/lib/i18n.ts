@@ -112,6 +112,7 @@ export const translations = {
   cplColumn: { en: 'CPL', ru: 'CPL' },
   cplLabel: { en: 'CPL (Cost Per Lead)', ru: 'CPL (стоимость лида)' },
   createCourse: { en: 'Create Course', ru: 'Создать курс' },
+  createFirstUser: { en: 'Create the first user', ru: 'Создайте первого пользователя' },
   createGroup: { en: 'Create Group', ru: 'Создать группу' },
   createGroupTitle: { en: 'Create Group', ru: 'Создать группу' },
   createLead: { en: 'Create Lead', ru: 'Создать лида' },
@@ -123,7 +124,6 @@ export const translations = {
   created: { en: 'Created', ru: 'Создано' },
   credentialsCopied: { en: 'User credentials copied to clipboard', ru: 'Учётные данные пользователя скопированы в буфер' },
   crmWorksWithoutExternal: { en: 'CRM continues working without external services. Errors and tests are logged.', ru: 'CRM продолжает работать без внешнего сервиса. Ошибки и тесты пишутся в лог.' },
-  currencySuffix: { en: ' UZS', ru: ' сум' },
   currentKeyMasked: { en: 'Current key', ru: 'Текущий ключ' },
   currentRole: { en: 'Current Role', ru: 'Текущая роль' },
   dashboard: { en: 'Dashboard', ru: 'Панель управления' },
@@ -190,6 +190,7 @@ export const translations = {
   group: { en: 'Group', ru: 'Группа' },
   groupCreateFailed: { en: 'Group not created', ru: 'Группа не создана' },
   groupCreated: { en: 'Group created', ru: 'Группа создана' },
+  groupFormName: { en: 'Group name', ru: 'Название группы' },
   groupLabel: { en: 'Group:', ru: 'Группа:' },
   groupOccupancy: { en: 'Group Occupancy', ru: 'Заполненность групп' },
   groupTab: { en: 'Group', ru: 'Группа' },
@@ -214,6 +215,16 @@ export const translations = {
   leadCreated: { en: 'Lead created', ru: 'Лид создан' },
   leadCreatedDesc: { en: 'Task for first contact has been created automatically.', ru: 'Задача на первый контакт создана автоматически.' },
   leadSources: { en: 'Lead Sources', ru: 'Источники лидов' },
+  leadStatusDemoAttended: { en: 'Demo attended', ru: 'Был на демо' },
+  leadStatusDemoInvited: { en: 'Invited to demo', ru: 'Приглашён на демо' },
+  leadStatusEnrolled: { en: 'Enrolled', ru: 'Записан на курс' },
+  leadStatusFirstContact: { en: 'First contact', ru: 'Первый контакт' },
+  leadStatusNewRequest: { en: 'New request', ru: 'Новая заявка' },
+  leadStatusNotNow: { en: 'Not now', ru: 'Не сейчас' },
+  leadStatusOffer: { en: 'Offer', ru: 'Предложение' },
+  leadStatusPaid: { en: 'Paid', ru: 'Оплатил' },
+  leadStatusQualified: { en: 'Qualified', ru: 'Квалифицирован' },
+  leadStatusThinking: { en: 'Thinking', ru: 'Думает' },
   leadsColumn: { en: 'Leads', ru: 'Лиды' },
   leadsSuffix: { en: ' leads', ru: ' лидов' },
   leadsThinkingOver7: { en: 'Leads thinking over 7 days', ru: 'Лиды думают больше 7 дней' },
@@ -269,7 +280,6 @@ export const translations = {
   navTeachers: { en: 'Teachers', ru: 'Преподаватели' },
   navWarmBase: { en: 'Warm Base', ru: 'Тёплая база' },
   newApplication: { en: 'New Application', ru: 'Новая заявка' },
-  newApplicationShort: { en: 'New Application', ru: 'Новая заявка' },
   newUserAddedDescription: { en: 'The new user has been added and will receive login credentials via email.', ru: 'Новый пользователь добавлен и получит учётные данные по электронной почте.' },
   next: { en: 'Next', ru: 'Далее' },
   nextPaymentLabel: { en: 'Next Payment:', ru: 'След. оплата:' },
@@ -325,11 +335,24 @@ export const translations = {
   passwordResetSuccessfullyTitle: { en: 'Password reset successfully', ru: 'Пароль успешно сброшен' },
   payment: { en: 'Payment', ru: 'Оплата' },
   paymentDateColumn: { en: 'Payment Date', ru: 'Дата оплаты' },
+  paymentDiscountFamily15: { en: 'Family 15%', ru: 'Семейная 15%' },
+  paymentDiscountNone: { en: 'No discount', ru: 'Без скидки' },
+  paymentDiscountPromo20: { en: 'Promo 20%', ru: 'Промо 20%' },
+  paymentDiscountReferral15: { en: 'Referral 15%', ru: 'Реферальная 15%' },
   paymentHistory: { en: 'Payment History', ru: 'История оплат' },
+  paymentMethodCard: { en: 'Card', ru: 'Карта' },
+  paymentMethodCash: { en: 'Cash', ru: 'Наличные' },
+  paymentMethodTransfer: { en: 'Transfer', ru: 'Перевод' },
   paymentReminderTimeDescription: { en: 'Payment reminder time in minutes before due date', ru: 'Время напоминания об оплате в минутах до дедлайна' },
   paymentSaveFailed: { en: 'Payment not saved', ru: 'Оплата не сохранена' },
   paymentSaved: { en: 'Payment saved', ru: 'Оплата сохранена' },
   paymentSavedDesc: { en: 'If this is the first payment, the student has been created automatically.', ru: 'Если это первая оплата лида, ученик создан автоматически.' },
+  paymentStatusOverdue: { en: 'Overdue', ru: 'Просрочено' },
+  paymentStatusPaid: { en: 'Paid', ru: 'Оплачено' },
+  paymentStatusPending: { en: 'Pending', ru: 'Ожидает' },
+  paymentTypeFull: { en: 'Full payment', ru: 'Полная оплата' },
+  paymentTypeInstallmentOne: { en: 'Installment 1/2', ru: 'Рассрочка 1/2' },
+  paymentTypeInstallmentTwo: { en: 'Installment 2/2', ru: 'Рассрочка 2/2' },
   paymentsLabel: { en: 'Payments:', ru: 'Оплат:' },
   paymentsTab: { en: 'Payments', ru: 'Оплаты' },
   period: { en: 'Period', ru: 'Период' },
@@ -454,6 +477,7 @@ export const translations = {
   smtpPortPlaceholder: { en: '587', ru: '587' },
   source: { en: 'Source', ru: 'Источник' },
   sourceCreated: { en: 'Source created', ru: 'Источник создан' },
+  sourceFormName: { en: 'Source name', ru: 'Название источника' },
   start: { en: 'Start', ru: 'Начало' },
   startConversation: { en: 'Start a conversation!', ru: 'Начните переписку!' },
   startDate: { en: 'Start Date', ru: 'Дата старта' },
@@ -479,6 +503,7 @@ export const translations = {
   teacherCreated: { en: 'Teacher created', ru: 'Преподаватель создан' },
   teacherDismissed: { en: 'Dismissed', ru: 'Уволен' },
   teacherHours: { en: 'Teacher Hours', ru: 'Часы преподавателей' },
+  teacherHoursAndRatings: { en: 'Teacher Hours & Ratings', ru: 'Часы и оценки преподавателей' },
   teacherLabel: { en: 'Teacher:', ru: 'Преподаватель:' },
   teacherVacation: { en: 'Vacation', ru: 'Отпуск' },
   telegramWhatsapp: { en: 'Telegram/WhatsApp', ru: 'Telegram/WhatsApp' },
@@ -552,6 +577,7 @@ export const translations = {
 
 
 export type Language = 'en' | 'ru';
+export type TranslationKey = keyof typeof translations;
 
 const DEFAULT_LANGUAGE: Language = 'ru';
 const PRIMARY_LANGUAGE_STORAGE_KEY = 'preferred-language';
@@ -617,7 +643,7 @@ class I18nService {
     };
   }
 
-  t(key: keyof typeof translations): string {
+  t(key: TranslationKey): string {
     const translation = translations[key];
     if (!translation) {
       devLog(`Translation missing for key: ${key}`);
@@ -628,5 +654,4 @@ class I18nService {
 }
 
 export const i18n = new I18nService();
-export const t = (key: keyof typeof translations) => i18n.t(key);
-
+export const t = (key: TranslationKey) => i18n.t(key);

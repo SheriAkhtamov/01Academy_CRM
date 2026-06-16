@@ -20,7 +20,7 @@ services:
     container_name: crm-pro
     restart: unless-stopped
     ports:
-      - "8011:5000"
+      - "8011:5001"
     depends_on:
       postgres:
         condition: service_healthy

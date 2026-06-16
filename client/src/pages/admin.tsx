@@ -403,15 +403,15 @@ export default function Admin() {
       case 'admin':
         return t('admin');
       case 'head':
-        return 'Руководитель';
+        return t('roleHead');
       case 'account_manager':
-        return 'Аккаунт-менеджер';
+        return t('roleAccountManager');
       case 'teacher':
-        return 'Преподаватель';
+        return t('roleTeacher');
       case 'operations_director':
-        return 'Операционный директор';
+        return t('roleOperationsDirector');
       case 'smm_manager':
-        return 'SMM-менеджер';
+        return t('roleSmmManager');
       case 'employee':
         return t('employee');
       default:
@@ -590,11 +590,11 @@ export default function Admin() {
                                   </FormControl>
                                   <SelectContent>
                                     <SelectItem value="employee">{t('employee')}</SelectItem>
-                                    <SelectItem value="account_manager">Аккаунт-менеджер</SelectItem>
-                                    <SelectItem value="teacher">Преподаватель</SelectItem>
-                                    <SelectItem value="operations_director">Операционный директор</SelectItem>
-                                    <SelectItem value="smm_manager">SMM-менеджер</SelectItem>
-                                    <SelectItem value="head">Руководитель</SelectItem>
+                                    <SelectItem value="account_manager">{t('roleAccountManager')}</SelectItem>
+                                    <SelectItem value="teacher">{t('roleTeacher')}</SelectItem>
+                                    <SelectItem value="operations_director">{t('roleOperationsDirector')}</SelectItem>
+                                    <SelectItem value="smm_manager">{t('roleSmmManager')}</SelectItem>
+                                    <SelectItem value="head">{t('roleHead')}</SelectItem>
                                     <SelectItem value="admin">{t('admin')}</SelectItem>
                                   </SelectContent>
                                 </Select>
@@ -734,11 +734,11 @@ export default function Admin() {
                   <SelectContent>
                     <SelectItem value="all">{t('allRoles')}</SelectItem>
                     <SelectItem value="admin">{t('administrators')}</SelectItem>
-                    <SelectItem value="head">Руководители</SelectItem>
-                    <SelectItem value="account_manager">Аккаунт-менеджеры</SelectItem>
-                    <SelectItem value="teacher">Преподаватели</SelectItem>
-                    <SelectItem value="operations_director">Операционные директора</SelectItem>
-                    <SelectItem value="smm_manager">SMM-менеджеры</SelectItem>
+                    <SelectItem value="head">{t('roleHeads')}</SelectItem>
+                    <SelectItem value="account_manager">{t('roleAccountManagers')}</SelectItem>
+                    <SelectItem value="teacher">{t('roleTeachers')}</SelectItem>
+                    <SelectItem value="operations_director">{t('roleOperationsDirectors')}</SelectItem>
+                    <SelectItem value="smm_manager">{t('roleSmmManagers')}</SelectItem>
                     <SelectItem value="employee">{t('employees')}</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1004,9 +1004,9 @@ export default function Admin() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="openai">OpenAI</SelectItem>
-                                <SelectItem value="anthropic">Anthropic</SelectItem>
-                                <SelectItem value="gemini">Google Gemini</SelectItem>
+                                <SelectItem value="openai">{t('providerOpenAI')}</SelectItem>
+                                <SelectItem value="anthropic">{t('providerAnthropic')}</SelectItem>
+                                <SelectItem value="gemini">{t('providerGoogleGemini')}</SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />

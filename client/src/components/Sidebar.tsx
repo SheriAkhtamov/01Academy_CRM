@@ -58,35 +58,35 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const sections: NavSection[] = [
     {
-      label: '01 Academy',
+      label: t('sectionMain'),
       items: [
-        { name: 'Главный экран', href: '/', icon: BarChart3 },
-        { name: 'Лиды', href: '/leads', icon: Users },
-        { name: 'Воронка продаж', href: '/pipeline', icon: Flame },
-        { name: 'Ученики', href: '/students', icon: GraduationCap },
-        { name: 'Курсы', href: '/courses', icon: BookOpen },
-        { name: 'Группы', href: '/groups', icon: Layers3, requiresOperationsAccess: true },
-        { name: 'Занятия', href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
-        { name: 'Посещаемость', href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
+        { name: t('navDashboard'), href: '/', icon: BarChart3 },
+        { name: t('navLeads'), href: '/leads', icon: Users },
+        { name: t('navPipeline'), href: '/pipeline', icon: Flame },
+        { name: t('navStudents'), href: '/students', icon: GraduationCap },
+        { name: t('navCourses'), href: '/courses', icon: BookOpen },
+        { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
+        { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
+        { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
       ],
     },
     {
-      label: 'Операции и финансы',
+      label: t('sectionOperationsFinance'),
       items: [
-        { name: 'Преподаватели', href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
-        { name: 'Оплаты', href: '/payments', icon: Banknote, requiresFinanceAccess: true },
-        { name: 'Финансы', href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
-        { name: 'Риски', href: '/risks', icon: AlertTriangle },
-        { name: 'Тёплая база', href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
-        { name: 'Рефералы', href: '/referrals', icon: HeartHandshake },
+        { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
+        { name: t('navPayments'), href: '/payments', icon: Banknote, requiresFinanceAccess: true },
+        { name: t('navFinance'), href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
+        { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
+        { name: t('navWarmBase'), href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
+        { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
       ],
     },
     {
-      label: 'Система',
+      label: t('sectionSystem'),
       items: [
-        { name: 'Аналитика', href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
-        { name: 'Интеграции', href: '/integrations', icon: Plug },
-        { name: 'Настройки', href: '/settings', icon: Settings },
+        { name: t('navAnalytics'), href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
+        { name: t('navIntegrations'), href: '/integrations', icon: Plug },
+        { name: t('navSettings'), href: '/settings', icon: Settings },
         { name: t('administration'), href: '/admin', icon: Settings, requiresAdminAccess: true },
       ],
     },
@@ -111,7 +111,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             <span className="text-xl font-semibold text-slate-900 truncate">
               {'01 Academy'}
             </span>
-            <span className="text-xs text-gray-500">School CRM</span>
+            <span className="text-xs text-gray-500">{t('schoolCrm')}</span>
           </div>
           {/* Mobile close button */}
           {onClose && (

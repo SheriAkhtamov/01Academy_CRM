@@ -33,3 +33,11 @@ yarn-error.log*
 
 # Uploads
 uploads/
+
+# Local logs
+logs/
+
+# Environment variables
+.env
+.env.*
+!.env.example

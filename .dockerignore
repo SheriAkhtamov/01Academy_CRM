@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+dist
+coverage
+uploads
+logs
+config/app.config.json
+*.log
+.DS_Store

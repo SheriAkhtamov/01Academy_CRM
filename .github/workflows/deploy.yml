@@ -50,7 +50,11 @@ jobs:
           SUPER_ADMIN_PASSWORD_B64="$(printf '%s' "$SUPER_ADMIN_PASSWORD" | base64 -w 0)"
           SUPER_ADMIN_EMAIL_B64="$(printf '%s' "$SUPER_ADMIN_EMAIL" | base64 -w 0)"
 
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -i ~/.ssh/deploy_key \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            -o TCPKeepAlive=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
             "DEPLOY_HOST='$DEPLOY_HOST' SUPER_ADMIN_LOGIN_B64='$SUPER_ADMIN_LOGIN_B64' SUPER_ADMIN_PASSWORD_B64='$SUPER_ADMIN_PASSWORD_B64' SUPER_ADMIN_EMAIL_B64='$SUPER_ADMIN_EMAIL_B64' bash -s" <<'REMOTE'
           set -euo pipefail
 

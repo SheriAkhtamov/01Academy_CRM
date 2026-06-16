@@ -13,12 +13,16 @@ ENTRYPOINT ["/sbin/tini", "--"]
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/migrations ./migrations
+COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/server ./server
+COPY --from=build /app/shared ./shared
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/apply-migrations.js ./
+COPY --from=build /app/tsconfig.json ./
 
 RUN mkdir -p /app/uploads /app/uploads/photos /app/logs && \
     chown -R node:node /app/uploads /app/logs
 
-EXPOSE 5000
+EXPOSE 5001
 USER node
 CMD ["sh", "-c", "node apply-migrations.js && node dist/index.js"]

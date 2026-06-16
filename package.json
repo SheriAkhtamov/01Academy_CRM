@@ -12,6 +12,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "seed": "tsx scripts/init-dev-data.ts",
     "db:migrate": "node apply-migrations.js",
     "db:backup": "node scripts/backup-database.mjs"
   },

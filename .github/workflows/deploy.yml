@@ -1,0 +1,151 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SUPER_ADMIN_LOGIN: ${{ secrets.SUPER_ADMIN_LOGIN }}
+          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+          SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
+        run: |
+          set -euo pipefail
+
+          require_secret() {
+            local name="$1"
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: ${name}" >&2
+              exit 1
+            fi
+          }
+
+          require_secret DEPLOY_HOST
+          require_secret DEPLOY_USER
+          require_secret DEPLOY_SSH_KEY
+          require_secret SUPER_ADMIN_LOGIN
+          require_secret SUPER_ADMIN_PASSWORD
+          require_secret SUPER_ADMIN_EMAIL
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+          SUPER_ADMIN_LOGIN_B64="$(printf '%s' "$SUPER_ADMIN_LOGIN" | base64 -w 0)"
+          SUPER_ADMIN_PASSWORD_B64="$(printf '%s' "$SUPER_ADMIN_PASSWORD" | base64 -w 0)"
+          SUPER_ADMIN_EMAIL_B64="$(printf '%s' "$SUPER_ADMIN_EMAIL" | base64 -w 0)"
+
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_HOST='$DEPLOY_HOST' SUPER_ADMIN_LOGIN_B64='$SUPER_ADMIN_LOGIN_B64' SUPER_ADMIN_PASSWORD_B64='$SUPER_ADMIN_PASSWORD_B64' SUPER_ADMIN_EMAIL_B64='$SUPER_ADMIN_EMAIL_B64' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          decode_secret() {
+            printf '%s' "$1" | base64 -d
+          }
+
+          export SUPER_USERNAME="$(decode_secret "$SUPER_ADMIN_LOGIN_B64")"
+          export SUPER_FULLNAME="$SUPER_USERNAME"
+          export SUPER_PASSWORD="$(decode_secret "$SUPER_ADMIN_PASSWORD_B64")"
+          export SUPER_EMAIL="$(decode_secret "$SUPER_ADMIN_EMAIL_B64")"
+
+          APP_DIR="$HOME/01academy-crm"
+          REPO_URL="https://github.com/SheriAkhtamov/01Academy_CRM.git"
+
+          if [ ! -d "$APP_DIR/.git" ]; then
+            rm -rf "$APP_DIR"
+            git clone "$REPO_URL" "$APP_DIR"
+          fi
+
+          cd "$APP_DIR"
+          git remote set-url origin "$REPO_URL"
+          git fetch origin main
+          git reset --hard origin/main
+
+          mkdir -p config uploads logs
+
+          if [ ! -f config/app.config.json ]; then
+            SESSION_SECRET="$(openssl rand -hex 32)"
+            cat > config/app.config.json <<JSON
+          {
+            "database": {
+              "provider": "postgresql",
+              "url": "postgresql://crm:crm_password_2026@postgres:5432/crm",
+              "ssl": false,
+              "pool": {
+                "max": 20,
+                "idleTimeoutMillis": 30000,
+                "connectionTimeoutMillis": 2000
+              }
+            },
+            "server": {
+              "environment": "production",
+              "host": "0.0.0.0",
+              "port": 5001,
+              "appUrl": "http://${DEPLOY_HOST}:8011"
+            },
+            "session": {
+              "secret": "${SESSION_SECRET}",
+              "cookieSecure": false
+            },
+            "email": {
+              "resendApiKey": "",
+              "smtp": {
+                "host": "",
+                "port": 587,
+                "user": "",
+                "pass": "",
+                "from": ""
+              }
+            },
+            "integrations": {
+              "chatplace": { "webhookSecret": "" },
+              "telegram": { "botToken": "", "leadershipChatId": "" },
+              "whatsapp": { "apiToken": "", "phoneNumberId": "", "apiUrl": "https://graph.facebook.com/v19.0" },
+              "metaAds": { "accessToken": "", "adAccountId": "" },
+              "notion": { "token": "", "databaseId": "" },
+              "googleSheets": { "credentialsPath": "", "spreadsheetId": "" },
+              "bank": { "webhookSecret": "" }
+            }
+          }
+          JSON
+          fi
+
+          docker compose up -d --build --remove-orphans
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8011/api/auth/session >/dev/null; then
+              break
+            fi
+
+            if [ "$attempt" -eq 30 ]; then
+              docker compose logs --tail=120 crm
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          docker compose exec -T \
+            -e SUPER_USERNAME="$SUPER_USERNAME" \
+            -e SUPER_FULLNAME="$SUPER_FULLNAME" \
+            -e SUPER_EMAIL="$SUPER_EMAIL" \
+            -e SUPER_PASSWORD="$SUPER_PASSWORD" \
+            crm npm run seed
+
+          docker compose ps
+          REMOTE

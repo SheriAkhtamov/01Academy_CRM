@@ -10,7 +10,7 @@ import {
 
 const SUPER = {
   username: process.env.SUPER_USERNAME || 'Sheri',
-  fullName: process.env.SUPER_FULLNAME || 'Sheri Super Admin',
+  fullName: process.env.SUPER_FULLNAME || process.env.SUPER_USERNAME || 'Sheri',
   email: process.env.SUPER_EMAIL || 'admin@01academy.uz',
   password: process.env.SUPER_PASSWORD || 'Sheri2001',
 };
@@ -25,17 +25,36 @@ async function exists(table, whereSql, params = []) {
 }
 
 async function seedSuperAdmin() {
-  if (await exists('users', 'email = $1', [SUPER.email])) {
-    console.log(`[skip] user "${SUPER.email}" already exists`);
+  const existingUser = await exec(
+    `SELECT id FROM users WHERE email = $1 OR full_name = $2 ORDER BY id LIMIT 1`,
+    [SUPER.email, SUPER.username],
+  );
+  const hash = await bcrypt.hash(SUPER.password, 10);
+
+  if (existingUser.rows[0]?.id) {
+    await exec(
+      `UPDATE users
+       SET email = $1,
+           password = $2,
+           full_name = $3,
+           position = $4,
+           role = 'admin',
+           has_report_access = true,
+           is_active = true,
+           updated_at = now()
+       WHERE id = $5`,
+      [SUPER.email, hash, SUPER.fullName, 'Super Administrator', existingUser.rows[0].id],
+    );
+    console.log(`[ok] ensured super-admin login="${SUPER.username}"`);
     return;
   }
-  const hash = await bcrypt.hash(SUPER.password, 10);
+
   await exec(
     `INSERT INTO users (email, password, full_name, position, role, has_report_access, is_active)
      VALUES ($1, $2, $3, $4, 'admin', true, true)`,
     [SUPER.email, hash, SUPER.fullName, 'Super Administrator'],
   );
-  console.log(`[ok] created super-admin: login="${SUPER.email}" (or "${SUPER.username}"), password="${SUPER.password}"`);
+  console.log(`[ok] created super-admin login="${SUPER.username}"`);
 }
 
 async function seedStatuses() {

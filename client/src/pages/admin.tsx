@@ -464,12 +464,12 @@ export default function Admin() {
   ];
 
   return (
-    <div className="p-6">
+    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{t('administration')}</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{t('administration')}</h1>
+          <p className="text-sm text-slate-500 mt-1">
             {t('adminDescription')}
           </p>
         </div>
@@ -685,30 +685,36 @@ export default function Admin() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card>
+            <Card className="hover-lift">
               <CardContent className="p-4 flex items-center space-x-3">
-                <UserCheck className="h-5 w-5 text-emerald-600" />
-                <div>
-                  <p className="text-sm text-slate-500">{t('activeUsers')}</p>
-                  <p className="text-lg font-semibold text-slate-900">{activeUserCount}</p>
+                <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                  <UserCheck className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 truncate">{t('activeUsers')}</p>
+                  <p className="text-lg font-bold text-slate-900 tabular-nums">{activeUserCount}</p>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="hover-lift">
               <CardContent className="p-4 flex items-center space-x-3">
-                <UserX className="h-5 w-5 text-amber-600" />
-                <div>
-                  <p className="text-sm text-slate-500">{t('inactiveUsers')}</p>
-                  <p className="text-lg font-semibold text-slate-900">{inactiveUserCount}</p>
+                <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                  <UserX className="h-5 w-5 text-amber-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 truncate">{t('inactiveUsers')}</p>
+                  <p className="text-lg font-bold text-slate-900 tabular-nums">{inactiveUserCount}</p>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="hover-lift">
               <CardContent className="p-4 flex items-center space-x-3">
-                <Clock className="h-5 w-5 text-slate-500" />
-                <div>
-                  <p className="text-sm text-slate-500">{t('lastUpdated')}</p>
-                  <p className="text-lg font-semibold text-slate-900">{settingsSnapshotTime}</p>
+                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                  <Clock className="h-5 w-5 text-slate-500" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 truncate">{t('lastUpdated')}</p>
+                  <p className="text-lg font-bold text-slate-900 tabular-nums">{settingsSnapshotTime}</p>
                 </div>
               </CardContent>
             </Card>
@@ -751,29 +757,29 @@ export default function Admin() {
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+                  <thead className="border-b border-slate-200/70">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                         {t('user')}
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                         {t('role')}
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                         {t('status')}
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                         {t('reportsAccess')}
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                         {t('created')}
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                         {t('actions')}
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
+                  <tbody className="bg-white divide-y divide-slate-100">
                     {usersLoading ? (
                       Array.from({ length: 5 }, (_, i) => (
                         <tr key={i}>
@@ -807,11 +813,12 @@ export default function Admin() {
                       </tr>
                     ) : (
                       filteredUsers.map((user: any) => (
-                        <tr key={user.id} className="hover:bg-slate-50">
+                        <tr key={user.id} className="hover:bg-primary/[0.035] transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                                <span className="text-sm font-medium text-primary-600">
+                              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
+                                   style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))', boxShadow: 'var(--shadow-primary)' }}>
+                                <span>
                                   {user.fullName.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                                 </span>
                               </div>
@@ -973,8 +980,8 @@ export default function Admin() {
               </Dialog>
           </div>
 
-          <Card>
-            <CardHeader>
+          <Card className="hover-lift">
+            <CardHeader className="pb-4">
               <CardTitle>{t('aiSettings')}</CardTitle>
             </CardHeader>
             <CardContent>
@@ -1102,10 +1109,10 @@ export default function Admin() {
           {/* Settings Categories */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Academy Settings */}
-            <Card>
-              <CardHeader>
+            <Card className="hover-lift">
+              <CardHeader className="pb-4">
                 <CardTitle className="flex items-center space-x-2">
-                  <Calendar className="h-5 w-5" />
+                  <Calendar className="h-5 w-5 text-primary-600" />
                   <span>{t('academySettings')}</span>
                 </CardTitle>
               </CardHeader>
@@ -1137,10 +1144,10 @@ export default function Admin() {
             </Card>
 
             {/* Email Settings */}
-            <Card>
-              <CardHeader>
+            <Card className="hover-lift">
+              <CardHeader className="pb-4">
                 <CardTitle className="flex items-center space-x-2">
-                  <Mail className="h-5 w-5" />
+                  <Mail className="h-5 w-5 text-blue-600" />
                   <span>{t('emailSettings')}</span>
                 </CardTitle>
               </CardHeader>
@@ -1167,10 +1174,10 @@ export default function Admin() {
             </Card>
 
             {/* Security Settings */}
-            <Card>
-              <CardHeader>
+            <Card className="hover-lift">
+              <CardHeader className="pb-4">
                 <CardTitle className="flex items-center space-x-2">
-                  <Shield className="h-5 w-5" />
+                  <Shield className="h-5 w-5 text-emerald-600" />
                   <span>{t('securitySettings')}</span>
                 </CardTitle>
               </CardHeader>

@@ -15,6 +15,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { DataTable } from '@/components/ux/DataTable';
+import { DashboardCharts } from '@/components/ux/DashboardCharts';
+import { KanbanBoard } from '@/components/ux/KanbanBoard';
+import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
+import { PageHeader } from '@/components/ux/PageHeader';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -170,23 +176,23 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   tone?: 'blue' | 'green' | 'amber' | 'red' | 'slate';
 }) {
   const toneClass = {
-    blue: 'bg-blue-50 text-blue-700 border-blue-100',
-    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-    red: 'bg-red-50 text-red-700 border-red-100',
-    slate: 'bg-slate-50 text-slate-700 border-slate-100',
+    blue: 'bg-blue-50 text-blue-600',
+    green: 'bg-emerald-50 text-emerald-600',
+    amber: 'bg-amber-50 text-amber-600',
+    red: 'bg-red-50 text-red-600',
+    slate: 'bg-slate-100 text-slate-600',
   }[tone];
 
   return (
-    <Card className="border-slate-200">
+    <Card className="border-slate-200/70 hover-lift group">
       <CardContent className="p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-500">{title}</p>
-            <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
-            {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-slate-500 truncate">{title}</p>
+            <div className="mt-1.5 text-[26px] font-bold text-slate-900 leading-tight tracking-tight tabular-nums">{value}</div>
+            {detail && <p className="mt-1 text-xs text-slate-400 truncate">{detail}</p>}
           </div>
-          <div className={`h-11 w-11 rounded-lg border flex items-center justify-center ${toneClass}`}>
+          <div className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${toneClass}`}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
@@ -206,11 +212,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function EmptyState({ title, text, icon: Icon = Sparkles }: { title: string; text: string; icon?: any }) {
   return (
-    <Card>
-      <CardContent className="p-10 text-center">
-        <Icon className="mx-auto h-10 w-10 text-slate-300" />
-        <h3 className="mt-3 text-lg font-medium text-slate-900">{title}</h3>
-        <p className="mt-1 text-sm text-slate-500">{text}</p>
+    <Card className="border-dashed">
+      <CardContent className="py-14 px-6 text-center">
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+          <Icon className="h-7 w-7 text-slate-400" />
+        </div>
+        <h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>
+        <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">{text}</p>
       </CardContent>
     </Card>
   );
@@ -304,7 +312,8 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   const [selectedLessonId, setSelectedLessonId] = useState<string>('');
   const [attendanceDraft, setAttendanceDraft] = useState<Record<number, string>>({});
   const [search, setSearch] = useState('');
-  const [globalSearch, setGlobalSearch] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+  const [studentSheetOpen, setStudentSheetOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [courseFilter, setCourseFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -511,18 +520,6 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
     });
   }, [data?.leads, data?.payments, search, statusFilter, courseFilter, sourceFilter, managerFilter, groupFilter, createdDateFilter, paymentDateFilter]);
 
-  const globalResults = useMemo(() => {
-    const normalized = globalSearch.trim().toLowerCase();
-    if (!normalized) return [];
-    const haystack = [
-      ...(data?.leads ?? []).map((item: any) => ({ type: t('typeLead'), title: item.contactName, subtitle: `${item.phone} • ${item.courseName || t('noCourse')}`, href: '/leads', raw: item })),
-      ...(data?.students ?? []).map((item: any) => ({ type: t('typeStudent'), title: item.studentName, subtitle: `${item.phone} • ${item.groupName || t('noGroup')}`, href: '/students', raw: item })),
-      ...(data?.groups ?? []).map((item: any) => ({ type: t('typeGroup'), title: item.name, subtitle: `${item.courseName || t('noCourse')} • ${item.teacherName || t('noTeacher')}`, href: '/groups', raw: item })),
-      ...(data?.courses ?? []).map((item: any) => ({ type: t('typeCourse'), title: item.name, subtitle: item.ageCategory, href: '/courses', raw: item })),
-    ];
-    return haystack.filter((item) => JSON.stringify(item.raw).toLowerCase().includes(normalized)).slice(0, 8);
-  }, [data, globalSearch, t]);
-
   const selectedLesson = useMemo(
     () => data?.lessons?.find((lesson: any) => String(lesson.id) === selectedLessonId),
     [data?.lessons, selectedLessonId],
@@ -541,8 +538,17 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
 
   if (isLoading || !data) {
     return (
-      <div className="p-6">
-        <div className="h-24 rounded-lg bg-white border border-slate-200 animate-pulse" />
+      <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-28" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <Skeleton className="h-80 xl:col-span-2" />
+          <Skeleton className="h-80" />
+        </div>
       </div>
     );
   }
@@ -695,9 +701,9 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
 
   const renderGeneratedLessonsFields = () => (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+      <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-4 text-sm text-slate-700">
         <div className="font-medium text-slate-900">{lessonGenerationGroup?.name || t('group')}</div>
-        <div className="mt-1">{lessonGenerationGroup?.courseName || t('courseNotSelected')}</div>
+        <div className="mt-0.5 text-slate-500">{lessonGenerationGroup?.courseName || t('courseNotSelected')}</div>
       </div>
       <div className="flex justify-end">
         <Button
@@ -858,37 +864,46 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   const renderDashboard = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <KpiCard title={t('weeklyLeads')} value={analytics.summary.newLeadsWeek} detail={t('marketingAndSales')} icon={Megaphone} />
-        <KpiCard title={t('activeStudents')} value={analytics.summary.activeStudents} detail={t('statusLearning')} icon={GraduationCap} tone="green" />
-        <KpiCard title={t('monthlyRevenue')} value={money(analytics.summary.revenueMonth)} detail={`${t('averageCheck')} ${money(analytics.summary.avgCheck)}`} icon={Banknote} tone="green" />
-        <KpiCard title={t('averageAttendance')} value={`${analytics.summary.avgAttendance}%`} detail={t('byActiveStudents')} icon={UserRoundCheck} tone="amber" />
-        <KpiCard title={t('redFlags')} value={analytics.risks.lowAttendanceStudents.length + analytics.risks.lowScores.length + analytics.risks.overduePayments.length + analytics.risks.longThinkingLeads.length} detail={t('managerRisks')} icon={ShieldAlert} tone="red" />
+        <div className="stagger-item"><KpiCard title={t('weeklyLeads')} value={analytics.summary.newLeadsWeek} detail={t('marketingAndSales')} icon={Megaphone} /></div>
+        <div className="stagger-item"><KpiCard title={t('activeStudents')} value={analytics.summary.activeStudents} detail={t('statusLearning')} icon={GraduationCap} tone="green" /></div>
+        <div className="stagger-item"><KpiCard title={t('monthlyRevenue')} value={money(analytics.summary.revenueMonth)} detail={`${t('averageCheck')} ${money(analytics.summary.avgCheck)}`} icon={Banknote} tone="green" /></div>
+        <div className="stagger-item"><KpiCard title={t('averageAttendance')} value={`${analytics.summary.avgAttendance}%`} detail={t('byActiveStudents')} icon={UserRoundCheck} tone="amber" /></div>
+        <div className="stagger-item"><KpiCard title={t('redFlags')} value={analytics.risks.lowAttendanceStudents.length + analytics.risks.lowScores.length + analytics.risks.overduePayments.length + analytics.risks.longThinkingLeads.length} detail={t('managerRisks')} icon={ShieldAlert} tone="red" /></div>
       </div>
 
+      <DashboardCharts
+        payments={data.payments}
+        funnel={analytics.funnel}
+        analytics={analytics}
+        leadStatusName={leadStatusName}
+        statusColor={statusColor}
+        money={money}
+      />
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <Card className="xl:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="xl:col-span-2 hover-lift">
+          <CardHeader className="flex flex-row items-center justify-between pb-4">
             <CardTitle>{t('salesPipeline')}</CardTitle>
             <Link href="/pipeline"><Button variant="outline" size="sm">{t('openKanban')}</Button></Link>
           </CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {analytics.funnel.map((item: any) => (
-              <div key={item.code} className="rounded-lg border border-slate-200 p-3">
+              <div key={item.code} className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-3 transition-all duration-200 hover:bg-white hover:shadow-sm">
                 <div className="h-1.5 rounded-full mb-3" style={{ backgroundColor: item.color }} />
-                <div className="text-xl font-semibold text-slate-900">{item.count}</div>
-                <div className="text-xs text-slate-500">{leadStatusName(item.code)}</div>
+                <div className="text-2xl font-bold text-slate-900 tabular-nums">{item.count}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{leadStatusName(item.code)}</div>
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="hover-lift">
+          <CardHeader className="pb-4">
             <CardTitle>{t('todaysTasks')}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2.5">
             {(data.tasks ?? []).slice(0, 5).map((task: any) => (
-              <div key={task.id} className="rounded-lg border border-slate-200 p-3">
+              <div key={task.id} className="rounded-lg border border-slate-200/70 p-3 transition-colors hover:border-slate-300 hover:bg-slate-50/50">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-slate-900">{task.title}</p>
                   <Badge variant={task.status === 'done' ? 'secondary' : 'outline'}>{task.status}</Badge>
@@ -902,32 +917,32 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <Card>
-          <CardHeader><CardTitle>{t('upcomingDemos')}</CardTitle></CardHeader>
+        <Card className="hover-lift">
+          <CardHeader className="pb-4"><CardTitle>{t('upcomingDemos')}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {(data.leads ?? [])
               .filter((lead: any) => lead.demoAt && new Date(lead.demoAt) >= new Date())
               .sort((left: any, right: any) => new Date(left.demoAt).getTime() - new Date(right.demoAt).getTime())
               .slice(0, 6)
               .map((lead: any) => (
-                <div key={lead.id} className="rounded-lg border border-slate-200 p-3 text-sm flex items-center justify-between">
-                  <span>{lead.contactName} • {lead.courseName || t('courseNotSelected')}</span>
+                <div key={lead.id} className="rounded-lg border border-slate-200/70 p-3 text-sm flex items-center justify-between transition-colors hover:border-slate-300 hover:bg-slate-50/50">
+                  <span className="text-slate-700">{lead.contactName} • {lead.courseName || t('courseNotSelected')}</span>
                   <Badge variant="outline">{dateTime(lead.demoAt)}</Badge>
                 </div>
               ))}
             {(data.leads ?? []).filter((lead: any) => lead.demoAt && new Date(lead.demoAt) >= new Date()).length === 0 && <p className="text-sm text-slate-500">{t('noData')}</p>}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader><CardTitle>{t('overdueFollowups')}</CardTitle></CardHeader>
+        <Card className="hover-lift">
+          <CardHeader className="pb-4"><CardTitle>{t('overdueFollowups')}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {(data.tasks ?? [])
               .filter((task: any) => task.status !== 'done' && String(task.title || '').toLowerCase().includes('follow') && task.deadlineAt && new Date(task.deadlineAt) < new Date())
               .slice(0, 6)
               .map((task: any) => (
-                <div key={task.id} className="rounded-lg border border-red-100 bg-red-50/50 p-3 text-sm">
+                <div key={task.id} className="rounded-lg border border-red-100 bg-red-50/40 p-3 text-sm">
                   <div className="font-medium text-red-900">{task.title}</div>
-                  <div className="text-xs text-red-700">{dateTime(task.deadlineAt)} • {task.responsibleName || t('noResponsible')}</div>
+                  <div className="text-xs text-red-700/80 mt-0.5">{dateTime(task.deadlineAt)} • {task.responsibleName || t('noResponsible')}</div>
                 </div>
               ))}
             {(data.tasks ?? []).filter((task: any) => task.status !== 'done' && String(task.title || '').toLowerCase().includes('follow') && task.deadlineAt && new Date(task.deadlineAt) < new Date()).length === 0 && <p className="text-sm text-slate-500">{t('noData')}</p>}
@@ -936,14 +951,14 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <Card>
-          <CardHeader><CardTitle>{t('groupOccupancy')}</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
+        <Card className="hover-lift">
+          <CardHeader className="pb-4"><CardTitle>{t('groupOccupancy')}</CardTitle></CardHeader>
+          <CardContent className="space-y-3.5">
             {analytics.groups.slice(0, 6).map((group: any) => (
               <div key={group.id}>
-                <div className="flex justify-between text-sm mb-1">
+                <div className="flex justify-between text-sm mb-1.5">
                   <span className="font-medium text-slate-900">{group.name}</span>
-                  <span className={group.isFull ? 'text-red-600' : 'text-slate-500'}>{group.capacityLabel}</span>
+                  <span className={`tabular-nums ${group.isFull ? 'text-red-600 font-medium' : 'text-slate-500'}`}>{group.capacityLabel}</span>
                 </div>
                 <Progress value={(Number(group.currentStudents) / Number(group.maxStudents || 12)) * 100} />
               </div>
@@ -951,19 +966,19 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle>{t('finances')}</CardTitle></CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between"><span>{t('cacLabel')}</span><strong>{money(analytics.summary.cac)}</strong></div>
-            <div className="flex justify-between"><span>{t('roasLabel')}</span><strong>{analytics.summary.roas}x</strong></div>
-            <div className="flex justify-between"><span>LTV</span><strong>{money(analytics.summary.averageLtv)}</strong></div>
-            <div className="flex justify-between"><span>{t('ltvCacLabel')}</span><strong>{analytics.summary.ltvCac}:1</strong></div>
-            <div className="flex justify-between"><span>{t('overduePayments')}</span><strong className="text-red-600">{analytics.summary.overduePayments}</strong></div>
+        <Card className="hover-lift">
+          <CardHeader className="pb-4"><CardTitle>{t('finances')}</CardTitle></CardHeader>
+          <CardContent className="space-y-2.5 text-sm">
+            <div className="flex justify-between items-center"><span className="text-slate-500">{t('cacLabel')}</span><strong className="text-slate-900 tabular-nums">{money(analytics.summary.cac)}</strong></div>
+            <div className="flex justify-between items-center"><span className="text-slate-500">{t('roasLabel')}</span><strong className="text-emerald-600 tabular-nums">{analytics.summary.roas}x</strong></div>
+            <div className="flex justify-between items-center"><span className="text-slate-500">LTV</span><strong className="text-slate-900 tabular-nums">{money(analytics.summary.averageLtv)}</strong></div>
+            <div className="flex justify-between items-center"><span className="text-slate-500">{t('ltvCacLabel')}</span><strong className="text-slate-900 tabular-nums">{analytics.summary.ltvCac}:1</strong></div>
+            <div className="flex justify-between items-center pt-1 border-t border-slate-100"><span className="text-slate-500">{t('overduePayments')}</span><strong className="text-red-600 tabular-nums">{analytics.summary.overduePayments}</strong></div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle>{t('quickActions')}</CardTitle></CardHeader>
+        <Card className="hover-lift">
+          <CardHeader className="pb-4"><CardTitle>{t('quickActions')}</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 gap-2">
             <Button variant="outline" className="w-full" onClick={() => setCreationDialog('lead')}>{t('lead')}</Button>
             <Button variant="outline" className="w-full" onClick={() => setCreationDialog('payment')}>{t('payment')}</Button>
@@ -982,63 +997,111 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           <Plus className="h-4 w-4 mr-2" />{t('newApplication')}
         </Button>
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
-        {activePipelineStatuses.map((status) => {
-          const leads = filteredLeads.filter((lead: any) => lead.statusCode === status.code);
-          return (
-            <Card key={status.code} className="min-h-72">
-              <CardHeader className="p-4">
-                <CardTitle className="text-sm flex items-center justify-between gap-2">
-                  <span>{leadStatusName(status.code)}</span>
-                  <Badge style={{ backgroundColor: status.color, color: 'white' }}>{leads.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 pt-0 space-y-3">
-                {leads.map((lead: any) => (
-                  <div key={lead.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="font-medium text-sm text-slate-900">{lead.contactName}</div>
-                    <div className="text-xs text-slate-500">{lead.phone}</div>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {lead.courseName && <Badge variant="secondary">{lead.courseName}</Badge>}
-                      {lead.sourceName && <Badge variant="outline">{lead.sourceName}</Badge>}
-                    </div>
-                    <div className="mt-3 flex gap-1">
-                      {activePipelineStatuses
-                        .filter((item) => item.sortOrder > status.sortOrder)
-                        .slice(0, 1)
-                        .map((nextStatus) => (
-                          <Button
-                            key={nextStatus.code}
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: nextStatus.code } })}
-                          >
-                            <ArrowRight className="h-3 w-3 mr-1" /> {leadStatusName(nextStatus.code)}
-                          </Button>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-                {leads.length === 0 && <p className="text-xs text-slate-400 py-4 text-center">{t('noData')}</p>}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      <KanbanBoard
+        statuses={activePipelineStatuses.map((status) => ({
+          code: status.code,
+          name: leadStatusName(status.code),
+          color: status.color,
+          sortOrder: status.sortOrder,
+        }))}
+        leads={filteredLeads.map((lead: any) => ({ ...lead, statusCode: lead.statusCode }))}
+        onStatusChange={(leadId, statusCode) => updateLead.mutate({ id: leadId, payload: { statusCode } })}
+        onQuickAction={(action, lead) => {
+          if (action === 'qualify') updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
+          if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
+          if (action === 'payment') {
+            setPaymentForm({ ...paymentForm, leadId: String(lead.id), studentId: '', amountUzs: String(lead.expectedPaymentUzs || lead.offerPriceUzs || '') });
+            setCreationDialog('payment');
+          }
+        }}
+        isPending={updateLead.isPending}
+      />
     </div>
   );
 
   const renderLeads = (onlyWarm = false) => {
     const leads = onlyWarm ? warmLeads : filteredLeads;
+    const columns = [
+      {
+        key: 'contact',
+        header: t('contact'),
+        sortable: true,
+        accessor: (lead: any) => lead.contactName,
+        render: (lead: any) => {
+          const minutesToFirstContact = lead.firstContactAt
+            ? Math.round((new Date(lead.firstContactAt).getTime() - new Date(lead.createdAt).getTime()) / 60000)
+            : null;
+          const firstContactOverdue = !lead.firstContactAt && lead.statusCode === 'new_request' && Date.now() - new Date(lead.createdAt).getTime() > 15 * 60 * 1000;
+          return (
+            <div>
+              <div className="font-medium text-slate-900">{lead.contactName}</div>
+              <div className="text-xs text-slate-500">{lead.phone} {lead.messenger ? `• ${lead.messenger}` : ''}</div>
+              <div className={`text-xs ${firstContactOverdue ? 'text-red-600 font-medium' : 'text-slate-400'}`}>
+                {t('contactTime')} {minutesToFirstContact === null ? t('waiting') : `${minutesToFirstContact}${t('minutes')}`}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        key: 'statusCode',
+        header: t('status'),
+        sortable: true,
+        accessor: (lead: any) => leadStatusName(lead.statusCode),
+        render: (lead: any) => (
+          <Badge style={{ backgroundColor: statusColor(lead.statusCode), color: 'white' }}>{leadStatusName(lead.statusCode)}</Badge>
+        ),
+      },
+      {
+        key: 'courseId',
+        header: t('course'),
+        sortable: true,
+        accessor: (lead: any) => lead.courseName,
+        render: (lead: any) => <span className="text-slate-600">{lead.courseName || t('noData')}</span>,
+      },
+      {
+        key: 'sourceId',
+        header: t('source'),
+        sortable: true,
+        accessor: (lead: any) => lead.sourceName,
+        render: (lead: any) => <span className="text-slate-600">{lead.sourceName || t('noData')}</span>,
+      },
+      {
+        key: 'managerId',
+        header: t('manager'),
+        sortable: true,
+        accessor: (lead: any) => lead.managerName,
+        render: (lead: any) => <span className="text-slate-600">{lead.managerName || t('noData')}</span>,
+      },
+      {
+        key: 'actions',
+        header: t('actions'),
+        render: (lead: any) => (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } })}>{t('qualify')}</Button>
+            <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } })}>{t('toWarm')}</Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setPaymentForm({ ...paymentForm, leadId: String(lead.id), studentId: '', amountUzs: String(lead.expectedPaymentUzs || lead.offerPriceUzs || '') });
+                setCreationDialog('payment');
+              }}
+            >
+              {t('payment')}
+            </Button>
+          </div>
+        ),
+      },
+    ];
+
     return (
       <div className="space-y-5">
-        <Card>
-          <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <Card className="hover-lift">
+          <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4">
             <CardTitle>{onlyWarm ? t('warmBase') : t('allLeads')}</CardTitle>
             <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
               <div className="relative w-full md:w-80">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                 <Input className="pl-9" placeholder={t('searchByNamePhone')} value={search} onChange={(event) => setSearch(event.target.value)} />
               </div>
               {!onlyWarm && (
@@ -1089,59 +1152,21 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
               <Input type="date" value={paymentDateFilter} onChange={(event) => setPaymentDateFilter(event.target.value)} />
             </div>
           )}
-          <CardContent className="p-0 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
-                  <th className="text-left p-3">{t('contact')}</th>
-                  <th className="text-left p-3">{t('status')}</th>
-                  <th className="text-left p-3">{t('course')}</th>
-                  <th className="text-left p-3">{t('source')}</th>
-                  <th className="text-left p-3">{t('manager')}</th>
-                  <th className="text-left p-3">{t('actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map((lead: any) => {
-                  const minutesToFirstContact = lead.firstContactAt
-                    ? Math.round((new Date(lead.firstContactAt).getTime() - new Date(lead.createdAt).getTime()) / 60000)
-                    : null;
-                  const firstContactOverdue = !lead.firstContactAt && lead.statusCode === 'new_request' && Date.now() - new Date(lead.createdAt).getTime() > 15 * 60 * 1000;
-                  return (
-                  <tr key={lead.id} className={`border-t border-slate-100 ${firstContactOverdue ? 'bg-red-50/60' : ''}`}>
-                    <td className="p-3">
-                      <div className="font-medium text-slate-900">{lead.contactName}</div>
-                      <div className="text-xs text-slate-500">{lead.phone} {lead.messenger ? `• ${lead.messenger}` : ''}</div>
-                      <div className={`text-xs ${firstContactOverdue ? 'text-red-600 font-medium' : 'text-slate-400'}`}>
-                        {t('contactTime')} {minutesToFirstContact === null ? t('waiting') : `${minutesToFirstContact}${t('minutes')}`}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <Badge style={{ backgroundColor: statusColor(lead.statusCode), color: 'white' }}>{leadStatusName(lead.statusCode)}</Badge>
-                    </td>
-                    <td className="p-3">{lead.courseName || t('noData')}</td>
-                    <td className="p-3">{lead.sourceName || t('noData')}</td>
-                    <td className="p-3">{lead.managerName || t('noData')}</td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } })}>{t('qualify')}</Button>
-                        <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } })}>{t('toWarm')}</Button>
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setPaymentForm({ ...paymentForm, leadId: String(lead.id), studentId: '', amountUzs: String(lead.expectedPaymentUzs || lead.offerPriceUzs || '') });
-                            setCreationDialog('payment');
-                          }}
-                        >
-                          {t('payment')}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                )})}
-              </tbody>
-            </table>
-            {leads.length === 0 && <div className="p-8"><EmptyState title={t('noLeadsFound')} text={t('noLeadsFoundDesc')} /></div>}
+          <CardContent className="p-0">
+            <DataTable
+              columns={columns}
+              data={leads}
+              keyExtractor={(lead: any) => `lead-${lead.id}`}
+              emptyState={
+                <div className="p-8">
+                  <EmptyState title={t('noLeadsFound')} text={t('noLeadsFoundDesc')} />
+                </div>
+              }
+              rowClassName={(lead: any) => {
+                const firstContactOverdue = !lead.firstContactAt && lead.statusCode === 'new_request' && Date.now() - new Date(lead.createdAt).getTime() > 15 * 60 * 1000;
+                return firstContactOverdue ? 'bg-red-50/60' : '';
+              }}
+            />
           </CardContent>
         </Card>
       </div>
@@ -1149,28 +1174,34 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   };
 
   const renderStudents = () => (
-    <Card>
-      <CardHeader><CardTitle>{t('studentsAndCards')}</CardTitle></CardHeader>
-      <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {(data.students ?? []).map((student: any) => (
-          <div key={student.id} className="rounded-lg border border-slate-200 p-4">
+          <div
+            key={student.id}
+            className="rounded-xl border border-slate-200/70 bg-white p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-sm cursor-pointer group"
+            onClick={() => {
+              setSelectedStudent(student);
+              setStudentSheetOpen(true);
+            }}
+          >
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="font-semibold text-slate-900">{student.studentName}</h3>
-                <p className="text-sm text-slate-500">{student.contactName} • {student.phone}</p>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-slate-900 truncate group-hover:text-primary-600 transition-colors">{student.studentName}</h3>
+                <p className="text-sm text-slate-500 truncate">{student.contactName} • {student.phone}</p>
               </div>
               <Badge>{student.status}</Badge>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-              <div><span className="text-slate-500">{t('courseLabel')}</span> {student.courseName || t('noData')}</div>
-              <div><span className="text-slate-500">{t('groupLabel')}</span> {student.groupName || t('noData')}</div>
-              <div><span className="text-slate-500">{t('nextPaymentLabel')}</span> {dateTime(student.nextPaymentAt)}</div>
-              <div><span className="text-slate-500">{t('referralCodeLabel')}</span> {student.referralCode}</div>
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+              <div className="truncate"><span className="text-slate-400">{t('courseLabel')} </span><span className="text-slate-700">{student.courseName || t('noData')}</span></div>
+              <div className="truncate"><span className="text-slate-400">{t('groupLabel')} </span><span className="text-slate-700">{student.groupName || t('noData')}</span></div>
+              <div className="truncate"><span className="text-slate-400">{t('nextPaymentLabel')} </span><span className="text-slate-700">{dateTime(student.nextPaymentAt)}</span></div>
+              <div className="truncate"><span className="text-slate-400">{t('referralCodeLabel')} </span><span className="text-slate-700">{student.referralCode}</span></div>
             </div>
-            <div className="mt-4 space-y-2">
-              <div className="flex justify-between text-xs"><span>{t('attendanceLabel')}</span><span>{student.attendancePercent}%</span></div>
+            <div className="mt-4 space-y-2.5">
+              <div className="flex justify-between text-xs"><span className="text-slate-500">{t('attendanceLabel')}</span><span className="font-medium text-slate-700 tabular-nums">{student.attendancePercent}%</span></div>
               <Progress value={student.attendancePercent} />
-              <div className="flex justify-between text-xs"><span>{t('progressLabel')}</span><span>{student.progressPercent}%</span></div>
+              <div className="flex justify-between text-xs"><span className="text-slate-500">{t('progressLabel')}</span><span className="font-medium text-slate-700 tabular-nums">{student.progressPercent}%</span></div>
               <Progress value={student.progressPercent} />
             </div>
             {Array.isArray(student.riskFlags) && student.riskFlags.length > 0 && (
@@ -1178,33 +1209,18 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
                 {student.riskFlags.map((flag: string) => <Badge key={flag} variant="destructive">{flag}</Badge>)}
               </div>
             )}
-            <Tabs defaultValue="info" className="mt-4">
-              <TabsList className="grid grid-cols-3 lg:grid-cols-9 h-auto">
-                <TabsTrigger value="info">{t('generalTab')}</TabsTrigger>
-                <TabsTrigger value="schedule">{t('groupTab')}</TabsTrigger>
-                <TabsTrigger value="attendance">{t('attendanceTab')}</TabsTrigger>
-                <TabsTrigger value="progress">{t('progressTab')}</TabsTrigger>
-                <TabsTrigger value="portfolio">{t('portfolioTab')}</TabsTrigger>
-                <TabsTrigger value="payments">{t('paymentsTab')}</TabsTrigger>
-                <TabsTrigger value="nps">{t('npsTab')}</TabsTrigger>
-                <TabsTrigger value="refs">{t('referralsTab')}</TabsTrigger>
-                <TabsTrigger value="history">{t('historyTab')}</TabsTrigger>
-              </TabsList>
-              <TabsContent value="info" className="text-xs text-slate-600">{t('ageLabel')} {student.age || t('noData')} • {t('managerLabel')} {student.managerName || t('noData')}</TabsContent>
-              <TabsContent value="schedule" className="text-xs text-slate-600">{student.groupName || t('noGroup')} • {student.courseName || t('noCourse')}</TabsContent>
-              <TabsContent value="attendance" className="text-xs text-slate-600">{t('attendanceRateLabel')} {student.attendancePercent}%</TabsContent>
-              <TabsContent value="progress" className="text-xs text-slate-600">{t('courseProgressLabel')} {student.progressPercent}%</TabsContent>
-              <TabsContent value="portfolio" className="text-xs text-slate-600">{t('projectsLabel')} {data.projects.filter((project: any) => project.studentId === student.id).length}</TabsContent>
-              <TabsContent value="payments" className="text-xs text-slate-600">{t('paymentsLabel')} {data.payments.filter((payment: any) => payment.studentId === student.id).length}</TabsContent>
-              <TabsContent value="nps" className="text-xs text-slate-600">{t('averageRatingLabel')} {student.satisfactionAvg || t('noData')} • {t('parentLabel')} {student.parentFeedback || t('noData')}</TabsContent>
-              <TabsContent value="refs" className="text-xs text-slate-600">{t('referralCodeField')} {student.referralCode} • {t('awardsField')} {data.referrals.filter((reward: any) => reward.referrerStudentId === student.id).length}</TabsContent>
-              <TabsContent value="history" className="text-xs text-slate-600">{t('historyDescription')}</TabsContent>
-            </Tabs>
           </div>
         ))}
         {(data.students ?? []).length === 0 && <EmptyState title={t('noStudentsYet')} text={t('noStudentsYetDesc')} icon={GraduationCap} />}
-      </CardContent>
-    </Card>
+      </div>
+      <StudentDetailSheet
+        student={selectedStudent}
+        open={studentSheetOpen}
+        onOpenChange={setStudentSheetOpen}
+        data={{ projects: data.projects, payments: data.payments, referrals: data.referrals }}
+        dateTime={dateTime}
+      />
+    </>
   );
 
   const renderCourses = () => (
@@ -1216,26 +1232,26 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {(data.courses ?? []).map((course: any) => (
-          <Card key={course.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                {course.name}
+          <Card key={course.id} className="hover-lift">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between gap-2">
+                <span className="truncate">{course.name}</span>
                 <Badge variant={course.isActive ? 'default' : 'secondary'}>{course.isActive ? t('courseActive') : t('courseInactive')}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <div>{t('ageLabel')} <strong>{course.ageCategory}</strong></div>
-                <div>{t('lessonsCountLabel')} <strong>{course.lessonCount}</strong></div>
-                <div>{t('durationLabel')} <strong>{course.lessonDurationMinutes} {t('minutes')}</strong></div>
-                <div>{t('frequencyLabel')} <strong>{course.frequency}</strong></div>
-                <div>{t('priceLabel')} <strong>{money(course.basePriceUzs)}</strong></div>
-                <div>{t('discountLabel')} <strong>{money(course.discountedPriceUzs)}</strong></div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                <div><span className="text-slate-400">{t('ageLabel')} </span><strong className="text-slate-700">{course.ageCategory}</strong></div>
+                <div><span className="text-slate-400">{t('lessonsCountLabel')} </span><strong className="text-slate-700">{course.lessonCount}</strong></div>
+                <div><span className="text-slate-400">{t('durationLabel')} </span><strong className="text-slate-700">{course.lessonDurationMinutes} {t('minutes')}</strong></div>
+                <div><span className="text-slate-400">{t('frequencyLabel')} </span><strong className="text-slate-700">{course.frequency}</strong></div>
+                <div><span className="text-slate-400">{t('priceLabel')} </span><strong className="text-slate-700">{money(course.basePriceUzs)}</strong></div>
+                <div><span className="text-slate-400">{t('discountLabel')} </span><strong className="text-emerald-600">{money(course.discountedPriceUzs)}</strong></div>
               </div>
               <div className="space-y-1">
                 {(course.program ?? []).slice(0, 5).map((lesson: any) => (
-                  <div key={lesson.lessonNumber} className="rounded border border-slate-100 p-2">
-                    {lesson.lessonNumber}. {lesson.topic}
+                  <div key={lesson.lessonNumber} className="rounded-md border border-slate-100 bg-slate-50/50 px-2.5 py-1.5 text-slate-600">
+                    <span className="text-slate-400 tabular-nums">{lesson.lessonNumber}.</span> {lesson.topic}
                   </div>
                 ))}
               </div>
@@ -1255,19 +1271,19 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {analytics.groups.map((group: any) => (
-          <Card key={group.id}>
-            <CardHeader>
-              <CardTitle className="flex justify-between">
-                {group.name}
+          <Card key={group.id} className="hover-lift">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex justify-between items-center gap-2">
+                <span className="truncate">{group.name}</span>
                 <Badge variant={group.isFull ? 'destructive' : 'outline'}>{group.capacityLabel}</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div>{t('courseLabel')} <strong>{group.courseName}</strong></div>
-              <div>{t('teacherLabel')} <strong>{group.teacherName || t('noData')}</strong></div>
-              <div>{t('startLabel')} {dateTime(group.startDate)}</div>
-              <div>{t('endLabel')} {dateTime(group.endDate)}</div>
-              <Progress value={(Number(group.currentStudents) / Number(group.maxStudents || 12)) * 100} />
+            <CardContent className="space-y-2.5 text-sm">
+              <div><span className="text-slate-400">{t('courseLabel')} </span><strong className="text-slate-700">{group.courseName}</strong></div>
+              <div><span className="text-slate-400">{t('teacherLabel')} </span><strong className="text-slate-700">{group.teacherName || t('noData')}</strong></div>
+              <div><span className="text-slate-400">{t('startLabel')} </span><span className="text-slate-700">{dateTime(group.startDate)}</span></div>
+              <div><span className="text-slate-400">{t('endLabel')} </span><span className="text-slate-700">{dateTime(group.endDate)}</span></div>
+              <div className="pt-1"><Progress value={(Number(group.currentStudents) / Number(group.maxStudents || 12)) * 100} /></div>
               <Button
                 variant="outline"
                 className="w-full"
@@ -1285,37 +1301,76 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
     </div>
   );
 
-  const renderLessons = () => (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <CardTitle>{t('lessonList')}</CardTitle>
-          <Button onClick={() => setCreationDialog('lesson')}>
-            <Plus className="h-4 w-4 mr-2" />{t('createLesson')}
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">{t('lessonColumn')}</th><th className="p-3 text-left">{t('group')}</th><th className="p-3 text-left">{t('teacher')}</th><th className="p-3 text-left">{t('dateColumn')}</th><th className="p-3 text-left">{t('status')}</th></tr></thead>
-            <tbody>{data.lessons.map((lesson: any) => (
-              <tr key={lesson.id} className="border-t border-slate-100">
-                <td className="p-3">#{lesson.lessonNumber} {lesson.topic}</td>
-                <td className="p-3">{lesson.groupName}</td>
-                <td className="p-3">{lesson.teacherName || t('noData')}</td>
-                <td className="p-3">{dateTime(lesson.scheduledAt)}</td>
-                <td className="p-3"><Badge>{lesson.status}</Badge></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  const renderLessons = () => {
+    const columns = [
+      {
+        key: 'lessonNumber',
+        header: t('lessonColumn'),
+        sortable: true,
+        accessor: (lesson: any) => lesson.lessonNumber,
+        render: (lesson: any) => (
+          <div className="font-medium text-slate-900">
+            <span className="text-slate-400 tabular-nums">#{lesson.lessonNumber}</span> {lesson.topic}
+          </div>
+        ),
+      },
+      {
+        key: 'groupId',
+        header: t('group'),
+        sortable: true,
+        accessor: (lesson: any) => lesson.groupName,
+        render: (lesson: any) => <span className="text-slate-600">{lesson.groupName}</span>,
+      },
+      {
+        key: 'teacherId',
+        header: t('teacher'),
+        sortable: true,
+        accessor: (lesson: any) => lesson.teacherName,
+        render: (lesson: any) => <span className="text-slate-600">{lesson.teacherName || t('noData')}</span>,
+      },
+      {
+        key: 'scheduledAt',
+        header: t('dateColumn'),
+        sortable: true,
+        accessor: (lesson: any) => lesson.scheduledAt,
+        render: (lesson: any) => <span className="text-slate-600">{dateTime(lesson.scheduledAt)}</span>,
+      },
+      {
+        key: 'status',
+        header: t('status'),
+        sortable: true,
+        accessor: (lesson: any) => lesson.status,
+        render: (lesson: any) => <Badge>{lesson.status}</Badge>,
+      },
+    ];
+
+    return (
+      <div className="space-y-5">
+        <Card className="hover-lift">
+          <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4">
+            <CardTitle>{t('lessonList')}</CardTitle>
+            <Button onClick={() => setCreationDialog('lesson')}>
+              <Plus className="h-4 w-4 mr-2" />{t('createLesson')}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <DataTable
+              columns={columns}
+              data={data.lessons}
+              keyExtractor={(lesson: any) => `lesson-${lesson.id}`}
+              defaultSortKey="scheduledAt"
+              defaultSortDirection="desc"
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
 
   const renderAttendance = () => (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-      <Card>
-        <CardHeader><CardTitle>{t('selectLesson')}</CardTitle></CardHeader>
+      <Card className="hover-lift">
+        <CardHeader className="pb-4"><CardTitle>{t('selectLesson')}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger><SelectValue placeholder={t('filterByGroup')} /></SelectTrigger>
@@ -1332,23 +1387,43 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             </SelectContent>
           </Select>
           {selectedLesson && (
-            <div className="rounded-lg border border-slate-200 p-3 text-sm">
-              <div className="font-medium">{selectedLesson.topic}</div>
+            <div className="rounded-lg border border-slate-200/70 bg-slate-50/50 p-3 text-sm">
+              <div className="font-medium text-slate-900">{selectedLesson.topic}</div>
               <div className="text-slate-500">{dateTime(selectedLesson.scheduledAt)}</div>
             </div>
           )}
         </CardContent>
       </Card>
-      <Card className="xl:col-span-2">
-        <CardHeader className="flex flex-row items-center justify-between">
+      <Card className="xl:col-span-2 hover-lift">
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
           <CardTitle>{t('attendanceChecklist')}</CardTitle>
-          <Button disabled={!selectedLessonId || saveAttendance.isPending} onClick={() => saveAttendance.mutate()}><CheckCircle2 className="h-4 w-4 mr-2" />{t('saveAttendanceLabel')}</Button>
+          <div className="flex items-center gap-2">
+            {selectedLessonStudents.length > 0 && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const draft: Record<number, string> = {};
+                  selectedLessonStudents.forEach((student: any) => { draft[student.id] = 'present'; });
+                  setAttendanceDraft(draft);
+                }}>
+                  {t('allPresent')}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const draft: Record<number, string> = {};
+                  selectedLessonStudents.forEach((student: any) => { draft[student.id] = 'absent'; });
+                  setAttendanceDraft(draft);
+                }}>
+                  {t('allAbsent')}
+                </Button>
+              </>
+            )}
+            <Button disabled={!selectedLessonId || saveAttendance.isPending} onClick={() => saveAttendance.mutate()}><CheckCircle2 className="h-4 w-4 mr-2" />{t('saveAttendanceLabel')}</Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           {selectedLessonStudents.map((student: any) => (
-            <div key={student.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-              <div>
-                <div className="font-medium text-slate-900">{student.studentName}</div>
+            <div key={student.id} className="flex items-center justify-between rounded-lg border border-slate-200/70 p-3 transition-colors hover:border-slate-300">
+              <div className="min-w-0">
+                <div className="font-medium text-slate-900 truncate">{student.studentName}</div>
                 <div className="text-xs text-slate-500">{student.attendancePercent}% {t('attendanceLabel')}</div>
               </div>
               <Select value={attendanceDraft[student.id] || 'present'} onValueChange={(status) => setAttendanceDraft({ ...attendanceDraft, [student.id]: status })}>
@@ -1366,34 +1441,81 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
     </div>
   );
 
-  const renderPayments = () => (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <CardTitle>{t('paymentHistory')}</CardTitle>
-          <Button onClick={() => setCreationDialog('payment')}>
-            <Plus className="h-4 w-4 mr-2" />{t('recordPayment')}
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">{t('clientColumn')}</th><th className="p-3 text-left">{t('amount')}</th><th className="p-3 text-left">{t('period')}</th><th className="p-3 text-left">{t('discount')}</th><th className="p-3 text-left">{t('status')}</th><th className="p-3 text-left">{t('method')}</th><th className="p-3 text-left">{t('paymentDateColumn')}</th></tr></thead>
-            <tbody>{data.payments.map((payment: any) => (
-              <tr key={payment.id} className="border-t border-slate-100">
-                <td className="p-3">{payment.studentName || payment.leadName || t('noData')}</td>
-                <td className="p-3">{money(payment.amountUzs)}</td>
-                <td className="p-3">{payment.period || '—'}</td>
-                <td className="p-3">{paymentDiscountName(payment.discount || 'none')}</td>
-                <td className="p-3"><Badge variant={payment.status === 'paid' ? 'default' : payment.status === 'overdue' ? 'destructive' : 'outline'}>{paymentStatusName(payment.status)}</Badge></td>
-                <td className="p-3">{paymentMethodName(payment.method)}</td>
-                <td className="p-3">{dateTime(payment.paidAt || payment.dueAt)}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  const renderPayments = () => {
+    const columns = [
+      {
+        key: 'client',
+        header: t('clientColumn'),
+        sortable: true,
+        accessor: (payment: any) => payment.studentName || payment.leadName,
+        render: (payment: any) => <div className="font-medium text-slate-900">{payment.studentName || payment.leadName || t('noData')}</div>,
+      },
+      {
+        key: 'amountUzs',
+        header: t('amount'),
+        sortable: true,
+        accessor: (payment: any) => Number(payment.amountUzs),
+        render: (payment: any) => <div className="font-semibold text-slate-900 tabular-nums">{money(payment.amountUzs)}</div>,
+      },
+      {
+        key: 'period',
+        header: t('period'),
+        sortable: true,
+        accessor: (payment: any) => payment.period,
+        render: (payment: any) => <span className="text-slate-600">{payment.period || '—'}</span>,
+      },
+      {
+        key: 'discount',
+        header: t('discount'),
+        sortable: true,
+        accessor: (payment: any) => payment.discount,
+        render: (payment: any) => <span className="text-slate-600">{paymentDiscountName(payment.discount || 'none')}</span>,
+      },
+      {
+        key: 'status',
+        header: t('status'),
+        sortable: true,
+        accessor: (payment: any) => payment.status,
+        render: (payment: any) => <Badge variant={payment.status === 'paid' ? 'default' : payment.status === 'overdue' ? 'destructive' : 'outline'}>{paymentStatusName(payment.status)}</Badge>,
+      },
+      {
+        key: 'method',
+        header: t('method'),
+        sortable: true,
+        accessor: (payment: any) => payment.method,
+        render: (payment: any) => <span className="text-slate-600">{paymentMethodName(payment.method)}</span>,
+      },
+      {
+        key: 'paidAt',
+        header: t('paymentDateColumn'),
+        sortable: true,
+        accessor: (payment: any) => payment.paidAt || payment.dueAt,
+        render: (payment: any) => <span className="text-slate-600">{dateTime(payment.paidAt || payment.dueAt)}</span>,
+      },
+    ];
+
+    return (
+      <div className="space-y-5">
+        <Card className="hover-lift">
+          <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4">
+            <CardTitle>{t('paymentHistory')}</CardTitle>
+            <Button onClick={() => setCreationDialog('payment')}>
+              <Plus className="h-4 w-4 mr-2" />{t('recordPayment')}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <DataTable
+              columns={columns}
+              data={data.payments}
+              keyExtractor={(payment: any) => `payment-${payment.id}`}
+              defaultSortKey="paidAt"
+              defaultSortDirection="desc"
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
 
   const renderFinance = () => (
     <div className="space-y-5">
@@ -1415,13 +1537,13 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             </CardHeader>
             <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               {analytics.bySource.map((source: any) => (
-                <div key={source.sourceId} className="rounded-lg border border-slate-200 p-3 text-sm">
-                  <div className="flex justify-between"><strong>{source.sourceName}</strong><span>{source.leads}{t('leadsSuffix')}</span></div>
-                  <div className="mt-2 grid grid-cols-4 gap-2 text-xs text-slate-600">
-                    <div>{t('cacLabel')}<br /><strong>{money(source.cac)}</strong></div>
-                    <div>{t('roasLabel')}<br /><strong>{source.roas}x</strong></div>
-                    <div>{t('ltvCacLabel')}<br /><strong>{source.ltvCac}:1</strong></div>
-                    <div>{t('revenueLabel')}<br /><strong>{money(source.revenue)}</strong></div>
+                <div key={source.sourceId} className="rounded-xl border border-slate-200/70 p-3.5 text-sm transition-all duration-200 hover:border-slate-300 hover:shadow-sm">
+                  <div className="flex justify-between items-center"><strong className="text-slate-900">{source.sourceName}</strong><span className="text-slate-500 tabular-nums">{source.leads}{t('leadsSuffix')}</span></div>
+                  <div className="mt-2.5 grid grid-cols-4 gap-2 text-xs">
+                    <div><div className="text-slate-400">{t('cacLabel')}</div><strong className="text-slate-700 tabular-nums">{money(source.cac)}</strong></div>
+                    <div><div className="text-slate-400">{t('roasLabel')}</div><strong className="text-emerald-600 tabular-nums">{source.roas}x</strong></div>
+                    <div><div className="text-slate-400">{t('ltvCacLabel')}</div><strong className="text-slate-700 tabular-nums">{source.ltvCac}:1</strong></div>
+                    <div><div className="text-slate-400">{t('revenueLabel')}</div><strong className="text-slate-700 tabular-nums">{money(source.revenue)}</strong></div>
                   </div>
                 </div>
               ))}
@@ -1446,13 +1568,13 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           const scores = data.lessonSurveys.filter((survey: any) => survey.teacherId === teacher.id).map((survey: any) => Number(survey.score));
           const avg = scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0;
           return (
-            <Card key={teacher.id}>
-              <CardHeader><CardTitle>{teacher.fullName}</CardTitle></CardHeader>
+            <Card key={teacher.id} className="hover-lift">
+              <CardHeader className="pb-3"><CardTitle className="truncate">{teacher.fullName}</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <div>{t('statusLabel')} <Badge>{teacher.status}</Badge></div>
-                <div>{t('hoursLabel')} <strong>{hours}</strong></div>
-                <div>{t('ratingLabel')} <strong>{avg || t('noData')}</strong></div>
-                <div>{t('groupsLabel')} <strong>{data.groups.filter((group: any) => group.teacherId === teacher.id).length}</strong></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">{t('statusLabel')}</span> <Badge>{teacher.status}</Badge></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">{t('hoursLabel')}</span> <strong className="text-slate-700 tabular-nums">{hours}</strong></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">{t('ratingLabel')}</span> <strong className="text-amber-600 tabular-nums">{avg || t('noData')}</strong></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">{t('groupsLabel')}</span> <strong className="text-slate-700 tabular-nums">{data.groups.filter((group: any) => group.teacherId === teacher.id).length}</strong></div>
               </CardContent>
             </Card>
           );
@@ -1472,19 +1594,19 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
 
   const renderIntegrations = () => (
     <div className="space-y-5">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+      <Card className="hover-lift">
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
           <CardTitle>{t('integrationStatus')}</CardTitle>
           <Button variant="outline" onClick={() => sendWeeklyReport.mutate()}><Send className="h-4 w-4 mr-2" />{t('testWeeklyReport')}</Button>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {integrationProviders.map((provider) => (
-            <div key={provider} className="rounded-lg border border-slate-200 p-4">
-              <div className="flex items-center justify-between">
-                <strong>{provider}</strong>
+            <div key={provider} className="rounded-xl border border-slate-200/70 p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-slate-900">{provider}</strong>
                 <Badge variant="secondary">safe stub</Badge>
               </div>
-              <p className="mt-2 text-xs text-slate-500">{t('crmWorksWithoutExternal')}</p>
+              <p className="mt-2 text-xs text-slate-500 leading-relaxed">{t('crmWorksWithoutExternal')}</p>
               <Button className="mt-3 w-full" variant="outline" size="sm" onClick={() => testIntegration.mutate(provider)}>
                 <RefreshCw className="h-3 w-3 mr-2" />{t('test')}
               </Button>
@@ -1497,8 +1619,8 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
 
   const renderSettings = () => (
     <div className="space-y-5">
-      <Card>
-        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <Card className="hover-lift">
+        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4">
           <CardTitle>{t('leadSources')}</CardTitle>
           <Button variant="outline" onClick={() => setCreationDialog('source')}>
             <Plus className="h-4 w-4 mr-2" />{t('addSource')}
@@ -1506,18 +1628,18 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         </CardHeader>
         <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
           {data.sources.map((source: any) => (
-            <div key={source.id} className="rounded-lg border border-slate-200 p-3 text-sm flex items-center justify-between">
-              <div>
-                <strong>{source.name}</strong>
-                <div className="text-xs text-slate-500">{source.code} • {source.channel || t('noChannel')}</div>
+            <div key={source.id} className="rounded-lg border border-slate-200/70 p-3 text-sm flex items-center justify-between transition-colors hover:border-slate-300 hover:bg-slate-50/40">
+              <div className="min-w-0">
+                <strong className="text-slate-900">{source.name}</strong>
+                <div className="text-xs text-slate-500 truncate">{source.code} • {source.channel || t('noChannel')}</div>
               </div>
               <Badge variant={source.isActive ? 'default' : 'secondary'}>{source.isActive ? t('activeBadge') : t('inactiveBadge')}</Badge>
             </div>
           ))}
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader><CardTitle>{t('exportLabel')}</CardTitle></CardHeader>
+      <Card className="hover-lift">
+        <CardHeader className="pb-4"><CardTitle>{t('exportLabel')}</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {['leads', 'students', 'payments', 'attendance', 'surveys', 'marketing'].map((entity) => (
             <a key={entity} href={`/api/academy/exports/${entity}`} target="_blank" rel="noreferrer">
@@ -1550,18 +1672,18 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             <KpiCard title={t('parentNps')} value={analytics.summary.nps ?? 0} detail={`${t('targetGreaterThan')}${analytics.targets?.nps ?? 50}`} icon={Sparkles} tone={(analytics.summary.nps ?? 0) >= (analytics.targets?.nps ?? 50) ? 'green' : 'amber'} />
             <KpiCard title={t('warmBase')} value={analytics.summary.warmBaseSize ?? 0} detail={`${t('reactivated')}${analytics.summary.warmReactivated ?? 0}`} icon={Users} tone="amber" />
           </div>
-          <Card><CardHeader><CardTitle>{t('marketingBySources')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
+          <Card className="hover-lift"><CardHeader className="pb-4"><CardTitle>{t('marketingBySources')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">{t('source')}</th><th className="p-3 text-left">{t('leadsColumn')}</th><th className="p-3 text-left">{t('paymentsTab')}</th><th className="p-3 text-left">{t('cplColumn')}</th><th className="p-3 text-left">CAC</th><th className="p-3 text-left">ROAS</th><th className="p-3 text-left">LTV:CAC</th></tr></thead>
+              <thead><tr className="border-b border-slate-200/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><th className="p-3 px-4 text-left">{t('source')}</th><th className="p-3 px-4 text-left">{t('leadsColumn')}</th><th className="p-3 px-4 text-left">{t('paymentsTab')}</th><th className="p-3 px-4 text-left">{t('cplColumn')}</th><th className="p-3 px-4 text-left">CAC</th><th className="p-3 px-4 text-left">ROAS</th><th className="p-3 px-4 text-left">LTV:CAC</th></tr></thead>
               <tbody>{analytics.bySource.map((source: any) => (
-                <tr key={source.sourceId} className="border-t border-slate-100">
-                  <td className="p-3 font-medium">{source.sourceName}</td>
-                  <td className="p-3">{source.leads}</td>
-                  <td className="p-3">{source.paidStudents}</td>
-                  <td className="p-3">{money(source.cpl)}</td>
-                  <td className="p-3">{money(source.cac)}</td>
-                  <td className="p-3">{source.roas}x</td>
-                  <td className="p-3">{source.ltvCac}:1</td>
+                <tr key={source.sourceId} className="border-b border-slate-100 transition-colors hover:bg-primary/[0.035]">
+                  <td className="p-3 px-4 font-medium text-slate-900">{source.sourceName}</td>
+                  <td className="p-3 px-4 text-slate-600 tabular-nums">{source.leads}</td>
+                  <td className="p-3 px-4 text-slate-600 tabular-nums">{source.paidStudents}</td>
+                  <td className="p-3 px-4 text-slate-600 tabular-nums">{money(source.cpl)}</td>
+                  <td className="p-3 px-4 text-slate-600 tabular-nums">{money(source.cac)}</td>
+                  <td className="p-3 px-4 text-emerald-600 font-medium tabular-nums">{source.roas}x</td>
+                  <td className="p-3 px-4 text-slate-600 tabular-nums">{source.ltvCac}:1</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -1577,31 +1699,31 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             <KpiCard title={t('teacherHours')} value={`${Math.round(analytics.summary.teacherHours ?? 0)}${t('hoursSuffix')}`} icon={UserRoundCheck} tone="slate" />
           </div>
           {(analytics.byGroupProgress ?? []).length > 0 && (
-            <Card><CardHeader><CardTitle>{t('occupancyAndProgress')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
+            <Card className="hover-lift"><CardHeader className="pb-4"><CardTitle>{t('occupancyAndProgress')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">{t('group')}</th><th className="p-3 text-left">{t('occupancyColumn')}</th><th className="p-3 text-left">{t('attendanceLabel')}</th><th className="p-3 text-left">{t('progressLabel')}</th></tr></thead>
+                <thead><tr className="border-b border-slate-200/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><th className="p-3 px-4 text-left">{t('group')}</th><th className="p-3 px-4 text-left">{t('occupancyColumn')}</th><th className="p-3 px-4 text-left">{t('attendanceLabel')}</th><th className="p-3 px-4 text-left">{t('progressLabel')}</th></tr></thead>
                 <tbody>{(analytics.byGroupProgress ?? []).map((group: any) => (
-                  <tr key={group.groupId} className="border-t border-slate-100">
-                    <td className="p-3 font-medium">{group.groupName}</td>
-                    <td className="p-3">{group.capacity}/{group.maxCapacity}</td>
-                    <td className="p-3"><Progress value={group.attendanceAvg} className="w-24 inline-flex" /></td>
-                    <td className="p-3"><Progress value={group.progressAvg} className="w-24 inline-flex" /></td>
+                  <tr key={group.groupId} className="border-b border-slate-100 transition-colors hover:bg-primary/[0.035]">
+                    <td className="p-3 px-4 font-medium text-slate-900">{group.groupName}</td>
+                    <td className="p-3 px-4 text-slate-600 tabular-nums">{group.capacity}/{group.maxCapacity}</td>
+                    <td className="p-3 px-4"><Progress value={group.attendanceAvg} className="w-24 inline-flex" /></td>
+                    <td className="p-3 px-4"><Progress value={group.progressAvg} className="w-24 inline-flex" /></td>
                   </tr>
                 ))}</tbody>
               </table>
             </CardContent></Card>
           )}
           {(analytics.byTeacher ?? []).length > 0 && (
-            <Card><CardHeader><CardTitle>{t('teacherHoursAndRatings')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
+            <Card className="hover-lift"><CardHeader className="pb-4"><CardTitle>{t('teacherHoursAndRatings')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">{t('teacher')}</th><th className="p-3 text-left">{t('hoursSuffix')}</th><th className="p-3 text-left">{t('averageRatingLabel')}</th><th className="p-3 text-left">{t('attendanceLabel')}</th><th className="p-3 text-left">{t('trendColumn')}</th></tr></thead>
+                <thead><tr className="border-b border-slate-200/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><th className="p-3 px-4 text-left">{t('teacher')}</th><th className="p-3 px-4 text-left">{t('hoursSuffix')}</th><th className="p-3 px-4 text-left">{t('averageRatingLabel')}</th><th className="p-3 px-4 text-left">{t('attendanceLabel')}</th><th className="p-3 px-4 text-left">{t('trendColumn')}</th></tr></thead>
                 <tbody>{(analytics.byTeacher ?? []).map((teacher: any) => (
-                  <tr key={teacher.teacherId} className="border-t border-slate-100">
-                    <td className="p-3 font-medium">{teacher.teacherName}</td>
-                    <td className="p-3">{Math.round(teacher.hours)}{t('hoursSuffix')}</td>
-                    <td className="p-3">{(teacher.avgScore ?? 0).toFixed(1)}</td>
-                    <td className="p-3">{teacher.attendance}%</td>
-                    <td className="p-3">{teacher.trend === 'up' ? t('trendUp') : teacher.trend === 'down' ? t('trendDown') : t('trendStable')}</td>
+                  <tr key={teacher.teacherId} className="border-b border-slate-100 transition-colors hover:bg-primary/[0.035]">
+                    <td className="p-3 px-4 font-medium text-slate-900">{teacher.teacherName}</td>
+                    <td className="p-3 px-4 text-slate-600 tabular-nums">{Math.round(teacher.hours)}{t('hoursSuffix')}</td>
+                    <td className="p-3 px-4 text-amber-600 font-medium tabular-nums">{(teacher.avgScore ?? 0).toFixed(1)}</td>
+                    <td className="p-3 px-4 text-slate-600 tabular-nums">{teacher.attendance}%</td>
+                    <td className="p-3 px-4 text-slate-600">{teacher.trend === 'up' ? t('trendUp') : teacher.trend === 'down' ? t('trendDown') : t('trendStable')}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -1634,29 +1756,18 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{sectionTitles[section]}</h1>
-          <p className="text-sm text-slate-500">{t('academyDescription')}</p>
-        </div>
-        <div className="flex flex-col md:flex-row gap-2 md:items-center">
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              className="pl-9"
-              placeholder={t('globalSearchPlaceholder')}
-              value={globalSearch}
-              onChange={(event) => setGlobalSearch(event.target.value)}
-            />
-          </div>
+    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
+      <PageHeader
+        title={sectionTitles[section]}
+        subtitle={t('academyDescription')}
+        actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setCreationDialog('lead')}><Plus className="h-4 w-4 mr-2" />{t('lead')}</Button>
             <Link href="/pipeline"><Button variant="outline" size="sm">{t('salesPipeline')}</Button></Link>
             <Button size="sm" onClick={() => setCreationDialog('payment')}>{t('payment')}</Button>
           </div>
-        </div>
-      </div>
+        }
+      />
       <Dialog
         open={creationDialog !== null}
         onOpenChange={(open) => {
@@ -1678,32 +1789,17 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           </DialogContent>
         )}
       </Dialog>
-      {globalResults.length > 0 && (
-        <Card>
-          <CardContent className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
-            {globalResults.map((item, index) => (
-              <Link key={`${item.type}-${index}`} href={item.href}>
-                <div className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50 cursor-pointer">
-                  <Badge variant="outline">{item.type}</Badge>
-                  <div className="mt-2 text-sm font-medium text-slate-900">{item.title}</div>
-                  <div className="text-xs text-slate-500">{item.subtitle}</div>
-                </div>
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-      {content[section]}
+      <div className="mt-6">{content[section]}</div>
     </div>
   );
 }
 
 function RiskList({ title, items, render, t }: { title: string; items: any[]; render: (item: any) => string; t: any }) {
   return (
-    <Card>
-      <CardHeader><CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-500" />{title}</CardTitle></CardHeader>
+    <Card className="hover-lift">
+      <CardHeader className="pb-4"><CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-500" />{title}</CardTitle></CardHeader>
       <CardContent className="space-y-2">
-        {items.map((item) => <div key={`${title}-${item.id}`} className="rounded-lg border border-red-100 bg-red-50/50 p-3 text-sm text-red-900">{render(item)}</div>)}
+        {items.map((item) => <div key={`${title}-${item.id}`} className="rounded-lg border border-red-100 bg-red-50/40 p-3 text-sm text-red-900">{render(item)}</div>)}
         {items.length === 0 && <p className="text-sm text-slate-500">{t('noData')}</p>}
       </CardContent>
     </Card>
@@ -1715,28 +1811,28 @@ function ReferralView({ data, analytics, t }: { data: any; analytics: any; t: an
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <KpiCard title={t('referralCodes')} value={data.students?.length ?? 0} icon={HeartHandshake} />
-        <KpiCard title={t('paidReferrals')} value={referredPaid} icon={CheckCircle2} tone="green" />
-        <KpiCard title={t('warmBase')} value={analytics.summary.warmBaseSize} icon={Users} tone="amber" />
-        <KpiCard title={t('rewards')} value={data.referrals?.length ?? 0} icon={Sparkles} tone="green" />
+        <div className="stagger-item"><KpiCard title={t('referralCodes')} value={data.students?.length ?? 0} icon={HeartHandshake} /></div>
+        <div className="stagger-item"><KpiCard title={t('paidReferrals')} value={referredPaid} icon={CheckCircle2} tone="green" /></div>
+        <div className="stagger-item"><KpiCard title={t('warmBase')} value={analytics.summary.warmBaseSize} icon={Users} tone="amber" /></div>
+        <div className="stagger-item"><KpiCard title={t('rewards')} value={data.referrals?.length ?? 0} icon={Sparkles} tone="green" /></div>
       </div>
-      <Card>
-        <CardHeader><CardTitle>{t('studentsAndRefCodes')}</CardTitle></CardHeader>
+      <Card className="hover-lift">
+        <CardHeader className="pb-4"><CardTitle>{t('studentsAndRefCodes')}</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
           {data.students.map((student: any) => (
-            <div key={student.id} className="rounded-lg border border-slate-200 p-3">
+            <div key={student.id} className="rounded-xl border border-slate-200/70 p-3 transition-all duration-200 hover:border-slate-300 hover:shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <strong>{student.studentName}</strong>
+                <div className="min-w-0">
+                  <strong className="text-slate-900">{student.studentName}</strong>
                   <div className="mt-1"><Badge>{student.referralCode}</Badge></div>
                 </div>
                 <img
-                  className="h-16 w-16 rounded border border-slate-200 bg-white"
+                  className="h-16 w-16 rounded-lg border border-slate-200 bg-white p-1"
                   alt={`QR ${student.referralCode}`}
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(student.referralCode)}`}
                 />
               </div>
-              <p className="mt-1 text-xs text-slate-500">{t('referralDescription')}</p>
+              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">{t('referralDescription')}</p>
             </div>
           ))}
         </CardContent>
@@ -1761,8 +1857,8 @@ function Cohorts({ courses, sources, users, t, money }: { courses: any[]; source
   if (isLoading) return <Card><CardContent className="p-6">{t('loading')}</CardContent></Card>;
 
   return (
-    <Card>
-      <CardHeader><CardTitle>{t('cohortAnalysis')}</CardTitle></CardHeader>
+    <Card className="hover-lift">
+      <CardHeader className="pb-4"><CardTitle>{t('cohortAnalysis')}</CardTitle></CardHeader>
       <div className="px-6 pb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
         <Select value={courseId} onValueChange={setCourseId}>
           <SelectTrigger><SelectValue placeholder={t('course')} /></SelectTrigger>
@@ -1779,38 +1875,38 @@ function Cohorts({ courses, sources, users, t, money }: { courses: any[]; source
       </div>
       <CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="p-3 text-left">{t('cohortColumn')}</th>
-              <th className="p-3 text-left">{t('month1')}</th>
-              <th className="p-3 text-left">{t('month2')}</th>
-              <th className="p-3 text-left">{t('retention2')}</th>
-              <th className="p-3 text-left">{t('month3')}</th>
-              <th className="p-3 text-left">{t('retention3')}</th>
-              <th className="p-3 text-left">{t('month4')}</th>
-              <th className="p-3 text-left">{t('retention4')}</th>
-              <th className="p-3 text-left">{t('revenue')}</th>
-              <th className="p-3 text-left">{t('forecast')}</th>
+          <thead>
+            <tr className="border-b border-slate-200/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <th className="p-3 px-4 text-left">{t('cohortColumn')}</th>
+              <th className="p-3 px-4 text-left">{t('month1')}</th>
+              <th className="p-3 px-4 text-left">{t('month2')}</th>
+              <th className="p-3 px-4 text-left">{t('retention2')}</th>
+              <th className="p-3 px-4 text-left">{t('month3')}</th>
+              <th className="p-3 px-4 text-left">{t('retention3')}</th>
+              <th className="p-3 px-4 text-left">{t('month4')}</th>
+              <th className="p-3 px-4 text-left">{t('retention4')}</th>
+              <th className="p-3 px-4 text-left">{t('revenue')}</th>
+              <th className="p-3 px-4 text-left">{t('forecast')}</th>
             </tr>
           </thead>
           <tbody>
             {data.map((row: any) => (
-              <tr key={row.cohort} className="border-t border-slate-100">
-                <td className="p-3 font-medium">{row.cohort}</td>
-                <td className="p-3">{row.students}</td>
-                <td className="p-3">{row.month2}</td>
-                <td className="p-3">{row.retentionMonth2Percent ?? 0}%</td>
-                <td className="p-3">{row.month3}</td>
-                <td className="p-3">{row.retentionMonth3Percent ?? 0}%</td>
-                <td className="p-3">{row.month4}</td>
-                <td className="p-3">{row.retentionMonth4Percent ?? 0}%</td>
-                <td className="p-3">{money(row.revenue)}</td>
-                <td className="p-3">{money(row.forecastRevenue)}</td>
+              <tr key={row.cohort} className="border-b border-slate-100 transition-colors hover:bg-primary/[0.035]">
+                <td className="p-3 px-4 font-medium text-slate-900">{row.cohort}</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.students}</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.month2}</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.retentionMonth2Percent ?? 0}%</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.month3}</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.retentionMonth3Percent ?? 0}%</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.month4}</td>
+                <td className="p-3 px-4 text-slate-600 tabular-nums">{row.retentionMonth4Percent ?? 0}%</td>
+                <td className="p-3 px-4 font-semibold text-slate-900 tabular-nums">{money(row.revenue)}</td>
+                <td className="p-3 px-4 text-emerald-600 font-medium tabular-nums">{money(row.forecastRevenue)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {data.length === 0 && <div className="p-6 text-sm text-slate-500">{t('noCohortData')}</div>}
+        {data.length === 0 && <div className="p-8 text-sm text-slate-500 text-center">{t('noCohortData')}</div>}
       </CardContent>
     </Card>
   );

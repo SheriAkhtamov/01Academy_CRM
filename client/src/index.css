@@ -4,25 +4,25 @@
 
 :root {
   --background: hsl(0, 0%, 100%);
-  --foreground: hsl(20, 14.3%, 4.1%);
-  --muted: hsl(220, 14.3%, 95.9%);
-  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --foreground: hsl(222, 47%, 11%);
+  --muted: hsl(220, 14.3%, 96.3%);
+  --muted-foreground: hsl(220, 9%, 46%);
   --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --popover-foreground: hsl(222, 47%, 11%);
   --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(20, 14.3%, 4.1%);
-  --border: hsl(220, 13%, 91%);
-  --input: hsl(220, 13%, 91%);
+  --card-foreground: hsl(222, 47%, 11%);
+  --border: hsl(220, 16%, 93%);
+  --input: hsl(220, 16%, 93%);
   --primary: hsl(221, 83%, 53%);
   --primary-foreground: hsl(210, 40%, 98%);
-  --secondary: hsl(220, 14.3%, 95.9%);
-  --secondary-foreground: hsl(24, 9.8%, 10%);
-  --accent: hsl(220, 14.3%, 95.9%);
-  --accent-foreground: hsl(24, 9.8%, 10%);
+  --secondary: hsl(220, 14.3%, 96.3%);
+  --secondary-foreground: hsl(222, 47%, 11%);
+  --accent: hsl(220, 14.3%, 96.3%);
+  --accent-foreground: hsl(222, 47%, 11%);
   --destructive: hsl(0, 84.2%, 60.2%);
   --destructive-foreground: hsl(60, 9.1%, 97.8%);
-  --ring: hsl(20, 14.3%, 4.1%);
-  --radius: 0.5rem;
+  --ring: hsl(221, 83%, 53%);
+  --radius: 0.625rem;
   
   /* Custom colors matching design */
   --primary-50: hsl(214, 100%, 97%);
@@ -52,6 +52,30 @@
   --slate-600: hsl(215, 19%, 35%);
   --slate-700: hsl(215, 25%, 27%);
   --slate-900: hsl(222, 84%, 5%);
+
+  /* Premium shadow scale — soft, layered, never harsh.
+     Exposed as CSS vars so tailwind.config can wire them up to shadow-* utilities. */
+  --shadow-2xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.07), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.09), 0 2px 6px -2px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 12px 28px -6px rgba(15, 23, 42, 0.12), 0 6px 12px -6px rgba(15, 23, 42, 0.06);
+  --shadow-xl: 0 20px 44px -10px rgba(15, 23, 42, 0.16), 0 10px 20px -10px rgba(15, 23, 42, 0.08);
+  --shadow-2xl: 0 28px 64px -16px rgba(15, 23, 42, 0.22);
+  --shadow-primary: 0 8px 20px -4px rgba(37, 99, 235, 0.35), 0 4px 8px -4px rgba(37, 99, 235, 0.20);
+  --shadow-primary-lg: 0 14px 30px -6px rgba(37, 99, 235, 0.42), 0 6px 14px -6px rgba(37, 99, 235, 0.25);
+
+  /* Soft tonal backgrounds for badges / tints */
+  --tint-blue: hsl(214, 95%, 96%);
+  --tint-green: hsl(149, 70%, 95%);
+  --tint-amber: hsl(44, 95%, 95%);
+  --tint-red: hsl(0, 84%, 96%);
+  --tint-purple: hsl(270, 80%, 97%);
+
+  /* App canvas — very subtle warm-cool gradient gives depth to empty space */
+  --app-bg: radial-gradient(1200px 600px at 100% -10%, hsl(214, 100%, 98%) 0%, transparent 55%),
+            radial-gradient(900px 500px at -10% 110%, hsl(270, 80%, 99%) 0%, transparent 50%),
+            hsl(210, 40%, 99%);
 }
 
 .dark {
@@ -85,6 +109,26 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variation-settings: 'opsz' 32;
+  }
+
+  /* App canvas background — soft, premium, never flat */
+  #root {
+    background: var(--app-bg);
+    background-attachment: fixed;
+  }
+
+  /* Smooth interactions only on interactive elements — avoids the jarring
+     "everything flashes" feel of a global transition. */
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  [role="button"],
+  [data-slot] {
+    @apply transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-200 ease-out;
   }
 }
 
@@ -131,6 +175,10 @@
   .hover\:text-slate-900:hover { color: var(--slate-900); }
   .hover\:text-primary-700:hover { color: var(--primary-700); }
   .hover\:bg-primary-700:hover { background-color: var(--primary-700); }
+
+  /* Shadow helpers wired to the premium scale (used by tailwind shadow-* too) */
+  .shadow-primary { box-shadow: var(--shadow-primary); }
+  .shadow-primary-lg { box-shadow: var(--shadow-primary-lg); }
 }
 
 /* ========================================
@@ -138,35 +186,30 @@
    ======================================== */
 
 @layer components {
-  /* Smooth Transitions */
-  * {
-    @apply transition-colors duration-200;
-  }
-
   /* Glassmorphism Effect */
   .glass {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
   }
 
   .glass-dark {
     background: rgba(15, 23, 42, 0.8);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   /* Modern Card Shadows */
   .card-modern {
     @apply transition-all duration-300 ease-out;
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-sm);
   }
 
   .card-modern:hover {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-3px);
   }
 
   /* Pulse Animation */
@@ -209,7 +252,7 @@
   @keyframes slideInUp {
     from {
       opacity: 0;
-      transform: translateY(20px);
+      transform: translateY(14px);
     }
     to {
       opacity: 1;
@@ -220,7 +263,7 @@
   @keyframes slideInDown {
     from {
       opacity: 0;
-      transform: translateY(-20px);
+      transform: translateY(-14px);
     }
     to {
       opacity: 1;
@@ -240,7 +283,7 @@
   @keyframes scaleIn {
     from {
       opacity: 0;
-      transform: scale(0.95);
+      transform: scale(0.97);
     }
     to {
       opacity: 1;
@@ -249,19 +292,19 @@
   }
 
   .animate-slideInRight {
-    animation: slideInRight 0.4s ease-out;
+    animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-slideInLeft {
-    animation: slideInLeft 0.4s ease-out;
+    animation: slideInLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-slideInUp {
-    animation: slideInUp 0.4s ease-out;
+    animation: slideInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-slideInDown {
-    animation: slideInDown 0.4s ease-out;
+    animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-fadeIn {
@@ -269,23 +312,23 @@
   }
 
   .animate-scaleIn {
-    animation: scaleIn 0.3s ease-out;
+    animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   /* Stagger Animation (for lists) */
   .stagger-item {
     opacity: 0;
-    animation: slideInUp 0.5s ease-out forwards;
+    animation: slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
-  .stagger-item:nth-child(1) { animation-delay: 0.05s; }
-  .stagger-item:nth-child(2) { animation-delay: 0.1s; }
-  .stagger-item:nth-child(3) { animation-delay: 0.15s; }
-  .stagger-item:nth-child(4) { animation-delay: 0.2s; }
-  .stagger-item:nth-child(5) { animation-delay: 0.25s; }
-  .stagger-item:nth-child(6) { animation-delay: 0.3s; }
-  .stagger-item:nth-child(7) { animation-delay: 0.35s; }
-  .stagger-item:nth-child(8) { animation-delay: 0.4s; }
+  .stagger-item:nth-child(1) { animation-delay: 0.04s; }
+  .stagger-item:nth-child(2) { animation-delay: 0.08s; }
+  .stagger-item:nth-child(3) { animation-delay: 0.12s; }
+  .stagger-item:nth-child(4) { animation-delay: 0.16s; }
+  .stagger-item:nth-child(5) { animation-delay: 0.20s; }
+  .stagger-item:nth-child(6) { animation-delay: 0.24s; }
+  .stagger-item:nth-child(7) { animation-delay: 0.28s; }
+  .stagger-item:nth-child(8) { animation-delay: 0.32s; }
 
   /* Shimmer Loading Effect */
   @keyframes shimmer {
@@ -316,20 +359,20 @@
 
   /* Button Hover Effects */
   .btn-modern {
-    @apply relative overflow-hidden transition-all duration-300;
+    @apply relative overflow-hidden transition-all duration-200;
   }
 
   .btn-modern::before {
     content: '';
-    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-300;
+    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-200;
   }
 
   .btn-modern:hover::before {
-    @apply opacity-20;
+    @apply opacity-15;
   }
 
   .btn-modern:active {
-    @apply scale-95;
+    @apply scale-[0.97];
   }
 
   /* Badge Pulse */
@@ -355,7 +398,7 @@
 
   .hover-lift:hover {
     @apply -translate-y-1;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-lg);
   }
 
   /* Gradient Text */
@@ -456,6 +499,8 @@
 
   ::-webkit-scrollbar-thumb {
     @apply bg-slate-300 rounded-full;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
@@ -526,13 +571,46 @@
     animation: content-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  /* Page transition — subtle fade + rise when entering main content */
+  .page-enter {
+    animation: slideInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   /* Login Page */
   .login-page {
-    @apply min-h-screen flex items-center justify-center bg-slate-50;
+    @apply min-h-screen flex items-center justify-center relative overflow-hidden;
+    background:
+      radial-gradient(900px 500px at 12% 18%, hsl(214, 100%, 96%) 0%, transparent 60%),
+      radial-gradient(800px 460px at 88% 82%, hsl(270, 80%, 97%) 0%, transparent 55%),
+      hsl(210, 40%, 99%);
+  }
+
+  .login-page::before,
+  .login-page::after {
+    content: '';
+    @apply absolute rounded-full blur-3xl pointer-events-none;
+  }
+
+  .login-page::before {
+    width: 420px;
+    height: 420px;
+    top: -120px;
+    left: -80px;
+    background: radial-gradient(circle, hsla(221, 83%, 60%, 0.18), transparent 70%);
+  }
+
+  .login-page::after {
+    width: 460px;
+    height: 460px;
+    bottom: -160px;
+    right: -100px;
+    background: radial-gradient(circle, hsla(271, 81%, 60%, 0.16), transparent 70%);
   }
 
   .login-card {
-    @apply w-full max-w-md mx-auto bg-white rounded-xl shadow-lg p-8;
+    @apply w-full max-w-md mx-auto bg-white/90 backdrop-blur-xl rounded-2xl p-8 relative;
+    box-shadow: var(--shadow-xl);
+    border: 1px solid hsl(0 0% 100% / 0.6);
   }
 
   .login-card__header {
@@ -540,7 +618,7 @@
   }
 
   .login-card__title {
-    @apply text-2xl font-bold text-slate-900 mb-1;
+    @apply text-2xl font-bold text-slate-900 mb-1 tracking-tight;
   }
 
   .login-card__subtitle {
@@ -557,15 +635,15 @@
 
   /* Sidebar */
   .sidebar-section-label {
-    @apply text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2;
+    @apply text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-1.5;
   }
 
   .sidebar-nav {
-    @apply space-y-1 mb-5;
+    @apply space-y-0.5 mb-4;
   }
 
   .sidebar-nav-item {
-    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 cursor-pointer transition-all duration-200;
+    @apply relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 cursor-pointer transition-all duration-200;
   }
 
   .sidebar-nav-item:hover {
@@ -573,11 +651,24 @@
   }
 
   .sidebar-nav-item.active {
-    @apply bg-primary-50 text-primary-700;
+    @apply text-primary-700;
+    background: linear-gradient(90deg, var(--primary-50), hsl(214, 100%, 98%));
+  }
+
+  /* Animated active indicator bar on the left edge */
+  .sidebar-nav-item.active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full;
+    background: var(--primary-600);
+    box-shadow: 0 0 10px 0 rgba(37, 99, 235, 0.5);
   }
 
   .sidebar-nav-item__icon {
-    @apply w-5 h-5 flex-shrink-0;
+    @apply w-5 h-5 flex-shrink-0 transition-transform duration-200;
+  }
+
+  .sidebar-nav-item:hover .sidebar-nav-item__icon {
+    @apply scale-110;
   }
 
   .sidebar-user-card {
@@ -585,6 +676,8 @@
   }
 
   .sidebar-user-avatar {
-    @apply w-9 h-9 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-medium flex-shrink-0;
+    @apply w-9 h-9 rounded-full text-white flex items-center justify-center text-sm font-medium flex-shrink-0;
+    background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+    box-shadow: var(--shadow-primary);
   }
 }

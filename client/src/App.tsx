@@ -1,15 +1,37 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import { useTranslation } from "@/hooks/useTranslation";
-import Layout from "@/components/Layout";
-import NotFound from "@/pages/not-found";
-import Login from "@/pages/login";
-import AcademyPage from "@/pages/academy";
-import Admin from "@/pages/admin";
+import { useQuery } from '@tanstack/react-query';
+import { Switch, Route } from 'wouter';
+import { queryClient } from './lib/queryClient';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { useTranslation } from '@/hooks/useTranslation';
+import Layout from '@/components/Layout';
+import NotFound from '@/pages/not-found';
+import Login from '@/pages/login';
+import AcademyPage from '@/pages/academy';
+import Admin from '@/pages/admin';
+
+function LayoutWithSearch({ children }: { children: React.ReactNode }) {
+  const { data } = useQuery<any>({
+    queryKey: ['/api/academy/bootstrap'],
+    enabled: true,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const searchData = data
+    ? {
+        leads: data.leads,
+        students: data.students,
+        courses: data.courses,
+        groups: data.groups,
+        teachers: data.teachers,
+        sources: data.sources,
+      }
+    : undefined;
+
+  return <Layout searchData={searchData}>{children}</Layout>;
+}
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -17,10 +39,10 @@ function Router() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600">{t('loading')}</p>
+          <div className="w-10 h-10 border-[3px] border-slate-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-500 text-sm">{t('loading')}</p>
         </div>
       </div>
     );
@@ -31,7 +53,7 @@ function Router() {
   }
 
   return (
-    <Layout>
+    <LayoutWithSearch>
       <Switch>
         <Route path="/" component={() => <AcademyPage section="dashboard" />} />
         <Route path="/leads" component={() => <AcademyPage section="leads" />} />
@@ -53,7 +75,7 @@ function Router() {
         <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
       </Switch>
-    </Layout>
+    </LayoutWithSearch>
   );
 }
 

@@ -283,13 +283,13 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             )}
 
             {/* Current Role Info */}
-            <div className="bg-slate-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-slate-700 mb-2">{t('currentRole')}</h3>
-              <p className="text-slate-600">{getRoleLabel(user?.role || 'employee')}</p>
+            <div className="bg-slate-50/60 border border-slate-200/70 p-4 rounded-xl">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentRole')}</h3>
+              <p className="text-slate-700 font-medium">{getRoleLabel(user?.role || 'employee')}</p>
             </div>
 
             {/* Form Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t">
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
@@ -301,7 +301,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               <Button
                 type="submit"
                 disabled={updateProfileMutation.isPending}
-                className="bg-primary-600 hover:bg-primary-700"
               >
                 {updateProfileMutation.isPending ? (
                   <>

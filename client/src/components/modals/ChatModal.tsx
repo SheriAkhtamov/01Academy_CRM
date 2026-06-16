@@ -198,8 +198,8 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                 {filteredEmployees.map((employee: any) => (
                   <div
                     key={employee.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-50 ${
-                      selectedEmployeeId === employee.id ? 'bg-blue-50 border border-blue-200' : ''
+                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-slate-100 ${
+                      selectedEmployeeId === employee.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''
                     }`}
                     onClick={() => setSelectedEmployeeId(employee.id)}
                   >
@@ -209,23 +209,23 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-gray-900 truncate">
+                      <p className="font-medium text-sm text-slate-900 truncate">
                         {employee.fullName}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs text-slate-500 truncate">
                         {employee.position}
                       </p>
                     </div>
                     <div className="flex items-center gap-1">
                       {(() => {
-                        const userStatus = Array.isArray(usersWithStatus) 
+                        const userStatus = Array.isArray(usersWithStatus)
                           ? usersWithStatus.find((u: any) => u.id === employee.id)
                           : null;
                         const isOnline = userStatus?.isOnline || false;
                         return (
                           <>
-                            <Circle className={`w-2 h-2 ${isOnline ? 'fill-green-500 text-green-500' : 'fill-gray-400 text-gray-400'}`} />
-                            <span className="text-xs text-gray-500">{isOnline ? t('online') : t('offline')}</span>
+                            <Circle className={`w-2 h-2 ${isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
+                            <span className="text-xs text-slate-500">{isOnline ? t('online') : t('offline')}</span>
                           </>
                         );
                       })()}
@@ -233,13 +233,13 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                   </div>
                 ))}
                 {filteredEmployees.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <User className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <div className="text-center py-8 text-slate-500">
+                    <User className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                     <p className="text-sm">
                       {searchQuery ? t('noSearchResults') : t('noConversationsYet')}
                     </p>
                     {!searchQuery && (
-                      <p className="text-xs text-gray-400 mt-1">{t('useSearchToStartChat')}</p>
+                      <p className="text-xs text-slate-400 mt-1">{t('useSearchToStartChat')}</p>
                     )}
                   </div>
                 )}
@@ -252,22 +252,22 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
             {selectedEmployee ? (
               <>
                 {/* Chat Header */}
-                <div className="p-4 border-b border-gray-200 bg-gray-50">
+                <div className="p-4 border-b border-slate-200/70 bg-slate-50/50">
                   <div className="flex items-center gap-3">
                     <Avatar className="w-8 h-8">
                       <AvatarFallback>
                         {selectedEmployee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <p className="font-medium text-gray-900">{selectedEmployee.fullName}</p>
-                      <p className="text-xs text-gray-500">{selectedEmployee.position}</p>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900 truncate">{selectedEmployee.fullName}</p>
+                      <p className="text-xs text-slate-500">{selectedEmployee.position}</p>
                     </div>
-                    <Badge 
-                      variant={selectedEmployee.isOnline ? "default" : "secondary"} 
-                      className={`ml-auto ${selectedEmployee.isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                    <Badge
+                      variant={selectedEmployee.isOnline ? "default" : "secondary"}
+                      className={`ml-auto ${selectedEmployee.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}
                     >
-                      <Circle className={`w-2 h-2 mr-1 ${selectedEmployee.isOnline ? 'fill-green-500 text-green-500' : 'fill-gray-400 text-gray-400'}`} />
+                      <Circle className={`w-2 h-2 mr-1 ${selectedEmployee.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
                       {selectedEmployee.isOnline ? t('online') : t('offline')}
                     </Badge>
                   </div>
@@ -289,16 +289,17 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                             className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                           >
                             <div
-                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
                                 isOwnMessage
-                                  ? 'bg-blue-500 text-white'
-                                  : 'bg-gray-100 text-gray-900'
+                                  ? 'text-white rounded-br-sm'
+                                  : 'bg-slate-100 text-slate-900 rounded-bl-sm'
                               }`}
+                              style={isOwnMessage ? { background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' } : undefined}
                             >
-                              <p className="text-sm">{message.content}</p>
+                              <p className="text-sm leading-relaxed">{message.content}</p>
                               <p
                                 className={`text-xs mt-1 ${
-                                  isOwnMessage ? 'text-blue-100' : 'text-gray-500'
+                                  isOwnMessage ? 'text-white/70' : 'text-slate-500'
                                 }`}
                               >
                                 {(() => {
@@ -314,17 +315,17 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                         );
                       })
                     ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <MessageCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      <div className="text-center py-8 text-slate-500">
+                        <MessageCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                         <p className="text-sm">{t('noMessagesYet')}</p>
-                        <p className="text-xs text-gray-400">{t('startConversation')}</p>
+                        <p className="text-xs text-slate-400 mt-1">{t('startConversation')}</p>
                       </div>
                     )}
                   </div>
                 </ScrollArea>
 
                 {/* Message Input */}
-                <div className="p-4 border-t border-gray-200">
+                <div className="p-4 border-t border-slate-200/70">
                   <div className="flex gap-2">
                     <Input
                       placeholder={t('typeMessage')}
@@ -348,11 +349,11 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-gray-500">
+              <div className="flex-1 flex items-center justify-center text-slate-500">
                 <div className="text-center">
-                  <MessageCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <MessageCircle className="w-12 h-12 mx-auto mb-4 text-slate-300" />
                   <p className="text-lg font-medium mb-2">{t('selectEmployee')}</p>
-                  <p className="text-sm text-gray-400">{t('chatWithEmployees')}</p>
+                  <p className="text-sm text-slate-400">{t('chatWithEmployees')}</p>
                 </div>
               </div>
             )}

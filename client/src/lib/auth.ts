@@ -44,3 +44,15 @@ export function canAccessMarketing(user: SanitizedUser): boolean {
 export function isEmployee(user: SanitizedUser): boolean {
   return user.role === 'employee';
 }
+
+export function isTeacher(user: SanitizedUser): boolean {
+  return user.role === 'teacher';
+}
+
+export function canAccessSales(user: SanitizedUser): boolean {
+  return user.role === 'account_manager' || ['admin', 'head'].includes(user.role);
+}
+
+export function canAccessTeacherWorkspace(user: SanitizedUser): boolean {
+  return user.role === 'teacher' || ['admin', 'head'].includes(user.role);
+}

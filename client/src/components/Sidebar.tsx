@@ -10,6 +10,9 @@ import {
   canAccessFinance,
   canAccessOperations,
   canAccessMarketing,
+  isTeacher,
+  canAccessSales,
+  canAccessTeacherWorkspace,
 } from '@/lib/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
@@ -38,24 +41,30 @@ import {
   Flame,
   Megaphone,
   ChevronDown,
+  ListChecks,
+  Star,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
+interface NavItem {
+  name: string;
+  href: string;
+  icon: any;
+  requiresDocAccess?: boolean;
+  requiresArchiveAccess?: boolean;
+  requiresAnalyticsAccess?: boolean;
+  requiresAdminAccess?: boolean;
+  requiresFinanceAccess?: boolean;
+  requiresOperationsAccess?: boolean;
+  requiresMarketingAccess?: boolean;
+  requiresTeacherAccess?: boolean;
+  requiresSalesAccess?: boolean;
+}
+
 interface NavSection {
   label: string;
-  items: Array<{
-    name: string;
-    href: string;
-    icon: any;
-    requiresDocAccess?: boolean;
-    requiresArchiveAccess?: boolean;
-    requiresAnalyticsAccess?: boolean;
-    requiresAdminAccess?: boolean;
-    requiresFinanceAccess?: boolean;
-    requiresOperationsAccess?: boolean;
-    requiresMarketingAccess?: boolean;
-  }>;
+  items: NavItem[];
 }
 
 export default function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -66,48 +75,231 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   if (!user) return null;
 
-  const sections: NavSection[] = [
-    {
-      label: t('sectionMain'),
-      items: [
-        { name: t('navDashboard'), href: '/', icon: BarChart3 },
-        { name: t('navLeads'), href: '/leads', icon: Users },
-        { name: t('navPipeline'), href: '/pipeline', icon: Flame },
-        { name: t('navStudents'), href: '/students', icon: GraduationCap },
-        { name: t('navCourses'), href: '/courses', icon: BookOpen },
-        { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
-        { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
-        { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
-      ],
-    },
-    {
-      label: t('sectionOperationsFinance'),
-      items: [
-        { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
-        { name: t('navPayments'), href: '/payments', icon: Banknote, requiresFinanceAccess: true },
-        { name: t('navFinance'), href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
-        { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
-        { name: t('navWarmBase'), href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
-        { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
-      ],
-    },
-    {
-      label: t('sectionSystem'),
-      items: [
-        { name: t('navAnalytics'), href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
-        { name: t('navIntegrations'), href: '/integrations', icon: Plug },
-        { name: t('navSettings'), href: '/settings', icon: Settings },
-        { name: t('administration'), href: '/admin', icon: Settings, requiresAdminAccess: true },
-      ],
-    },
-  ];
+  const { role } = user;
 
-  const canAccess = (item: NavSection['items'][0]) => {
+  const isItemActive = (href: string) => {
+    if (href === '/') return location === '/';
+    if (href.includes('?')) return location === href;
+    return location === href || location.startsWith(href + '?');
+  };
+
+  const buildSections = (): NavSection[] => {
+    // ── ACCOUNT MANAGER ──
+    if (role === 'account_manager') {
+      return [
+        {
+          label: t('salesPipeline'),
+          items: [
+            { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
+            { name: t('myLeads'), href: '/sales?tab=leads', icon: Users },
+            { name: t('pipeline'), href: '/sales?tab=pipeline', icon: Flame },
+            { name: t('myStudents'), href: '/sales?tab=students', icon: GraduationCap },
+            { name: t('myTasks'), href: '/sales?tab=tasks', icon: ListChecks },
+          ],
+        },
+        {
+          label: t('sectionOperationsFinance'),
+          items: [
+            { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
+          ],
+        },
+        {
+          label: t('sectionSystem'),
+          items: [
+            { name: t('navSettings'), href: '/settings', icon: Settings },
+          ],
+        },
+      ];
+    }
+
+    // ── TEACHER ──
+    if (role === 'teacher') {
+      return [
+        {
+          label: t('teacher'),
+          items: [
+            { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
+            { name: t('schedule'), href: '/teacher-workspace?tab=schedule', icon: Calendar },
+            { name: t('myGroups'), href: '/teacher-workspace?tab=groups', icon: Layers3 },
+            { name: t('attendanceLabel'), href: '/teacher-workspace?tab=attendance', icon: ClipboardCheck },
+            { name: t('lessonRatings'), href: '/teacher-workspace?tab=surveys', icon: Star },
+          ],
+        },
+        {
+          label: t('sectionMain'),
+          items: [
+            { name: t('navDashboard'), href: '/', icon: BarChart3 },
+            { name: t('navLeads'), href: '/leads', icon: Users },
+            { name: t('navPipeline'), href: '/pipeline', icon: Flame },
+            { name: t('navStudents'), href: '/students', icon: GraduationCap },
+            { name: t('navCourses'), href: '/courses', icon: BookOpen },
+          ],
+        },
+        {
+          label: t('sectionSystem'),
+          items: [
+            { name: t('navSettings'), href: '/settings', icon: Settings },
+          ],
+        },
+      ];
+    }
+
+    // ── OPERATIONS DIRECTOR ──
+    if (role === 'operations_director') {
+      return [
+        {
+          label: t('sectionMain'),
+          items: [
+            { name: t('navDashboard'), href: '/', icon: BarChart3 },
+            { name: t('navLeads'), href: '/leads', icon: Users },
+            { name: t('navPipeline'), href: '/pipeline', icon: Flame },
+            { name: t('navStudents'), href: '/students', icon: GraduationCap },
+            { name: t('navCourses'), href: '/courses', icon: BookOpen },
+            { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
+            { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
+            { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
+          ],
+        },
+        {
+          label: t('sectionTitleAnalytics'),
+          items: [
+            { name: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
+            { name: t('byCourses'), href: '/analytics-workspace?tab=courses', icon: BookOpen },
+            { name: t('bySources'), href: '/analytics-workspace?tab=sources', icon: Megaphone },
+            { name: t('navTeachers'), href: '/analytics-workspace?tab=teachers', icon: UserRoundCheck },
+            { name: t('navGroups'), href: '/analytics-workspace?tab=groups', icon: Layers3 },
+            { name: t('navRisks'), href: '/analytics-workspace?tab=risks', icon: AlertTriangle },
+          ],
+        },
+        {
+          label: t('sectionOperationsFinance'),
+          items: [
+            { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
+            { name: t('navPayments'), href: '/payments', icon: Banknote, requiresFinanceAccess: true },
+            { name: t('navFinance'), href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
+            { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
+            { name: t('navWarmBase'), href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
+            { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
+          ],
+        },
+        {
+          label: t('sectionSystem'),
+          items: [
+            { name: t('navAnalytics'), href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
+            { name: t('navIntegrations'), href: '/integrations', icon: Plug },
+            { name: t('navSettings'), href: '/settings', icon: Settings },
+            { name: t('administration'), href: '/admin', icon: Settings, requiresAdminAccess: true },
+          ],
+        },
+      ];
+    }
+
+    // ── SMM MANAGER ──
+    if (role === 'smm_manager') {
+      return [
+        {
+          label: t('marketingTab'),
+          items: [
+            { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
+            { name: t('leadSources'), href: '/marketing-workspace?tab=sources', icon: Megaphone },
+            { name: t('conversionFunnel'), href: '/marketing-workspace?tab=funnel', icon: Flame },
+            { name: t('warmBase'), href: '/marketing-workspace?tab=warm', icon: Users },
+            { name: t('referralsTab'), href: '/marketing-workspace?tab=referrals', icon: HeartHandshake },
+            { name: t('expenses'), href: '/marketing-workspace?tab=expenses', icon: Banknote },
+          ],
+        },
+        {
+          label: t('sectionSystem'),
+          items: [
+            { name: t('navSettings'), href: '/settings', icon: Settings },
+          ],
+        },
+      ];
+    }
+
+    // ── EMPLOYEE ──
+    if (role === 'employee') {
+      return [
+        {
+          label: t('sectionMain'),
+          items: [
+            { name: t('navDashboard'), href: '/', icon: BarChart3 },
+            { name: t('navLeads'), href: '/leads', icon: Users },
+            { name: t('navPipeline'), href: '/pipeline', icon: Flame },
+            { name: t('navStudents'), href: '/students', icon: GraduationCap },
+            { name: t('navCourses'), href: '/courses', icon: BookOpen },
+            { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
+            { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
+            { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
+          ],
+        },
+        {
+          label: t('sectionOperationsFinance'),
+          items: [
+            { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
+            { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
+            { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
+          ],
+        },
+        {
+          label: t('sectionSystem'),
+          items: [
+            { name: t('navIntegrations'), href: '/integrations', icon: Plug },
+            { name: t('navSettings'), href: '/settings', icon: Settings },
+          ],
+        },
+      ];
+    }
+
+    // ── ADMIN / HEAD (default) ──
+    return [
+      {
+        label: t('sectionMain'),
+        items: [
+          { name: t('navDashboard'), href: '/', icon: BarChart3 },
+          { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap, requiresTeacherAccess: true },
+          { name: t('navLeads'), href: '/leads', icon: Users },
+          { name: t('navPipeline'), href: '/pipeline', icon: Flame },
+          { name: t('navStudents'), href: '/students', icon: GraduationCap },
+          { name: t('navCourses'), href: '/courses', icon: BookOpen },
+          { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
+          { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
+          { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
+        ],
+      },
+      {
+        label: t('sectionOperationsFinance'),
+        items: [
+          { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
+          { name: t('navPayments'), href: '/payments', icon: Banknote, requiresFinanceAccess: true },
+          { name: t('navFinance'), href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
+          { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
+          { name: t('navWarmBase'), href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
+          { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
+        ],
+      },
+      {
+        label: t('sectionSystem'),
+        items: [
+          { name: t('navAnalytics'), href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
+          { name: t('navIntegrations'), href: '/integrations', icon: Plug },
+          { name: t('navSettings'), href: '/settings', icon: Settings },
+          { name: t('administration'), href: '/admin', icon: Settings, requiresAdminAccess: true },
+        ],
+      },
+    ];
+  };
+
+  const sections = buildSections();
+
+  const canAccess = (item: NavItem) => {
+    if (item.requiresTeacherAccess && !isTeacher(user)) return false;
     if (item.requiresAnalyticsAccess && !canAccessAnalytics(user)) return false;
     if (item.requiresAdminAccess && !canAccessAdmin(user)) return false;
     if (item.requiresFinanceAccess && !canAccessFinance(user)) return false;
     if (item.requiresOperationsAccess && !canAccessOperations(user)) return false;
     if (item.requiresMarketingAccess && !canAccessMarketing(user)) return false;
+    if (item.requiresSalesAccess && !canAccessSales(user)) return false;
     return true;
   };
 
@@ -168,10 +360,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                 >
                   {visibleItems.map((item) => {
                     const Icon = item.icon;
-                    const isActive = item.href === '/' ? location === '/' : location.startsWith(item.href);
+                    const isActive = isItemActive(item.href);
 
                     return (
-                      <Tooltip key={item.name}>
+                      <Tooltip key={item.name + item.href}>
                         <TooltipTrigger asChild>
                           <Link href={item.href}>
                             <div

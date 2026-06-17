@@ -31,7 +31,7 @@ interface KanbanLead {
 }
 
 interface KanbanBoardProps {
-  statuses: KanbanStatus[];
+  statuses: readonly KanbanStatus[];
   leads: KanbanLead[];
   onStatusChange: (leadId: number, statusCode: string) => void;
   onQuickAction?: (action: 'qualify' | 'warm' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;

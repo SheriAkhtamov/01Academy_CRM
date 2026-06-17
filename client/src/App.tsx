@@ -10,6 +10,10 @@ import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
 import AcademyPage from '@/pages/academy';
+import SalesDashboard from '@/pages/sales-dashboard';
+import AnalyticsWorkspace from '@/pages/analytics-workspace';
+import TeacherWorkspace from '@/pages/teacher-workspace';
+import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
 
 function LayoutWithSearch({ children }: { children: React.ReactNode }) {
@@ -31,6 +35,17 @@ function LayoutWithSearch({ children }: { children: React.ReactNode }) {
     : undefined;
 
   return <Layout searchData={searchData}>{children}</Layout>;
+}
+
+function RoleBasedHome() {
+  const { user } = useAuth();
+  switch (user?.role) {
+    case 'account_manager': return <SalesDashboard />;
+    case 'teacher': return <TeacherWorkspace />;
+    case 'operations_director': return <AnalyticsWorkspace />;
+    case 'smm_manager': return <MarketingWorkspace />;
+    default: return <AcademyPage section="dashboard" />;
+  }
 }
 
 function Router() {
@@ -55,7 +70,7 @@ function Router() {
   return (
     <LayoutWithSearch>
       <Switch>
-        <Route path="/" component={() => <AcademyPage section="dashboard" />} />
+        <Route path="/" component={RoleBasedHome} />
         <Route path="/leads" component={() => <AcademyPage section="leads" />} />
         <Route path="/pipeline" component={() => <AcademyPage section="pipeline" />} />
         <Route path="/students" component={() => <AcademyPage section="students" />} />
@@ -72,6 +87,10 @@ function Router() {
         <Route path="/referrals" component={() => <AcademyPage section="referrals" />} />
         <Route path="/integrations" component={() => <AcademyPage section="integrations" />} />
         <Route path="/settings" component={() => <AcademyPage section="settings" />} />
+        <Route path="/sales" component={SalesDashboard} />
+        <Route path="/analytics-workspace" component={AnalyticsWorkspace} />
+        <Route path="/teacher-workspace" component={TeacherWorkspace} />
+        <Route path="/marketing-workspace" component={MarketingWorkspace} />
         <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
       </Switch>

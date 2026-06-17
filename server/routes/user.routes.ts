@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { storage } from '../storage';
+import { pool } from '../db';
 import { authService } from '../services/auth';
 import { requireAuth, requireAdmin } from '../middleware/auth.middleware';
 import { emailService } from '../services/email';
@@ -58,6 +59,45 @@ const generateLogin = (fullName: string, role: AcademyRole, existingUsers: Array
     return `${base}.${Date.now().toString(36)}@01academy.local`.toLowerCase();
 };
 
+const syncAcademyTeacherForUser = async (user: {
+    id: number;
+    fullName: string;
+    role: string;
+    isActive?: boolean | null;
+}) => {
+    const existing = await pool.query<{ id: number }>(
+        'SELECT id FROM academy_teachers WHERE user_id = $1 LIMIT 1',
+        [user.id],
+    );
+    const teacherRecord = existing.rows[0];
+
+    if (user.role === 'teacher') {
+        const status = user.isActive === false ? 'dismissed' : 'active';
+
+        if (teacherRecord) {
+            await pool.query(
+                'UPDATE academy_teachers SET full_name = $1, status = $2, updated_at = NOW() WHERE id = $3',
+                [user.fullName, status, teacherRecord.id],
+            );
+            return;
+        }
+
+        await pool.query(
+            `INSERT INTO academy_teachers (user_id, full_name, course_ids, schedule, status)
+             VALUES ($1, $2, '[]'::jsonb, '[]'::jsonb, $3)`,
+            [user.id, user.fullName, status],
+        );
+        return;
+    }
+
+    if (teacherRecord) {
+        await pool.query(
+            'UPDATE academy_teachers SET full_name = $1, status = $2, updated_at = NOW() WHERE id = $3',
+            [user.fullName, 'dismissed', teacherRecord.id],
+        );
+    }
+};
+
 router.get('/', requireAuth, async (req, res) => {
     try {
         const users = await storage.getUsers();
@@ -110,6 +150,8 @@ router.post('/', requireAdmin, async (req, res) => {
             hasReportAccess: hasReportAccess || false,
             isActive: isActive !== undefined ? isActive : true,
         });
+
+        await syncAcademyTeacherForUser(newUser);
 
         try {
             await emailService.sendWelcomeEmail(email, fullName, temporaryPassword);
@@ -273,6 +315,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         const updatedUser = await storage.updateUser(id, updateData);
+        await syncAcademyTeacherForUser(updatedUser);
 
         res.json(authService.sanitizeUser(updatedUser));
     } catch (error) {
@@ -307,6 +350,10 @@ router.delete('/:id', requireAdmin, async (req, res) => {
             return res.status(403).json({ error: 'Cannot delete the last active administrator account.' });
         }
 
+        await pool.query(
+            "UPDATE academy_teachers SET status = 'dismissed', updated_at = NOW() WHERE user_id = $1",
+            [id],
+        );
         await storage.deleteUser(id);
         res.json({ message: 'User deleted successfully' });
     } catch (error) {

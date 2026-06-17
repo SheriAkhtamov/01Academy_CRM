@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'wouter';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -45,7 +44,6 @@ import {
   Plus,
   Search,
   Settings,
-  BarChart3,
   Users,
   Mail,
   Clock,
@@ -91,7 +89,12 @@ const createAiSettingsSchema = (t: any) => z.object({
   clearApiKey: z.boolean().default(false),
 });
 
-export default function Admin() {
+interface AdminProps {
+  mode?: 'admin' | 'employees';
+}
+
+export default function Admin({ mode = 'admin' }: AdminProps) {
+  const isEmployeesPage = mode === 'employees';
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -100,7 +103,7 @@ export default function Admin() {
   const [userCredentials, setUserCredentials] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState('users');
+  const [activeTab, setActiveTab] = useState(isEmployeesPage ? 'users' : 'settings');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -143,6 +146,10 @@ export default function Admin() {
       clearApiKey: false,
     },
   });
+
+  useEffect(() => {
+    setActiveTab(isEmployeesPage ? 'users' : 'settings');
+  }, [isEmployeesPage]);
 
   // Check admin access
   if (!user || !canManageUsers(user)) {
@@ -492,19 +499,6 @@ export default function Admin() {
     { value: 'admin', label: t('admin') },
   ];
 
-  const adminDataSections = [
-    { title: t('navLeads'), text: t('adminDataLeadsDesc'), href: '/leads', icon: Users },
-    { title: t('navPipeline'), text: t('adminDataPipelineDesc'), href: '/pipeline', icon: BarChart3 },
-    { title: t('navStudents'), text: t('adminDataStudentsDesc'), href: '/students', icon: UserCheck },
-    { title: t('navCourses'), text: t('adminDataCoursesDesc'), href: '/courses', icon: FileText },
-    { title: t('navGroups'), text: t('adminDataGroupsDesc'), href: '/groups', icon: Users },
-    { title: t('navLessons'), text: t('adminDataLessonsDesc'), href: '/lessons', icon: Calendar },
-    { title: t('navTeachers'), text: t('adminDataTeachersDesc'), href: '/teachers', icon: UserCheck },
-    { title: t('navPayments'), text: t('adminDataPaymentsDesc'), href: '/payments', icon: Key },
-    { title: t('navFinance'), text: t('adminDataFinanceDesc'), href: '/finance', icon: FileText },
-    { title: t('navIntegrations'), text: t('adminDataIntegrationsDesc'), href: '/integrations', icon: Settings },
-  ];
-
   const userColumns: DataTableColumn<any>[] = [
     {
       key: 'user',
@@ -603,9 +597,9 @@ export default function Admin() {
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
-        title={t('adminWorkspaceTitle')}
-        subtitle={t('adminWorkspaceSubtitle')}
-        actions={
+        title={isEmployeesPage ? t('employees') : t('adminWorkspaceTitle')}
+        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminWorkspaceSubtitle')}
+        actions={isEmployeesPage ? (
           <Button
             className="bg-primary-600 hover:bg-primary-700"
             onClick={() => {
@@ -616,30 +610,25 @@ export default function Admin() {
             <Plus className="h-4 w-4 mr-2" />
             {t('createEmployee')}
           </Button>
-        }
+        ) : undefined}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="users" className="flex items-center space-x-2">
-            <Users className="h-4 w-4" />
-            <span>{t('usersTab')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="data" className="flex items-center space-x-2">
-            <Settings className="h-4 w-4" />
-            <span>{t('dataTab')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center space-x-2">
-            <Settings className="h-4 w-4" />
-            <span>{t('settingsTab')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="reports" className="flex items-center space-x-2">
-            <FileText className="h-4 w-4" />
-            <span>{t('reportsTab')}</span>
-          </TabsTrigger>
-        </TabsList>
+        {!isEmployeesPage && (
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="settings" className="flex items-center space-x-2">
+              <Settings className="h-4 w-4" />
+              <span>{t('settingsTab')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="flex items-center space-x-2">
+              <FileText className="h-4 w-4" />
+              <span>{t('reportsTab')}</span>
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         {/* Users Tab */}
+        {isEmployeesPage && (
         <TabsContent value="users" className="space-y-6">
           {/* User Management Header */}
           <div className="flex items-center justify-between">
@@ -948,36 +937,7 @@ export default function Admin() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="data" className="space-y-6">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">{t('operationalData')}</h2>
-            <p className="text-sm text-slate-500">{t('adminDataDescription')}</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {adminDataSections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <Card key={section.href} className="hover-lift">
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-semibold text-slate-900">{section.title}</h3>
-                        <p className="mt-1 text-sm text-slate-500">{section.text}</p>
-                        <Button asChild variant="outline" size="sm" className="mt-4">
-                          <Link href={section.href}>{t('openSection')}</Link>
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
+        )}
 
         {/* System Settings Tab */}
         <TabsContent value="settings" className="space-y-6">

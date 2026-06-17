@@ -63,7 +63,6 @@ export function useBreadcrumbTitle(fallback: string) {
     '/groups': t('navGroups'),
     '/lessons': t('navLessons'),
     '/attendance': t('navAttendance'),
-    '/teachers': t('navTeachers'),
     '/payments': t('navPayments'),
     '/finance': t('navFinance'),
     '/analytics': t('navAnalytics'),
@@ -73,6 +72,7 @@ export function useBreadcrumbTitle(fallback: string) {
     '/integrations': t('navIntegrations'),
     '/settings': t('navSettings'),
     '/admin': t('administration'),
+    '/employees': t('employees'),
   };
   return map[location] || fallback;
 }

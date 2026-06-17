@@ -25,7 +25,6 @@ import {
 import {
   BarChart3,
   Calendar,
-  ChartBar,
   Settings,
   Users,
   X,
@@ -161,23 +160,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('systemAdministration'),
           items: [
             { name: t('administration'), href: '/admin', icon: Settings },
-          ],
-        },
-        {
-          label: t('dataMaintenance'),
-          items: [
-            { name: t('navLeads'), href: '/leads', icon: Users },
-            { name: t('navPipeline'), href: '/pipeline', icon: Flame },
-            { name: t('navStudents'), href: '/students', icon: GraduationCap },
-            { name: t('navCourses'), href: '/courses', icon: BookOpen },
-            { name: t('navGroups'), href: '/groups', icon: Layers3 },
-            { name: t('navLessons'), href: '/lessons', icon: Calendar },
-            { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck },
-            { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck },
-            { name: t('navPayments'), href: '/payments', icon: Banknote },
-            { name: t('navFinance'), href: '/finance', icon: ChartBar },
-            { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
-            { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
+            { name: t('employees'), href: '/employees', icon: Users },
           ],
         },
         {

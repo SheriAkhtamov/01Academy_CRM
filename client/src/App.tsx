@@ -42,7 +42,7 @@ function RoleBasedHome() {
   const { user } = useAuth();
   switch (user?.role) {
     case 'admin':
-    case 'head': return <Admin />;
+    case 'head': return <Admin mode="admin" />;
     case 'account_manager': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
     case 'operations_director': return <AnalyticsWorkspace />;
@@ -82,27 +82,12 @@ function RoleGuard({
 }
 
 const adminRoles: AcademyRole[] = ['admin', 'head'];
-const salesRoles: AcademyRole[] = ['account_manager', 'admin', 'head'];
-const teacherRoles: AcademyRole[] = ['teacher', 'admin', 'head'];
-const analyticsRoles: AcademyRole[] = ['operations_director', 'admin', 'head'];
-const marketingRoles: AcademyRole[] = ['smm_manager', 'admin', 'head'];
+const salesRoles: AcademyRole[] = ['account_manager'];
+const teacherRoles: AcademyRole[] = ['teacher'];
+const analyticsRoles: AcademyRole[] = ['operations_director'];
+const marketingRoles: AcademyRole[] = ['smm_manager'];
 
 type AcademySection =
-  | 'dashboard'
-  | 'leads'
-  | 'pipeline'
-  | 'students'
-  | 'courses'
-  | 'groups'
-  | 'lessons'
-  | 'teachers'
-  | 'attendance'
-  | 'payments'
-  | 'finance'
-  | 'analytics'
-  | 'risks'
-  | 'warm-base'
-  | 'referrals'
   | 'integrations'
   | 'settings';
 
@@ -135,20 +120,6 @@ function Router() {
     <LayoutWithSearch>
       <Switch>
         <Route path="/" component={RoleBasedHome} />
-        <Route path="/leads" component={() => adminPage('leads')} />
-        <Route path="/pipeline" component={() => adminPage('pipeline')} />
-        <Route path="/students" component={() => adminPage('students')} />
-        <Route path="/courses" component={() => adminPage('courses')} />
-        <Route path="/groups" component={() => adminPage('groups')} />
-        <Route path="/lessons" component={() => adminPage('lessons')} />
-        <Route path="/teachers" component={() => adminPage('teachers')} />
-        <Route path="/attendance" component={() => adminPage('attendance')} />
-        <Route path="/payments" component={() => adminPage('payments')} />
-        <Route path="/finance" component={() => adminPage('finance')} />
-        <Route path="/analytics" component={() => adminPage('analytics')} />
-        <Route path="/risks" component={() => adminPage('risks')} />
-        <Route path="/warm-base" component={() => adminPage('warm-base')} />
-        <Route path="/referrals" component={() => adminPage('referrals')} />
         <Route path="/integrations" component={() => adminPage('integrations')} />
         <Route path="/settings" component={() => adminPage('settings')} />
         <Route path="/sales" component={() => (
@@ -173,7 +144,12 @@ function Router() {
         )} />
         <Route path="/admin" component={() => (
           <RoleGuard allowedRoles={adminRoles}>
-            <Admin />
+            <Admin mode="admin" />
+          </RoleGuard>
+        )} />
+        <Route path="/employees" component={() => (
+          <RoleGuard allowedRoles={adminRoles}>
+            <Admin mode="employees" />
           </RoleGuard>
         )} />
         <Route component={NotFound} />

@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,9 +18,8 @@ import { apiRequest } from '@/lib/queryClient';
 import { MessageCircle, Send, User, Circle, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru, enUS } from 'date-fns/locale';
-import { devLog } from '@/lib/debug';
 
-interface ChatModalProps {
+interface ChatSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -40,7 +39,7 @@ interface Message {
   };
 }
 
-export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
+export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const { t, language } = useTranslation();
   const { user } = useAuth();
   const locale = language === 'en' ? enUS : ru;
@@ -72,7 +71,7 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
   });
 
   // Fetch messages for selected employee
-  const { data: messagesData, isLoading: messagesLoading, error: messagesError } = useQuery({
+  const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: ['/api/messages', selectedEmployeeId],
     queryFn: () => apiRequest('GET', `/api/messages/${selectedEmployeeId}`),
     enabled: open && !!selectedEmployeeId,
@@ -80,20 +79,6 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
 
   // Ensure messages is always an array
   const messages = Array.isArray(messagesData) ? messagesData : [];
-
-  // Debug log
-  devLog('Messages API Debug:', { 
-    messagesData: typeof messagesData === 'object' ? JSON.stringify(messagesData) : messagesData,
-    messages,
-    isArray: Array.isArray(messages),
-    length: messages.length,
-    selectedEmployeeId,
-    messagesLoading,
-    messagesError,
-    url: `/api/messages/${selectedEmployeeId}`,
-    userLogged: !!user?.id,
-    currentUserId: user?.id
-  });
 
   // Filter employees based on search query or show conversation history
   const filteredEmployees = useMemo(() => {
@@ -166,25 +151,31 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
   }, [selectedEmployeeId, employees, conversationEmployees, usersWithStatus]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] p-0">
-        <DialogHeader className="p-6 pb-4">
-          <DialogTitle className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5" />
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+      <SheetContent
+        side="right"
+        showOverlay={false}
+        className="w-[min(960px,calc(100vw-1rem))] max-w-none p-0 sm:max-w-2xl lg:max-w-4xl"
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
+        <SheetHeader className="border-b border-border p-5 pr-12">
+          <SheetTitle className="flex items-center gap-2">
+            <MessageCircle />
             {t('employeeChat')}
-          </DialogTitle>
-          <DialogDescription>
+          </SheetTitle>
+          <SheetDescription>
             {t('chatWithEmployees')}
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
-        <div className="flex h-[60vh]">
+        <div className="flex h-[calc(100vh-101px)] min-h-0">
           {/* Employee List */}
-          <div className="w-1/3 border-r border-gray-200">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="font-medium text-gray-900 mb-3">{t('employees')}</h3>
+          <div className="flex w-40 shrink-0 flex-col border-r border-border sm:w-64 lg:w-72">
+            <div className="border-b border-border p-3 sm:p-4">
+              <h3 className="mb-3 hidden font-medium text-foreground sm:block">{t('employees')}</h3>
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder={t('searchEmployees')}
                   value={searchQuery}
@@ -193,30 +184,30 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                 />
               </div>
             </div>
-            <ScrollArea className="h-full">
+            <ScrollArea className="min-h-0 flex-1">
               <div className="p-2">
                 {filteredEmployees.map((employee: any) => (
                   <div
                     key={employee.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-slate-100 ${
+                    className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted ${
                       selectedEmployeeId === employee.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''
                     }`}
                     onClick={() => setSelectedEmployeeId(employee.id)}
                   >
-                    <Avatar className="w-10 h-10">
+                    <Avatar className="size-10">
                       <AvatarFallback>
                         {employee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-slate-900 truncate">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
                         {employee.fullName}
                       </p>
-                      <p className="text-xs text-slate-500 truncate">
+                      <p className="truncate text-xs text-muted-foreground">
                         {employee.position}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="hidden items-center gap-1 lg:flex">
                       {(() => {
                         const userStatus = Array.isArray(usersWithStatus)
                           ? usersWithStatus.find((u: any) => u.id === employee.id)
@@ -224,8 +215,8 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                         const isOnline = userStatus?.isOnline || false;
                         return (
                           <>
-                            <Circle className={`w-2 h-2 ${isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
-                            <span className="text-xs text-slate-500">{isOnline ? t('online') : t('offline')}</span>
+                            <Circle className={`size-2 ${isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
+                            <span className="text-xs text-muted-foreground">{isOnline ? t('online') : t('offline')}</span>
                           </>
                         );
                       })()}
@@ -233,8 +224,8 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                   </div>
                 ))}
                 {filteredEmployees.length === 0 && (
-                  <div className="text-center py-8 text-slate-500">
-                    <User className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                  <div className="py-8 text-center text-muted-foreground">
+                    <User className="mx-auto mb-2 size-8 opacity-40" />
                     <p className="text-sm">
                       {searchQuery ? t('noSearchResults') : t('noConversationsYet')}
                     </p>
@@ -248,20 +239,20 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
           </div>
 
           {/* Chat Area */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex min-w-0 flex-1 flex-col">
             {selectedEmployee ? (
               <>
                 {/* Chat Header */}
-                <div className="p-4 border-b border-slate-200/70 bg-slate-50/50">
+                <div className="border-b border-border bg-muted/40 p-4">
                   <div className="flex items-center gap-3">
-                    <Avatar className="w-8 h-8">
+                    <Avatar className="size-8">
                       <AvatarFallback>
                         {selectedEmployee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
-                      <p className="font-medium text-slate-900 truncate">{selectedEmployee.fullName}</p>
-                      <p className="text-xs text-slate-500">{selectedEmployee.position}</p>
+                      <p className="truncate font-medium text-foreground">{selectedEmployee.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{selectedEmployee.position}</p>
                     </div>
                     <Badge
                       variant={selectedEmployee.isOnline ? "default" : "secondary"}
@@ -275,7 +266,7 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
 
                 {/* Messages */}
                 <ScrollArea className="flex-1 p-4">
-                  <div className="space-y-4">
+                  <div className="flex flex-col gap-4">
                     {messagesLoading ? (
                       <div className="text-center py-8 text-gray-500">
                         <p className="text-sm">{t('loadingMessages')}</p>
@@ -331,7 +322,7 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                       placeholder={t('typeMessage')}
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => {
+                      onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
                           handleSendMessage();
@@ -343,7 +334,8 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
                       disabled={!newMessage.trim() || sendMessageMutation.isPending}
                       size="icon"
                     >
-                      <Send className="w-4 h-4" />
+                      <Send />
+                      <span className="sr-only">{t('send')}</span>
                     </Button>
                   </div>
                 </div>
@@ -359,7 +351,7 @@ export default function ChatModal({ open, onOpenChange }: ChatModalProps) {
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

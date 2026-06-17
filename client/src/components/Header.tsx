@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck } from 'lucide-react';
-import ChatModal from './modals/ChatModal';
+import ChatSheet from './ux/ChatSheet';
 import SettingsModal from './modals/SettingsModal';
 import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
@@ -216,7 +216,7 @@ export default function Header({
         </div>
       </header>
 
-      <ChatModal
+      <ChatSheet
         open={showChat}
         onOpenChange={setShowChat}
       />

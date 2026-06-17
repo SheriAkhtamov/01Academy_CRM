@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
@@ -20,6 +20,11 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { KanbanBoard } from '@/components/ux/KanbanBoard';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -322,6 +327,99 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   const [teacherFilter, setTeacherFilter] = useState('all');
   const [createdDateFilter, setCreatedDateFilter] = useState('');
   const [paymentDateFilter, setPaymentDateFilter] = useState('');
+  const initialCreationSnapshotRef = useRef('');
+
+  const currentCreationSnapshot = useMemo(() => {
+    switch (creationDialog) {
+      case 'lead':
+        return JSON.stringify(leadForm);
+      case 'payment':
+        return JSON.stringify(paymentForm);
+      case 'course':
+        return JSON.stringify(courseForm);
+      case 'group':
+        return JSON.stringify(groupForm);
+      case 'lesson':
+        return JSON.stringify(lessonForm);
+      case 'generatedLessons':
+        return JSON.stringify(lessonGenerationGroup);
+      case 'teacher':
+        return JSON.stringify(teacherForm);
+      case 'expense':
+        return JSON.stringify(expenseForm);
+      case 'source':
+        return JSON.stringify(sourceForm);
+      default:
+        return '';
+    }
+  }, [
+    courseForm,
+    creationDialog,
+    expenseForm,
+    groupForm,
+    leadForm,
+    lessonForm,
+    lessonGenerationGroup,
+    paymentForm,
+    sourceForm,
+    teacherForm,
+  ]);
+
+  useEffect(() => {
+    initialCreationSnapshotRef.current = creationDialog ? currentCreationSnapshot : '';
+    // Capture only when the dialog type changes; field edits must not replace the baseline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creationDialog]);
+
+  const creationDialogDirty = Boolean(
+    creationDialog
+      && initialCreationSnapshotRef.current
+      && currentCreationSnapshot !== initialCreationSnapshotRef.current,
+  );
+
+  const resetCreationForm = useCallback((dialog: CreationDialog) => {
+    switch (dialog) {
+      case 'lead':
+        setLeadForm(emptyForm);
+        break;
+      case 'payment':
+        setPaymentForm({ leadId: '', studentId: '', amountUzs: '', type: 'full', method: 'transfer', status: 'paid', discount: 'none', period: 'month_1' });
+        break;
+      case 'course':
+        setCourseForm({ name: '', slug: '', ageCategory: '', lessonCount: '24', lessonDurationMinutes: '120', frequency: t('freqDefault'), basePriceUzs: '', discountedPriceUzs: '', program: '[]' });
+        break;
+      case 'group':
+        setGroupForm({ name: '', courseId: '', teacherId: '', maxStudents: '12', startDate: '', status: 'open' });
+        break;
+      case 'lesson':
+        setLessonForm({ groupId: '', lessonNumber: '1', topic: '', scheduledAt: '', status: 'scheduled' });
+        break;
+      case 'teacher':
+        setTeacherForm({ fullName: '', userId: '', status: 'active' });
+        break;
+      case 'expense':
+        setExpenseForm({ sourceId: '', channel: '', campaignName: '', amountUzs: '', periodStart: '', periodEnd: '' });
+        break;
+      case 'source':
+        setSourceForm({ name: '', code: '', channel: 'custom' });
+        break;
+      default:
+        break;
+    }
+  }, [t]);
+
+  const handleCreationDialogState = useCallback((open: boolean) => {
+    if (open) return;
+    resetCreationForm(creationDialog);
+    setCreationDialog(null);
+    setLessonGenerationGroup(null);
+  }, [creationDialog, resetCreationForm]);
+
+  const creationDialogGuard = useUnsavedChangesGuard({
+    open: creationDialog !== null,
+    isDirty: creationDialogDirty,
+    onOpenChange: handleCreationDialogState,
+  });
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/admin'],
@@ -565,7 +663,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         <Input value={leadForm.contactName} onChange={(event) => setLeadForm({ ...leadForm, contactName: event.target.value })} />
       </Field>
       <Field label={t('phone')}>
-        <Input value={leadForm.phone} onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })} />
+        <PhoneInput value={leadForm.phone} onValueChange={(phone) => setLeadForm({ ...leadForm, phone })} />
       </Field>
       <Field label={t('telegramWhatsapp')}>
         <Input value={leadForm.messenger} onChange={(event) => setLeadForm({ ...leadForm, messenger: event.target.value })} />
@@ -648,8 +746,8 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       <Field label={t('lessonCount')}><Input value={courseForm.lessonCount} onChange={(event) => setCourseForm({ ...courseForm, lessonCount: event.target.value })} /></Field>
       <Field label={t('durationMinutes')}><Input value={courseForm.lessonDurationMinutes} onChange={(event) => setCourseForm({ ...courseForm, lessonDurationMinutes: event.target.value })} /></Field>
       <Field label={t('frequency')}><Input value={courseForm.frequency} onChange={(event) => setCourseForm({ ...courseForm, frequency: event.target.value })} /></Field>
-      <Field label={t('price')}><Input value={courseForm.basePriceUzs} onChange={(event) => setCourseForm({ ...courseForm, basePriceUzs: event.target.value })} /></Field>
-      <Field label={t('discountedPrice')}><Input value={courseForm.discountedPriceUzs} onChange={(event) => setCourseForm({ ...courseForm, discountedPriceUzs: event.target.value })} /></Field>
+      <Field label={t('price')}><CurrencyInput value={courseForm.basePriceUzs} onValueChange={(basePriceUzs) => setCourseForm({ ...courseForm, basePriceUzs })} /></Field>
+      <Field label={t('discountedPrice')}><CurrencyInput value={courseForm.discountedPriceUzs} onValueChange={(discountedPriceUzs) => setCourseForm({ ...courseForm, discountedPriceUzs })} /></Field>
       <div className="md:col-span-4">
         <Field label={t('programJSON')}><Textarea rows={4} value={courseForm.program} onChange={(event) => setCourseForm({ ...courseForm, program: event.target.value })} /></Field>
       </div>
@@ -730,7 +828,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           <SelectContent>{data.students.map((student: any) => <SelectItem key={student.id} value={String(student.id)}>{student.studentName}</SelectItem>)}</SelectContent>
         </Select>
       </Field>
-      <Field label={t('amount')}><Input value={paymentForm.amountUzs} onChange={(event) => setPaymentForm({ ...paymentForm, amountUzs: event.target.value })} /></Field>
+      <Field label={t('amount')}><CurrencyInput value={paymentForm.amountUzs} onValueChange={(amountUzs) => setPaymentForm({ ...paymentForm, amountUzs })} /></Field>
       <Field label={t('type')}>
         <Select value={paymentForm.type} onValueChange={(type) => setPaymentForm({ ...paymentForm, type })}>
           <SelectTrigger><SelectValue /></SelectTrigger>
@@ -773,7 +871,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       </Field>
       <Field label={t('channel')}><Input value={expenseForm.channel} onChange={(event) => setExpenseForm({ ...expenseForm, channel: event.target.value })} /></Field>
       <Field label={t('campaign')}><Input value={expenseForm.campaignName} onChange={(event) => setExpenseForm({ ...expenseForm, campaignName: event.target.value })} /></Field>
-      <Field label={t('amount')}><Input value={expenseForm.amountUzs} onChange={(event) => setExpenseForm({ ...expenseForm, amountUzs: event.target.value })} /></Field>
+      <Field label={t('amount')}><CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} /></Field>
       <Field label={t('start')}><Input type="date" value={expenseForm.periodStart} onChange={(event) => setExpenseForm({ ...expenseForm, periodStart: event.target.value })} /></Field>
       <Field label={t('end')}><Input type="date" value={expenseForm.periodEnd} onChange={(event) => setExpenseForm({ ...expenseForm, periodEnd: event.target.value })} /></Field>
       <div className="md:col-span-3 flex justify-end">
@@ -1005,7 +1103,9 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           sortOrder: status.sortOrder,
         }))}
         leads={filteredLeads.map((lead: any) => ({ ...lead, statusCode: lead.statusCode }))}
-        onStatusChange={(leadId, statusCode) => updateLead.mutate({ id: leadId, payload: { statusCode } })}
+        onStatusChange={async (leadId, statusCode) => {
+          await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
+        }}
         onQuickAction={(action, lead) => {
           if (action === 'qualify') updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
           if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
@@ -1770,12 +1870,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       />
       <Dialog
         open={creationDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setCreationDialog(null);
-            setLessonGenerationGroup(null);
-          }
-        }}
+        onOpenChange={creationDialogGuard.handleOpenChange}
       >
         {creationDialog && (
           <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
@@ -1789,6 +1884,11 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           </DialogContent>
         )}
       </Dialog>
+      <UnsavedChangesDialog
+        open={creationDialogGuard.confirmationOpen}
+        onOpenChange={creationDialogGuard.setConfirmationOpen}
+        onDiscard={creationDialogGuard.discardChanges}
+      />
       <div className="mt-6">{content[section]}</div>
     </div>
   );

@@ -15,6 +15,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { PhoneInput } from '@/components/ux/FormattedInputs';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import {
   Dialog,
   DialogContent,
@@ -145,6 +150,29 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       apiKey: '',
       clearApiKey: false,
     },
+  });
+
+  const handleUserModalState = (open: boolean) => {
+    setShowCreateUserModal(open);
+    if (!open) {
+      setSelectedUser(null);
+      userForm.reset();
+    }
+  };
+  const userDialogGuard = useUnsavedChangesGuard({
+    open: showCreateUserModal,
+    isDirty: userForm.formState.isDirty,
+    onOpenChange: handleUserModalState,
+  });
+
+  const handleSettingsModalState = (open: boolean) => {
+    setShowSettingsModal(open);
+    if (!open) settingsForm.reset();
+  };
+  const settingsDialogGuard = useUnsavedChangesGuard({
+    open: showSettingsModal,
+    isDirty: settingsForm.formState.isDirty,
+    onOpenChange: handleSettingsModalState,
   });
 
   useEffect(() => {
@@ -638,7 +666,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 {t('createManageUserAccounts')}
               </p>
             </div>
-            <Dialog open={showCreateUserModal} onOpenChange={setShowCreateUserModal}>
+            <Dialog open={showCreateUserModal} onOpenChange={userDialogGuard.handleOpenChange}>
                 <DialogTrigger asChild>
                   <Button className="bg-primary-600 hover:bg-primary-700">
                     <Plus className="h-4 w-4 mr-2" />
@@ -701,7 +729,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                               <FormItem>
                                 <FormLabel>{t('phone')}</FormLabel>
                                 <FormControl>
-                                  <Input type="tel" placeholder={t('phonePlaceholder')} {...field} />
+                                  <PhoneInput
+                                    ref={field.ref}
+                                    name={field.name}
+                                    value={field.value ?? ''}
+                                    onBlur={field.onBlur}
+                                    onValueChange={field.onChange}
+                                    placeholder={t('phonePlaceholder')}
+                                  />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -808,7 +843,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         </div>
 
                         <div className="flex items-center justify-end space-x-3 pt-4 border-t sticky bottom-0 bg-white">
-                          <Button type="button" variant="outline" onClick={closeUserModal}>
+                          <Button type="button" variant="outline" onClick={() => userDialogGuard.handleOpenChange(false)}>
                             {t('cancel')}
                           </Button>
                           <Button
@@ -828,6 +863,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </div>
                 </DialogContent>
               </Dialog>
+              <UnsavedChangesDialog
+                open={userDialogGuard.confirmationOpen}
+                onOpenChange={userDialogGuard.setConfirmationOpen}
+                onDiscard={userDialogGuard.discardChanges}
+              />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -951,7 +991,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 {t('configureSettings')}
               </p>
             </div>
-            <Dialog open={showSettingsModal} onOpenChange={setShowSettingsModal}>
+            <Dialog open={showSettingsModal} onOpenChange={settingsDialogGuard.handleOpenChange}>
                 <DialogTrigger asChild>
                   <Button className="bg-primary-600 hover:bg-primary-700">
                     <Plus className="h-4 w-4 mr-2" />
@@ -1010,7 +1050,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => setShowSettingsModal(false)}
+                          onClick={() => settingsDialogGuard.handleOpenChange(false)}
                         >
                           {t('cancel')}
                         </Button>
@@ -1026,6 +1066,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </Form>
                 </DialogContent>
               </Dialog>
+              <UnsavedChangesDialog
+                open={settingsDialogGuard.confirmationOpen}
+                onOpenChange={settingsDialogGuard.setConfirmationOpen}
+                onDiscard={settingsDialogGuard.discardChanges}
+              />
           </div>
 
           <Card className="hover-lift">

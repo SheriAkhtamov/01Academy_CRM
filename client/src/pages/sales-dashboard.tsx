@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
@@ -27,6 +27,11 @@ import { KanbanBoard } from '@/components/ux/KanbanBoard';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
+import { PhoneInput } from '@/components/ux/FormattedInputs';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import {
   ACTIVE_PIPELINE_STATUSES,
   LEAD_STATUSES,
@@ -125,6 +130,18 @@ const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
   overdue: 'paymentStatusOverdue',
 };
 
+const EMPTY_LEAD_FORM = {
+  contactName: '',
+  phone: '',
+  messenger: '',
+  studentName: '',
+  studentAge: '',
+  courseId: '',
+  sourceId: '',
+  comment: '',
+  language: 'ru',
+};
+
 function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   title: string;
   value: string | number;
@@ -220,17 +237,7 @@ export default function SalesDashboard() {
   };
 
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
-  const [leadForm, setLeadForm] = useState({
-    contactName: '',
-    phone: '',
-    messenger: '',
-    studentName: '',
-    studentAge: '',
-    courseId: '',
-    sourceId: '',
-    comment: '',
-    language: 'ru',
-  });
+  const [leadForm, setLeadForm] = useState(EMPTY_LEAD_FORM);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -302,7 +309,7 @@ export default function SalesDashboard() {
     }),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
-      setLeadForm({ contactName: '', phone: '', messenger: '', studentName: '', studentAge: '', courseId: '', sourceId: '', comment: '', language: 'ru' });
+      setLeadForm(EMPTY_LEAD_FORM);
       setLeadDialogOpen(false);
       invalidate();
     },
@@ -335,6 +342,20 @@ export default function SalesDashboard() {
     params.set('tab', tab);
     setLocation(`/sales?${params.toString()}`, { replace: true });
   };
+
+  const leadFormDirty = useMemo(
+    () => JSON.stringify(leadForm) !== JSON.stringify(EMPTY_LEAD_FORM),
+    [leadForm],
+  );
+  const handleLeadDialogState = useCallback((open: boolean) => {
+    setLeadDialogOpen(open);
+    if (!open) setLeadForm(EMPTY_LEAD_FORM);
+  }, []);
+  const leadDialogGuard = useUnsavedChangesGuard({
+    open: leadDialogOpen,
+    isDirty: leadFormDirty,
+    onOpenChange: handleLeadDialogState,
+  });
 
   const managerFunnel = useMemo(() => {
     const funnelMap: Record<string, number> = {};
@@ -456,7 +477,7 @@ export default function SalesDashboard() {
         </Tabs>
       </div>
 
-      <Dialog open={leadDialogOpen} onOpenChange={setLeadDialogOpen}>
+      <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('newApplication')}</DialogTitle>
@@ -471,6 +492,11 @@ export default function SalesDashboard() {
           />
         </DialogContent>
       </Dialog>
+      <UnsavedChangesDialog
+        open={leadDialogGuard.confirmationOpen}
+        onOpenChange={leadDialogGuard.setConfirmationOpen}
+        onDiscard={leadDialogGuard.discardChanges}
+      />
     </div>
   );
 }
@@ -660,7 +686,9 @@ function PipelineTab({
           ...lead,
           statusCode: lead.statusCode,
         }))}
-        onStatusChange={(leadId: number, statusCode: string) => updateLead.mutate({ id: leadId, payload: { statusCode } })}
+        onStatusChange={async (leadId: number, statusCode: string) => {
+          await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
+        }}
         onQuickAction={(action: string, lead: any) => {
           if (action === 'qualify') updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
           if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
@@ -913,10 +941,9 @@ function LeadForm({
         />
       </Field>
       <Field label={t('phone')}>
-        <Input
+        <PhoneInput
           value={leadForm.phone}
-          onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })}
-          placeholder="+998..."
+          onValueChange={(phone) => setLeadForm({ ...leadForm, phone })}
         />
       </Field>
       <Field label={t('telegramWhatsapp')}>

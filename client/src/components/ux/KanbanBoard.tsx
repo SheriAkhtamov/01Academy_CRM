@@ -1,14 +1,40 @@
-import { useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  closestCorners,
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, MoreHorizontal, Phone, Send, UserPlus, Wallet } from 'lucide-react';
+import {
+  ArrowRight,
+  GripVertical,
+  MoreHorizontal,
+  Phone,
+  Send,
+  UserPlus,
+  Wallet,
+} from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 
 interface KanbanStatus {
   code: string;
@@ -33,154 +59,376 @@ interface KanbanLead {
 interface KanbanBoardProps {
   statuses: readonly KanbanStatus[];
   leads: KanbanLead[];
-  onStatusChange: (leadId: number, statusCode: string) => void;
+  onStatusChange: (leadId: number, statusCode: string) => void | Promise<void>;
   onQuickAction?: (action: 'qualify' | 'warm' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction?: boolean;
 }
 
-export function KanbanBoard({ statuses, leads, onStatusChange, onQuickAction, isPending, showPaymentAction = true }: KanbanBoardProps) {
-  const { t } = useTranslation();
-  const scrollRef = useRef<HTMLDivElement>(null);
+interface LeadCardContentProps {
+  lead: KanbanLead;
+  currentStatus: KanbanStatus;
+  statuses: readonly KanbanStatus[];
+  onMove: (leadId: number, statusCode: string) => void;
+  onQuickAction?: KanbanBoardProps['onQuickAction'];
+  isPending?: boolean;
+  showPaymentAction: boolean;
+  t: (key: TranslationKey) => string;
+  dragHandle?: React.ReactNode;
+}
 
-  const getLeadsByStatus = (code: string) => leads.filter((lead) => lead.statusCode === code);
-
-  const getNextStatuses = (currentStatus: KanbanStatus) => {
-    return statuses.filter((status) => status.sortOrder > currentStatus.sortOrder);
-  };
-
-  const getPrevStatuses = (currentStatus: KanbanStatus) => {
-    return statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
-  };
+function LeadCardContent({
+  lead,
+  currentStatus,
+  statuses,
+  onMove,
+  onQuickAction,
+  isPending,
+  showPaymentAction,
+  t,
+  dragHandle,
+}: LeadCardContentProps) {
+  const nextStatuses = statuses.filter((status) => status.sortOrder > currentStatus.sortOrder);
+  const prevStatuses = statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
 
   return (
-    <div ref={scrollRef} className="-mx-2 overflow-x-auto pb-2">
-      <div className="flex gap-4 min-w-max px-2">
-        {statuses.map((status) => {
-          const statusLeads = getLeadsByStatus(status.code);
-          const nextStatuses = getNextStatuses(status);
-          const prevStatuses = getPrevStatuses(status);
-
-          return (
-            <div
-              key={status.code}
-              className="w-80 flex-shrink-0 flex flex-col rounded-xl bg-slate-50/60 border border-slate-200/70 max-h-[calc(100vh-260px)]"
-            >
-              <div className="flex items-center justify-between gap-2 p-4 pb-3 shrink-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: status.color }} />
-                  <span className="text-sm font-semibold text-slate-700 truncate">{status.name}</span>
-                </div>
-                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white border border-slate-200 px-1.5 text-xs font-semibold text-slate-600 shadow-2xs">
-                  {statusLeads.length}
-                </span>
-              </div>
-
-              <div className="p-3 pt-0 space-y-2.5 flex-1 overflow-y-auto">
-                {statusLeads.map((lead) => (
-                  <div
-                    key={lead.id}
-                    className="rounded-lg border border-slate-200/80 bg-white p-3 shadow-2xs transition-all duration-200 hover:shadow-md hover:border-slate-300 hover:-translate-y-0.5 group"
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-foreground">{lead.contactName}</div>
+          {lead.phone ? <div className="truncate text-xs text-muted-foreground">{lead.phone}</div> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {dragHandle}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 opacity-50 transition-opacity group-hover:opacity-100"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <MoreHorizontal />
+                <span className="sr-only">{t('actions')}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuGroup>
+                {nextStatuses.slice(0, 3).map((nextStatus) => (
+                  <DropdownMenuItem
+                    key={nextStatus.code}
+                    onClick={() => onMove(lead.id, nextStatus.code)}
+                    disabled={isPending}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-sm text-slate-900 truncate">{lead.contactName}</div>
-                        {lead.phone && <div className="text-xs text-slate-500 truncate">{lead.phone}</div>}
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 -mr-1 -mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <MoreHorizontal className="h-4 w-4 text-slate-400" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          {nextStatuses.slice(0, 3).map((nextStatus) => (
-                            <DropdownMenuItem
-                              key={nextStatus.code}
-                              onClick={() => onStatusChange(lead.id, nextStatus.code)}
-                              disabled={isPending}
-                            >
-                              <ArrowRight className="h-4 w-4 mr-2" />
-                              {t('moveTo')} {nextStatus.name}
-                            </DropdownMenuItem>
-                          ))}
-                          {prevStatuses.length > 0 && nextStatuses.length > 0 && <hr className="my-1 border-slate-100" />}
-                          {prevStatuses.slice(-2).map((prevStatus) => (
-                            <DropdownMenuItem
-                              key={prevStatus.code}
-                              onClick={() => onStatusChange(lead.id, prevStatus.code)}
-                              disabled={isPending}
-                            >
-                              {t('returnTo')} {prevStatus.name}
-                            </DropdownMenuItem>
-                          ))}
-                          <hr className="my-1 border-slate-100" />
-                          <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)}>
-                            <Phone className="h-4 w-4 mr-2" /> {t('call')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)}>
-                            <Send className="h-4 w-4 mr-2" /> {t('write')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {lead.courseName && <Badge variant="secondary" className="text-xs">{lead.courseName}</Badge>}
-                      {lead.sourceName && <Badge variant="outline" className="text-xs">{lead.sourceName}</Badge>}
-                      {lead.studentAge && <Badge variant="outline" className="text-xs">{lead.studentAge} {t('years')}</Badge>}
-                    </div>
-
-                    <div className="mt-3 flex gap-1 flex-wrap">
-                      {nextStatuses.slice(0, 1).map((nextStatus) => (
-                        <Button
-                          key={nextStatus.code}
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => onStatusChange(lead.id, nextStatus.code)}
-                          disabled={isPending}
-                        >
-                          <ArrowRight className="h-3 w-3 mr-1" /> {nextStatus.name}
-                        </Button>
-                      ))}
-                      {showPaymentAction && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs px-2"
-                          onClick={() => onQuickAction?.('payment', lead)}
-                        >
-                          <Wallet className="h-3 w-3 mr-1" /> {t('payment')}
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs px-2"
-                        onClick={() => onQuickAction?.('qualify', lead)}
-                      >
-                        <UserPlus className="h-3 w-3 mr-1" /> {t('qualify')}
-                      </Button>
-                    </div>
-                  </div>
+                    <ArrowRight />
+                    {t('moveTo')} {nextStatus.name}
+                  </DropdownMenuItem>
                 ))}
-                {statusLeads.length === 0 && (
-                  <div className="py-8 text-center">
-                    <div className="mx-auto h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center mb-2">
-                      <ArrowRight className="h-5 w-5 text-slate-300" />
-                    </div>
-                    <p className="text-xs text-slate-400">{t('noLeadsInStage')}</p>
-                  </div>
-                )}
-              </div>
+              </DropdownMenuGroup>
+              {prevStatuses.length > 0 && nextStatuses.length > 0 ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuGroup>
+                {prevStatuses.slice(-2).map((prevStatus) => (
+                  <DropdownMenuItem
+                    key={prevStatus.code}
+                    onClick={() => onMove(lead.id, prevStatus.code)}
+                    disabled={isPending}
+                  >
+                    {t('returnTo')} {prevStatus.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)}>
+                  <Phone /> {t('call')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)}>
+                  <Send /> {t('write')}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {lead.courseName ? <Badge variant="secondary">{lead.courseName}</Badge> : null}
+        {lead.sourceName ? <Badge variant="outline">{lead.sourceName}</Badge> : null}
+        {lead.studentAge ? <Badge variant="outline">{lead.studentAge} {t('years')}</Badge> : null}
+      </div>
+
+      <div
+        className="mt-3 flex flex-wrap gap-1"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {nextStatuses.slice(0, 1).map((nextStatus) => (
+          <Button
+            key={nextStatus.code}
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => onMove(lead.id, nextStatus.code)}
+            disabled={isPending}
+          >
+            <ArrowRight data-icon="inline-start" /> {nextStatus.name}
+          </Button>
+        ))}
+        {showPaymentAction ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => onQuickAction?.('payment', lead)}
+          >
+            <Wallet data-icon="inline-start" /> {t('payment')}
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => onQuickAction?.('qualify', lead)}
+        >
+          <UserPlus data-icon="inline-start" /> {t('qualify')}
+        </Button>
+      </div>
+    </>
+  );
+}
+
+interface DraggableLeadCardProps extends Omit<LeadCardContentProps, 'dragHandle'> {}
+
+function DraggableLeadCard(props: DraggableLeadCardProps) {
+  const { lead, currentStatus, isPending, t } = props;
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `lead-${lead.id}`,
+    data: { leadId: lead.id, statusCode: currentStatus.code },
+    disabled: isPending,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform) }}
+      className={cn(
+        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing',
+        isDragging && 'opacity-30',
+      )}
+      {...listeners}
+    >
+      <LeadCardContent
+        {...props}
+        dragHandle={(
+          <Button
+            ref={setActivatorNodeRef}
+            variant="ghost"
+            size="icon"
+            className="size-7 cursor-grab text-muted-foreground active:cursor-grabbing"
+            aria-label={t('dragLeadHint')}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical />
+          </Button>
+        )}
+      />
+    </div>
+  );
+}
+
+interface KanbanColumnProps {
+  status: KanbanStatus;
+  leads: KanbanLead[];
+  statuses: readonly KanbanStatus[];
+  onMove: (leadId: number, statusCode: string) => void;
+  onQuickAction?: KanbanBoardProps['onQuickAction'];
+  isPending?: boolean;
+  showPaymentAction: boolean;
+  t: (key: TranslationKey) => string;
+}
+
+function KanbanColumn({
+  status,
+  leads,
+  statuses,
+  onMove,
+  onQuickAction,
+  isPending,
+  showPaymentAction,
+  t,
+}: KanbanColumnProps) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `status-${status.code}`,
+    data: { statusCode: status.code },
+    disabled: isPending,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'flex max-h-[calc(100vh-260px)] w-80 shrink-0 flex-col rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
+        isOver && 'border-primary bg-primary/5 shadow-md',
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 p-4 pb-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="size-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: status.color }}
+          />
+          <span className="truncate text-sm font-semibold text-foreground">{status.name}</span>
+        </div>
+        <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-1.5 text-xs font-semibold text-muted-foreground shadow-2xs">
+          {leads.length}
+        </span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3 pt-0">
+        {leads.map((lead) => (
+          <DraggableLeadCard
+            key={lead.id}
+            lead={lead}
+            currentStatus={status}
+            statuses={statuses}
+            onMove={onMove}
+            onQuickAction={onQuickAction}
+            isPending={isPending}
+            showPaymentAction={showPaymentAction}
+            t={t}
+          />
+        ))}
+        {leads.length === 0 ? (
+          <div className="flex flex-col items-center py-8 text-center">
+            <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-muted">
+              <ArrowRight className="text-muted-foreground/40" />
             </div>
-          );
-        })}
+            <p className="text-xs text-muted-foreground">{t('noLeadsInStage')}</p>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-// Add statusCode to lead type for internal filtering
-KanbanBoard.defaultProps = {};
+export function KanbanBoard({
+  statuses,
+  leads,
+  onStatusChange,
+  onQuickAction,
+  isPending,
+  showPaymentAction = true,
+}: KanbanBoardProps) {
+  const { t } = useTranslation();
+  const [boardLeads, setBoardLeads] = useState(leads);
+  const [activeLeadId, setActiveLeadId] = useState<number | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  useEffect(() => {
+    setBoardLeads(leads);
+  }, [leads]);
+
+  const statusesByCode = useMemo(
+    () => new Map(statuses.map((status) => [status.code, status])),
+    [statuses],
+  );
+
+  const activeLead = activeLeadId === null
+    ? null
+    : boardLeads.find((lead) => lead.id === activeLeadId) ?? null;
+
+  const moveLead = useCallback((leadId: number, statusCode: string) => {
+    const previousLeads = boardLeads;
+    const lead = previousLeads.find((item) => item.id === leadId);
+    if (!lead || lead.statusCode === statusCode || !statusesByCode.has(statusCode)) return;
+
+    setBoardLeads((current) => current.map((item) => (
+      item.id === leadId ? { ...item, statusCode } : item
+    )));
+
+    Promise.resolve(onStatusChange(leadId, statusCode)).catch(() => {
+      setBoardLeads(previousLeads);
+    });
+  }, [boardLeads, onStatusChange, statusesByCode]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveLeadId(Number(event.active.data.current?.leadId));
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const leadId = Number(event.active.data.current?.leadId);
+    const statusCode = String(event.over?.data.current?.statusCode ?? '');
+    setActiveLeadId(null);
+
+    if (Number.isFinite(leadId) && statusCode) {
+      moveLead(leadId, statusCode);
+    }
+  }, [moveLead]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+        <GripVertical />
+        <span>{t('dragLeadHint')}</span>
+      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragCancel={() => setActiveLeadId(null)}
+        onDragEnd={handleDragEnd}
+        accessibility={{
+          announcements: {
+            onDragStart: () => t('dragLeadHint'),
+            onDragOver: () => t('dragLeadHint'),
+            onDragEnd: ({ over }) => over ? t('dragLeadAnnouncement') : t('dragLeadHint'),
+            onDragCancel: () => t('dragLeadHint'),
+          },
+        }}
+      >
+        <div className="-mx-2 overflow-x-auto pb-2">
+          <div className="flex min-w-max gap-4 px-2">
+            {statuses.map((status) => (
+              <KanbanColumn
+                key={status.code}
+                status={status}
+                leads={boardLeads.filter((lead) => lead.statusCode === status.code)}
+                statuses={statuses}
+                onMove={moveLead}
+                onQuickAction={onQuickAction}
+                isPending={isPending}
+                showPaymentAction={showPaymentAction}
+                t={t}
+              />
+            ))}
+          </div>
+        </div>
+        <DragOverlay>
+          {activeLead ? (
+            <div className="w-80 rounded-lg border border-primary/30 bg-card p-3 shadow-xl">
+              <LeadCardContent
+                lead={activeLead}
+                currentStatus={statusesByCode.get(activeLead.statusCode) ?? statuses[0]}
+                statuses={statuses}
+                onMove={() => undefined}
+                onQuickAction={undefined}
+                showPaymentAction={showPaymentAction}
+                t={t}
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  );
+}

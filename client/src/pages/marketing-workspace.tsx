@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -13,6 +13,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { CurrencyInput } from '@/components/ux/FormattedInputs';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import {
   Dialog,
   DialogContent,
@@ -39,6 +44,15 @@ import {
   Send,
   Calculator,
 } from 'lucide-react';
+
+const EMPTY_EXPENSE_FORM = {
+  sourceId: '',
+  channel: '',
+  campaignName: '',
+  amountUzs: '',
+  periodStart: '',
+  periodEnd: '',
+};
 
 function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   title: string;
@@ -133,14 +147,7 @@ export default function MarketingWorkspace() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('sources');
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({
-    sourceId: '',
-    channel: '',
-    campaignName: '',
-    amountUzs: '',
-    periodStart: '',
-    periodEnd: '',
-  });
+  const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
   const [warmDateFilter, setWarmDateFilter] = useState('');
   const [expensePeriodFilter, setExpensePeriodFilter] = useState('');
@@ -170,7 +177,7 @@ export default function MarketingWorkspace() {
     }),
     onSuccess: () => {
       toast({ title: t('expenseSaved') });
-      setExpenseForm({ sourceId: '', channel: '', campaignName: '', amountUzs: '', periodStart: '', periodEnd: '' });
+      setExpenseForm(EMPTY_EXPENSE_FORM);
       setExpenseDialogOpen(false);
       invalidate();
     },
@@ -222,6 +229,20 @@ export default function MarketingWorkspace() {
       String(exp.periodStart || exp.createdAt).startsWith(expensePeriodFilter)
     );
   }, [expenses, expensePeriodFilter]);
+
+  const expenseFormDirty = useMemo(
+    () => JSON.stringify(expenseForm) !== JSON.stringify(EMPTY_EXPENSE_FORM),
+    [expenseForm],
+  );
+  const handleExpenseDialogState = useCallback((open: boolean) => {
+    setExpenseDialogOpen(open);
+    if (!open) setExpenseForm(EMPTY_EXPENSE_FORM);
+  }, []);
+  const expenseDialogGuard = useUnsavedChangesGuard({
+    open: expenseDialogOpen,
+    isDirty: expenseFormDirty,
+    onOpenChange: handleExpenseDialogState,
+  });
 
   const referralStats = useMemo(() => {
     const totalReferrals = referrals.length;
@@ -754,7 +775,7 @@ export default function MarketingWorkspace() {
       </Tabs>
 
       {/* ─── Expense Dialog ─── */}
-      <Dialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen}>
+      <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('marketingExpenseTitle')}</DialogTitle>
@@ -778,7 +799,7 @@ export default function MarketingWorkspace() {
               <Input value={expenseForm.campaignName} onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })} />
             </Field>
             <Field label={t('amount')}>
-              <Input value={expenseForm.amountUzs} onChange={(e) => setExpenseForm({ ...expenseForm, amountUzs: e.target.value })} />
+              <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
             </Field>
             <Field label={t('start')}>
               <Input type="date" value={expenseForm.periodStart} onChange={(e) => setExpenseForm({ ...expenseForm, periodStart: e.target.value })} />
@@ -787,7 +808,7 @@ export default function MarketingWorkspace() {
               <Input type="date" value={expenseForm.periodEnd} onChange={(e) => setExpenseForm({ ...expenseForm, periodEnd: e.target.value })} />
             </Field>
             <div className="md:col-span-2 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setExpenseDialogOpen(false)}>{t('cancel')}</Button>
+              <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
               <Button onClick={() => createExpense.mutate()} disabled={createExpense.isPending}>
                 {createExpense.isPending ? t('saving') : t('saveExpense')}
               </Button>
@@ -795,6 +816,11 @@ export default function MarketingWorkspace() {
           </div>
         </DialogContent>
       </Dialog>
+      <UnsavedChangesDialog
+        open={expenseDialogGuard.confirmationOpen}
+        onOpenChange={expenseDialogGuard.setConfirmationOpen}
+        onDiscard={expenseDialogGuard.discardChanges}
+      />
     </div>
   );
 }

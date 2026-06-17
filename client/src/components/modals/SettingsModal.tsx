@@ -26,6 +26,11 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { PhoneInput } from '@/components/ux/FormattedInputs';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import {
   Select,
   SelectContent,
@@ -71,6 +76,11 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       role: (user?.role as AcademyRole) || 'employee',
       hasReportAccess: user?.hasReportAccess || false,
     },
+  });
+  const settingsDialogGuard = useUnsavedChangesGuard({
+    open,
+    isDirty: form.formState.isDirty,
+    onOpenChange,
   });
 
   // Reset form when user data changes or modal opens
@@ -120,8 +130,9 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+    <>
+      <Dialog open={open} onOpenChange={settingsDialogGuard.handleOpenChange}>
+        <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
@@ -197,7 +208,15 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                       {t('phone')}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder={t('enterPhone')} />
+                      <PhoneInput
+                        ref={field.ref}
+                        name={field.name}
+                        value={field.value ?? ''}
+                        onBlur={field.onBlur}
+                        onValueChange={field.onChange}
+                        placeholder={t('phonePlaceholder')}
+                        aria-label={t('enterPhone')}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -293,7 +312,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={() => settingsDialogGuard.handleOpenChange(false)}
                 disabled={updateProfileMutation.isPending}
               >
                 {t('cancel')}
@@ -317,7 +336,13 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             </div>
           </form>
         </Form>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+      <UnsavedChangesDialog
+        open={settingsDialogGuard.confirmationOpen}
+        onOpenChange={settingsDialogGuard.setConfirmationOpen}
+        onDiscard={settingsDialogGuard.discardChanges}
+      />
+    </>
   );
 }

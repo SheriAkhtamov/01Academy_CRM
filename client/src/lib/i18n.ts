@@ -144,7 +144,6 @@ export const translations = {
   emailLogin: { en: 'Email (Login)', ru: 'Email (Логин)' },
   emailPlaceholder: { en: 'john@company.com', ru: 'ivan@example.com' },
   emailSettings: { en: 'Email Settings', ru: 'Настройки email' },
-  employee: { en: 'Employee', ru: 'Сотрудник' },
   employeeChat: { en: 'Employee Chat', ru: 'Чат с сотрудниками' },
   employees: { en: 'Employees', ru: 'Сотрудники' },
   end: { en: 'End', ru: 'Окончание' },

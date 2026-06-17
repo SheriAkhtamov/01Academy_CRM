@@ -41,10 +41,6 @@ export function canAccessMarketing(user: SanitizedUser): boolean {
   return ['admin', 'head', 'account_manager', 'smm_manager'].includes(user.role);
 }
 
-export function isEmployee(user: SanitizedUser): boolean {
-  return user.role === 'employee';
-}
-
 export function isTeacher(user: SanitizedUser): boolean {
   return user.role === 'teacher';
 }

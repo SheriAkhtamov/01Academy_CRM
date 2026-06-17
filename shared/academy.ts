@@ -7,7 +7,6 @@ export const ACADEMY_ROLES = [
   "teacher",
   "operations_director",
   "smm_manager",
-  "employee",
 ] as const;
 
 export type AcademyRole = (typeof ACADEMY_ROLES)[number];
@@ -19,7 +18,6 @@ export const ACADEMY_ROLE_LABELS: Record<AcademyRole, { en: string; ru: string }
   teacher: { en: "Teacher", ru: "Преподаватель" },
   operations_director: { en: "Operations Director", ru: "Операционный директор" },
   smm_manager: { en: "SMM Manager", ru: "SMM-менеджер" },
-  employee: { en: "Employee", ru: "Сотрудник" },
 };
 
 export const LEAD_STATUSES = [

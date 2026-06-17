@@ -57,10 +57,10 @@ describe("auth middleware", () => {
   it("blocks non-admin users from admin routes", async () => {
     mockStorage.getUser.mockResolvedValue({
       id: 7,
-      fullName: "Employee User",
-      email: "employee@example.com",
+      fullName: "Teacher User",
+      email: "teacher@example.com",
       password: "hashed",
-      role: "employee",
+      role: "teacher",
       isActive: true,
       hasReportAccess: false,
     });
@@ -76,13 +76,13 @@ describe("auth middleware", () => {
     expect(response.body).toEqual({ error: "Admin access required" });
   });
 
-  it("blocks employees from sales routes", async () => {
+  it("blocks teachers from sales routes", async () => {
     mockStorage.getUser.mockResolvedValue({
       id: 7,
-      fullName: "Employee User",
-      email: "employee@example.com",
+      fullName: "Teacher User",
+      email: "teacher@example.com",
       password: "hashed",
-      role: "employee",
+      role: "teacher",
       isActive: true,
       hasReportAccess: false,
     });

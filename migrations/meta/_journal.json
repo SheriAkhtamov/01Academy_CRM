@@ -8,6 +8,20 @@
       "when": 1781481065971,
       "tag": "0000_initial_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781733342957,
+      "tag": "0001_remove_employee_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781733421870,
+      "tag": "0002_enforce_valid_roles",
+      "breakpoints": true
     }
   ]
 }

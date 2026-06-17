@@ -73,7 +73,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       position: user?.position || '',
       phone: user?.phone || '',
       location: '',
-      role: (user?.role as AcademyRole) || 'employee',
+      role: (user?.role as AcademyRole) || 'account_manager',
       hasReportAccess: user?.hasReportAccess || false,
     },
   });
@@ -92,7 +92,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         position: user.position || '',
         phone: user.phone || '',
         location: '',
-        role: (user.role as AcademyRole) || 'employee',
+        role: (user.role as AcademyRole) || 'account_manager',
         hasReportAccess: user.hasReportAccess || false,
       });
     }
@@ -304,7 +304,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             {/* Current Role Info */}
             <div className="bg-slate-50/60 border border-slate-200/70 p-4 rounded-xl">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentRole')}</h3>
-              <p className="text-slate-700 font-medium">{getRoleLabel(user?.role || 'employee')}</p>
+              <p className="text-slate-700 font-medium">{getRoleLabel(user?.role || 'account_manager')}</p>
             </div>
 
             {/* Form Actions */}

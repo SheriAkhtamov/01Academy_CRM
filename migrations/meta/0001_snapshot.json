@@ -1,6 +1,6 @@
 {
-  "id": "68d8f31e-9eaf-4dbb-9510-8aa12e7f23f2",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "81c61ac2-a812-44f7-b8ac-fd6301989dc7",
+  "prevId": "68d8f31e-9eaf-4dbb-9510-8aa12e7f23f2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -83,50 +83,50 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_attendance_lesson_id_academy_lessons_id_fk": {
           "name": "academy_attendance_lesson_id_academy_lessons_id_fk",
           "tableFrom": "academy_attendance",
-          "tableTo": "academy_lessons",
           "columnsFrom": [
             "lesson_id"
           ],
+          "tableTo": "academy_lessons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_attendance_student_id_academy_students_id_fk": {
           "name": "academy_attendance_student_id_academy_students_id_fk",
           "tableFrom": "academy_attendance",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_attendance_marked_by_users_id_fk": {
           "name": "academy_attendance_marked_by_users_id_fk",
           "tableFrom": "academy_attendance",
-          "tableTo": "users",
           "columnsFrom": [
             "marked_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -201,9 +201,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_communications_student_idx": {
           "name": "academy_communications_student_idx",
@@ -216,50 +216,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_communications_lead_id_academy_leads_id_fk": {
           "name": "academy_communications_lead_id_academy_leads_id_fk",
           "tableFrom": "academy_communications",
-          "tableTo": "academy_leads",
           "columnsFrom": [
             "lead_id"
           ],
+          "tableTo": "academy_leads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_communications_student_id_academy_students_id_fk": {
           "name": "academy_communications_student_id_academy_students_id_fk",
           "tableFrom": "academy_communications",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_communications_created_by_users_id_fk": {
           "name": "academy_communications_created_by_users_id_fk",
           "tableFrom": "academy_communications",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -385,9 +385,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -485,9 +485,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_groups_teacher_idx": {
           "name": "academy_groups_teacher_idx",
@@ -500,37 +500,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_groups_course_id_academy_courses_id_fk": {
           "name": "academy_groups_course_id_academy_courses_id_fk",
           "tableFrom": "academy_groups",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "academy_groups_teacher_id_academy_teachers_id_fk": {
           "name": "academy_groups_teacher_id_academy_teachers_id_fk",
           "tableFrom": "academy_groups",
-          "tableTo": "academy_teachers",
           "columnsFrom": [
             "teacher_id"
           ],
+          "tableTo": "academy_teachers",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -613,9 +613,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -707,9 +707,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -779,37 +779,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_lead_stage_history_lead_id_academy_leads_id_fk": {
           "name": "academy_lead_stage_history_lead_id_academy_leads_id_fk",
           "tableFrom": "academy_lead_stage_history",
-          "tableTo": "academy_leads",
           "columnsFrom": [
             "lead_id"
           ],
+          "tableTo": "academy_leads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_lead_stage_history_changed_by_users_id_fk": {
           "name": "academy_lead_stage_history_changed_by_users_id_fk",
           "tableFrom": "academy_lead_stage_history",
-          "tableTo": "users",
           "columnsFrom": [
             "changed_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -894,9 +894,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1158,9 +1158,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_leads_status_idx": {
           "name": "academy_leads_status_idx",
@@ -1173,9 +1173,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_leads_manager_idx": {
           "name": "academy_leads_manager_idx",
@@ -1188,9 +1188,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_leads_source_idx": {
           "name": "academy_leads_source_idx",
@@ -1203,102 +1203,102 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_leads_course_id_academy_courses_id_fk": {
           "name": "academy_leads_course_id_academy_courses_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_leads_source_id_academy_lead_sources_id_fk": {
           "name": "academy_leads_source_id_academy_lead_sources_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "academy_lead_sources",
           "columnsFrom": [
             "source_id"
           ],
+          "tableTo": "academy_lead_sources",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "academy_leads_manager_id_users_id_fk": {
           "name": "academy_leads_manager_id_users_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "users",
           "columnsFrom": [
             "manager_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_leads_demo_course_id_academy_courses_id_fk": {
           "name": "academy_leads_demo_course_id_academy_courses_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "demo_course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_leads_offer_course_id_academy_courses_id_fk": {
           "name": "academy_leads_offer_course_id_academy_courses_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "offer_course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_leads_enrolled_group_id_academy_groups_id_fk": {
           "name": "academy_leads_enrolled_group_id_academy_groups_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "enrolled_group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_leads_created_by_users_id_fk": {
           "name": "academy_leads_created_by_users_id_fk",
           "tableFrom": "academy_leads",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1367,37 +1367,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_lesson_status_history_lesson_id_academy_lessons_id_fk": {
           "name": "academy_lesson_status_history_lesson_id_academy_lessons_id_fk",
           "tableFrom": "academy_lesson_status_history",
-          "tableTo": "academy_lessons",
           "columnsFrom": [
             "lesson_id"
           ],
+          "tableTo": "academy_lessons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_lesson_status_history_changed_by_users_id_fk": {
           "name": "academy_lesson_status_history_changed_by_users_id_fk",
           "tableFrom": "academy_lesson_status_history",
-          "tableTo": "users",
           "columnsFrom": [
             "changed_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1484,76 +1484,76 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_lesson_surveys_student_id_academy_students_id_fk": {
           "name": "academy_lesson_surveys_student_id_academy_students_id_fk",
           "tableFrom": "academy_lesson_surveys",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_lesson_surveys_lesson_id_academy_lessons_id_fk": {
           "name": "academy_lesson_surveys_lesson_id_academy_lessons_id_fk",
           "tableFrom": "academy_lesson_surveys",
-          "tableTo": "academy_lessons",
           "columnsFrom": [
             "lesson_id"
           ],
+          "tableTo": "academy_lessons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_lesson_surveys_group_id_academy_groups_id_fk": {
           "name": "academy_lesson_surveys_group_id_academy_groups_id_fk",
           "tableFrom": "academy_lesson_surveys",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_lesson_surveys_teacher_id_academy_teachers_id_fk": {
           "name": "academy_lesson_surveys_teacher_id_academy_teachers_id_fk",
           "tableFrom": "academy_lesson_surveys",
-          "tableTo": "academy_teachers",
           "columnsFrom": [
             "teacher_id"
           ],
+          "tableTo": "academy_teachers",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_lesson_surveys_course_id_academy_courses_id_fk": {
           "name": "academy_lesson_surveys_course_id_academy_courses_id_fk",
           "tableFrom": "academy_lesson_surveys",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1655,9 +1655,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_lessons_teacher_idx": {
           "name": "academy_lessons_teacher_idx",
@@ -1670,50 +1670,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_lessons_group_id_academy_groups_id_fk": {
           "name": "academy_lessons_group_id_academy_groups_id_fk",
           "tableFrom": "academy_lessons",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_lessons_course_id_academy_courses_id_fk": {
           "name": "academy_lessons_course_id_academy_courses_id_fk",
           "tableFrom": "academy_lessons",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_lessons_teacher_id_academy_teachers_id_fk": {
           "name": "academy_lessons_teacher_id_academy_teachers_id_fk",
           "tableFrom": "academy_lessons",
-          "tableTo": "academy_teachers",
           "columnsFrom": [
             "teacher_id"
           ],
+          "tableTo": "academy_teachers",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1801,37 +1801,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_marketing_expenses_source_id_academy_lead_sources_id_fk": {
           "name": "academy_marketing_expenses_source_id_academy_lead_sources_id_fk",
           "tableFrom": "academy_marketing_expenses",
-          "tableTo": "academy_lead_sources",
           "columnsFrom": [
             "source_id"
           ],
+          "tableTo": "academy_lead_sources",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_marketing_expenses_created_by_users_id_fk": {
           "name": "academy_marketing_expenses_created_by_users_id_fk",
           "tableFrom": "academy_marketing_expenses",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1939,9 +1939,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -2035,50 +2035,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_parent_surveys_student_id_academy_students_id_fk": {
           "name": "academy_parent_surveys_student_id_academy_students_id_fk",
           "tableFrom": "academy_parent_surveys",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_parent_surveys_group_id_academy_groups_id_fk": {
           "name": "academy_parent_surveys_group_id_academy_groups_id_fk",
           "tableFrom": "academy_parent_surveys",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_parent_surveys_course_id_academy_courses_id_fk": {
           "name": "academy_parent_surveys_course_id_academy_courses_id_fk",
           "tableFrom": "academy_parent_surveys",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2212,9 +2212,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_payments_lead_idx": {
           "name": "academy_payments_lead_idx",
@@ -2227,9 +2227,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_payments_status_idx": {
           "name": "academy_payments_status_idx",
@@ -2242,50 +2242,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_payments_lead_id_academy_leads_id_fk": {
           "name": "academy_payments_lead_id_academy_leads_id_fk",
           "tableFrom": "academy_payments",
-          "tableTo": "academy_leads",
           "columnsFrom": [
             "lead_id"
           ],
+          "tableTo": "academy_leads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_payments_student_id_academy_students_id_fk": {
           "name": "academy_payments_student_id_academy_students_id_fk",
           "tableFrom": "academy_payments",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_payments_confirmed_by_users_id_fk": {
           "name": "academy_payments_confirmed_by_users_id_fk",
           "tableFrom": "academy_payments",
-          "tableTo": "users",
           "columnsFrom": [
             "confirmed_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2387,63 +2387,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_portfolio_projects_student_id_academy_students_id_fk": {
           "name": "academy_portfolio_projects_student_id_academy_students_id_fk",
           "tableFrom": "academy_portfolio_projects",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_portfolio_projects_lesson_id_academy_lessons_id_fk": {
           "name": "academy_portfolio_projects_lesson_id_academy_lessons_id_fk",
           "tableFrom": "academy_portfolio_projects",
-          "tableTo": "academy_lessons",
           "columnsFrom": [
             "lesson_id"
           ],
+          "tableTo": "academy_lessons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_portfolio_projects_group_id_academy_groups_id_fk": {
           "name": "academy_portfolio_projects_group_id_academy_groups_id_fk",
           "tableFrom": "academy_portfolio_projects",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_portfolio_projects_course_id_academy_courses_id_fk": {
           "name": "academy_portfolio_projects_course_id_academy_courses_id_fk",
           "tableFrom": "academy_portfolio_projects",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2525,9 +2525,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_referral_rewards_referred_lead_idx": {
           "name": "academy_referral_rewards_referred_lead_idx",
@@ -2540,50 +2540,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_referral_rewards_referrer_student_id_academy_students_id_fk": {
           "name": "academy_referral_rewards_referrer_student_id_academy_students_id_fk",
           "tableFrom": "academy_referral_rewards",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "referrer_student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_referral_rewards_referred_lead_id_academy_leads_id_fk": {
           "name": "academy_referral_rewards_referred_lead_id_academy_leads_id_fk",
           "tableFrom": "academy_referral_rewards",
-          "tableTo": "academy_leads",
           "columnsFrom": [
             "referred_lead_id"
           ],
+          "tableTo": "academy_leads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_referral_rewards_referred_student_id_academy_students_id_fk": {
           "name": "academy_referral_rewards_referred_student_id_academy_students_id_fk",
           "tableFrom": "academy_referral_rewards",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "referred_student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2652,37 +2652,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_student_status_history_student_id_academy_students_id_fk": {
           "name": "academy_student_status_history_student_id_academy_students_id_fk",
           "tableFrom": "academy_student_status_history",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_student_status_history_changed_by_users_id_fk": {
           "name": "academy_student_status_history_changed_by_users_id_fk",
           "tableFrom": "academy_student_status_history",
-          "tableTo": "users",
           "columnsFrom": [
             "changed_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2751,63 +2751,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_student_transfers_student_id_academy_students_id_fk": {
           "name": "academy_student_transfers_student_id_academy_students_id_fk",
           "tableFrom": "academy_student_transfers",
-          "tableTo": "academy_students",
           "columnsFrom": [
             "student_id"
           ],
+          "tableTo": "academy_students",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "academy_student_transfers_from_group_id_academy_groups_id_fk": {
           "name": "academy_student_transfers_from_group_id_academy_groups_id_fk",
           "tableFrom": "academy_student_transfers",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "from_group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_student_transfers_to_group_id_academy_groups_id_fk": {
           "name": "academy_student_transfers_to_group_id_academy_groups_id_fk",
           "tableFrom": "academy_student_transfers",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "to_group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_student_transfers_created_by_users_id_fk": {
           "name": "academy_student_transfers_created_by_users_id_fk",
           "tableFrom": "academy_student_transfers",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2993,9 +2993,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_students_group_idx": {
           "name": "academy_students_group_idx",
@@ -3008,9 +3008,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_students_lead_idx": {
           "name": "academy_students_lead_idx",
@@ -3023,9 +3023,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_students_manager_idx": {
           "name": "academy_students_manager_idx",
@@ -3038,9 +3038,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_students_status_idx": {
           "name": "academy_students_status_idx",
@@ -3053,63 +3053,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_students_lead_id_academy_leads_id_fk": {
           "name": "academy_students_lead_id_academy_leads_id_fk",
           "tableFrom": "academy_students",
-          "tableTo": "academy_leads",
           "columnsFrom": [
             "lead_id"
           ],
+          "tableTo": "academy_leads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_students_group_id_academy_groups_id_fk": {
           "name": "academy_students_group_id_academy_groups_id_fk",
           "tableFrom": "academy_students",
-          "tableTo": "academy_groups",
           "columnsFrom": [
             "group_id"
           ],
+          "tableTo": "academy_groups",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_students_course_id_academy_courses_id_fk": {
           "name": "academy_students_course_id_academy_courses_id_fk",
           "tableFrom": "academy_students",
-          "tableTo": "academy_courses",
           "columnsFrom": [
             "course_id"
           ],
+          "tableTo": "academy_courses",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "academy_students_manager_id_users_id_fk": {
           "name": "academy_students_manager_id_users_id_fk",
           "tableFrom": "academy_students",
-          "tableTo": "users",
           "columnsFrom": [
             "manager_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -3204,9 +3204,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "academy_tasks_entity_idx": {
           "name": "academy_tasks_entity_idx",
@@ -3225,24 +3225,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "academy_tasks_responsible_id_users_id_fk": {
           "name": "academy_tasks_responsible_id_users_id_fk",
           "tableFrom": "academy_tasks",
-          "tableTo": "users",
           "columnsFrom": [
             "responsible_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -3314,15 +3314,15 @@
         "academy_teachers_user_id_users_id_fk": {
           "name": "academy_teachers_user_id_users_id_fk",
           "tableFrom": "academy_teachers",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -3390,15 +3390,15 @@
         "audit_logs_user_id_users_id_fk": {
           "name": "audit_logs_user_id_users_id_fk",
           "tableFrom": "audit_logs",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3462,28 +3462,28 @@
         "messages_sender_id_users_id_fk": {
           "name": "messages_sender_id_users_id_fk",
           "tableFrom": "messages",
-          "tableTo": "users",
           "columnsFrom": [
             "sender_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "messages_receiver_id_users_id_fk": {
           "name": "messages_receiver_id_users_id_fk",
           "tableFrom": "messages",
-          "tableTo": "users",
           "columnsFrom": [
             "receiver_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -3558,15 +3558,15 @@
         "notifications_user_id_users_id_fk": {
           "name": "notifications_user_id_users_id_fk",
           "tableFrom": "notifications",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3623,9 +3623,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -3742,9 +3742,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -3757,10 +3757,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

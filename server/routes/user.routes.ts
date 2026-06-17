@@ -17,7 +17,6 @@ const roleLoginPrefix: Record<AcademyRole, string> = {
     teacher: 'teacher',
     operations_director: 'ops',
     smm_manager: 'smm',
-    employee: 'employee',
 };
 
 const translitMap: Record<string, string> = {
@@ -44,7 +43,7 @@ const slugifyName = (fullName: string) => {
 };
 
 const generateLogin = (fullName: string, role: AcademyRole, existingUsers: Array<{ email: string }>) => {
-    const prefix = roleLoginPrefix[role] ?? 'employee';
+    const prefix = roleLoginPrefix[role];
     const base = `${prefix}.${slugifyName(fullName)}`;
     const existing = new Set(existingUsers.map((user) => user.email.toLowerCase()));
 
@@ -127,7 +126,10 @@ router.post('/', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Full name is required' });
         }
 
-        const role = roleSet.has(req.body.role) ? req.body.role as AcademyRole : 'employee';
+        if (!roleSet.has(req.body.role)) {
+            return res.status(400).json({ error: 'A valid role is required' });
+        }
+        const role = req.body.role as AcademyRole;
 
         const existingUsers = await storage.getUsers();
         const providedEmail = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
@@ -146,7 +148,7 @@ router.post('/', requireAdmin, async (req, res) => {
             fullName,
             phone: phone || null,
             position: position || null,
-            role: role || 'employee',
+            role,
             hasReportAccess: hasReportAccess || false,
             isActive: isActive !== undefined ? isActive : true,
         });
@@ -283,7 +285,12 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         if (currentUser?.role === 'admin') {
-            if (req.body.role !== undefined) updateData.role = req.body.role;
+            if (req.body.role !== undefined) {
+                if (!roleSet.has(req.body.role)) {
+                    return res.status(400).json({ error: 'A valid role is required' });
+                }
+                updateData.role = req.body.role;
+            }
             if (req.body.hasReportAccess !== undefined) {
                 updateData.hasReportAccess = Boolean(req.body.hasReportAccess);
             }

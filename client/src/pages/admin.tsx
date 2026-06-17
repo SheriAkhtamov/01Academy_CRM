@@ -64,6 +64,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { ACADEMY_ROLES } from '@shared/academy';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -75,7 +76,7 @@ const createUserSchema = (t: any) => z.object({
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
-  role: z.enum(['admin', 'head', 'account_manager', 'teacher', 'operations_director', 'smm_manager', 'employee']),
+  role: z.enum(ACADEMY_ROLES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
@@ -432,8 +433,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         return 'bg-amber-100 text-amber-800';
       case 'smm_manager':
         return 'bg-pink-100 text-pink-800';
-      case 'employee':
-        return 'bg-emerald-100 text-emerald-800';
       default:
         return 'bg-slate-100 text-slate-800';
     }
@@ -453,8 +452,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         return t('roleOperationsDirector');
       case 'smm_manager':
         return t('roleSmmManager');
-      case 'employee':
-        return t('employee');
       default:
         return role;
     }
@@ -511,18 +508,16 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     teacher: { label: t('teacherWorkspace'), href: '/teacher-workspace' },
     operations_director: { label: t('sectionTitleAnalytics'), href: '/analytics-workspace' },
     smm_manager: { label: t('marketingTab'), href: '/marketing-workspace' },
-    employee: { label: t('noWorkspaceAssigned'), href: null },
   };
 
   const selectedRole = userForm.watch('role');
-  const selectedWorkspace = roleWorkspaceMap[selectedRole] ?? roleWorkspaceMap.employee;
+  const selectedWorkspace = roleWorkspaceMap[selectedRole] ?? roleWorkspaceMap.account_manager;
 
   const roleOptions = [
     { value: 'account_manager', label: t('roleAccountManager') },
     { value: 'teacher', label: t('roleTeacher') },
     { value: 'operations_director', label: t('roleOperationsDirector') },
     { value: 'smm_manager', label: t('roleSmmManager') },
-    { value: 'employee', label: t('employee') },
     { value: 'head', label: t('roleHead') },
     { value: 'admin', label: t('admin') },
   ];
@@ -931,7 +926,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     <SelectItem value="teacher">{t('roleTeachers')}</SelectItem>
                     <SelectItem value="operations_director">{t('roleOperationsDirectors')}</SelectItem>
                     <SelectItem value="smm_manager">{t('roleSmmManagers')}</SelectItem>
-                    <SelectItem value="employee">{t('employees')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

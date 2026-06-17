@@ -1,6 +1,6 @@
 {
-  "id": "68d8f31e-9eaf-4dbb-9510-8aa12e7f23f2",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "e5dd8a6d-9adc-49e8-9bd7-3e87c5ef51c9",
+  "prevId": "81c61ac2-a812-44f7-b8ac-fd6301989dc7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3685,8 +3685,7 @@
           "name": "role",
           "type": "varchar(50)",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'employee'"
+          "notNull": true
         },
         "has_report_access": {
           "name": "has_report_access",
@@ -3751,7 +3750,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "users_role_check": {
+          "name": "users_role_check",
+          "value": "\"users\".\"role\" IN ('admin', 'head', 'account_manager', 'teacher', 'operations_director', 'smm_manager')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

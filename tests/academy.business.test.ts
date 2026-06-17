@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACADEMY_ROLES,
   buildReferralCode,
   calculateAttendancePercent,
   calculateCac,
@@ -14,6 +15,17 @@ import {
 } from "../shared/academy";
 
 describe("01 Academy business rules", () => {
+  it("only exposes roles that have an assigned workspace", () => {
+    expect(ACADEMY_ROLES).toEqual([
+      "admin",
+      "head",
+      "account_manager",
+      "teacher",
+      "operations_director",
+      "smm_manager",
+    ]);
+  });
+
   it("suggests course and age group from student age", () => {
     expect(suggestCourseSlugByAge(8)).toBe("ai-kids");
     expect(suggestCourseSlugByAge(13)).toBe("ai-creator");

@@ -54,6 +54,11 @@ const HEAD_ROLES = new Set(['admin', 'head']);
 const FINANCE_ROLES = new Set(['admin', 'head', 'operations_director']);
 const OPERATIONS_ROLES = new Set(['admin', 'head', 'operations_director']);
 const MARKETING_ROLES = new Set(['admin', 'head', 'smm_manager']);
+const SALES_ROLES = new Set(['admin', 'head', 'account_manager']);
+const TEACHER_WORKSPACE_ROLES = new Set(['admin', 'head', 'teacher']);
+const ANALYTICS_WORKSPACE_ROLES = new Set(['admin', 'head', 'operations_director']);
+const REPORT_ROLES = new Set(['admin', 'head', 'operations_director', 'smm_manager']);
+const LEAD_WRITE_ROLES = new Set(['admin', 'head', 'account_manager', 'smm_manager']);
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -178,10 +183,64 @@ const ensureOperationsAccess = (req: any, res: any) => {
 };
 
 const ensureMarketingAccess = (req: any, res: any) => {
-  if (MARKETING_ROLES.has(req.user?.role) || req.user?.role === 'account_manager') return true;
+  if (MARKETING_ROLES.has(req.user?.role)) return true;
   res.status(403).json({ error: 'Marketing access required' });
   return false;
 };
+
+const ensureRoleAccess = (req: any, res: any, roles: Set<string>, message: string) => {
+  if (roles.has(String(req.user?.role))) return true;
+  res.status(403).json({ error: message });
+  return false;
+};
+
+const ensureSalesAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, SALES_ROLES, 'Sales access required');
+
+const ensureTeacherWorkspaceAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, TEACHER_WORKSPACE_ROLES, 'Teacher workspace access required');
+
+const ensureAnalyticsWorkspaceAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, ANALYTICS_WORKSPACE_ROLES, 'Analytics workspace access required');
+
+const ensureAdminWorkspaceAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, HEAD_ROLES, 'Admin access required');
+
+const ensureReportRouteAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, REPORT_ROLES, 'Report access required');
+
+const canAccessLeadRow = (req: any, lead?: Row | null) => {
+  if (!lead) return false;
+  const role = String(req.user?.role);
+  if (HEAD_ROLES.has(role) || MARKETING_ROLES.has(role)) return true;
+  return role === 'account_manager' && Number(lead.managerId) === Number(req.user?.id);
+};
+
+const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
+  if (canAccessLeadRow(req, lead)) return true;
+  res.status(403).json({ error: 'Lead access required' });
+  return false;
+};
+
+const academyConstants = () => ({
+  leadStatuses: LEAD_STATUSES,
+  studentStatuses: STUDENT_STATUSES,
+  groupStatuses: GROUP_STATUSES,
+  lessonStatuses: LESSON_STATUSES,
+  paymentStatuses: PAYMENT_STATUSES,
+  paymentTypes: PAYMENT_TYPES,
+  paymentMethods: PAYMENT_METHODS,
+  paymentDiscounts: PAYMENT_DISCOUNTS,
+  finalProjectStatuses: FINAL_PROJECT_STATUSES,
+  referralTiers: REFERRAL_TIERS,
+  targets: {
+    nps: TARGET_NPS,
+    cac: TARGET_CAC_UZS,
+    ltvCac: TARGET_LTV_CAC_RATIO,
+    roas: TARGET_ROAS,
+    attendance: TARGET_ATTENDANCE_PERCENT,
+  },
+});
 
 // Read-only marketing data (e.g. sources for SMM): mutations restricted to head/admin.
 const ensureHeadOnlyForMutations = (req: any, res: any, requireMarketingReadOnly?: boolean) => {
@@ -718,18 +777,62 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       FROM academy_payments p
       LEFT JOIN academy_students st ON st.id = p.student_id
       LEFT JOIN academy_leads l ON l.id = p.lead_id
-      WHERE 1=1 ${isManagerScoped ? 'AND (st.manager_id = $1 OR p.lead_id IN (SELECT id FROM academy_leads WHERE manager_id = $1))' : ''}
-      ORDER BY p.created_at DESC`, managerParams),
+      WHERE 1=1
+        ${isManagerScoped ? 'AND (st.manager_id = $1 OR p.lead_id IN (SELECT id FROM academy_leads WHERE manager_id = $1))' : ''}
+        ${isTeacherScoped ? 'AND FALSE' : ''}
+      ORDER BY p.created_at DESC`, isTeacherScoped ? [] : managerParams),
     query(`SELECT t.*, u.full_name AS responsible_name
       FROM academy_tasks t
       LEFT JOIN users u ON u.id = t.responsible_id
       WHERE 1=1 ${isManagerScoped ? 'AND t.responsible_id = $1' : ''}
       ORDER BY COALESCE(t.deadline_at, t.created_at)`, managerParams),
-    query(`SELECT * FROM academy_lesson_surveys`),
-    query(`SELECT * FROM academy_parent_surveys`),
-    query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
-    query(`SELECT * FROM academy_portfolio_projects ORDER BY created_at DESC`),
-    query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
+    isTeacherScoped
+      ? query(`SELECT ls.*
+        FROM academy_lesson_surveys ls
+        JOIN academy_lessons l ON l.id = ls.lesson_id
+        WHERE l.teacher_id = $1
+        ORDER BY ls.created_at DESC`, [teacherId])
+      : query(`SELECT * FROM academy_lesson_surveys ORDER BY created_at DESC`),
+    isTeacherScoped
+      ? query(`SELECT ps.*
+        FROM academy_parent_surveys ps
+        JOIN academy_students st ON st.id = ps.student_id
+        JOIN academy_groups g ON g.id = st.group_id
+        WHERE g.teacher_id = $1
+        ORDER BY ps.created_at DESC`, [teacherId])
+      : isManagerScoped
+        ? query(`SELECT ps.*
+          FROM academy_parent_surveys ps
+          JOIN academy_students st ON st.id = ps.student_id
+          WHERE st.manager_id = $1
+          ORDER BY ps.created_at DESC`, managerParams)
+        : query(`SELECT * FROM academy_parent_surveys ORDER BY created_at DESC`),
+    isManagerScoped || isTeacherScoped
+      ? Promise.resolve([])
+      : query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
+    isTeacherScoped
+      ? query(`SELECT p.*
+        FROM academy_portfolio_projects p
+        JOIN academy_groups g ON g.id = p.group_id
+        WHERE g.teacher_id = $1
+        ORDER BY p.created_at DESC`, [teacherId])
+      : isManagerScoped
+        ? query(`SELECT p.*
+          FROM academy_portfolio_projects p
+          JOIN academy_students st ON st.id = p.student_id
+          WHERE st.manager_id = $1
+          ORDER BY p.created_at DESC`, managerParams)
+        : query(`SELECT * FROM academy_portfolio_projects ORDER BY created_at DESC`),
+    isManagerScoped
+      ? query(`SELECT rr.*
+        FROM academy_referral_rewards rr
+        LEFT JOIN academy_students referrer ON referrer.id = rr.referrer_student_id
+        LEFT JOIN academy_students referred ON referred.id = rr.referred_student_id
+        WHERE referrer.manager_id = $1 OR referred.manager_id = $1
+        ORDER BY rr.created_at DESC`, managerParams)
+      : isTeacherScoped
+        ? Promise.resolve([])
+        : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
   ]);
 
   return { courses, sources, statuses, teachers, groups, leads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
@@ -954,6 +1057,49 @@ const buildAnalytics = async () => {
     data };
 };
 
+const getMarketingWorkspaceDataset = async () => {
+  const [sources, leads, students, expenses, referrals] = await Promise.all([
+    query(`SELECT * FROM academy_lead_sources ORDER BY name`),
+    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name
+      FROM academy_leads l
+      LEFT JOIN academy_courses c ON c.id = l.course_id
+      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+      LEFT JOIN users u ON u.id = l.manager_id
+      ORDER BY l.created_at DESC`),
+    query(`SELECT id, student_name, contact_name, referral_code, referral_level
+      FROM academy_students
+      ORDER BY created_at DESC`),
+    query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
+    query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
+  ]);
+
+  return { sources, leads, students, expenses, referrals };
+};
+
+const buildMarketingAnalyticsPayload = (analytics: Row) => ({
+  summary: {
+    newLeadsWeek: analytics.summary.newLeadsWeek,
+    newLeadsMonth: analytics.summary.newLeadsMonth,
+    warmBaseSize: analytics.summary.warmBaseSize,
+    warmReactivated: analytics.summary.warmReactivated,
+    leadToDemoConversion: analytics.summary.leadToDemoConversion,
+    demoToPaidConversion: analytics.summary.demoToPaidConversion,
+    cpl: analytics.summary.cpl,
+    cac: analytics.summary.cac,
+    roas: analytics.summary.roas,
+    avgDealCycleDays: analytics.summary.avgDealCycleDays,
+  },
+  funnel: analytics.funnel,
+  bySource: analytics.bySource,
+  warmBaseSize: analytics.summary.warmBaseSize,
+  warmReactivated: analytics.summary.warmReactivated,
+  leadToDemoConversion: analytics.summary.leadToDemoConversion,
+  demoToPaidConversion: analytics.summary.demoToPaidConversion,
+  cpl: analytics.summary.cpl,
+  avgDealCycleDays: analytics.summary.avgDealCycleDays,
+  targets: analytics.targets,
+});
+
 const createCsv = (rows: Row[]) => {
   if (rows.length === 0) return 'нет данных\n';
   const columns = Object.keys(rows[0]);
@@ -965,6 +1111,7 @@ const createCsv = (rows: Row[]) => {
 };
 
 router.post('/seed', async (req, res) => {
+  if (!ensureAdminWorkspaceAccess(req, res)) return;
   try {
     const existingCourses = await query(`SELECT id FROM academy_courses LIMIT 1`, []);
 
@@ -996,12 +1143,103 @@ router.post('/seed', async (req, res) => {
   }
 });
 
-router.get('/bootstrap', async (req, res) => {
+router.get('/bootstrap', async (_req, res) => {
+  res.status(410).json({
+    error: 'Academy bootstrap was removed. Use role-scoped /api/academy/workspaces/* endpoints.',
+  });
+});
+
+router.get('/workspaces/sales', async (req, res) => {
+  if (!ensureSalesAccess(req, res)) return;
   try {
     const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
+    const dataset = await getAcademyDataset(actor);
+
+    res.json({
+      courses: dataset.courses,
+      sources: dataset.sources,
+      statuses: dataset.statuses,
+      leads: dataset.leads,
+      students: dataset.students,
+      tasks: dataset.tasks,
+      projects: dataset.projects,
+      referrals: dataset.referrals,
+      constants: academyConstants(),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch sales workspace', { error });
+    res.status(500).json({ error: 'Failed to fetch sales workspace' });
+  }
+});
+
+router.get('/workspaces/teacher', async (req, res) => {
+  if (!ensureTeacherWorkspaceAccess(req, res)) return;
+  try {
+    const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
+    const dataset = await getAcademyDataset(actor);
+    res.json({
+      courses: dataset.courses,
+      groups: dataset.groups,
+      students: dataset.students,
+      lessons: dataset.lessons,
+      attendance: dataset.attendance,
+      lessonSurveys: dataset.lessonSurveys,
+      projects: dataset.projects,
+      constants: academyConstants(),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch teacher workspace', { error });
+    res.status(500).json({ error: 'Failed to fetch teacher workspace' });
+  }
+});
+
+router.get('/workspaces/marketing', async (req, res) => {
+  if (!ensureMarketingAccess(req, res)) return;
+  try {
+    const [dataset, analytics] = await Promise.all([
+      getMarketingWorkspaceDataset(),
+      buildAnalytics(),
+    ]);
+    res.json({
+      ...dataset,
+      analytics: buildMarketingAnalyticsPayload(analytics),
+      constants: academyConstants(),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch marketing workspace', { error });
+    res.status(500).json({ error: 'Failed to fetch marketing workspace' });
+  }
+});
+
+router.get('/workspaces/analytics', async (req, res) => {
+  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
+  try {
+    const [analytics, dataset] = await Promise.all([
+      buildAnalytics(),
+      getAcademyDataset(),
+    ]);
+    res.json({
+      analytics,
+      payments: dataset.payments,
+      constants: academyConstants(),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch analytics workspace', { error });
+    res.status(500).json({ error: 'Failed to fetch analytics workspace' });
+  }
+});
+
+router.get('/workspaces/admin', async (req, res) => {
+  if (!ensureAdminWorkspaceAccess(req, res)) return;
+  try {
     const [users, dataset, analytics] = await Promise.all([
-      storage.getUsers().then((items) => items.map((user) => ({ id: user.id, fullName: user.fullName, role: user.role, hasReportAccess: user.hasReportAccess }))),
-      getAcademyDataset(actor),
+      storage.getUsers().then((items) => items.map((user) => ({
+        id: user.id,
+        fullName: user.fullName,
+        role: user.role,
+        hasReportAccess: user.hasReportAccess,
+      }))),
+      getAcademyDataset(),
       buildAnalytics(),
     ]);
 
@@ -1009,25 +1247,203 @@ router.get('/bootstrap', async (req, res) => {
       users,
       ...dataset,
       analytics,
-      constants: {
-        leadStatuses: LEAD_STATUSES,
-        studentStatuses: STUDENT_STATUSES,
-        groupStatuses: GROUP_STATUSES,
-        lessonStatuses: LESSON_STATUSES,
-        paymentStatuses: PAYMENT_STATUSES,
-        paymentTypes: PAYMENT_TYPES,
-        paymentMethods: PAYMENT_METHODS,
-        paymentDiscounts: PAYMENT_DISCOUNTS,
-        finalProjectStatuses: FINAL_PROJECT_STATUSES,
-        referralTiers: REFERRAL_TIERS,
-        targets: { nps: TARGET_NPS, cac: TARGET_CAC_UZS, ltvCac: TARGET_LTV_CAC_RATIO, roas: TARGET_ROAS, attendance: TARGET_ATTENDANCE_PERCENT } } });
+      constants: academyConstants(),
+    });
   } catch (error) {
-    logger.error('Failed to fetch academy bootstrap', { error });
-    res.status(500).json({ error: 'Failed to fetch academy data' });
+    logger.error('Failed to fetch admin workspace', { error });
+    res.status(500).json({ error: 'Failed to fetch admin workspace' });
+  }
+});
+
+router.get('/search', async (req, res) => {
+  try {
+    const term = String(req.query.q ?? '').trim();
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 8) || 8, 1), 10);
+    if (term.length < 2) {
+      return res.json([]);
+    }
+
+    const like = `%${term.toLowerCase()}%`;
+    const role = String(req.user?.role);
+    const results: Row[] = [];
+    const remaining = () => Math.max(limit - results.length, 0);
+
+    const pushLeads = async (whereSql: string, params: DbValue[], href: string) => {
+      if (remaining() <= 0) return;
+      const rows = await query(
+        `SELECT l.id, l.contact_name, l.phone, l.student_name, c.name AS course_name
+         FROM academy_leads l
+         LEFT JOIN academy_courses c ON c.id = l.course_id
+         WHERE ${whereSql}
+           AND (
+             LOWER(l.contact_name) LIKE $${params.length + 1}
+             OR LOWER(COALESCE(l.student_name, '')) LIKE $${params.length + 1}
+             OR LOWER(l.phone) LIKE $${params.length + 1}
+             OR LOWER(COALESCE(l.messenger, '')) LIKE $${params.length + 1}
+           )
+         ORDER BY l.created_at DESC
+         LIMIT $${params.length + 2}`,
+        [...params, like, remaining()],
+      );
+      results.push(...rows.map((lead) => ({
+        id: `lead-${lead.id}`,
+        entityType: 'lead',
+        title: lead.contactName,
+        subtitle: [lead.phone, lead.studentName, lead.courseName].filter(Boolean).join(' • '),
+        href,
+      })));
+    };
+
+    const pushStudents = async (whereSql: string, params: DbValue[], href: string) => {
+      if (remaining() <= 0) return;
+      const rows = await query(
+        `SELECT st.id, st.student_name, st.contact_name, st.phone, g.name AS group_name
+         FROM academy_students st
+         LEFT JOIN academy_groups g ON g.id = st.group_id
+         WHERE ${whereSql}
+           AND (
+             LOWER(COALESCE(st.student_name, '')) LIKE $${params.length + 1}
+             OR LOWER(st.contact_name) LIKE $${params.length + 1}
+             OR LOWER(st.phone) LIKE $${params.length + 1}
+             OR LOWER(COALESCE(st.referral_code, '')) LIKE $${params.length + 1}
+           )
+         ORDER BY st.created_at DESC
+         LIMIT $${params.length + 2}`,
+        [...params, like, remaining()],
+      );
+      results.push(...rows.map((student) => ({
+        id: `student-${student.id}`,
+        entityType: 'student',
+        title: student.studentName || student.contactName,
+        subtitle: [student.contactName, student.phone, student.groupName].filter(Boolean).join(' • '),
+        href,
+      })));
+    };
+
+    const pushGroups = async (whereSql: string, params: DbValue[], href: string) => {
+      if (remaining() <= 0) return;
+      const rows = await query(
+        `SELECT g.id, g.name, c.name AS course_name, t.full_name AS teacher_name
+         FROM academy_groups g
+         LEFT JOIN academy_courses c ON c.id = g.course_id
+         LEFT JOIN academy_teachers t ON t.id = g.teacher_id
+         WHERE ${whereSql}
+           AND (
+             LOWER(g.name) LIKE $${params.length + 1}
+             OR LOWER(COALESCE(c.name, '')) LIKE $${params.length + 1}
+             OR LOWER(COALESCE(t.full_name, '')) LIKE $${params.length + 1}
+           )
+         ORDER BY g.created_at DESC
+         LIMIT $${params.length + 2}`,
+        [...params, like, remaining()],
+      );
+      results.push(...rows.map((group) => ({
+        id: `group-${group.id}`,
+        entityType: 'group',
+        title: group.name,
+        subtitle: [group.courseName, group.teacherName].filter(Boolean).join(' • '),
+        href,
+      })));
+    };
+
+    const pushCourses = async (href: string) => {
+      if (remaining() <= 0) return;
+      const rows = await query(
+        `SELECT id, name, age_category
+         FROM academy_courses
+         WHERE LOWER(name) LIKE $1 OR LOWER(slug) LIKE $1 OR LOWER(COALESCE(age_category, '')) LIKE $1
+         ORDER BY name
+         LIMIT $2`,
+        [like, remaining()],
+      );
+      results.push(...rows.map((course) => ({
+        id: `course-${course.id}`,
+        entityType: 'course',
+        title: course.name,
+        subtitle: course.ageCategory,
+        href,
+      })));
+    };
+
+    if (role === 'account_manager') {
+      await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales?tab=leads');
+      await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales?tab=students');
+    } else if (role === 'teacher') {
+      const teacherId = await resolveTeacherId(req.user!.id);
+      if (!teacherId) return res.json([]);
+      await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace?tab=groups');
+      await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace?tab=groups');
+      await pushCourses('/teacher-workspace?tab=groups');
+    } else if (role === 'operations_director') {
+      await pushGroups(`TRUE`, [], '/analytics-workspace?tab=groups');
+      if (remaining() > 0) {
+        const teachers = await query(
+          `SELECT id, full_name, status
+           FROM academy_teachers
+           WHERE LOWER(full_name) LIKE $1
+           ORDER BY full_name
+           LIMIT $2`,
+          [like, remaining()],
+        );
+        results.push(...teachers.map((teacher) => ({
+          id: `teacher-${teacher.id}`,
+          entityType: 'teacher',
+          title: teacher.fullName,
+          subtitle: teacher.status,
+          href: '/analytics-workspace?tab=teachers',
+        })));
+      }
+      await pushCourses('/analytics-workspace?tab=courses');
+    } else if (role === 'smm_manager') {
+      if (remaining() > 0) {
+        const sources = await query(
+          `SELECT id, name, channel, campaign_name
+           FROM academy_lead_sources
+           WHERE LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1
+           ORDER BY name
+           LIMIT $2`,
+          [like, remaining()],
+        );
+        results.push(...sources.map((source) => ({
+          id: `source-${source.id}`,
+          entityType: 'source',
+          title: source.name,
+          subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
+          href: '/marketing-workspace?tab=sources',
+        })));
+      }
+      await pushLeads(`TRUE`, [], '/marketing-workspace?tab=warm');
+    } else if (HEAD_ROLES.has(role)) {
+      if (remaining() > 0) {
+        const users = await query(
+          `SELECT id, full_name, role
+           FROM users
+           WHERE LOWER(full_name) LIKE $1 OR LOWER(role) LIKE $1
+           ORDER BY full_name
+           LIMIT $2`,
+          [like, remaining()],
+        );
+        results.push(...users.map((user) => ({
+          id: `user-${user.id}`,
+          entityType: 'user',
+          title: user.fullName,
+          subtitle: user.role,
+          href: '/employees',
+        })));
+      }
+      await pushCourses('/admin');
+      await pushGroups(`TRUE`, [], '/admin');
+    }
+
+    res.json(results.slice(0, limit));
+  } catch (error) {
+    logger.error('Failed to search academy data', { error });
+    res.status(500).json({ error: 'Failed to search academy data' });
   }
 });
 
 router.get('/analytics/dashboard', async (req, res) => {
+  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
   try {
     res.json(await buildAnalytics());
   } catch (error) {
@@ -1040,18 +1456,7 @@ router.get('/analytics/marketing', async (req, res) => {
   if (!ensureMarketingAccess(req, res)) return;
   try {
     const analytics = await buildAnalytics();
-    res.json({
-      summary: analytics.summary,
-      funnel: analytics.funnel,
-      bySource: analytics.bySource,
-      byCourse: analytics.byCourse,
-      warmBaseSize: analytics.summary.warmBaseSize,
-      warmReactivated: analytics.summary.warmReactivated,
-      leadToDemoConversion: analytics.summary.leadToDemoConversion,
-      demoToPaidConversion: analytics.summary.demoToPaidConversion,
-      cpl: analytics.summary.cpl,
-      avgDealCycleDays: analytics.summary.avgDealCycleDays,
-      targets: analytics.targets });
+    res.json(buildMarketingAnalyticsPayload(analytics));
   } catch (error) {
     logger.error('Failed to fetch marketing analytics', { error });
     res.status(500).json({ error: 'Failed to fetch marketing analytics' });
@@ -1059,7 +1464,7 @@ router.get('/analytics/marketing', async (req, res) => {
 });
 
 router.get('/analytics/operations', async (req, res) => {
-  if (!ensureOperationsAccess(req, res)) return;
+  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
   try {
     const analytics = await buildAnalytics();
     res.json({
@@ -1094,6 +1499,7 @@ router.get('/analytics/finance', async (req, res) => {
 });
 
 router.get('/analytics/cohorts', async (req, res) => {
+  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
   try {
     const filters: string[] = [];
     const params: DbValue[] = [];
@@ -1152,9 +1558,16 @@ router.get('/analytics/cohorts', async (req, res) => {
 });
 
 router.get('/leads', async (req, res) => {
+  if (!ensureRoleAccess(req, res, new Set([...Array.from(HEAD_ROLES), 'account_manager', 'smm_manager']), 'Lead access required')) return;
   try {
     const conditions: string[] = [];
     const params: DbValue[] = [];
+    const role = String(req.user?.role);
+
+    if (role === 'account_manager') {
+      params.push(req.user!.id);
+      conditions.push(`l.manager_id = $${params.length}`);
+    }
 
     if (req.query.status) {
       params.push(String(req.query.status));
@@ -1185,13 +1598,14 @@ router.get('/leads', async (req, res) => {
       )`);
     }
 
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const leads = await query(
       `SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
        LEFT JOIN users u ON u.id = l.manager_id
-       WHERE ${conditions.join(' AND ')}
+       ${whereSql}
        ORDER BY l.created_at DESC`,
       params,
     );
@@ -1203,6 +1617,7 @@ router.get('/leads', async (req, res) => {
 });
 
 router.post('/leads', async (req, res) => {
+  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
   try {
     const contactName = nullableText(req.body.contactName);
     const phone = nullableText(req.body.phone);
@@ -1236,7 +1651,7 @@ router.post('/leads', async (req, res) => {
       advertisingCampaign: nullableText(req.body.advertisingCampaign) ?? nullableText(source?.campaignName) ?? null,
       acquisitionCostUzs: normalizeMoney(req.body.acquisitionCostUzs ?? source?.costPerLeadUzs),
       statusCode: nullableText(req.body.statusCode) ?? 'new_request',
-      managerId: parseId(req.body.managerId) ?? req.user!.id,
+      managerId: req.user!.role === 'account_manager' ? req.user!.id : parseId(req.body.managerId) ?? req.user!.id,
       language: nullableText(req.body.language) ?? 'ru',
       comment: nullableText(req.body.comment) ?? null,
       referralCode: nullableText(req.body.referralCode) ?? null,
@@ -1259,6 +1674,7 @@ router.get('/leads/:id', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, lead)) return;
     const [history, communications, tasks, payments] = await Promise.all([
       query(`SELECT * FROM academy_lead_stage_history WHERE lead_id = $1 ORDER BY entered_at DESC`, [id]),
       query(`SELECT * FROM academy_communications WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
@@ -1273,11 +1689,13 @@ router.get('/leads/:id', async (req, res) => {
 });
 
 router.patch('/leads/:id', async (req, res) => {
+  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
 
     const nextStatus = nullableText(req.body.statusCode) ?? oldLead.statusCode;
     const merged = {
@@ -1299,7 +1717,7 @@ router.patch('/leads/:id', async (req, res) => {
       advertisingCampaign: nullableText(req.body.advertisingCampaign),
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
       statusCode: nullableText(req.body.statusCode),
-      managerId: parseId(req.body.managerId),
+      managerId: req.user!.role === 'account_manager' ? undefined : parseId(req.body.managerId),
       language: nullableText(req.body.language),
       comment: nullableText(req.body.comment),
       firstContactAt: nullableDate(req.body.firstContactAt),
@@ -1345,11 +1763,13 @@ router.patch('/leads/:id', async (req, res) => {
 });
 
 router.post('/leads/:id/contact', async (req, res) => {
+  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, lead)) return;
 
     const communication = await insertRow('academy_communications', {
       leadId: id,
@@ -1388,11 +1808,13 @@ router.post('/leads/:id/contact', async (req, res) => {
 });
 
 router.post('/leads/:id/demo', async (req, res) => {
+  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
 
     const demoAt = nullableDate(req.body.demoAt);
     if (!demoAt) return res.status(400).json({ error: 'Дата и время демо обязательны' });
@@ -1414,11 +1836,13 @@ router.post('/leads/:id/demo', async (req, res) => {
 });
 
 router.post('/leads/:id/demo-attendance', async (req, res) => {
+  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
 
     const attended = req.body.attended !== false;
     const nextStatus = attended ? 'demo_attended' : oldLead.statusCode;
@@ -1439,9 +1863,13 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
 });
 
 router.post('/leads/:id/convert-to-student', async (req, res) => {
+  if (!ensureRoleAccess(req, res, new Set([...Array.from(HEAD_ROLES), 'account_manager']), 'Student conversion access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+    const lead = await getLead(id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, lead)) return;
     const student = await createStudentFromLead(req, id);
     res.status(201).json(student);
   } catch (error: any) {
@@ -1452,6 +1880,103 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
 
 // Inbound webhooks (ChatPlace, Google Forms, bank) live in ./incoming.routes.ts as
 // PUBLIC routes verified by per-provider secrets, not session auth.
+
+const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Promise<{
+  whereSql: string;
+  params: DbValue[];
+  denied?: boolean;
+}> => {
+  const role = String(req.user?.role);
+  const params: DbValue[] = [];
+  const pushParam = (value: DbValue) => {
+    params.push(value);
+    return `$${firstParamIndex + params.length - 1}`;
+  };
+  const ownUserParam = () => pushParam(req.user!.id);
+  const teacherParam = async () => {
+    const teacherId = await resolveTeacherId(req.user!.id);
+    return teacherId ? pushParam(teacherId) : null;
+  };
+
+  if (HEAD_ROLES.has(role)) return { whereSql: '', params };
+
+  if (table === 'academy_students') {
+    if (role === 'operations_director') return { whereSql: '', params };
+    if (role === 'account_manager') return { whereSql: `manager_id = ${ownUserParam()}`, params };
+    if (role === 'teacher') {
+      const placeholder = await teacherParam();
+      return placeholder
+        ? { whereSql: `group_id IN (SELECT id FROM academy_groups WHERE teacher_id = ${placeholder})`, params }
+        : { whereSql: 'FALSE', params };
+    }
+    return { whereSql: 'FALSE', params, denied: true };
+  }
+
+  if (table === 'academy_tasks') {
+    if (role === 'operations_director') return { whereSql: '', params };
+    return { whereSql: `responsible_id = ${ownUserParam()}`, params };
+  }
+
+  if (table === 'academy_groups') {
+    if (role === 'operations_director') return { whereSql: '', params };
+    if (role === 'teacher') {
+      const placeholder = await teacherParam();
+      return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
+    }
+    return { whereSql: 'FALSE', params, denied: true };
+  }
+
+  if (table === 'academy_lessons') {
+    if (role === 'operations_director') return { whereSql: '', params };
+    if (role === 'teacher') {
+      const placeholder = await teacherParam();
+      return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
+    }
+    return { whereSql: 'FALSE', params, denied: true };
+  }
+
+  if (table === 'academy_teachers') {
+    if (role === 'operations_director') return { whereSql: '', params };
+    if (role === 'teacher') {
+      const placeholder = await teacherParam();
+      return placeholder ? { whereSql: `id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
+    }
+    return { whereSql: 'FALSE', params, denied: true };
+  }
+
+  if (table === 'academy_portfolio_projects') {
+    if (role === 'operations_director') return { whereSql: '', params };
+    if (role === 'account_manager') {
+      return {
+        whereSql: `student_id IN (SELECT id FROM academy_students WHERE manager_id = ${ownUserParam()})`,
+        params,
+      };
+    }
+    if (role === 'teacher') {
+      const placeholder = await teacherParam();
+      return placeholder
+        ? { whereSql: `group_id IN (SELECT id FROM academy_groups WHERE teacher_id = ${placeholder})`, params }
+        : { whereSql: 'FALSE', params };
+    }
+    if (role === 'smm_manager') return { whereSql: `marketing_consent = true`, params };
+    return { whereSql: 'FALSE', params, denied: true };
+  }
+
+  if (table === 'academy_referral_rewards') {
+    if (role === 'smm_manager' || role === 'operations_director') return { whereSql: '', params };
+    if (role === 'account_manager') {
+      const placeholder = ownUserParam();
+      return {
+        whereSql: `(referrer_student_id IN (SELECT id FROM academy_students WHERE manager_id = ${placeholder})
+          OR referred_student_id IN (SELECT id FROM academy_students WHERE manager_id = ${placeholder}))`,
+        params,
+      };
+    }
+    return { whereSql: 'FALSE', params, denied: true };
+  }
+
+  return { whereSql: '', params };
+};
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
@@ -1466,9 +1991,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
     try {
+      const scope = await buildCrudScope(req, table);
+      if (scope.denied) return res.status(403).json({ error: `${path} access required` });
+      const whereSql = scope.whereSql ? `WHERE ${scope.whereSql}` : '';
       const rows = await query(
-        `SELECT * FROM ${quoteIdent(table)} ORDER BY ${options.orderBy ?? 'created_at DESC, id DESC'}`,
-        [],
+        `SELECT * FROM ${quoteIdent(table)} ${whereSql} ORDER BY ${options.orderBy ?? 'created_at DESC, id DESC'}`,
+        scope.params,
       );
       res.json(rows);
     } catch (error) {
@@ -1484,7 +2012,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
-      const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
+      const scope = await buildCrudScope(req, table, 2);
+      if (scope.denied) return res.status(403).json({ error: `${path} access required` });
+      const scopedWhere = scope.whereSql ? `AND ${scope.whereSql}` : '';
+      const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere}`, [id, ...scope.params]);
       if (!row) return res.status(404).json({ error: `${path} not found` });
       res.json(row);
     } catch (error) {
@@ -1498,6 +2029,28 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
+    const role = String(req.user?.role);
+    if (options.requireOperations && req.user?.role === 'teacher') {
+      return res.status(403).json({ error: 'Operations mutation access required' });
+    }
+    if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
+      return res.status(403).json({ error: 'Course mutation access required' });
+    }
+    if (table === 'academy_students' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && req.user?.role !== 'account_manager') {
+      return res.status(403).json({ error: 'Student mutation access required' });
+    }
+    if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
+      return res.status(403).json({ error: 'Portfolio mutation access required' });
+    }
+    if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
+      return res.status(403).json({ error: 'Referral mutation access required' });
+    }
+    if (table === 'academy_tasks' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director') {
+      const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
+      if (Number(responsibleId) !== Number(req.user!.id)) {
+        return res.status(403).json({ error: 'Task mutation access required' });
+      }
+    }
     try {
       const values: Row = {  };
       for (const column of columns) {
@@ -1521,6 +2074,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           : null;
         values.endDate = deriveGroupEndDate(values.startDate as Date, Number(course?.lessonCount ?? 24));
       }
+      if (table === 'academy_marketing_expenses') {
+        values.createdBy = req.user!.id;
+      }
 
       const row = await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
@@ -1536,11 +2092,33 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
+    const role = String(req.user?.role);
+    if (options.requireOperations && req.user?.role === 'teacher') {
+      return res.status(403).json({ error: 'Operations mutation access required' });
+    }
+    if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
+      return res.status(403).json({ error: 'Course mutation access required' });
+    }
+    if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
+      return res.status(403).json({ error: 'Portfolio mutation access required' });
+    }
+    if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
+      return res.status(403).json({ error: 'Referral mutation access required' });
+    }
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
       const oldRow = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
+      if (table === 'academy_tasks' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
+        return res.status(403).json({ error: 'Task mutation access required' });
+      }
+      if (table === 'academy_students' && req.user?.role === 'account_manager' && Number(oldRow.managerId) !== Number(req.user!.id)) {
+        return res.status(403).json({ error: 'Student mutation access required' });
+      }
+      if (table === 'academy_students' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && req.user?.role !== 'account_manager') {
+        return res.status(403).json({ error: 'Student mutation access required' });
+      }
       const values: Row = {};
       for (const column of columns) {
         if (!(column in req.body)) continue;
@@ -1587,11 +2165,29 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
+    const role = String(req.user?.role);
+    if (options.requireOperations && req.user?.role === 'teacher') {
+      return res.status(403).json({ error: 'Operations mutation access required' });
+    }
+    if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
+      return res.status(403).json({ error: 'Course mutation access required' });
+    }
+    if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
+      return res.status(403).json({ error: 'Portfolio mutation access required' });
+    }
+    if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
+      return res.status(403).json({ error: 'Referral mutation access required' });
+    }
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
+      const scope = await buildCrudScope(req, table, 2);
+      if (scope.denied) return res.status(403).json({ error: `${path} access required` });
+      const scopedWhere = scope.whereSql ? `AND ${scope.whereSql}` : '';
+      const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere}`, [id, ...scope.params]);
+      if (!row) return res.status(404).json({ error: `${path} not found` });
       if (table === 'academy_payments') {
-        const payment = await queryOne(`SELECT * FROM academy_payments WHERE id = $1`, [id]);
+        const payment = row;
         if (payment?.status === 'paid' && !HEAD_ROLES.has(String(req.user?.role))) {
           return res.status(403).json({ error: 'Paid payments can be deleted only by head/admin' });
         }
@@ -1606,6 +2202,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
 };
 
 router.post('/groups/:id/generate-lessons', async (req, res) => {
+  if (!ensureRoleAccess(req, res, OPERATIONS_ROLES, 'Operations access required')) return;
   try {
     const groupId = parseId(req.params.id);
     if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
@@ -1655,7 +2252,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     );
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
     if (lesson.status === 'cancelled') return res.status(400).json({ error: 'Нельзя отметить посещаемость по отменённому занятию' });
-    if (req.user!.role === 'teacher' && lesson.teacherUserId && Number(lesson.teacherUserId) !== req.user!.id) {
+    if (req.user!.role === 'teacher' && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)) {
       return res.status(403).json({ error: 'Teacher can mark only own lessons' });
     }
 
@@ -1664,6 +2261,10 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     for (const item of items) {
       const studentId = parseId(item.studentId);
       if (!studentId) continue;
+      const student = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
+      if (!student || Number(student.groupId) !== Number(lesson.groupId)) {
+        return res.status(403).json({ error: 'Attendance can include only students from this lesson group' });
+      }
       const status = item.status === 'present' ? 'present' : 'absent';
       const result = await pool.query(
         `INSERT INTO academy_attendance (lesson_id, student_id, status, project_url, note, marked_by)
@@ -1686,7 +2287,6 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         [lesson.groupId, studentId],
       );
       if (recentAbsences.length === 3 && recentAbsences.every((row) => row.status === 'absent')) {
-        const student = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
         await createTask('3 пропуска подряд: позвонить родителю', {
           responsibleId: student?.managerId ?? req.user!.id,
           entityType: 'student',
@@ -1717,6 +2317,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
 });
 
 router.post('/students/:id/transfer', async (req, res) => {
+  if (!ensureRoleAccess(req, res, OPERATIONS_ROLES, 'Operations access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const toGroupId = parseId(req.body.toGroupId);
@@ -1860,6 +2461,7 @@ router.post('/surveys/parent', async (req, res) => {
 });
 
 router.get('/integrations/status', async (req, res) => {
+  if (!ensureAdminWorkspaceAccess(req, res)) return;
   try {
     const logs = await query(
       `SELECT DISTINCT ON (provider) provider, status, error_message, updated_at, created_at
@@ -1894,6 +2496,7 @@ router.get('/integrations/status', async (req, res) => {
 });
 
 router.post('/integrations/:provider/test', async (req, res) => {
+  if (!ensureAdminWorkspaceAccess(req, res)) return;
   try {
     const provider = String(req.params.provider);
     // Actually exercise the channel so the test reflects real connectivity.
@@ -1920,6 +2523,7 @@ router.post('/integrations/:provider/test', async (req, res) => {
 });
 
 router.post('/integrations/notion/export', async (req, res) => {
+  if (!ensureAdminWorkspaceAccess(req, res)) return;
   try {
     const dataset = await getAcademyDataset();
     const payload = {
@@ -1942,19 +2546,32 @@ router.post('/integrations/notion/export', async (req, res) => {
 });
 
 router.post('/reports/weekly/test', async (req, res) => {
+  if (!ensureReportRouteAccess(req, res)) return;
   try {
     const analytics = await buildAnalytics();
     const recipient = nullableText(req.body.recipient) ?? 'leadership';
-    const message = [
-      'Еженедельный отчёт 01 Academy',
-      `Новые лиды: ${analytics.summary.newLeadsWeek}`,
-      `Были на демо: ${analytics.funnel.find((item) => item.code === 'demo_attended')?.count ?? 0}`,
-      `Новые оплатившие: ${analytics.summary.newPaidStudents}`,
-      `Выручка: ${analytics.summary.revenueMonth} сум`,
-      `Средняя посещаемость: ${analytics.summary.avgAttendance}%`,
-      `NPS родителей: ${analytics.summary.nps}`,
-      `Красные флаги: ${analytics.risks.lowAttendanceStudents.length + analytics.risks.lowScores.length + analytics.risks.overduePayments.length + analytics.risks.longThinkingLeads.length}`,
-    ].join('\n');
+    const isMarketingReport = req.user?.role === 'smm_manager';
+    const message = isMarketingReport
+      ? [
+        'Еженедельный маркетинг-отчёт 01 Academy',
+        `Новые лиды: ${analytics.summary.newLeadsWeek}`,
+        `Конверсия заявка → демо: ${analytics.summary.leadToDemoConversion}%`,
+        `Конверсия демо → оплата: ${analytics.summary.demoToPaidConversion}%`,
+        `CPL: ${analytics.summary.cpl} сум`,
+        `CAC: ${analytics.summary.cac} сум`,
+        `ROAS: ${analytics.summary.roas}x`,
+        `Тёплая база: ${analytics.summary.warmBaseSize}`,
+      ].join('\n')
+      : [
+        'Еженедельный отчёт 01 Academy',
+        `Новые лиды: ${analytics.summary.newLeadsWeek}`,
+        `Были на демо: ${analytics.funnel.find((item) => item.code === 'demo_attended')?.count ?? 0}`,
+        `Новые оплатившие: ${analytics.summary.newPaidStudents}`,
+        `Выручка: ${analytics.summary.revenueMonth} сум`,
+        `Средняя посещаемость: ${analytics.summary.avgAttendance}%`,
+        `NPS родителей: ${analytics.summary.nps}`,
+        `Красные флаги: ${analytics.risks.lowAttendanceStudents.length + analytics.risks.lowScores.length + analytics.risks.overduePayments.length + analytics.risks.longThinkingLeads.length}`,
+      ].join('\n');
     const outbox = await createOutbox('telegram', recipient, message, { entityType: 'weekly_report' });
     res.json({ ok: true, outbox, preview: message });
   } catch (error) {
@@ -1964,6 +2581,7 @@ router.post('/reports/weekly/test', async (req, res) => {
 });
 
 router.post('/automations/run', async (req, res) => {
+  if (!ensureRoleAccess(req, res, OPERATIONS_ROLES, 'Operations access required')) return;
   try {
     const now = new Date();
     const actions: string[] = [];
@@ -2101,6 +2719,7 @@ router.post('/mailings/:id/event', async (req, res) => {
 });
 
 router.get('/exports/:entity', async (req, res) => {
+  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
   try {
     const entityMap: Record<string, string> = {
       leads: 'academy_leads',
@@ -2161,7 +2780,7 @@ registerSimpleCrud('tasks', 'academy_tasks', [
 
 registerSimpleCrud('expenses', 'academy_marketing_expenses', [
   'sourceId', 'channel', 'campaignName', 'periodStart', 'periodEnd', 'amountUzs', 'createdBy',
-], { orderBy: 'period_start DESC', requireFinance: true });
+], { orderBy: 'period_start DESC', requireMarketing: true });
 
 registerSimpleCrud('portfolio', 'academy_portfolio_projects', [
   'studentId', 'lessonId', 'groupId', 'courseId', 'title', 'url', 'fileUrl', 'finalStatus', 'marketingConsent',

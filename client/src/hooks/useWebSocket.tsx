@@ -65,7 +65,11 @@ export function useWebSocket() {
         case 'ACADEMY_STUDENT_UPDATED':
         case 'ACADEMY_PAYMENT_CREATED':
         case 'ACADEMY_ATTENDANCE_UPDATED':
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/bootstrap'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/analytics'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/admin'] });
           queryClient.invalidateQueries({ queryKey: ['/api/academy/analytics/dashboard'] });
           break;
         case 'NEW_MESSAGE':

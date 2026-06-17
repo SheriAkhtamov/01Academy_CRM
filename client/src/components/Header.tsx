@@ -24,21 +24,12 @@ interface HeaderProps {
   title?: string;
   subtitle?: string;
   onMenuToggle?: () => void;
-  searchData?: {
-    leads?: any[];
-    students?: any[];
-    courses?: any[];
-    groups?: any[];
-    teachers?: any[];
-    sources?: any[];
-  };
 }
 
 export default function Header({
   title,
   subtitle,
   onMenuToggle,
-  searchData,
 }: HeaderProps) {
   const { logout, user } = useAuth();
   const { t } = useTranslation();
@@ -238,7 +229,6 @@ export default function Header({
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        data={searchData}
       />
     </>
   );

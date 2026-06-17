@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import { Switch, Route } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -16,27 +15,6 @@ import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
-
-function LayoutWithSearch({ children }: { children: React.ReactNode }) {
-  const { data } = useQuery<any>({
-    queryKey: ['/api/academy/bootstrap'],
-    enabled: true,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const searchData = data
-    ? {
-        leads: data.leads,
-        students: data.students,
-        courses: data.courses,
-        groups: data.groups,
-        teachers: data.teachers,
-        sources: data.sources,
-      }
-    : undefined;
-
-  return <Layout searchData={searchData}>{children}</Layout>;
-}
 
 function RoleBasedHome() {
   const { user } = useAuth();
@@ -117,7 +95,7 @@ function Router() {
   }
 
   return (
-    <LayoutWithSearch>
+    <Layout>
       <Switch>
         <Route path="/" component={RoleBasedHome} />
         <Route path="/integrations" component={() => adminPage('integrations')} />
@@ -154,7 +132,7 @@ function Router() {
         )} />
         <Route component={NotFound} />
       </Switch>
-    </LayoutWithSearch>
+    </Layout>
   );
 }
 

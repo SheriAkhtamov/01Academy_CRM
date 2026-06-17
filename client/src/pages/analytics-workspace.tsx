@@ -171,7 +171,7 @@ export default function AnalyticsWorkspace() {
   const leadStatusName = (code: string) => translateEnumValue(code, leadStatusTranslationKeys, t);
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ['/api/academy/bootstrap'],
+    queryKey: ['/api/academy/workspaces/analytics'],
   });
 
   const handleSendTelegram = async () => {

@@ -213,10 +213,10 @@ export default function TeacherWorkspace() {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ['/api/academy/bootstrap'],
+    queryKey: ['/api/academy/workspaces/teacher'],
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/bootstrap'] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
 
   const saveAttendance = useMutation({
     mutationFn: () =>

@@ -30,13 +30,9 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import {
   ACTIVE_PIPELINE_STATUSES,
   LEAD_STATUSES,
-  PAYMENT_TYPES,
-  PAYMENT_METHODS,
-  PAYMENT_DISCOUNTS,
 } from '@shared/academy';
 import {
   AlertCircle,
-  Banknote,
   CheckCircle2,
   ClipboardList,
   GraduationCap,
@@ -44,10 +40,8 @@ import {
   Percent,
   Plus,
   Search,
-  Send,
   TrendingUp,
   UserCheck,
-  Wallet,
 } from 'lucide-react';
 
 type SalesTab = 'leads' | 'pipeline' | 'students' | 'tasks';
@@ -123,25 +117,6 @@ const leadStatusTranslationKeys: Record<string, TranslationKey> = {
   enrolled: 'leadStatusEnrolled',
   paid: 'leadStatusPaid',
   not_now: 'leadStatusNotNow',
-};
-
-const paymentTypeTranslationKeys: Record<string, TranslationKey> = {
-  full: 'paymentTypeFull',
-  installment_1_2: 'paymentTypeInstallmentOne',
-  installment_2_2: 'paymentTypeInstallmentTwo',
-};
-
-const paymentMethodTranslationKeys: Record<string, TranslationKey> = {
-  cash: 'paymentMethodCash',
-  transfer: 'paymentMethodTransfer',
-  card: 'paymentMethodCard',
-};
-
-const paymentDiscountTranslationKeys: Record<string, TranslationKey> = {
-  promo_20: 'paymentDiscountPromo20',
-  family_15: 'paymentDiscountFamily15',
-  referral_15: 'paymentDiscountReferral15',
-  none: 'paymentDiscountNone',
 };
 
 const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
@@ -245,7 +220,6 @@ export default function SalesDashboard() {
   };
 
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
-  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [leadForm, setLeadForm] = useState({
     contactName: '',
     phone: '',
@@ -257,51 +231,31 @@ export default function SalesDashboard() {
     comment: '',
     language: 'ru',
   });
-  const [paymentForm, setPaymentForm] = useState({
-    leadId: '',
-    studentId: '',
-    amountUzs: '',
-    type: 'full',
-    method: 'transfer',
-    status: 'paid',
-    discount: 'none',
-    period: 'month_1',
-  });
-
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ['/api/academy/bootstrap'],
+    queryKey: ['/api/academy/workspaces/sales'],
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/bootstrap'] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
 
   const myLeads = useMemo<Lead[]>(() => {
     if (!data?.leads) return [];
-    return data.leads.filter((lead: Lead) => lead.managerId === user?.id);
-  }, [data?.leads, user?.id]);
+    return data.leads;
+  }, [data?.leads]);
 
   const myStudents = useMemo<Student[]>(() => {
     if (!data?.students) return [];
-    return data.students.filter((student: Student) => student.managerId === user?.id);
-  }, [data?.students, user?.id]);
+    return data.students;
+  }, [data?.students]);
 
   const myTasks = useMemo<Task[]>(() => {
     if (!data?.tasks) return [];
-    return data.tasks.filter((task: Task) => task.responsibleId === user?.id);
-  }, [data?.tasks, user?.id]);
-
-  const myPayments = useMemo(() => {
-    if (!data?.payments) return [];
-    return data.payments.filter((payment: any) => {
-      const lead = data.leads?.find((l: Lead) => l.id === payment.leadId);
-      const student = data.students?.find((s: Student) => s.id === payment.studentId);
-      return lead?.managerId === user?.id || student?.managerId === user?.id;
-    });
-  }, [data?.payments, data?.leads, data?.students, user?.id]);
+    return data.tasks;
+  }, [data?.tasks]);
 
   const filteredLeads = useMemo(() => {
     const normalized = search.trim().toLowerCase();
@@ -318,7 +272,6 @@ export default function SalesDashboard() {
   const managerStats = useMemo(() => {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const monthAgo = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const newLeadsWeek = myLeads.filter((lead) => new Date(lead.createdAt) >= weekAgo).length;
     const activeLeads = myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any)).length;
@@ -332,15 +285,8 @@ export default function SalesDashboard() {
       (task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now
     ).length;
 
-    const revenueMonth = myPayments
-      .filter((payment: any) => {
-        const paidAt = payment.paidAt || payment.createdAt;
-        return paidAt && new Date(paidAt) >= monthAgo && payment.status === 'paid';
-      })
-      .reduce((sum: number, payment: any) => sum + Number(payment.amountUzs || 0), 0);
-
-    return { newLeadsWeek, activeLeads, totalStudents, conversionRate, overdueTasks, revenueMonth };
-  }, [myLeads, myStudents, myTasks, myPayments]);
+    return { newLeadsWeek, activeLeads, totalStudents, conversionRate, overdueTasks };
+  }, [myLeads, myStudents, myTasks]);
 
   const activePipelineStatuses = LEAD_STATUSES.filter(
     (status) => ACTIVE_PIPELINE_STATUSES.includes(status.code as any)
@@ -373,22 +319,6 @@ export default function SalesDashboard() {
     onError: (error: any) => toast({ title: t('statusNotUpdated'), description: error.message, variant: 'destructive' }),
   });
 
-  const createPayment = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/academy/payments', {
-      ...paymentForm,
-      leadId: paymentForm.leadId ? Number(paymentForm.leadId) : undefined,
-      studentId: paymentForm.studentId ? Number(paymentForm.studentId) : undefined,
-      amountUzs: Number(paymentForm.amountUzs),
-    }),
-    onSuccess: () => {
-      toast({ title: t('paymentSaved'), description: t('paymentSavedDesc') });
-      setPaymentForm({ leadId: '', studentId: '', amountUzs: '', type: 'full', method: 'transfer', status: 'paid', discount: 'none', period: 'month_1' });
-      setPaymentDialogOpen(false);
-      invalidate();
-    },
-    onError: (error: any) => toast({ title: t('paymentSaveFailed'), description: error.message, variant: 'destructive' }),
-  });
-
   const updateTask = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
       apiRequest('PATCH', `/api/academy/tasks/${id}`, payload),
@@ -399,17 +329,24 @@ export default function SalesDashboard() {
     onError: (error: any) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
-  const sendReport = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/academy/reports/weekly/test', { recipient: 'leadership' }),
-    onSuccess: (result: any) => toast({ title: t('testReportCreated'), description: result?.preview?.split('\n')[0] }),
-  });
-
   const handleTabChange = (tab: string) => {
     setActiveTab(tab as SalesTab);
     const params = new URLSearchParams(window.location.search);
     params.set('tab', tab);
     setLocation(`/sales?${params.toString()}`, { replace: true });
   };
+
+  const managerFunnel = useMemo(() => {
+    const funnelMap: Record<string, number> = {};
+    LEAD_STATUSES.forEach((status) => {
+      funnelMap[status.code] = myLeads.filter((l) => l.statusCode === status.code).length;
+    });
+    return LEAD_STATUSES.filter((s) => funnelMap[s.code] > 0).map((status) => ({
+      code: status.code,
+      count: funnelMap[status.code],
+      color: status.color,
+    }));
+  }, [myLeads]);
 
   if (isLoading || !data) {
     return (
@@ -425,18 +362,6 @@ export default function SalesDashboard() {
     );
   }
 
-  const managerFunnel = useMemo(() => {
-    const funnelMap: Record<string, number> = {};
-    LEAD_STATUSES.forEach((status) => {
-      funnelMap[status.code] = myLeads.filter((l) => l.statusCode === status.code).length;
-    });
-    return LEAD_STATUSES.filter((s) => funnelMap[s.code] > 0).map((status) => ({
-      code: status.code,
-      count: funnelMap[status.code],
-      color: status.color,
-    }));
-  }, [myLeads]);
-
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
@@ -446,12 +371,6 @@ export default function SalesDashboard() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setLeadDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />{t('lead')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setPaymentDialogOpen(true)}>
-              <Wallet className="h-4 w-4 mr-2" />{t('payment')}
-            </Button>
-            <Button size="sm" onClick={() => sendReport.mutate()} disabled={sendReport.isPending}>
-              <Send className="h-4 w-4 mr-2" />{t('sendReport')}
             </Button>
           </div>
         }
@@ -463,17 +382,15 @@ export default function SalesDashboard() {
         <KpiCard title={t('myStudents')} value={managerStats.totalStudents} detail={t('assignedToMe')} icon={GraduationCap} tone="green" />
         <KpiCard title={t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
         <KpiCard title={t('overdueTasks')} value={managerStats.overdueTasks} detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')} icon={AlertCircle} tone={managerStats.overdueTasks > 0 ? 'red' : 'green'} />
-        <KpiCard title={t('revenueMonth')} value={money(managerStats.revenueMonth)} detail={t('myLeadsAndStudents')} icon={Banknote} tone="green" />
       </div>
 
       <div className="mt-6">
         <DashboardCharts
-          payments={myPayments}
+          payments={[]}
           funnel={managerFunnel}
           analytics={{
             summary: {
               newLeadsWeek: managerStats.newLeadsWeek,
-              revenueMonth: managerStats.revenueMonth,
             },
           }}
           leadStatusName={leadStatusName}
@@ -503,8 +420,6 @@ export default function SalesDashboard() {
               setStatusFilter={setStatusFilter}
               setLeadDialogOpen={setLeadDialogOpen}
               updateLead={updateLead}
-              setPaymentForm={setPaymentForm}
-              setPaymentDialogOpen={setPaymentDialogOpen}
             />
           </TabsContent>
           <TabsContent value="pipeline" className="mt-0">
@@ -514,8 +429,6 @@ export default function SalesDashboard() {
               filteredLeads={filteredLeads}
               activePipelineStatuses={activePipelineStatuses}
               updateLead={updateLead}
-              setPaymentForm={setPaymentForm}
-              setPaymentDialogOpen={setPaymentDialogOpen}
               setLeadDialogOpen={setLeadDialogOpen}
             />
           </TabsContent>
@@ -558,35 +471,6 @@ export default function SalesDashboard() {
           />
         </DialogContent>
       </Dialog>
-
-      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('recordPayment')}</DialogTitle>
-            <DialogDescription className="sr-only">{t('formCreation')} {t('recordPayment')}</DialogDescription>
-          </DialogHeader>
-          <PaymentForm
-            t={t}
-            paymentForm={paymentForm}
-            setPaymentForm={setPaymentForm}
-            createPayment={createPayment}
-            myLeads={myLeads}
-            myStudents={myStudents}
-            paymentTypeName={(code) => {
-              const key = paymentTypeTranslationKeys[code || ''];
-              return key ? t(key) : code || t('noData');
-            }}
-            paymentMethodName={(code) => {
-              const key = paymentMethodTranslationKeys[code || ''];
-              return key ? t(key) : code || t('noData');
-            }}
-            paymentDiscountName={(code) => {
-              const key = paymentDiscountTranslationKeys[code || ''];
-              return key ? t(key) : code || t('noData');
-            }}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -604,8 +488,6 @@ function LeadsTab({
   setStatusFilter,
   setLeadDialogOpen,
   updateLead,
-  setPaymentForm,
-  setPaymentDialogOpen,
 }: {
   t: (key: TranslationKey) => string;
   leadStatusName: (code: string) => string;
@@ -618,8 +500,6 @@ function LeadsTab({
   setStatusFilter: (v: string) => void;
   setLeadDialogOpen: (v: boolean) => void;
   updateLead: any;
-  setPaymentForm: any;
-  setPaymentDialogOpen: (v: boolean) => void;
 }) {
   const columns = [
     {
@@ -695,18 +575,6 @@ function LeadsTab({
             onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } })}>
             {t('toWarm')}
           </Button>
-          <Button size="sm" className="h-7 text-xs"
-            onClick={() => {
-              setPaymentForm((prev: any) => ({
-                ...prev,
-                leadId: String(lead.id),
-                studentId: '',
-                amountUzs: String(lead.expectedPaymentUzs || lead.offerPriceUzs || ''),
-              }));
-              setPaymentDialogOpen(true);
-            }}>
-            <Wallet className="h-3 w-3 mr-1" />{t('payment')}
-          </Button>
         </div>
       ),
     },
@@ -764,8 +632,6 @@ function PipelineTab({
   filteredLeads,
   activePipelineStatuses,
   updateLead,
-  setPaymentForm,
-  setPaymentDialogOpen,
   setLeadDialogOpen,
 }: {
   t: (key: TranslationKey) => string;
@@ -773,8 +639,6 @@ function PipelineTab({
   filteredLeads: Lead[];
   activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
   updateLead: any;
-  setPaymentForm: any;
-  setPaymentDialogOpen: (v: boolean) => void;
   setLeadDialogOpen: (v: boolean) => void;
 }) {
   return (
@@ -800,17 +664,9 @@ function PipelineTab({
         onQuickAction={(action: string, lead: any) => {
           if (action === 'qualify') updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
           if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
-          if (action === 'payment') {
-            setPaymentForm((prev: any) => ({
-              ...prev,
-              leadId: String(lead.id),
-              studentId: '',
-              amountUzs: String(lead.expectedPaymentUzs || lead.offerPriceUzs || ''),
-            }));
-            setPaymentDialogOpen(true);
-          }
         }}
         isPending={updateLead.isPending}
+        showPaymentAction={false}
       />
     </div>
   );
@@ -1031,89 +887,6 @@ function TasksTab({
     </div>
   );
 }
-
-function PaymentForm({
-  t,
-  paymentForm,
-  setPaymentForm,
-  createPayment,
-  myLeads,
-  myStudents,
-  paymentTypeName,
-  paymentMethodName,
-  paymentDiscountName,
-}: {
-  t: (key: TranslationKey) => string;
-  paymentForm: any;
-  setPaymentForm: any;
-  createPayment: any;
-  myLeads: Lead[];
-  myStudents: Student[];
-  paymentTypeName: (code: string | null | undefined) => string;
-  paymentMethodName: (code: string | null | undefined) => string;
-  paymentDiscountName: (code: string | null | undefined) => string;
-}) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <Field label={t('lead')}>
-        <Select value={paymentForm.leadId} onValueChange={(leadId: string) => setPaymentForm({ ...paymentForm, leadId, studentId: '' })}>
-          <SelectTrigger><SelectValue placeholder={t('ifFirstPayment')} /></SelectTrigger>
-          <SelectContent>
-            {myLeads.map((lead) => (
-              <SelectItem key={lead.id} value={String(lead.id)}>{lead.contactName}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={t('student')}>
-        <Select value={paymentForm.studentId} onValueChange={(studentId: string) => setPaymentForm({ ...paymentForm, studentId, leadId: '' })}>
-          <SelectTrigger><SelectValue placeholder={t('ifAlreadyStudent')} /></SelectTrigger>
-          <SelectContent>
-            {myStudents.map((student) => (
-              <SelectItem key={student.id} value={String(student.id)}>{student.studentName || student.contactName}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={t('amount')}>
-        <Input value={paymentForm.amountUzs} onChange={(e) => setPaymentForm({ ...paymentForm, amountUzs: e.target.value })} placeholder="0" />
-      </Field>
-      <Field label={t('type')}>
-        <Select value={paymentForm.type} onValueChange={(type: string) => setPaymentForm({ ...paymentForm, type })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {PAYMENT_TYPES.map((type) => <SelectItem key={type} value={type}>{paymentTypeName(type)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={t('method')}>
-        <Select value={paymentForm.method} onValueChange={(method: string) => setPaymentForm({ ...paymentForm, method })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{paymentMethodName(method)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={t('discount')}>
-        <Select value={paymentForm.discount} onValueChange={(discount: string) => setPaymentForm({ ...paymentForm, discount })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {PAYMENT_DISCOUNTS.map((discount) => <SelectItem key={discount} value={discount}>{paymentDiscountName(discount)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </Field>
-      <div className="md:col-span-2 flex justify-end">
-        <Button
-          onClick={() => createPayment.mutate()}
-          disabled={createPayment.isPending || (!paymentForm.leadId && !paymentForm.studentId) || !paymentForm.amountUzs}
-        >
-          {t('savePayment')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 
 // ---- Lead Form Component ----
 

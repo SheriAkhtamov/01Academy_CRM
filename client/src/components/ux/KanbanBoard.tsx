@@ -36,9 +36,10 @@ interface KanbanBoardProps {
   onStatusChange: (leadId: number, statusCode: string) => void;
   onQuickAction?: (action: 'qualify' | 'warm' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
   isPending?: boolean;
+  showPaymentAction?: boolean;
 }
 
-export function KanbanBoard({ statuses, leads, onStatusChange, onQuickAction, isPending }: KanbanBoardProps) {
+export function KanbanBoard({ statuses, leads, onStatusChange, onQuickAction, isPending, showPaymentAction = true }: KanbanBoardProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -143,14 +144,16 @@ export function KanbanBoard({ statuses, leads, onStatusChange, onQuickAction, is
                           <ArrowRight className="h-3 w-3 mr-1" /> {nextStatus.name}
                         </Button>
                       ))}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs px-2"
-                        onClick={() => onQuickAction?.('payment', lead)}
-                      >
-                        <Wallet className="h-3 w-3 mr-1" /> {t('payment')}
-                      </Button>
+                      {showPaymentAction && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs px-2"
+                          onClick={() => onQuickAction?.('payment', lead)}
+                        >
+                          <Wallet className="h-3 w-3 mr-1" /> {t('payment')}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

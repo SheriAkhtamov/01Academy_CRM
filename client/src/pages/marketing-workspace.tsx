@@ -157,10 +157,10 @@ export default function MarketingWorkspace() {
   };
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ['/api/academy/bootstrap'],
+    queryKey: ['/api/academy/workspaces/marketing'],
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/bootstrap'] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] });
 
   const createExpense = useMutation({
     mutationFn: () => apiRequest('POST', '/api/academy/expenses', {

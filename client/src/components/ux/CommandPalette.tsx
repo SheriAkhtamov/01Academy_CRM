@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
+import { apiRequest } from '@/lib/queryClient';
 import {
   CommandDialog,
   CommandEmpty,
@@ -20,6 +22,7 @@ import {
   GraduationCap,
   HeartHandshake,
   Layers3,
+  Loader2,
   Megaphone,
   Search,
   Settings,
@@ -37,20 +40,20 @@ interface SearchItem {
   keywords?: string;
 }
 
+interface ServerSearchItem {
+  id: string;
+  entityType: string;
+  title: string;
+  subtitle?: string;
+  href: string;
+}
+
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  data?: {
-    leads?: any[];
-    students?: any[];
-    courses?: any[];
-    groups?: any[];
-    teachers?: any[];
-    sources?: any[];
-  };
 }
 
-export function CommandPalette({ open, onOpenChange, data }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -113,75 +116,53 @@ export function CommandPalette({ open, onOpenChange, data }: CommandPaletteProps
     [t, user?.role]
   );
 
-  const entityItems: SearchItem[] = useMemo(() => {
-    const items: SearchItem[] = [];
-    if (!user || user.role === 'admin' || user.role === 'head') {
-      return items;
-    }
-    (data?.leads ?? []).forEach((lead) => {
-      if (user.role !== 'account_manager') return;
-      items.push({
-        id: `lead-${lead.id}`,
-        type: t('typeLead'),
-        title: lead.contactName || t('noData'),
-        subtitle: [lead.phone, lead.studentName, lead.courseName].filter(Boolean).join(' • '),
-        href: '/sales?tab=leads',
-        icon: Users,
-        keywords: [lead.contactName, lead.phone, lead.studentName, lead.messenger].filter(Boolean).join(' '),
-      });
-    });
-    (data?.students ?? []).forEach((student) => {
-      if (user.role !== 'account_manager' && user.role !== 'teacher') return;
-      items.push({
-        id: `student-${student.id}`,
-        type: t('typeStudent'),
-        title: student.studentName || t('noData'),
-        subtitle: [student.contactName, student.phone, student.groupName].filter(Boolean).join(' • '),
-        href: user.role === 'teacher' ? '/teacher-workspace?tab=groups' : '/sales?tab=students',
-        icon: GraduationCap,
-        keywords: [student.studentName, student.contactName, student.phone, student.referralCode].filter(Boolean).join(' '),
-      });
-    });
-    (data?.courses ?? []).forEach((course) => {
-      if (user.role !== 'operations_director' && user.role !== 'teacher') return;
-      items.push({
-        id: `course-${course.id}`,
-        type: t('typeCourse'),
-        title: course.name,
-        subtitle: course.ageCategory,
-        href: user.role === 'teacher' ? '/teacher-workspace?tab=groups' : '/analytics-workspace?tab=courses',
-        icon: BookOpen,
-        keywords: [course.name, course.slug, course.ageCategory].filter(Boolean).join(' '),
-      });
-    });
-    (data?.groups ?? []).forEach((group) => {
-      if (user.role !== 'operations_director' && user.role !== 'teacher') return;
-      items.push({
-        id: `group-${group.id}`,
-        type: t('typeGroup'),
-        title: group.name,
-        subtitle: [group.courseName, group.teacherName].filter(Boolean).join(' • '),
-        href: user.role === 'teacher' ? '/teacher-workspace?tab=groups' : '/analytics-workspace?tab=groups',
-        icon: Layers3,
-        keywords: [group.name, group.courseName, group.teacherName].filter(Boolean).join(' '),
-      });
-    });
-    (data?.teachers ?? []).forEach((teacher) => {
-      if (user.role !== 'operations_director') return;
-      items.push({
-        id: `teacher-${teacher.id}`,
-        type: t('typeTeacher'),
-        title: teacher.fullName,
-        subtitle: teacher.status,
-        href: '/analytics-workspace?tab=teachers',
-        icon: UserRoundCheck,
-        keywords: teacher.fullName,
-      });
-    });
-    return items;
-  }, [data, t, user]);
-
   const normalizedSearch = search.trim().toLowerCase();
+
+  const { data: serverResults = [], isFetching } = useQuery<ServerSearchItem[]>({
+    queryKey: ['academy-search', normalizedSearch],
+    queryFn: () => apiRequest('GET', `/api/academy/search?q=${encodeURIComponent(normalizedSearch)}&limit=8`),
+    enabled: open && normalizedSearch.length >= 2,
+    staleTime: 30_000,
+  });
+
+  const iconForEntity = (entityType: string) => {
+    const icons: Record<string, React.ComponentType<{ className?: string }>> = {
+      lead: Users,
+      student: GraduationCap,
+      course: BookOpen,
+      group: Layers3,
+      teacher: UserRoundCheck,
+      source: Megaphone,
+      user: Users,
+    };
+    return icons[entityType] ?? Search;
+  };
+
+  const labelForEntity = (entityType: string) => {
+    const labels: Record<string, string> = {
+      lead: t('typeLead'),
+      student: t('typeStudent'),
+      course: t('typeCourse'),
+      group: t('typeGroup'),
+      teacher: t('typeTeacher'),
+      source: t('leadSources'),
+      user: t('employees'),
+    };
+    return labels[entityType] ?? entityType;
+  };
+
+  const entityItems: SearchItem[] = useMemo(
+    () =>
+      serverResults.map((item) => ({
+        id: item.id,
+        type: labelForEntity(item.entityType),
+        title: item.title || t('noData'),
+        subtitle: item.subtitle,
+        href: item.href,
+        icon: iconForEntity(item.entityType),
+      })),
+    [serverResults, t]
+  );
 
   const filteredNavigation = useMemo(() => {
     if (!normalizedSearch) return [];
@@ -192,17 +173,7 @@ export function CommandPalette({ open, onOpenChange, data }: CommandPaletteProps
     );
   }, [navigationItems, normalizedSearch]);
 
-  const filteredEntities = useMemo(() => {
-    if (!normalizedSearch) return [];
-    return entityItems
-      .filter(
-        (item) =>
-          item.title.toLowerCase().includes(normalizedSearch) ||
-          (item.subtitle && item.subtitle.toLowerCase().includes(normalizedSearch)) ||
-          (item.keywords && item.keywords.toLowerCase().includes(normalizedSearch))
-      )
-      .slice(0, 8);
-  }, [entityItems, normalizedSearch]);
+  const filteredEntities = normalizedSearch.length >= 2 ? entityItems : [];
 
   const handleSelect = (href: string) => {
     onOpenChange(false);
@@ -212,6 +183,7 @@ export function CommandPalette({ open, onOpenChange, data }: CommandPaletteProps
 
   const showNavigation = filteredNavigation.length > 0;
   const showEntities = filteredEntities.length > 0;
+  const showSearching = normalizedSearch.length >= 2 && isFetching && !showEntities;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -227,7 +199,19 @@ export function CommandPalette({ open, onOpenChange, data }: CommandPaletteProps
             <p className="text-sm text-slate-500">{t('commandPaletteHint')}</p>
           </CommandEmpty>
         )}
-        {normalizedSearch && !showNavigation && !showEntities && (
+        {normalizedSearch.length === 1 && (
+          <CommandEmpty className="py-8 text-center">
+            <Search className="mx-auto h-8 w-8 text-slate-300 mb-2" />
+            <p className="text-sm text-slate-500">{t('commandPaletteHint')}</p>
+          </CommandEmpty>
+        )}
+        {showSearching && (
+          <CommandEmpty className="py-8 text-center">
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400 mb-2" />
+            <p className="text-sm text-slate-500">{t('loading')}</p>
+          </CommandEmpty>
+        )}
+        {normalizedSearch.length >= 2 && !isFetching && !showNavigation && !showEntities && (
           <CommandEmpty>{t('noSearchResults')}</CommandEmpty>
         )}
         {showNavigation && (

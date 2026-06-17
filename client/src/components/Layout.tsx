@@ -9,17 +9,9 @@ import { ThemeProvider } from './ux/ThemeProvider';
 
 interface LayoutProps {
   children: React.ReactNode;
-  searchData?: {
-    leads?: any[];
-    students?: any[];
-    courses?: any[];
-    groups?: any[];
-    teachers?: any[];
-    sources?: any[];
-  };
 }
 
-function LayoutInner({ children, searchData }: LayoutProps) {
+function LayoutInner({ children }: LayoutProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const { t } = useTranslation();
   const [location] = useLocation();
@@ -58,7 +50,7 @@ function LayoutInner({ children, searchData }: LayoutProps) {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <Header onMenuToggle={() => setSidebarOpen(true)} searchData={searchData} />
+        <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto">
           <div key={location} className="page-enter">
             {children}
@@ -69,10 +61,10 @@ function LayoutInner({ children, searchData }: LayoutProps) {
   );
 }
 
-export default function Layout({ children, searchData }: LayoutProps) {
+export default function Layout({ children }: LayoutProps) {
   return (
     <ThemeProvider defaultTheme="system" storageKey="academy-crm-theme">
-      <LayoutInner searchData={searchData}>{children}</LayoutInner>
+      <LayoutInner>{children}</LayoutInner>
     </ThemeProvider>
   );
 }

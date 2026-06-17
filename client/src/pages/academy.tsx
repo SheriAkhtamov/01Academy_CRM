@@ -324,10 +324,10 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   const [paymentDateFilter, setPaymentDateFilter] = useState('');
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ['/api/academy/bootstrap'],
+    queryKey: ['/api/academy/workspaces/admin'],
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/bootstrap'] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/admin'] });
 
   const createLead = useMutation({
     mutationFn: () => apiRequest('POST', '/api/academy/leads', {

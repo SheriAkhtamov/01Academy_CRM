@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { Link } from 'wouter';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -12,6 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DataTable } from '@/components/ux/DataTable';
+import type { DataTableColumn } from '@/components/ux/DataTable';
+import { PageHeader } from '@/components/ux/PageHeader';
 import {
   Dialog,
   DialogContent,
@@ -41,14 +45,13 @@ import {
   Plus,
   Search,
   Settings,
+  BarChart3,
   Users,
   Mail,
   Clock,
   Shield,
   Edit,
   Trash2,
-  Eye,
-  EyeOff,
   UserCheck,
   UserX,
   Calendar,
@@ -61,7 +64,10 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
-  email: z.string().email(t('invalidEmailAddress')),
+  email: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().email(t('invalidEmailAddress')).optional()
+  ),
   fullName: z.string().min(1, t('fullNameRequiredValidation')),
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
@@ -112,7 +118,7 @@ export default function Admin() {
       fullName: '',
       phone: '',
       position: '',
-      role: 'employee',
+      role: 'account_manager',
       hasReportAccess: false,
       isActive: true,
     },
@@ -463,31 +469,173 @@ export default function Admin() {
     },
   ];
 
+  const roleWorkspaceMap: Record<string, { label: string; href: string | null }> = {
+    admin: { label: t('administration'), href: '/admin' },
+    head: { label: t('administration'), href: '/admin' },
+    account_manager: { label: t('salesManagerWorkspace'), href: '/sales' },
+    teacher: { label: t('teacherWorkspace'), href: '/teacher-workspace' },
+    operations_director: { label: t('sectionTitleAnalytics'), href: '/analytics-workspace' },
+    smm_manager: { label: t('marketingTab'), href: '/marketing-workspace' },
+    employee: { label: t('noWorkspaceAssigned'), href: null },
+  };
+
+  const selectedRole = userForm.watch('role');
+  const selectedWorkspace = roleWorkspaceMap[selectedRole] ?? roleWorkspaceMap.employee;
+
+  const roleOptions = [
+    { value: 'account_manager', label: t('roleAccountManager') },
+    { value: 'teacher', label: t('roleTeacher') },
+    { value: 'operations_director', label: t('roleOperationsDirector') },
+    { value: 'smm_manager', label: t('roleSmmManager') },
+    { value: 'employee', label: t('employee') },
+    { value: 'head', label: t('roleHead') },
+    { value: 'admin', label: t('admin') },
+  ];
+
+  const adminDataSections = [
+    { title: t('navLeads'), text: t('adminDataLeadsDesc'), href: '/leads', icon: Users },
+    { title: t('navPipeline'), text: t('adminDataPipelineDesc'), href: '/pipeline', icon: BarChart3 },
+    { title: t('navStudents'), text: t('adminDataStudentsDesc'), href: '/students', icon: UserCheck },
+    { title: t('navCourses'), text: t('adminDataCoursesDesc'), href: '/courses', icon: FileText },
+    { title: t('navGroups'), text: t('adminDataGroupsDesc'), href: '/groups', icon: Users },
+    { title: t('navLessons'), text: t('adminDataLessonsDesc'), href: '/lessons', icon: Calendar },
+    { title: t('navTeachers'), text: t('adminDataTeachersDesc'), href: '/teachers', icon: UserCheck },
+    { title: t('navPayments'), text: t('adminDataPaymentsDesc'), href: '/payments', icon: Key },
+    { title: t('navFinance'), text: t('adminDataFinanceDesc'), href: '/finance', icon: FileText },
+    { title: t('navIntegrations'), text: t('adminDataIntegrationsDesc'), href: '/integrations', icon: Settings },
+  ];
+
+  const userColumns: DataTableColumn<any>[] = [
+    {
+      key: 'user',
+      header: t('user'),
+      sortable: true,
+      accessor: (row) => `${row.fullName} ${row.email}`,
+      render: (row) => (
+        <div className="flex items-center space-x-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
+            style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))', boxShadow: 'var(--shadow-primary)' }}
+          >
+            <span>
+              {row.fullName.split(' ').map((name: string) => name[0]).join('').slice(0, 2)}
+            </span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-900 truncate">{row.fullName}</p>
+            <p className="text-sm text-slate-500 truncate">{row.email}</p>
+            {row.position && <p className="text-xs text-slate-400 truncate">{row.position}</p>}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: t('role'),
+      sortable: true,
+      accessor: (row) => getRoleLabel(row.role),
+      render: (row) => <Badge className={getRoleColor(row.role)}>{getRoleLabel(row.role)}</Badge>,
+    },
+    {
+      key: 'workspace',
+      header: t('workspaceLabel'),
+      sortable: true,
+      accessor: (row) => roleWorkspaceMap[row.role]?.label ?? t('noWorkspaceAssigned'),
+      render: (row) => (
+        <span className="text-sm text-slate-600">
+          {roleWorkspaceMap[row.role]?.label ?? t('noWorkspaceAssigned')}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: t('status'),
+      sortable: true,
+      accessor: (row) => row.isActive ? t('active') : t('inactive'),
+      render: (row) => (
+        <Badge className={getStatusColor(row.isActive)}>
+          {row.isActive ? t('active') : t('inactive')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: t('created'),
+      sortable: true,
+      accessor: (row) => row.createdAt ? new Date(row.createdAt).getTime() : 0,
+      render: (row) => (
+        <span className="text-sm text-slate-500">
+          {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : t('notAvailable')}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: t('actions'),
+      cellClassName: 'text-right',
+      render: (row) => (
+        <div className="flex items-center justify-end space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fetchUserCredentials(row.id)}
+            title={t('viewCredentials')}
+          >
+            <Key className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => openEditUserModal(row)}>
+            <Edit className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setUserToDelete(row)}
+            className="text-red-600 hover:text-red-800"
+            title={t('deleteUser')}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{t('administration')}</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {t('adminDescription')}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title={t('adminWorkspaceTitle')}
+        subtitle={t('adminWorkspaceSubtitle')}
+        actions={
+          <Button
+            className="bg-primary-600 hover:bg-primary-700"
+            onClick={() => {
+              setActiveTab('users');
+              setShowCreateUserModal(true);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            {t('createEmployee')}
+          </Button>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="users" className="flex items-center space-x-2">
             <Users className="h-4 w-4" />
-            <span>{t('userManagement')}</span>
+            <span>{t('usersTab')}</span>
+          </TabsTrigger>
+          <TabsTrigger value="data" className="flex items-center space-x-2">
+            <Settings className="h-4 w-4" />
+            <span>{t('dataTab')}</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center space-x-2">
             <Settings className="h-4 w-4" />
-            <span>{t('systemSettings')}</span>
+            <span>{t('settingsTab')}</span>
           </TabsTrigger>
           <TabsTrigger value="reports" className="flex items-center space-x-2">
             <FileText className="h-4 w-4" />
-            <span>{t('reportsLogs')}</span>
+            <span>{t('reportsTab')}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -534,15 +682,25 @@ export default function Admin() {
                           <FormField
                             control={userForm.control}
                             name="email"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('email')}</FormLabel>
-                                <FormControl>
-                                  <Input type="email" placeholder={t('emailPlaceholder')} {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
+                            render={({ field }) => selectedUser ? (
+                                <FormItem>
+                                  <FormLabel>{t('loginLabel')}</FormLabel>
+                                  <FormControl>
+                                    <Input type="email" placeholder={t('emailPlaceholder')} {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              ) : (
+                                <FormItem>
+                                  <FormLabel>{t('loginLabel')}</FormLabel>
+                                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/70 p-3">
+                                    <p className="text-sm font-medium text-slate-700">{t('employeeLoginGenerated')}</p>
+                                    <p className="mt-1 text-xs text-slate-500">{t('employeeLoginHint')}</p>
+                                  </div>
+                                  <input type="hidden" {...field} value="" />
+                                  <FormMessage />
+                                </FormItem>
+                              )}
                           />
                         </div>
 
@@ -589,15 +747,14 @@ export default function Admin() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="employee">{t('employee')}</SelectItem>
-                                    <SelectItem value="account_manager">{t('roleAccountManager')}</SelectItem>
-                                    <SelectItem value="teacher">{t('roleTeacher')}</SelectItem>
-                                    <SelectItem value="operations_director">{t('roleOperationsDirector')}</SelectItem>
-                                    <SelectItem value="smm_manager">{t('roleSmmManager')}</SelectItem>
-                                    <SelectItem value="head">{t('roleHead')}</SelectItem>
-                                    <SelectItem value="admin">{t('admin')}</SelectItem>
+                                    {roleOptions.map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
+                                <p className="text-xs text-slate-500">
+                                  {t('employeeRoleWorkspace')}: {selectedWorkspace.label}
+                                </p>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -755,140 +912,71 @@ export default function Admin() {
           {/* Users List */}
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="border-b border-slate-200/70">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {t('user')}
-                      </th>
-                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {t('role')}
-                      </th>
-                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {t('status')}
-                      </th>
-                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {t('reportsAccess')}
-                      </th>
-                      <th className="px-6 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {t('created')}
-                      </th>
-                      <th className="px-6 py-3 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                        {t('actions')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-100">
-                    {usersLoading ? (
-                      Array.from({ length: 5 }, (_, i) => (
-                        <tr key={i}>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center space-x-3">
-                              <Skeleton className="w-10 h-10 rounded-full" />
-                              <div className="space-y-1">
-                                <Skeleton className="h-4 w-32" />
-                                <Skeleton className="h-3 w-48" />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4"><Skeleton className="h-6 w-20" /></td>
-                          <td className="px-6 py-4"><Skeleton className="h-6 w-16" /></td>
-                          <td className="px-6 py-4"><Skeleton className="h-4 w-4" /></td>
-                          <td className="px-6 py-4"><Skeleton className="h-4 w-20" /></td>
-                          <td className="px-6 py-4"><Skeleton className="h-8 w-16" /></td>
-                        </tr>
-                      ))
-                    ) : filteredUsers.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center">
-                          <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-slate-900 mb-2">{t('noUsersFound')}</h3>
-                          <p className="text-slate-500 mb-4">
-                            {searchTerm || roleFilter !== 'all'
-                              ? t('adjustSearchCriteria')
-                              : t('createFirstUser')}
-                          </p>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredUsers.map((user: any) => (
-                        <tr key={user.id} className="hover:bg-primary/[0.035] transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
-                                   style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))', boxShadow: 'var(--shadow-primary)' }}>
-                                <span>
-                                  {user.fullName.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
-                                </span>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-slate-900">{user.fullName}</p>
-                                <p className="text-sm text-slate-500">{user.email}</p>
-                                {user.position && (
-                                  <p className="text-xs text-slate-400">{user.position}</p>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <Badge className={getRoleColor(user.role)}>
-                              {getRoleLabel(user.role)}
-                            </Badge>
-                          </td>
-                          <td className="px-6 py-4">
-                            <Badge className={getStatusColor(user.isActive)}>
-                              {user.isActive ? t('active') : t('inactive')}
-                            </Badge>
-                          </td>
-                          <td className="px-6 py-4">
-                            {user.hasReportAccess ? (
-                              <Eye className="h-4 w-4 text-emerald-500" />
-                            ) : (
-                              <EyeOff className="h-4 w-4 text-slate-400" />
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-500">
-                            {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : t('notAvailable')}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end space-x-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => fetchUserCredentials(user.id)}
-                                title={t('viewCredentials')}
-                              >
-                                <Key className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openEditUserModal(user)}
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setUserToDelete(user);
-                                  }}
-                                  className="text-red-600 hover:text-red-800"
-                                  title={t('deleteUser')}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {usersLoading ? (
+                <div className="p-4 space-y-3">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <div key={i} className="flex items-center gap-4 rounded-lg border border-slate-100 p-3">
+                      <Skeleton className="w-10 h-10 rounded-full" />
+                      <div className="flex-1 space-y-1">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-3 w-64" />
+                      </div>
+                      <Skeleton className="h-6 w-24" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <DataTable
+                  columns={userColumns}
+                  data={filteredUsers}
+                  keyExtractor={(row) => `user-${row.id}`}
+                  defaultSortKey="user"
+                  emptyState={
+                    <div className="px-6 py-12 text-center">
+                      <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-slate-900 mb-2">{t('noUsersFound')}</h3>
+                      <p className="text-slate-500 mb-4">
+                        {searchTerm || roleFilter !== 'all'
+                          ? t('adjustSearchCriteria')
+                          : t('createFirstUser')}
+                      </p>
+                    </div>
+                  }
+                />
+              )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="data" className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">{t('operationalData')}</h2>
+            <p className="text-sm text-slate-500">{t('adminDataDescription')}</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {adminDataSections.map((section) => {
+              const Icon = section.icon;
+              return (
+                <Card key={section.href} className="hover-lift">
+                  <CardContent className="p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-semibold text-slate-900">{section.title}</h3>
+                        <p className="mt-1 text-sm text-slate-500">{section.text}</p>
+                        <Button asChild variant="outline" size="sm" className="mt-4">
+                          <Link href={section.href}>{t('openSection')}</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </TabsContent>
 
         {/* System Settings Tab */}
@@ -1349,6 +1437,13 @@ export default function Admin() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">{t('workspaceLabel')}</label>
+                <div className="p-3 bg-slate-50 rounded-md text-sm">
+                  {roleWorkspaceMap[userCredentials.role]?.label ?? t('noWorkspaceAssigned')}
+                </div>
+              </div>
+
               <div className="flex justify-end space-x-2 pt-4">
                 {userCredentials.id && (
                   <Button
@@ -1367,6 +1462,7 @@ export default function Admin() {
                     if (userCredentials.temporaryPassword) {
                       credentialLines.push(`Password: ${userCredentials.temporaryPassword}`);
                     }
+                    credentialLines.push(`Workspace: ${roleWorkspaceMap[userCredentials.role]?.label ?? t('noWorkspaceAssigned')}`);
                     navigator.clipboard.writeText(credentialLines.join('\n'));
                     toast({
                       title: t('copiedToClipboard'),

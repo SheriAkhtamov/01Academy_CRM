@@ -97,18 +97,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('myTasks'), href: '/sales?tab=tasks', icon: ListChecks },
           ],
         },
-        {
-          label: t('sectionOperationsFinance'),
-          items: [
-            { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
-          ],
-        },
-        {
-          label: t('sectionSystem'),
-          items: [
-            { name: t('navSettings'), href: '/settings', icon: Settings },
-          ],
-        },
       ];
     }
 
@@ -125,41 +113,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('lessonRatings'), href: '/teacher-workspace?tab=surveys', icon: Star },
           ],
         },
-        {
-          label: t('sectionMain'),
-          items: [
-            { name: t('navDashboard'), href: '/', icon: BarChart3 },
-            { name: t('navLeads'), href: '/leads', icon: Users },
-            { name: t('navPipeline'), href: '/pipeline', icon: Flame },
-            { name: t('navStudents'), href: '/students', icon: GraduationCap },
-            { name: t('navCourses'), href: '/courses', icon: BookOpen },
-          ],
-        },
-        {
-          label: t('sectionSystem'),
-          items: [
-            { name: t('navSettings'), href: '/settings', icon: Settings },
-          ],
-        },
       ];
     }
 
     // ── OPERATIONS DIRECTOR ──
     if (role === 'operations_director') {
       return [
-        {
-          label: t('sectionMain'),
-          items: [
-            { name: t('navDashboard'), href: '/', icon: BarChart3 },
-            { name: t('navLeads'), href: '/leads', icon: Users },
-            { name: t('navPipeline'), href: '/pipeline', icon: Flame },
-            { name: t('navStudents'), href: '/students', icon: GraduationCap },
-            { name: t('navCourses'), href: '/courses', icon: BookOpen },
-            { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
-            { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
-            { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
-          ],
-        },
         {
           label: t('sectionTitleAnalytics'),
           items: [
@@ -169,26 +128,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('navTeachers'), href: '/analytics-workspace?tab=teachers', icon: UserRoundCheck },
             { name: t('navGroups'), href: '/analytics-workspace?tab=groups', icon: Layers3 },
             { name: t('navRisks'), href: '/analytics-workspace?tab=risks', icon: AlertTriangle },
-          ],
-        },
-        {
-          label: t('sectionOperationsFinance'),
-          items: [
-            { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
-            { name: t('navPayments'), href: '/payments', icon: Banknote, requiresFinanceAccess: true },
-            { name: t('navFinance'), href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
-            { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
-            { name: t('navWarmBase'), href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
-            { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
-          ],
-        },
-        {
-          label: t('sectionSystem'),
-          items: [
-            { name: t('navAnalytics'), href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
-            { name: t('navIntegrations'), href: '/integrations', icon: Plug },
-            { name: t('navSettings'), href: '/settings', icon: Settings },
-            { name: t('administration'), href: '/admin', icon: Settings, requiresAdminAccess: true },
           ],
         },
       ];
@@ -210,33 +149,33 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         },
         {
           label: t('sectionSystem'),
-          items: [
-            { name: t('navSettings'), href: '/settings', icon: Settings },
-          ],
+          items: [],
         },
       ];
     }
 
-    // ── EMPLOYEE ──
-    if (role === 'employee') {
+    // ── ADMIN / HEAD ──
+    if (role === 'admin' || role === 'head') {
       return [
         {
-          label: t('sectionMain'),
+          label: t('systemAdministration'),
           items: [
-            { name: t('navDashboard'), href: '/', icon: BarChart3 },
+            { name: t('administration'), href: '/admin', icon: Settings },
+          ],
+        },
+        {
+          label: t('dataMaintenance'),
+          items: [
             { name: t('navLeads'), href: '/leads', icon: Users },
             { name: t('navPipeline'), href: '/pipeline', icon: Flame },
             { name: t('navStudents'), href: '/students', icon: GraduationCap },
             { name: t('navCourses'), href: '/courses', icon: BookOpen },
-            { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
-            { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
-            { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
-          ],
-        },
-        {
-          label: t('sectionOperationsFinance'),
-          items: [
-            { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
+            { name: t('navGroups'), href: '/groups', icon: Layers3 },
+            { name: t('navLessons'), href: '/lessons', icon: Calendar },
+            { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck },
+            { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck },
+            { name: t('navPayments'), href: '/payments', icon: Banknote },
+            { name: t('navFinance'), href: '/finance', icon: ChartBar },
             { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
             { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
           ],
@@ -251,43 +190,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
-    // ── ADMIN / HEAD (default) ──
-    return [
-      {
-        label: t('sectionMain'),
-        items: [
-          { name: t('navDashboard'), href: '/', icon: BarChart3 },
-          { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap, requiresTeacherAccess: true },
-          { name: t('navLeads'), href: '/leads', icon: Users },
-          { name: t('navPipeline'), href: '/pipeline', icon: Flame },
-          { name: t('navStudents'), href: '/students', icon: GraduationCap },
-          { name: t('navCourses'), href: '/courses', icon: BookOpen },
-          { name: t('navGroups'), href: '/groups', icon: Layers3, requiresOperationsAccess: true },
-          { name: t('navLessons'), href: '/lessons', icon: Calendar, requiresOperationsAccess: true },
-          { name: t('navAttendance'), href: '/attendance', icon: ClipboardCheck, requiresOperationsAccess: true },
-        ],
-      },
-      {
-        label: t('sectionOperationsFinance'),
-        items: [
-          { name: t('navTeachers'), href: '/teachers', icon: UserRoundCheck, requiresOperationsAccess: true },
-          { name: t('navPayments'), href: '/payments', icon: Banknote, requiresFinanceAccess: true },
-          { name: t('navFinance'), href: '/finance', icon: ChartBar, requiresFinanceAccess: true },
-          { name: t('navRisks'), href: '/risks', icon: AlertTriangle },
-          { name: t('navWarmBase'), href: '/warm-base', icon: Megaphone, requiresMarketingAccess: true },
-          { name: t('navReferrals'), href: '/referrals', icon: HeartHandshake },
-        ],
-      },
-      {
-        label: t('sectionSystem'),
-        items: [
-          { name: t('navAnalytics'), href: '/analytics', icon: ChartBar, requiresAnalyticsAccess: true },
-          { name: t('navIntegrations'), href: '/integrations', icon: Plug },
-          { name: t('navSettings'), href: '/settings', icon: Settings },
-          { name: t('administration'), href: '/admin', icon: Settings, requiresAdminAccess: true },
-        ],
-      },
-    ];
+    return [];
   };
 
   const sections = buildSections();

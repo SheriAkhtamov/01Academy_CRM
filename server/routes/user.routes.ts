@@ -5,8 +5,58 @@ import { authService } from '../services/auth';
 import { requireAuth, requireAdmin } from '../middleware/auth.middleware';
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
+import { ACADEMY_ROLES, type AcademyRole } from '@shared/academy';
 
 const router = Router();
+const roleSet = new Set<string>(ACADEMY_ROLES);
+const roleLoginPrefix: Record<AcademyRole, string> = {
+    admin: 'admin',
+    head: 'head',
+    account_manager: 'sales',
+    teacher: 'teacher',
+    operations_director: 'ops',
+    smm_manager: 'smm',
+    employee: 'employee',
+};
+
+const translitMap: Record<string, string> = {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i',
+    й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't',
+    у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'y', ь: '',
+    э: 'e', ю: 'yu', я: 'ya',
+};
+
+const slugifyName = (fullName: string) => {
+    const transliterated = fullName
+        .trim()
+        .toLowerCase()
+        .split('')
+        .map((char) => translitMap[char] ?? char)
+        .join('');
+
+    const slug = transliterated
+        .replace(/[^a-z0-9]+/g, '.')
+        .replace(/^\.+|\.+$/g, '')
+        .slice(0, 32);
+
+    return slug || 'user';
+};
+
+const generateLogin = (fullName: string, role: AcademyRole, existingUsers: Array<{ email: string }>) => {
+    const prefix = roleLoginPrefix[role] ?? 'employee';
+    const base = `${prefix}.${slugifyName(fullName)}`;
+    const existing = new Set(existingUsers.map((user) => user.email.toLowerCase()));
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+        const suffix = crypto.randomBytes(2).toString('hex');
+        const login = `${base}.${suffix}@01academy.local`.toLowerCase();
+        if (!existing.has(login)) {
+            return login;
+        }
+    }
+
+    return `${base}.${Date.now().toString(36)}@01academy.local`.toLowerCase();
+};
 
 router.get('/', requireAuth, async (req, res) => {
     try {
@@ -32,9 +82,16 @@ router.get('/online-status', requireAuth, async (req, res) => {
 
 router.post('/', requireAdmin, async (req, res) => {
     try {
-        const { email, fullName, phone, position, role, hasReportAccess, isActive } = req.body;
+        const { fullName, phone, position, hasReportAccess, isActive } = req.body;
+        if (!fullName || typeof fullName !== 'string' || !fullName.trim()) {
+            return res.status(400).json({ error: 'Full name is required' });
+        }
+
+        const role = roleSet.has(req.body.role) ? req.body.role as AcademyRole : 'employee';
 
         const existingUsers = await storage.getUsers();
+        const providedEmail = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const email = providedEmail || generateLogin(fullName, role, existingUsers);
         const userExists = existingUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
 
         if (userExists) {

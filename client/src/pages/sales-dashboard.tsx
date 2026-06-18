@@ -489,7 +489,7 @@ export default function SalesDashboard() {
       return;
     }
     if (action === 'warm') {
-      updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
+      updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('leadStatusNotNow') } });
     }
   }, [openLead, t, updateLead]);
 
@@ -754,7 +754,7 @@ function OverviewTab({
                   {task.deadlineAt ? <span className="block text-xs text-muted-foreground">{dateTime(task.deadlineAt)}</span> : null}
                 </span>
                 <Badge variant={task.deadlineAt && new Date(task.deadlineAt) < new Date() ? 'destructive' : 'outline'}>
-                  {task.deadlineAt && new Date(task.deadlineAt) < new Date() ? t('taskOverdue') : t('taskInProgress')}
+                  {task.deadlineAt && new Date(task.deadlineAt) < new Date() ? t('paymentStatusOverdue') : t('taskInProgress')}
                 </Badge>
               </button>
             ))
@@ -1184,7 +1184,7 @@ function TasksTab({
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Badge variant={task.status === 'done' ? 'secondary' : isOverdue ? 'destructive' : 'outline'}>
-                      {task.status === 'done' ? t('taskDone') : isOverdue ? t('taskOverdue') : t('taskInProgress')}
+                      {task.status === 'done' ? t('taskDone') : isOverdue ? t('paymentStatusOverdue') : t('taskInProgress')}
                     </Badge>
                     {task.status !== 'done' && (
                       <Button
@@ -1367,7 +1367,7 @@ function LeadForm({
                 <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="ru">{t('russianLang')}</SelectItem>
+                    <SelectItem value="ru">{t('russian')}</SelectItem>
                     <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
                   </SelectGroup>
                 </SelectContent>

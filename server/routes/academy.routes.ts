@@ -449,7 +449,7 @@ const buildLeadStageDurations = (history: Row[]) => {
     const minutes = Math.max(0, Math.round((nextEnteredAt.getTime() - enteredAt.getTime()) / 60000));
     return {
       statusCode: item.toStatusCode,
-      statusName: LEAD_STATUSES.find((status) => status.code === item.toStatusCode)?.name ?? item.toStatusCode,
+      statusTranslationKey: LEAD_STATUSES.find((status) => status.code === item.toStatusCode)?.translationKey ?? item.toStatusCode,
       enteredAt: item.enteredAt,
       minutes,
       hours: Number((minutes / 60).toFixed(1)),
@@ -1669,9 +1669,9 @@ router.post('/leads', async (req, res) => {
     const messenger = nullableText(req.body.messenger);
     const sourceId = await resolveSourceId(req.body);
 
-    if (!contactName) return res.status(400).json({ error: 'Имя контактного лица обязательно' });
-    if (!phone) return res.status(400).json({ error: 'Телефон обязателен' });
-    if (!sourceId) return res.status(400).json({ error: 'Источник обязателен' });
+    if (!contactName) return res.status(400).json({ error: 'contactPersonRequired' });
+    if (!phone) return res.status(400).json({ error: 'phoneRequired' });
+    if (!sourceId) return res.status(400).json({ error: 'sourceRequired' });
 
     const duplicate = await findDuplicate(phone, messenger);
     if (duplicate) {
@@ -1866,7 +1866,7 @@ router.post('/leads/:id/demo', async (req, res) => {
     if (transitionError) return res.status(400).json({ error: transitionError });
 
     const demoAt = nullableDate(req.body.demoAt);
-    if (!demoAt) return res.status(400).json({ error: 'Дата и время демо обязательны' });
+    if (!demoAt) return res.status(400).json({ error: 'demoDateRequired' });
 
     const lead = await updateRow('academy_leads', id, {
       demoAt,
@@ -1928,7 +1928,7 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
         [id],
       );
       if (!paidPayment) {
-        throw Object.assign(new Error('Сначала зафиксируйте подтверждённую оплату.'), { statusCode: 409 });
+        throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
       }
       return createStudentFromLead(req, id, Number(paidPayment.id));
     });
@@ -2315,7 +2315,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       [lessonId],
     );
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    if (lesson.status === 'cancelled') return res.status(400).json({ error: 'Нельзя отметить посещаемость по отменённому занятию' });
+    if (lesson.status === 'cancelled') return res.status(400).json({ error: 'cancelledLessonAttendanceNotAllowed' });
     if (req.user!.role === 'teacher' && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)) {
       return res.status(403).json({ error: 'Teacher can mark only own lessons' });
     }
@@ -2409,8 +2409,8 @@ router.post('/payments', async (req, res) => {
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
     const studentId = parseId(req.body.studentId);
-    if (!amountUzs) return res.status(400).json({ error: 'Нельзя отметить оплату без суммы' });
-    if (!leadId && !studentId) return res.status(400).json({ error: 'Нельзя отметить оплату без ученика или лида' });
+    if (!amountUzs) return res.status(400).json({ error: 'paymentAmountRequired' });
+    if (!leadId && !studentId) return res.status(400).json({ error: 'paymentPartyRequired' });
     const status = nullableText(req.body.status) ?? 'paid';
     if (!PAYMENT_STATUSES.some((item) => item.code === status)) {
       return res.status(400).json({ error: 'Invalid payment status' });

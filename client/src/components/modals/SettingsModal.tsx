@@ -9,6 +9,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { formatUserRole } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -40,7 +41,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { User, Mail, Briefcase, Phone, MapPin, Save } from 'lucide-react';
-import { ACADEMY_ROLE_LABELS, ACADEMY_ROLES, type AcademyRole } from '@shared/academy';
+import { ACADEMY_ROLES, type AcademyRole } from '@shared/academy';
 
 const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
@@ -123,10 +124,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 
   const onSubmit = (data: z.infer<typeof settingsSchema>) => {
     updateProfileMutation.mutate(data);
-  };
-
-  const getRoleLabel = (role: string) => {
-    return ACADEMY_ROLE_LABELS[role as AcademyRole]?.ru ?? role;
   };
 
   return (
@@ -260,7 +257,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                         <SelectContent>
                           {ACADEMY_ROLES.map((role) => (
                             <SelectItem key={role} value={role}>
-                              {getRoleLabel(role)}
+                              {formatUserRole(role, t)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -304,7 +301,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             {/* Current Role Info */}
             <div className="bg-slate-50/60 border border-slate-200/70 p-4 rounded-xl">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentRole')}</h3>
-              <p className="text-slate-700 font-medium">{getRoleLabel(user?.role || 'account_manager')}</p>
+              <p className="text-slate-700 font-medium">{formatUserRole(user?.role || 'account_manager', t)}</p>
             </div>
 
             {/* Form Actions */}

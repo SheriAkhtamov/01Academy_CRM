@@ -1149,10 +1149,10 @@ export default function TeacherWorkspace() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-slate-500">{t('role')}</Label>
-                    <Input value={t('roleTeacher')} readOnly className="bg-slate-50" />
+                    <Input value={t('teacher')} readOnly className="bg-slate-50" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">Email</Label>
+                    <Label className="text-xs text-slate-500">{t('email')}</Label>
                     <Input value={user?.email || '—'} readOnly className="bg-slate-50" />
                   </div>
                   <div className="space-y-1.5">

@@ -8,9 +8,47 @@ const ts = require('typescript');
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const clientSrcDir = path.join(rootDir, 'client/src');
+const serverDir = path.join(rootDir, 'server');
+const sharedDir = path.join(rootDir, 'shared');
 const i18nPath = path.join(clientSrcDir, 'lib/i18n.ts');
 const ignoredDirectories = new Set(['node_modules', 'dist', '.git']);
 const formatPath = (filePath) => path.relative(rootDir, filePath);
+const nonLocalizedValueKeys = new Set([
+  'aiBaseUrl',
+  'aiModelPlaceholder',
+  'cacLabel',
+  'cplColumn',
+  'emailPlaceholder',
+  'fromEmailPlaceholder',
+  'ltvCacLabel',
+  'ltvLabel',
+  'npsTab',
+  'passwordMinLengthPlaceholder',
+  'platformName',
+  'providerAnthropic',
+  'providerGoogleGemini',
+  'providerOpenAI',
+  'roasLabel',
+  'sessionTimeoutPlaceholder',
+  'smtpHostPlaceholder',
+  'smtpPortPlaceholder',
+  'telegramWhatsapp',
+  'uzbekLang',
+]);
+const hardcodedTextAllowlist = new Set(['.csv', 'Enter', 'K', 'Telegram', 'WhatsApp', 'x']);
+const uiTextProperties = new Set([
+  'cancelLabel',
+  'description',
+  'detail',
+  'emptyText',
+  'header',
+  'label',
+  'message',
+  'subtitle',
+  'text',
+  'title',
+]);
+const uiTextAttributes = new Set(['alt', 'aria-label', 'placeholder', 'title']);
 
 const unwrapExpression = (expression) => {
   let current = expression;
@@ -75,6 +113,9 @@ const readTranslations = () => {
   const keySet = new Set();
   const duplicates = [];
   const invalidEntries = [];
+  const untranslatedEntries = [];
+  const duplicateValues = [];
+  const valuesToKeys = new Map();
 
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === 'translations' && node.initializer) {
@@ -117,6 +158,34 @@ const readTranslations = () => {
           const languageValue = languages.get(language);
           if (!languageValue || !ts.isStringLiteralLike(languageValue)) {
             invalidEntries.push(`${formatPath(i18nPath)}:${getLineColumn(sourceFile, property)} '${key}.${language}' must be a string`);
+          } else if (languageValue.text.trim().length === 0) {
+            invalidEntries.push(`${formatPath(i18nPath)}:${getLineColumn(sourceFile, languageValue)} '${key}.${language}' must not be empty`);
+          }
+        }
+
+        const englishValue = languages.get('en');
+        const russianValue = languages.get('ru');
+        if (ts.isStringLiteralLike(englishValue) && ts.isStringLiteralLike(russianValue)) {
+          const valueSignature = JSON.stringify([englishValue.text, russianValue.text]);
+          if (!valuesToKeys.has(valueSignature)) valuesToKeys.set(valueSignature, []);
+          valuesToKeys.get(valueSignature).push({
+            key,
+            location: `${formatPath(i18nPath)}:${getLineColumn(sourceFile, property.name)}`,
+          });
+
+          if (
+            /[A-Za-z]/.test(russianValue.text) &&
+            !/[А-Яа-яЁё]/.test(russianValue.text) &&
+            !nonLocalizedValueKeys.has(key)
+          ) {
+            untranslatedEntries.push(
+              `${formatPath(i18nPath)}:${getLineColumn(sourceFile, russianValue)} '${key}.ru' appears untranslated: ${JSON.stringify(russianValue.text)}`,
+            );
+          }
+          if (/[А-Яа-яЁё]/.test(englishValue.text)) {
+            untranslatedEntries.push(
+              `${formatPath(i18nPath)}:${getLineColumn(sourceFile, englishValue)} '${key}.en' appears untranslated: ${JSON.stringify(englishValue.text)}`,
+            );
           }
         }
       }
@@ -126,7 +195,21 @@ const readTranslations = () => {
   };
 
   visit(sourceFile);
-  return { keys, keySet, duplicates, invalidEntries };
+  for (const entries of valuesToKeys.values()) {
+    if (entries.length < 2) continue;
+    duplicateValues.push(
+      `${entries.map((entry) => entry.location).join(', ')} duplicate translation values for keys: ${entries.map((entry) => `'${entry.key}'`).join(', ')}`,
+    );
+  }
+
+  return {
+    keys,
+    keySet,
+    duplicates,
+    duplicateValues,
+    invalidEntries,
+    untranslatedEntries,
+  };
 };
 
 const isTranslationCall = (callExpression, sourceFile) => {
@@ -155,9 +238,10 @@ const collectTranslationReferences = (files, keySet) => {
   for (const filePath of files) {
     const sourceFile = parseSourceFile(filePath);
     const relativePath = formatPath(filePath);
+    const isClientFile = filePath.startsWith(clientSrcDir);
 
     const visit = (node) => {
-      if (ts.isCallExpression(node) && isTranslationCall(node, sourceFile)) {
+      if (isClientFile && ts.isCallExpression(node) && isTranslationCall(node, sourceFile)) {
         const firstArgument = node.arguments[0];
         if (firstArgument && ts.isStringLiteralLike(firstArgument)) {
           const key = firstArgument.text;
@@ -168,6 +252,26 @@ const collectTranslationReferences = (files, keySet) => {
           } else {
             missing.push(`${location} missing translation key '${key}'`);
           }
+        }
+      }
+
+      if (ts.isStringLiteralLike(node) && keySet.has(node.text)) {
+        const parent = node.parent;
+        const propertyName = ts.isPropertyAssignment(parent)
+          ? getPropertyName(parent.name)
+          : null;
+        const isServerTranslationKey =
+          propertyName === 'translationKey' ||
+          propertyName === 'rewardKey' ||
+          propertyName === 'error' ||
+          ts.isReturnStatement(parent) ||
+          (
+            ts.isNewExpression(parent) &&
+            parent.expression.getText(sourceFile) === 'Error'
+          );
+
+        if (isServerTranslationKey) {
+          addReference(node.text, `${relativePath}:${getLineColumn(sourceFile, node)}`);
         }
       }
 
@@ -235,7 +339,64 @@ const collectDuplicateObjectKeys = (files) => {
 const collectHardcodedClientText = (files) => {
   const hardcoded = [];
   const cyrillicPattern = /[А-Яа-яЁё]/;
-  const quotedTranslationPattern = /\{\s*t\(['"]/;
+  const letterPattern = /[A-Za-zА-Яа-яЁё]/;
+
+  const isAllowedText = (value) => {
+    const text = value.trim().replace(/\s+/g, ' ');
+    if (!text || !letterPattern.test(text)) return true;
+    if (hardcodedTextAllowlist.has(text)) return true;
+    if (/^(?:https?:|mailto:|tel:|\/|@)/.test(text)) return true;
+    if (/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+$/.test(text)) return true;
+    return false;
+  };
+
+  const isInsideTranslationCall = (node) => {
+    let current = node.parent;
+    while (current && !ts.isStatement(current) && !ts.isJsxExpression(current)) {
+      if (ts.isCallExpression(current) && isTranslationCall(current, current.getSourceFile())) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
+  };
+
+  const isRenderedExpressionText = (node) => {
+    let current = node;
+    while (current.parent && !ts.isStatement(current.parent)) {
+      const parent = current.parent;
+      if (ts.isJsxExpression(parent)) {
+        return !ts.isJsxAttribute(parent.parent);
+      }
+      if (
+        ts.isParenthesizedExpression(parent) ||
+        ts.isAsExpression(parent) ||
+        (ts.isSatisfiesExpression && ts.isSatisfiesExpression(parent))
+      ) {
+        current = parent;
+        continue;
+      }
+      if (ts.isConditionalExpression(parent)) {
+        if (parent.condition === current) return false;
+        current = parent;
+        continue;
+      }
+      if (ts.isBinaryExpression(parent)) {
+        const operator = parent.operatorToken.kind;
+        if (
+          operator !== ts.SyntaxKind.BarBarToken &&
+          operator !== ts.SyntaxKind.QuestionQuestionToken &&
+          operator !== ts.SyntaxKind.PlusToken
+        ) {
+          return false;
+        }
+        current = parent;
+        continue;
+      }
+      return false;
+    }
+    return false;
+  };
 
   for (const filePath of files) {
     if (filePath === i18nPath) continue;
@@ -244,21 +405,47 @@ const collectHardcodedClientText = (files) => {
     const relativePath = formatPath(filePath);
 
     const report = (node, text) => {
-      const value = String(text);
-      if (cyrillicPattern.test(value) || quotedTranslationPattern.test(value)) {
-        hardcoded.push(`${relativePath}:${getLineColumn(sourceFile, node)} hardcoded UI text ${JSON.stringify(value)}`);
-      }
+      const value = String(text).trim().replace(/\s+/g, ' ');
+      if (isAllowedText(value)) return;
+      hardcoded.push(`${relativePath}:${getLineColumn(sourceFile, node)} hardcoded UI text ${JSON.stringify(value)}`);
     };
 
     const visit = (node) => {
-      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-        report(node, node.text);
-      } else if (ts.isTemplateExpression(node)) {
-        for (const span of node.templateSpans) {
-          report(span.literal, span.literal.text);
-        }
-      } else if (ts.isJsxText(node)) {
+      if (ts.isJsxText(node)) {
         report(node, node.getText(sourceFile));
+      } else if (ts.isStringLiteralLike(node) && !isInsideTranslationCall(node)) {
+        const parent = node.parent;
+        if (ts.isJsxAttribute(parent) && uiTextAttributes.has(parent.name.text)) {
+          report(node, node.text);
+        } else if (ts.isPropertyAssignment(parent) && uiTextProperties.has(getPropertyName(parent.name))) {
+          report(node, node.text);
+        } else if (ts.isArrayLiteralExpression(parent)) {
+          const declaration = parent.parent;
+          if (
+            ts.isVariableDeclaration(declaration) &&
+            /headers?/i.test(declaration.name.getText(sourceFile))
+          ) {
+            report(node, node.text);
+          }
+        } else if (isRenderedExpressionText(node)) {
+          report(node, node.text);
+        } else if (cyrillicPattern.test(node.text)) {
+          report(node, node.text);
+        }
+      } else if (ts.isTemplateExpression(node)) {
+        const parent = node.parent;
+        const isUiTemplate =
+          isRenderedExpressionText(node) ||
+          (
+            ts.isPropertyAssignment(parent) &&
+            uiTextProperties.has(getPropertyName(parent.name))
+          );
+        if (isUiTemplate) {
+          report(node.head, node.head.text);
+          for (const span of node.templateSpans) {
+            report(span.literal, span.literal.text);
+          }
+        }
       }
 
       ts.forEachChild(node, visit);
@@ -274,7 +461,12 @@ const main = () => {
   const translationAudit = readTranslations();
   const allClientFiles = collectFiles(clientSrcDir);
   const appFiles = collectFiles(clientSrcDir, { ignoreClientUi: true });
-  const referenceAudit = collectTranslationReferences(allClientFiles, translationAudit.keySet);
+  const serverFiles = collectFiles(serverDir);
+  const sharedFiles = collectFiles(sharedDir);
+  const referenceAudit = collectTranslationReferences(
+    [...allClientFiles, ...serverFiles, ...sharedFiles],
+    translationAudit.keySet,
+  );
   const duplicateObjectKeys = collectDuplicateObjectKeys(allClientFiles);
   const hardcodedClientText = collectHardcodedClientText(appFiles);
   const unused = translationAudit.keys
@@ -283,7 +475,9 @@ const main = () => {
 
   const failures = [
     ...translationAudit.invalidEntries,
+    ...translationAudit.untranslatedEntries,
     ...translationAudit.duplicates,
+    ...translationAudit.duplicateValues,
     ...referenceAudit.missing,
     ...unused,
     ...duplicateObjectKeys,

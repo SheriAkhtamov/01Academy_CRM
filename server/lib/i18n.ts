@@ -10,14 +10,6 @@ const translations = {
         en: 'Too many login attempts. Please try again later.',
         ru: 'Слишком много попыток входа. Попробуйте позже.',
     },
-    failed: {
-        en: 'Failed',
-        ru: 'Ошибка',
-    },
-    success: {
-        en: 'Success',
-        ru: 'Успешно',
-    },
 } as const;
 
 type TranslationKey = keyof typeof translations;

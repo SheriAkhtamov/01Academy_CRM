@@ -11,26 +11,17 @@ export const ACADEMY_ROLES = [
 
 export type AcademyRole = (typeof ACADEMY_ROLES)[number];
 
-export const ACADEMY_ROLE_LABELS: Record<AcademyRole, { en: string; ru: string }> = {
-  admin: { en: "Administrator", ru: "Администратор" },
-  head: { en: "Head", ru: "Руководитель" },
-  account_manager: { en: "Account Manager", ru: "Аккаунт-менеджер" },
-  teacher: { en: "Teacher", ru: "Преподаватель" },
-  operations_director: { en: "Operations Director", ru: "Операционный директор" },
-  smm_manager: { en: "SMM Manager", ru: "SMM-менеджер" },
-};
-
 export const LEAD_STATUSES = [
-  { code: "new_request", name: "Новая заявка", color: "#2563eb", sortOrder: 10, activePipeline: true },
-  { code: "first_contact", name: "Первый контакт", color: "#0ea5e9", sortOrder: 20, activePipeline: true },
-  { code: "qualified", name: "Квалифицирован", color: "#14b8a6", sortOrder: 30, activePipeline: true },
-  { code: "demo_invited", name: "Приглашён на демо", color: "#8b5cf6", sortOrder: 40, activePipeline: true },
-  { code: "demo_attended", name: "Был на демо", color: "#a855f7", sortOrder: 50, activePipeline: true },
-  { code: "offer", name: "Предложение", color: "#f59e0b", sortOrder: 60, activePipeline: true },
-  { code: "thinking", name: "Думает", color: "#f97316", sortOrder: 70, activePipeline: true },
-  { code: "enrolled", name: "Записан на курс", color: "#22c55e", sortOrder: 80, activePipeline: true },
-  { code: "paid", name: "Оплатил", color: "#16a34a", sortOrder: 90, activePipeline: true },
-  { code: "not_now", name: "Не сейчас", color: "#64748b", sortOrder: 100, activePipeline: false },
+  { code: "new_request", translationKey: "leadStatusNewRequest", color: "#2563eb", sortOrder: 10, activePipeline: true },
+  { code: "first_contact", translationKey: "leadStatusFirstContact", color: "#0ea5e9", sortOrder: 20, activePipeline: true },
+  { code: "qualified", translationKey: "leadStatusQualified", color: "#14b8a6", sortOrder: 30, activePipeline: true },
+  { code: "demo_invited", translationKey: "leadStatusDemoInvited", color: "#8b5cf6", sortOrder: 40, activePipeline: true },
+  { code: "demo_attended", translationKey: "leadStatusDemoAttended", color: "#a855f7", sortOrder: 50, activePipeline: true },
+  { code: "offer", translationKey: "leadStatusOffer", color: "#f59e0b", sortOrder: 60, activePipeline: true },
+  { code: "thinking", translationKey: "leadStatusThinking", color: "#f97316", sortOrder: 70, activePipeline: true },
+  { code: "enrolled", translationKey: "leadStatusEnrolled", color: "#22c55e", sortOrder: 80, activePipeline: true },
+  { code: "paid", translationKey: "leadStatusPaid", color: "#16a34a", sortOrder: 90, activePipeline: true },
+  { code: "not_now", translationKey: "leadStatusNotNow", color: "#64748b", sortOrder: 100, activePipeline: false },
 ] as const;
 
 export type LeadStatusCode = (typeof LEAD_STATUSES)[number]["code"];
@@ -40,24 +31,24 @@ export const ACTIVE_PIPELINE_STATUSES = LEAD_STATUSES
   .map((status) => status.code);
 
 export const STUDENT_STATUSES = [
-  { code: "studying", name: "Учится", color: "#16a34a" },
-  { code: "paused", name: "Приостановлен", color: "#f59e0b" },
-  { code: "completed", name: "Завершил", color: "#2563eb" },
-  { code: "expelled", name: "Отчислен", color: "#dc2626" },
+  { code: "studying", translationKey: "studentStatusStudying", color: "#16a34a" },
+  { code: "paused", translationKey: "studentStatusPaused", color: "#f59e0b" },
+  { code: "completed", translationKey: "studentStatusCompleted", color: "#2563eb" },
+  { code: "expelled", translationKey: "studentStatusExpelled", color: "#dc2626" },
 ] as const;
 
 export const FINAL_PROJECT_STATUSES = [
-  { code: "not_started", name: "Не начат", color: "#64748b" },
-  { code: "in_progress", name: "В процессе", color: "#f59e0b" },
-  { code: "completed", name: "Завершён", color: "#2563eb" },
-  { code: "presented", name: "Презентован", color: "#16a34a" },
+  { code: "not_started", translationKey: "finalProjectStatusNotStarted", color: "#64748b" },
+  { code: "in_progress", translationKey: "finalProjectStatusInProgress", color: "#f59e0b" },
+  { code: "completed", translationKey: "finalProjectStatusCompleted", color: "#2563eb" },
+  { code: "presented", translationKey: "finalProjectStatusPresented", color: "#16a34a" },
 ] as const;
 
 // Referral tier thresholds from TZ 5.1: 1 → 15% discount, 3 → free month, 5+ → AI Ambassador.
 export const REFERRAL_TIERS = [
-  { minReferrals: 5, level: "ai_ambassador", reward: "Бесплатное обучение + статус AI Ambassador" },
-  { minReferrals: 3, level: "free_month", reward: "Бесплатный месяц" },
-  { minReferrals: 1, level: "discount_15", reward: "Скидка 15% на 1 месяц" },
+  { minReferrals: 5, level: "ai_ambassador", rewardKey: "freeTrainingAiAmbassador" },
+  { minReferrals: 3, level: "free_month", rewardKey: "freeMonth" },
+  { minReferrals: 1, level: "discount_15", rewardKey: "referralDiscount15" },
 ] as const;
 
 export const REFERRAL_DISCOUNT_PERCENT = 15;
@@ -68,21 +59,21 @@ export const TARGET_ROAS = 5;
 export const TARGET_ATTENDANCE_PERCENT = 70;
 
 export const GROUP_STATUSES = [
-  { code: "open", name: "Набор открыт", color: "#2563eb" },
-  { code: "in_progress", name: "Идут занятия", color: "#16a34a" },
-  { code: "completed", name: "Завершена", color: "#64748b" },
+  { code: "open", translationKey: "groupStatusOpen", color: "#2563eb" },
+  { code: "in_progress", translationKey: "groupStatusInProgress", color: "#16a34a" },
+  { code: "completed", translationKey: "groupStatusCompleted", color: "#64748b" },
 ] as const;
 
 export const LESSON_STATUSES = [
-  { code: "scheduled", name: "Запланировано", color: "#2563eb" },
-  { code: "conducted", name: "Проведено", color: "#16a34a" },
-  { code: "cancelled", name: "Отменено", color: "#dc2626" },
+  { code: "scheduled", translationKey: "lessonStatusScheduled", color: "#2563eb" },
+  { code: "conducted", translationKey: "lessonStatusConducted", color: "#16a34a" },
+  { code: "cancelled", translationKey: "lessonStatusCancelled", color: "#dc2626" },
 ] as const;
 
 export const PAYMENT_STATUSES = [
-  { code: "paid", name: "Оплачено", color: "#16a34a" },
-  { code: "pending", name: "Ожидает", color: "#f59e0b" },
-  { code: "overdue", name: "Просрочено", color: "#dc2626" },
+  { code: "paid", translationKey: "paymentStatusPaid", color: "#16a34a" },
+  { code: "pending", translationKey: "paymentStatusPending", color: "#f59e0b" },
+  { code: "overdue", translationKey: "paymentStatusOverdue", color: "#dc2626" },
 ] as const;
 
 export const PAYMENT_TYPES = ["full", "installment_1_2", "installment_2_2"] as const;
@@ -193,7 +184,7 @@ export function validateLeadForStatusChange(input: {
   }
 
   if (!input.studentName?.trim() || !input.studentAge || !input.courseId) {
-    return "Для перевода в статус «Квалифицирован» заполните имя ученика, возраст и курс.";
+    return "completeQualificationFields";
   }
 
   return null;
@@ -201,10 +192,10 @@ export function validateLeadForStatusChange(input: {
 
 export function validateLeadStatusTransition(currentStatus: string, nextStatus: string): string | null {
   if (currentStatus === "paid" && nextStatus !== "paid") {
-    return "Оплаченного клиента нельзя вернуть на этап лида.";
+    return "paidLeadCannotReturn";
   }
   if (currentStatus !== "paid" && nextStatus === "paid") {
-    return "Чтобы перевести лида в статус «Оплатил», сначала зафиксируйте подтверждённую оплату.";
+    return "paymentRequiredBeforePaid";
   }
   return null;
 }

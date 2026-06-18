@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { canManageUsers } from '@/lib/auth';
+import { canManageUsers, formatUserRole } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +72,7 @@ const createUserSchema = (t: any) => z.object({
     (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
     z.string().email(t('invalidEmailAddress')).optional()
   ),
-  fullName: z.string().min(1, t('fullNameRequiredValidation')),
+  fullName: z.string().min(1, t('fullNameRequired')),
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
@@ -438,24 +438,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     }
   };
 
-  const getRoleLabel = (role: string) => {
-    switch (role) {
-      case 'admin':
-        return t('admin');
-      case 'head':
-        return t('roleHead');
-      case 'account_manager':
-        return t('roleAccountManager');
-      case 'teacher':
-        return t('roleTeacher');
-      case 'operations_director':
-        return t('roleOperationsDirector');
-      case 'smm_manager':
-        return t('roleSmmManager');
-      default:
-        return role;
-    }
-  };
+  const getRoleLabel = (role: string) => formatUserRole(role, t);
 
   const getStatusColor = (isActive: boolean) => {
     return isActive
@@ -506,7 +489,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     head: { label: t('administration'), href: '/admin' },
     account_manager: { label: t('salesManagerWorkspace'), href: '/sales' },
     teacher: { label: t('teacherWorkspace'), href: '/teacher-workspace' },
-    operations_director: { label: t('sectionTitleAnalytics'), href: '/analytics-workspace' },
+    operations_director: { label: t('navAnalytics'), href: '/analytics-workspace' },
     smm_manager: { label: t('marketingTab'), href: '/marketing-workspace' },
   };
 
@@ -515,7 +498,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const roleOptions = [
     { value: 'account_manager', label: t('roleAccountManager') },
-    { value: 'teacher', label: t('roleTeacher') },
+    { value: 'teacher', label: t('teacher') },
     { value: 'operations_director', label: t('roleOperationsDirector') },
     { value: 'smm_manager', label: t('roleSmmManager') },
     { value: 'head', label: t('roleHead') },
@@ -641,11 +624,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="settings" className="flex items-center space-x-2">
               <Settings className="h-4 w-4" />
-              <span>{t('settingsTab')}</span>
+              <span>{t('settings')}</span>
             </TabsTrigger>
             <TabsTrigger value="reports" className="flex items-center space-x-2">
               <FileText className="h-4 w-4" />
-              <span>{t('reportsTab')}</span>
+              <span>{t('reports')}</span>
             </TabsTrigger>
           </TabsList>
         )}
@@ -772,7 +755,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   </SelectContent>
                                 </Select>
                                 <p className="text-xs text-slate-500">
-                                  {t('employeeRoleWorkspace')}: {selectedWorkspace.label}
+                                  {t('workspaceLabel')}: {selectedWorkspace.label}
                                 </p>
                                 <FormMessage />
                               </FormItem>
@@ -923,7 +906,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     <SelectItem value="admin">{t('administrators')}</SelectItem>
                     <SelectItem value="head">{t('roleHeads')}</SelectItem>
                     <SelectItem value="account_manager">{t('roleAccountManagers')}</SelectItem>
-                    <SelectItem value="teacher">{t('roleTeachers')}</SelectItem>
+                    <SelectItem value="teacher">{t('navTeachers')}</SelectItem>
                     <SelectItem value="operations_director">{t('roleOperationsDirectors')}</SelectItem>
                     <SelectItem value="smm_manager">{t('roleSmmManagers')}</SelectItem>
                   </SelectContent>
@@ -1334,7 +1317,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">{t('accountManagers')}</span>
+                    <span className="text-sm text-slate-600">{t('roleAccountManagers')}</span>
                     <span className="text-sm font-medium">
                       {users.filter((u: any) => u.role === 'account_manager').length}
                     </span>
@@ -1395,7 +1378,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           {userCredentials && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('fullNameLabel')}</label>
+                <label className="text-sm font-medium text-slate-700">{t('fullName')}</label>
                 <div className="p-3 bg-slate-50 rounded-md text-sm">
                   {userCredentials.fullName}
                 </div>
@@ -1409,7 +1392,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('passwordLabel')}</label>
+                <label className="text-sm font-medium text-slate-700">{t('password')}</label>
                 <div className={`p-3 rounded-md text-sm font-mono ${userCredentials.temporaryPassword ? 'bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-500 italic'}`}>
                   {userCredentials.temporaryPassword || t('passwordNotAvailable')}
                 </div>
@@ -1421,14 +1404,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('positionLabel')}</label>
+                <label className="text-sm font-medium text-slate-700">{t('position')}</label>
                 <div className="p-3 bg-slate-50 rounded-md text-sm">
                   {userCredentials.position}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('roleLabel')}</label>
+                <label className="text-sm font-medium text-slate-700">{t('role')}</label>
                 <div className="p-3 bg-slate-50 rounded-md text-sm">
                   <Badge className={getRoleColor(userCredentials.role)}>
                     {getRoleLabel(userCredentials.role)}
@@ -1457,11 +1440,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    const credentialLines = [`Email: ${userCredentials.email}`];
+                    const credentialLines = [`${t('email')}: ${userCredentials.email}`];
                     if (userCredentials.temporaryPassword) {
-                      credentialLines.push(`Password: ${userCredentials.temporaryPassword}`);
+                      credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
                     }
-                    credentialLines.push(`Workspace: ${roleWorkspaceMap[userCredentials.role]?.label ?? t('noWorkspaceAssigned')}`);
+                    credentialLines.push(`${t('workspaceLabel')}: ${roleWorkspaceMap[userCredentials.role]?.label ?? t('noWorkspaceAssigned')}`);
                     navigator.clipboard.writeText(credentialLines.join('\n'));
                     toast({
                       title: t('copiedToClipboard'),

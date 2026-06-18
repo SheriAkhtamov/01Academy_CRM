@@ -1,5 +1,15 @@
 import type { SanitizedUser } from '@shared/auth';
-import { ACADEMY_ROLE_LABELS, type AcademyRole } from '@shared/academy';
+import type { AcademyRole } from '@shared/academy';
+import type { TranslationKey } from '@/lib/i18n';
+
+const roleTranslationKeys = {
+  admin: 'admin',
+  head: 'roleHead',
+  account_manager: 'roleAccountManager',
+  teacher: 'teacher',
+  operations_director: 'roleOperationsDirector',
+  smm_manager: 'roleSmmManager',
+} as const satisfies Record<AcademyRole, TranslationKey>;
 
 export function getInitials(fullName: string): string {
   return fullName
@@ -9,8 +19,12 @@ export function getInitials(fullName: string): string {
     .slice(0, 2);
 }
 
-export function formatUserRole(role: string): string {
-  return ACADEMY_ROLE_LABELS[role as AcademyRole]?.ru ?? role;
+export function formatUserRole(
+  role: string,
+  t: (key: TranslationKey) => string,
+): string {
+  const key = roleTranslationKeys[role as AcademyRole];
+  return key ? t(key) : role;
 }
 
 export function canAccessReports(user: SanitizedUser): boolean {

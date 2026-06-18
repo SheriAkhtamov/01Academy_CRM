@@ -79,7 +79,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-admin', type: t('administration'), title: t('administration'), href: '/admin', icon: Settings },
             { id: 'nav-employees', type: t('employees'), title: t('employees'), href: '/employees', icon: Users },
             { id: 'nav-integrations', type: t('navIntegrations'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
-            { id: 'nav-settings', type: t('navSettings'), title: t('navSettings'), href: '/settings', icon: Settings },
+            { id: 'nav-settings', type: t('settings'), title: t('settings'), href: '/settings', icon: Settings },
           ];
         case 'account_manager':
           return [
@@ -97,7 +97,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           ];
         case 'operations_director':
           return [
-            { id: 'nav-analytics', type: t('sectionTitleAnalytics'), title: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
+            { id: 'nav-analytics', type: t('navAnalytics'), title: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
             { id: 'nav-analytics-courses', type: t('byCourses'), title: t('byCourses'), href: '/analytics-workspace?tab=courses', icon: BookOpen },
             { id: 'nav-analytics-teachers', type: t('navTeachers'), title: t('navTeachers'), href: '/analytics-workspace?tab=teachers', icon: UserRoundCheck },
             { id: 'nav-analytics-groups', type: t('navGroups'), title: t('navGroups'), href: '/analytics-workspace?tab=groups', icon: Layers3 },
@@ -107,7 +107,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-marketing', type: t('marketingTab'), title: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
             { id: 'nav-marketing-sources', type: t('leadSources'), title: t('leadSources'), href: '/marketing-workspace?tab=sources', icon: Megaphone },
             { id: 'nav-marketing-funnel', type: t('conversionFunnel'), title: t('conversionFunnel'), href: '/marketing-workspace?tab=funnel', icon: Flame },
-            { id: 'nav-marketing-referrals', type: t('referralsTab'), title: t('referralsTab'), href: '/marketing-workspace?tab=referrals', icon: HeartHandshake },
+            { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace?tab=referrals', icon: HeartHandshake },
           ];
         default:
           return [];
@@ -140,11 +140,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const labelForEntity = (entityType: string) => {
     const labels: Record<string, string> = {
-      lead: t('typeLead'),
-      student: t('typeStudent'),
-      course: t('typeCourse'),
-      group: t('typeGroup'),
-      teacher: t('typeTeacher'),
+      lead: t('lead'),
+      student: t('student'),
+      course: t('course'),
+      group: t('group'),
+      teacher: t('teacher'),
       source: t('leadSources'),
       user: t('employees'),
     };

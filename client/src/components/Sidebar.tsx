@@ -119,7 +119,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     if (role === 'operations_director') {
       return [
         {
-          label: t('sectionTitleAnalytics'),
+          label: t('navAnalytics'),
           items: [
             { name: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
             { name: t('byCourses'), href: '/analytics-workspace?tab=courses', icon: BookOpen },
@@ -142,7 +142,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('leadSources'), href: '/marketing-workspace?tab=sources', icon: Megaphone },
             { name: t('conversionFunnel'), href: '/marketing-workspace?tab=funnel', icon: Flame },
             { name: t('warmBase'), href: '/marketing-workspace?tab=warm', icon: Users },
-            { name: t('referralsTab'), href: '/marketing-workspace?tab=referrals', icon: HeartHandshake },
+            { name: t('navReferrals'), href: '/marketing-workspace?tab=referrals', icon: HeartHandshake },
             { name: t('expenses'), href: '/marketing-workspace?tab=expenses', icon: Banknote },
           ],
         },
@@ -167,7 +167,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('sectionSystem'),
           items: [
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
-            { name: t('navSettings'), href: '/settings', icon: Settings },
+            { name: t('settings'), href: '/settings', icon: Settings },
           ],
         },
       ];
@@ -202,7 +202,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             <Logo size="md" />
             <div className="ml-3 flex flex-col flex-1 min-w-0">
               <span className="text-lg font-semibold text-slate-900 dark:text-slate-100 truncate tracking-tight leading-tight">
-                {'01 Academy'}
+                {t('platformName')}
               </span>
               <span className="text-xs text-slate-400">{t('schoolCrm')}</span>
             </div>
@@ -290,7 +290,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user.fullName}</p>
-              <p className="text-xs text-slate-500 truncate">{formatUserRole(user.role)}</p>
+              <p className="text-xs text-slate-500 truncate">{formatUserRole(user.role, t)}</p>
               {canAccessReports(user) && (
                 <p className="text-[10px] text-emerald-600">{t('reportsAccess')}</p>
               )}

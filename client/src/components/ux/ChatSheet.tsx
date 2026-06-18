@@ -196,7 +196,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                   >
                     <Avatar className="size-10">
                       <AvatarFallback>
-                        {employee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'}
+                        {employee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
@@ -247,7 +247,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                   <div className="flex items-center gap-3">
                     <Avatar className="size-8">
                       <AvatarFallback>
-                        {selectedEmployee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'}
+                        {selectedEmployee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">

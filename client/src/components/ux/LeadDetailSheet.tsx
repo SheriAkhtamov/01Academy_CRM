@@ -173,6 +173,13 @@ const paymentSchema = z.object({
   comment: z.string(),
 });
 
+const paymentDiscountTranslationKeys = {
+  promo_20: 'paymentDiscountPromo20',
+  family_15: 'paymentDiscountFamily15',
+  referral_15: 'paymentDiscountReferral15',
+  none: 'paymentDiscountNone',
+} as const satisfies Record<(typeof PAYMENT_DISCOUNTS)[number], TranslationKey>;
+
 const taskSchema = z.object({
   title: z.string().trim().min(1, 'fillRequiredFields'),
   deadlineAt: z.string(),
@@ -577,7 +584,7 @@ export function LeadDetailSheet({
                                   <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      <SelectItem value="ru">{t('russianLang')}</SelectItem>
+                                      <SelectItem value="ru">{t('russian')}</SelectItem>
                                       <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
                                     </SelectGroup>
                                   </SelectContent>
@@ -933,7 +940,9 @@ export function LeadDetailSheet({
                                     <SelectContent>
                                       <SelectGroup>
                                         {PAYMENT_DISCOUNTS.map((discount) => (
-                                          <SelectItem key={discount} value={discount}>{t(`paymentDiscount${discount === 'none' ? 'None' : discount === 'promo_20' ? 'Promo20' : discount === 'family_15' ? 'Family15' : 'Referral15'}` as TranslationKey)}</SelectItem>
+                                          <SelectItem key={discount} value={discount}>
+                                            {t(paymentDiscountTranslationKeys[discount])}
+                                          </SelectItem>
                                         ))}
                                       </SelectGroup>
                                     </SelectContent>

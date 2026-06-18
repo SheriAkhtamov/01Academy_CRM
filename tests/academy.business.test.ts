@@ -37,7 +37,7 @@ describe("01 Academy business rules", () => {
   });
 
   it("requires qualification fields before moving lead to qualified", () => {
-    expect(validateLeadForStatusChange({ nextStatus: "qualified" })).toContain("Квалифицирован");
+    expect(validateLeadForStatusChange({ nextStatus: "qualified" })).toBe("completeQualificationFields");
     expect(validateLeadForStatusChange({
       nextStatus: "qualified",
       studentName: "Timur",
@@ -47,8 +47,8 @@ describe("01 Academy business rules", () => {
   });
 
   it("keeps paid clients terminal and requires a payment to enter paid", () => {
-    expect(validateLeadStatusTransition("qualified", "paid")).toContain("оплату");
-    expect(validateLeadStatusTransition("paid", "thinking")).toContain("нельзя вернуть");
+    expect(validateLeadStatusTransition("qualified", "paid")).toBe("paymentRequiredBeforePaid");
+    expect(validateLeadStatusTransition("paid", "thinking")).toBe("paidLeadCannotReturn");
     expect(validateLeadStatusTransition("paid", "paid")).toBeNull();
   });
 

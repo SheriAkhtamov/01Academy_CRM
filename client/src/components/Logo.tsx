@@ -1,4 +1,5 @@
 import React from 'react';
+import { ACADEMY_BRAND_NAME } from '@shared/academy';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -16,7 +17,7 @@ export default function Logo({ size = 'md', className = '' }: LogoProps) {
     <div className={`${sizeClasses[size]} ${className} flex items-center justify-center`}>
       <img
         src="/logo.png"
-        alt="01 Academy"
+        alt={ACADEMY_BRAND_NAME}
         className="w-full h-full object-contain"
       />
     </div>

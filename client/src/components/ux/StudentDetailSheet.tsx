@@ -77,13 +77,13 @@ export function StudentDetailSheet({
 
   const tabs = [
     { value: 'info', label: t('generalTab'), icon: User },
-    { value: 'schedule', label: t('groupTab'), icon: Calendar },
+    { value: 'schedule', label: t('group'), icon: Calendar },
     { value: 'attendance', label: t('attendanceTab'), icon: CheckCircle2 },
-    { value: 'progress', label: t('progressTab'), icon: BookOpen },
+    { value: 'progress', label: t('progressLabel'), icon: BookOpen },
     { value: 'portfolio', label: t('portfolioTab'), icon: FolderOpen },
-    { value: 'payments', label: t('paymentsTab'), icon: CreditCard },
+    { value: 'payments', label: t('navPayments'), icon: CreditCard },
     { value: 'nps', label: t('npsTab'), icon: Star },
-    { value: 'referrals', label: t('referralsTab'), icon: Users },
+    { value: 'referrals', label: t('navReferrals'), icon: Users },
     { value: 'history', label: t('historyTab'), icon: History },
   ];
 

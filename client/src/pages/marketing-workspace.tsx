@@ -272,7 +272,7 @@ export default function MarketingWorkspace() {
     return Array.from(map.values())
       .map((r: any) => ({
         ...r,
-        level: r.paid >= 5 ? 'AI Ambassador' : r.paid >= 3 ? t('freeMonth') : r.paid >= 1 ? '15%' : '-',
+        level: r.paid >= 5 ? t('aiAmbassador') : r.paid >= 3 ? t('freeMonth') : r.paid >= 1 ? '15%' : '-',
       }))
       .sort((a: any, b: any) => b.referred - a.referred);
   }, [referrals, students, t]);
@@ -297,7 +297,7 @@ export default function MarketingWorkspace() {
   /* ─── tab: sources ─── */
   const sourceColumns = [
     { key: 'sourceName', header: t('source'), accessor: (row: any) => row.sourceName, sortable: true },
-    { key: 'leads', header: t('leadsColumn'), accessor: (row: any) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'leads', header: t('navLeads'), accessor: (row: any) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'paidStudents', header: t('paidReferrals'), accessor: (row: any) => row.paidStudents, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'revenue', header: t('revenueLabel'), accessor: (row: any) => money(row.revenue), sortable: true, cellClassName: 'tabular-nums' },
     { key: 'expenses', header: t('expenses'), accessor: (row: any) => money(row.expenses), sortable: true, cellClassName: 'tabular-nums' },
@@ -305,13 +305,13 @@ export default function MarketingWorkspace() {
     { key: 'cac', header: t('cacLabel'), accessor: (row: any) => money(row.cac), sortable: true, cellClassName: 'tabular-nums' },
     {
       key: 'roas',
-      header: 'ROAS',
+      header: t('roasLabel'),
       accessor: (row: any) => row.roas,
       render: (row: any) => <RoasBadge value={row.roas} />,
       sortable: true,
       cellClassName: 'tabular-nums',
     },
-    { key: 'ltvCac', header: 'LTV:CAC', accessor: (row: any) => `${row.ltvCac}:1`, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'ltvCac', header: t('ltvCacLabel'), accessor: (row: any) => `${row.ltvCac}:1`, sortable: true, cellClassName: 'tabular-nums' },
   ];
 
   /* ─── tab: warm base ─── */
@@ -347,14 +347,14 @@ export default function MarketingWorkspace() {
   const referralColumns = [
     { key: 'studentName', header: t('student'), accessor: (row: any) => row.studentName, sortable: true },
     { key: 'code', header: t('referralCodeLabel'), accessor: (row: any) => row.code, sortable: true },
-    { key: 'referred', header: t('referralsTab'), accessor: (row: any) => row.referred, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'referred', header: t('navReferrals'), accessor: (row: any) => row.referred, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'paid', header: t('paidReferrals'), accessor: (row: any) => row.paid, sortable: true, cellClassName: 'tabular-nums' },
     {
       key: 'level',
       header: t('status'),
       accessor: (row: any) => row.level,
       render: (row: any) => (
-        <Badge variant={row.level === 'AI Ambassador' ? 'default' : 'outline'}>{row.level}</Badge>
+        <Badge variant={row.level === t('aiAmbassador') ? 'default' : 'outline'}>{row.level}</Badge>
       ),
       sortable: true,
     },
@@ -459,7 +459,7 @@ export default function MarketingWorkspace() {
           <TabsTrigger value="sources">{t('leadSources')}</TabsTrigger>
           <TabsTrigger value="funnel">{t('conversionFunnel')}</TabsTrigger>
           <TabsTrigger value="warm">{t('warmBase')}</TabsTrigger>
-          <TabsTrigger value="referrals">{t('referralsTab')}</TabsTrigger>
+          <TabsTrigger value="referrals">{t('navReferrals')}</TabsTrigger>
           <TabsTrigger value="expenses">{t('expenses')}</TabsTrigger>
           <TabsTrigger value="reports">{t('reports')}</TabsTrigger>
         </TabsList>

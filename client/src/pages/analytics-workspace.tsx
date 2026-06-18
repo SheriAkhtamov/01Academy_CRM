@@ -255,49 +255,58 @@ export default function AnalyticsWorkspace() {
 
   /* ── export handlers ── */
   const exportCourses = () => {
-    const headers = [t('course'), t('leadsColumn'), t('students'), t('revenueLabel'), 'LTV', 'CAC', t('occupancyColumn')];
+    const headers = [t('course'), t('navLeads'), t('students'), t('revenueLabel'), t('ltvLabel'), t('cacLabel'), t('occupancyColumn')];
     const rows = byCourse.map((c: any) => [c.courseName, c.leads, c.students, money(c.revenue), money(c.avgLtv), money(c.cac), `${c.occupancyPercent ?? 0}%`]);
     exportToCSV('analytics-by-course.csv', headers, rows);
-    toast({ title: t('exportLabel'), description: 'CSV exported' });
+    toast({ title: t('exportLabel'), description: t('csvExported') });
   };
 
   const exportSources = () => {
-    const headers = [t('source'), t('leadsColumn'), t('paymentsTab'), t('revenueLabel'), t('expense'), 'CPL', 'CAC', 'ROAS', 'LTV:CAC'];
+    const headers = [t('source'), t('navLeads'), t('navPayments'), t('revenueLabel'), t('expense'), t('cplColumn'), t('cacLabel'), t('roasLabel'), t('ltvCacLabel')];
     const rows = bySource.map((s: any) => [s.sourceName, s.leads, s.paidStudents, money(s.revenue), money(s.expenses), money(s.cpl), money(s.cac), `${s.roas}x`, `${s.ltvCac}:1`]);
     exportToCSV('analytics-by-source.csv', headers, rows);
-    toast({ title: t('exportLabel'), description: 'CSV exported' });
+    toast({ title: t('exportLabel'), description: t('csvExported') });
   };
 
   const exportTeachers = () => {
     const headers = [t('teacher'), t('hoursSuffix'), t('averageRatingLabel'), t('attendanceLabel'), t('groupsLabel'), t('trendColumn')];
     const rows = byTeacher.map((tr: any) => [tr.teacherName, `${Math.round(tr.hours)}${t('hoursSuffix')}`, (tr.avgScore ?? 0).toFixed(1), `${tr.attendance}%`, tr.groupCount ?? '-', tr.trend === 'up' ? t('trendUp') : tr.trend === 'down' ? t('trendDown') : t('trendStable')]);
     exportToCSV('analytics-by-teacher.csv', headers, rows);
-    toast({ title: t('exportLabel'), description: 'CSV exported' });
+    toast({ title: t('exportLabel'), description: t('csvExported') });
   };
 
   const exportGroups = () => {
     const headers = [t('group'), t('course'), t('occupancyColumn'), t('attendanceLabel'), t('progressLabel'), t('averageRatingLabel')];
     const rows = byGroupProgress.map((g: any) => [g.groupName, g.courseName || '-', `${g.capacity}/${g.maxCapacity}`, `${g.attendanceAvg ?? 0}%`, `${g.progressAvg ?? 0}%`, (g.avgScore ?? 0).toFixed(1)]);
     exportToCSV('analytics-by-group.csv', headers, rows);
-    toast({ title: t('exportLabel'), description: 'CSV exported' });
+    toast({ title: t('exportLabel'), description: t('csvExported') });
   };
 
   const exportRetention = () => {
-    const headers = [t('course'), t('cohortColumn'), t('month1'), t('retention2'), t('month3'), t('retention3'), t('month4'), t('retention4')];
+    const headers = [
+      t('course'),
+      t('cohortColumn'),
+      t('month1'),
+      `${t('month2')} / ${t('retentionLabel')}`,
+      t('month3'),
+      `${t('month3')} / ${t('retentionLabel')}`,
+      t('month4'),
+      `${t('month4')} / ${t('retentionLabel')}`,
+    ];
     const rows = retentionByCourse.map((r: any) => [r.courseName, r.cohort, r.month1Students, `${r.retentionMonth2 ?? 0}%`, r.month3Students, `${r.retentionMonth3 ?? 0}%`, r.month4Students, `${r.retentionMonth4 ?? 0}%`]);
     exportToCSV('analytics-retention.csv', headers, rows);
-    toast({ title: t('exportLabel'), description: 'CSV exported' });
+    toast({ title: t('exportLabel'), description: t('csvExported') });
   };
 
   /* ── table columns ── */
 
   const courseColumns: DataTableColumn<any>[] = [
     { key: 'courseName', header: t('course'), sortable: true, accessor: (c: any) => c.courseName, render: (c: any) => <span className="font-medium text-slate-900">{c.courseName}</span> },
-    { key: 'leads', header: t('leadsColumn'), sortable: true, accessor: (c: any) => c.leads, render: (c: any) => <span className="tabular-nums">{c.leads}</span>, cellClassName: 'text-right' },
+    { key: 'leads', header: t('navLeads'), sortable: true, accessor: (c: any) => c.leads, render: (c: any) => <span className="tabular-nums">{c.leads}</span>, cellClassName: 'text-right' },
     { key: 'students', header: t('students'), sortable: true, accessor: (c: any) => c.students, render: (c: any) => <span className="tabular-nums">{c.students}</span>, cellClassName: 'text-right' },
     { key: 'revenue', header: t('revenueLabel'), sortable: true, accessor: (c: any) => c.revenue, render: (c: any) => <span className="tabular-nums font-medium">{money(c.revenue)}</span>, cellClassName: 'text-right' },
-    { key: 'avgLtv', header: 'LTV', sortable: true, accessor: (c: any) => c.avgLtv, render: (c: any) => <span className="tabular-nums">{money(c.avgLtv)}</span>, cellClassName: 'text-right' },
-    { key: 'cac', header: 'CAC', sortable: true, accessor: (c: any) => c.cac, render: (c: any) => <span className="tabular-nums">{money(c.cac)}</span>, cellClassName: 'text-right' },
+    { key: 'avgLtv', header: t('ltvLabel'), sortable: true, accessor: (c: any) => c.avgLtv, render: (c: any) => <span className="tabular-nums">{money(c.avgLtv)}</span>, cellClassName: 'text-right' },
+    { key: 'cac', header: t('cacLabel'), sortable: true, accessor: (c: any) => c.cac, render: (c: any) => <span className="tabular-nums">{money(c.cac)}</span>, cellClassName: 'text-right' },
     {
       key: 'occupancy',
       header: t('occupancyColumn'),
@@ -314,15 +323,15 @@ export default function AnalyticsWorkspace() {
 
   const sourceColumns: DataTableColumn<any>[] = [
     { key: 'sourceName', header: t('source'), sortable: true, accessor: (s: any) => s.sourceName, render: (s: any) => <span className="font-medium text-slate-900">{s.sourceName}</span> },
-    { key: 'leads', header: t('leadsColumn'), sortable: true, accessor: (s: any) => s.leads, render: (s: any) => <span className="tabular-nums">{s.leads}</span>, cellClassName: 'text-right' },
-    { key: 'paidStudents', header: t('paymentsTab'), sortable: true, accessor: (s: any) => s.paidStudents, render: (s: any) => <span className="tabular-nums">{s.paidStudents}</span>, cellClassName: 'text-right' },
+    { key: 'leads', header: t('navLeads'), sortable: true, accessor: (s: any) => s.leads, render: (s: any) => <span className="tabular-nums">{s.leads}</span>, cellClassName: 'text-right' },
+    { key: 'paidStudents', header: t('navPayments'), sortable: true, accessor: (s: any) => s.paidStudents, render: (s: any) => <span className="tabular-nums">{s.paidStudents}</span>, cellClassName: 'text-right' },
     { key: 'revenue', header: t('revenueLabel'), sortable: true, accessor: (s: any) => s.revenue, render: (s: any) => <span className="tabular-nums font-medium">{money(s.revenue)}</span>, cellClassName: 'text-right' },
     { key: 'expenses', header: t('expense'), sortable: true, accessor: (s: any) => s.expenses, render: (s: any) => <span className="tabular-nums text-slate-600">{money(s.expenses)}</span>, cellClassName: 'text-right' },
-    { key: 'cpl', header: 'CPL', sortable: true, accessor: (s: any) => s.cpl, render: (s: any) => <span className="tabular-nums">{money(s.cpl)}</span>, cellClassName: 'text-right' },
-    { key: 'cac', header: 'CAC', sortable: true, accessor: (s: any) => s.cac, render: (s: any) => <span className="tabular-nums">{money(s.cac)}</span>, cellClassName: 'text-right' },
+    { key: 'cpl', header: t('cplColumn'), sortable: true, accessor: (s: any) => s.cpl, render: (s: any) => <span className="tabular-nums">{money(s.cpl)}</span>, cellClassName: 'text-right' },
+    { key: 'cac', header: t('cacLabel'), sortable: true, accessor: (s: any) => s.cac, render: (s: any) => <span className="tabular-nums">{money(s.cac)}</span>, cellClassName: 'text-right' },
     {
       key: 'roas',
-      header: 'ROAS',
+      header: t('roasLabel'),
       sortable: true,
       accessor: (s: any) => s.roas || 0,
       render: (s: any) => (
@@ -332,7 +341,7 @@ export default function AnalyticsWorkspace() {
       ),
       cellClassName: 'text-right',
     },
-    { key: 'ltvCac', header: 'LTV:CAC', sortable: true, accessor: (s: any) => s.ltvCac || 0, render: (s: any) => <span className="tabular-nums">{s.ltvCac}:1</span>, cellClassName: 'text-right' },
+    { key: 'ltvCac', header: t('ltvCacLabel'), sortable: true, accessor: (s: any) => s.ltvCac || 0, render: (s: any) => <span className="tabular-nums">{s.ltvCac}:1</span>, cellClassName: 'text-right' },
   ];
 
   const teacherColumns: DataTableColumn<any>[] = [
@@ -420,7 +429,7 @@ export default function AnalyticsWorkspace() {
     { key: 'month1Students', header: t('month1'), sortable: true, accessor: (r: any) => r.month1Students, render: (r: any) => <span className="tabular-nums font-medium">{r.month1Students}</span>, cellClassName: 'text-right' },
     {
       key: 'retentionMonth2',
-      header: `${t('month2')} / Retention`,
+      header: `${t('month2')} / ${t('retentionLabel')}`,
       sortable: true,
       accessor: (r: any) => r.retentionMonth2 || 0,
       render: (r: any) => (
@@ -432,7 +441,7 @@ export default function AnalyticsWorkspace() {
     },
     {
       key: 'retentionMonth3',
-      header: `${t('month3')} / Retention`,
+      header: `${t('month3')} / ${t('retentionLabel')}`,
       sortable: true,
       accessor: (r: any) => r.retentionMonth3 || 0,
       render: (r: any) => (
@@ -444,7 +453,7 @@ export default function AnalyticsWorkspace() {
     },
     {
       key: 'retentionMonth4',
-      header: `${t('month4')} / Retention`,
+      header: `${t('month4')} / ${t('retentionLabel')}`,
       sortable: true,
       accessor: (r: any) => r.retentionMonth4 || 0,
       render: (r: any) => (
@@ -460,7 +469,7 @@ export default function AnalyticsWorkspace() {
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
-        title={t('sectionTitleAnalytics')}
+        title={t('navAnalytics')}
         subtitle={`${t('lastUpdated')}: ${lastUpdated}`}
         actions={
           <div className="flex items-center gap-2">
@@ -503,28 +512,28 @@ export default function AnalyticsWorkspace() {
           tone="slate"
         />
         <KpiCard
-          title="CAC"
+          title={t('cacLabel')}
           value={money(analytics.summary.cac)}
           detail={`${t('cacTarget')}`}
           icon={Target}
           tone={cacTone}
         />
         <KpiCard
-          title="LTV:CAC"
+          title={t('ltvCacLabel')}
           value={`${analytics.summary.ltvCac}:1`}
           detail={`${t('ltvCacTarget')}`}
           icon={Sparkles}
           tone={ltvCacTone}
         />
         <KpiCard
-          title="ROAS"
+          title={t('roasLabel')}
           value={`${analytics.summary.roas}x`}
           detail={`${t('roasTarget')}`}
           icon={BarChart3}
           tone={roasTone}
         />
         <KpiCard
-          title="NPS"
+          title={t('npsTab')}
           value={analytics.summary.nps ?? 0}
           detail={`${t('targetGreaterThan')}${targets.nps ?? 50}`}
           icon={Star}
@@ -616,7 +625,7 @@ export default function AnalyticsWorkspace() {
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={exportCourses}>
               <Download className="h-4 w-4 mr-2" />
-              {t('exportLabel')} CSV
+              {t('exportCsv')}
             </Button>
           </div>
           <Card className="hover-lift">
@@ -636,7 +645,7 @@ export default function AnalyticsWorkspace() {
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={exportSources}>
               <Download className="h-4 w-4 mr-2" />
-              {t('exportLabel')} CSV
+              {t('exportCsv')}
             </Button>
           </div>
           <Card className="hover-lift">
@@ -658,7 +667,7 @@ export default function AnalyticsWorkspace() {
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={exportTeachers}>
               <Download className="h-4 w-4 mr-2" />
-              {t('exportLabel')} CSV
+              {t('exportCsv')}
             </Button>
           </div>
           <Card className="hover-lift">
@@ -678,7 +687,7 @@ export default function AnalyticsWorkspace() {
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={exportGroups}>
               <Download className="h-4 w-4 mr-2" />
-              {t('exportLabel')} CSV
+              {t('exportCsv')}
             </Button>
           </div>
           <Card className="hover-lift">
@@ -697,7 +706,7 @@ export default function AnalyticsWorkspace() {
         <TabsContent value="risks" className="space-y-5">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <RiskCard
-              title={t('attendanceBelow70')}
+              title={t('riskAttendanceBelow70')}
               items={risks.lowAttendanceStudents || []}
               render={(student: any) => (
                 <div className="flex items-center justify-between">
@@ -759,7 +768,7 @@ export default function AnalyticsWorkspace() {
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={exportRetention}>
               <Download className="h-4 w-4 mr-2" />
-              {t('exportLabel')} CSV
+              {t('exportCsv')}
             </Button>
           </div>
           <Card className="hover-lift">

@@ -245,23 +245,23 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
   const paymentDiscountName = (code: string | null | undefined) => translateEnumValue(code, paymentDiscountTranslationKeys, t);
   const paymentStatusName = (code: string | null | undefined) => translateEnumValue(code, paymentStatusTranslationKeys, t);
   const sectionTitles: Record<AcademySection, string> = {
-  dashboard: t('sectionTitleDashboard'),
-  leads: t('sectionTitleLeads'),
-  pipeline: t('sectionTitlePipeline'),
-  students: t('sectionTitleStudents'),
-  courses: t('sectionTitleCourses'),
-  groups: t('sectionTitleGroups'),
-  lessons: t('sectionTitleLessons'),
-  teachers: t('sectionTitleTeachers'),
-  attendance: t('sectionTitleAttendance'),
-  payments: t('sectionTitlePayments'),
-  finance: t('sectionTitleFinance'),
-  analytics: t('sectionTitleAnalytics'),
-  risks: t('sectionTitleRisks'),
-  'warm-base': t('sectionTitleWarmBase'),
+  dashboard: t('navDashboard'),
+  leads: t('navLeads'),
+  pipeline: t('salesPipeline'),
+  students: t('students'),
+  courses: t('navCourses'),
+  groups: t('navGroups'),
+  lessons: t('navLessons'),
+  teachers: t('navTeachers'),
+  attendance: t('attendanceLabel'),
+  payments: t('navPayments'),
+  finance: t('navFinance'),
+  analytics: t('navAnalytics'),
+  risks: t('navRisks'),
+  'warm-base': t('warmBase'),
   referrals: t('sectionTitleReferrals'),
-  integrations: t('sectionTitleIntegrations'),
-  settings: t('sectionTitleSettings'),
+  integrations: t('navIntegrations'),
+  settings: t('settings'),
   };
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -720,7 +720,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         <Select value={leadForm.language} onValueChange={(language) => setLeadForm({ ...leadForm, language })}>
           <SelectTrigger><SelectValue placeholder={t('language')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="ru">{t('russianLang')}</SelectItem>
+            <SelectItem value="ru">{t('russian')}</SelectItem>
             <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
           </SelectContent>
         </Select>
@@ -926,12 +926,12 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
     lead: t('newApplication'),
     payment: t('recordPayment'),
     course: t('createCourse'),
-    group: t('createGroupTitle'),
-    lesson: t('createLessonTitle'),
+    group: t('createGroup'),
+    lesson: t('createLesson'),
     generatedLessons: t('generateLessonsTitle'),
-    teacher: t('addTeacherTitle'),
+    teacher: t('addTeacher'),
     expense: t('marketingExpenseTitle'),
-    source: t('addSourceTitle'),
+    source: t('addSource'),
   };
 
   const renderCreationDialogContent = () => {
@@ -1069,7 +1069,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           <CardContent className="space-y-2.5 text-sm">
             <div className="flex justify-between items-center"><span className="text-slate-500">{t('cacLabel')}</span><strong className="text-slate-900 tabular-nums">{money(analytics.summary.cac)}</strong></div>
             <div className="flex justify-between items-center"><span className="text-slate-500">{t('roasLabel')}</span><strong className="text-emerald-600 tabular-nums">{analytics.summary.roas}x</strong></div>
-            <div className="flex justify-between items-center"><span className="text-slate-500">LTV</span><strong className="text-slate-900 tabular-nums">{money(analytics.summary.averageLtv)}</strong></div>
+            <div className="flex justify-between items-center"><span className="text-slate-500">{t('ltvLabel')}</span><strong className="text-slate-900 tabular-nums">{money(analytics.summary.averageLtv)}</strong></div>
             <div className="flex justify-between items-center"><span className="text-slate-500">{t('ltvCacLabel')}</span><strong className="text-slate-900 tabular-nums">{analytics.summary.ltvCac}:1</strong></div>
             <div className="flex justify-between items-center pt-1 border-t border-slate-100"><span className="text-slate-500">{t('overduePayments')}</span><strong className="text-red-600 tabular-nums">{analytics.summary.overduePayments}</strong></div>
           </CardContent>
@@ -1108,7 +1108,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         }}
         onQuickAction={(action, lead) => {
           if (action === 'qualify') updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
-          if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
+          if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('leadStatusNotNow') } });
           if (action === 'payment') {
             setPaymentForm({ ...paymentForm, leadId: String(lead.id), studentId: '', amountUzs: String(lead.expectedPaymentUzs || lead.offerPriceUzs || '') });
             setCreationDialog('payment');
@@ -1179,7 +1179,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         render: (lead: any) => (
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } })}>{t('qualify')}</Button>
-            <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } })}>{t('toWarm')}</Button>
+            <Button size="sm" variant="outline" onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('leadStatusNotNow') } })}>{t('toWarm')}</Button>
             <Button
               size="sm"
               onClick={() => {
@@ -1336,7 +1336,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center justify-between gap-2">
                 <span className="truncate">{course.name}</span>
-                <Badge variant={course.isActive ? 'default' : 'secondary'}>{course.isActive ? t('courseActive') : t('courseInactive')}</Badge>
+                <Badge variant={course.isActive ? 'default' : 'secondary'}>{course.isActive ? t('activeBadge') : t('inactiveBadge')}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
@@ -1624,9 +1624,9 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
         <>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <KpiCard title={t('monthlyRevenue')} value={money(analytics.summary.revenueMonth)} icon={Banknote} tone="green" />
-            <KpiCard title="CAC" value={money(analytics.summary.cac)} detail={t('cacTarget')} icon={TargetIcon} tone={analytics.summary.cac > 300000 ? 'red' : 'green'} />
-            <KpiCard title="ROAS" value={`${analytics.summary.roas}x`} detail={t('roasTarget')} icon={BarChart3} tone={analytics.summary.roas && analytics.summary.roas < 5 ? 'red' : 'green'} />
-            <KpiCard title="LTV:CAC" value={`${analytics.summary.ltvCac}:1`} detail={t('ltvCacTarget')} icon={Sparkles} tone={analytics.summary.ltvCac && analytics.summary.ltvCac < 10 ? 'amber' : 'green'} />
+            <KpiCard title={t('cacLabel')} value={money(analytics.summary.cac)} detail={t('cacTarget')} icon={TargetIcon} tone={analytics.summary.cac > 300000 ? 'red' : 'green'} />
+            <KpiCard title={t('roasLabel')} value={`${analytics.summary.roas}x`} detail={t('roasTarget')} icon={BarChart3} tone={analytics.summary.roas && analytics.summary.roas < 5 ? 'red' : 'green'} />
+            <KpiCard title={t('ltvCacLabel')} value={`${analytics.summary.ltvCac}:1`} detail={t('ltvCacTarget')} icon={Sparkles} tone={analytics.summary.ltvCac && analytics.summary.ltvCac < 10 ? 'amber' : 'green'} />
           </div>
           <Card>
             <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1685,7 +1685,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
 
   const renderRisks = () => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-      <RiskList title={t('attendanceBelow70')} items={analytics.risks.lowAttendanceStudents} render={(student: any) => `${student.studentName} • ${student.attendancePercent}%`} t={t} />
+      <RiskList title={t('riskAttendanceBelow70')} items={analytics.risks.lowAttendanceStudents} render={(student: any) => `${student.studentName} • ${student.attendancePercent}%`} t={t} />
       <RiskList title={t('ratingsBelow3')} items={analytics.risks.lowScores} render={(survey: any) => `${t('student')} #${survey.studentId} • ${t('ratingLabel')} ${survey.score}`} t={t} />
       <RiskList title={t('overduePayments')} items={analytics.risks.overduePayments} render={(payment: any) => `${payment.studentName || payment.leadName || t('clientColumn')} • ${money(payment.amountUzs)}`} t={t} />
       <RiskList title={t('leadsThinkingOver7')} items={analytics.risks.longThinkingLeads} render={(lead: any) => `${lead.contactName} • ${dateTime(lead.updatedAt)}`} t={t} />
@@ -1704,7 +1704,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
             <div key={provider} className="rounded-xl border border-slate-200/70 p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-sm">
               <div className="flex items-center justify-between gap-2">
                 <strong className="text-slate-900">{provider}</strong>
-                <Badge variant="secondary">safe stub</Badge>
+                <Badge variant="secondary">{t('integrationStubMode')}</Badge>
               </div>
               <p className="mt-2 text-xs text-slate-500 leading-relaxed">{t('crmWorksWithoutExternal')}</p>
               <Button className="mt-3 w-full" variant="outline" size="sm" onClick={() => testIntegration.mutate(provider)}>
@@ -1741,9 +1741,16 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       <Card className="hover-lift">
         <CardHeader className="pb-4"><CardTitle>{t('exportLabel')}</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          {['leads', 'students', 'payments', 'attendance', 'surveys', 'marketing'].map((entity) => (
-            <a key={entity} href={`/api/academy/exports/${entity}`} target="_blank" rel="noreferrer">
-              <Button variant="outline"><Download className="h-4 w-4 mr-2" />{entity}.csv</Button>
+          {[
+            { code: 'leads', label: t('navLeads') },
+            { code: 'students', label: t('students') },
+            { code: 'payments', label: t('navPayments') },
+            { code: 'attendance', label: t('attendanceLabel') },
+            { code: 'surveys', label: t('studentLessonRatings') },
+            { code: 'marketing', label: t('marketingTab') },
+          ].map((entity) => (
+            <a key={entity.code} href={`/api/academy/exports/${entity.code}`} target="_blank" rel="noreferrer">
+              <Button variant="outline"><Download className="h-4 w-4 mr-2" />{entity.label}.csv</Button>
             </a>
           ))}
         </CardContent>
@@ -1774,7 +1781,7 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           </div>
           <Card className="hover-lift"><CardHeader className="pb-4"><CardTitle>{t('marketingBySources')}</CardTitle></CardHeader><CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-200/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><th className="p-3 px-4 text-left">{t('source')}</th><th className="p-3 px-4 text-left">{t('leadsColumn')}</th><th className="p-3 px-4 text-left">{t('paymentsTab')}</th><th className="p-3 px-4 text-left">{t('cplColumn')}</th><th className="p-3 px-4 text-left">CAC</th><th className="p-3 px-4 text-left">ROAS</th><th className="p-3 px-4 text-left">LTV:CAC</th></tr></thead>
+              <thead><tr className="border-b border-slate-200/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><th className="p-3 px-4 text-left">{t('source')}</th><th className="p-3 px-4 text-left">{t('navLeads')}</th><th className="p-3 px-4 text-left">{t('navPayments')}</th><th className="p-3 px-4 text-left">{t('cplColumn')}</th><th className="p-3 px-4 text-left">{t('cacLabel')}</th><th className="p-3 px-4 text-left">{t('roasLabel')}</th><th className="p-3 px-4 text-left">{t('ltvCacLabel')}</th></tr></thead>
               <tbody>{analytics.bySource.map((source: any) => (
                 <tr key={source.sourceId} className="border-b border-slate-100 transition-colors hover:bg-primary/[0.035]">
                   <td className="p-3 px-4 font-medium text-slate-900">{source.sourceName}</td>
@@ -1980,11 +1987,11 @@ function Cohorts({ courses, sources, users, t, money }: { courses: any[]; source
               <th className="p-3 px-4 text-left">{t('cohortColumn')}</th>
               <th className="p-3 px-4 text-left">{t('month1')}</th>
               <th className="p-3 px-4 text-left">{t('month2')}</th>
-              <th className="p-3 px-4 text-left">{t('retention2')}</th>
+              <th className="p-3 px-4 text-left">{t('month2')} / {t('retentionLabel')}</th>
               <th className="p-3 px-4 text-left">{t('month3')}</th>
-              <th className="p-3 px-4 text-left">{t('retention3')}</th>
+              <th className="p-3 px-4 text-left">{t('month3')} / {t('retentionLabel')}</th>
               <th className="p-3 px-4 text-left">{t('month4')}</th>
-              <th className="p-3 px-4 text-left">{t('retention4')}</th>
+              <th className="p-3 px-4 text-left">{t('month4')} / {t('retentionLabel')}</th>
               <th className="p-3 px-4 text-left">{t('revenue')}</th>
               <th className="p-3 px-4 text-left">{t('forecast')}</th>
             </tr>

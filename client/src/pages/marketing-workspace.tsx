@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -53,6 +53,8 @@ const EMPTY_EXPENSE_FORM = {
   periodStart: '',
   periodEnd: '',
 };
+
+export type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses' | 'reports';
 
 function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   title: string;
@@ -142,10 +144,9 @@ function ConversionBar({ label, value, total, color = '#2563eb' }: {
 }
 
 /* ─── main component ─── */
-export default function MarketingWorkspace() {
+export default function MarketingWorkspace({ section = 'overview' }: { section?: MarketingSection }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('sources');
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
@@ -229,6 +230,12 @@ export default function MarketingWorkspace() {
       String(exp.periodStart || exp.createdAt).startsWith(expensePeriodFilter)
     );
   }, [expenses, expensePeriodFilter]);
+
+  const funnelData = useMemo(() => {
+    if (funnelSourceFilter === 'all') return funnel;
+    const sourceFunnel = analytics?.funnelBySource?.[funnelSourceFilter];
+    return sourceFunnel || funnel;
+  }, [analytics, funnel, funnelSourceFilter]);
 
   const expenseFormDirty = useMemo(
     () => JSON.stringify(expenseForm) !== JSON.stringify(EMPTY_EXPENSE_FORM),
@@ -373,13 +380,6 @@ export default function MarketingWorkspace() {
     { key: 'amount', header: t('amount'), accessor: (row: any) => money(row.amountUzs), sortable: true, cellClassName: 'tabular-nums font-medium' },
   ];
 
-  /* ─── funnel data ─── */
-  const funnelData = useMemo(() => {
-    if (funnelSourceFilter === 'all') return funnel;
-    const sourceFunnel = analytics?.funnelBySource?.[funnelSourceFilter];
-    return sourceFunnel || funnel;
-  }, [funnel, funnelSourceFilter, analytics]);
-
   const funnelStages = [
     { code: 'new_request', label: t('leadStatusNewRequest'), color: '#2563eb' },
     { code: 'first_contact', label: t('leadStatusFirstContact'), color: '#0ea5e9' },
@@ -392,78 +392,86 @@ export default function MarketingWorkspace() {
   ];
 
   const avgDealCycle = summary.avgDealCycleDays ?? t('noData');
+  const sectionTitle: Record<MarketingSection, string> = {
+    overview: t('marketingTab'),
+    sources: t('leadSources'),
+    funnel: t('conversionFunnel'),
+    warm: t('warmBase'),
+    referrals: t('navReferrals'),
+    expenses: t('expenses'),
+    reports: t('reports'),
+  };
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
       <PageHeader
-        title={t('marketingTab')}
+        title={sectionTitle[section]}
         subtitle={t('channelsAndEfficiency')}
+        breadcrumbs={[
+          { label: t('navDashboard'), href: '/marketing-workspace' },
+          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
+        ]}
         actions={
-          <Button onClick={() => setExpenseDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('addExpense')}
-          </Button>
+          section === 'overview' || section === 'sources' || section === 'expenses' ? (
+            <Button onClick={() => setExpenseDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t('addExpense')}
+            </Button>
+          ) : undefined
         }
       />
 
       {/* ─── KPI cards ─── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <div className="stagger-item">
-          <KpiCard title={t('newLeadsMonth')} value={summary.newLeadsMonth ?? 0} icon={Users} tone="blue" />
+      {section === 'overview' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="stagger-item">
+            <KpiCard title={t('newLeadsMonth')} value={summary.newLeadsMonth ?? 0} icon={Users} tone="blue" />
+          </div>
+          <div className="stagger-item">
+            <KpiCard title={t('weeklyLeads')} value={summary.newLeadsWeek ?? 0} icon={Megaphone} tone="blue" />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('conversionApplicationToDemo')}
+              value={`${summary.leadToDemoConversion ?? 0}%`}
+              icon={TrendingUp}
+              tone="green"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('conversionDemoToPayment')}
+              value={`${summary.demoToPaidConversion ?? 0}%`}
+              icon={TrendingDown}
+              tone="green"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard title={t('cplLabel')} value={money(summary.cpl)} detail={t('cplTarget')} icon={Calculator} tone="amber" />
+          </div>
+          <div className="stagger-item">
+            <KpiCard title={t('cacLabel')} value={money(summary.cac)} detail={t('cacTarget')} icon={DollarSign} tone="amber" />
+          </div>
+          <div className="stagger-item">
+            <KpiCard title={t('roasLabel')} value={`${summary.roas ?? 0}x`} detail={t('roasTarget')} icon={Target} tone="purple" />
+          </div>
+          <div className="stagger-item">
+            <KpiCard title={t('warmBaseSize')} value={summary.warmBaseSize ?? warmLeads.length} icon={Flame} tone="slate" />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('warmReactivated')}
+              value={summary.warmReactivated ?? 0}
+              detail={t('reactivated')}
+              icon={RotateCcw}
+              tone="green"
+            />
+          </div>
         </div>
-        <div className="stagger-item">
-          <KpiCard title={t('weeklyLeads')} value={summary.newLeadsWeek ?? 0} icon={Megaphone} tone="blue" />
-        </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('conversionApplicationToDemo')}
-            value={`${summary.leadToDemoConversion ?? 0}%`}
-            icon={TrendingUp}
-            tone="green"
-          />
-        </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('conversionDemoToPayment')}
-            value={`${summary.demoToPaidConversion ?? 0}%`}
-            icon={TrendingDown}
-            tone="green"
-          />
-        </div>
-        <div className="stagger-item">
-          <KpiCard title={t('cplLabel')} value={money(summary.cpl)} detail={t('cplTarget')} icon={Calculator} tone="amber" />
-        </div>
-        <div className="stagger-item">
-          <KpiCard title={t('cacLabel')} value={money(summary.cac)} detail={t('cacTarget')} icon={DollarSign} tone="amber" />
-        </div>
-        <div className="stagger-item">
-          <KpiCard title={t('roasLabel')} value={`${summary.roas ?? 0}x`} detail={t('roasTarget')} icon={Target} tone="purple" />
-        </div>
-        <div className="stagger-item">
-          <KpiCard title={t('warmBaseSize')} value={summary.warmBaseSize ?? warmLeads.length} icon={Flame} tone="slate" />
-        </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('warmReactivated')}
-            value={summary.warmReactivated ?? 0}
-            detail={t('reactivated')}
-            icon={RotateCcw}
-            tone="green"
-          />
-        </div>
-      </div>
+      ) : null}
 
-      {/* ─── Tabs ─── */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="w-full flex-wrap h-auto gap-1">
-          <TabsTrigger value="sources">{t('leadSources')}</TabsTrigger>
-          <TabsTrigger value="funnel">{t('conversionFunnel')}</TabsTrigger>
-          <TabsTrigger value="warm">{t('warmBase')}</TabsTrigger>
-          <TabsTrigger value="referrals">{t('navReferrals')}</TabsTrigger>
-          <TabsTrigger value="expenses">{t('expenses')}</TabsTrigger>
-          <TabsTrigger value="reports">{t('reports')}</TabsTrigger>
-        </TabsList>
-
+      {section !== 'overview' ? (
+      <Tabs value={section} className="space-y-4">
         {/* ─── Tab: Sources ─── */}
         <TabsContent value="sources" className="space-y-4">
           <Card>
@@ -773,6 +781,7 @@ export default function MarketingWorkspace() {
           </Card>
         </TabsContent>
       </Tabs>
+      ) : null}
 
       {/* ─── Expense Dialog ─── */}
       <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>

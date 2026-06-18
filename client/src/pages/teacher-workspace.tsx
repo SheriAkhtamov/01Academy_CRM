@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,7 +8,7 @@ import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -48,6 +49,8 @@ type Lesson = {
   durationMinutes: number;
   status: string;
 };
+
+export type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings' | 'profile';
 
 type Group = {
   id: number;
@@ -180,11 +183,11 @@ function formatDateFull(dateStr: string): string {
   return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-export default function TeacherWorkspace() {
+export default function TeacherWorkspace({ section = 'overview' }: { section?: TeacherSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('schedule');
+  const [, setLocation] = useLocation();
   const dayNames = [
     t('sundayShort'),
     t('mondayShort'),
@@ -366,6 +369,14 @@ export default function TeacherWorkspace() {
   }
 
   const fullName = user?.fullName || t('teacher');
+  const sectionTitle: Record<TeacherSection, string> = {
+    overview: `${t('hello')}, ${fullName}`,
+    schedule: t('schedule'),
+    groups: t('myGroups'),
+    attendance: t('attendanceLabel'),
+    ratings: t('lessonRatings'),
+    profile: t('myProfile'),
+  };
 
   const getLessonStatusBadge = (status: string) => {
     const variants: Record<string, string> = {
@@ -400,85 +411,67 @@ export default function TeacherWorkspace() {
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
       <PageHeader
-        title={`${t('hello')}, ${fullName}`}
+        title={sectionTitle[section]}
         subtitle={t('teacherWorkspace')}
-        breadcrumbs={[{ label: t('dashboard'), href: '/' }, { label: t('teacherWorkspace') }]}
+        breadcrumbs={[
+          { label: t('navDashboard'), href: '/teacher-workspace' },
+          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
+        ]}
       />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <div className="stagger-item">
-          <KpiCard
-            title={t('myGroupsCount')}
-            value={groups.length}
-            detail={teacherCourses.map((c: any) => c.name).join(', ') || t('noData')}
-            icon={Users}
-            tone="blue"
-          />
+      {section === 'overview' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="stagger-item">
+            <KpiCard
+              title={t('myGroupsCount')}
+              value={groups.length}
+              detail={teacherCourses.map((c: any) => c.name).join(', ') || t('noData')}
+              icon={Users}
+              tone="blue"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('totalStudents')}
+              value={totalStudents}
+              detail={`${t('maxStudents')}: ${groups.reduce((s, g) => s + (g.maxStudents || 12), 0)}`}
+              icon={GraduationCap}
+              tone="green"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('lessonsToday')}
+              value={todayLessons.length}
+              detail={formatDateFull(new Date().toISOString())}
+              icon={Calendar}
+              tone="amber"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('averageAttendance')}
+              value={`${avgAttendance}%`}
+              detail={t('byActiveStudents')}
+              icon={ClipboardCheck}
+              tone="blue"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('avgLessonRating')}
+              value={avgLessonRating}
+              detail={`${surveys.length} ${t('ratingsCount')}`}
+              icon={Star}
+              tone="green"
+            />
+          </div>
         </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('totalStudents')}
-            value={totalStudents}
-            detail={`${t('maxStudents')}: ${groups.reduce((s, g) => s + (g.maxStudents || 12), 0)}`}
-            icon={GraduationCap}
-            tone="green"
-          />
-        </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('lessonsToday')}
-            value={todayLessons.length}
-            detail={formatDateFull(new Date().toISOString())}
-            icon={Calendar}
-            tone="amber"
-          />
-        </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('averageAttendance')}
-            value={`${avgAttendance}%`}
-            detail={t('byActiveStudents')}
-            icon={ClipboardCheck}
-            tone="blue"
-          />
-        </div>
-        <div className="stagger-item">
-          <KpiCard
-            title={t('avgLessonRating')}
-            value={avgLessonRating}
-            detail={`${surveys.length} ${t('ratingsCount')}`}
-            icon={Star}
-            tone="green"
-          />
-        </div>
-      </div>
+      ) : null}
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-flex">
-          <TabsTrigger value="schedule" className="gap-2">
-            <Calendar className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('schedule')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="groups" className="gap-2">
-            <Users className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('myGroups')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="attendance" className="gap-2">
-            <ClipboardCheck className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('attendanceLabel')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="ratings" className="gap-2">
-            <Star className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('lessonRatings')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="profile" className="gap-2">
-            <UserCircle className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('myProfile')}</span>
-          </TabsTrigger>
-        </TabsList>
-
+      {section !== 'overview' ? (
+      <Tabs value={section}>
         {/* Schedule Tab */}
         <TabsContent value="schedule" className="mt-6 space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
@@ -536,7 +529,7 @@ export default function TeacherWorkspace() {
                             className="h-6 text-[10px] px-2 mt-1 text-primary-600 hover:text-primary-700"
                             onClick={() => {
                               setSelectedLessonId(String(lesson.id));
-                              setActiveTab('attendance');
+                              setLocation('/teacher-workspace/attendance');
                             }}
                           >
                             {t('attendanceLabel')}
@@ -590,7 +583,7 @@ export default function TeacherWorkspace() {
                             className="h-7 text-xs"
                             onClick={() => {
                               setSelectedLessonId(String(lesson.id));
-                              setActiveTab('attendance');
+                              setLocation('/teacher-workspace/attendance');
                             }}
                           >
                             {t('attendanceChecklist')}
@@ -1262,6 +1255,7 @@ export default function TeacherWorkspace() {
           </Card>
         </TabsContent>
       </Tabs>
+      ) : null}
     </div>
   );
 }

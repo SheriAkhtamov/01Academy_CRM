@@ -100,29 +100,144 @@ function Router() {
         <Route path="/" component={RoleBasedHome} />
         <Route path="/integrations" component={() => adminPage('integrations')} />
         <Route path="/settings" component={() => adminPage('settings')} />
+        <Route path="/sales/leads" component={() => (
+          <RoleGuard allowedRoles={salesRoles}>
+            <SalesDashboard section="leads" />
+          </RoleGuard>
+        )} />
+        <Route path="/sales/pipeline" component={() => (
+          <RoleGuard allowedRoles={salesRoles}>
+            <SalesDashboard section="pipeline" />
+          </RoleGuard>
+        )} />
+        <Route path="/sales/clients" component={() => (
+          <RoleGuard allowedRoles={salesRoles}>
+            <SalesDashboard section="students" />
+          </RoleGuard>
+        )} />
+        <Route path="/sales/tasks" component={() => (
+          <RoleGuard allowedRoles={salesRoles}>
+            <SalesDashboard section="tasks" />
+          </RoleGuard>
+        )} />
         <Route path="/sales" component={() => (
           <RoleGuard allowedRoles={salesRoles}>
-            <SalesDashboard />
+            <SalesDashboard section="overview" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/funnel" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="funnel" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/courses" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="courses" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/sources" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="sources" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/teachers" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="teachers" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/groups" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="groups" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/risks" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="risks" />
+          </RoleGuard>
+        )} />
+        <Route path="/analytics-workspace/cohorts" component={() => (
+          <RoleGuard allowedRoles={analyticsRoles}>
+            <AnalyticsWorkspace section="cohorts" />
           </RoleGuard>
         )} />
         <Route path="/analytics-workspace" component={() => (
           <RoleGuard allowedRoles={analyticsRoles}>
-            <AnalyticsWorkspace />
+            <AnalyticsWorkspace section="overview" />
+          </RoleGuard>
+        )} />
+        <Route path="/teacher-workspace/schedule" component={() => (
+          <RoleGuard allowedRoles={teacherRoles}>
+            <TeacherWorkspace section="schedule" />
+          </RoleGuard>
+        )} />
+        <Route path="/teacher-workspace/groups" component={() => (
+          <RoleGuard allowedRoles={teacherRoles}>
+            <TeacherWorkspace section="groups" />
+          </RoleGuard>
+        )} />
+        <Route path="/teacher-workspace/attendance" component={() => (
+          <RoleGuard allowedRoles={teacherRoles}>
+            <TeacherWorkspace section="attendance" />
+          </RoleGuard>
+        )} />
+        <Route path="/teacher-workspace/ratings" component={() => (
+          <RoleGuard allowedRoles={teacherRoles}>
+            <TeacherWorkspace section="ratings" />
+          </RoleGuard>
+        )} />
+        <Route path="/teacher-workspace/profile" component={() => (
+          <RoleGuard allowedRoles={teacherRoles}>
+            <TeacherWorkspace section="profile" />
           </RoleGuard>
         )} />
         <Route path="/teacher-workspace" component={() => (
           <RoleGuard allowedRoles={teacherRoles}>
-            <TeacherWorkspace />
+            <TeacherWorkspace section="overview" />
+          </RoleGuard>
+        )} />
+        <Route path="/marketing-workspace/sources" component={() => (
+          <RoleGuard allowedRoles={marketingRoles}>
+            <MarketingWorkspace section="sources" />
+          </RoleGuard>
+        )} />
+        <Route path="/marketing-workspace/funnel" component={() => (
+          <RoleGuard allowedRoles={marketingRoles}>
+            <MarketingWorkspace section="funnel" />
+          </RoleGuard>
+        )} />
+        <Route path="/marketing-workspace/warm-base" component={() => (
+          <RoleGuard allowedRoles={marketingRoles}>
+            <MarketingWorkspace section="warm" />
+          </RoleGuard>
+        )} />
+        <Route path="/marketing-workspace/referrals" component={() => (
+          <RoleGuard allowedRoles={marketingRoles}>
+            <MarketingWorkspace section="referrals" />
+          </RoleGuard>
+        )} />
+        <Route path="/marketing-workspace/expenses" component={() => (
+          <RoleGuard allowedRoles={marketingRoles}>
+            <MarketingWorkspace section="expenses" />
+          </RoleGuard>
+        )} />
+        <Route path="/marketing-workspace/reports" component={() => (
+          <RoleGuard allowedRoles={marketingRoles}>
+            <MarketingWorkspace section="reports" />
           </RoleGuard>
         )} />
         <Route path="/marketing-workspace" component={() => (
           <RoleGuard allowedRoles={marketingRoles}>
-            <MarketingWorkspace />
+            <MarketingWorkspace section="overview" />
+          </RoleGuard>
+        )} />
+        <Route path="/admin/reports" component={() => (
+          <RoleGuard allowedRoles={adminRoles}>
+            <Admin mode="admin" section="reports" />
           </RoleGuard>
         )} />
         <Route path="/admin" component={() => (
           <RoleGuard allowedRoles={adminRoles}>
-            <Admin mode="admin" />
+            <Admin mode="admin" section="settings" />
           </RoleGuard>
         )} />
         <Route path="/employees" component={() => (

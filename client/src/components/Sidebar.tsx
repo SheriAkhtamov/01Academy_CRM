@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ListChecks,
   Star,
+  UserCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -78,8 +79,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const isItemActive = (href: string) => {
     if (href === '/') return location === '/';
-    if (href.includes('?')) return location === href;
-    return location === href || location.startsWith(href + '?');
+    return location === href;
   };
 
   const buildSections = (): NavSection[] => {
@@ -90,10 +90,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('salesPipeline'),
           items: [
             { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
-            { name: t('myLeads'), href: '/sales?tab=leads', icon: Users },
-            { name: t('pipeline'), href: '/sales?tab=pipeline', icon: Flame },
-            { name: t('myStudents'), href: '/sales?tab=students', icon: GraduationCap },
-            { name: t('myTasks'), href: '/sales?tab=tasks', icon: ListChecks },
+            { name: t('myLeads'), href: '/sales/leads', icon: Users },
+            { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
+            { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
+            { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
           ],
         },
       ];
@@ -106,10 +106,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('teacher'),
           items: [
             { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
-            { name: t('schedule'), href: '/teacher-workspace?tab=schedule', icon: Calendar },
-            { name: t('myGroups'), href: '/teacher-workspace?tab=groups', icon: Layers3 },
-            { name: t('attendanceLabel'), href: '/teacher-workspace?tab=attendance', icon: ClipboardCheck },
-            { name: t('lessonRatings'), href: '/teacher-workspace?tab=surveys', icon: Star },
+            { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
+            { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
+            { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
+            { name: t('lessonRatings'), href: '/teacher-workspace/ratings', icon: Star },
+            { name: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
           ],
         },
       ];
@@ -122,11 +123,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('navAnalytics'),
           items: [
             { name: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
-            { name: t('byCourses'), href: '/analytics-workspace?tab=courses', icon: BookOpen },
-            { name: t('bySources'), href: '/analytics-workspace?tab=sources', icon: Megaphone },
-            { name: t('navTeachers'), href: '/analytics-workspace?tab=teachers', icon: UserRoundCheck },
-            { name: t('navGroups'), href: '/analytics-workspace?tab=groups', icon: Layers3 },
-            { name: t('navRisks'), href: '/analytics-workspace?tab=risks', icon: AlertTriangle },
+            { name: t('salesPipeline'), href: '/analytics-workspace/funnel', icon: Flame },
+            { name: t('byCourses'), href: '/analytics-workspace/courses', icon: BookOpen },
+            { name: t('bySources'), href: '/analytics-workspace/sources', icon: Megaphone },
+            { name: t('navTeachers'), href: '/analytics-workspace/teachers', icon: UserRoundCheck },
+            { name: t('navGroups'), href: '/analytics-workspace/groups', icon: Layers3 },
+            { name: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
+            { name: t('cohortsTab'), href: '/analytics-workspace/cohorts', icon: Users },
           ],
         },
       ];
@@ -139,11 +142,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('marketingTab'),
           items: [
             { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
-            { name: t('leadSources'), href: '/marketing-workspace?tab=sources', icon: Megaphone },
-            { name: t('conversionFunnel'), href: '/marketing-workspace?tab=funnel', icon: Flame },
-            { name: t('warmBase'), href: '/marketing-workspace?tab=warm', icon: Users },
-            { name: t('navReferrals'), href: '/marketing-workspace?tab=referrals', icon: HeartHandshake },
-            { name: t('expenses'), href: '/marketing-workspace?tab=expenses', icon: Banknote },
+            { name: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
+            { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
+            { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
+            { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
+            { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
+            { name: t('reports'), href: '/marketing-workspace/reports', icon: ListChecks },
           ],
         },
         {
@@ -159,7 +163,8 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         {
           label: t('systemAdministration'),
           items: [
-            { name: t('administration'), href: '/admin', icon: Settings },
+            { name: t('systemSettings'), href: '/admin', icon: Settings },
+            { name: t('reportsActivityLogs'), href: '/admin/reports', icon: ListChecks },
             { name: t('employees'), href: '/employees', icon: Users },
           ],
         },

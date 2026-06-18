@@ -1411,16 +1411,16 @@ router.get('/search', async (req, res) => {
     };
 
     if (role === 'account_manager') {
-      await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales?tab=leads');
-      await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales?tab=students');
+      await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/leads');
+      await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
     } else if (role === 'teacher') {
       const teacherId = await resolveTeacherId(req.user!.id);
       if (!teacherId) return res.json([]);
-      await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace?tab=groups');
-      await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace?tab=groups');
-      await pushCourses('/teacher-workspace?tab=groups');
+      await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
+      await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace/groups');
+      await pushCourses('/teacher-workspace/groups');
     } else if (role === 'operations_director') {
-      await pushGroups(`TRUE`, [], '/analytics-workspace?tab=groups');
+      await pushGroups(`TRUE`, [], '/analytics-workspace/groups');
       if (remaining() > 0) {
         const teachers = await query(
           `SELECT id, full_name, status
@@ -1435,10 +1435,10 @@ router.get('/search', async (req, res) => {
           entityType: 'teacher',
           title: teacher.fullName,
           subtitle: teacher.status,
-          href: '/analytics-workspace?tab=teachers',
+          href: '/analytics-workspace/teachers',
         })));
       }
-      await pushCourses('/analytics-workspace?tab=courses');
+      await pushCourses('/analytics-workspace/courses');
     } else if (role === 'smm_manager') {
       if (remaining() > 0) {
         const sources = await query(
@@ -1454,10 +1454,10 @@ router.get('/search', async (req, res) => {
           entityType: 'source',
           title: source.name,
           subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
-          href: '/marketing-workspace?tab=sources',
+          href: '/marketing-workspace/sources',
         })));
       }
-      await pushLeads(`TRUE`, [], '/marketing-workspace?tab=warm');
+      await pushLeads(`TRUE`, [], '/marketing-workspace/warm-base');
     } else if (HEAD_ROLES.has(role)) {
       if (remaining() > 0) {
         const users = await query(

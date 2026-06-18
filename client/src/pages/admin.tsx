@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -23,6 +23,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -97,9 +98,10 @@ const createAiSettingsSchema = (t: any) => z.object({
 
 interface AdminProps {
   mode?: 'admin' | 'employees';
+  section?: 'settings' | 'reports';
 }
 
-export default function Admin({ mode = 'admin' }: AdminProps) {
+export default function Admin({ mode = 'admin', section = 'settings' }: AdminProps) {
   const isEmployeesPage = mode === 'employees';
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -109,7 +111,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [userCredentials, setUserCredentials] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState(isEmployeesPage ? 'users' : 'settings');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -176,10 +177,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onOpenChange: handleSettingsModalState,
   });
 
-  useEffect(() => {
-    setActiveTab(isEmployeesPage ? 'users' : 'settings');
-  }, [isEmployeesPage]);
-
   // Check admin access
   if (!user || !canManageUsers(user)) {
     return (
@@ -225,7 +222,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const activeUserCount = users.filter((user: any) => user.isActive).length;
   const inactiveUserCount = users.length - activeUserCount;
-  const settingsCount = systemSettings.length;
   const settingsSnapshotTime = new Date().toLocaleTimeString();
 
   const createUserMutation = useMutation({
@@ -603,13 +599,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
-        title={isEmployeesPage ? t('employees') : t('adminWorkspaceTitle')}
-        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminWorkspaceSubtitle')}
+        title={isEmployeesPage ? t('employees') : section === 'reports' ? t('reportsActivityLogs') : t('systemSettings')}
+        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : section === 'reports' ? t('viewSystemActivity') : t('configureSettings')}
+        breadcrumbs={isEmployeesPage
+          ? [{ label: t('systemAdministration'), href: '/admin' }, { label: t('employees') }]
+          : section === 'reports'
+            ? [{ label: t('systemSettings'), href: '/admin' }, { label: t('reportsActivityLogs') }]
+            : [{ label: t('systemSettings') }]}
         actions={isEmployeesPage ? (
           <Button
             className="bg-primary-600 hover:bg-primary-700"
             onClick={() => {
-              setActiveTab('users');
               setShowCreateUserModal(true);
             }}
           >
@@ -619,25 +619,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         ) : undefined}
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        {!isEmployeesPage && (
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="settings" className="flex items-center space-x-2">
-              <Settings className="h-4 w-4" />
-              <span>{t('settings')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="reports" className="flex items-center space-x-2">
-              <FileText className="h-4 w-4" />
-              <span>{t('reports')}</span>
-            </TabsTrigger>
-          </TabsList>
-        )}
-
+      <Tabs value={isEmployeesPage ? 'users' : section} className="space-y-6">
         {/* Users Tab */}
         {isEmployeesPage && (
         <TabsContent value="users" className="space-y-6">
           {/* User Management Header */}
-          <div className="flex items-center justify-between">
+          <div>
             <div>
               <h2 className="text-xl font-semibold text-slate-900">{t('userManagement')}</h2>
               <p className="text-sm text-slate-500">
@@ -645,17 +632,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               </p>
             </div>
             <Dialog open={showCreateUserModal} onOpenChange={userDialogGuard.handleOpenChange}>
-                <DialogTrigger asChild>
-                  <Button className="bg-primary-600 hover:bg-primary-700">
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('addUser')}
-                  </Button>
-                </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>
                       {selectedUser ? t('editUser') : t('addNewUser')}
                     </DialogTitle>
+                    <DialogDescription className="sr-only">
+                      {t('createManageUserAccounts')}
+                    </DialogDescription>
                   </DialogHeader>
                   <div className="max-h-[70vh] overflow-y-auto pr-2">
                     <Form {...userForm}>
@@ -958,16 +942,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
         {/* System Settings Tab */}
         <TabsContent value="settings" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="text-xl font-semibold text-slate-900">{t('systemSettings')}</h2>
-                <span className="text-xs text-slate-500">{settingsCount}</span>
-              </div>
-              <p className="text-sm text-slate-500">
-                {t('configureSettings')}
-              </p>
-            </div>
+          <div className="flex items-center justify-end">
             <Dialog open={showSettingsModal} onOpenChange={settingsDialogGuard.handleOpenChange}>
                 <DialogTrigger asChild>
                   <Button className="bg-primary-600 hover:bg-primary-700">
@@ -1285,13 +1260,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
         {/* Reports & Logs Tab */}
         <TabsContent value="reports" className="space-y-6">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">{t('reportsActivityLogs')}</h2>
-            <p className="text-sm text-slate-500">
-              {t('viewSystemActivity')}
-            </p>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* System Statistics */}
             <Card>

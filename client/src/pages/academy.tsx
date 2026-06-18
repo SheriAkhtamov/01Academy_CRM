@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
@@ -980,9 +979,8 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <Card className="xl:col-span-2 hover-lift">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
+          <CardHeader className="pb-4">
             <CardTitle>{t('salesPipeline')}</CardTitle>
-            <Link href="/pipeline"><Button variant="outline" size="sm">{t('openKanban')}</Button></Link>
           </CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {analytics.funnel.map((item: any) => (
@@ -1080,7 +1078,6 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
           <CardContent className="grid grid-cols-2 gap-2">
             <Button variant="outline" className="w-full" onClick={() => setCreationDialog('lead')}>{t('lead')}</Button>
             <Button variant="outline" className="w-full" onClick={() => setCreationDialog('payment')}>{t('payment')}</Button>
-            <Link href="/students"><Button variant="outline" className="w-full">{t('students')}</Button></Link>
             <Button variant="outline" className="w-full" onClick={() => setCreationDialog('group')}>{t('group')}</Button>
           </CardContent>
         </Card>
@@ -1867,13 +1864,12 @@ export default function AcademyPage({ section = 'dashboard' }: AcademyPageProps)
       <PageHeader
         title={sectionTitles[section]}
         subtitle={t('academyDescription')}
-        actions={
+        actions={section !== 'integrations' && section !== 'settings' ? (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setCreationDialog('lead')}><Plus className="h-4 w-4 mr-2" />{t('lead')}</Button>
-            <Link href="/pipeline"><Button variant="outline" size="sm">{t('salesPipeline')}</Button></Link>
             <Button size="sm" onClick={() => setCreationDialog('payment')}>{t('payment')}</Button>
           </div>
-        }
+        ) : undefined}
       />
       <Dialog
         open={creationDialog !== null}

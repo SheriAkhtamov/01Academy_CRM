@@ -9,7 +9,7 @@ import { canAccessAnalytics } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
@@ -64,6 +64,8 @@ const translateEnumValue = (value: string | null | undefined, labels: Record<str
   const key = labels[value];
   return key ? t(key) : value;
 };
+
+export type AnalyticsSection = 'overview' | 'funnel' | 'courses' | 'sources' | 'teachers' | 'groups' | 'risks' | 'cohorts';
 
 /* ── sub-components ────────────────────────────────────────── */
 
@@ -161,7 +163,7 @@ function exportToCSV(filename: string, headers: string[], rows: (string | number
 
 /* ── main component ────────────────────────────────────────── */
 
-export default function AnalyticsWorkspace() {
+export default function AnalyticsWorkspace({ section = 'overview' }: { section?: AnalyticsSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
 
@@ -235,6 +237,16 @@ export default function AnalyticsWorkspace() {
   const ltvCacTone = getTone(analytics.summary.ltvCac || 0, targets.ltvCac || 10, 'gt');
   const npsTone = getTone(analytics.summary.nps || 0, targets.nps || 50, 'gt');
   const attendanceTone = getTone(analytics.summary.avgAttendance || 0, targets.attendance || 70, 'gt');
+  const sectionTitle: Record<AnalyticsSection, string> = {
+    overview: t('navAnalytics'),
+    funnel: t('salesPipeline'),
+    courses: t('byCourses'),
+    sources: t('bySources'),
+    teachers: t('navTeachers'),
+    groups: t('navGroups'),
+    risks: t('navRisks'),
+    cohorts: t('cohortsTab'),
+  };
 
   /* ── derived data ── */
   const funnelData = (analytics.funnel || []) as any[];
@@ -469,8 +481,12 @@ export default function AnalyticsWorkspace() {
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
-        title={t('navAnalytics')}
+        title={sectionTitle[section]}
         subtitle={`${t('lastUpdated')}: ${lastUpdated}`}
+        breadcrumbs={[
+          { label: t('navDashboard'), href: '/analytics-workspace' },
+          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
+        ]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleSendTelegram}>
@@ -482,102 +498,95 @@ export default function AnalyticsWorkspace() {
       />
 
       {/* ── KPI Grid ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard
-          title={t('weeklyLeads')}
-          value={analytics.summary.newLeadsWeek ?? 0}
-          detail={`${t('marketingAndSales')} • ${t('monthlyRevenue')}: ${money(analytics.summary.newLeadsMonth ?? 0)}`}
-          icon={Megaphone}
-          tone="blue"
-        />
-        <KpiCard
-          title={t('activeStudents')}
-          value={analytics.summary.activeStudents ?? 0}
-          detail={t('statusLearning')}
-          icon={GraduationCap}
-          tone="green"
-        />
-        <KpiCard
-          title={t('monthlyRevenue')}
-          value={money(analytics.summary.revenueMonth)}
-          detail={`${t('averageCheck')}: ${money(analytics.summary.avgCheck)}`}
-          icon={Banknote}
-          tone="green"
-        />
-        <KpiCard
-          title={t('averageCheck')}
-          value={money(analytics.summary.avgCheck)}
-          detail={t('averageCheck')}
-          icon={CreditCard}
-          tone="slate"
-        />
-        <KpiCard
-          title={t('cacLabel')}
-          value={money(analytics.summary.cac)}
-          detail={`${t('cacTarget')}`}
-          icon={Target}
-          tone={cacTone}
-        />
-        <KpiCard
-          title={t('ltvCacLabel')}
-          value={`${analytics.summary.ltvCac}:1`}
-          detail={`${t('ltvCacTarget')}`}
-          icon={Sparkles}
-          tone={ltvCacTone}
-        />
-        <KpiCard
-          title={t('roasLabel')}
-          value={`${analytics.summary.roas}x`}
-          detail={`${t('roasTarget')}`}
-          icon={BarChart3}
-          tone={roasTone}
-        />
-        <KpiCard
-          title={t('npsTab')}
-          value={analytics.summary.nps ?? 0}
-          detail={`${t('targetGreaterThan')}${targets.nps ?? 50}`}
-          icon={Star}
-          tone={npsTone}
-        />
-        <KpiCard
-          title={t('averageAttendance')}
-          value={`${analytics.summary.avgAttendance ?? 0}%`}
-          detail={`${t('targetGreaterThan')}${targets.attendance ?? 70}%`}
-          icon={UserRoundCheck}
-          tone={attendanceTone}
-        />
-        <KpiCard
-          title={t('avgLessonRating')}
-          value={`${(analytics.summary.avgLessonScore ?? 0).toFixed(1)} / 5`}
-          icon={Star}
-          tone="blue"
-        />
-      </div>
+      {section === 'overview' ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+            <KpiCard
+              title={t('weeklyLeads')}
+              value={analytics.summary.newLeadsWeek ?? 0}
+              detail={`${t('marketingAndSales')} • ${t('monthlyRevenue')}: ${money(analytics.summary.newLeadsMonth ?? 0)}`}
+              icon={Megaphone}
+              tone="blue"
+            />
+            <KpiCard
+              title={t('activeStudents')}
+              value={analytics.summary.activeStudents ?? 0}
+              detail={t('statusLearning')}
+              icon={GraduationCap}
+              tone="green"
+            />
+            <KpiCard
+              title={t('monthlyRevenue')}
+              value={money(analytics.summary.revenueMonth)}
+              detail={`${t('averageCheck')}: ${money(analytics.summary.avgCheck)}`}
+              icon={Banknote}
+              tone="green"
+            />
+            <KpiCard
+              title={t('averageCheck')}
+              value={money(analytics.summary.avgCheck)}
+              detail={t('averageCheck')}
+              icon={CreditCard}
+              tone="slate"
+            />
+            <KpiCard
+              title={t('cacLabel')}
+              value={money(analytics.summary.cac)}
+              detail={`${t('cacTarget')}`}
+              icon={Target}
+              tone={cacTone}
+            />
+            <KpiCard
+              title={t('ltvCacLabel')}
+              value={`${analytics.summary.ltvCac}:1`}
+              detail={`${t('ltvCacTarget')}`}
+              icon={Sparkles}
+              tone={ltvCacTone}
+            />
+            <KpiCard
+              title={t('roasLabel')}
+              value={`${analytics.summary.roas}x`}
+              detail={`${t('roasTarget')}`}
+              icon={BarChart3}
+              tone={roasTone}
+            />
+            <KpiCard
+              title={t('npsTab')}
+              value={analytics.summary.nps ?? 0}
+              detail={`${t('targetGreaterThan')}${targets.nps ?? 50}`}
+              icon={Star}
+              tone={npsTone}
+            />
+            <KpiCard
+              title={t('averageAttendance')}
+              value={`${analytics.summary.avgAttendance ?? 0}%`}
+              detail={`${t('targetGreaterThan')}${targets.attendance ?? 70}%`}
+              icon={UserRoundCheck}
+              tone={attendanceTone}
+            />
+            <KpiCard
+              title={t('avgLessonRating')}
+              value={`${(analytics.summary.avgLessonScore ?? 0).toFixed(1)} / 5`}
+              icon={Star}
+              tone="blue"
+            />
+          </div>
 
-      {/* ── Dashboard Charts ── */}
-      <div className="mb-6">
-        <DashboardCharts
-          payments={data.payments}
-          funnel={analytics.funnel}
-          analytics={analytics}
-          leadStatusName={leadStatusName}
-          statusColor={statusColor}
-          money={money}
-        />
-      </div>
+          <div className="mb-6">
+            <DashboardCharts
+              payments={data.payments}
+              funnel={analytics.funnel}
+              analytics={analytics}
+              leadStatusName={leadStatusName}
+              statusColor={statusColor}
+              money={money}
+            />
+          </div>
+        </>
+      ) : null}
 
-      {/* ── Tabs ── */}
-      <Tabs defaultValue="funnel" className="space-y-5">
-        <TabsList className="flex flex-wrap h-auto gap-1">
-          <TabsTrigger value="funnel">{t('salesPipeline')}</TabsTrigger>
-          <TabsTrigger value="courses">{t('navCourses')}</TabsTrigger>
-          <TabsTrigger value="sources">{t('leadSources')}</TabsTrigger>
-          <TabsTrigger value="teachers">{t('navTeachers')}</TabsTrigger>
-          <TabsTrigger value="groups">{t('navGroups')}</TabsTrigger>
-          <TabsTrigger value="risks">{t('navRisks')}</TabsTrigger>
-          <TabsTrigger value="cohorts">{t('cohortsTab')}</TabsTrigger>
-        </TabsList>
-
+      {section !== 'overview' ? (
+      <Tabs value={section} className="space-y-5">
         {/* ── Funnel Tab ── */}
         <TabsContent value="funnel" className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -786,6 +795,7 @@ export default function AnalyticsWorkspace() {
           </Card>
         </TabsContent>
       </Tabs>
+      ) : null}
     </div>
   );
 }

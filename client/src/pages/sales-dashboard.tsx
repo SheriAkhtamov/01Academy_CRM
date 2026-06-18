@@ -23,7 +23,6 @@ import {
   useFormField,
 } from '@/components/ui/form';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -54,7 +53,6 @@ import {
   ClipboardList,
   CreditCard,
   GraduationCap,
-  LayoutDashboard,
   Megaphone,
   Percent,
   Plus,
@@ -62,7 +60,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 
-type SalesTab = 'overview' | 'leads' | 'pipeline' | 'students' | 'tasks';
+export type SalesSection = 'overview' | 'leads' | 'pipeline' | 'students' | 'tasks';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 type QuickAction = 'qualify' | 'warm' | 'payment' | 'call' | 'message';
 
@@ -145,10 +143,13 @@ const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
   overdue: 'paymentStatusOverdue',
 };
 
-const SALES_TABS: readonly SalesTab[] = ['overview', 'leads', 'pipeline', 'students', 'tasks'];
-
-const isSalesTab = (value: string | null): value is SalesTab =>
-  value !== null && SALES_TABS.includes(value as SalesTab);
+const SALES_SECTION_PATHS: Record<SalesSection, string> = {
+  overview: '/sales',
+  leads: '/sales/leads',
+  pipeline: '/sales/pipeline',
+  students: '/sales/clients',
+  tasks: '/sales/tasks',
+};
 
 const createLeadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
@@ -239,16 +240,13 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
   );
 }
 
-export default function SalesDashboard() {
+export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
-
-  const urlParams = new URLSearchParams(routeSearch);
-  const urlTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState<SalesTab>(isSalesTab(urlTab) ? urlTab : 'overview');
+  const pagePath = SALES_SECTION_PATHS[section];
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString('ru-RU')} ${t('uzs')}`;
@@ -395,15 +393,15 @@ export default function SalesDashboard() {
       else params.set(key, value);
     });
     const query = params.toString();
-    setLocation(query ? `/sales?${query}` : '/sales', { replace: true });
-  }, [routeSearch, setLocation]);
+    setLocation(query ? `${pagePath}?${query}` : pagePath, { replace: true });
+  }, [pagePath, routeSearch, setLocation]);
 
   const openLead = useCallback((leadId: number, tab: LeadSheetTab = 'deal') => {
     setSelectedLeadId(leadId);
     setLeadSheetTab(tab);
     setLeadSheetOpen(true);
-    replaceSalesParams({ tab: activeTab, lead: String(leadId), student: null });
-  }, [activeTab, replaceSalesParams]);
+    replaceSalesParams({ lead: String(leadId), student: null });
+  }, [replaceSalesParams]);
 
   const handleLeadSheetState = useCallback((open: boolean) => {
     setLeadSheetOpen(open);
@@ -416,7 +414,7 @@ export default function SalesDashboard() {
   const openStudent = useCallback((student: Student) => {
     setSelectedStudent(student);
     setStudentSheetOpen(true);
-    replaceSalesParams({ tab: 'students', student: String(student.id), lead: null });
+    replaceSalesParams({ student: String(student.id), lead: null });
   }, [replaceSalesParams]);
 
   const handleStudentSheetState = useCallback((open: boolean) => {
@@ -426,12 +424,6 @@ export default function SalesDashboard() {
       replaceSalesParams({ student: null });
     }
   }, [replaceSalesParams]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(routeSearch);
-    const nextTab = params.get('tab');
-    setActiveTab(isSalesTab(nextTab) ? nextTab : 'overview');
-  }, [routeSearch]);
 
   useEffect(() => {
     if (!data) return;
@@ -452,16 +444,6 @@ export default function SalesDashboard() {
       }
     }
   }, [data, myStudents, routeSearch, selectedLeadId, selectedStudent?.id]);
-
-  const handleTabChange = (tab: string) => {
-    const nextTab = isSalesTab(tab) ? tab : 'overview';
-    setActiveTab(nextTab);
-    setLeadSheetOpen(false);
-    setSelectedLeadId(null);
-    setStudentSheetOpen(false);
-    setSelectedStudent(null);
-    replaceSalesParams({ tab: nextTab, lead: null, student: null });
-  };
 
   const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
     if (action === 'payment') {
@@ -546,112 +528,120 @@ export default function SalesDashboard() {
     );
   }
 
+  const sectionTitle: Record<SalesSection, string> = {
+    overview: `${t('welcome')}, ${user?.fullName || t('manager')}!`,
+    leads: t('myLeads'),
+    pipeline: t('pipeline'),
+    students: t('myStudents'),
+    tasks: t('myTasks'),
+  };
+
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
-        title={`${t('welcome')}, ${user?.fullName || t('manager')}!`}
+        title={sectionTitle[section]}
         subtitle={t('salesManagerWorkspace')}
+        breadcrumbs={[
+          { label: t('navDashboard'), href: '/sales' },
+          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
+        ]}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
-              <Plus data-icon="inline-start" />{t('newApplication')}
-            </Button>
-          </div>
+          section === 'overview' || section === 'leads' || section === 'pipeline' ? (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
+                <Plus data-icon="inline-start" />{t('newApplication')}
+              </Button>
+            </div>
+          ) : undefined
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <KpiCard title={t('myNewLeadsWeek')} value={managerStats.newLeadsWeek} detail={t('last7Days')} icon={Megaphone} tone="blue" />
-        <KpiCard title={t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
-        <KpiCard title={t('myStudents')} value={managerStats.totalStudents} detail={t('assignedToMe')} icon={GraduationCap} tone="green" />
-        <KpiCard title={t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
-        <KpiCard title={t('overdueTasks')} value={managerStats.overdueTasks} detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')} icon={AlertCircle} tone={managerStats.overdueTasks > 0 ? 'red' : 'green'} />
-      </div>
+      {section === 'overview' ? (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+            <KpiCard title={t('myNewLeadsWeek')} value={managerStats.newLeadsWeek} detail={t('last7Days')} icon={Megaphone} tone="blue" />
+            <KpiCard title={t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
+            <KpiCard title={t('myStudents')} value={managerStats.totalStudents} detail={t('assignedToMe')} icon={GraduationCap} tone="green" />
+            <KpiCard title={t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
+            <KpiCard title={t('overdueTasks')} value={managerStats.overdueTasks} detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')} icon={AlertCircle} tone={managerStats.overdueTasks > 0 ? 'red' : 'green'} />
+          </div>
+          <OverviewTab
+            t={t}
+            payments={myPayments.filter((payment) => payment.status === 'paid')}
+            managerFunnel={managerFunnel}
+            managerStats={managerStats}
+            leadStatusName={leadStatusName}
+            money={money}
+            myTasks={myTasks}
+            dateTime={dateTime}
+            openLead={openLead}
+          />
+        </div>
+      ) : null}
 
-      <div className="mt-6">
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList className="mb-4 flex h-auto w-full justify-start overflow-x-auto">
-            <TabsTrigger value="overview" className="gap-1.5"><LayoutDashboard data-icon="inline-start" />{t('overview')}</TabsTrigger>
-            <TabsTrigger value="pipeline" className="gap-1.5"><TrendingUp data-icon="inline-start" />{t('pipeline')}</TabsTrigger>
-            <TabsTrigger value="leads" className="gap-1.5"><Megaphone data-icon="inline-start" />{t('myLeads')}</TabsTrigger>
-            <TabsTrigger value="students" className="gap-1.5"><UserCheck data-icon="inline-start" />{t('myStudents')}</TabsTrigger>
-            <TabsTrigger value="tasks" className="gap-1.5"><ClipboardList data-icon="inline-start" />{t('myTasks')}</TabsTrigger>
-          </TabsList>
-          <TabsContent value="overview" className="mt-0">
-            <OverviewTab
-              t={t}
-              payments={myPayments.filter((payment) => payment.status === 'paid')}
-              managerFunnel={managerFunnel}
-              managerStats={managerStats}
-              leadStatusName={leadStatusName}
-              money={money}
-              myTasks={myTasks}
-              dateTime={dateTime}
-              openLead={openLead}
-            />
-          </TabsContent>
-          <TabsContent value="leads" className="mt-0">
-            <LeadsTab
-              t={t}
-              leadStatusName={leadStatusName}
-              statusColor={statusColor}
-              dateOnly={dateOnly}
-              filteredLeads={filteredLeads}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              sourceFilter={sourceFilter}
-              setSourceFilter={setSourceFilter}
-              sources={data.sources ?? []}
-              setLeadDialogOpen={setLeadDialogOpen}
-              openLead={openLead}
-              onQuickAction={handleQuickAction}
-            />
-          </TabsContent>
-          <TabsContent value="pipeline" className="mt-0">
-            <PipelineTab
-              t={t}
-              leadStatusName={leadStatusName}
-              leads={myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any))}
-              activePipelineStatuses={activePipelineStatuses}
-              setLeadDialogOpen={setLeadDialogOpen}
-              onLeadClick={(lead) => openLead(lead.id)}
-              onQuickAction={handleQuickAction}
-              onStatusChange={async (leadId, statusCode) => {
-                if (statusCode === 'paid') {
-                  openLead(leadId, 'payment');
-                  return false;
-                }
-                await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
-                return true;
-              }}
-              isPending={updateLead.isPending}
-            />
-          </TabsContent>
-          <TabsContent value="students" className="mt-0">
-            <StudentsTab
-              t={t}
-              myStudents={myStudents}
-              paymentStatusName={paymentStatusName}
-              dateTime={dateTime}
-              data={data}
-              selectedStudent={selectedStudent}
-              studentSheetOpen={studentSheetOpen}
-              openStudent={openStudent}
-              openLead={openLead}
-              onStudentSheetOpenChange={handleStudentSheetState}
-            />
-          </TabsContent>
-          <TabsContent value="tasks" className="mt-0">
-            <TasksTab
-              t={t}
-              myTasks={myTasks}
-              updateTask={updateTask}
-              dateTime={dateTime}
-              openLead={(leadId) => openLead(leadId, 'tasks')}
-            />
-          </TabsContent>
-        </Tabs>
-      </div>
+      {section === 'leads' ? (
+        <LeadsTab
+          t={t}
+          leadStatusName={leadStatusName}
+          statusColor={statusColor}
+          dateOnly={dateOnly}
+          filteredLeads={filteredLeads}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          sourceFilter={sourceFilter}
+          setSourceFilter={setSourceFilter}
+          sources={data.sources ?? []}
+          setLeadDialogOpen={setLeadDialogOpen}
+          openLead={openLead}
+          onQuickAction={handleQuickAction}
+        />
+      ) : null}
+
+      {section === 'pipeline' ? (
+        <PipelineTab
+          t={t}
+          leadStatusName={leadStatusName}
+          leads={myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any))}
+          activePipelineStatuses={activePipelineStatuses}
+          setLeadDialogOpen={setLeadDialogOpen}
+          onLeadClick={(lead) => openLead(lead.id)}
+          onQuickAction={handleQuickAction}
+          onStatusChange={async (leadId, statusCode) => {
+            if (statusCode === 'paid') {
+              openLead(leadId, 'payment');
+              return false;
+            }
+            await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
+            return true;
+          }}
+          isPending={updateLead.isPending}
+        />
+      ) : null}
+
+      {section === 'students' ? (
+        <StudentsTab
+          t={t}
+          myStudents={myStudents}
+          paymentStatusName={paymentStatusName}
+          dateTime={dateTime}
+          data={data}
+          selectedStudent={selectedStudent}
+          studentSheetOpen={studentSheetOpen}
+          openStudent={openStudent}
+          openLead={openLead}
+          onStudentSheetOpenChange={handleStudentSheetState}
+        />
+      ) : null}
+
+      {section === 'tasks' ? (
+        <TasksTab
+          t={t}
+          myTasks={myTasks}
+          updateTask={updateTask}
+          dateTime={dateTime}
+          openLead={(leadId) => openLead(leadId, 'tasks')}
+        />
+      ) : null}
 
       <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">

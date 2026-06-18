@@ -324,6 +324,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     });
   }, [myLeads, sourceFilter, statusFilter]);
 
+  const pipelineLeads = useMemo(
+    () => myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any)),
+    [myLeads],
+  );
+
   const managerStats = useMemo(() => {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -471,7 +476,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       return;
     }
     if (action === 'warm') {
-      updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('leadStatusNotNow') } });
+      updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('warmReasonDefault') } });
     }
   }, [openLead, t, updateLead]);
 
@@ -591,7 +596,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           sourceFilter={sourceFilter}
           setSourceFilter={setSourceFilter}
           sources={data.sources ?? []}
-          setLeadDialogOpen={setLeadDialogOpen}
           openLead={openLead}
           onQuickAction={handleQuickAction}
         />
@@ -601,9 +605,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         <PipelineTab
           t={t}
           leadStatusName={leadStatusName}
-          leads={myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any))}
+          leads={pipelineLeads}
           activePipelineStatuses={activePipelineStatuses}
-          setLeadDialogOpen={setLeadDialogOpen}
           onLeadClick={(lead) => openLead(lead.id)}
           onQuickAction={handleQuickAction}
           onStatusChange={async (leadId, statusCode) => {
@@ -766,7 +769,6 @@ function LeadsTab({
   sourceFilter,
   setSourceFilter,
   sources,
-  setLeadDialogOpen,
   openLead,
   onQuickAction,
 }: {
@@ -780,7 +782,6 @@ function LeadsTab({
   sourceFilter: string;
   setSourceFilter: (v: string) => void;
   sources: Array<{ id: number; name: string }>;
-  setLeadDialogOpen: (v: boolean) => void;
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
   onQuickAction: (action: QuickAction, lead: Lead) => void;
 }) {
@@ -913,9 +914,6 @@ function LeadsTab({
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <Button onClick={() => setLeadDialogOpen(true)}>
-              <Plus data-icon="inline-start" />{t('newApplication')}
-            </Button>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -946,7 +944,6 @@ function PipelineTab({
   leadStatusName,
   leads,
   activePipelineStatuses,
-  setLeadDialogOpen,
   onLeadClick,
   onQuickAction,
   onStatusChange,
@@ -956,7 +953,6 @@ function PipelineTab({
   leadStatusName: (code: string) => string;
   leads: Lead[];
   activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
-  setLeadDialogOpen: (v: boolean) => void;
   onLeadClick: (lead: Lead) => void;
   onQuickAction: (action: QuickAction, lead: Lead) => void;
   onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
@@ -964,12 +960,6 @@ function PipelineTab({
 }) {
   return (
     <div className="space-y-5">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-slate-900">{t('salesPipeline')}</h2>
-        <Button onClick={() => setLeadDialogOpen(true)}>
-          <Plus data-icon="inline-start" />{t('newApplication')}
-        </Button>
-      </div>
       <KanbanBoard
         statuses={activePipelineStatuses.map((status) => ({
           code: status.code,

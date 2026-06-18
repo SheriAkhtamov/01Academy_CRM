@@ -50,17 +50,32 @@ export function StudentDetailSheet({
 }: StudentDetailSheetProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('info');
+  // Hold onto the last non-null student so the sheet can animate out on close
+  // instead of unmounting the instant the parent clears the selection.
+  const [heldStudent, setHeldStudent] = useState(student);
+  useEffect(() => {
+    if (student) setHeldStudent(student);
+  }, [student]);
 
   useEffect(() => {
     if (open) setActiveTab('info');
   }, [open, student?.id]);
 
-  if (!student) return null;
+  if (!heldStudent) return null;
+  const student = heldStudent;
 
   const projects = data?.projects?.filter((project: any) => project.studentId === student.id) ?? [];
   const payments = data?.payments?.filter((payment: any) => payment.studentId === student.id) ?? [];
   const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === student.id) ?? [];
   const displayName = student.studentName || student.contactName;
+  const phoneHref = student.phone ? `tel:${String(student.phone).replace(/[^\d+]/g, '')}` : undefined;
+  const messageHref = student.phone || student.messenger
+    ? student.messenger?.startsWith('@')
+      ? `https://t.me/${student.messenger.slice(1)}`
+      : student.phone
+        ? `https://wa.me/${String(student.phone).replace(/\D/g, '')}`
+        : undefined
+    : undefined;
   const studentStatusLabel = (status: string) => {
     if (status === 'studying') return t('studentStatusStudying');
     if (status === 'paused') return t('studentStatusPaused');
@@ -103,24 +118,22 @@ export function StudentDetailSheet({
                 {student.contactName} • {student.phone}
               </SheetDescription>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <a href={`tel:${String(student.phone || '').replace(/[^\d+]/g, '')}`}>
-                    <Phone data-icon="inline-start" />
-                    {t('call')}
-                  </a>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <a
-                    href={student.messenger?.startsWith('@')
-                      ? `https://t.me/${student.messenger.slice(1)}`
-                      : `https://wa.me/${String(student.phone || '').replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <MessageSquare data-icon="inline-start" />
-                    {t('write')}
-                  </a>
-                </Button>
+                {phoneHref ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={phoneHref}>
+                      <Phone data-icon="inline-start" />
+                      {t('call')}
+                    </a>
+                  </Button>
+                ) : null}
+                {messageHref ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={messageHref} target="_blank" rel="noreferrer">
+                      <MessageSquare data-icon="inline-start" />
+                      {t('write')}
+                    </a>
+                  </Button>
+                ) : null}
                 {student.leadId && onRecordPayment ? (
                   <Button
                     size="sm"

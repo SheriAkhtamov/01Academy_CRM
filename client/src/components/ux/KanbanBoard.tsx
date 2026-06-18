@@ -365,7 +365,25 @@ export function KanbanBoard({
   );
 
   useEffect(() => {
-    setBoardLeads(leads);
+    setBoardLeads((current) => {
+      // Preserve the in-flight optimistic status for any lead whose server value
+      // hasn't caught up yet, so dragging doesn't visually snap back mid-mutation.
+      if (current.length === 0) return leads;
+      const optimisticById = new Map<number, string>();
+      current.forEach((lead) => {
+        const incoming = leads.find((next) => next.id === lead.id);
+        if (incoming && incoming.statusCode !== lead.statusCode) {
+          optimisticById.set(lead.id, lead.statusCode);
+        }
+      });
+      if (optimisticById.size === 0) return leads;
+      return leads.map((lead) => {
+        const optimistic = optimisticById.get(lead.id);
+        return optimistic && optimistic !== lead.statusCode
+          ? { ...lead, statusCode: optimistic }
+          : lead;
+      });
+    });
   }, [leads]);
 
   const statusesByCode = useMemo(

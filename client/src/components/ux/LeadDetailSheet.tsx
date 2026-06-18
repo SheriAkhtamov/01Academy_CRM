@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -309,37 +309,108 @@ export function LeadDetailSheet({
     if (open) setActiveTab(initialTab);
   }, [initialTab, open]);
 
+  // Track which lead snapshot we last hydrated the forms from. Background refetches
+  // (e.g. after recording a contact) must NOT wipe what the user is typing in other tabs,
+  // so we only reseed when the lead identity changes or when the deal data itself changed
+  // AND the user hasn't started editing the affected form.
+  const hydratedLeadKey = useRef<string | null>(null);
+  const hydratedTransientKey = useRef<string | null>(null);
+
+  const leadSnapshotKey = useMemo(() => {
+    const lead = leadQuery.data;
+    if (!lead) return null;
+    return [
+      lead.id,
+      lead.contactName,
+      lead.phone ?? '',
+      lead.messenger ?? '',
+      lead.studentName ?? '',
+      lead.studentAge ?? '',
+      lead.courseId ?? '',
+      lead.sourceId ?? '',
+      lead.enrolledGroupId ?? '',
+      lead.language ?? '',
+      lead.statusCode,
+      lead.expectedPaymentUzs ?? '',
+      lead.comment ?? '',
+    ].join('|');
+  }, [leadQuery.data]);
+
+  const transientSnapshotKey = useMemo(() => {
+    const lead = leadQuery.data;
+    if (!lead) return null;
+    return [
+      lead.id,
+      lead.demoAt ?? '',
+      lead.demoFormat ?? '',
+      lead.demoLocation ?? '',
+      lead.expectedPaymentUzs ?? '',
+      lead.offerPriceUzs ?? '',
+      (lead.payments ?? []).map((p) => `${p.id}:${p.paidUntil ?? ''}`).join(','),
+    ].join('|');
+  }, [leadQuery.data]);
+
   useEffect(() => {
     const lead = leadQuery.data;
-    if (!lead) return;
-    leadForm.reset({
-      contactName: lead.contactName ?? '',
-      phone: lead.phone ?? '',
-      messenger: lead.messenger ?? '',
-      studentName: lead.studentName ?? '',
-      studentAge: lead.studentAge ? String(lead.studentAge) : '',
-      courseId: lead.courseId ? String(lead.courseId) : '',
-      sourceId: lead.sourceId ? String(lead.sourceId) : '',
-      enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
-      language: lead.language ?? 'ru',
-      statusCode: lead.statusCode,
-      expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
-      comment: lead.comment ?? '',
-    });
-    demoForm.reset({
-      demoAt: toInputDateTime(lead.demoAt),
-      demoFormat: lead.demoFormat ?? 'online',
-      demoLocation: lead.demoLocation ?? '',
-    });
-    paymentForm.reset({
-      amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
-      method: 'transfer',
-      type: 'full',
-      discount: 'none',
-      paidUntil: nextPaymentDate(lead.payments),
-      comment: '',
-    });
-  }, [demoForm, leadForm, leadQuery.data, paymentForm]);
+    if (!lead || !leadSnapshotKey) return;
+
+    // Reseed the deal form only when the lead itself changes, or when the
+    // server data changed AND the user is not mid-edit in the deal tab.
+    if (hydratedLeadKey.current !== leadSnapshotKey) {
+      const shouldReseed = !leadForm.formState.isDirty || hydratedLeadKey.current === null;
+      if (shouldReseed) {
+        leadForm.reset({
+          contactName: lead.contactName ?? '',
+          phone: lead.phone ?? '',
+          messenger: lead.messenger ?? '',
+          studentName: lead.studentName ?? '',
+          studentAge: lead.studentAge ? String(lead.studentAge) : '',
+          courseId: lead.courseId ? String(lead.courseId) : '',
+          sourceId: lead.sourceId ? String(lead.sourceId) : '',
+          enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
+          language: lead.language ?? 'ru',
+          statusCode: lead.statusCode,
+          expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
+          comment: lead.comment ?? '',
+        });
+      }
+      hydratedLeadKey.current = leadSnapshotKey;
+    }
+
+    // Payment & demo forms are transient (single-shot actions). Only reseed them on
+    // first load of the lead or when the underlying amounts/demo data changed AND
+    // the user hasn't started filling them in.
+    if (hydratedTransientKey.current !== transientSnapshotKey) {
+      const paymentDirty = paymentForm.formState.isDirty;
+      const demoDirty = demoForm.formState.isDirty;
+      if (!paymentDirty || hydratedTransientKey.current === null) {
+        paymentForm.reset({
+          amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
+          method: 'transfer',
+          type: 'full',
+          discount: 'none',
+          paidUntil: nextPaymentDate(lead.payments),
+          comment: '',
+        });
+      }
+      if (!demoDirty || hydratedTransientKey.current === null) {
+        demoForm.reset({
+          demoAt: toInputDateTime(lead.demoAt),
+          demoFormat: lead.demoFormat ?? 'online',
+          demoLocation: lead.demoLocation ?? '',
+        });
+      }
+      hydratedTransientKey.current = transientSnapshotKey;
+    }
+  }, [leadQuery.data, leadSnapshotKey, transientSnapshotKey, leadForm, demoForm, paymentForm]);
+
+  // Reset hydration tracking when the sheet closes so reopening reseeds cleanly.
+  useEffect(() => {
+    if (!open) {
+      hydratedLeadKey.current = null;
+      hydratedTransientKey.current = null;
+    }
+  }, [open]);
 
   const finishMutation = async (title: string) => {
     toast({ title });

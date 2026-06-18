@@ -317,6 +317,7 @@ export const translations = {
   viewSystemActivity: { en: 'View system activity and user actions', ru: 'Просмотр системной активности и действий пользователей' },
   waiting: { en: 'waiting', ru: 'ожидает' },
   warmBase: { en: 'Warm Base', ru: 'Тёплая база' },
+  warmReasonDefault: { en: 'Moved to the warm base by the manager', ru: 'Перенесён менеджером в тёплую базу' },
   weeklyLeads: { en: 'Weekly Leads', ru: 'Лиды за неделю' },
   welcomeMessage: { en: 'Welcome to 01 Academy CRM', ru: 'Добро пожаловать в CRM 01 Academy' },
 

@@ -12,6 +12,7 @@ import {
   suggestAgeGroup,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
+  validateLeadStatusTransition,
 } from "../shared/academy";
 
 describe("01 Academy business rules", () => {
@@ -43,6 +44,12 @@ describe("01 Academy business rules", () => {
       studentAge: 10,
       courseId: 1,
     })).toBeNull();
+  });
+
+  it("keeps paid clients terminal and requires a payment to enter paid", () => {
+    expect(validateLeadStatusTransition("qualified", "paid")).toContain("оплату");
+    expect(validateLeadStatusTransition("paid", "thinking")).toContain("нельзя вернуть");
+    expect(validateLeadStatusTransition("paid", "paid")).toBeNull();
   });
 
   it("calculates attendance, progress, NPS, CAC, ROAS, and LTV", () => {

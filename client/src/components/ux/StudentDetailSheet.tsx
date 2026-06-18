@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
 import {
@@ -20,6 +21,7 @@ import {
   FolderOpen,
   History,
   MessageSquare,
+  Phone,
   Star,
   User,
   Users,
@@ -29,6 +31,7 @@ interface StudentDetailSheetProps {
   student: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRecordPayment?: (leadId: number) => void;
   data?: {
     projects?: any[];
     payments?: any[];
@@ -37,15 +40,40 @@ interface StudentDetailSheetProps {
   dateTime: (value: string | null | undefined) => string;
 }
 
-export function StudentDetailSheet({ student, open, onOpenChange, data, dateTime }: StudentDetailSheetProps) {
+export function StudentDetailSheet({
+  student,
+  open,
+  onOpenChange,
+  onRecordPayment,
+  data,
+  dateTime,
+}: StudentDetailSheetProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('info');
+
+  useEffect(() => {
+    if (open) setActiveTab('info');
+  }, [open, student?.id]);
 
   if (!student) return null;
 
   const projects = data?.projects?.filter((project: any) => project.studentId === student.id) ?? [];
   const payments = data?.payments?.filter((payment: any) => payment.studentId === student.id) ?? [];
   const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === student.id) ?? [];
+  const displayName = student.studentName || student.contactName;
+  const studentStatusLabel = (status: string) => {
+    if (status === 'studying') return t('studentStatusStudying');
+    if (status === 'paused') return t('studentStatusPaused');
+    if (status === 'completed') return t('studentStatusCompleted');
+    if (status === 'expelled') return t('studentStatusExpelled');
+    return status;
+  };
+  const riskFlagLabel = (flag: string) => {
+    if (flag === 'attendance_below_70') return t('riskAttendanceBelow70');
+    if (flag === 'churn_risk') return t('riskChurn');
+    if (flag === 'low_satisfaction') return t('riskLowSatisfaction');
+    return flag;
+  };
 
   const tabs = [
     { value: 'info', label: t('generalTab'), icon: User },
@@ -66,21 +94,57 @@ export function StudentDetailSheet({ student, open, onOpenChange, data, dateTime
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-slate-100">
               <AvatarFallback className="bg-gradient-to-br from-primary-500 to-primary-700 text-white text-lg">
-                {getInitials(student.studentName)}
+                {getInitials(displayName)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <SheetTitle className="text-xl truncate">{student.studentName}</SheetTitle>
+              <SheetTitle className="text-xl truncate">{displayName}</SheetTitle>
               <SheetDescription className="mt-1">
                 {student.contactName} • {student.phone}
               </SheetDescription>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button asChild size="sm" variant="outline">
+                  <a href={`tel:${String(student.phone || '').replace(/[^\d+]/g, '')}`}>
+                    <Phone data-icon="inline-start" />
+                    {t('call')}
+                  </a>
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <a
+                    href={student.messenger?.startsWith('@')
+                      ? `https://t.me/${student.messenger.slice(1)}`
+                      : `https://wa.me/${String(student.phone || '').replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MessageSquare data-icon="inline-start" />
+                    {t('write')}
+                  </a>
+                </Button>
+                {student.leadId && onRecordPayment ? (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onRecordPayment(Number(student.leadId));
+                    }}
+                  >
+                    <CreditCard data-icon="inline-start" />
+                    {t('recordAnotherPayment')}
+                  </Button>
+                ) : null}
+              </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <Badge variant="secondary">{student.status}</Badge>
+                <Badge variant="secondary">
+                  {studentStatusLabel(student.status)}
+                </Badge>
                 {student.groupName && <Badge variant="outline">{student.groupName}</Badge>}
                 {student.courseName && <Badge variant="outline">{student.courseName}</Badge>}
                 {Array.isArray(student.riskFlags) &&
                   student.riskFlags.map((flag: string) => (
-                    <Badge key={flag} variant="destructive">{flag}</Badge>
+                    <Badge key={flag} variant="destructive">
+                      {riskFlagLabel(flag)}
+                    </Badge>
                   ))}
               </div>
             </div>
@@ -118,9 +182,9 @@ export function StudentDetailSheet({ student, open, onOpenChange, data, dateTime
           </TabsList>
 
           <TabsContent value="info" className="space-y-3">
-            <InfoRow label={t('ageLabel')} value={student.age || t('noData')} />
+            <InfoRow label={t('ageLabel')} value={String(student.studentAge ?? student.age ?? t('noData'))} />
             <InfoRow label={t('managerLabel')} value={student.managerName || t('noData')} />
-            <InfoRow label={t('referralCodeLabel')} value={student.referralCode} />
+            <InfoRow label={t('referralCodeLabel')} value={student.referralCode || t('noData')} />
             <InfoRow label={t('nextPaymentLabel')} value={dateTime(student.nextPaymentAt)} />
           </TabsContent>
 
@@ -157,9 +221,19 @@ export function StudentDetailSheet({ student, open, onOpenChange, data, dateTime
           <TabsContent value="payments" className="space-y-2">
             {payments.length > 0 ? (
               payments.map((payment: any) => (
-                <div key={payment.id} className="rounded-lg border border-slate-200 p-3 text-sm flex justify-between">
-                  <span className="font-medium">{payment.period || payment.description || t('payment')}</span>
-                  <span className="text-slate-600">{dateTime(payment.paidAt)}</span>
+                <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+                  <div>
+                    <div className="font-medium">
+                      {Number(payment.amountUzs || 0).toLocaleString('ru-RU')} {t('uzs')}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">{payment.period || payment.method || t('payment')}</div>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : 'warning'}>
+                      {payment.status === 'paid' ? t('paymentStatusPaid') : payment.status === 'overdue' ? t('paymentStatusOverdue') : t('paymentStatusPending')}
+                    </Badge>
+                    <div className="mt-1 text-xs text-slate-500">{dateTime(payment.paidAt || payment.createdAt)}</div>
+                  </div>
                 </div>
               ))
             ) : (
@@ -173,13 +247,13 @@ export function StudentDetailSheet({ student, open, onOpenChange, data, dateTime
           </TabsContent>
 
           <TabsContent value="referrals" className="space-y-2">
-            <InfoRow label={t('referralCodeField')} value={student.referralCode} />
+            <InfoRow label={t('referralCodeField')} value={student.referralCode || t('noData')} />
             <InfoRow label={t('awardsField')} value={referrals.length.toString()} />
             {referrals.length > 0 && (
               <div className="mt-3 space-y-2">
                 {referrals.map((reward: any) => (
                   <div key={reward.id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    {t('referralBonus')} {reward.amountUzs}
+                    {t('referralBonus')} {reward.rewardValue || reward.amountUzs || t('noData')}
                   </div>
                 ))}
               </div>
@@ -187,7 +261,18 @@ export function StudentDetailSheet({ student, open, onOpenChange, data, dateTime
           </TabsContent>
 
           <TabsContent value="history">
-            <div className="text-sm text-slate-600">{t('historyDescription')}</div>
+            <div className="space-y-2">
+              <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                <div className="font-medium">{t('clientCreated')}</div>
+                <div className="mt-1 text-xs text-slate-500">{dateTime(student.createdAt)}</div>
+              </div>
+              {payments.map((payment: any) => (
+                <div key={`history-payment-${payment.id}`} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div className="font-medium">{t('paymentSaved')}</div>
+                  <div className="mt-1 text-xs text-slate-500">{dateTime(payment.paidAt || payment.createdAt)}</div>
+                </div>
+              ))}
+            </div>
           </TabsContent>
         </Tabs>
       </SheetContent>

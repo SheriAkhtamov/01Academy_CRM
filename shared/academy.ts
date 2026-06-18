@@ -199,6 +199,16 @@ export function validateLeadForStatusChange(input: {
   return null;
 }
 
+export function validateLeadStatusTransition(currentStatus: string, nextStatus: string): string | null {
+  if (currentStatus === "paid" && nextStatus !== "paid") {
+    return "Оплаченного клиента нельзя вернуть на этап лида.";
+  }
+  if (currentStatus !== "paid" && nextStatus === "paid") {
+    return "Чтобы перевести лида в статус «Оплатил», сначала зафиксируйте подтверждённую оплату.";
+  }
+  return null;
+}
+
 export function getComputedPaymentStatus(status: string, dueAt?: string | Date | null): string {
   if (status === "paid") return "paid";
   if (!dueAt) return status;

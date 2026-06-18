@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   Breadcrumb,
@@ -30,16 +31,18 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
         <Breadcrumb>
           <BreadcrumbList>
             {items.map((item, index) => (
-              <BreadcrumbItem key={index}>
-                {index > 0 && <BreadcrumbSeparator />}
-                {item.href && index < items.length - 1 ? (
-                  <BreadcrumbLink asChild>
-                    <Link href={item.href}>{item.label}</Link>
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>{item.label}</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
+              <Fragment key={`${item.label}-${index}`}>
+                {index > 0 ? <BreadcrumbSeparator /> : null}
+                <BreadcrumbItem>
+                  {item.href && index < items.length - 1 ? (
+                    <BreadcrumbLink asChild>
+                      <Link href={item.href}>{item.label}</Link>
+                    </BreadcrumbLink>
+                  ) : (
+                    <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                  )}
+                </BreadcrumbItem>
+              </Fragment>
             ))}
           </BreadcrumbList>
         </Breadcrumb>

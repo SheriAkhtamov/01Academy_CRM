@@ -1,17 +1,28 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useForm, type UseFormReturn } from 'react-hook-form';
+import { useLocation, useSearch } from 'wouter';
+import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  useFormField,
+} from '@/components/ui/form';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,6 +35,7 @@ import {
 } from '@/components/ui/dialog';
 import { DataTable } from '@/components/ux/DataTable';
 import { KanbanBoard } from '@/components/ux/KanbanBoard';
+import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
@@ -40,16 +52,19 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
+  CreditCard,
   GraduationCap,
+  LayoutDashboard,
   Megaphone,
   Percent,
   Plus,
-  Search,
   TrendingUp,
   UserCheck,
 } from 'lucide-react';
 
-type SalesTab = 'leads' | 'pipeline' | 'students' | 'tasks';
+type SalesTab = 'overview' | 'leads' | 'pipeline' | 'students' | 'tasks';
+type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
+type QuickAction = 'qualify' | 'warm' | 'payment' | 'call' | 'message';
 
 interface Lead {
   id: number;
@@ -130,7 +145,29 @@ const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
   overdue: 'paymentStatusOverdue',
 };
 
-const EMPTY_LEAD_FORM = {
+const SALES_TABS: readonly SalesTab[] = ['overview', 'leads', 'pipeline', 'students', 'tasks'];
+
+const isSalesTab = (value: string | null): value is SalesTab =>
+  value !== null && SALES_TABS.includes(value as SalesTab);
+
+const createLeadSchema = z.object({
+  contactName: z.string().trim().min(1, 'fillRequiredFields'),
+  phone: z.string().trim().min(7, 'invalidData'),
+  messenger: z.string(),
+  studentName: z.string(),
+  studentAge: z.string().refine(
+    (value) => value === '' || (Number.isFinite(Number(value)) && Number(value) > 0),
+    'invalidData',
+  ),
+  courseId: z.string(),
+  sourceId: z.string().min(1, 'fillRequiredFields'),
+  comment: z.string(),
+  language: z.string().min(1, 'fillRequiredFields'),
+});
+
+type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
+
+const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   contactName: '',
   phone: '',
   messenger: '',
@@ -175,12 +212,16 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function LocalizedFormMessage() {
+  const { t } = useTranslation();
+  const { error, formMessageId } = useFormField();
+  if (!error?.message) return null;
+  const key = String(error.message) as TranslationKey;
+
   return (
-    <div className="space-y-1.5">
-      <Label className="text-xs text-slate-500">{label}</Label>
-      {children}
-    </div>
+    <p id={formMessageId} className="text-sm font-medium text-destructive">
+      {t(key)}
+    </p>
   );
 }
 
@@ -203,10 +244,11 @@ export default function SalesDashboard() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const routeSearch = useSearch();
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlTab = urlParams.get('tab') as SalesTab | null;
-  const [activeTab, setActiveTab] = useState<SalesTab>(urlTab || 'leads');
+  const urlParams = new URLSearchParams(routeSearch);
+  const urlTab = urlParams.get('tab');
+  const [activeTab, setActiveTab] = useState<SalesTab>(isSalesTab(urlTab) ? urlTab : 'overview');
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString('ru-RU')} ${t('uzs')}`;
@@ -237,17 +279,24 @@ export default function SalesDashboard() {
   };
 
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
-  const [leadForm, setLeadForm] = useState(EMPTY_LEAD_FORM);
-  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
+  const [leadSheetOpen, setLeadSheetOpen] = useState(false);
+  const [leadSheetTab, setLeadSheetTab] = useState<LeadSheetTab>('deal');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
 
-  const { data, isLoading } = useQuery<any>({
+  const { data, error, isError, isLoading, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/sales'],
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+
+  const leadForm = useForm<CreateLeadFormValues>({
+    resolver: zodResolver(createLeadSchema),
+    defaultValues: EMPTY_LEAD_FORM,
+  });
 
   const myLeads = useMemo<Lead[]>(() => {
     if (!data?.leads) return [];
@@ -264,24 +313,27 @@ export default function SalesDashboard() {
     return data.tasks;
   }, [data?.tasks]);
 
+  const myPayments = useMemo<any[]>(() => {
+    if (!data?.payments) return [];
+    return data.payments;
+  }, [data?.payments]);
+
   const filteredLeads = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
     return myLeads.filter((lead) => {
-      const matchesSearch = !normalized ||
-        [lead.contactName, lead.studentName, lead.phone, lead.messenger]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(normalized));
       const matchesStatus = statusFilter === 'all' || lead.statusCode === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesSource = sourceFilter === 'all' || String(lead.sourceId) === sourceFilter;
+      return matchesStatus && matchesSource;
     });
-  }, [myLeads, search, statusFilter]);
+  }, [myLeads, sourceFilter, statusFilter]);
 
   const managerStats = useMemo(() => {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const newLeadsWeek = myLeads.filter((lead) => new Date(lead.createdAt) >= weekAgo).length;
-    const activeLeads = myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any)).length;
+    const activeLeads = myLeads.filter(
+      (lead) => lead.statusCode !== 'paid' && ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any),
+    ).length;
     const totalStudents = myStudents.length;
 
     const paidLeads = myLeads.filter((lead) => lead.statusCode === 'paid').length;
@@ -300,16 +352,16 @@ export default function SalesDashboard() {
   );
 
   const createLead = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/academy/leads', {
-      ...leadForm,
-      studentAge: leadForm.studentAge ? Number(leadForm.studentAge) : undefined,
-      courseId: leadForm.courseId ? Number(leadForm.courseId) : undefined,
-      sourceId: leadForm.sourceId ? Number(leadForm.sourceId) : undefined,
+    mutationFn: (values: CreateLeadFormValues) => apiRequest('POST', '/api/academy/leads', {
+      ...values,
+      studentAge: values.studentAge ? Number(values.studentAge) : undefined,
+      courseId: values.courseId ? Number(values.courseId) : undefined,
+      sourceId: Number(values.sourceId),
       managerId: user?.id,
     }),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
-      setLeadForm(EMPTY_LEAD_FORM);
+      leadForm.reset(EMPTY_LEAD_FORM);
       setLeadDialogOpen(false);
       invalidate();
     },
@@ -336,24 +388,118 @@ export default function SalesDashboard() {
     onError: (error: any) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
+  const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
+    const params = new URLSearchParams(routeSearch);
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    });
+    const query = params.toString();
+    setLocation(query ? `/sales?${query}` : '/sales', { replace: true });
+  }, [routeSearch, setLocation]);
+
+  const openLead = useCallback((leadId: number, tab: LeadSheetTab = 'deal') => {
+    setSelectedLeadId(leadId);
+    setLeadSheetTab(tab);
+    setLeadSheetOpen(true);
+    replaceSalesParams({ tab: activeTab, lead: String(leadId), student: null });
+  }, [activeTab, replaceSalesParams]);
+
+  const handleLeadSheetState = useCallback((open: boolean) => {
+    setLeadSheetOpen(open);
+    if (!open) {
+      setSelectedLeadId(null);
+      replaceSalesParams({ lead: null });
+    }
+  }, [replaceSalesParams]);
+
+  const openStudent = useCallback((student: Student) => {
+    setSelectedStudent(student);
+    setStudentSheetOpen(true);
+    replaceSalesParams({ tab: 'students', student: String(student.id), lead: null });
+  }, [replaceSalesParams]);
+
+  const handleStudentSheetState = useCallback((open: boolean) => {
+    setStudentSheetOpen(open);
+    if (!open) {
+      setSelectedStudent(null);
+      replaceSalesParams({ student: null });
+    }
+  }, [replaceSalesParams]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(routeSearch);
+    const nextTab = params.get('tab');
+    setActiveTab(isSalesTab(nextTab) ? nextTab : 'overview');
+  }, [routeSearch]);
+
+  useEffect(() => {
+    if (!data) return;
+    const params = new URLSearchParams(routeSearch);
+    const leadId = Number(params.get('lead'));
+    const studentId = Number(params.get('student'));
+
+    if (Number.isFinite(leadId) && leadId > 0 && leadId !== selectedLeadId) {
+      setSelectedLeadId(leadId);
+      setLeadSheetTab('deal');
+      setLeadSheetOpen(true);
+    }
+    if (Number.isFinite(studentId) && studentId > 0 && selectedStudent?.id !== studentId) {
+      const student = myStudents.find((item) => item.id === studentId);
+      if (student) {
+        setSelectedStudent(student);
+        setStudentSheetOpen(true);
+      }
+    }
+  }, [data, myStudents, routeSearch, selectedLeadId, selectedStudent?.id]);
+
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab as SalesTab);
-    const params = new URLSearchParams(window.location.search);
-    params.set('tab', tab);
-    setLocation(`/sales?${params.toString()}`, { replace: true });
+    const nextTab = isSalesTab(tab) ? tab : 'overview';
+    setActiveTab(nextTab);
+    setLeadSheetOpen(false);
+    setSelectedLeadId(null);
+    setStudentSheetOpen(false);
+    setSelectedStudent(null);
+    replaceSalesParams({ tab: nextTab, lead: null, student: null });
   };
 
-  const leadFormDirty = useMemo(
-    () => JSON.stringify(leadForm) !== JSON.stringify(EMPTY_LEAD_FORM),
-    [leadForm],
-  );
+  const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
+    if (action === 'payment') {
+      openLead(lead.id, 'payment');
+      return;
+    }
+    if (action === 'call') {
+      window.location.href = `tel:${lead.phone.replace(/[^\d+]/g, '')}`;
+      return;
+    }
+    if (action === 'message') {
+      const href = lead.messenger?.startsWith('@')
+        ? `https://t.me/${lead.messenger.slice(1)}`
+        : `https://wa.me/${lead.phone.replace(/\D/g, '')}`;
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (action === 'qualify') {
+      if (!lead.studentName || !lead.studentAge || !lead.courseId) {
+        openLead(lead.id, 'deal');
+        toast({ title: t('completeQualificationFields') });
+        return;
+      }
+      updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
+      return;
+    }
+    if (action === 'warm') {
+      updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
+    }
+  }, [openLead, t, updateLead]);
+
   const handleLeadDialogState = useCallback((open: boolean) => {
     setLeadDialogOpen(open);
-    if (!open) setLeadForm(EMPTY_LEAD_FORM);
-  }, []);
+    if (!open) leadForm.reset(EMPTY_LEAD_FORM);
+  }, [leadForm]);
   const leadDialogGuard = useUnsavedChangesGuard({
     open: leadDialogOpen,
-    isDirty: leadFormDirty,
+    isDirty: leadForm.formState.isDirty,
     onOpenChange: handleLeadDialogState,
   });
 
@@ -369,7 +515,7 @@ export default function SalesDashboard() {
     }));
   }, [myLeads]);
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
         <Skeleton className="h-10 w-64" />
@@ -383,21 +529,38 @@ export default function SalesDashboard() {
     );
   }
 
+  if (isError || !data) {
+    return (
+      <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+          <AlertDescription className="flex flex-col items-start gap-3">
+            <span>{error instanceof Error ? error.message : t('errorOccurred')}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              {t('retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
+    <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
         title={`${t('welcome')}, ${user?.fullName || t('manager')}!`}
         subtitle={t('salesManagerWorkspace')}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setLeadDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />{t('lead')}
+            <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
+              <Plus data-icon="inline-start" />{t('newApplication')}
             </Button>
           </div>
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <KpiCard title={t('myNewLeadsWeek')} value={managerStats.newLeadsWeek} detail={t('last7Days')} icon={Megaphone} tone="blue" />
         <KpiCard title={t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
         <KpiCard title={t('myStudents')} value={managerStats.totalStudents} detail={t('assignedToMe')} icon={GraduationCap} tone="green" />
@@ -406,28 +569,27 @@ export default function SalesDashboard() {
       </div>
 
       <div className="mt-6">
-        <DashboardCharts
-          payments={[]}
-          funnel={managerFunnel}
-          analytics={{
-            summary: {
-              newLeadsWeek: managerStats.newLeadsWeek,
-            },
-          }}
-          leadStatusName={leadStatusName}
-          statusColor={statusColor}
-          money={money}
-        />
-      </div>
-
-      <div className="mt-6">
         <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList className="mb-4">
-            <TabsTrigger value="leads">{t('myLeads')}</TabsTrigger>
-            <TabsTrigger value="pipeline">{t('pipeline')}</TabsTrigger>
-            <TabsTrigger value="students">{t('myStudents')}</TabsTrigger>
-            <TabsTrigger value="tasks">{t('myTasks')}</TabsTrigger>
+          <TabsList className="mb-4 flex h-auto w-full justify-start overflow-x-auto">
+            <TabsTrigger value="overview" className="gap-1.5"><LayoutDashboard data-icon="inline-start" />{t('overview')}</TabsTrigger>
+            <TabsTrigger value="pipeline" className="gap-1.5"><TrendingUp data-icon="inline-start" />{t('pipeline')}</TabsTrigger>
+            <TabsTrigger value="leads" className="gap-1.5"><Megaphone data-icon="inline-start" />{t('myLeads')}</TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5"><UserCheck data-icon="inline-start" />{t('myStudents')}</TabsTrigger>
+            <TabsTrigger value="tasks" className="gap-1.5"><ClipboardList data-icon="inline-start" />{t('myTasks')}</TabsTrigger>
           </TabsList>
+          <TabsContent value="overview" className="mt-0">
+            <OverviewTab
+              t={t}
+              payments={myPayments.filter((payment) => payment.status === 'paid')}
+              managerFunnel={managerFunnel}
+              managerStats={managerStats}
+              leadStatusName={leadStatusName}
+              money={money}
+              myTasks={myTasks}
+              dateTime={dateTime}
+              openLead={openLead}
+            />
+          </TabsContent>
           <TabsContent value="leads" className="mt-0">
             <LeadsTab
               t={t}
@@ -435,22 +597,34 @@ export default function SalesDashboard() {
               statusColor={statusColor}
               dateOnly={dateOnly}
               filteredLeads={filteredLeads}
-              search={search}
-              setSearch={setSearch}
               statusFilter={statusFilter}
               setStatusFilter={setStatusFilter}
+              sourceFilter={sourceFilter}
+              setSourceFilter={setSourceFilter}
+              sources={data.sources ?? []}
               setLeadDialogOpen={setLeadDialogOpen}
-              updateLead={updateLead}
+              openLead={openLead}
+              onQuickAction={handleQuickAction}
             />
           </TabsContent>
           <TabsContent value="pipeline" className="mt-0">
             <PipelineTab
               t={t}
               leadStatusName={leadStatusName}
-              filteredLeads={filteredLeads}
+              leads={myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any))}
               activePipelineStatuses={activePipelineStatuses}
-              updateLead={updateLead}
               setLeadDialogOpen={setLeadDialogOpen}
+              onLeadClick={(lead) => openLead(lead.id)}
+              onQuickAction={handleQuickAction}
+              onStatusChange={async (leadId, statusCode) => {
+                if (statusCode === 'paid') {
+                  openLead(leadId, 'payment');
+                  return false;
+                }
+                await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
+                return true;
+              }}
+              isPending={updateLead.isPending}
             />
           </TabsContent>
           <TabsContent value="students" className="mt-0">
@@ -459,11 +633,12 @@ export default function SalesDashboard() {
               myStudents={myStudents}
               paymentStatusName={paymentStatusName}
               dateTime={dateTime}
-              setSelectedStudent={setSelectedStudent}
-              setStudentSheetOpen={setStudentSheetOpen}
               data={data}
               selectedStudent={selectedStudent}
               studentSheetOpen={studentSheetOpen}
+              openStudent={openStudent}
+              openLead={openLead}
+              onStudentSheetOpenChange={handleStudentSheetState}
             />
           </TabsContent>
           <TabsContent value="tasks" className="mt-0">
@@ -472,6 +647,7 @@ export default function SalesDashboard() {
               myTasks={myTasks}
               updateTask={updateTask}
               dateTime={dateTime}
+              openLead={(leadId) => openLead(leadId, 'tasks')}
             />
           </TabsContent>
         </Tabs>
@@ -485,8 +661,7 @@ export default function SalesDashboard() {
           </DialogHeader>
           <LeadForm
             t={t}
-            leadForm={leadForm}
-            setLeadForm={setLeadForm}
+            form={leadForm}
             createLead={createLead}
             data={data}
           />
@@ -497,10 +672,98 @@ export default function SalesDashboard() {
         onOpenChange={leadDialogGuard.setConfirmationOpen}
         onDiscard={leadDialogGuard.discardChanges}
       />
+      <LeadDetailSheet
+        leadId={selectedLeadId}
+        open={leadSheetOpen}
+        onOpenChange={handleLeadSheetState}
+        initialTab={leadSheetTab}
+        courses={data.courses ?? []}
+        groups={data.groups ?? []}
+        sources={data.sources ?? []}
+        currentUserId={user?.id}
+        leadStatusName={leadStatusName}
+        dateTime={dateTime}
+        money={money}
+        onChanged={invalidate}
+      />
     </div>
   );
 }
 // ---- Sub-components for tabs ----
+
+function OverviewTab({
+  t,
+  payments,
+  managerFunnel,
+  managerStats,
+  leadStatusName,
+  money,
+  myTasks,
+  dateTime,
+  openLead,
+}: {
+  t: (key: TranslationKey) => string;
+  payments: any[];
+  managerFunnel: Array<{ code: string; count: number; color: string }>;
+  managerStats: {
+    newLeadsWeek: number;
+    activeLeads: number;
+    totalStudents: number;
+    conversionRate: number;
+    overdueTasks: number;
+  };
+  leadStatusName: (code: string) => string;
+  money: (value: number | string | null | undefined) => string;
+  myTasks: Task[];
+  dateTime: (value: string | null | undefined) => string;
+  openLead: (leadId: number, tab?: LeadSheetTab) => void;
+}) {
+  const priorityTasks = myTasks
+    .filter((task) => task.status !== 'done')
+    .sort((a, b) => new Date(a.deadlineAt || 0).getTime() - new Date(b.deadlineAt || 0).getTime())
+    .slice(0, 5);
+
+  return (
+    <div className="flex flex-col gap-5">
+      <DashboardCharts
+        payments={payments}
+        funnel={managerFunnel}
+        analytics={{ summary: { newLeadsWeek: managerStats.newLeadsWeek } }}
+        leadStatusName={leadStatusName}
+        statusColor={statusColor}
+        money={money}
+      />
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('priorityTasks')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {priorityTasks.length === 0 ? (
+            <EmptyState title={t('noTasks')} text={t('noTasksAssigned')} icon={ClipboardList} />
+          ) : (
+            priorityTasks.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-left enabled:hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                disabled={task.entityType !== 'lead' || !task.entityId}
+                onClick={() => task.entityType === 'lead' && task.entityId ? openLead(task.entityId, 'tasks') : undefined}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{task.title}</span>
+                  {task.deadlineAt ? <span className="block text-xs text-muted-foreground">{dateTime(task.deadlineAt)}</span> : null}
+                </span>
+                <Badge variant={task.deadlineAt && new Date(task.deadlineAt) < new Date() ? 'destructive' : 'outline'}>
+                  {task.deadlineAt && new Date(task.deadlineAt) < new Date() ? t('taskOverdue') : t('taskInProgress')}
+                </Badge>
+              </button>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function LeadsTab({
   t,
@@ -508,24 +771,28 @@ function LeadsTab({
   statusColor,
   dateOnly,
   filteredLeads,
-  search,
-  setSearch,
   statusFilter,
   setStatusFilter,
+  sourceFilter,
+  setSourceFilter,
+  sources,
   setLeadDialogOpen,
-  updateLead,
+  openLead,
+  onQuickAction,
 }: {
   t: (key: TranslationKey) => string;
   leadStatusName: (code: string) => string;
   statusColor: (code: string) => string;
   dateOnly: (v: string | null | undefined) => string;
   filteredLeads: Lead[];
-  search: string;
-  setSearch: (v: string) => void;
   statusFilter: string;
   setStatusFilter: (v: string) => void;
+  sourceFilter: string;
+  setSourceFilter: (v: string) => void;
+  sources: Array<{ id: number; name: string }>;
   setLeadDialogOpen: (v: boolean) => void;
-  updateLead: any;
+  openLead: (leadId: number, tab?: LeadSheetTab) => void;
+  onQuickAction: (action: QuickAction, lead: Lead) => void;
 }) {
   const columns = [
     {
@@ -591,18 +858,40 @@ function LeadsTab({
     {
       key: 'actions',
       header: t('actions'),
-      render: (lead: Lead) => (
-        <div className="flex flex-wrap gap-1.5">
-          <Button size="sm" variant="outline" className="h-7 text-xs"
-            onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } })}>
-            {t('qualify')}
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs"
-            onClick={() => updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } })}>
-            {t('toWarm')}
-          </Button>
-        </div>
-      ),
+      render: (lead: Lead) => {
+        const canQualify = lead.statusCode === 'new_request' || lead.statusCode === 'first_contact';
+        const canMoveToWarmBase = lead.statusCode !== 'paid' && lead.statusCode !== 'not_now';
+        return (
+          <div className="flex flex-wrap gap-1.5">
+            {canQualify ? (
+              <Button size="sm" variant="outline" className="h-7 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onQuickAction('qualify', lead);
+                }}>
+                {t('qualify')}
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" className="h-7 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                openLead(lead.id, 'payment');
+              }}>
+              <CreditCard data-icon="inline-start" />
+              {t('payment')}
+            </Button>
+            {canMoveToWarmBase ? (
+              <Button size="sm" variant="ghost" className="h-7 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onQuickAction('warm', lead);
+                }}>
+                {t('warmBase')}
+              </Button>
+            ) : null}
+          </div>
+        );
+      },
     },
   ];
 
@@ -612,21 +901,30 @@ function LeadsTab({
         <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4">
           <CardTitle>{t('myLeads')}</CardTitle>
           <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-              <Input className="pl-9" placeholder={t('searchByNamePhone')} value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-48"><SelectValue placeholder={t('status')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t('allStatuses')}</SelectItem>
-                {LEAD_STATUSES.map((status) => (
-                  <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectItem value="all">{t('allStatuses')}</SelectItem>
+                  {LEAD_STATUSES.map((status) => (
+                    <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-48"><SelectValue placeholder={t('source')} /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">{t('allSources')}</SelectItem>
+                  {sources.map((source) => (
+                    <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             <Button onClick={() => setLeadDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />{t('newApplication')}
+              <Plus data-icon="inline-start" />{t('newApplication')}
             </Button>
           </div>
         </CardHeader>
@@ -645,6 +943,7 @@ function LeadsTab({
                 Date.now() - new Date(lead.createdAt).getTime() > 15 * 60 * 1000;
               return firstContactOverdue ? 'bg-red-50/60' : '';
             }}
+            onRowClick={(lead: Lead) => openLead(lead.id)}
           />
         </CardContent>
       </Card>
@@ -655,24 +954,30 @@ function LeadsTab({
 function PipelineTab({
   t,
   leadStatusName,
-  filteredLeads,
+  leads,
   activePipelineStatuses,
-  updateLead,
   setLeadDialogOpen,
+  onLeadClick,
+  onQuickAction,
+  onStatusChange,
+  isPending,
 }: {
   t: (key: TranslationKey) => string;
   leadStatusName: (code: string) => string;
-  filteredLeads: Lead[];
+  leads: Lead[];
   activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
-  updateLead: any;
   setLeadDialogOpen: (v: boolean) => void;
+  onLeadClick: (lead: Lead) => void;
+  onQuickAction: (action: QuickAction, lead: Lead) => void;
+  onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
+  isPending: boolean;
 }) {
   return (
     <div className="space-y-5">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold text-slate-900">{t('salesPipeline')}</h2>
         <Button onClick={() => setLeadDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />{t('newApplication')}
+          <Plus data-icon="inline-start" />{t('newApplication')}
         </Button>
       </div>
       <KanbanBoard
@@ -682,19 +987,15 @@ function PipelineTab({
           color: status.color,
           sortOrder: status.sortOrder,
         }))}
-        leads={filteredLeads.map((lead) => ({
+        leads={leads.map((lead) => ({
           ...lead,
           statusCode: lead.statusCode,
         }))}
-        onStatusChange={async (leadId: number, statusCode: string) => {
-          await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
-        }}
-        onQuickAction={(action: string, lead: any) => {
-          if (action === 'qualify') updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
-          if (action === 'warm') updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('notNow') } });
-        }}
-        isPending={updateLead.isPending}
-        showPaymentAction={false}
+        onStatusChange={onStatusChange}
+        onQuickAction={(action, lead) => onQuickAction(action, lead as Lead)}
+        onLeadClick={(lead) => onLeadClick(lead as Lead)}
+        isPending={isPending}
+        showPaymentAction
       />
     </div>
   );
@@ -705,21 +1006,23 @@ function StudentsTab({
   myStudents,
   paymentStatusName,
   dateTime,
-  setSelectedStudent,
-  setStudentSheetOpen,
   data,
   selectedStudent,
   studentSheetOpen,
+  openStudent,
+  openLead,
+  onStudentSheetOpenChange,
 }: {
   t: (key: TranslationKey) => string;
   myStudents: Student[];
   paymentStatusName: (code: string | null | undefined) => string;
   dateTime: (v: string | null | undefined) => string;
-  setSelectedStudent: (s: Student | null) => void;
-  setStudentSheetOpen: (v: boolean) => void;
   data: any;
   selectedStudent: Student | null;
   studentSheetOpen: boolean;
+  openStudent: (student: Student) => void;
+  openLead: (leadId: number, tab?: LeadSheetTab) => void;
+  onStudentSheetOpenChange: (open: boolean) => void;
 }) {
   const columns = [
     {
@@ -783,9 +1086,10 @@ function StudentsTab({
       accessor: (student: Student) => student.paymentStatus || student.status,
       render: (student: Student) => {
         const isOverdue = student.nextPaymentAt && new Date(student.nextPaymentAt) < new Date();
+        const paymentStatus = isOverdue ? 'overdue' : student.paymentStatus ?? 'paid';
         return (
-          <Badge variant={isOverdue ? 'destructive' : student.status === 'studying' ? 'default' : 'outline'}>
-            {isOverdue ? t('paymentStatusOverdue') : paymentStatusName(student.status)}
+          <Badge variant={paymentStatus === 'overdue' ? 'destructive' : paymentStatus === 'paid' ? 'success' : 'warning'}>
+            {paymentStatusName(paymentStatus)}
           </Badge>
         );
       },
@@ -805,20 +1109,18 @@ function StudentsTab({
             keyExtractor={(student: Student) => `student-${student.id}`}
             emptyState={
               <div className="p-8">
-                <EmptyState title={t('noStudentsYet')} text={t('noStudentsYetDesc')} icon={GraduationCap} />
+                <EmptyState title={t('noClientsYet')} text={t('noClientsYetDesc')} icon={UserCheck} />
               </div>
             }
-            onRowClick={(student: Student) => {
-              setSelectedStudent(student);
-              setStudentSheetOpen(true);
-            }}
+            onRowClick={openStudent}
           />
         </CardContent>
       </Card>
       <StudentDetailSheet
         student={selectedStudent}
         open={studentSheetOpen}
-        onOpenChange={setStudentSheetOpen}
+        onOpenChange={onStudentSheetOpenChange}
+        onRecordPayment={(leadId) => openLead(leadId, 'payment')}
         data={{ projects: data.projects, payments: data.payments, referrals: data.referrals }}
         dateTime={dateTime}
       />
@@ -831,11 +1133,13 @@ function TasksTab({
   myTasks,
   updateTask,
   dateTime,
+  openLead,
 }: {
   t: (key: TranslationKey) => string;
   myTasks: Task[];
   updateTask: any;
   dateTime: (v: string | null | undefined) => string;
+  openLead: (leadId: number) => void;
 }) {
   const now = new Date();
   const sortedTasks = [...myTasks].sort((a, b) => {
@@ -887,7 +1191,11 @@ function TasksTab({
                         size="sm"
                         variant="ghost"
                         className="h-7 text-xs"
-                        onClick={() => updateTask.mutate({ id: task.id, payload: { status: 'done' } })}
+                        disabled={updateTask.isPending}
+                        onClick={() => updateTask.mutate({
+                          id: task.id,
+                          payload: { status: 'done', completedAt: new Date().toISOString() },
+                        })}
                       >
                         <CheckCircle2 className="h-3.5 w-3.5 mr-1" />{t('completeTask')}
                       </Button>
@@ -904,7 +1212,17 @@ function TasksTab({
                     </span>
                   )}
                   {task.entityType && (
-                    <span className="text-xs text-slate-400">{task.entityType} #{task.entityId}</span>
+                    task.entityType === 'lead' && task.entityId ? (
+                      <button
+                        type="button"
+                        className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => openLead(task.entityId!)}
+                      >
+                        {t('openLead')}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400">{task.entityType} #{task.entityId}</span>
+                    )
                   )}
                 </div>
               </div>
@@ -920,99 +1238,162 @@ function TasksTab({
 
 function LeadForm({
   t,
-  leadForm,
-  setLeadForm,
+  form,
   createLead,
   data,
 }: {
   t: (key: TranslationKey) => string;
-  leadForm: any;
-  setLeadForm: any;
+  form: UseFormReturn<CreateLeadFormValues>;
   createLead: any;
   data: any;
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <Field label={t('contactPersonName')}>
-        <Input
-          value={leadForm.contactName}
-          onChange={(e) => setLeadForm({ ...leadForm, contactName: e.target.value })}
-          placeholder={t('parentNamePlaceholder')}
+    <Form {...form}>
+      <form
+        className="grid grid-cols-1 gap-3 md:grid-cols-2"
+        onSubmit={form.handleSubmit((values) => createLead.mutate(values))}
+      >
+        <FormField
+          control={form.control}
+          name="contactName"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('contactPersonName')}</FormLabel>
+              <FormControl><Input {...field} placeholder={t('parentNamePlaceholder')} /></FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
         />
-      </Field>
-      <Field label={t('phone')}>
-        <PhoneInput
-          value={leadForm.phone}
-          onValueChange={(phone) => setLeadForm({ ...leadForm, phone })}
+        <FormField
+          control={form.control}
+          name="phone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('phone')}</FormLabel>
+              <FormControl>
+                <PhoneInput
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onValueChange={field.onChange}
+                />
+              </FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
         />
-      </Field>
-      <Field label={t('telegramWhatsapp')}>
-        <Input
-          value={leadForm.messenger}
-          onChange={(e) => setLeadForm({ ...leadForm, messenger: e.target.value })}
-          placeholder="@username"
+        <FormField
+          control={form.control}
+          name="messenger"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('telegramWhatsapp')}</FormLabel>
+              <FormControl><Input {...field} placeholder="@username" /></FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
         />
-      </Field>
-      <Field label={t('studentName')}>
-        <Input
-          value={leadForm.studentName}
-          onChange={(e) => setLeadForm({ ...leadForm, studentName: e.target.value })}
-          placeholder={t('studentNamePlaceholder')}
+        <FormField
+          control={form.control}
+          name="studentName"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('studentName')}</FormLabel>
+              <FormControl><Input {...field} placeholder={t('studentNamePlaceholder')} /></FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
         />
-      </Field>
-      <Field label={t('age')}>
-        <Input
-          type="number"
-          value={leadForm.studentAge}
-          onChange={(e) => setLeadForm({ ...leadForm, studentAge: e.target.value })}
+        <FormField
+          control={form.control}
+          name="studentAge"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('age')}</FormLabel>
+              <FormControl><Input {...field} type="number" min="1" /></FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
         />
-      </Field>
-      <Field label={t('course')}>
-        <Select value={leadForm.courseId} onValueChange={(courseId: string) => setLeadForm({ ...leadForm, courseId })}>
-          <SelectTrigger><SelectValue placeholder={t('autoByAgeOrManual')} /></SelectTrigger>
-          <SelectContent>
-            {(data.courses ?? []).map((course: any) => (
-              <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={t('source')}>
-        <Select value={leadForm.sourceId} onValueChange={(sourceId: string) => setLeadForm({ ...leadForm, sourceId })}>
-          <SelectTrigger><SelectValue placeholder={t('selectSource')} /></SelectTrigger>
-          <SelectContent>
-            {(data.sources ?? []).map((source: any) => (
-              <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label={t('communicationLanguage')}>
-        <Select value={leadForm.language} onValueChange={(language: string) => setLeadForm({ ...leadForm, language })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ru">{t('russianLang')}</SelectItem>
-            <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
-          </SelectContent>
-        </Select>
-      </Field>
-      <div className="md:col-span-2">
-        <Field label={t('comment')}>
-          <Input
-            value={leadForm.comment}
-            onChange={(e) => setLeadForm({ ...leadForm, comment: e.target.value })}
-            placeholder={t('commentPlaceholder')}
-          />
-        </Field>
-      </div>
-      <div className="md:col-span-2 flex justify-end">
-        <Button
-          onClick={() => createLead.mutate()}
-          disabled={createLead.isPending || !leadForm.contactName || !leadForm.phone}
-        >
-          <Plus className="h-4 w-4 mr-2" />{t('createLead')}
-        </Button>
-      </div>
-    </div>
+        <FormField
+          control={form.control}
+          name="courseId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('course')}</FormLabel>
+              <Select value={field.value || 'auto'} onValueChange={(value) => field.onChange(value === 'auto' ? '' : value)}>
+                <FormControl><SelectTrigger><SelectValue placeholder={t('autoByAgeOrManual')} /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="auto">{t('autoByAgeOrManual')}</SelectItem>
+                    {(data.courses ?? []).map((course: any) => (
+                      <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="sourceId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('source')}</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl><SelectTrigger><SelectValue placeholder={t('selectSource')} /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    {(data.sources ?? []).map((source: any) => (
+                      <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="language"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('communicationLanguage')}</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="ru">{t('russianLang')}</SelectItem>
+                    <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="comment"
+          render={({ field }) => (
+            <FormItem className="md:col-span-2">
+              <FormLabel>{t('comment')}</FormLabel>
+              <FormControl><Input {...field} placeholder={t('commentPlaceholder')} /></FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <div className="flex justify-end md:col-span-2">
+          <Button type="submit" disabled={createLead.isPending}>
+            <Plus data-icon="inline-start" />
+            {createLead.isPending ? t('saving') : t('createLead')}
+          </Button>
+        </div>
+      </form>
+    </Form>
   );
 }

@@ -52,7 +52,7 @@ function LayoutInner({ children }: LayoutProps) {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto">
-          <div key={location} className="page-enter">
+          <div key={location} className="page-enter min-w-0 max-w-full">
             {children}
           </div>
         </main>

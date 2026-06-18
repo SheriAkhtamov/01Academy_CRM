@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   ArrowRight,
+  Clock3,
   GripVertical,
   MoreHorizontal,
   Phone,
@@ -59,8 +60,9 @@ interface KanbanLead {
 interface KanbanBoardProps {
   statuses: readonly KanbanStatus[];
   leads: KanbanLead[];
-  onStatusChange: (leadId: number, statusCode: string) => void | Promise<void>;
+  onStatusChange: (leadId: number, statusCode: string) => boolean | void | Promise<boolean | void>;
   onQuickAction?: (action: 'qualify' | 'warm' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
+  onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction?: boolean;
 }
@@ -74,6 +76,7 @@ interface LeadCardContentProps {
   isPending?: boolean;
   showPaymentAction: boolean;
   t: (key: TranslationKey) => string;
+  onLeadClick?: KanbanBoardProps['onLeadClick'];
   dragHandle?: React.ReactNode;
 }
 
@@ -86,16 +89,27 @@ function LeadCardContent({
   isPending,
   showPaymentAction,
   t,
+  onLeadClick,
   dragHandle,
 }: LeadCardContentProps) {
   const nextStatuses = statuses.filter((status) => status.sortOrder > currentStatus.sortOrder);
-  const prevStatuses = statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
+  const prevStatuses = currentStatus.code === 'paid'
+    ? []
+    : statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
+  const canQualify = currentStatus.code === 'new_request' || currentStatus.code === 'first_contact';
+  const canMoveToWarmBase = currentStatus.code !== 'paid' && currentStatus.code !== 'not_now';
 
   return (
     <>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-foreground">{lead.contactName}</div>
+          <button
+            type="button"
+            className="block max-w-full truncate text-left text-sm font-medium text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={() => onLeadClick?.(lead)}
+          >
+            {lead.contactName}
+          </button>
           {lead.phone ? <div className="truncate text-xs text-muted-foreground">{lead.phone}</div> : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -145,6 +159,14 @@ function LeadCardContent({
                 <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)}>
                   <Send /> {t('write')}
                 </DropdownMenuItem>
+                {canMoveToWarmBase ? (
+                  <DropdownMenuItem
+                    onClick={() => onQuickAction?.('warm', lead)}
+                    disabled={isPending}
+                  >
+                    <Clock3 /> {t('warmBase')}
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -179,18 +201,22 @@ function LeadCardContent({
             size="sm"
             className="h-7 px-2 text-xs"
             onClick={() => onQuickAction?.('payment', lead)}
+            disabled={isPending}
           >
             <Wallet data-icon="inline-start" /> {t('payment')}
           </Button>
         ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => onQuickAction?.('qualify', lead)}
-        >
-          <UserPlus data-icon="inline-start" /> {t('qualify')}
-        </Button>
+        {canQualify ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => onQuickAction?.('qualify', lead)}
+            disabled={isPending}
+          >
+            <UserPlus data-icon="inline-start" /> {t('qualify')}
+          </Button>
+        ) : null}
       </div>
     </>
   );
@@ -199,7 +225,7 @@ function LeadCardContent({
 interface DraggableLeadCardProps extends Omit<LeadCardContentProps, 'dragHandle'> {}
 
 function DraggableLeadCard(props: DraggableLeadCardProps) {
-  const { lead, currentStatus, isPending, t } = props;
+  const { lead, currentStatus, isPending, t, onLeadClick } = props;
   const {
     attributes,
     listeners,
@@ -218,10 +244,10 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
       className={cn(
-        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing',
+        'group rounded-lg border border-border/80 bg-card p-3 shadow-2xs transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md',
         isDragging && 'opacity-30',
       )}
-      {...listeners}
+      onDoubleClick={() => onLeadClick?.(lead)}
     >
       <LeadCardContent
         {...props}
@@ -252,6 +278,7 @@ interface KanbanColumnProps {
   isPending?: boolean;
   showPaymentAction: boolean;
   t: (key: TranslationKey) => string;
+  onLeadClick?: KanbanBoardProps['onLeadClick'];
 }
 
 function KanbanColumn({
@@ -263,6 +290,7 @@ function KanbanColumn({
   isPending,
   showPaymentAction,
   t,
+  onLeadClick,
 }: KanbanColumnProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: `status-${status.code}`,
@@ -303,6 +331,7 @@ function KanbanColumn({
             isPending={isPending}
             showPaymentAction={showPaymentAction}
             t={t}
+            onLeadClick={onLeadClick}
           />
         ))}
         {leads.length === 0 ? (
@@ -323,6 +352,7 @@ export function KanbanBoard({
   leads,
   onStatusChange,
   onQuickAction,
+  onLeadClick,
   isPending,
   showPaymentAction = true,
 }: KanbanBoardProps) {
@@ -348,17 +378,31 @@ export function KanbanBoard({
     : boardLeads.find((lead) => lead.id === activeLeadId) ?? null;
 
   const moveLead = useCallback((leadId: number, statusCode: string) => {
-    const previousLeads = boardLeads;
-    const lead = previousLeads.find((item) => item.id === leadId);
+    const lead = boardLeads.find((item) => item.id === leadId);
     if (!lead || lead.statusCode === statusCode || !statusesByCode.has(statusCode)) return;
+    const previousStatusCode = lead.statusCode;
 
     setBoardLeads((current) => current.map((item) => (
       item.id === leadId ? { ...item, statusCode } : item
     )));
 
-    Promise.resolve(onStatusChange(leadId, statusCode)).catch(() => {
-      setBoardLeads(previousLeads);
-    });
+    Promise.resolve(onStatusChange(leadId, statusCode))
+      .then((accepted) => {
+        if (accepted === false) {
+          setBoardLeads((current) => current.map((item) => (
+            item.id === leadId && item.statusCode === statusCode
+              ? { ...item, statusCode: previousStatusCode }
+              : item
+          )));
+        }
+      })
+      .catch(() => {
+        setBoardLeads((current) => current.map((item) => (
+          item.id === leadId && item.statusCode === statusCode
+            ? { ...item, statusCode: previousStatusCode }
+            : item
+        )));
+      });
   }, [boardLeads, onStatusChange, statusesByCode]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -376,7 +420,7 @@ export function KanbanBoard({
   }, [moveLead]);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 max-w-full flex-col gap-2">
       <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
         <GripVertical />
         <span>{t('dragLeadHint')}</span>
@@ -396,7 +440,7 @@ export function KanbanBoard({
           },
         }}
       >
-        <div className="-mx-2 overflow-x-auto pb-2">
+        <div className="-mx-2 min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2">
           <div className="flex min-w-max gap-4 px-2">
             {statuses.map((status) => (
               <KanbanColumn
@@ -409,6 +453,7 @@ export function KanbanBoard({
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}
                 t={t}
+                onLeadClick={onLeadClick}
               />
             ))}
           </div>
@@ -424,6 +469,7 @@ export function KanbanBoard({
                 onQuickAction={undefined}
                 showPaymentAction={showPaymentAction}
                 t={t}
+                onLeadClick={onLeadClick}
               />
             </div>
           ) : null}

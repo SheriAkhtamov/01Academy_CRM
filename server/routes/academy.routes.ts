@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -41,7 +43,8 @@ import {
   normalizeMoney,
   resolveReferralLevel,
   suggestCourseSlugByAge,
-  validateLeadForStatusChange } from '@shared/academy';
+  validateLeadForStatusChange,
+  validateLeadStatusTransition } from '@shared/academy';
 
 const router = Router();
 
@@ -49,6 +52,7 @@ router.use(requireAuth);
 
 type DbValue = string | number | boolean | Date | null | unknown[] | Record<string, unknown>;
 type Row = Record<string, any>;
+const transactionContext = new AsyncLocalStorage<PoolClient>();
 
 const HEAD_ROLES = new Set(['admin', 'head']);
 const FINANCE_ROLES = new Set(['admin', 'head', 'operations_director']);
@@ -122,8 +126,28 @@ const safeJson = (value: unknown, fallback: unknown[] = []) => {
 };
 
 const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
-  const result = await pool.query(sql, values as any[]);
+  const executor = transactionContext.getStore() ?? pool;
+  const result = await executor.query(sql, values as any[]);
   return camelizeRows(result.rows) as T[];
+};
+
+const withTransaction = async <T>(callback: () => Promise<T>): Promise<T> => {
+  if (transactionContext.getStore()) {
+    return callback();
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await transactionContext.run(client, callback);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 const queryOne = async <T = Row>(sql: string, values: DbValue[] = []) => {
@@ -496,7 +520,16 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
   }
 
   const existingStudent = await queryOne(`SELECT * FROM academy_students WHERE lead_id = $1`, [leadId]);
-  if (existingStudent) return existingStudent;
+  if (existingStudent) {
+    if (paymentId) {
+      await updateRow('academy_payments', paymentId, { studentId: existingStudent.id });
+    }
+    if (lead.statusCode !== 'paid') {
+      await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
+      await createStageHistory(lead.id, lead.statusCode, 'paid', req.user!.id, 'Подтверждена оплата существующего клиента');
+    }
+    return existingStudent;
+  }
 
   await ensureGroupCapacity(lead.enrolledGroupId);
 
@@ -758,7 +791,17 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN users u ON u.id = l.manager_id
       WHERE 1=1 ${isManagerScoped ? 'AND l.manager_id = $1' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
       ORDER BY l.created_at DESC`, managerParams),
-    query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name
+    query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
+        (
+          SELECT CASE
+            WHEN p.status <> 'paid' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
+            ELSE p.status
+          END
+          FROM academy_payments p
+          WHERE p.student_id = st.id
+          ORDER BY p.created_at DESC
+          LIMIT 1
+        ) AS payment_status
       FROM academy_students st
       LEFT JOIN academy_courses c ON c.id = st.course_id
       LEFT JOIN academy_groups g ON g.id = st.group_id
@@ -1157,10 +1200,12 @@ router.get('/workspaces/sales', async (req, res) => {
 
     res.json({
       courses: dataset.courses,
+      groups: dataset.groups,
       sources: dataset.sources,
       statuses: dataset.statuses,
       leads: dataset.leads,
       students: dataset.students,
+      payments: dataset.payments,
       tasks: dataset.tasks,
       projects: dataset.projects,
       referrals: dataset.referrals,
@@ -1290,7 +1335,7 @@ router.get('/search', async (req, res) => {
         entityType: 'lead',
         title: lead.contactName,
         subtitle: [lead.phone, lead.studentName, lead.courseName].filter(Boolean).join(' • '),
-        href,
+        href: `${href}&lead=${lead.id}`,
       })));
     };
 
@@ -1316,7 +1361,7 @@ router.get('/search', async (req, res) => {
         entityType: 'student',
         title: student.studentName || student.contactName,
         subtitle: [student.contactName, student.phone, student.groupName].filter(Boolean).join(' • '),
-        href,
+        href: `${href}&student=${student.id}`,
       })));
     };
 
@@ -1698,6 +1743,8 @@ router.patch('/leads/:id', async (req, res) => {
     if (!ensureLeadRowAccess(req, res, oldLead)) return;
 
     const nextStatus = nullableText(req.body.statusCode) ?? oldLead.statusCode;
+    const transitionError = validateLeadStatusTransition(oldLead.statusCode, nextStatus);
+    if (transitionError) return res.status(400).json({ error: transitionError });
     const merged = {
       nextStatus,
       studentName: nullableText(req.body.studentName) ?? oldLead.studentName,
@@ -1815,6 +1862,8 @@ router.post('/leads/:id/demo', async (req, res) => {
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    const transitionError = validateLeadStatusTransition(oldLead.statusCode, 'demo_invited');
+    if (transitionError) return res.status(400).json({ error: transitionError });
 
     const demoAt = nullableDate(req.body.demoAt);
     if (!demoAt) return res.status(400).json({ error: 'Дата и время демо обязательны' });
@@ -1846,6 +1895,8 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
 
     const attended = req.body.attended !== false;
     const nextStatus = attended ? 'demo_attended' : oldLead.statusCode;
+    const transitionError = validateLeadStatusTransition(oldLead.statusCode, nextStatus);
+    if (transitionError) return res.status(400).json({ error: transitionError });
     const lead = await updateRow('academy_leads', id, {
       demoAttended: attended,
       demoResult: nullableText(req.body.demoResult) ?? null,
@@ -1870,7 +1921,17 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, lead)) return;
-    const student = await createStudentFromLead(req, id);
+    const student = await withTransaction(async () => {
+      await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      const paidPayment = await queryOne(
+        `SELECT id FROM academy_payments WHERE lead_id = $1 AND status = 'paid' ORDER BY paid_at DESC, id DESC LIMIT 1`,
+        [id],
+      );
+      if (!paidPayment) {
+        throw Object.assign(new Error('Сначала зафиксируйте подтверждённую оплату.'), { statusCode: 409 });
+      }
+      return createStudentFromLead(req, id, Number(paidPayment.id));
+    });
     res.status(201).json(student);
   } catch (error: any) {
     logger.error('Failed to convert lead to student', { error });
@@ -2036,7 +2097,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
       return res.status(403).json({ error: 'Course mutation access required' });
     }
-    if (table === 'academy_students' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && req.user?.role !== 'account_manager') {
+    if (table === 'academy_students' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director') {
       return res.status(403).json({ error: 'Student mutation access required' });
     }
     if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
@@ -2177,6 +2238,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     }
     if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
       return res.status(403).json({ error: 'Referral mutation access required' });
+    }
+    if (table === 'academy_students' && !HEAD_ROLES.has(role)) {
+      return res.status(403).json({ error: 'Client records stay in the database and can be deleted only by head/admin' });
     }
     try {
       const id = parseId(req.params.id);
@@ -2340,46 +2404,82 @@ router.post('/students/:id/transfer', async (req, res) => {
 });
 
 router.post('/payments', async (req, res) => {
-  if (!ensureFinanceAccess(req, res)) return;
+  if (!ensureRoleAccess(req, res, new Set([...Array.from(FINANCE_ROLES), 'account_manager']), 'Payment access required')) return;
   try {
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
     const studentId = parseId(req.body.studentId);
     if (!amountUzs) return res.status(400).json({ error: 'Нельзя отметить оплату без суммы' });
     if (!leadId && !studentId) return res.status(400).json({ error: 'Нельзя отметить оплату без ученика или лида' });
-
     const status = nullableText(req.body.status) ?? 'paid';
-    const paidAt = status === 'paid' ? nullableDate(req.body.paidAt) ?? new Date() : nullableDate(req.body.paidAt);
-    const payment = await insertRow('academy_payments', {
-      leadId,
-      studentId,
-      amountUzs,
-      type: nullableText(req.body.type) ?? 'full',
-      method: nullableText(req.body.method) ?? 'transfer',
-      paidAt,
-      period: nullableText(req.body.period) ?? 'month_1',
-      discount: nullableText(req.body.discount) ?? 'none',
-      status,
-      dueAt: nullableDate(req.body.dueAt),
-      paidUntil: nullableDate(req.body.paidUntil) ?? (status === 'paid' ? addDays(new Date(), 30) : null),
-      comment: nullableText(req.body.comment),
-      receiptUrl: nullableText(req.body.receiptUrl),
-      confirmedBy: status === 'paid' ? req.user!.id : null });
-
-    let student = null;
-    if (status === 'paid' && leadId && !studentId) {
-      student = await createStudentFromLead(req, leadId, payment.id);
-    }
-    const resolvedStudentId = studentId || student?.id;
-    if (status === 'paid' && resolvedStudentId) {
-      await updateRow('academy_students', Number(resolvedStudentId), {
-        nextPaymentAt: payment.paidUntil ?? addDays(new Date(), 30) });
-      // Apply referral rewards (TZ 5.1): discount for referrer + new student, recompute tiers.
-      await applyReferralRewards(req, Number(resolvedStudentId), leadId, payment.id);
+    if (!PAYMENT_STATUSES.some((item) => item.code === status)) {
+      return res.status(400).json({ error: 'Invalid payment status' });
     }
 
-    await createAudit(req, 'CREATE_ACADEMY_PAYMENT', 'academy_payment', payment.id, payment);
-    res.status(201).json({ payment, student });
+    const result = await withTransaction(async () => {
+      const lead = leadId
+        ? await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId])
+        : undefined;
+      if (leadId && !lead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+
+      const existingStudent = studentId
+        ? await queryOne(`SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`, [studentId])
+        : leadId
+          ? await queryOne(`SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`, [leadId])
+          : undefined;
+      if (studentId && !existingStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      if (lead && existingStudent && Number(existingStudent.leadId) !== Number(lead.id)) {
+        throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+      }
+      if (req.user!.role === 'account_manager') {
+        const ownsLead = !lead || Number(lead.managerId) === Number(req.user!.id);
+        const ownsStudent = !existingStudent || Number(existingStudent.managerId) === Number(req.user!.id);
+        if (!ownsLead || !ownsStudent) {
+          throw Object.assign(new Error('Payment access required'), { statusCode: 403 });
+        }
+      }
+
+      if (lead?.enrolledGroupId) {
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [lead.enrolledGroupId]);
+      }
+
+      const paidAt = status === 'paid' ? nullableDate(req.body.paidAt) ?? new Date() : nullableDate(req.body.paidAt);
+      const payment = await insertRow('academy_payments', {
+        leadId,
+        studentId: existingStudent?.id ?? studentId,
+        amountUzs,
+        type: nullableText(req.body.type) ?? 'full',
+        method: nullableText(req.body.method) ?? 'transfer',
+        paidAt,
+        period: nullableText(req.body.period) ?? 'month_1',
+        discount: nullableText(req.body.discount) ?? 'none',
+        status,
+        dueAt: nullableDate(req.body.dueAt),
+        paidUntil: nullableDate(req.body.paidUntil) ?? (status === 'paid' ? addDays(new Date(), 30) : null),
+        comment: nullableText(req.body.comment),
+        receiptUrl: nullableText(req.body.receiptUrl),
+        confirmedBy: status === 'paid' ? req.user!.id : null });
+
+      let student = existingStudent ?? null;
+      if (status === 'paid' && leadId) {
+        student = await createStudentFromLead(req, leadId, payment.id);
+      }
+      const resolvedStudentId = student?.id ?? studentId;
+      if (status === 'paid' && resolvedStudentId) {
+        await updateRow('academy_students', Number(resolvedStudentId), {
+          nextPaymentAt: payment.paidUntil ?? addDays(new Date(), 30) });
+        await applyReferralRewards(req, Number(resolvedStudentId), leadId, payment.id);
+      }
+
+      await createAudit(req, 'CREATE_ACADEMY_PAYMENT', 'academy_payment', payment.id, payment);
+      return { payment, student };
+    });
+
+    res.status(201).json(result);
   } catch (error: any) {
     logger.error('Failed to create payment', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create payment' });

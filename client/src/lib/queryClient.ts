@@ -41,8 +41,7 @@ const localizeApiErrorMessage = (message: string, status: number) => {
   }
   if (
     lower.includes("required") ||
-    lower.includes("missing required") ||
-    lower.includes("no documents uploaded")
+    lower.includes("missing required")
   ) {
     return i18n.t("fillRequiredFields");
   }
@@ -64,10 +63,6 @@ const localizeApiErrorMessage = (message: string, status: number) => {
   if (lower.startsWith("failed to delete")) {
     return i18n.t("failedToDeleteResource");
   }
-  if (lower.startsWith("failed to upload")) {
-    return i18n.t("failedToUploadResource");
-  }
-
   return normalized;
 };
 
@@ -138,7 +133,7 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
+const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>

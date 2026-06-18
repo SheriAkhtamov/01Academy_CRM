@@ -351,7 +351,7 @@ const logIntegration = async (provider: string, direction: string, status: strin
 };
 
 // Parse JSON bodies for these public webhook routes (mounted before the authed academy router).
-function expressRawJson(req: any, _res: any, next: any) {
+function expressRawJson(_req: any, _res: any, next: any) {
   // Express json() is applied globally before route mounting, so bodies are already parsed.
   next();
 }

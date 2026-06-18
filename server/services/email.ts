@@ -13,7 +13,7 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export class EmailService {
+class EmailService {
   private transporter: nodemailer.Transporter | null = null;
   private resend: Resend | null = null;
   private emailMethod: 'smtp' | 'resend' | 'console' = 'console';

@@ -1,4 +1,4 @@
-export const websocketEventTypes = [
+const websocketEventTypes = [
   "ACADEMY_LEAD_CREATED",
   "ACADEMY_LEAD_UPDATED",
   "ACADEMY_STUDENT_CREATED",
@@ -10,7 +10,7 @@ export const websocketEventTypes = [
   "USER_STATUS_CHANGED",
 ] as const;
 
-export type WebSocketEventType = (typeof websocketEventTypes)[number];
+type WebSocketEventType = (typeof websocketEventTypes)[number];
 
 export type WebSocketEvent = {
   type: WebSocketEventType;

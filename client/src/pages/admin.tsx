@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,7 +26,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Form,
@@ -37,7 +36,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -49,17 +47,13 @@ import { Switch } from '@/components/ui/switch';
 import {
   Plus,
   Search,
-  Settings,
   Users,
-  Mail,
   Clock,
   Shield,
   Edit,
   Trash2,
   UserCheck,
   UserX,
-  Calendar,
-  FileText,
   Key
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -82,29 +76,13 @@ const createUserSchema = (t: any) => z.object({
   isActive: z.boolean().default(true),
 });
 
-const createSystemSettingSchema = (t: any) => z.object({
-  key: z.string().min(1, t('settingKeyRequiredValidation')),
-  value: z.string().min(1, t('settingValueRequiredValidation')),
-  description: z.string().optional(),
-});
-
-const createAiSettingsSchema = (t: any) => z.object({
-  provider: z.enum(['openai', 'anthropic', 'gemini']),
-  model: z.string().min(1, t('aiModelRequired')),
-  baseUrl: z.string().optional(),
-  apiKey: z.string().optional(),
-  clearApiKey: z.boolean().default(false),
-});
-
 interface AdminProps {
   mode?: 'admin' | 'employees';
-  section?: 'settings' | 'reports';
 }
 
-export default function Admin({ mode = 'admin', section = 'settings' }: AdminProps) {
+export default function Admin({ mode = 'admin' }: AdminProps) {
   const isEmployeesPage = mode === 'employees';
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -118,9 +96,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
 
   // Create schemas with translations
   const userSchema = createUserSchema(t);
-  const systemSettingSchema = createSystemSettingSchema(t);
-  const aiSettingsSchema = createAiSettingsSchema(t);
-
   const userForm = useForm<z.infer<typeof userSchema>>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -131,26 +106,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
       role: 'account_manager',
       hasReportAccess: false,
       isActive: true,
-    },
-  });
-
-  const settingsForm = useForm<z.infer<typeof systemSettingSchema>>({
-    resolver: zodResolver(systemSettingSchema),
-    defaultValues: {
-      key: '',
-      value: '',
-      description: '',
-    },
-  });
-
-  const aiSettingsForm = useForm<z.infer<typeof aiSettingsSchema>>({
-    resolver: zodResolver(aiSettingsSchema),
-    defaultValues: {
-      provider: 'openai',
-      model: '',
-      baseUrl: '',
-      apiKey: '',
-      clearApiKey: false,
     },
   });
 
@@ -165,16 +120,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
     open: showCreateUserModal,
     isDirty: userForm.formState.isDirty,
     onOpenChange: handleUserModalState,
-  });
-
-  const handleSettingsModalState = (open: boolean) => {
-    setShowSettingsModal(open);
-    if (!open) settingsForm.reset();
-  };
-  const settingsDialogGuard = useUnsavedChangesGuard({
-    open: showSettingsModal,
-    isDirty: settingsForm.formState.isDirty,
-    onOpenChange: handleSettingsModalState,
   });
 
   // Check admin access
@@ -197,28 +142,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
   const { data: users = [], isLoading: usersLoading } = useQuery<any[]>({
     queryKey: ['/api/users'],
   });
-
-  const { data: systemSettings = [], isLoading: settingsLoading } = useQuery<any[]>({
-    queryKey: ['/api/system-settings'],
-  });
-
-  const { data: aiSettings, isLoading: aiSettingsLoading } = useQuery<any>({
-    queryKey: ['/api/system-settings/ai'],
-  });
-
-  useEffect(() => {
-    if (!aiSettings) {
-      return;
-    }
-
-    aiSettingsForm.reset({
-      provider: aiSettings.provider || 'openai',
-      model: aiSettings.model || '',
-      baseUrl: aiSettings.baseUrl || '',
-      apiKey: '',
-      clearApiKey: false,
-    });
-  }, [aiSettings, aiSettingsForm]);
 
   const activeUserCount = users.filter((user: any) => user.isActive).length;
   const inactiveUserCount = users.length - activeUserCount;
@@ -311,50 +234,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
     },
   });
 
-  const updateSystemSettingMutation = useMutation({
-    mutationFn: async (data: z.infer<ReturnType<typeof createSystemSettingSchema>>) => {
-      return await apiRequest('POST', '/api/system-settings', data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/system-settings'] });
-      toast({
-        title: t('settingUpdatedSuccessfullyTitle'),
-        description: t('systemSettingSavedDescription'),
-      });
-      settingsForm.reset();
-      setShowSettingsModal(false);
-    },
-    onError: () => {
-      toast({
-        title: t('error'),
-        description: t('failedUpdateSettingDescription'),
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const updateAiSettingsMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof aiSettingsSchema>) => {
-      return apiRequest('PUT', '/api/system-settings/ai', data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/system-settings/ai'] });
-      toast({
-        title: t('aiSettingsSavedTitle'),
-        description: t('aiSettingsSavedDescription'),
-      });
-      aiSettingsForm.setValue('apiKey', '');
-      aiSettingsForm.setValue('clearApiKey', false);
-    },
-    onError: (error: any) => {
-      toast({
-        title: t('error'),
-        description: error.message || t('aiSettingsSaveFailed'),
-        variant: 'destructive',
-      });
-    },
-  });
-
   const fetchUserCredentials = async (userId: number) => {
     try {
       devLog('Fetching credentials for user ID:', userId);
@@ -381,14 +260,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
     }
   };
 
-  const onSubmitSetting = (data: z.infer<ReturnType<typeof createSystemSettingSchema>>) => {
-    updateSystemSettingMutation.mutate(data);
-  };
-
-  const onSubmitAiSettings = (data: z.infer<ReturnType<typeof createAiSettingsSchema>>) => {
-    updateAiSettingsMutation.mutate(data);
-  };
-
   const openEditUserModal = (user: any) => {
     setSelectedUser(user);
     userForm.reset({
@@ -401,12 +272,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
       isActive: user.isActive,
     });
     setShowCreateUserModal(true);
-  };
-
-  const closeUserModal = () => {
-    setShowCreateUserModal(false);
-    setSelectedUser(null);
-    userForm.reset();
   };
 
   const filteredUsers = users.filter((user: any) => {
@@ -441,44 +306,6 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
       ? 'bg-emerald-100 text-emerald-800'
       : 'bg-red-100 text-red-800';
   };
-
-  const getSettingDescription = (key: string) => {
-    switch (key) {
-      case 'working_hours_start':
-        return t('workingHoursStart');
-      case 'working_hours_end':
-        return t('workingHoursEnd');
-      case 'lesson_duration':
-        return t('lessonDuration');
-      case 'reminder_time':
-        return t('reminderTime');
-      default:
-        return key;
-    }
-  };
-
-  const defaultSystemSettings = [
-    {
-      key: 'working_hours_start',
-      value: '09:00',
-      description: t('startOfWorkingHoursDescription'),
-    },
-    {
-      key: 'working_hours_end',
-      value: '17:00',
-      description: t('endOfWorkingHoursDescription'),
-    },
-    {
-      key: 'lesson_duration',
-      value: '90',
-      description: t('defaultLessonDurationDescription'),
-    },
-    {
-      key: 'reminder_time',
-      value: '30',
-      description: t('paymentReminderTimeDescription'),
-    },
-  ];
 
   const roleWorkspaceMap: Record<string, { label: string; href: string | null }> = {
     admin: { label: t('administration'), href: '/admin' },
@@ -599,13 +426,11 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
-        title={isEmployeesPage ? t('employees') : section === 'reports' ? t('reportsActivityLogs') : t('systemSettings')}
-        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : section === 'reports' ? t('viewSystemActivity') : t('configureSettings')}
+        title={isEmployeesPage ? t('employees') : t('reportsActivityLogs')}
+        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('viewSystemActivity')}
         breadcrumbs={isEmployeesPage
           ? [{ label: t('systemAdministration'), href: '/admin' }, { label: t('employees') }]
-          : section === 'reports'
-            ? [{ label: t('systemSettings'), href: '/admin' }, { label: t('reportsActivityLogs') }]
-            : [{ label: t('systemSettings') }]}
+          : [{ label: t('reportsActivityLogs') }]}
         actions={isEmployeesPage ? (
           <Button
             className="bg-primary-600 hover:bg-primary-700"
@@ -619,7 +444,7 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
         ) : undefined}
       />
 
-      <Tabs value={isEmployeesPage ? 'users' : section} className="space-y-6">
+      <Tabs value={isEmployeesPage ? 'users' : 'reports'} className="space-y-6">
         {/* Users Tab */}
         {isEmployeesPage && (
         <TabsContent value="users" className="space-y-6">
@@ -940,394 +765,36 @@ export default function Admin({ mode = 'admin', section = 'settings' }: AdminPro
         </TabsContent>
         )}
 
-        {/* System Settings Tab */}
-        <TabsContent value="settings" className="space-y-6">
-          <div className="flex items-center justify-end">
-            <Dialog open={showSettingsModal} onOpenChange={settingsDialogGuard.handleOpenChange}>
-                <DialogTrigger asChild>
-                  <Button className="bg-primary-600 hover:bg-primary-700">
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('addSetting')}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{t('addSystemSetting')}</DialogTitle>
-                  </DialogHeader>
-                  <Form {...settingsForm}>
-                    <form onSubmit={settingsForm.handleSubmit(onSubmitSetting)} className="space-y-4">
-                      <FormField
-                        control={settingsForm.control}
-                        name="key"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('settingKey')}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t('settingNamePlaceholder')} {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={settingsForm.control}
-                        name="value"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('value')}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t('settingValuePlaceholder')} {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={settingsForm.control}
-                        name="description"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('description')}</FormLabel>
-                            <FormControl>
-                              <Textarea
-                                placeholder={t('settingDescriptionPlaceholder')}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="flex items-center justify-end space-x-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => settingsDialogGuard.handleOpenChange(false)}
-                        >
-                          {t('cancel')}
-                        </Button>
-                        <Button
-                          type="submit"
-                          disabled={updateSystemSettingMutation.isPending}
-                          className="bg-primary-600 hover:bg-primary-700"
-                        >
-                          {updateSystemSettingMutation.isPending ? t('saving') : t('saveSetting')}
-                        </Button>
-                      </div>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-              <UnsavedChangesDialog
-                open={settingsDialogGuard.confirmationOpen}
-                onOpenChange={settingsDialogGuard.setConfirmationOpen}
-                onDiscard={settingsDialogGuard.discardChanges}
-              />
-          </div>
-
-          <Card className="hover-lift">
-            <CardHeader className="pb-4">
-              <CardTitle>{t('aiSettings')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {aiSettingsLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-5 w-48" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-              ) : (
-                <Form {...aiSettingsForm}>
-                  <form onSubmit={aiSettingsForm.handleSubmit(onSubmitAiSettings)} className="space-y-4">
-                    <p className="text-sm text-slate-500">{t('aiSettingsDescription')}</p>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField
-                        control={aiSettingsForm.control}
-                        name="provider"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('aiProvider')}</FormLabel>
-                            <Select value={field.value} onValueChange={field.onChange}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="openai">{t('providerOpenAI')}</SelectItem>
-                                <SelectItem value="anthropic">{t('providerAnthropic')}</SelectItem>
-                                <SelectItem value="gemini">{t('providerGoogleGemini')}</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={aiSettingsForm.control}
-                        name="model"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('aiModel')}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t('aiModelPlaceholder')} {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={aiSettingsForm.control}
-                        name="baseUrl"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('aiBaseUrl')}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t('aiBaseUrlPlaceholder')} {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={aiSettingsForm.control}
-                        name="apiKey"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('aiApiKey')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="password"
-                                placeholder={aiSettings?.apiKeyMasked || t('aiApiKeyPlaceholder')}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between rounded-lg border p-4">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{t('aiApiKeyStored')}</p>
-                        <p className="text-xs text-slate-500">
-                          {aiSettings?.hasApiKey
-                            ? `${t('currentKeyMasked')}: ${aiSettings.apiKeyMasked}`
-                            : t('aiApiKeyMissing')}
-                        </p>
-                      </div>
-
-                      <FormField
-                        control={aiSettingsForm.control}
-                        name="clearApiKey"
-                        render={({ field }) => (
-                          <FormItem className="flex flex-row items-center justify-between gap-3">
-                            <FormLabel>{t('clearStoredApiKey')}</FormLabel>
-                            <FormControl>
-                              <Switch checked={field.value} onCheckedChange={field.onChange} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Badge className={aiSettings?.configured ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>
-                        {aiSettings?.configured ? t('aiConfigured') : t('aiNotConfigured')}
-                      </Badge>
-                      <Button type="submit" disabled={updateAiSettingsMutation.isPending}>
-                        {updateAiSettingsMutation.isPending ? t('saving') : t('saveAiSettings')}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Settings Categories */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Academy Settings */}
-            <Card className="hover-lift">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center space-x-2">
-                  <Calendar className="h-5 w-5 text-primary-600" />
-                  <span>{t('academySettings')}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {settingsLoading ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="space-y-1">
-                        <Skeleton className="h-4 w-32" />
-                        <Skeleton className="h-6 w-full" />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  defaultSystemSettings.map((setting) => (
-                    <div key={setting.key} className="space-y-1">
-                      <label className="text-sm font-medium text-slate-700">
-                        {getSettingDescription(setting.key)}
-                      </label>
-                      <Input
-                        defaultValue={setting.value}
-                        className="text-sm"
-                        placeholder={setting.value}
-                      />
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Email Settings */}
-            <Card className="hover-lift">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center space-x-2">
-                  <Mail className="h-5 w-5 text-blue-600" />
-                  <span>{t('emailSettings')}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    {t('smtpHost')}
-                  </label>
-                  <Input placeholder={t('smtpHostPlaceholder')} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    {t('smtpPort')}
-                  </label>
-                  <Input placeholder={t('smtpPortPlaceholder')} type="number" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    {t('fromEmail')}
-                  </label>
-                  <Input placeholder={t('fromEmailPlaceholder')} type="email" />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Security Settings */}
-            <Card className="hover-lift">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center space-x-2">
-                  <Shield className="h-5 w-5 text-emerald-600" />
-                  <span>{t('securitySettings')}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    {t('sessionTimeout')}
-                  </label>
-                  <Input placeholder={t('sessionTimeoutPlaceholder')} type="number" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">
-                    {t('passwordMinLength')}
-                  </label>
-                  <Input placeholder={t('passwordMinLengthPlaceholder')} type="number" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-slate-700">
-                    {t('require2FA')}
-                  </label>
-                  <Switch />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Save Settings */}
-          <div className="flex justify-end">
-            <Button className="bg-primary-600 hover:bg-primary-700">
-              <Settings className="h-4 w-4 mr-2" />
-              {t('saveAllSettings')}
-            </Button>
-          </div>
-        </TabsContent>
-
         {/* Reports & Logs Tab */}
         <TabsContent value="reports" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* System Statistics */}
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('systemStatistics')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">{t('totalUsers')}</span>
-                    <span className="text-sm font-medium">{users.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">{t('activeUsers')}</span>
-                    <span className="text-sm font-medium">
-                      {users.filter((u: any) => u.isActive).length}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">{t('administrators')}</span>
-                    <span className="text-sm font-medium">
-                      {users.filter((u: any) => u.role === 'admin').length}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">{t('roleAccountManagers')}</span>
-                    <span className="text-sm font-medium">
-                      {users.filter((u: any) => u.role === 'account_manager').length}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('recentActivity')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-slate-500">
-                  <FileText className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-                  <p>{t('activityLogsWillAppear')}</p>
-                  <p className="text-xs">{t('trackUserActions')}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Export Options */}
           <Card>
             <CardHeader>
-              <CardTitle>{t('exportReports')}</CardTitle>
+              <CardTitle>{t('systemStatistics')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Button variant="outline" className="justify-start">
-                  <FileText className="h-4 w-4 mr-2" />
-                  {t('userReportPDF')}
-                </Button>
-                <Button variant="outline" className="justify-start">
-                  <FileText className="h-4 w-4 mr-2" />
-                  {t('activityLogCSV')}
-                </Button>
-                <Button variant="outline" className="justify-start">
-                  <FileText className="h-4 w-4 mr-2" />
-                  {t('systemSettingsJSON')}
-                </Button>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">{t('totalUsers')}</span>
+                  <span className="text-sm font-medium">{users.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">{t('activeUsers')}</span>
+                  <span className="text-sm font-medium">
+                    {users.filter((u: any) => u.isActive).length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">{t('administrators')}</span>
+                  <span className="text-sm font-medium">
+                    {users.filter((u: any) => u.role === 'admin').length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">{t('roleAccountManagers')}</span>
+                  <span className="text-sm font-medium">
+                    {users.filter((u: any) => u.role === 'account_manager').length}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>

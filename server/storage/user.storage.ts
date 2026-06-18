@@ -6,7 +6,7 @@ import {
 } from '@shared/schema';
 import { asc, desc, eq, or } from 'drizzle-orm';
 
-export class UserStorage {
+class UserStorage {
     async getUser(id: number): Promise<User | undefined> {
         const result = await db.select().from(users).where(eq(users.id, id));
         return result[0];

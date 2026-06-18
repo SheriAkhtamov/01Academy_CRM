@@ -1,5 +1,4 @@
 import type { User } from "./schema";
-export type { User };
 
 export type SanitizedUser = Omit<User, "password">;
 

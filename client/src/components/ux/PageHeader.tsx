@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { Link, useLocation } from 'wouter';
+import { Link } from 'wouter';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,7 +19,6 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageHeaderProps) {
   const { t } = useTranslation();
-  const [location] = useLocation();
 
   const items = breadcrumbs.length > 0
     ? breadcrumbs
@@ -52,30 +51,4 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
       {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
     </div>
   );
-}
-
-export function useBreadcrumbTitle(fallback: string) {
-  const [location] = useLocation();
-  const { t } = useTranslation();
-  const map: Record<string, string> = {
-    '/': t('navDashboard'),
-    '/leads': t('navLeads'),
-    '/pipeline': t('salesPipeline'),
-    '/students': t('students'),
-    '/courses': t('navCourses'),
-    '/groups': t('navGroups'),
-    '/lessons': t('navLessons'),
-    '/attendance': t('attendanceLabel'),
-    '/payments': t('navPayments'),
-    '/finance': t('navFinance'),
-    '/analytics': t('navAnalytics'),
-    '/risks': t('navRisks'),
-    '/warm-base': t('warmBase'),
-    '/referrals': t('navReferrals'),
-    '/integrations': t('navIntegrations'),
-    '/settings': t('settings'),
-    '/admin': t('administration'),
-    '/employees': t('employees'),
-  };
-  return map[location] || fallback;
 }

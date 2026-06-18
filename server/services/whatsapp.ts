@@ -1,10 +1,10 @@
 import { appConfig } from "../config";
 import { logger } from "../lib/logger";
 
-export const isWhatsAppConfigured = () =>
+const isWhatsAppConfigured = () =>
   Boolean(appConfig.integrations?.whatsapp?.apiToken && appConfig.integrations?.whatsapp?.phoneNumberId);
 
-export interface WhatsAppSendResult {
+interface WhatsAppSendResult {
   ok: boolean;
   messageId?: string;
   error?: string;

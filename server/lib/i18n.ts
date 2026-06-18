@@ -3,7 +3,7 @@
  * The server currently defaults to Russian text for system notifications.
  */
 
-export type Language = 'en' | 'ru';
+type Language = 'en' | 'ru';
 
 const translations = {
     tooManyLoginAttempts: {

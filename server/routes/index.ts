@@ -8,14 +8,11 @@ import { pool } from '../db';
 import { storage } from '../storage';
 import userRoutes from './user.routes';
 import authRoutes from './auth.routes';
-import fileRoutes, { uploadsMiddleware } from './file.routes';
 import messageRoutes from './message.routes';
 import notificationsRoutes from './notifications.routes';
-import systemSettingsRoutes from './system-settings.routes';
 import academyRoutes from './academy.routes';
 import incomingRoutes from './incoming.routes';
 import { logger } from '../lib/logger';
-import { requireFileAccess } from '../middleware/auth.middleware';
 import { createPresenceTracker } from '../lib/presence';
 import { appConfig } from '../config';
 
@@ -74,15 +71,11 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
 
     app.use('/api/auth', authRoutes);
     app.use('/api/users', userRoutes);
-    app.use('/api/files', fileRoutes);
     app.use('/api/messages', messageRoutes);
     app.use('/api/notifications', notificationsRoutes);
-    app.use('/api/system-settings', systemSettingsRoutes);
     app.use('/api/academy', academyRoutes);
     // Public inbound webhooks (verified by per-provider secrets, NOT session auth).
     app.use('/api/incoming', incomingRoutes);
-    app.use('/uploads', requireFileAccess, uploadsMiddleware);
-
     const httpServer = createServer(app);
 
     const wss = new WebSocket.WebSocketServer({ noServer: true });
@@ -230,5 +223,3 @@ const applySessionMiddleware = async (middleware: SessionMiddleware, request: Ws
             resolve();
         });
     });
-
-export default registerModularRoutes;

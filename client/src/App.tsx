@@ -20,7 +20,7 @@ function RoleBasedHome() {
   const { user } = useAuth();
   switch (user?.role) {
     case 'admin':
-    case 'head': return <Admin mode="admin" />;
+    case 'head': return <Admin />;
     case 'account_manager': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
     case 'operations_director': return <AnalyticsWorkspace />;
@@ -230,14 +230,9 @@ function Router() {
             <MarketingWorkspace section="overview" />
           </RoleGuard>
         )} />
-        <Route path="/admin/reports" component={() => (
-          <RoleGuard allowedRoles={adminRoles}>
-            <Admin mode="admin" section="reports" />
-          </RoleGuard>
-        )} />
         <Route path="/admin" component={() => (
           <RoleGuard allowedRoles={adminRoles}>
-            <Admin mode="admin" section="settings" />
+            <Admin />
           </RoleGuard>
         )} />
         <Route path="/employees" component={() => (

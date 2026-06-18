@@ -1,10 +1,5 @@
-import {
-  AUTH_SESSION_QUERY_KEY,
-  type AuthSession,
-} from "@shared/auth";
+import type { AuthSession } from "@shared/auth";
 import { apiRequest } from "@/lib/queryClient";
-
-export { AUTH_SESSION_QUERY_KEY };
 
 export async function fetchAuthSession(): Promise<AuthSession> {
   const response = await fetch("/api/auth/session", {

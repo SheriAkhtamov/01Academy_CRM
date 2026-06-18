@@ -54,7 +54,7 @@ const EMPTY_EXPENSE_FORM = {
   periodEnd: '',
 };
 
-export type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses' | 'reports';
+type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses' | 'reports';
 
 function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   title: string;

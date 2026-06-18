@@ -33,7 +33,7 @@ export const toApiErrorKey = (message: string) => {
     if (lower.includes('session save failed')) {
         return 'sessionSaveFailed';
     }
-    if (lower.includes('required') || lower.includes('missing required') || lower.includes('no documents uploaded')) {
+    if (lower.includes('required') || lower.includes('missing required')) {
         return 'fillRequiredFields';
     }
     if (lower.startsWith('invalid ')) {
@@ -54,9 +54,5 @@ export const toApiErrorKey = (message: string) => {
     if (lower.startsWith('failed to delete')) {
         return 'failedToDeleteResource';
     }
-    if (lower.startsWith('failed to upload')) {
-        return 'failedToUploadResource';
-    }
-
     return normalized;
 };

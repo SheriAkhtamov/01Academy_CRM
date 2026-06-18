@@ -24,8 +24,6 @@ export const LEAD_STATUSES = [
   { code: "not_now", translationKey: "leadStatusNotNow", color: "#64748b", sortOrder: 100, activePipeline: false },
 ] as const;
 
-export type LeadStatusCode = (typeof LEAD_STATUSES)[number]["code"];
-
 export const ACTIVE_PIPELINE_STATUSES = LEAD_STATUSES
   .filter((status) => status.activePipeline)
   .map((status) => status.code);
@@ -51,7 +49,6 @@ export const REFERRAL_TIERS = [
   { minReferrals: 1, level: "discount_15", rewardKey: "referralDiscount15" },
 ] as const;
 
-export const REFERRAL_DISCOUNT_PERCENT = 15;
 export const TARGET_NPS = 50;
 export const TARGET_CAC_UZS = 300000;
 export const TARGET_LTV_CAC_RATIO = 10;
@@ -153,8 +150,6 @@ export const DEFAULT_LEAD_SOURCES = [
   "organic",
 ] as const;
 
-export type AcademyCourseSeed = (typeof DEFAULT_COURSES)[number];
-
 export function suggestCourseSlugByAge(age?: number | null): string | null {
   if (!age || age < 1) return null;
   if (age <= 10) return "ai-kids";
@@ -169,7 +164,7 @@ export function suggestAgeGroup(age?: number | null): string | null {
   return "15+";
 }
 
-export function requiresQualificationFields(status: string): boolean {
+function requiresQualificationFields(status: string): boolean {
   return status === "qualified";
 }
 
@@ -296,18 +291,6 @@ export function resolveReferralLevel(paidReferralsCount: number): string {
   return "none";
 }
 
-export function calculateDiscountedAmount(amountUzs: number, discount: string): number {
-  if (!amountUzs || amountUzs <= 0) return 0;
-  const map: Record<string, number> = {
-    promo_20: 0.8,
-    family_15: 0.85,
-    referral_15: 0.85,
-    none: 1,
-  };
-  const factor = map[discount] ?? 1;
-  return Math.round(amountUzs * factor);
-}
-
 // Average deal cycle (days) from lead creation to first paid payment.
 export function calculateAvgDealCycleDays(cycleDays: number[]): number | null {
   const valid = cycleDays.filter((d) => Number.isFinite(d) && d >= 0);
@@ -328,13 +311,6 @@ export function addMinutes(date: Date, minutes: number): Date {
 
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-export function deriveGroupEndDate(startDate: Date, lessonCount: number, sessionsPerWeek = 2): Date {
-  const safeLessonCount = Math.max(1, lessonCount);
-  const safeSessionsPerWeek = Math.max(1, sessionsPerWeek);
-  const totalWeeks = Math.ceil(safeLessonCount / safeSessionsPerWeek);
-  return addDays(startDate, totalWeeks * 7);
 }
 
 export function normalizeMoney(value: unknown): number {

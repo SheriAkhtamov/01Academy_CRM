@@ -2,7 +2,6 @@ import { userStorage } from './user.storage';
 import { notificationStorage } from './notification.storage';
 import { auditStorage } from './audit.storage';
 import { messageStorage } from './message.storage';
-import { systemSettingsStorage } from './system-settings.storage';
 
 export const storage = {
     // User operations
@@ -25,34 +24,16 @@ export const storage = {
     deleteNotification: notificationStorage.deleteNotification.bind(notificationStorage),
 
     // Audit Log operations
-    getAuditLogs: auditStorage.getAuditLogs.bind(auditStorage),
     createAuditLog: auditStorage.createAuditLog.bind(auditStorage),
 
     // Message operations
-    getConversations: messageStorage.getConversations.bind(messageStorage),
     getConversationsByUser: messageStorage.getConversations.bind(messageStorage),
     getMessagesBetweenUsers: messageStorage.getMessagesBetweenUsers.bind(messageStorage),
     createMessage: messageStorage.createMessage.bind(messageStorage),
-    updateMessage: messageStorage.updateMessage.bind(messageStorage),
     markMessageAsRead: async (id: number, userId: number) => {
         if (!userId) {
             throw new Error('userId is required to mark message as read');
         }
         return messageStorage.markMessageAsRead(id, userId);
     },
-
-    // System Settings operations
-    getSystemSettings: systemSettingsStorage.getSystemSettings.bind(systemSettingsStorage),
-    getSystemSetting: systemSettingsStorage.getSystemSetting.bind(systemSettingsStorage),
-    setSystemSetting: systemSettingsStorage.setSystemSetting.bind(systemSettingsStorage),
 };
-
-export {
-    userStorage,
-    notificationStorage,
-    auditStorage,
-    messageStorage,
-    systemSettingsStorage,
-};
-
-export default storage;

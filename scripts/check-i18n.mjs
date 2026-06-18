@@ -14,8 +14,6 @@ const i18nPath = path.join(clientSrcDir, 'lib/i18n.ts');
 const ignoredDirectories = new Set(['node_modules', 'dist', '.git']);
 const formatPath = (filePath) => path.relative(rootDir, filePath);
 const nonLocalizedValueKeys = new Set([
-  'aiBaseUrl',
-  'aiModelPlaceholder',
   'cacLabel',
   'cplColumn',
   'emailPlaceholder',
@@ -25,9 +23,6 @@ const nonLocalizedValueKeys = new Set([
   'npsTab',
   'passwordMinLengthPlaceholder',
   'platformName',
-  'providerAnthropic',
-  'providerGoogleGemini',
-  'providerOpenAI',
   'roasLabel',
   'sessionTimeoutPlaceholder',
   'smtpHostPlaceholder',

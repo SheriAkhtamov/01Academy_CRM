@@ -2,7 +2,7 @@ import { db } from '../db';
 import { notifications, type Notification, type InsertNotification } from '@shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
-export class NotificationStorage {
+class NotificationStorage {
     async getNotificationsByUser(userId: number, limit = 100): Promise<Notification[]> {
         return db
             .select()

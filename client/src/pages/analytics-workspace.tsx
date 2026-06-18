@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -18,12 +17,9 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { LEAD_STATUSES } from '@shared/academy';
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   BarChart3,
   Banknote,
-  ClipboardCheck,
   CreditCard,
   Download,
   GraduationCap,
@@ -35,7 +31,6 @@ import {
   TrendingDown,
   TrendingUp,
   UserRoundCheck,
-  Users,
   AlertTriangle,
   Minus,
   CalendarDays,
@@ -65,7 +60,7 @@ const translateEnumValue = (value: string | null | undefined, labels: Record<str
   return key ? t(key) : value;
 };
 
-export type AnalyticsSection = 'overview' | 'funnel' | 'courses' | 'sources' | 'teachers' | 'groups' | 'risks' | 'cohorts';
+type AnalyticsSection = 'overview' | 'funnel' | 'courses' | 'sources' | 'teachers' | 'groups' | 'risks' | 'cohorts';
 
 /* ── sub-components ────────────────────────────────────────── */
 
@@ -256,8 +251,6 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
   const byGroupProgress = (analytics.byGroupProgress || []) as any[];
   const risks = analytics.risks || {};
   const retentionByCourse = (analytics.retentionByCourse || []) as any[];
-  const groups = (analytics.groups || []) as any[];
-
   /* ── funnel conversion ── */
   const newRequestCount = funnelData.find((f) => f.code === 'new_request')?.count || 0;
   const demoAttendedCount = funnelData.find((f) => f.code === 'demo_attended')?.count || 0;

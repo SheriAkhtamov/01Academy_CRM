@@ -50,7 +50,7 @@ type Lesson = {
   status: string;
 };
 
-export type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings' | 'profile';
+type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings' | 'profile';
 
 type Group = {
   id: number;

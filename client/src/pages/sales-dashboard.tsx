@@ -60,7 +60,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 
-export type SalesSection = 'overview' | 'leads' | 'pipeline' | 'students' | 'tasks';
+type SalesSection = 'overview' | 'leads' | 'pipeline' | 'students' | 'tasks';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 type QuickAction = 'qualify' | 'warm' | 'payment' | 'call' | 'message';
 

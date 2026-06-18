@@ -5,14 +5,6 @@ import {
   getInitials,
   formatUserRole,
   canAccessReports,
-  canAccessAnalytics,
-  canAccessAdmin,
-  canAccessFinance,
-  canAccessOperations,
-  canAccessMarketing,
-  isTeacher,
-  canAccessSales,
-  canAccessTeacherWorkspace,
 } from '@/lib/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
@@ -51,15 +43,6 @@ interface NavItem {
   name: string;
   href: string;
   icon: any;
-  requiresDocAccess?: boolean;
-  requiresArchiveAccess?: boolean;
-  requiresAnalyticsAccess?: boolean;
-  requiresAdminAccess?: boolean;
-  requiresFinanceAccess?: boolean;
-  requiresOperationsAccess?: boolean;
-  requiresMarketingAccess?: boolean;
-  requiresTeacherAccess?: boolean;
-  requiresSalesAccess?: boolean;
 }
 
 interface NavSection {
@@ -163,8 +146,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         {
           label: t('systemAdministration'),
           items: [
-            { name: t('systemSettings'), href: '/admin', icon: Settings },
-            { name: t('reportsActivityLogs'), href: '/admin/reports', icon: ListChecks },
+            { name: t('reportsActivityLogs'), href: '/admin', icon: ListChecks },
             { name: t('employees'), href: '/employees', icon: Users },
           ],
         },
@@ -182,17 +164,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const sections = buildSections();
-
-  const canAccess = (item: NavItem) => {
-    if (item.requiresTeacherAccess && !isTeacher(user)) return false;
-    if (item.requiresAnalyticsAccess && !canAccessAnalytics(user)) return false;
-    if (item.requiresAdminAccess && !canAccessAdmin(user)) return false;
-    if (item.requiresFinanceAccess && !canAccessFinance(user)) return false;
-    if (item.requiresOperationsAccess && !canAccessOperations(user)) return false;
-    if (item.requiresMarketingAccess && !canAccessMarketing(user)) return false;
-    if (item.requiresSalesAccess && !canAccessSales(user)) return false;
-    return true;
-  };
 
   const toggleSection = (label: string) => {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -225,7 +196,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden">
           {sections.map((section) => {
-            const visibleItems = section.items.filter(canAccess);
+            const visibleItems = section.items;
             if (visibleItems.length === 0) return null;
             const isCollapsed = collapsedSections[section.label];
 

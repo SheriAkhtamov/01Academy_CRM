@@ -1,7 +1,7 @@
 import { pool } from "../db";
 import { createOutbox } from "./outbox-helpers";
 
-export interface WeeklyReportResult {
+interface WeeklyReportResult {
   outboxId: number | null;
   preview: string;
 }

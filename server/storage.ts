@@ -1,2 +1,1 @@
-export { storage, default } from './storage/index';
-export type IStorage = typeof import('./storage/index').storage;
+export { storage } from './storage/index';

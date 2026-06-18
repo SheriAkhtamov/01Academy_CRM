@@ -31,6 +31,3 @@ if (!isProductionEnvironment) {
     ),
   }));
 }
-
-// Shared debug logger used by the client/server debug hooks.
-export const devLog = (message: string, ...meta: any[]) => logger.debug(message, ...meta);

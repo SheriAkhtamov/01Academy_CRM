@@ -104,7 +104,7 @@ app.use(morgan(':method :url :status :response-time ms', {
     startScheduler();
 
     // Fix #74/84: Explicit 404 for unknown /api/* routes before SPA fallback
-    app.all('/api/*', (req: Request, res: Response) => {
+    app.all('/api/*', (_req: Request, res: Response) => {
       res.status(404).json({ error: 'API endpoint not found' });
     });
 

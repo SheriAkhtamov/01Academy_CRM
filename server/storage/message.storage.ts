@@ -2,7 +2,7 @@ import { db } from '../db';
 import { messages, users, type Message, type InsertMessage, type User } from '@shared/schema';
 import { eq, or, and, asc, sql } from 'drizzle-orm';
 
-export class MessageStorage {
+class MessageStorage {
     async getConversations(userId: number): Promise<User[]> {
         const result = await db.execute(sql`
       SELECT DISTINCT
@@ -99,35 +99,6 @@ export class MessageStorage {
                 position: messageWithSender.senderPosition || '',
             } : undefined,
         } as Message;
-    }
-
-    async updateMessage(id: number, updates: Partial<InsertMessage>): Promise<Message> {
-        const result = await db
-            .update(messages)
-            .set(updates)
-            .where(eq(messages.id, id))
-            .returning();
-        if (!result[0]) {
-            throw new Error('Message not found');
-        }
-        return result[0];
-    }
-
-    async deleteMessage(id: number): Promise<void> {
-        await db.delete(messages).where(eq(messages.id, id));
-    }
-
-    async markMessagesAsRead(senderId: number, receiverId: number): Promise<void> {
-        await db
-            .update(messages)
-            .set({ isRead: true })
-            .where(
-                and(
-                    eq(messages.senderId, senderId),
-                    eq(messages.receiverId, receiverId),
-                    eq(messages.isRead, false)
-                )
-            );
     }
 
     async markMessageAsRead(messageId: number, userId: number): Promise<Message> {

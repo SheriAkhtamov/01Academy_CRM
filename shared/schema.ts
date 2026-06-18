@@ -59,16 +59,6 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const systemSettings = pgTable("system_settings", {
-  id: serial("id").primaryKey(),
-  key: varchar("key", { length: 255 }).notNull(),
-  value: text("value"),
-  description: text("description"),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  keyUnique: uniqueIndex("system_settings_key_unique").on(table.key),
-}));
-
 export const academyCourses = pgTable("academy_courses", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -506,11 +496,6 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
-export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({
-  id: true,
-  updatedAt: true,
-});
-
 export const insertAcademyCourseSchema = createInsertSchema(academyCourses).omit({
   id: true,
   createdAt: true,
@@ -655,8 +640,6 @@ export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
-export type SystemSetting = typeof systemSettings.$inferSelect;
-export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type AcademyCourse = typeof academyCourses.$inferSelect;
 export type InsertAcademyCourse = z.infer<typeof insertAcademyCourseSchema>;
 export type AcademyLeadSource = typeof academyLeadSources.$inferSelect;

@@ -82,8 +82,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         case 'admin':
         case 'head':
           return [
-            { id: 'nav-admin', type: t('systemAdministration'), title: t('systemSettings'), href: '/admin', icon: Settings },
-            { id: 'nav-admin-reports', type: t('reportsActivityLogs'), title: t('reportsActivityLogs'), href: '/admin/reports', icon: FileText },
+            { id: 'nav-admin-reports', type: t('systemAdministration'), title: t('reportsActivityLogs'), href: '/admin', icon: FileText },
             { id: 'nav-employees', type: t('employees'), title: t('employees'), href: '/employees', icon: Users },
             { id: 'nav-integrations', type: t('navIntegrations'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
             { id: 'nav-settings', type: t('settings'), title: t('settings'), href: '/settings', icon: Settings },

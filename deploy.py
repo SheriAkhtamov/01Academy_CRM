@@ -36,10 +36,9 @@ HEALTH_DELAY   = 3.0
 # Files/dirs excluded from rsync.
 #   config/  — holds production secrets on the server; the local file is a
 #              dev config and MUST NEVER overwrite the server's.
-#   uploads/ — user data (photos etc.), preserved across deploys.
 RSYNC_EXCLUDES = [
     "node_modules", ".git", "dist", "__pycache__", "*.pyc", ".DS_Store",
-    "logs/*", "uploads/*", "config/*",
+    "logs/*", "config/*",
 ]
 
 # sshpass reads the password from the SSHPASS env var (never on the CLI / ps).

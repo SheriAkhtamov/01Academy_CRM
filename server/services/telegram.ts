@@ -28,9 +28,7 @@ const getBot = () => {
   }
 };
 
-export const isTelegramConfigured = () => Boolean(appConfig.integrations?.telegram?.botToken);
-
-export interface TelegramSendResult {
+interface TelegramSendResult {
   ok: boolean;
   messageId?: number;
   error?: string;

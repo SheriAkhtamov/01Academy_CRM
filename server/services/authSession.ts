@@ -5,7 +5,7 @@ import { authService } from "./auth";
 
 type SessionData = session.SessionData | null | undefined;
 
-export type ResolvedAuthSession = {
+type ResolvedAuthSession = {
   session: AuthSession;
   shouldDestroy: boolean;
 };

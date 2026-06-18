@@ -8,7 +8,6 @@ import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import {
   ACTIVE_PIPELINE_STATUSES,
-  DEFAULT_LEAD_SOURCES,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_STATUSES,
@@ -38,7 +37,6 @@ import {
   calculateRetentionPercent,
   calculateRoas,
   calculateTrend,
-  deriveGroupEndDate,
   getComputedPaymentStatus,
   normalizeMoney,
   resolveReferralLevel,
@@ -334,17 +332,6 @@ const logIntegration = async (provider: string, direction: string, status: strin
 
 const getSourceByCode = async (code: string) =>
   queryOne(`SELECT * FROM academy_lead_sources WHERE code = $1`, [code]);
-
-const getDefaultSource = async () => {
-  const source = await getSourceByCode('organic');
-  if (source) return source;
-  return insertRow('academy_lead_sources', {
-    code: 'organic',
-    name: 'Organic',
-    channel: 'organic',
-    isSystem: true,
-    isActive: true });
-};
 
 // Template source prefixes from TZ 1.2: the suffix is filled from campaign/referrer name.
 const TEMPLATE_SOURCE_PREFIXES = ['instagram_ad', 'blogger', 'school', 'event', 'referral'];
@@ -743,7 +730,6 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   const isTeacherScoped = teacherId !== null;
   const isManagerScoped = actor?.role === 'account_manager';
 
-  const managerClause = isManagerScoped ? `AND (l.manager_id = $1 OR l.manager_id IS NULL)` : '';
   const managerParams = isManagerScoped ? [actor!.userId] : [];
 
   const [
@@ -929,7 +915,6 @@ const buildAnalytics = async () => {
 
   // --- Marketing metrics (TZ 4.2): conversions, CPL, deal cycle, warm-base conversion. ---
   const newRequestCount = data.leads.filter((lead) => lead.statusCode !== 'new_request' || true).length;
-  const demoAttendedCount = data.leads.filter((lead) => lead.demoAttended).length;
   const invitedToDemoCount = data.leads.filter((lead) =>
     ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
     || lead.demoAttended).length;
@@ -1153,45 +1138,6 @@ const createCsv = (rows: Row[]) => {
   return [columns.join(','), ...rows.map((row) => columns.map((column) => escape(row[column])).join(','))].join('\n');
 };
 
-router.post('/seed', async (req, res) => {
-  if (!ensureAdminWorkspaceAccess(req, res)) return;
-  try {
-    const existingCourses = await query(`SELECT id FROM academy_courses LIMIT 1`, []);
-
-    if (existingCourses.length === 0) {
-      for (const course of req.body?.courses ?? []) {
-        await insertRow('academy_courses', {
-          ...course,
-          program: safeJson(course.program, []),
-          isActive: course.isActive ?? true });
-      }
-    }
-
-    for (const code of DEFAULT_LEAD_SOURCES) {
-      const existing = await getSourceByCode(code);
-      if (!existing) {
-        await insertRow('academy_lead_sources', {
-          code,
-          name: code,
-          channel: code.split('_')[0],
-          isSystem: true,
-          isActive: true });
-      }
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    logger.error('Failed to seed academy data', { error });
-    res.status(500).json({ error: 'Failed to seed academy data' });
-  }
-});
-
-router.get('/bootstrap', async (_req, res) => {
-  res.status(410).json({
-    error: 'Academy bootstrap was removed. Use role-scoped /api/academy/workspaces/* endpoints.',
-  });
-});
-
 router.get('/workspaces/sales', async (req, res) => {
   if (!ensureSalesAccess(req, res)) return;
   try {
@@ -1271,32 +1217,6 @@ router.get('/workspaces/analytics', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch analytics workspace', { error });
     res.status(500).json({ error: 'Failed to fetch analytics workspace' });
-  }
-});
-
-router.get('/workspaces/admin', async (req, res) => {
-  if (!ensureAdminWorkspaceAccess(req, res)) return;
-  try {
-    const [users, dataset, analytics] = await Promise.all([
-      storage.getUsers().then((items) => items.map((user) => ({
-        id: user.id,
-        fullName: user.fullName,
-        role: user.role,
-        hasReportAccess: user.hasReportAccess,
-      }))),
-      getAcademyDataset(),
-      buildAnalytics(),
-    ]);
-
-    res.json({
-      users,
-      ...dataset,
-      analytics,
-      constants: academyConstants(),
-    });
-  } catch (error) {
-    logger.error('Failed to fetch admin workspace', { error });
-    res.status(500).json({ error: 'Failed to fetch admin workspace' });
   }
 });
 
@@ -1476,70 +1396,12 @@ router.get('/search', async (req, res) => {
           href: '/employees',
         })));
       }
-      await pushCourses('/admin');
-      await pushGroups(`TRUE`, [], '/admin');
     }
 
     res.json(results.slice(0, limit));
   } catch (error) {
     logger.error('Failed to search academy data', { error });
     res.status(500).json({ error: 'Failed to search academy data' });
-  }
-});
-
-router.get('/analytics/dashboard', async (req, res) => {
-  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
-  try {
-    res.json(await buildAnalytics());
-  } catch (error) {
-    logger.error('Failed to fetch academy dashboard', { error });
-    res.status(500).json({ error: 'Failed to fetch academy dashboard' });
-  }
-});
-
-router.get('/analytics/marketing', async (req, res) => {
-  if (!ensureMarketingAccess(req, res)) return;
-  try {
-    const analytics = await buildAnalytics();
-    res.json(buildMarketingAnalyticsPayload(analytics));
-  } catch (error) {
-    logger.error('Failed to fetch marketing analytics', { error });
-    res.status(500).json({ error: 'Failed to fetch marketing analytics' });
-  }
-});
-
-router.get('/analytics/operations', async (req, res) => {
-  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
-  try {
-    const analytics = await buildAnalytics();
-    res.json({
-      summary: analytics.summary,
-      groups: analytics.groups,
-      risks: analytics.risks,
-      byCourse: analytics.byCourse,
-      byTeacher: analytics.byTeacher,
-      byCourseLessonNps: analytics.byCourseLessonNps,
-      byGroupProgress: analytics.byGroupProgress,
-      retentionByCourse: analytics.retentionByCourse,
-      targets: analytics.targets });
-  } catch (error) {
-    logger.error('Failed to fetch operations analytics', { error });
-    res.status(500).json({ error: 'Failed to fetch operations analytics' });
-  }
-});
-
-router.get('/analytics/finance', async (req, res) => {
-  if (!ensureFinanceAccess(req, res)) return;
-  try {
-    const analytics = await buildAnalytics();
-    res.json({
-      summary: analytics.summary,
-      byCourse: analytics.byCourse,
-      bySource: analytics.bySource,
-      overduePayments: analytics.risks.overduePayments });
-  } catch (error) {
-    logger.error('Failed to fetch finance analytics', { error });
-    res.status(500).json({ error: 'Failed to fetch finance analytics' });
   }
 });
 
@@ -1961,30 +1823,9 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
 
   if (HEAD_ROLES.has(role)) return { whereSql: '', params };
 
-  if (table === 'academy_students') {
-    if (role === 'operations_director') return { whereSql: '', params };
-    if (role === 'account_manager') return { whereSql: `manager_id = ${ownUserParam()}`, params };
-    if (role === 'teacher') {
-      const placeholder = await teacherParam();
-      return placeholder
-        ? { whereSql: `group_id IN (SELECT id FROM academy_groups WHERE teacher_id = ${placeholder})`, params }
-        : { whereSql: 'FALSE', params };
-    }
-    return { whereSql: 'FALSE', params, denied: true };
-  }
-
   if (table === 'academy_tasks') {
     if (role === 'operations_director') return { whereSql: '', params };
     return { whereSql: `responsible_id = ${ownUserParam()}`, params };
-  }
-
-  if (table === 'academy_groups') {
-    if (role === 'operations_director') return { whereSql: '', params };
-    if (role === 'teacher') {
-      const placeholder = await teacherParam();
-      return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
-    }
-    return { whereSql: 'FALSE', params, denied: true };
   }
 
   if (table === 'academy_lessons') {
@@ -1992,46 +1833,6 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
     if (role === 'teacher') {
       const placeholder = await teacherParam();
       return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
-    }
-    return { whereSql: 'FALSE', params, denied: true };
-  }
-
-  if (table === 'academy_teachers') {
-    if (role === 'operations_director') return { whereSql: '', params };
-    if (role === 'teacher') {
-      const placeholder = await teacherParam();
-      return placeholder ? { whereSql: `id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
-    }
-    return { whereSql: 'FALSE', params, denied: true };
-  }
-
-  if (table === 'academy_portfolio_projects') {
-    if (role === 'operations_director') return { whereSql: '', params };
-    if (role === 'account_manager') {
-      return {
-        whereSql: `student_id IN (SELECT id FROM academy_students WHERE manager_id = ${ownUserParam()})`,
-        params,
-      };
-    }
-    if (role === 'teacher') {
-      const placeholder = await teacherParam();
-      return placeholder
-        ? { whereSql: `group_id IN (SELECT id FROM academy_groups WHERE teacher_id = ${placeholder})`, params }
-        : { whereSql: 'FALSE', params };
-    }
-    if (role === 'smm_manager') return { whereSql: `marketing_consent = true`, params };
-    return { whereSql: 'FALSE', params, denied: true };
-  }
-
-  if (table === 'academy_referral_rewards') {
-    if (role === 'smm_manager' || role === 'operations_director') return { whereSql: '', params };
-    if (role === 'account_manager') {
-      const placeholder = ownUserParam();
-      return {
-        whereSql: `(referrer_student_id IN (SELECT id FROM academy_students WHERE manager_id = ${placeholder})
-          OR referred_student_id IN (SELECT id FROM academy_students WHERE manager_id = ${placeholder}))`,
-        params,
-      };
     }
     return { whereSql: 'FALSE', params, denied: true };
   }
@@ -2090,21 +1891,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
-    const role = String(req.user?.role);
     if (options.requireOperations && req.user?.role === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
-    }
-    if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
-      return res.status(403).json({ error: 'Course mutation access required' });
-    }
-    if (table === 'academy_students' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director') {
-      return res.status(403).json({ error: 'Student mutation access required' });
-    }
-    if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
-      return res.status(403).json({ error: 'Portfolio mutation access required' });
-    }
-    if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
-      return res.status(403).json({ error: 'Referral mutation access required' });
     }
     if (table === 'academy_tasks' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director') {
       const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
@@ -2129,12 +1917,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         }
       }
 
-      if (table === 'academy_groups' && values.startDate && !values.endDate) {
-        const course = values.courseId
-          ? await queryOne(`SELECT lesson_count FROM academy_courses WHERE id = $1`, [values.courseId as number])
-          : null;
-        values.endDate = deriveGroupEndDate(values.startDate as Date, Number(course?.lessonCount ?? 24));
-      }
       if (table === 'academy_marketing_expenses') {
         values.createdBy = req.user!.id;
       }
@@ -2153,18 +1935,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
-    const role = String(req.user?.role);
     if (options.requireOperations && req.user?.role === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
-    }
-    if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
-      return res.status(403).json({ error: 'Course mutation access required' });
-    }
-    if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
-      return res.status(403).json({ error: 'Portfolio mutation access required' });
-    }
-    if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
-      return res.status(403).json({ error: 'Referral mutation access required' });
     }
     try {
       const id = parseId(req.params.id);
@@ -2173,12 +1945,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
       if (table === 'academy_tasks' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
-      }
-      if (table === 'academy_students' && req.user?.role === 'account_manager' && Number(oldRow.managerId) !== Number(req.user!.id)) {
-        return res.status(403).json({ error: 'Student mutation access required' });
-      }
-      if (table === 'academy_students' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && req.user?.role !== 'account_manager') {
-        return res.status(403).json({ error: 'Student mutation access required' });
       }
       const values: Row = {};
       for (const column of columns) {
@@ -2197,14 +1963,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         }
       }
       const row = await updateRow(table, id, values);
-      if (table === 'academy_students' && values.status !== undefined && oldRow.status !== row?.status) {
-        await insertRow('academy_student_status_history', {
-                    studentId: id,
-          fromStatus: oldRow.status ?? null,
-          toStatus: row?.status ?? String(values.status),
-          changedBy: req.user!.id,
-          comment: nullableText(req.body.statusComment) ?? null });
-      }
       if (table === 'academy_lessons' && values.status !== undefined && oldRow.status !== row?.status) {
         await insertRow('academy_lesson_status_history', {
                     lessonId: id,
@@ -2226,21 +1984,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
-    const role = String(req.user?.role);
     if (options.requireOperations && req.user?.role === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
-    }
-    if (table === 'academy_courses' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
-      return res.status(403).json({ error: 'Course mutation access required' });
-    }
-    if (table === 'academy_portfolio_projects' && !HEAD_ROLES.has(role) && role !== 'operations_director') {
-      return res.status(403).json({ error: 'Portfolio mutation access required' });
-    }
-    if (table === 'academy_referral_rewards' && !HEAD_ROLES.has(role) && role !== 'smm_manager') {
-      return res.status(403).json({ error: 'Referral mutation access required' });
-    }
-    if (table === 'academy_students' && !HEAD_ROLES.has(role)) {
-      return res.status(403).json({ error: 'Client records stay in the database and can be deleted only by head/admin' });
     }
     try {
       const id = parseId(req.params.id);
@@ -2250,12 +1995,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       const scopedWhere = scope.whereSql ? `AND ${scope.whereSql}` : '';
       const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere}`, [id, ...scope.params]);
       if (!row) return res.status(404).json({ error: `${path} not found` });
-      if (table === 'academy_payments') {
-        const payment = row;
-        if (payment?.status === 'paid' && !HEAD_ROLES.has(String(req.user?.role))) {
-          return res.status(403).json({ error: 'Paid payments can be deleted only by head/admin' });
-        }
-      }
       await deleteRow(table, id);
       res.json({ ok: true });
     } catch (error) {
@@ -2264,44 +2003,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     }
   });
 };
-
-router.post('/groups/:id/generate-lessons', async (req, res) => {
-  if (!ensureRoleAccess(req, res, OPERATIONS_ROLES, 'Operations access required')) return;
-  try {
-    const groupId = parseId(req.params.id);
-    if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
-    const group = await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId]);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
-    const existing = await query(`SELECT * FROM academy_lessons WHERE group_id = $1 ORDER BY lesson_number`, [groupId]);
-    if (existing.length > 0 && req.body.force !== true) return res.json(existing);
-
-    const course = await queryOne(`SELECT * FROM academy_courses WHERE id = $1`, [group.courseId]);
-    const program = Array.isArray(course?.program) ? course.program : [];
-    const lessonCount = Math.max(Number(course?.lessonCount || program.length || 1), program.length);
-    const startDate = group.startDate ? new Date(group.startDate) : new Date();
-    const created = [];
-
-    for (let index = 0; index < lessonCount; index++) {
-      const programLesson = program[index] ?? { lessonNumber: index + 1, topic: `Урок ${index + 1}` };
-      const scheduledAt = addDays(startDate, Math.floor(index / 2) * 7 + (index % 2) * 3);
-      created.push(await insertRow('academy_lessons', {
-        groupId,
-        courseId: group.courseId,
-        teacherId: group.teacherId ?? null,
-        lessonNumber: Number(programLesson.lessonNumber ?? index + 1),
-        topic: programLesson.topic ?? `Урок ${index + 1}`,
-        materials: programLesson.materials ?? programLesson.description ?? null,
-        scheduledAt,
-        durationMinutes: course?.lessonDurationMinutes ?? 120,
-        status: 'scheduled' }));
-    }
-
-    res.status(201).json(created);
-  } catch (error) {
-    logger.error('Failed to generate lessons', { error });
-    res.status(500).json({ error: 'Failed to generate lessons' });
-  }
-});
 
 router.post('/lessons/:id/attendance', async (req, res) => {
   try {
@@ -2842,37 +2543,13 @@ router.get('/exports/:entity', async (req, res) => {
   }
 });
 
-registerSimpleCrud('courses', 'academy_courses', [
-  'name', 'slug', 'ageCategory', 'lessonCount', 'lessonDurationMinutes', 'frequency',
-  'basePriceUzs', 'discountedPriceUzs', 'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
-], { orderBy: 'name' });
-
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
 ], { orderBy: 'name', requireMarketingReadOnly: true });
 
-registerSimpleCrud('teachers', 'academy_teachers', [
-  'userId', 'fullName', 'courseIds', 'schedule', 'status',
-], { orderBy: 'full_name', requireOperations: true });
-
-registerSimpleCrud('groups', 'academy_groups', [
-  'name', 'courseId', 'teacherId', 'schedule', 'maxStudents', 'status', 'startDate', 'endDate',
-], { orderBy: 'created_at DESC', requireOperations: true });
-
-registerSimpleCrud('students', 'academy_students', [
-  'leadId', 'contactName', 'phone', 'messenger', 'studentName', 'age', 'courseId', 'groupId',
-  'managerId', 'enrolledAt', 'status', 'attendancePercent', 'progressPercent', 'satisfactionAvg',
-  'parentFeedback', 'nextPaymentAt', 'referralCode', 'marketingConsent', 'riskFlags',
-], { orderBy: 'created_at DESC' });
-
 registerSimpleCrud('lessons', 'academy_lessons', [
   'groupId', 'courseId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',
 ], { orderBy: 'scheduled_at DESC', requireOperations: true });
-
-registerSimpleCrud('payments', 'academy_payments', [
-  'leadId', 'studentId', 'amountUzs', 'type', 'method', 'paidAt', 'period', 'discount', 'status',
-  'dueAt', 'paidUntil', 'comment', 'receiptUrl', 'confirmedBy',
-], { orderBy: 'created_at DESC', requireFinance: true });
 
 registerSimpleCrud('tasks', 'academy_tasks', [
   'title', 'description', 'responsibleId', 'deadlineAt', 'status', 'entityType', 'entityId', 'completedAt',
@@ -2881,13 +2558,5 @@ registerSimpleCrud('tasks', 'academy_tasks', [
 registerSimpleCrud('expenses', 'academy_marketing_expenses', [
   'sourceId', 'channel', 'campaignName', 'periodStart', 'periodEnd', 'amountUzs', 'createdBy',
 ], { orderBy: 'period_start DESC', requireMarketing: true });
-
-registerSimpleCrud('portfolio', 'academy_portfolio_projects', [
-  'studentId', 'lessonId', 'groupId', 'courseId', 'title', 'url', 'fileUrl', 'finalStatus', 'marketingConsent',
-], { orderBy: 'created_at DESC' });
-
-registerSimpleCrud('referrals', 'academy_referral_rewards', [
-  'referrerStudentId', 'referredLeadId', 'referredStudentId', 'rewardType', 'rewardValue', 'status', 'appliedAt',
-], { orderBy: 'created_at DESC' });
 
 export default router;

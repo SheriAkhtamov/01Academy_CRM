@@ -3,7 +3,7 @@ import { storage } from '../storage';
 import type { User, InsertUser } from '@shared/schema';
 import type { SanitizedUser } from '@shared/auth';
 
-export class AuthService {
+class AuthService {
   private saltRounds = 10;
 
   async hashPassword(password: string): Promise<string> {

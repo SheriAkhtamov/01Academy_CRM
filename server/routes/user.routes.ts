@@ -97,7 +97,7 @@ const syncAcademyTeacherForUser = async (user: {
     }
 };
 
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, async (_req, res) => {
     try {
         const users = await storage.getUsers();
         const sanitizedUsers = users.map(u => authService.sanitizeUser(u));
@@ -108,7 +108,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
-router.get('/online-status', requireAuth, async (req, res) => {
+router.get('/online-status', requireAuth, async (_req, res) => {
     try {
         const users = await storage.getUsersWithOnlineStatus();
         const sanitizedUsers = users.map((user) => authService.sanitizeUser(user));

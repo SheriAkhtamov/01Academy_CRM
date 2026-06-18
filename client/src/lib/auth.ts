@@ -38,31 +38,3 @@ export function canManageUsers(user: SanitizedUser): boolean {
 export function canAccessAnalytics(user: SanitizedUser): boolean {
   return ['admin', 'head', 'operations_director', 'smm_manager'].includes(user.role) || Boolean(user.hasReportAccess);
 }
-
-export function canAccessAdmin(user: SanitizedUser): boolean {
-  return ['admin', 'head'].includes(user.role);
-}
-
-export function canAccessFinance(user: SanitizedUser): boolean {
-  return ['admin', 'head', 'operations_director'].includes(user.role);
-}
-
-export function canAccessOperations(user: SanitizedUser): boolean {
-  return ['admin', 'head', 'operations_director', 'teacher'].includes(user.role);
-}
-
-export function canAccessMarketing(user: SanitizedUser): boolean {
-  return ['admin', 'head', 'account_manager', 'smm_manager'].includes(user.role);
-}
-
-export function isTeacher(user: SanitizedUser): boolean {
-  return user.role === 'teacher';
-}
-
-export function canAccessSales(user: SanitizedUser): boolean {
-  return user.role === 'account_manager' || ['admin', 'head'].includes(user.role);
-}
-
-export function canAccessTeacherWorkspace(user: SanitizedUser): boolean {
-  return user.role === 'teacher' || ['admin', 'head'].includes(user.role);
-}

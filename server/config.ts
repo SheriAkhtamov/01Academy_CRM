@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 
-export type AppEnvironment = 'development' | 'production' | 'test';
+type AppEnvironment = 'development' | 'production' | 'test';
 
-export interface AppConfig {
+interface AppConfig {
   database: {
     provider: string;
     url: string;
@@ -109,7 +109,6 @@ const loadedConfig = readConfigFile();
 validateConfig(loadedConfig);
 
 export const appConfig = Object.freeze(loadedConfig);
-export const appConfigPath = configPath;
-export const appEnvironment = appConfig.server.environment;
+const appEnvironment = appConfig.server.environment;
 export const isDevelopmentEnvironment = appEnvironment === 'development';
 export const isProductionEnvironment = appEnvironment === 'production';

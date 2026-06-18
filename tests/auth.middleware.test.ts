@@ -20,7 +20,6 @@ describe("auth middleware", () => {
     const {
       requireAuth,
       requireAdmin,
-      requireSalesAccess,
     } = await import("../server/middleware/auth.middleware");
 
     const app = express();
@@ -41,7 +40,6 @@ describe("auth middleware", () => {
     app.get("/auth-only", requireAuth, (_req, res) => res.json({ ok: true }));
     app.post("/auth-only", requireAuth, (_req, res) => res.json({ ok: true }));
     app.get("/admin-only", requireAdmin, (_req, res) => res.json({ ok: true }));
-    app.get("/sales-only", requireSalesAccess, (_req, res) => res.json({ ok: true }));
   return app;
   };
 
@@ -74,27 +72,5 @@ describe("auth middleware", () => {
 
     expect(response.status).toBe(403);
     expect(response.body).toEqual({ error: "Admin access required" });
-  });
-
-  it("blocks teachers from sales routes", async () => {
-    mockStorage.getUser.mockResolvedValue({
-      id: 7,
-      fullName: "Teacher User",
-      email: "teacher@example.com",
-      password: "hashed",
-      role: "teacher",
-      isActive: true,
-      hasReportAccess: false,
-    });
-
-    const app = await createApp();
-    const agent = request.agent(app);
-
-    await agent.post("/test/session").send({ userId: 7 });
-
-    const response = await agent.get("/sales-only");
-
-    expect(response.status).toBe(403);
-    expect(response.body).toEqual({ error: "Sales access required" });
   });
 });

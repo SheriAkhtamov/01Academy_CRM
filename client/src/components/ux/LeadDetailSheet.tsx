@@ -180,6 +180,18 @@ const paymentDiscountTranslationKeys = {
   none: 'paymentDiscountNone',
 } as const satisfies Record<(typeof PAYMENT_DISCOUNTS)[number], TranslationKey>;
 
+const paymentMethodTranslationKeys = {
+  cash: 'paymentMethodCash',
+  transfer: 'paymentMethodTransfer',
+  card: 'paymentMethodCard',
+} as const satisfies Record<(typeof PAYMENT_METHODS)[number], TranslationKey>;
+
+const paymentTypeTranslationKeys = {
+  full: 'paymentTypeFull',
+  installment_1_2: 'paymentTypeInstallmentOne',
+  installment_2_2: 'paymentTypeInstallmentTwo',
+} as const satisfies Record<(typeof PAYMENT_TYPES)[number], TranslationKey>;
+
 const taskSchema = z.object({
   title: z.string().trim().min(1, 'fillRequiredFields'),
   deadlineAt: z.string(),
@@ -531,7 +543,7 @@ export function LeadDetailSheet({
                           <FormField
                             control={leadForm.control}
                             name="phone"
-                            render={({ field, fieldState }) => (
+                            render={({ field }) => (
                               <FormItem>
                                 <FormLabel>{t('phone')}</FormLabel>
                                 <FormControl>
@@ -894,7 +906,9 @@ export function LeadDetailSheet({
                                     <SelectContent>
                                       <SelectGroup>
                                         {PAYMENT_METHODS.map((method) => (
-                                          <SelectItem key={method} value={method}>{t(`paymentMethod${method[0].toUpperCase()}${method.slice(1)}` as TranslationKey)}</SelectItem>
+                                          <SelectItem key={method} value={method}>
+                                            {t(paymentMethodTranslationKeys[method])}
+                                          </SelectItem>
                                         ))}
                                       </SelectGroup>
                                     </SelectContent>
@@ -915,11 +929,7 @@ export function LeadDetailSheet({
                                       <SelectGroup>
                                         {PAYMENT_TYPES.map((type) => (
                                           <SelectItem key={type} value={type}>
-                                            {t(type === 'full'
-                                              ? 'paymentTypeFull'
-                                              : type === 'installment_1_2'
-                                                ? 'paymentTypeInstallmentOne'
-                                                : 'paymentTypeInstallmentTwo')}
+                                            {t(paymentTypeTranslationKeys[type])}
                                           </SelectItem>
                                         ))}
                                       </SelectGroup>

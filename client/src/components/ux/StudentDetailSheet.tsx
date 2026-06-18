@@ -62,18 +62,18 @@ export function StudentDetailSheet({
   }, [open, student?.id]);
 
   if (!heldStudent) return null;
-  const student = heldStudent;
+  const currentStudent = heldStudent;
 
-  const projects = data?.projects?.filter((project: any) => project.studentId === student.id) ?? [];
-  const payments = data?.payments?.filter((payment: any) => payment.studentId === student.id) ?? [];
-  const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === student.id) ?? [];
-  const displayName = student.studentName || student.contactName;
-  const phoneHref = student.phone ? `tel:${String(student.phone).replace(/[^\d+]/g, '')}` : undefined;
-  const messageHref = student.phone || student.messenger
-    ? student.messenger?.startsWith('@')
-      ? `https://t.me/${student.messenger.slice(1)}`
-      : student.phone
-        ? `https://wa.me/${String(student.phone).replace(/\D/g, '')}`
+  const projects = data?.projects?.filter((project: any) => project.studentId === currentStudent.id) ?? [];
+  const payments = data?.payments?.filter((payment: any) => payment.studentId === currentStudent.id) ?? [];
+  const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === currentStudent.id) ?? [];
+  const displayName = currentStudent.studentName || currentStudent.contactName;
+  const phoneHref = currentStudent.phone ? `tel:${String(currentStudent.phone).replace(/[^\d+]/g, '')}` : undefined;
+  const messageHref = currentStudent.phone || currentStudent.messenger
+    ? currentStudent.messenger?.startsWith('@')
+      ? `https://t.me/${currentStudent.messenger.slice(1)}`
+      : currentStudent.phone
+        ? `https://wa.me/${String(currentStudent.phone).replace(/\D/g, '')}`
         : undefined
     : undefined;
   const studentStatusLabel = (status: string) => {
@@ -115,7 +115,7 @@ export function StudentDetailSheet({
             <div className="flex-1 min-w-0">
               <SheetTitle className="text-xl truncate">{displayName}</SheetTitle>
               <SheetDescription className="mt-1">
-                {student.contactName} • {student.phone}
+                {currentStudent.contactName} • {currentStudent.phone}
               </SheetDescription>
               <div className="mt-3 flex flex-wrap gap-2">
                 {phoneHref ? (
@@ -134,12 +134,12 @@ export function StudentDetailSheet({
                     </a>
                   </Button>
                 ) : null}
-                {student.leadId && onRecordPayment ? (
+                {currentStudent.leadId && onRecordPayment ? (
                   <Button
                     size="sm"
                     onClick={() => {
                       onOpenChange(false);
-                      onRecordPayment(Number(student.leadId));
+                      onRecordPayment(Number(currentStudent.leadId));
                     }}
                   >
                     <CreditCard data-icon="inline-start" />
@@ -149,12 +149,12 @@ export function StudentDetailSheet({
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <Badge variant="secondary">
-                  {studentStatusLabel(student.status)}
+                  {studentStatusLabel(currentStudent.status)}
                 </Badge>
-                {student.groupName && <Badge variant="outline">{student.groupName}</Badge>}
-                {student.courseName && <Badge variant="outline">{student.courseName}</Badge>}
-                {Array.isArray(student.riskFlags) &&
-                  student.riskFlags.map((flag: string) => (
+                {currentStudent.groupName && <Badge variant="outline">{currentStudent.groupName}</Badge>}
+                {currentStudent.courseName && <Badge variant="outline">{currentStudent.courseName}</Badge>}
+                {Array.isArray(currentStudent.riskFlags) &&
+                  currentStudent.riskFlags.map((flag: string) => (
                     <Badge key={flag} variant="destructive">
                       {riskFlagLabel(flag)}
                     </Badge>
@@ -167,16 +167,16 @@ export function StudentDetailSheet({
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-slate-500">{t('attendanceLabel')}</span>
-                <span className="font-medium text-slate-700">{student.attendancePercent}%</span>
+                <span className="font-medium text-slate-700">{currentStudent.attendancePercent}%</span>
               </div>
-              <Progress value={student.attendancePercent} />
+              <Progress value={currentStudent.attendancePercent} />
             </div>
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-slate-500">{t('progressLabel')}</span>
-                <span className="font-medium text-slate-700">{student.progressPercent}%</span>
+                <span className="font-medium text-slate-700">{currentStudent.progressPercent}%</span>
               </div>
-              <Progress value={student.progressPercent} />
+              <Progress value={currentStudent.progressPercent} />
             </div>
           </div>
         </SheetHeader>
@@ -195,26 +195,26 @@ export function StudentDetailSheet({
           </TabsList>
 
           <TabsContent value="info" className="space-y-3">
-            <InfoRow label={t('ageLabel')} value={String(student.studentAge ?? student.age ?? t('noData'))} />
-            <InfoRow label={t('managerLabel')} value={student.managerName || t('noData')} />
-            <InfoRow label={t('referralCodeLabel')} value={student.referralCode || t('noData')} />
-            <InfoRow label={t('nextPaymentLabel')} value={dateTime(student.nextPaymentAt)} />
+            <InfoRow label={t('ageLabel')} value={String(currentStudent.studentAge ?? currentStudent.age ?? t('noData'))} />
+            <InfoRow label={t('managerLabel')} value={currentStudent.managerName || t('noData')} />
+            <InfoRow label={t('referralCodeLabel')} value={currentStudent.referralCode || t('noData')} />
+            <InfoRow label={t('nextPaymentLabel')} value={dateTime(currentStudent.nextPaymentAt)} />
           </TabsContent>
 
           <TabsContent value="schedule" className="space-y-3">
-            <InfoRow label={t('courseLabel')} value={student.courseName || t('noCourse')} />
-            <InfoRow label={t('groupLabel')} value={student.groupName || t('noGroup')} />
+            <InfoRow label={t('courseLabel')} value={currentStudent.courseName || t('noCourse')} />
+            <InfoRow label={t('groupLabel')} value={currentStudent.groupName || t('noGroup')} />
           </TabsContent>
 
           <TabsContent value="attendance">
             <div className="text-sm text-slate-600">
-              {t('attendanceRateLabel')} {student.attendancePercent}%
+              {t('attendanceRateLabel')} {currentStudent.attendancePercent}%
             </div>
           </TabsContent>
 
           <TabsContent value="progress">
             <div className="text-sm text-slate-600">
-              {t('courseProgressLabel')} {student.progressPercent}%
+              {t('courseProgressLabel')} {currentStudent.progressPercent}%
             </div>
           </TabsContent>
 
@@ -255,12 +255,12 @@ export function StudentDetailSheet({
           </TabsContent>
 
           <TabsContent value="nps" className="space-y-3">
-            <InfoRow label={t('averageRatingLabel')} value={student.satisfactionAvg || t('noData')} />
-            <InfoRow label={t('parentLabel')} value={student.parentFeedback || t('noData')} />
+            <InfoRow label={t('averageRatingLabel')} value={currentStudent.satisfactionAvg || t('noData')} />
+            <InfoRow label={t('parentLabel')} value={currentStudent.parentFeedback || t('noData')} />
           </TabsContent>
 
           <TabsContent value="referrals" className="space-y-2">
-            <InfoRow label={t('referralCodeField')} value={student.referralCode || t('noData')} />
+            <InfoRow label={t('referralCodeField')} value={currentStudent.referralCode || t('noData')} />
             <InfoRow label={t('awardsField')} value={referrals.length.toString()} />
             {referrals.length > 0 && (
               <div className="mt-3 space-y-2">
@@ -277,7 +277,7 @@ export function StudentDetailSheet({
             <div className="space-y-2">
               <div className="rounded-lg border border-slate-200 p-3 text-sm">
                 <div className="font-medium">{t('clientCreated')}</div>
-                <div className="mt-1 text-xs text-slate-500">{dateTime(student.createdAt)}</div>
+                <div className="mt-1 text-xs text-slate-500">{dateTime(currentStudent.createdAt)}</div>
               </div>
               {payments.map((payment: any) => (
                 <div key={`history-payment-${payment.id}`} className="rounded-lg border border-slate-200 p-3 text-sm">

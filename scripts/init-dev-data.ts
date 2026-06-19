@@ -59,11 +59,16 @@ async function seedSuperAdmin() {
 
 async function seedStatuses() {
   for (const s of LEAD_STATUSES) {
-    if (await exists('academy_lead_statuses', 'code = $1', [s.code])) continue;
     await exec(
-      `INSERT INTO academy_lead_statuses (code, name, color, sort_order, is_system, is_active)
-       VALUES ($1,$2,$3,$4,true,true)`,
-      [s.code, s.name, s.color, s.sortOrder],
+      `INSERT INTO academy_lead_statuses (code, name, color, sort_order, is_pipeline, is_system, is_active)
+       VALUES ($1,$2,$3,$4,$5,true,true)
+       ON CONFLICT (code) DO UPDATE
+       SET name = EXCLUDED.name,
+           color = EXCLUDED.color,
+           sort_order = EXCLUDED.sort_order,
+           is_pipeline = EXCLUDED.is_pipeline,
+           is_system = true`,
+      [s.code, s.name, s.color, s.sortOrder, s.activePipeline],
     );
   }
   console.log(`[ok] lead statuses ensured (${LEAD_STATUSES.length})`);

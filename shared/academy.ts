@@ -12,16 +12,16 @@ export const ACADEMY_ROLES = [
 export type AcademyRole = (typeof ACADEMY_ROLES)[number];
 
 export const LEAD_STATUSES = [
-  { code: "new_request", translationKey: "leadStatusNewRequest", color: "#2563eb", sortOrder: 10, activePipeline: true },
-  { code: "first_contact", translationKey: "leadStatusFirstContact", color: "#0ea5e9", sortOrder: 20, activePipeline: true },
-  { code: "qualified", translationKey: "leadStatusQualified", color: "#14b8a6", sortOrder: 30, activePipeline: true },
-  { code: "demo_invited", translationKey: "leadStatusDemoInvited", color: "#8b5cf6", sortOrder: 40, activePipeline: true },
-  { code: "demo_attended", translationKey: "leadStatusDemoAttended", color: "#a855f7", sortOrder: 50, activePipeline: true },
-  { code: "offer", translationKey: "leadStatusOffer", color: "#f59e0b", sortOrder: 60, activePipeline: true },
-  { code: "thinking", translationKey: "leadStatusThinking", color: "#f97316", sortOrder: 70, activePipeline: true },
-  { code: "enrolled", translationKey: "leadStatusEnrolled", color: "#22c55e", sortOrder: 80, activePipeline: true },
-  { code: "paid", translationKey: "leadStatusPaid", color: "#16a34a", sortOrder: 90, activePipeline: true },
-  { code: "not_now", translationKey: "leadStatusNotNow", color: "#64748b", sortOrder: 100, activePipeline: false },
+  { code: "new_request", name: "Новая заявка", translationKey: "leadStatusNewRequest", color: "#2563eb", sortOrder: 10, activePipeline: true },
+  { code: "first_contact", name: "Первый контакт", translationKey: "leadStatusFirstContact", color: "#0ea5e9", sortOrder: 20, activePipeline: true },
+  { code: "qualified", name: "Квалифицирован", translationKey: "leadStatusQualified", color: "#14b8a6", sortOrder: 30, activePipeline: true },
+  { code: "demo_invited", name: "Приглашён на демо", translationKey: "leadStatusDemoInvited", color: "#8b5cf6", sortOrder: 40, activePipeline: true },
+  { code: "demo_attended", name: "Был на демо", translationKey: "leadStatusDemoAttended", color: "#a855f7", sortOrder: 50, activePipeline: true },
+  { code: "offer", name: "Предложение", translationKey: "leadStatusOffer", color: "#f59e0b", sortOrder: 60, activePipeline: true },
+  { code: "thinking", name: "Думает", translationKey: "leadStatusThinking", color: "#f97316", sortOrder: 70, activePipeline: true },
+  { code: "enrolled", name: "Записан на курс", translationKey: "leadStatusEnrolled", color: "#22c55e", sortOrder: 80, activePipeline: true },
+  { code: "paid", name: "Оплатил", translationKey: "leadStatusPaid", color: "#16a34a", sortOrder: 90, activePipeline: true },
+  { code: "not_now", name: "Не сейчас", translationKey: "leadStatusNotNow", color: "#64748b", sortOrder: 100, activePipeline: false },
 ] as const;
 
 export const ACTIVE_PIPELINE_STATUSES = LEAD_STATUSES

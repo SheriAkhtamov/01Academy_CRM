@@ -68,6 +68,8 @@ interface LeadDetails {
   studentAge?: number | null;
   courseId?: number | null;
   courseName?: string | null;
+  schoolId?: number | null;
+  schoolName?: string | null;
   sourceId?: number | null;
   sourceName?: string | null;
   statusCode: string;
@@ -123,8 +125,10 @@ interface LeadDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   initialTab?: LeadSheetTab;
   courses: Array<{ id: number; name: string }>;
-  groups: Array<{ id: number; name: string; courseId?: number | null; status?: string }>;
+  groups: Array<{ id: number; name: string; courseId?: number | null; schoolId?: number | null; status?: string }>;
   sources: Array<{ id: number; name: string }>;
+  schools: Array<{ id: number; name: string; isActive?: boolean }>;
+  statuses: Array<{ code: string; name: string; isActive?: boolean }>;
   currentUserId?: number;
   leadStatusName: (code: string) => string;
   dateTime: (value: string | null | undefined) => string;
@@ -144,6 +148,7 @@ const leadSchema = z.object({
   studentName: z.string(),
   studentAge: optionalNumberString,
   courseId: z.string(),
+  schoolId: z.string(),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   enrolledGroupId: z.string(),
   language: z.string(),
@@ -249,6 +254,8 @@ export function LeadDetailSheet({
   courses,
   groups,
   sources,
+  schools,
+  statuses,
   currentUserId,
   leadStatusName,
   dateTime,
@@ -273,6 +280,7 @@ export function LeadDetailSheet({
       studentName: '',
       studentAge: '',
       courseId: '',
+      schoolId: '',
       sourceId: '',
       enrolledGroupId: '',
       language: 'ru',
@@ -327,6 +335,7 @@ export function LeadDetailSheet({
       lead.studentName ?? '',
       lead.studentAge ?? '',
       lead.courseId ?? '',
+      lead.schoolId ?? '',
       lead.sourceId ?? '',
       lead.enrolledGroupId ?? '',
       lead.language ?? '',
@@ -366,6 +375,7 @@ export function LeadDetailSheet({
           studentName: lead.studentName ?? '',
           studentAge: lead.studentAge ? String(lead.studentAge) : '',
           courseId: lead.courseId ? String(lead.courseId) : '',
+          schoolId: lead.schoolId ? String(lead.schoolId) : '',
           sourceId: lead.sourceId ? String(lead.sourceId) : '',
           enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
           language: lead.language ?? 'ru',
@@ -423,6 +433,7 @@ export function LeadDetailSheet({
       ...values,
       studentAge: values.studentAge ? Number(values.studentAge) : null,
       courseId: values.courseId ? Number(values.courseId) : null,
+      schoolId: values.schoolId ? Number(values.schoolId) : null,
       sourceId: Number(values.sourceId),
       enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : null,
       expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
@@ -555,6 +566,7 @@ export function LeadDetailSheet({
                     <span>{lead.phone}</span>
                     {lead.studentName ? <span>• {lead.studentName}</span> : null}
                     {lead.courseName ? <span>• {lead.courseName}</span> : null}
+                    {lead.schoolName ? <span>• {lead.schoolName}</span> : null}
                   </SheetDescription>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {phoneHref ? (
@@ -698,10 +710,12 @@ export function LeadDetailSheet({
                                   <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      {LEAD_STATUSES.filter((status) => (
-                                        lead.statusCode === 'paid'
-                                          ? status.code === 'paid'
-                                          : status.code !== 'paid'
+                                      {(statuses.length > 0 ? statuses : LEAD_STATUSES).filter((status) => (
+                                        (!('isActive' in status) || status.isActive !== false) && (
+                                          lead.statusCode === 'paid'
+                                            ? status.code === 'paid'
+                                            : status.code !== 'paid'
+                                        )
                                       )).map((status) => (
                                         <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
                                       ))}
@@ -755,11 +769,38 @@ export function LeadDetailSheet({
                           />
                           <FormField
                             control={leadForm.control}
+                            name="schoolId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t('school')}</FormLabel>
+                                <Select value={field.value || 'none'} onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}>
+                                  <FormControl><SelectTrigger><SelectValue placeholder={t('schoolNotSelected')} /></SelectTrigger></FormControl>
+                                  <SelectContent>
+                                    <SelectGroup>
+                                      <SelectItem value="none">{t('schoolNotSelected')}</SelectItem>
+                                      {schools.filter((school) => school.isActive !== false).map((school) => (
+                                        <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                                <LocalizedFormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={leadForm.control}
                             name="enrolledGroupId"
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel>{t('group')}</FormLabel>
-                                <Select value={field.value || 'none'} onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}>
+                                <Select value={field.value || 'none'} onValueChange={(value) => {
+                                  const nextValue = value === 'none' ? '' : value;
+                                  field.onChange(nextValue);
+                                  const group = groups.find((item) => String(item.id) === nextValue);
+                                  if (group?.courseId) leadForm.setValue('courseId', String(group.courseId), { shouldDirty: true });
+                                  if (group?.schoolId) leadForm.setValue('schoolId', String(group.schoolId), { shouldDirty: true });
+                                }}>
                                   <FormControl><SelectTrigger><SelectValue placeholder={t('noGroup')} /></SelectTrigger></FormControl>
                                   <SelectContent>
                                     <SelectGroup>

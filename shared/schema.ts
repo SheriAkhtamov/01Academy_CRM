@@ -13,7 +13,10 @@ export interface AcademyCourseProgramLesson {
 
 export interface AcademyScheduleItem {
   dayOfWeek: number;
-  time: string;
+  time?: string;
+  startTime?: string;
+  endTime?: string;
+  schoolId?: number | null;
 }
 
 export const users = pgTable("users", {
@@ -59,6 +62,20 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const academySchools = pgTable("academy_schools", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  code: varchar("code", { length: 100 }).notNull(),
+  address: text("address").notNull(),
+  rooms: jsonb("rooms").$type<string[]>().notNull().default([]),
+  timezone: varchar("timezone", { length: 80 }).notNull().default("Asia/Tashkent"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  codeUnique: uniqueIndex("academy_schools_code_unique").on(table.code),
+}));
+
 export const academyCourses = pgTable("academy_courses", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -66,6 +83,9 @@ export const academyCourses = pgTable("academy_courses", {
   ageCategory: varchar("age_category", { length: 100 }).notNull(),
   lessonCount: integer("lesson_count").notNull().default(0),
   lessonDurationMinutes: integer("lesson_duration_minutes").notNull().default(120),
+  durationDays: integer("duration_days").notNull().default(0),
+  schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
+  description: text("description"),
   frequency: varchar("frequency", { length: 255 }),
   basePriceUzs: integer("base_price_uzs").notNull().default(0),
   discountedPriceUzs: integer("discounted_price_uzs").notNull().default(0),
@@ -100,6 +120,7 @@ export const academyLeadStatuses = pgTable("academy_lead_statuses", {
   name: varchar("name", { length: 255 }).notNull(),
   color: varchar("color", { length: 40 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  isPipeline: boolean("is_pipeline").notNull().default(true),
   isSystem: boolean("is_system").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
@@ -113,6 +134,8 @@ export const academyTeachers = pgTable("academy_teachers", {
   userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
   fullName: varchar("full_name", { length: 255 }).notNull(),
   courseIds: jsonb("course_ids").$type<number[]>().notNull().default([]),
+  schoolIds: jsonb("school_ids").$type<number[]>().notNull().default([]),
+  availability: jsonb("availability").$type<AcademyScheduleItem[]>().notNull().default([]),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   status: varchar("status", { length: 50 }).notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -123,6 +146,7 @@ export const academyGroups = pgTable("academy_groups", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "restrict" }).notNull(),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   maxStudents: integer("max_students").notNull().default(12),
@@ -133,6 +157,7 @@ export const academyGroups = pgTable("academy_groups", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   courseIdx: index("academy_groups_course_idx").on(table.courseId),
+  schoolIdx: index("academy_groups_school_idx").on(table.schoolId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
 }));
 
@@ -144,6 +169,7 @@ export const academyLeads = pgTable("academy_leads", {
   studentName: varchar("student_name", { length: 255 }),
   studentAge: integer("student_age"),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
   sourceId: integer("source_id").references(() => academyLeadSources.id, { onDelete: "restrict" }).notNull(),
   advertisingCampaign: varchar("advertising_campaign", { length: 255 }),
   acquisitionCostUzs: integer("acquisition_cost_uzs").notNull().default(0),
@@ -179,6 +205,7 @@ export const academyLeads = pgTable("academy_leads", {
   phoneIdx: index("academy_leads_phone_idx").on(table.phone),
   statusIdx: index("academy_leads_status_idx").on(table.statusCode),
   managerIdx: index("academy_leads_manager_idx").on(table.managerId),
+  schoolIdx: index("academy_leads_school_idx").on(table.schoolId),
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
 }));
 
@@ -204,6 +231,7 @@ export const academyStudents = pgTable("academy_students", {
   studentName: varchar("student_name", { length: 255 }),
   studentAge: integer("student_age"),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
   managerId: integer("manager_id").references(() => users.id, { onDelete: "set null" }),
   status: varchar("status", { length: 50 }).notNull().default("studying"),
   enrolledAt: timestamp("enrolled_at"),
@@ -225,6 +253,7 @@ export const academyStudents = pgTable("academy_students", {
   groupIdx: index("academy_students_group_idx").on(table.groupId),
   leadIdx: index("academy_students_lead_idx").on(table.leadId),
   managerIdx: index("academy_students_manager_idx").on(table.managerId),
+  schoolIdx: index("academy_students_school_idx").on(table.schoolId),
   statusIdx: index("academy_students_status_idx").on(table.status),
 }));
 
@@ -244,6 +273,7 @@ export const academyLessons = pgTable("academy_lessons", {
   id: serial("id").primaryKey(),
   groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   lessonNumber: integer("lesson_number").notNull(),
   topic: varchar("topic", { length: 255 }).notNull(),
@@ -255,6 +285,7 @@ export const academyLessons = pgTable("academy_lessons", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   groupIdx: index("academy_lessons_group_idx").on(table.groupId),
+  schoolIdx: index("academy_lessons_school_idx").on(table.schoolId),
   teacherIdx: index("academy_lessons_teacher_idx").on(table.teacherId),
 }));
 
@@ -496,6 +527,12 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+export const insertAcademySchoolSchema = createInsertSchema(academySchools).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyCourseSchema = createInsertSchema(academyCourses).omit({
   id: true,
   createdAt: true,
@@ -640,6 +677,8 @@ export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AcademySchool = typeof academySchools.$inferSelect;
+export type InsertAcademySchool = z.infer<typeof insertAcademySchoolSchema>;
 export type AcademyCourse = typeof academyCourses.$inferSelect;
 export type InsertAcademyCourse = z.infer<typeof insertAcademyCourseSchema>;
 export type AcademyLeadSource = typeof academyLeadSources.$inferSelect;

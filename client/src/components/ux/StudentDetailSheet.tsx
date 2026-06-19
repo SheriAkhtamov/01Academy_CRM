@@ -153,6 +153,7 @@ export function StudentDetailSheet({
                 </Badge>
                 {currentStudent.groupName && <Badge variant="outline">{currentStudent.groupName}</Badge>}
                 {currentStudent.courseName && <Badge variant="outline">{currentStudent.courseName}</Badge>}
+                {currentStudent.schoolName && <Badge variant="outline">{currentStudent.schoolName}</Badge>}
                 {Array.isArray(currentStudent.riskFlags) &&
                   currentStudent.riskFlags.map((flag: string) => (
                     <Badge key={flag} variant="destructive">
@@ -204,6 +205,7 @@ export function StudentDetailSheet({
           <TabsContent value="schedule" className="space-y-3">
             <InfoRow label={t('courseLabel')} value={currentStudent.courseName || t('noCourse')} />
             <InfoRow label={t('groupLabel')} value={currentStudent.groupName || t('noGroup')} />
+            <InfoRow label={t('school')} value={currentStudent.schoolName || t('schoolNotSelected')} />
           </TabsContent>
 
           <TabsContent value="attendance">

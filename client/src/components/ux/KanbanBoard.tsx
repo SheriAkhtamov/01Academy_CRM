@@ -302,11 +302,11 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex max-h-[calc(100vh-260px)] w-80 shrink-0 flex-col rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
+        'flex h-[calc(100dvh-15rem)] min-h-[26rem] max-h-[72rem] w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
         isOver && 'border-primary bg-primary/5 shadow-md',
       )}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 p-4 pb-3">
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/95 p-4 backdrop-blur-sm">
         <div className="flex min-w-0 items-center gap-2">
           <span
             className="size-2.5 shrink-0 rounded-full"
@@ -319,7 +319,7 @@ function KanbanColumn({
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3 pt-0">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3">
         {leads.map((lead) => (
           <DraggableLeadCard
             key={lead.id}
@@ -335,7 +335,7 @@ function KanbanColumn({
           />
         ))}
         {leads.length === 0 ? (
-          <div className="flex flex-col items-center py-8 text-center">
+          <div className="flex min-h-56 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/45 px-5 py-8 text-center">
             <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-muted">
               <ArrowRight className="text-muted-foreground/40" />
             </div>
@@ -438,7 +438,7 @@ export function KanbanBoard({
   }, [moveLead]);
 
   return (
-    <div className="flex min-w-0 max-w-full flex-col gap-2">
+    <div className="flex min-w-0 max-w-full flex-1 flex-col gap-2">
       <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
         <GripVertical />
         <span>{t('dragLeadHint')}</span>
@@ -458,8 +458,8 @@ export function KanbanBoard({
           },
         }}
       >
-        <div className="-mx-2 min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2">
-          <div className="flex min-w-max gap-4 px-2">
+        <div className="-mx-2 min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain pb-2">
+          <div className="flex min-h-full min-w-max items-stretch gap-4 px-2">
             {statuses.map((status) => (
               <KanbanColumn
                 key={status.code}

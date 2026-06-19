@@ -497,7 +497,7 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
             <KpiCard
               title={t('weeklyLeads')}
               value={analytics.summary.newLeadsWeek ?? 0}
-              detail={`${t('marketingAndSales')} • ${t('monthlyRevenue')}: ${money(analytics.summary.newLeadsMonth ?? 0)}`}
+              detail={`${t('marketingAndSales')} • ${t('newLeadsMonth')}: ${analytics.summary.newLeadsMonth ?? 0}`}
               icon={Megaphone}
               tone="blue"
             />

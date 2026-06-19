@@ -44,7 +44,6 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import {
-  ACTIVE_PIPELINE_STATUSES,
   LEAD_STATUSES,
 } from '@shared/academy';
 import {
@@ -56,6 +55,7 @@ import {
   Megaphone,
   Percent,
   Plus,
+  Settings2,
   TrendingUp,
   UserCheck,
 } from 'lucide-react';
@@ -73,6 +73,8 @@ interface Lead {
   studentAge?: number;
   courseId?: number;
   courseName?: string;
+  schoolId?: number;
+  schoolName?: string;
   sourceId?: number;
   sourceName?: string;
   statusCode: string;
@@ -161,6 +163,7 @@ const createLeadSchema = z.object({
     'invalidData',
   ),
   courseId: z.string(),
+  schoolId: z.string().min(1, 'fillRequiredFields'),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   comment: z.string(),
   language: z.string().min(1, 'fillRequiredFields'),
@@ -175,6 +178,7 @@ const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   studentName: '',
   studentAge: '',
   courseId: '',
+  schoolId: '',
   sourceId: '',
   comment: '',
   language: 'ru',
@@ -265,11 +269,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
   };
 
-  const leadStatusName = (code: string) => {
-    const key = leadStatusTranslationKeys[code];
-    return key ? t(key) : code;
-  };
-
   const paymentStatusName = (code: string | null | undefined) => {
     if (!code) return t('noData');
     const key = paymentStatusTranslationKeys[code];
@@ -288,6 +287,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/sales'],
   });
+
+  const leadStatusName = (code: string) => {
+    const key = leadStatusTranslationKeys[code];
+    if (key) return t(key);
+    return data?.statuses?.find((status: any) => status.code === code)?.name ?? code;
+  };
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
 
@@ -324,9 +329,21 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     });
   }, [myLeads, sourceFilter, statusFilter]);
 
+  const activePipelineStatuses = useMemo(
+    () => [...(data?.statuses ?? [])]
+      .filter((status: any) => status.isActive !== false && status.isPipeline !== false)
+      .sort((left: any, right: any) => Number(left.sortOrder) - Number(right.sortOrder)),
+    [data?.statuses],
+  );
+
+  const activePipelineCodes = useMemo(
+    () => new Set(activePipelineStatuses.map((status: any) => status.code)),
+    [activePipelineStatuses],
+  );
+
   const pipelineLeads = useMemo(
-    () => myLeads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any)),
-    [myLeads],
+    () => myLeads.filter((lead) => activePipelineCodes.has(lead.statusCode)),
+    [activePipelineCodes, myLeads],
   );
 
   const managerStats = useMemo(() => {
@@ -335,7 +352,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
     const newLeadsWeek = myLeads.filter((lead) => new Date(lead.createdAt) >= weekAgo).length;
     const activeLeads = myLeads.filter(
-      (lead) => lead.statusCode !== 'paid' && ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode as any),
+      (lead) => lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
     ).length;
     const totalStudents = myStudents.length;
 
@@ -348,17 +365,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     ).length;
 
     return { newLeadsWeek, activeLeads, totalStudents, conversionRate, overdueTasks };
-  }, [myLeads, myStudents, myTasks]);
-
-  const activePipelineStatuses = LEAD_STATUSES.filter(
-    (status) => ACTIVE_PIPELINE_STATUSES.includes(status.code as any)
-  );
+  }, [activePipelineCodes, myLeads, myStudents, myTasks]);
 
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => apiRequest('POST', '/api/academy/leads', {
       ...values,
       studentAge: values.studentAge ? Number(values.studentAge) : undefined,
       courseId: values.courseId ? Number(values.courseId) : undefined,
+      schoolId: values.schoolId ? Number(values.schoolId) : undefined,
       sourceId: Number(values.sourceId),
       managerId: user?.id,
     }),
@@ -553,6 +567,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         actions={
           section === 'overview' || section === 'leads' || section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">
+              {section === 'pipeline' && (user?.role === 'admin' || user?.role === 'head') ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setLocation('/admin/academy-settings?tab=pipeline')}
+                >
+                  <Settings2 data-icon="inline-start" />{t('configurePipeline')}
+                </Button>
+              ) : null}
               <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
               </Button>
@@ -596,6 +619,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           sourceFilter={sourceFilter}
           setSourceFilter={setSourceFilter}
           sources={data.sources ?? []}
+          statuses={data.statuses ?? []}
           openLead={openLead}
           onQuickAction={handleQuickAction}
         />
@@ -673,6 +697,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         courses={data.courses ?? []}
         groups={data.groups ?? []}
         sources={data.sources ?? []}
+        schools={data.schools ?? []}
+        statuses={data.statuses ?? []}
         currentUserId={user?.id}
         leadStatusName={leadStatusName}
         dateTime={dateTime}
@@ -769,6 +795,7 @@ function LeadsTab({
   sourceFilter,
   setSourceFilter,
   sources,
+  statuses,
   openLead,
   onQuickAction,
 }: {
@@ -782,6 +809,7 @@ function LeadsTab({
   sourceFilter: string;
   setSourceFilter: (v: string) => void;
   sources: Array<{ id: number; name: string }>;
+  statuses: Array<{ code: string; name: string; color: string; sortOrder: number; isActive?: boolean }>;
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
   onQuickAction: (action: QuickAction, lead: Lead) => void;
 }) {
@@ -819,7 +847,7 @@ function LeadsTab({
       sortable: true,
       accessor: (lead: Lead) => leadStatusName(lead.statusCode),
       render: (lead: Lead) => (
-        <Badge style={{ backgroundColor: statusColor(lead.statusCode), color: 'white' }}>
+        <Badge style={{ backgroundColor: statuses.find((status) => status.code === lead.statusCode)?.color ?? statusColor(lead.statusCode), color: 'white' }}>
           {leadStatusName(lead.statusCode)}
         </Badge>
       ),
@@ -830,6 +858,13 @@ function LeadsTab({
       sortable: true,
       accessor: (lead: Lead) => lead.courseName,
       render: (lead: Lead) => <span className="text-slate-600">{lead.courseName || t('noData')}</span>,
+    },
+    {
+      key: 'schoolId',
+      header: t('school'),
+      sortable: true,
+      accessor: (lead: Lead) => lead.schoolName,
+      render: (lead: Lead) => <span className="text-slate-600">{lead.schoolName || t('schoolNotSelected')}</span>,
     },
     {
       key: 'sourceId',
@@ -897,7 +932,7 @@ function LeadsTab({
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="all">{t('allStatuses')}</SelectItem>
-                  {LEAD_STATUSES.map((status) => (
+                  {statuses.filter((status) => status.isActive !== false).map((status) => (
                     <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
                   ))}
                 </SelectGroup>
@@ -959,7 +994,7 @@ function PipelineTab({
   isPending: boolean;
 }) {
   return (
-    <div className="space-y-5">
+    <div className="flex min-h-0 flex-1 flex-col">
       <KanbanBoard
         statuses={activePipelineStatuses.map((status) => ({
           code: status.code,
@@ -1309,6 +1344,26 @@ function LeadForm({
                     <SelectItem value="auto">{t('autoByAgeOrManual')}</SelectItem>
                     {(data.courses ?? []).map((course: any) => (
                       <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="schoolId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('school')}</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    {(data.schools ?? []).filter((school: any) => school.isActive !== false).map((school: any) => (
+                      <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>

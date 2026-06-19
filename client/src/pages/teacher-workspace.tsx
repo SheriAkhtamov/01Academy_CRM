@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
@@ -15,6 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import {
+  WeekScheduleEditor,
+  type WeekScheduleItem,
+} from '@/components/ux/WeekScheduleEditor';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,6 +47,8 @@ type Lesson = {
   courseName?: string;
   teacherId?: number;
   teacherName?: string;
+  schoolId?: number;
+  schoolName?: string;
   lessonNumber: number;
   topic: string;
   scheduledAt: string;
@@ -59,6 +65,8 @@ type Group = {
   courseName?: string;
   teacherId?: number;
   teacherName?: string;
+  schoolId?: number;
+  schoolName?: string;
   maxStudents: number;
   currentStudents?: number;
   capacityLabel?: string;
@@ -91,6 +99,12 @@ type LessonSurvey = {
   liked?: string;
   improve?: string;
   createdAt: string;
+};
+
+type TeacherProfile = {
+  id: number;
+  schoolIds?: number[];
+  availability?: WeekScheduleItem[];
 };
 
 function KpiCard({
@@ -214,12 +228,38 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   // Group detail dialog
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [availabilityDraft, setAvailabilityDraft] = useState<WeekScheduleItem[]>([]);
+  const [availabilitySchoolIds, setAvailabilitySchoolIds] = useState<number[]>([]);
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/teacher'],
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
+
+  const teacherProfile: TeacherProfile | null = data?.teacher ?? null;
+
+  useEffect(() => {
+    if (!teacherProfile) return;
+    setAvailabilityDraft(Array.isArray(teacherProfile.availability) ? teacherProfile.availability : []);
+    setAvailabilitySchoolIds(Array.isArray(teacherProfile.schoolIds) ? teacherProfile.schoolIds.map(Number) : []);
+  }, [teacherProfile?.id]);
+
+  const saveAvailability = useMutation({
+    mutationFn: () => apiRequest('PATCH', '/api/academy/teachers/me/availability', {
+      availability: availabilityDraft,
+      schoolIds: availabilitySchoolIds,
+    }),
+    onSuccess: () => {
+      toast({ title: t('availabilitySaved'), description: t('availabilitySavedDescription') });
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: t('error'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
 
   const saveAttendance = useMutation({
     mutationFn: () =>
@@ -245,6 +285,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const groups: Group[] = useMemo(() => data?.groups ?? [], [data]);
   const lessons: Lesson[] = useMemo(() => data?.lessons ?? [], [data]);
   const students: Student[] = useMemo(() => data?.students ?? [], [data]);
+  const schools: Array<{ id: number; name: string }> = useMemo(() => data?.schools ?? [], [data]);
   const surveys: LessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
   const attendanceRecords: any[] = useMemo(() => data?.attendance ?? [], [data]);
 
@@ -570,7 +611,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                           </p>
                           <p className="text-xs text-slate-500">
                             {lesson.courseName || t('noCourse')} • {lesson.durationMinutes}
-                            {t('minutes')}
+                            {t('minutes')} • {lesson.schoolName || t('schoolNotSelected')}
                           </p>
                         </div>
                       </div>
@@ -709,7 +750,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                           {group.name}
                         </h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {group.courseName || t('noCourse')}
+                          {group.courseName || t('noCourse')} · {group.schoolName || t('schoolNotSelected')}
                         </p>
                       </div>
                       <Badge
@@ -1218,6 +1259,54 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             </CardContent>
           </Card>
 
+          {user?.role === 'teacher' ? (
+            <Card className="border-slate-200/70">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-slate-500" />
+                  {t('teacherAvailability')}
+                </CardTitle>
+                <p className="text-sm text-slate-500">{t('teacherAvailabilityWorkspaceDescription')}</p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label className="text-xs text-slate-500">{t('availableSchools')}</Label>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {schools.map((school) => (
+                      <label key={school.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200/70 p-3">
+                        <Checkbox
+                          checked={availabilitySchoolIds.includes(school.id)}
+                          onCheckedChange={(checked) => setAvailabilitySchoolIds((current) => (
+                            checked === true
+                              ? [...new Set([...current, school.id])]
+                              : current.filter((id) => id !== school.id)
+                          ))}
+                        />
+                        <span className="text-sm font-medium text-slate-900">{school.name}</span>
+                      </label>
+                    ))}
+                    {schools.length === 0 ? <p className="text-sm text-slate-500">{t('noSchools')}</p> : null}
+                  </div>
+                </div>
+                <WeekScheduleEditor
+                  value={availabilityDraft}
+                  onChange={setAvailabilityDraft}
+                  dayNames={dayNamesFull.slice(1).concat(dayNamesFull[0])}
+                  schools={schools}
+                  showSchool
+                  allSchoolsLabel={t('allSchools')}
+                  startLabel={t('start')}
+                  endLabel={t('end')}
+                />
+                <div className="flex justify-end">
+                  <Button onClick={() => saveAvailability.mutate()} disabled={saveAvailability.isPending}>
+                    {saveAvailability.isPending ? t('saving') : t('saveAvailability')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           {/* Schedule summary */}
           <Card className="border-slate-200/70">
             <CardHeader className="pb-4">
@@ -1232,7 +1321,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <div>
                     <p className="text-sm font-medium text-slate-900">{group.name}</p>
                     <p className="text-xs text-slate-500">
-                      {group.courseName || t('noCourse')}
+                      {group.courseName || t('noCourse')} · {group.schoolName || t('schoolNotSelected')}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">

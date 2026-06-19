@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -146,6 +147,7 @@ function ConversionBar({ label, value, total, color = '#2563eb' }: {
 /* ─── main component ─── */
 export default function MarketingWorkspace({ section = 'overview' }: { section?: MarketingSection }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
@@ -212,6 +214,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const expenses = data?.expenses ?? [];
   const referrals = data?.referrals ?? [];
   const students = data?.students ?? [];
+  const canManageExpenses = user?.role === 'admin' || user?.role === 'head';
 
   const warmLeads = useMemo(() => {
     return leads.filter((lead: any) => lead.statusCode === 'not_now');
@@ -253,7 +256,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
 
   const referralStats = useMemo(() => {
     const totalReferrals = referrals.length;
-    const paidReferrals = referrals.filter((r: any) => r.status === 'paid').length;
+    const paidReferrals = referrals.filter((r: any) => r.status === 'applied').length;
     const conversion = totalReferrals > 0 ? Math.round((paidReferrals / totalReferrals) * 100) : 0;
     return { totalReferrals, paidReferrals, conversion };
   }, [referrals]);
@@ -274,7 +277,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
       }
       const entry = map.get(studentId);
       entry.referred += 1;
-      if (ref.status === 'paid') entry.paid += 1;
+      if (ref.status === 'applied') entry.paid += 1;
     });
     return Array.from(map.values())
       .map((r: any) => ({
@@ -412,7 +415,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
-          section === 'overview' || section === 'sources' || section === 'expenses' ? (
+          canManageExpenses && (section === 'overview' || section === 'sources' || section === 'expenses') ? (
             <Button onClick={() => setExpenseDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               {t('addExpense')}
@@ -477,10 +480,12 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <CardTitle>{t('marketingBySources')}</CardTitle>
-              <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                {t('addExpense')}
-              </Button>
+              {canManageExpenses && (
+                <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('addExpense')}
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               <DataTable
@@ -709,10 +714,12 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
                 <Button variant="outline" size="sm" onClick={() => setExpensePeriodFilter('')}>
                   {t('reset')}
                 </Button>
-                <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('addExpense')}
-                </Button>
+                {canManageExpenses && (
+                  <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {t('addExpense')}
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -784,47 +791,49 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
       ) : null}
 
       {/* ─── Expense Dialog ─── */}
-      <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('marketingExpenseTitle')}</DialogTitle>
-            <DialogDescription>{t('addExpense')}</DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
-            <Field label={t('source')}>
-              <Select value={expenseForm.sourceId} onValueChange={(sourceId) => setExpenseForm({ ...expenseForm, sourceId })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {sources.map((source: any) => (
-                    <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label={t('channel')}>
-              <Input value={expenseForm.channel} onChange={(e) => setExpenseForm({ ...expenseForm, channel: e.target.value })} />
-            </Field>
-            <Field label={t('campaign')}>
-              <Input value={expenseForm.campaignName} onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })} />
-            </Field>
-            <Field label={t('amount')}>
-              <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
-            </Field>
-            <Field label={t('start')}>
-              <Input type="date" value={expenseForm.periodStart} onChange={(e) => setExpenseForm({ ...expenseForm, periodStart: e.target.value })} />
-            </Field>
-            <Field label={t('end')}>
-              <Input type="date" value={expenseForm.periodEnd} onChange={(e) => setExpenseForm({ ...expenseForm, periodEnd: e.target.value })} />
-            </Field>
-            <div className="md:col-span-2 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
-              <Button onClick={() => createExpense.mutate()} disabled={createExpense.isPending}>
-                {createExpense.isPending ? t('saving') : t('saveExpense')}
-              </Button>
+      {canManageExpenses && (
+        <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{t('marketingExpenseTitle')}</DialogTitle>
+              <DialogDescription>{t('addExpense')}</DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
+              <Field label={t('source')}>
+                <Select value={expenseForm.sourceId} onValueChange={(sourceId) => setExpenseForm({ ...expenseForm, sourceId })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {sources.map((source: any) => (
+                      <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label={t('channel')}>
+                <Input value={expenseForm.channel} onChange={(e) => setExpenseForm({ ...expenseForm, channel: e.target.value })} />
+              </Field>
+              <Field label={t('campaign')}>
+                <Input value={expenseForm.campaignName} onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })} />
+              </Field>
+              <Field label={t('amount')}>
+                <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
+              </Field>
+              <Field label={t('start')}>
+                <Input type="date" value={expenseForm.periodStart} onChange={(e) => setExpenseForm({ ...expenseForm, periodStart: e.target.value })} />
+              </Field>
+              <Field label={t('end')}>
+                <Input type="date" value={expenseForm.periodEnd} onChange={(e) => setExpenseForm({ ...expenseForm, periodEnd: e.target.value })} />
+              </Field>
+              <div className="md:col-span-2 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
+                <Button onClick={() => createExpense.mutate()} disabled={createExpense.isPending}>
+                  {createExpense.isPending ? t('saving') : t('saveExpense')}
+                </Button>
+              </div>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
       <UnsavedChangesDialog
         open={expenseDialogGuard.confirmationOpen}
         onOpenChange={expenseDialogGuard.setConfirmationOpen}

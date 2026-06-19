@@ -111,16 +111,24 @@ const toIntegerOrNull = (value: unknown) => {
 
 const safeJson = (value: unknown, fallback: unknown[] = []) => {
   if (value === undefined) return undefined;
-  if (Array.isArray(value)) return value;
-  if (value === null || value === '') return fallback;
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (value === null || value === '') return JSON.stringify(fallback);
   if (typeof value === 'string') {
     try {
-      return JSON.parse(value);
+      return JSON.stringify(JSON.parse(value));
     } catch {
-      return fallback;
+      return JSON.stringify(fallback);
     }
   }
-  return value;
+  return JSON.stringify(value);
+};
+
+const toBoolean = (value: unknown, fallback?: boolean) => {
+  if (value === undefined) return fallback;
+  if (typeof value === 'boolean') return value;
+  if (value === 'true' || value === '1' || value === 1) return true;
+  if (value === 'false' || value === '0' || value === 0) return false;
+  return fallback;
 };
 
 const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
@@ -151,6 +159,12 @@ const withTransaction = async <T>(callback: () => Promise<T>): Promise<T> => {
 const queryOne = async <T = Row>(sql: string, values: DbValue[] = []) => {
   const rows = await query<T>(sql, values);
   return rows[0] as T | undefined;
+};
+
+const normalizeDbValue = (value: DbValue) => {
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (value && typeof value === 'object' && !(value instanceof Date)) return JSON.stringify(value);
+  return value;
 };
 
 const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
@@ -204,7 +218,7 @@ const insertRow = async (table: string, values: Record<string, DbValue | undefin
 
   const columns = entries.map(([key]) => quoteIdent(toSnake(key)));
   const placeholders = entries.map((_, index) => `$${index + 1}`);
-  const params = entries.map(([, value]) => value);
+  const params = entries.map(([, value]) => normalizeDbValue(value));
   const rows = await query(
     `INSERT INTO ${quoteIdent(table)} (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
     params,
@@ -219,7 +233,7 @@ const updateRow = async (table: string, id: number, values: Record<string, DbVal
   }
 
   const assignments = entries.map(([key], index) => `${quoteIdent(toSnake(key))} = $${index + 2}`);
-  const params = [id, ...entries.map(([, value]) => value)];
+  const params = [id, ...entries.map(([, value]) => normalizeDbValue(value))];
   const updatedAtAssignment = TABLES_WITHOUT_UPDATED_AT.has(table) ? '' : ', updated_at = NOW()';
   const rows = await query(
     `UPDATE ${quoteIdent(table)}
@@ -376,6 +390,87 @@ const logIntegration = async (provider: string, direction: string, status: strin
 const getSourceByCode = async (code: string) =>
   queryOne(`SELECT * FROM academy_lead_sources WHERE code = $1`, [code]);
 
+const parseTimeToMinutes = (value: unknown): number | null => {
+  const match = String(value ?? '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+};
+
+const academyDayOfWeek = (date: Date) => {
+  const day = date.getDay();
+  return day === 0 ? 7 : day;
+};
+
+const findAvailableTeacher = async (options: {
+  courseId: number;
+  schoolId?: number | null;
+  scheduledAt: Date;
+  durationMinutes: number;
+}) => {
+  const candidates = await query(
+    `SELECT t.*,
+        (
+          SELECT COUNT(*)::int
+          FROM academy_lessons l
+          WHERE l.teacher_id = t.id
+            AND l.status = 'scheduled'
+            AND l.scheduled_at >= NOW()
+        ) AS upcoming_lessons
+     FROM academy_teachers t
+     WHERE t.status = 'active'
+       AND t.course_ids @> $1::jsonb
+     ORDER BY upcoming_lessons, t.id`,
+    [JSON.stringify([options.courseId])],
+  );
+
+  const startMinutes = options.scheduledAt.getHours() * 60 + options.scheduledAt.getMinutes();
+  const endMinutes = startMinutes + options.durationMinutes;
+  const dayOfWeek = academyDayOfWeek(options.scheduledAt);
+  const lessonEnd = addMinutes(options.scheduledAt, options.durationMinutes);
+
+  for (const teacher of candidates) {
+    const schoolIds = Array.isArray(teacher.schoolIds) ? teacher.schoolIds.map(Number) : [];
+    if (options.schoolId && schoolIds.length > 0 && !schoolIds.includes(Number(options.schoolId))) {
+      continue;
+    }
+
+    const availability = Array.isArray(teacher.availability)
+      ? teacher.availability
+      : Array.isArray(teacher.schedule)
+        ? teacher.schedule
+        : [];
+    const canWork = availability.some((item: Row) => {
+      if (Number(item.dayOfWeek) !== dayOfWeek) return false;
+      if (options.schoolId && item.schoolId && Number(item.schoolId) !== Number(options.schoolId)) return false;
+      const availableStart = parseTimeToMinutes(item.startTime ?? item.time);
+      const availableEnd = parseTimeToMinutes(item.endTime ?? item.time);
+      if (availableStart === null) return false;
+      const resolvedEnd = availableEnd === null || availableEnd === availableStart
+        ? availableStart + options.durationMinutes
+        : availableEnd;
+      return startMinutes >= availableStart && endMinutes <= resolvedEnd;
+    });
+    if (!canWork) continue;
+
+    const conflict = await queryOne(
+      `SELECT id
+       FROM academy_lessons
+       WHERE teacher_id = $1
+         AND status <> 'cancelled'
+         AND scheduled_at < $3
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+       LIMIT 1`,
+      [teacher.id, options.scheduledAt, lessonEnd],
+    );
+    if (!conflict) return teacher;
+  }
+
+  return null;
+};
+
 // Template source prefixes from TZ 1.2: the suffix is filled from campaign/referrer name.
 const TEMPLATE_SOURCE_PREFIXES = ['instagram_ad', 'blogger', 'school', 'event', 'referral'];
 
@@ -458,7 +553,15 @@ const findDuplicate = async (phone?: string | null, messenger?: string | null) =
 };
 
 const getLead = (id: number) =>
-  queryOne(`SELECT * FROM academy_leads WHERE id = $1`, [id]);
+  queryOne(
+    `SELECT l.*, c.name AS course_name, s.name AS source_name, sc.name AS school_name
+     FROM academy_leads l
+     LEFT JOIN academy_courses c ON c.id = l.course_id
+     LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+     LEFT JOIN academy_schools sc ON sc.id = l.school_id
+     WHERE l.id = $1`,
+    [id],
+  );
 
 const createStageHistory = async (leadId: number, fromStatusCode: string | null, toStatusCode: string, changedBy: number, comment?: string | null) =>
   insertRow('academy_lead_stage_history', {
@@ -566,6 +669,9 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
   const course = lead.courseId
     ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1`, [lead.courseId])
     : await resolveCourseByAge(lead.studentAge);
+  const enrolledGroup = lead.enrolledGroupId
+    ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [lead.enrolledGroupId])
+    : null;
 
   const referralCode = buildReferralCode(lead.studentName || lead.contactName, lead.id);
   const student = await insertRow('academy_students', {
@@ -576,6 +682,7 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
     studentName: lead.studentName || lead.contactName,
     studentAge: lead.studentAge ?? null,
     courseId: lead.courseId ?? course?.id ?? null,
+    schoolId: lead.schoolId ?? enrolledGroup?.schoolId ?? null,
     groupId: lead.enrolledGroupId ?? null,
     managerId: lead.managerId ?? req.user!.id,
     status: 'studying',
@@ -776,6 +883,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   const managerParams = isManagerScoped ? [actor!.userId] : [];
 
   const [
+    schools,
     courses,
     sources,
     statuses,
@@ -793,6 +901,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     projects,
     referrals,
   ] = await Promise.all([
+    query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`),
     query(`SELECT * FROM academy_courses ORDER BY name`),
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
     query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order`),
@@ -801,26 +910,33 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       : query(`SELECT * FROM academy_teachers ORDER BY full_name`),
     isTeacherScoped
       ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
+          sc.name AS school_name,
           (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students
           FROM academy_groups g
           LEFT JOIN academy_courses c ON c.id = g.course_id
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
+          LEFT JOIN academy_schools sc ON sc.id = g.school_id
           WHERE g.teacher_id = $1
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
+          sc.name AS school_name,
           (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students
           FROM academy_groups g
           LEFT JOIN academy_courses c ON c.id = g.course_id
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
+          LEFT JOIN academy_schools sc ON sc.id = g.school_id
           ORDER BY g.created_at DESC`),
-    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name
+    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
+        sc.name AS school_name
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
       LEFT JOIN users u ON u.id = l.manager_id
+      LEFT JOIN academy_schools sc ON sc.id = l.school_id
       WHERE 1=1 ${isManagerScoped ? 'AND l.manager_id = $1' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
       ORDER BY l.created_at DESC`, managerParams),
     query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
+        sc.name AS school_name,
         (
           SELECT CASE
             WHEN p.status <> 'paid' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
@@ -835,13 +951,16 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_courses c ON c.id = st.course_id
       LEFT JOIN academy_groups g ON g.id = st.group_id
       LEFT JOIN users u ON u.id = st.manager_id
+      LEFT JOIN academy_schools sc ON sc.id = st.school_id
       WHERE 1=1 ${isManagerScoped ? 'AND st.manager_id = $1' : ''} ${isTeacherScoped ? 'AND st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)' : ''}
       ORDER BY st.created_at DESC`, isTeacherScoped ? [teacherId] : managerParams),
-    query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name
+    query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
+        sc.name AS school_name
       FROM academy_lessons l
       LEFT JOIN academy_groups g ON g.id = l.group_id
       LEFT JOIN academy_teachers t ON t.id = l.teacher_id
       LEFT JOIN academy_courses c ON c.id = l.course_id
+      LEFT JOIN academy_schools sc ON sc.id = l.school_id
       WHERE 1=1 ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}
       ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : []),
     query(`SELECT a.* FROM academy_attendance a ${isTeacherScoped ? 'JOIN academy_lessons l ON l.id = a.lesson_id WHERE l.teacher_id = $1' : ''}`, isTeacherScoped ? [teacherId] : []),
@@ -859,12 +978,19 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       WHERE 1=1 ${isManagerScoped ? 'AND t.responsible_id = $1' : ''}
       ORDER BY COALESCE(t.deadline_at, t.created_at)`, managerParams),
     isTeacherScoped
-      ? query(`SELECT ls.*
+      ? query(`SELECT ls.*, st.student_name, l.topic AS lesson_topic, g.name AS group_name
         FROM academy_lesson_surveys ls
         JOIN academy_lessons l ON l.id = ls.lesson_id
+        LEFT JOIN academy_students st ON st.id = ls.student_id
+        LEFT JOIN academy_groups g ON g.id = ls.group_id
         WHERE l.teacher_id = $1
         ORDER BY ls.created_at DESC`, [teacherId])
-      : query(`SELECT * FROM academy_lesson_surveys ORDER BY created_at DESC`),
+      : query(`SELECT ls.*, st.student_name, l.topic AS lesson_topic, g.name AS group_name
+        FROM academy_lesson_surveys ls
+        LEFT JOIN academy_students st ON st.id = ls.student_id
+        LEFT JOIN academy_lessons l ON l.id = ls.lesson_id
+        LEFT JOIN academy_groups g ON g.id = ls.group_id
+        ORDER BY ls.created_at DESC`),
     isTeacherScoped
       ? query(`SELECT ps.*
         FROM academy_parent_surveys ps
@@ -907,7 +1033,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
   ]);
 
-  return { courses, sources, statuses, teachers, groups, leads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
+  return { schools, courses, sources, statuses, teachers, groups, leads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
 };
 
 const buildAnalytics = async () => {
@@ -1188,6 +1314,7 @@ router.get('/workspaces/sales', async (req, res) => {
     const dataset = await getAcademyDataset(actor);
 
     res.json({
+      schools: dataset.schools,
       courses: dataset.courses,
       groups: dataset.groups,
       sources: dataset.sources,
@@ -1212,7 +1339,9 @@ router.get('/workspaces/teacher', async (req, res) => {
     const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
     const dataset = await getAcademyDataset(actor);
     res.json({
+      schools: dataset.schools,
       courses: dataset.courses,
+      teacher: req.user!.role === 'teacher' ? dataset.teachers[0] ?? null : null,
       groups: dataset.groups,
       students: dataset.students,
       lessons: dataset.lessons,
@@ -1224,6 +1353,42 @@ router.get('/workspaces/teacher', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch teacher workspace', { error });
     res.status(500).json({ error: 'Failed to fetch teacher workspace' });
+  }
+});
+
+router.get('/configuration', async (req, res) => {
+  if (!ensureAdminWorkspaceAccess(req, res)) return;
+  try {
+    const dataset = await getAcademyDataset();
+    res.json({
+      schools: dataset.schools,
+      courses: dataset.courses,
+      statuses: dataset.statuses,
+      teachers: dataset.teachers,
+      groups: dataset.groups,
+      lessons: dataset.lessons,
+    });
+  } catch (error) {
+    logger.error('Failed to fetch academy configuration', { error });
+    res.status(500).json({ error: 'Failed to fetch academy configuration' });
+  }
+});
+
+router.patch('/teachers/me/availability', async (req, res) => {
+  if (!ensureTeacherWorkspaceAccess(req, res)) return;
+  try {
+    const teacherId = await resolveTeacherId(req.user!.id);
+    if (!teacherId) return res.status(404).json({ error: 'Teacher profile not found' });
+    const oldTeacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [teacherId]);
+    const teacher = await updateRow('academy_teachers', teacherId, {
+      availability: safeJson(req.body.availability, []),
+      schoolIds: safeJson(req.body.schoolIds, []),
+    });
+    await createAudit(req, 'UPDATE_TEACHER_AVAILABILITY', 'academy_teacher', teacherId, teacher, oldTeacher);
+    res.json(teacher);
+  } catch (error: any) {
+    logger.error('Failed to update teacher availability', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update availability' });
   }
 });
 
@@ -1550,11 +1715,13 @@ router.get('/leads', async (req, res) => {
 
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const leads = await query(
-      `SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name
+      `SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
+          sc.name AS school_name
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
        LEFT JOIN users u ON u.id = l.manager_id
+       LEFT JOIN academy_schools sc ON sc.id = l.school_id
        ${whereSql}
        ORDER BY l.created_at DESC`,
       params,
@@ -1598,6 +1765,7 @@ router.post('/leads', async (req, res) => {
       studentName: nullableText(req.body.studentName) ?? null,
       studentAge: studentAge ?? null,
       courseId: courseId ?? null,
+      schoolId: parseId(req.body.schoolId),
       sourceId,
       advertisingCampaign: nullableText(req.body.advertisingCampaign) ?? nullableText(source?.campaignName) ?? null,
       acquisitionCostUzs: normalizeMoney(req.body.acquisitionCostUzs ?? source?.costPerLeadUzs),
@@ -1669,6 +1837,7 @@ router.patch('/leads/:id', async (req, res) => {
       studentName: nullableText(req.body.studentName),
       studentAge: toIntegerOrNull(req.body.studentAge),
       courseId: parseId(req.body.courseId),
+      schoolId: parseId(req.body.schoolId),
       sourceId: parseId(req.body.sourceId) ?? oldLead.sourceId,
       advertisingCampaign: nullableText(req.body.advertisingCampaign),
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
@@ -1889,6 +2058,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
+  requireAdmin?: boolean;
   requireFinance?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
@@ -1896,6 +2066,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   requireMarketingReadOnly?: boolean;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
+    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
@@ -1915,6 +2086,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.get(`/${path}/:id`, async (req, res) => {
+    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
@@ -1934,6 +2106,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.post(`/${path}`, async (req, res) => {
+    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
@@ -1953,12 +2126,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         const value = req.body[column];
         if (column.endsWith('At') || column.endsWith('Date') || column === 'periodStart' || column === 'periodEnd') {
           values[column] = nullableDate(value);
-        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'lessonNumber') {
+        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
-        } else if (column === 'program' || column === 'schedule' || column === 'courseIds' || column === 'riskFlags') {
+        } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
-        } else if (typeof value === 'boolean') {
-          values[column] = value;
+        } else if (['isActive', 'isSystem', 'isPipeline'].includes(column)) {
+          values[column] = toBoolean(value);
         } else {
           values[column] = nullableText(value);
         }
@@ -1966,6 +2139,31 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
 
       if (table === 'academy_marketing_expenses') {
         values.createdBy = req.user!.id;
+      }
+      if (table === 'academy_lessons') {
+        const groupId = Number(values.groupId || 0);
+        const group = groupId
+          ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId])
+          : null;
+        values.courseId = values.courseId ?? group?.courseId ?? null;
+        values.schoolId = values.schoolId ?? group?.schoolId ?? null;
+        values.durationMinutes = values.durationMinutes ?? (
+          values.courseId
+            ? (await queryOne(`SELECT lesson_duration_minutes FROM academy_courses WHERE id = $1`, [values.courseId]))?.lessonDurationMinutes
+            : null
+        ) ?? 120;
+        if (!values.teacherId && values.courseId && values.scheduledAt) {
+          const teacher = await findAvailableTeacher({
+            courseId: Number(values.courseId),
+            schoolId: values.schoolId ? Number(values.schoolId) : null,
+            scheduledAt: values.scheduledAt as Date,
+            durationMinutes: Number(values.durationMinutes),
+          });
+          if (!teacher) {
+            throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 409 });
+          }
+          values.teacherId = Number(teacher.id);
+        }
       }
 
       const row = await insertRow(table, values);
@@ -1978,6 +2176,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.patch(`/${path}/:id`, async (req, res) => {
+    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
@@ -1999,15 +2198,26 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         const value = req.body[column];
         if (column.endsWith('At') || column.endsWith('Date') || column === 'periodStart' || column === 'periodEnd') {
           values[column] = nullableDate(value);
-        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'lessonNumber') {
+        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
-        } else if (column === 'program' || column === 'schedule' || column === 'courseIds' || column === 'riskFlags') {
+        } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
-        } else if (typeof value === 'boolean') {
-          values[column] = value;
+        } else if (['isActive', 'isSystem', 'isPipeline'].includes(column)) {
+          values[column] = toBoolean(value);
         } else {
           values[column] = nullableText(value);
         }
+      }
+      if (table === 'academy_lessons' && req.body.autoAssign === true) {
+        const courseId = Number(values.courseId ?? oldRow.courseId);
+        const schoolId = Number(values.schoolId ?? oldRow.schoolId) || null;
+        const scheduledAt = (values.scheduledAt ?? oldRow.scheduledAt) as Date;
+        const durationMinutes = Number(values.durationMinutes ?? oldRow.durationMinutes ?? 120);
+        const teacher = await findAvailableTeacher({ courseId, schoolId, scheduledAt, durationMinutes });
+        if (!teacher) {
+          throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 409 });
+        }
+        values.teacherId = Number(teacher.id);
       }
       const row = await updateRow(table, id, values);
       if (table === 'academy_lessons' && values.status !== undefined && oldRow.status !== row?.status) {
@@ -2027,6 +2237,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.delete(`/${path}/:id`, async (req, res) => {
+    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
@@ -2044,9 +2255,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!row) return res.status(404).json({ error: `${path} not found` });
       await deleteRow(table, id);
       res.json({ ok: true });
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Failed to delete ${path}`, { error });
-      res.status(500).json({ error: `Failed to delete ${path}` });
+      const isForeignKeyConflict = error?.code === '23503';
+      res.status(isForeignKeyConflict ? 409 : 500).json({
+        error: isForeignKeyConflict ? 'resourceInUse' : `Failed to delete ${path}`,
+      });
     }
   });
 };
@@ -2087,7 +2301,6 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         [lessonId, studentId, status, nullableText(item.projectUrl), nullableText(item.note), req.user!.id],
       );
       saved.push(camelize(result.rows[0]));
-      await recalculateStudentMetrics(studentId);
 
       const recentAbsences = await query<{ status: string }>(
         `SELECT COALESCE(a.status, 'absent') AS status
@@ -2111,9 +2324,16 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     const updatedLesson = await updateRow('academy_lessons', lessonId, {
       status: nullableText(req.body.lessonStatus) ?? 'conducted' });
 
+    const groupStudents = await query(
+      `SELECT * FROM academy_students WHERE group_id = $1 AND status = 'studying'`,
+      [lesson.groupId],
+    );
+    for (const student of groupStudents) {
+      await recalculateStudentMetrics(Number(student.id));
+    }
+
     if (updatedLesson?.status === 'conducted') {
-      const students = await query(`SELECT * FROM academy_students WHERE group_id = $1 AND status = 'studying'`, [lesson.groupId]);
-      for (const student of students) {
+      for (const student of groupStudents) {
         await createOutbox(Number(student.age || 0) <= 10 ? 'whatsapp' : 'telegram', student.messenger || student.phone, 'Оцените сегодняшний урок 01 Academy: /survey', {
           scheduledAt: addMinutes(new Date(lesson.scheduledAt), Number(lesson.durationMinutes || 120) + 30),
           entityType: 'lesson',
@@ -2590,12 +2810,34 @@ router.get('/exports/:entity', async (req, res) => {
   }
 });
 
+registerSimpleCrud('schools', 'academy_schools', [
+  'name', 'code', 'address', 'rooms', 'timezone', 'isActive',
+], { orderBy: 'is_active DESC, name', requireAdmin: true });
+
+registerSimpleCrud('courses', 'academy_courses', [
+  'name', 'slug', 'ageCategory', 'lessonCount', 'lessonDurationMinutes', 'durationDays',
+  'schedule', 'description', 'frequency', 'basePriceUzs', 'discountedPriceUzs',
+  'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
+], { orderBy: 'is_active DESC, name', requireAdmin: true });
+
+registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
+  'code', 'name', 'color', 'sortOrder', 'isPipeline', 'isSystem', 'isActive',
+], { orderBy: 'sort_order, id', requireAdmin: true });
+
+registerSimpleCrud('teachers', 'academy_teachers', [
+  'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'status',
+], { orderBy: 'full_name', requireAdmin: true });
+
+registerSimpleCrud('groups', 'academy_groups', [
+  'name', 'courseId', 'schoolId', 'teacherId', 'schedule', 'maxStudents', 'status', 'startDate', 'endDate',
+], { orderBy: 'created_at DESC', requireAdmin: true });
+
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
 ], { orderBy: 'name', requireMarketingReadOnly: true });
 
 registerSimpleCrud('lessons', 'academy_lessons', [
-  'groupId', 'courseId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',
+  'groupId', 'courseId', 'schoolId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',
 ], { orderBy: 'scheduled_at DESC', requireOperations: true });
 
 registerSimpleCrud('tasks', 'academy_tasks', [

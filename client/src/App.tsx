@@ -15,6 +15,7 @@ import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
+import AcademySettings from '@/pages/academy-settings';
 
 function RoleBasedHome() {
   const { user } = useAuth();
@@ -60,10 +61,10 @@ function RoleGuard({
 }
 
 const adminRoles: AcademyRole[] = ['admin', 'head'];
-const salesRoles: AcademyRole[] = ['account_manager'];
-const teacherRoles: AcademyRole[] = ['teacher'];
-const analyticsRoles: AcademyRole[] = ['operations_director'];
-const marketingRoles: AcademyRole[] = ['smm_manager'];
+const salesRoles: AcademyRole[] = ['admin', 'head', 'account_manager'];
+const teacherRoles: AcademyRole[] = ['admin', 'head', 'teacher'];
+const analyticsRoles: AcademyRole[] = ['admin', 'head', 'operations_director'];
+const marketingRoles: AcademyRole[] = ['admin', 'head', 'smm_manager'];
 
 type AcademySection =
   | 'integrations'
@@ -238,6 +239,11 @@ function Router() {
         <Route path="/employees" component={() => (
           <RoleGuard allowedRoles={adminRoles}>
             <Admin mode="employees" />
+          </RoleGuard>
+        )} />
+        <Route path="/admin/academy-settings" component={() => (
+          <RoleGuard allowedRoles={adminRoles}>
+            <AcademySettings />
           </RoleGuard>
         )} />
         <Route component={NotFound} />

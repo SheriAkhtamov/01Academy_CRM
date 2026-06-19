@@ -29,6 +29,13 @@
       "when": 1781786091458,
       "tag": "0003_drop_legacy_system_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781883000000,
+      "tag": "0004_repair_sales_manager_ownership",
+      "breakpoints": true
     }
   ]
 }

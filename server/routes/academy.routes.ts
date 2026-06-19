@@ -153,6 +153,49 @@ const queryOne = async <T = Row>(sql: string, values: DbValue[] = []) => {
   return rows[0] as T | undefined;
 };
 
+const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
+  if (req.user?.role === 'account_manager') {
+    return Number(req.user.id);
+  }
+
+  const requestedId = requestedValue === undefined || requestedValue === null || requestedValue === ''
+    ? null
+    : parseId(requestedValue);
+
+  if (requestedValue !== undefined && requestedValue !== null && requestedValue !== '' && !requestedId) {
+    throw Object.assign(new Error('Invalid account manager'), { statusCode: 400 });
+  }
+
+  if (requestedId) {
+    const manager = await queryOne<{ id: string }>(
+      `SELECT id
+       FROM users
+       WHERE id = $1 AND role = 'account_manager' AND is_active = true`,
+      [requestedId],
+    );
+    if (!manager) {
+      throw Object.assign(new Error('Active account manager is required'), { statusCode: 400 });
+    }
+    return Number(manager.id);
+  }
+
+  const manager = await queryOne<{ id: string }>(
+    `SELECT u.id
+     FROM users u
+     LEFT JOIN academy_leads l
+       ON l.manager_id = u.id
+      AND l.status_code NOT IN ('paid', 'not_now')
+     WHERE u.role = 'account_manager' AND u.is_active = true
+     GROUP BY u.id
+     ORDER BY COUNT(l.id), u.id
+     LIMIT 1`,
+  );
+  if (!manager) {
+    throw Object.assign(new Error('Active account manager is required'), { statusCode: 400 });
+  }
+  return Number(manager.id);
+};
+
 const insertRow = async (table: string, values: Record<string, DbValue | undefined>) => {
   const entries = Object.entries(values).filter(([, value]) => value !== undefined) as Array<[string, DbValue]>;
   if (entries.length === 0) {
@@ -1547,6 +1590,7 @@ router.post('/leads', async (req, res) => {
     }
 
     const source = await queryOne(`SELECT * FROM academy_lead_sources WHERE id = $1`, [sourceId]);
+    const managerId = await resolveLeadManagerId(req, req.body.managerId);
     const lead = await insertRow('academy_leads', {
       contactName,
       phone,
@@ -1558,7 +1602,7 @@ router.post('/leads', async (req, res) => {
       advertisingCampaign: nullableText(req.body.advertisingCampaign) ?? nullableText(source?.campaignName) ?? null,
       acquisitionCostUzs: normalizeMoney(req.body.acquisitionCostUzs ?? source?.costPerLeadUzs),
       statusCode: nullableText(req.body.statusCode) ?? 'new_request',
-      managerId: req.user!.role === 'account_manager' ? req.user!.id : parseId(req.body.managerId) ?? req.user!.id,
+      managerId,
       language: nullableText(req.body.language) ?? 'ru',
       comment: nullableText(req.body.comment) ?? null,
       referralCode: nullableText(req.body.referralCode) ?? null,
@@ -1615,6 +1659,9 @@ router.patch('/leads/:id', async (req, res) => {
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
 
+    const managerId = req.user!.role !== 'account_manager' && req.body.managerId !== undefined
+      ? await resolveLeadManagerId(req, req.body.managerId)
+      : undefined;
     const updates: Row = {
       contactName: nullableText(req.body.contactName) ?? oldLead.contactName,
       phone: nullableText(req.body.phone) ?? oldLead.phone,
@@ -1626,7 +1673,7 @@ router.patch('/leads/:id', async (req, res) => {
       advertisingCampaign: nullableText(req.body.advertisingCampaign),
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
       statusCode: nullableText(req.body.statusCode),
-      managerId: req.user!.role === 'account_manager' ? undefined : parseId(req.body.managerId),
+      managerId,
       language: nullableText(req.body.language),
       comment: nullableText(req.body.comment),
       firstContactAt: nullableDate(req.body.firstContactAt),

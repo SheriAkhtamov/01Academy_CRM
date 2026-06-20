@@ -16,6 +16,7 @@ import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
 import AcademySettings from '@/pages/academy-settings';
+import ManagementBoard from '@/pages/management';
 
 function RoleBasedHome() {
   const { user } = useAuth();
@@ -246,6 +247,8 @@ function Router() {
             <AcademySettings />
           </RoleGuard>
         )} />
+        {/* Management board — available to every authenticated employee. */}
+        <Route path="/management" component={ManagementBoard} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

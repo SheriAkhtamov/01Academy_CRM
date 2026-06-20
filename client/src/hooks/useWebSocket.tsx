@@ -87,6 +87,14 @@ export function useWebSocket() {
         case 'USER_STATUS_CHANGED':
           queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
           break;
+        case 'BOARD_TASK_CREATED':
+        case 'BOARD_TASK_UPDATED':
+        case 'BOARD_TASK_DELETED':
+          queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+          if (message.data?.id) {
+            queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${message.data.id}`] });
+          }
+          break;
         default:
           devLog('Unhandled WebSocket message type:', message.type);
       }

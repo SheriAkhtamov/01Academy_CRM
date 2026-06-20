@@ -36,6 +36,7 @@ import {
   Star,
   UserCircle,
   SlidersHorizontal,
+  KanbanSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -208,7 +209,15 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     return [];
   };
 
-  const sections = buildSections();
+  // The management board is available to every role, so it is appended to
+  // whatever role-specific sections were built above.
+  const managementSection: NavSection = {
+    label: t('management'),
+    items: [
+      { name: t('taskBoard'), href: '/management', icon: KanbanSquare },
+    ],
+  };
+  const sections = [...buildSections(), managementSection];
 
   const toggleSection = (label: string) => {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));

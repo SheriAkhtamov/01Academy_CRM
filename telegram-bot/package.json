@@ -1,0 +1,26 @@
+{
+  "name": "crm-telegram-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram bot for 01Academy CRM management board — daily task summaries and micromanagement in the team group.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "summary:dry": "tsx src/dryRun.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "grammy": "^1.32.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

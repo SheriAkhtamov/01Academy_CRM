@@ -8,6 +8,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
+import { AvailabilityCalendar } from '@/components/ux/AvailabilityCalendar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -125,7 +126,16 @@ interface LeadDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   initialTab?: LeadSheetTab;
   courses: Array<{ id: number; name: string }>;
-  groups: Array<{ id: number; name: string; courseId?: number | null; schoolId?: number | null; status?: string }>;
+  groups: Array<{
+    id: number;
+    name: string;
+    courseId?: number | null;
+    schoolId?: number | null;
+    status?: string;
+    currentStudents?: number;
+    reservedStudents?: number;
+    maxStudents?: number;
+  }>;
   sources: Array<{ id: number; name: string }>;
   schools: Array<{ id: number; name: string; isActive?: boolean }>;
   statuses: Array<{ code: string; name: string; isActive?: boolean }>;
@@ -295,7 +305,7 @@ export function LeadDetailSheet({
   });
   const demoForm = useForm<DemoFormValues>({
     resolver: zodResolver(demoSchema),
-    defaultValues: { demoAt: '', demoFormat: 'online', demoLocation: '' },
+    defaultValues: { demoAt: '', demoFormat: 'offline', demoLocation: '' },
   });
   const paymentForm = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -406,7 +416,7 @@ export function LeadDetailSheet({
       if (!demoDirty || hydratedTransientKey.current === null) {
         demoForm.reset({
           demoAt: toInputDateTime(lead.demoAt),
-          demoFormat: lead.demoFormat ?? 'online',
+          demoFormat: lead.demoFormat ?? 'offline',
           demoLocation: lead.demoLocation ?? '',
         });
       }
@@ -454,7 +464,14 @@ export function LeadDetailSheet({
 
   const scheduleDemo = useMutation({
     mutationFn: (values: DemoFormValues) =>
-      apiRequest('POST', `/api/academy/leads/${leadId}/demo`, values),
+      apiRequest('POST', `/api/academy/leads/${leadId}/demo`, {
+        ...values,
+        schoolId: leadForm.getValues('schoolId') ? Number(leadForm.getValues('schoolId')) : undefined,
+        demoCourseId: leadForm.getValues('courseId') ? Number(leadForm.getValues('courseId')) : undefined,
+        demoLocation: values.demoFormat === 'offline'
+          ? schools.find((school) => school.id === Number(leadForm.getValues('schoolId')))?.name
+          : values.demoLocation,
+      }),
     onSuccess: () => finishMutation(t('demoScheduled')),
     onError: (error: Error) => toast({ title: t('demoScheduleFailed'), description: error.message, variant: 'destructive' }),
   });
@@ -507,12 +524,18 @@ export function LeadDetailSheet({
   });
 
   const selectedCourseId = leadForm.watch('courseId');
+  const selectedSchoolId = leadForm.watch('schoolId');
+  const selectedGroupId = leadForm.watch('enrolledGroupId');
+  const demoFormat = demoForm.watch('demoFormat');
   const availableGroups = useMemo(() => {
-    return groups.filter((group) => (
-      (!selectedCourseId || !group.courseId || Number(group.courseId) === Number(selectedCourseId))
-      && group.status !== 'completed'
-    ));
-  }, [groups, selectedCourseId]);
+    return groups.filter((group) => {
+      const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+      return (!selectedCourseId || !group.courseId || Number(group.courseId) === Number(selectedCourseId))
+        && (!selectedSchoolId || !group.schoolId || Number(group.schoolId) === Number(selectedSchoolId))
+        && (occupied < Number(group.maxStudents || 12) || String(group.id) === selectedGroupId)
+        && ['open', 'in_progress'].includes(String(group.status));
+    });
+  }, [groups, selectedCourseId, selectedGroupId, selectedSchoolId]);
 
   const lead = leadQuery.data;
   const phoneHref = lead?.phone ? `tel:${lead.phone.replace(/[^\d+]/g, '')}` : undefined;
@@ -805,9 +828,14 @@ export function LeadDetailSheet({
                                   <SelectContent>
                                     <SelectGroup>
                                       <SelectItem value="none">{t('noGroup')}</SelectItem>
-                                      {availableGroups.map((group) => (
-                                        <SelectItem key={group.id} value={String(group.id)}>{group.name}</SelectItem>
-                                      ))}
+                                      {availableGroups.map((group) => {
+                                        const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+                                        return (
+                                          <SelectItem key={group.id} value={String(group.id)}>
+                                            {group.name} · {occupied}/{group.maxStudents || 12}
+                                          </SelectItem>
+                                        );
+                                      })}
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
@@ -918,17 +946,6 @@ export function LeadDetailSheet({
                             <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={demoForm.handleSubmit((values) => scheduleDemo.mutate(values))}>
                               <FormField
                                 control={demoForm.control}
-                                name="demoAt"
-                                render={({ field, fieldState }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('dateTimeLabel')}</FormLabel>
-                                    <FormControl><Input {...field} type="datetime-local" aria-invalid={fieldState.invalid} /></FormControl>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={demoForm.control}
                                 name="demoFormat"
                                 render={({ field }) => (
                                   <FormItem>
@@ -946,17 +963,50 @@ export function LeadDetailSheet({
                                   </FormItem>
                                 )}
                               />
-                              <FormField
-                                control={demoForm.control}
-                                name="demoLocation"
-                                render={({ field }) => (
-                                  <FormItem className="md:col-span-2">
-                                    <FormLabel>{t('location')}</FormLabel>
-                                    <FormControl><Input {...field} /></FormControl>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
+                              {demoFormat === 'offline' ? (
+                                <FormField
+                                  control={demoForm.control}
+                                  name="demoAt"
+                                  render={({ field }) => (
+                                    <FormItem className="md:col-span-2">
+                                      <FormLabel>{t('availableSlots')}</FormLabel>
+                                      <AvailabilityCalendar
+                                        schoolId={Number(selectedSchoolId) || null}
+                                        courseId={Number(selectedCourseId) || null}
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        excludeLeadId={leadId}
+                                      />
+                                      <LocalizedFormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              ) : (
+                                <>
+                                  <FormField
+                                    control={demoForm.control}
+                                    name="demoAt"
+                                    render={({ field, fieldState }) => (
+                                      <FormItem>
+                                        <FormLabel>{t('dateTimeLabel')}</FormLabel>
+                                        <FormControl><Input {...field} type="datetime-local" aria-invalid={fieldState.invalid} /></FormControl>
+                                        <LocalizedFormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={demoForm.control}
+                                    name="demoLocation"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>{t('location')}</FormLabel>
+                                        <FormControl><Input {...field} /></FormControl>
+                                        <LocalizedFormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </>
+                              )}
                               <div className="flex justify-end md:col-span-2">
                                 <Button type="submit" variant="outline" disabled={scheduleDemo.isPending}>
                                   <CalendarClock data-icon="inline-start" />

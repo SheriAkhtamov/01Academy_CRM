@@ -61,6 +61,7 @@ import {
   Plus,
   Trash2,
   UserRoundCheck,
+  UsersRound,
 } from 'lucide-react';
 
 interface School {
@@ -113,8 +114,17 @@ interface Group {
   name: string;
   courseId: number;
   courseName?: string;
-  schoolId?: number | null;
+  schoolId: number;
   schoolName?: string;
+  teacherId?: number | null;
+  teacherName?: string | null;
+  schedule: WeekScheduleItem[];
+  maxStudents: number;
+  currentStudents: number;
+  reservedStudents: number;
+  status: string;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 interface Lesson {
@@ -169,6 +179,22 @@ const statusSchema = z.object({
   isActive: z.boolean(),
 });
 
+const groupSchema = z.object({
+  name: z.string().trim().min(1),
+  courseId: z.string().min(1),
+  schoolId: z.string().min(1),
+  status: z.enum(['open', 'in_progress', 'completed']),
+  startDate: z.string(),
+  endDate: z.string(),
+}).superRefine((values, context) => {
+  if (values.startDate && values.endDate && values.endDate < values.startDate) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endDate'],
+    });
+  }
+});
+
 const lessonSchema = z.object({
   groupId: z.string().min(1),
   scheduledAt: z.string().min(1),
@@ -179,6 +205,7 @@ const lessonSchema = z.object({
 type SchoolValues = z.infer<typeof schoolSchema>;
 type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
+type GroupValues = z.infer<typeof groupSchema>;
 type LessonValues = z.infer<typeof lessonSchema>;
 
 const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
@@ -195,6 +222,14 @@ const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
       schoolId: item?.schoolId ? Number(item.schoolId) : null,
     }];
   });
+};
+
+const toDateInput = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
 };
 
 const transliterationMap: Record<string, string> = {
@@ -239,20 +274,23 @@ export default function AcademySettings() {
   const routeSearch = useSearch();
   const requestedTab = new URLSearchParams(routeSearch).get('tab');
   const [activeTab, setActiveTab] = useState(
-    ['schools', 'courses', 'pipeline', 'assignment'].includes(String(requestedTab))
+    ['schools', 'courses', 'groups', 'pipeline', 'assignment'].includes(String(requestedTab))
       ? String(requestedTab)
       : 'schools',
   );
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [editingStatus, setEditingStatus] = useState<PipelineStatus | null>(null);
   const [courseSchedule, setCourseSchedule] = useState<WeekScheduleItem[]>([]);
+  const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
   const [courseTeacherIds, setCourseTeacherIds] = useState<number[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
-    resource: 'schools' | 'courses' | 'pipeline-statuses';
+    resource: 'schools' | 'courses' | 'groups' | 'pipeline-statuses';
     id: number;
     name: string;
   } | null>(null);
@@ -315,6 +353,18 @@ export default function AcademySettings() {
     },
   });
 
+  const groupForm = useForm<GroupValues>({
+    resolver: zodResolver(groupSchema),
+    defaultValues: {
+      name: '',
+      courseId: '',
+      schoolId: '',
+      status: 'open',
+      startDate: '',
+      endDate: '',
+    },
+  });
+
   const lessonForm = useForm<LessonValues>({
     resolver: zodResolver(lessonSchema),
     defaultValues: {
@@ -329,7 +379,7 @@ export default function AcademySettings() {
     mutationFn: (values: SchoolValues) => {
       const payload = {
         ...values,
-        rooms: values.rooms.split(',').map((room) => room.trim()).filter(Boolean),
+        rooms: values.rooms.trim() ? [values.rooms.trim()] : [],
       };
       return editingSchool
         ? apiRequest('PATCH', `/api/academy/schools/${editingSchool.id}`, payload)
@@ -377,6 +427,39 @@ export default function AcademySettings() {
       setCourseTeacherIds([]);
       courseForm.reset();
       invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: t('error'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const saveGroup = useMutation({
+    mutationFn: (values: GroupValues) => {
+      const payload = {
+        name: values.name,
+        courseId: Number(values.courseId),
+        schoolId: Number(values.schoolId),
+        schedule: groupSchedule,
+        maxStudents: 12,
+        status: values.status,
+        startDate: values.startDate || null,
+        endDate: values.endDate || null,
+        autoAssign: true,
+      };
+      return editingGroup
+        ? apiRequest('PATCH', `/api/academy/groups/${editingGroup.id}`, payload)
+        : apiRequest('POST', '/api/academy/groups', payload);
+    },
+    onSuccess: () => {
+      toast({ title: editingGroup ? t('groupUpdated') : t('groupCreated') });
+      setGroupDialogOpen(false);
+      setEditingGroup(null);
+      setGroupSchedule([]);
+      groupForm.reset();
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
     onError: (error: Error) => toast({
       title: t('error'),
@@ -486,7 +569,7 @@ export default function AcademySettings() {
       name: school.name,
       code: school.code,
       address: school.address,
-      rooms: (school.rooms ?? []).join(', '),
+      rooms: school.rooms?.[0] ?? '',
       timezone: school.timezone,
       isActive: school.isActive,
     } : {
@@ -530,6 +613,29 @@ export default function AcademySettings() {
       .filter((teacher) => course?.id && (teacher.courseIds ?? []).map(Number).includes(course.id))
       .map((teacher) => teacher.id));
     setCourseDialogOpen(true);
+  };
+
+  const openGroup = (group?: Group) => {
+    setEditingGroup(group ?? null);
+    groupForm.reset(group ? {
+      name: group.name,
+      courseId: String(group.courseId),
+      schoolId: String(group.schoolId),
+      status: ['open', 'in_progress', 'completed'].includes(group.status)
+        ? group.status as GroupValues['status']
+        : 'open',
+      startDate: toDateInput(group.startDate),
+      endDate: toDateInput(group.endDate),
+    } : {
+      name: '',
+      courseId: '',
+      schoolId: '',
+      status: 'open',
+      startDate: '',
+      endDate: '',
+    });
+    setGroupSchedule(normalizeSchedule(group?.schedule));
+    setGroupDialogOpen(true);
   };
 
   const openStatus = (status?: PipelineStatus) => {
@@ -691,6 +797,112 @@ export default function AcademySettings() {
     },
   ];
 
+  const groupColumns: DataTableColumn<Group>[] = [
+    {
+      key: 'name',
+      header: t('group'),
+      sortable: true,
+      accessor: (row) => row.name,
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{row.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {row.teacherName ?? t('teacherWillBeAssigned')}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'courseAndSchool',
+      header: t('courseAndSchool'),
+      sortable: true,
+      accessor: (row) => `${row.courseName ?? ''} ${row.schoolName ?? ''}`,
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.courseName ?? '—'}</p>
+          <p className="text-xs text-muted-foreground">{row.schoolName ?? '—'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'schedule',
+      header: t('schedule'),
+      accessor: (row) => row.schedule?.length ?? 0,
+      render: (row) => (
+        <div className="flex max-w-md flex-wrap gap-1">
+          {normalizeSchedule(row.schedule).slice(0, 3).map((item, index) => (
+            <Badge key={`${row.id}-${item.dayOfWeek}-${item.startTime}-${index}`} variant="outline">
+              {dayNames[item.dayOfWeek - 1]} {item.startTime}–{item.endTime}
+            </Badge>
+          ))}
+          {(row.schedule?.length ?? 0) > 3
+            ? <Badge variant="secondary">+{row.schedule.length - 3}</Badge>
+            : null}
+        </div>
+      ),
+    },
+    {
+      key: 'capacity',
+      header: t('groupCapacity'),
+      sortable: true,
+      accessor: (row) => Number(row.currentStudents || 0) + Number(row.reservedStudents || 0),
+      render: (row) => {
+        const occupied = Number(row.currentStudents || 0) + Number(row.reservedStudents || 0);
+        return (
+          <div className="flex min-w-36 flex-col gap-1">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-medium text-foreground">{occupied}/{row.maxStudents || 12}</span>
+              {Number(row.reservedStudents || 0) > 0
+                ? <span className="text-muted-foreground">{t('reservedSeats')}: {row.reservedStudents}</span>
+                : null}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-[width]"
+                style={{ width: `${Math.min(100, (occupied / Math.max(1, row.maxStudents || 12)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'status',
+      header: t('status'),
+      sortable: true,
+      accessor: (row) => row.status,
+      render: (row) => (
+        <Badge variant={row.status === 'completed' ? 'secondary' : 'outline'}>
+          {row.status === 'open'
+            ? t('groupStatusOpen')
+            : row.status === 'in_progress'
+              ? t('groupStatusInProgress')
+              : t('groupStatusCompleted')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: t('actions'),
+      render: (row) => (
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="icon" onClick={() => openGroup(row)}>
+            <Edit3 />
+            <span className="sr-only">{t('edit')}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setDeleteTarget({ resource: 'groups', id: row.id, name: row.name })}
+          >
+            <Trash2 />
+            <span className="sr-only">{t('delete')}</span>
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   const lessonColumns: DataTableColumn<Lesson>[] = [
     {
       key: 'scheduledAt',
@@ -772,6 +984,9 @@ export default function AcademySettings() {
           <TabsTrigger value="courses" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <BookOpen />{t('courses')}
           </TabsTrigger>
+          <TabsTrigger value="groups" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+            <UsersRound />{t('navGroups')}
+          </TabsTrigger>
           <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <GitBranch />{t('pipelineStages')}
           </TabsTrigger>
@@ -821,6 +1036,29 @@ export default function AcademySettings() {
                 keyExtractor={(row) => `course-${row.id}`}
                 defaultSortKey="name"
                 emptyState={<EmptyTableState title={t('noCourses')} description={t('noCoursesDescription')} />}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="groups" className="mt-0">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle>{t('navGroups')}</CardTitle>
+                <CardDescription>{t('groupsDescription')}</CardDescription>
+              </div>
+              <Button onClick={() => openGroup()}>
+                <Plus data-icon="inline-start" />{t('addGroup')}
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <DataTable
+                columns={groupColumns}
+                data={groups}
+                keyExtractor={(row) => `group-${row.id}`}
+                defaultSortKey="name"
+                emptyState={<EmptyTableState title={t('noGroups')} description={t('noGroupsDescription')} />}
               />
             </CardContent>
           </Card>
@@ -1052,8 +1290,8 @@ export default function AcademySettings() {
               )} />
               <FormField control={schoolForm.control} name="rooms" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('rooms')}</FormLabel>
-                  <FormControl><Input {...field} placeholder={t('roomsPlaceholder')} /></FormControl>
+                  <FormLabel>{t('room')}</FormLabel>
+                  <FormControl><Input {...field} placeholder={t('roomPlaceholder')} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -1212,6 +1450,138 @@ export default function AcademySettings() {
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCourseDialogOpen(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveCourse.isPending}>{saveCourse.isPending ? t('saving') : t('save')}</Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+        <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
+            <DialogDescription>{t('groupFormDescription')}</DialogDescription>
+          </DialogHeader>
+          <Form {...groupForm}>
+            <form
+              className="flex flex-col gap-5"
+              onSubmit={groupForm.handleSubmit((values) => {
+                if (groupSchedule.length === 0) {
+                  toast({ title: t('groupScheduleRequired'), variant: 'destructive' });
+                  return;
+                }
+                saveGroup.mutate(values);
+              })}
+            >
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <FormField control={groupForm.control} name="name" render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel>{t('groupName')}</FormLabel>
+                    <FormControl><Input {...field} placeholder={t('groupNamePlaceholder')} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('status')}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="open">{t('groupStatusOpen')}</SelectItem>
+                          <SelectItem value="in_progress">{t('groupStatusInProgress')}</SelectItem>
+                          <SelectItem value="completed">{t('groupStatusCompleted')}</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <div className="flex flex-col justify-center gap-1 rounded-lg border border-border px-3 py-2">
+                  <p className="text-xs text-muted-foreground">{t('groupCapacity')}</p>
+                  <p className="text-sm font-semibold text-foreground">12 {t('students')}</p>
+                  <p className="text-[11px] text-muted-foreground">{t('groupCapacityDescription')}</p>
+                </div>
+                <FormField control={groupForm.control} name="courseId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('course')}</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        if (groupSchedule.length === 0) {
+                          const course = courses.find((item) => item.id === Number(value));
+                          setGroupSchedule(normalizeSchedule(course?.schedule));
+                        }
+                      }}
+                    >
+                      <FormControl><SelectTrigger><SelectValue placeholder={t('selectCourse')} /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectGroup>
+                          {courses.filter((course) => course.isActive !== false).map((course) => (
+                            <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="schoolId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('school')}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectGroup>
+                          {schools.filter((school) => school.isActive !== false).map((school) => (
+                            <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="startDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('startDate')}</FormLabel>
+                    <FormControl><Input type="date" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="endDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('endDate')}</FormLabel>
+                    <FormControl><Input type="date" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t('schedule')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('singleRoomRule')} · {t('teacherWillBeAssigned')}
+                  </p>
+                </div>
+                <WeekScheduleEditor
+                  value={groupSchedule}
+                  onChange={setGroupSchedule}
+                  dayNames={dayNames}
+                  startLabel={t('start')}
+                  endLabel={t('end')}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setGroupDialogOpen(false)}>
+                  {t('cancel')}
+                </Button>
+                <Button type="submit" disabled={saveGroup.isPending}>
+                  {saveGroup.isPending ? t('saving') : t('save')}
+                </Button>
               </div>
             </form>
           </Form>

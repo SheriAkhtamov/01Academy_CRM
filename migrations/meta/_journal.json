@@ -57,6 +57,13 @@
       "when": 1781920800000,
       "tag": "0007_add_schools_course_scheduling",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781926200000,
+      "tag": "0008_enforce_group_capacity",
+      "breakpoints": true
     }
   ]
 }

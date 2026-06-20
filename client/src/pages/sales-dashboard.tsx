@@ -39,6 +39,7 @@ import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
+import { AvailabilityCalendar } from '@/components/ux/AvailabilityCalendar';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -164,6 +165,8 @@ const createLeadSchema = z.object({
   ),
   courseId: z.string(),
   schoolId: z.string().min(1, 'fillRequiredFields'),
+  enrolledGroupId: z.string(),
+  demoAt: z.string(),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   comment: z.string(),
   language: z.string().min(1, 'fillRequiredFields'),
@@ -179,6 +182,8 @@ const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   studentAge: '',
   courseId: '',
   schoolId: '',
+  enrolledGroupId: '',
+  demoAt: '',
   sourceId: '',
   comment: '',
   language: 'ru',
@@ -373,8 +378,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       studentAge: values.studentAge ? Number(values.studentAge) : undefined,
       courseId: values.courseId ? Number(values.courseId) : undefined,
       schoolId: values.schoolId ? Number(values.schoolId) : undefined,
+      enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
+      demoAt: values.demoAt || undefined,
+      demoFormat: values.demoAt ? 'offline' : undefined,
+      demoLocation: values.demoAt
+        ? data?.schools?.find((school: any) => school.id === Number(values.schoolId))?.name
+        : undefined,
       sourceId: Number(values.sourceId),
-      managerId: user?.id,
+      managerId: user?.role === 'account_manager' ? user.id : undefined,
     }),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
@@ -671,7 +682,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       ) : null}
 
       <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('newApplication')}</DialogTitle>
             <DialogDescription className="sr-only">{t('formCreation')} {t('newApplication')}</DialogDescription>
@@ -1262,6 +1273,21 @@ function LeadForm({
   createLead: any;
   data: any;
 }) {
+  const selectedCourseId = Number(form.watch('courseId')) || null;
+  const selectedSchoolId = Number(form.watch('schoolId')) || null;
+  const selectedGroupId = form.watch('enrolledGroupId');
+  const selectedSlot = form.watch('demoAt');
+  const availableGroups = (data.groups ?? []).filter((group: any) => {
+    const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+    const matchesCourse = !selectedCourseId || Number(group.courseId) === selectedCourseId;
+    const matchesSchool = !selectedSchoolId || Number(group.schoolId) === selectedSchoolId;
+    const hasSeat = occupied < Number(group.maxStudents || 12) || String(group.id) === selectedGroupId;
+    return matchesCourse
+      && matchesSchool
+      && hasSeat
+      && ['open', 'in_progress'].includes(String(group.status));
+  });
+
   return (
     <Form {...form}>
       <form
@@ -1337,7 +1363,14 @@ function LeadForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>{t('course')}</FormLabel>
-              <Select value={field.value || 'auto'} onValueChange={(value) => field.onChange(value === 'auto' ? '' : value)}>
+              <Select
+                value={field.value || 'auto'}
+                onValueChange={(value) => {
+                  field.onChange(value === 'auto' ? '' : value);
+                  form.setValue('enrolledGroupId', '');
+                  form.setValue('demoAt', '');
+                }}
+              >
                 <FormControl><SelectTrigger><SelectValue placeholder={t('autoByAgeOrManual')} /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectGroup>
@@ -1358,13 +1391,58 @@ function LeadForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>{t('school')}</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={(value) => {
+                  field.onChange(value);
+                  form.setValue('enrolledGroupId', '');
+                  form.setValue('demoAt', '');
+                }}
+              >
                 <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectGroup>
                     {(data.schools ?? []).filter((school: any) => school.isActive !== false).map((school: any) => (
                       <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
                     ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="enrolledGroupId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('group')}</FormLabel>
+              <Select
+                value={field.value || 'none'}
+                onValueChange={(value) => {
+                  if (value === 'none') {
+                    field.onChange('');
+                    return;
+                  }
+                  field.onChange(value);
+                  const group = (data.groups ?? []).find((item: any) => item.id === Number(value));
+                  if (group?.courseId) form.setValue('courseId', String(group.courseId));
+                  if (group?.schoolId) form.setValue('schoolId', String(group.schoolId));
+                }}
+              >
+                <FormControl><SelectTrigger><SelectValue placeholder={t('selectGroup')} /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="none">{t('notAssigned')}</SelectItem>
+                    {availableGroups.map((group: any) => {
+                      const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+                      return (
+                        <SelectItem key={group.id} value={String(group.id)}>
+                          {group.name} · {occupied}/{group.maxStudents || 12}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectGroup>
                 </SelectContent>
               </Select>
@@ -1418,6 +1496,24 @@ function LeadForm({
             <FormItem className="md:col-span-2">
               <FormLabel>{t('comment')}</FormLabel>
               <FormControl><Input {...field} placeholder={t('commentPlaceholder')} /></FormControl>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="demoAt"
+          render={({ field }) => (
+            <FormItem className="md:col-span-2">
+              <FormLabel>{t('availableSlots')}</FormLabel>
+              <FormControl>
+                <AvailabilityCalendar
+                  schoolId={selectedSchoolId}
+                  courseId={selectedCourseId}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              </FormControl>
               <LocalizedFormMessage />
             </FormItem>
           )}

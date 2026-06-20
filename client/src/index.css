@@ -42,6 +42,32 @@
   --purple-100: hsl(270, 100%, 98%);
   --purple-500: hsl(271, 91%, 65%);
   --purple-600: hsl(271, 81%, 56%);
+
+  /* Lesson calendar group tones */
+  --calendar-blue-background: hsl(214, 100%, 97%);
+  --calendar-blue-border: hsl(217, 91%, 72%);
+  --calendar-blue-foreground: hsl(224, 76%, 32%);
+  --calendar-blue-solid: hsl(217, 91%, 60%);
+  --calendar-emerald-background: hsl(149, 70%, 96%);
+  --calendar-emerald-border: hsl(158, 64%, 68%);
+  --calendar-emerald-foreground: hsl(160, 84%, 24%);
+  --calendar-emerald-solid: hsl(160, 84%, 39%);
+  --calendar-amber-background: hsl(44, 95%, 96%);
+  --calendar-amber-border: hsl(38, 92%, 70%);
+  --calendar-amber-foreground: hsl(28, 80%, 30%);
+  --calendar-amber-solid: hsl(38, 92%, 50%);
+  --calendar-violet-background: hsl(270, 80%, 97%);
+  --calendar-violet-border: hsl(271, 81%, 76%);
+  --calendar-violet-foreground: hsl(272, 72%, 34%);
+  --calendar-violet-solid: hsl(271, 81%, 56%);
+  --calendar-rose-background: hsl(350, 100%, 97%);
+  --calendar-rose-border: hsl(350, 89%, 78%);
+  --calendar-rose-foreground: hsl(346, 77%, 36%);
+  --calendar-rose-solid: hsl(347, 77%, 50%);
+  --calendar-cyan-background: hsl(186, 100%, 96%);
+  --calendar-cyan-border: hsl(187, 72%, 68%);
+  --calendar-cyan-foreground: hsl(190, 80%, 28%);
+  --calendar-cyan-solid: hsl(188, 86%, 42%);
   
   --slate-50: hsl(210, 40%, 98%);
   --slate-100: hsl(210, 40%, 96%);
@@ -99,6 +125,31 @@
   --destructive-foreground: hsl(0, 0%, 98%);
   --ring: hsl(240, 4.9%, 83.9%);
   --radius: 0.5rem;
+
+  --calendar-blue-background: hsl(224, 44%, 16%);
+  --calendar-blue-border: hsl(217, 70%, 46%);
+  --calendar-blue-foreground: hsl(214, 100%, 88%);
+  --calendar-blue-solid: hsl(217, 91%, 60%);
+  --calendar-emerald-background: hsl(160, 40%, 13%);
+  --calendar-emerald-border: hsl(160, 60%, 34%);
+  --calendar-emerald-foreground: hsl(149, 70%, 86%);
+  --calendar-emerald-solid: hsl(160, 84%, 39%);
+  --calendar-amber-background: hsl(32, 46%, 14%);
+  --calendar-amber-border: hsl(38, 80%, 42%);
+  --calendar-amber-foreground: hsl(44, 95%, 86%);
+  --calendar-amber-solid: hsl(38, 92%, 50%);
+  --calendar-violet-background: hsl(272, 38%, 16%);
+  --calendar-violet-border: hsl(271, 65%, 48%);
+  --calendar-violet-foreground: hsl(270, 80%, 90%);
+  --calendar-violet-solid: hsl(271, 81%, 56%);
+  --calendar-rose-background: hsl(346, 38%, 15%);
+  --calendar-rose-border: hsl(347, 68%, 46%);
+  --calendar-rose-foreground: hsl(350, 100%, 90%);
+  --calendar-rose-solid: hsl(347, 77%, 50%);
+  --calendar-cyan-background: hsl(190, 42%, 13%);
+  --calendar-cyan-border: hsl(188, 68%, 38%);
+  --calendar-cyan-foreground: hsl(186, 100%, 88%);
+  --calendar-cyan-solid: hsl(188, 86%, 42%);
 }
 
 @layer base {

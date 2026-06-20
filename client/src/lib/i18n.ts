@@ -792,6 +792,34 @@ export const translations = {
     en: 'This is an operational workspace for another role. Use Administration to configure the system.',
     ru: 'Это операционная рабочая область другой роли. Для настройки системы используйте раздел «Администрирование».',
   },
+
+  // UX improvements — sales lesson calendar
+  clearAll: { en: 'Clear all', ru: 'Снять все' },
+  groupsSelected: { en: 'groups selected', ru: 'групп выбрано' },
+  noLessonsThisWeek: { en: 'No lessons to display', ru: 'Нет занятий для отображения' },
+  noLessonsThisWeekDescription: {
+    en: 'The selected groups have no scheduled lessons during this week.',
+    ru: 'У выбранных групп нет занятий на этой неделе.',
+  },
+  noScheduledGroups: { en: 'No groups with a schedule', ru: 'Нет групп с расписанием' },
+  noScheduledGroupsDescription: {
+    en: 'Add a timetable to an active group in academy settings.',
+    ru: 'Добавьте расписание активной группе в настройках академии.',
+  },
+  ofLabel: { en: 'of', ru: 'из' },
+  salesSchedule: { en: 'Lesson schedule', ru: 'Расписание занятий' },
+  salesScheduleSubtitle: {
+    en: 'All group lessons in one calendar. Filter the schedule by school, course or group.',
+    ru: 'Все занятия групп в одном календаре. Фильтруйте расписание по школе, курсу или группе.',
+  },
+  scheduleFilters: { en: 'Schedule filters', ru: 'Фильтры расписания' },
+  selectAll: { en: 'Select all', ru: 'Выбрать все' },
+  selectGroupsToSeeSchedule: {
+    en: 'Select at least one group to see its lessons.',
+    ru: 'Выберите хотя бы одну группу, чтобы увидеть её занятия.',
+  },
+  today: { en: 'Today', ru: 'Сегодня' },
+  weeklySchedule: { en: 'Weekly schedule', ru: 'Недельное расписание' },
 } as const;
 
 

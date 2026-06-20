@@ -120,6 +120,11 @@ function Router() {
             <SalesDashboard section="pipeline" />
           </RoleGuard>
         )} />
+        <Route path="/sales/schedule" component={() => (
+          <RoleGuard allowedRoles={salesRoles}>
+            <SalesDashboard section="schedule" />
+          </RoleGuard>
+        )} />
         <Route path="/sales/clients" component={() => (
           <RoleGuard allowedRoles={salesRoles}>
             <SalesDashboard section="students" />

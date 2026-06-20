@@ -40,6 +40,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { AvailabilityCalendar } from '@/components/ux/AvailabilityCalendar';
+import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -61,7 +62,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 
-type SalesSection = 'overview' | 'leads' | 'pipeline' | 'students' | 'tasks';
+type SalesSection = 'overview' | 'leads' | 'pipeline' | 'schedule' | 'students' | 'tasks';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 type QuickAction = 'qualify' | 'warm' | 'payment' | 'call' | 'message';
 
@@ -150,6 +151,7 @@ const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   overview: '/sales',
   leads: '/sales/leads',
   pipeline: '/sales/pipeline',
+  schedule: '/sales/schedule',
   students: '/sales/clients',
   tasks: '/sales/tasks',
 };
@@ -562,6 +564,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     overview: `${t('welcome')}, ${user?.fullName || t('manager')}!`,
     leads: t('myLeads'),
     pipeline: t('pipeline'),
+    schedule: t('salesSchedule'),
     students: t('myStudents'),
     tasks: t('myTasks'),
   };
@@ -570,7 +573,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={t('salesManagerWorkspace')}
+        subtitle={section === 'schedule' ? t('salesScheduleSubtitle') : t('salesManagerWorkspace')}
         breadcrumbs={[
           { label: t('navDashboard'), href: '/sales' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
@@ -653,6 +656,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             return true;
           }}
           isPending={updateLead.isPending}
+        />
+      ) : null}
+
+      {section === 'schedule' ? (
+        <SalesScheduleCalendar
+          groups={data.groups ?? []}
+          lessons={data.lessons ?? []}
+          courses={data.courses ?? []}
+          schools={data.schools ?? []}
         />
       ) : null}
 

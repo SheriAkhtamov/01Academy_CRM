@@ -1812,6 +1812,7 @@ router.get('/workspaces/sales', async (req, res) => {
       statuses: dataset.statuses,
       leads: dataset.leads,
       students: dataset.students,
+      lessons: dataset.lessons,
       payments: dataset.payments,
       tasks: dataset.tasks,
       projects: dataset.projects,

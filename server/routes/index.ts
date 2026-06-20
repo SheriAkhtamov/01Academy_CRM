@@ -12,11 +12,13 @@ import messageRoutes from './message.routes';
 import notificationsRoutes from './notifications.routes';
 import academyRoutes from './academy.routes';
 import incomingRoutes from './incoming.routes';
+import boardRoutes from './board.routes';
 import { logger } from '../lib/logger';
 import { createPresenceTracker } from '../lib/presence';
 import { appConfig } from '../config';
 
 import { setBroadcastFunction as setMessageBroadcast } from './message.routes';
+import { setBroadcastFunction as setBoardBroadcast } from './board.routes';
 
 const PgStore = pgSession(session);
 const WS_OPEN_STATE = 1;
@@ -74,6 +76,7 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     app.use('/api/messages', messageRoutes);
     app.use('/api/notifications', notificationsRoutes);
     app.use('/api/academy', academyRoutes);
+    app.use('/api/board', boardRoutes);
     // Public inbound webhooks (verified by per-provider secrets, NOT session auth).
     app.use('/api/incoming', incomingRoutes);
     const httpServer = createServer(app);
@@ -200,6 +203,7 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     };
 
     setMessageBroadcast(broadcastToClients);
+    setBoardBroadcast(broadcastToClients);
 
     return httpServer;
 }

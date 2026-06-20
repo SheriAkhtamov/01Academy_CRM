@@ -38,3 +38,10 @@ logs/
 .env
 .env.*
 !.env.example
+
+# Uploaded files (board attachments)
+uploads/
+!uploads/board/.gitkeep
+
+# Local-only Docker overrides (dev machine specific)
+docker-compose.override.yml

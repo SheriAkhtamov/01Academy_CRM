@@ -1,0 +1,165 @@
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/hooks/useTranslation';
+import { PRIORITY_ORDER, type BoardPriority, type UserMini } from '@/lib/boardTypes';
+
+interface CreateTaskDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    users: UserMini[];
+}
+
+const UNASSIGNED = 'unassigned';
+
+export function CreateTaskDialog({ open, onOpenChange, users }: CreateTaskDialogProps) {
+    const { t } = useTranslation();
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+
+    const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
+    const [priority, setPriority] = useState<BoardPriority>('normal');
+    const [assigneeId, setAssigneeId] = useState<string>(UNASSIGNED);
+    const [dueAt, setDueAt] = useState('');
+
+    const reset = () => {
+        setTitle('');
+        setDescription('');
+        setPriority('normal');
+        setAssigneeId(UNASSIGNED);
+        setDueAt('');
+    };
+
+    const mutation = useMutation({
+        mutationFn: () =>
+            apiRequest('POST', '/api/board/tasks', {
+                title: title.trim(),
+                description: description.trim() || null,
+                priority,
+                assigneeId: assigneeId === UNASSIGNED ? null : Number(assigneeId),
+                dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+            toast({ title: t('taskCreated') });
+            reset();
+            onOpenChange(false);
+        },
+        onError: (error: Error) => {
+            toast({ title: error.message, variant: 'destructive' });
+        },
+    });
+
+    const handleSubmit = () => {
+        if (!title.trim()) {
+            toast({ title: t('titleRequired'), variant: 'destructive' });
+            return;
+        }
+        mutation.mutate();
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next); }}>
+            <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>{t('addTask')}</DialogTitle>
+                    <DialogDescription className="sr-only">{t('addTask')}</DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                    <div className="space-y-1.5">
+                        <Label className="text-xs text-slate-500">{t('taskTitleLabel')}</Label>
+                        <Input
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder={t('taskTitlePlaceholder')}
+                            autoFocus
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
+                            }}
+                        />
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <Label className="text-xs text-slate-500">{t('description')}</Label>
+                        <Textarea
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder={t('taskDescriptionPlaceholder')}
+                            rows={3}
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-slate-500">{t('priorityLabel')}</Label>
+                            <Select value={priority} onValueChange={(v) => setPriority(v as BoardPriority)}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {PRIORITY_ORDER.map((p) => (
+                                        <SelectItem key={p} value={p}>
+                                            {t(p === 'urgent' ? 'priorityUrgent' : p === 'normal' ? 'priorityNormal' : 'priorityLow')}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-slate-500">{t('assigneeLabel')}</Label>
+                            <Select value={assigneeId} onValueChange={setAssigneeId}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
+                                    {users.map((u) => (
+                                        <SelectItem key={u.id} value={String(u.id)}>
+                                            {u.fullName}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <Label className="text-xs text-slate-500">{t('dueDateLabel')}</Label>
+                        <Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
+                        {t('cancel')}
+                    </Button>
+                    <Button onClick={handleSubmit} disabled={mutation.isPending}>
+                        {t('createTask')}
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}

@@ -727,3 +727,151 @@ export type AcademyNotificationOutbox = typeof academyNotificationOutbox.$inferS
 export type InsertAcademyNotificationOutbox = z.infer<typeof insertAcademyNotificationOutboxSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
+// ---------------------------------------------------------------------------
+// Management board (Kanban task management).
+// One shared board ships today; the `boards` table and `boardId` foreign keys
+// leave room to add more boards, per-board membership and access rules later
+// without breaking existing tasks or data.
+// ---------------------------------------------------------------------------
+
+export const BOARD_TASK_STATUSES = ["backlog", "todo", "in_progress", "done", "accepted"] as const;
+export type BoardTaskStatus = (typeof BOARD_TASK_STATUSES)[number];
+
+export const BOARD_TASK_PRIORITIES = ["urgent", "normal", "low"] as const;
+export type BoardTaskPriority = (typeof BOARD_TASK_PRIORITIES)[number];
+
+export const boards = pgTable("boards", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  defaultIdx: index("boards_default_idx").on(table.isDefault),
+}));
+
+export const boardTasks = pgTable("board_tasks", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id").references(() => boards.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).notNull().default("backlog"),
+  priority: varchar("priority", { length: 10 }).notNull().default("normal"),
+  position: integer("position").notNull().default(0),
+  creatorId: integer("creator_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeId: integer("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  dueAt: timestamp("due_at"),
+  acceptedAt: timestamp("accepted_at"),
+  acceptedBy: integer("accepted_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  boardStatusIdx: index("board_tasks_board_status_idx").on(table.boardId, table.status),
+  assigneeIdx: index("board_tasks_assignee_idx").on(table.assigneeId),
+  creatorIdx: index("board_tasks_creator_idx").on(table.creatorId),
+  statusCheck: check("board_tasks_status_check", sql`${table.status} IN ('backlog', 'todo', 'in_progress', 'done', 'accepted')`),
+  priorityCheck: check("board_tasks_priority_check", sql`${table.priority} IN ('urgent', 'normal', 'low')`),
+}));
+
+export const boardTaskComments = pgTable("board_task_comments", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => boardTasks.id, { onDelete: "cascade" }).notNull(),
+  authorId: integer("author_id").references(() => users.id, { onDelete: "set null" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  taskIdx: index("board_task_comments_task_idx").on(table.taskId),
+}));
+
+export const boardTaskChecklistItems = pgTable("board_task_checklist_items", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => boardTasks.id, { onDelete: "cascade" }).notNull(),
+  content: varchar("content", { length: 500 }).notNull(),
+  isDone: boolean("is_done").notNull().default(false),
+  position: integer("position").notNull().default(0),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  taskIdx: index("board_task_checklist_items_task_idx").on(table.taskId),
+}));
+
+export const boardTaskAttachments = pgTable("board_task_attachments", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => boardTasks.id, { onDelete: "cascade" }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  originalName: varchar("original_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 120 }),
+  size: integer("size").notNull().default(0),
+  uploadedBy: integer("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  taskIdx: index("board_task_attachments_task_idx").on(table.taskId),
+}));
+
+export const boardTaskActivity = pgTable("board_task_activity", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => boardTasks.id, { onDelete: "cascade" }).notNull(),
+  actorId: integer("actor_id").references(() => users.id, { onDelete: "set null" }),
+  type: varchar("type", { length: 40 }).notNull(),
+  fromValue: varchar("from_value", { length: 120 }),
+  toValue: varchar("to_value", { length: 120 }),
+  meta: jsonb("meta"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  taskIdx: index("board_task_activity_task_idx").on(table.taskId),
+}));
+
+export const insertBoardSchema = createInsertSchema(boards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBoardTaskSchema = createInsertSchema(boardTasks).omit({
+  id: true,
+  acceptedAt: true,
+  acceptedBy: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBoardTaskCommentSchema = createInsertSchema(boardTaskComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBoardTaskChecklistItemSchema = createInsertSchema(boardTaskChecklistItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBoardTaskAttachmentSchema = createInsertSchema(boardTaskAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertBoardTaskActivitySchema = createInsertSchema(boardTaskActivity).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Board = typeof boards.$inferSelect;
+export type InsertBoard = z.infer<typeof insertBoardSchema>;
+export type BoardTask = typeof boardTasks.$inferSelect;
+export type InsertBoardTask = z.infer<typeof insertBoardTaskSchema>;
+export type BoardTaskComment = typeof boardTaskComments.$inferSelect;
+export type InsertBoardTaskComment = z.infer<typeof insertBoardTaskCommentSchema>;
+export type BoardTaskChecklistItem = typeof boardTaskChecklistItems.$inferSelect;
+export type InsertBoardTaskChecklistItem = z.infer<typeof insertBoardTaskChecklistItemSchema>;
+export type BoardTaskAttachment = typeof boardTaskAttachments.$inferSelect;
+export type InsertBoardTaskAttachment = z.infer<typeof insertBoardTaskAttachmentSchema>;
+export type BoardTaskActivity = typeof boardTaskActivity.$inferSelect;
+export type InsertBoardTaskActivity = z.infer<typeof insertBoardTaskActivitySchema>;

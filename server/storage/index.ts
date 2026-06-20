@@ -2,6 +2,7 @@ import { userStorage } from './user.storage';
 import { notificationStorage } from './notification.storage';
 import { auditStorage } from './audit.storage';
 import { messageStorage } from './message.storage';
+import { boardStorage } from './board.storage';
 
 export const storage = {
     // User operations
@@ -36,4 +37,8 @@ export const storage = {
         }
         return messageStorage.markMessageAsRead(id, userId);
     },
+
+    // Management board operations (Kanban). Exposed as a namespace since it
+    // groups many task/comment/checklist/attachment methods.
+    board: boardStorage,
 };

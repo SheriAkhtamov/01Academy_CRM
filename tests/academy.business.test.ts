@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACADEMY_ROLES,
+  ACADEMY_WORKSPACE_ROLES,
   buildReferralCode,
   calculateAttendancePercent,
   calculateCac,
@@ -8,6 +9,7 @@ import {
   calculateNps,
   calculateProgressPercent,
   calculateRoas,
+  canAccessAcademyWorkspace,
   getComputedPaymentStatus,
   suggestAgeGroup,
   suggestCourseSlugByAge,
@@ -25,6 +27,24 @@ describe("01 Academy business rules", () => {
       "operations_director",
       "smm_manager",
     ]);
+  });
+
+  it("keeps system administrators out of operational workspaces", () => {
+    expect(ACADEMY_WORKSPACE_ROLES.administration).toEqual(["admin", "head"]);
+    expect(canAccessAcademyWorkspace("admin", "administration")).toBe(true);
+    expect(canAccessAcademyWorkspace("admin", "sales")).toBe(false);
+    expect(canAccessAcademyWorkspace("admin", "teacher")).toBe(false);
+    expect(canAccessAcademyWorkspace("admin", "analytics")).toBe(false);
+    expect(canAccessAcademyWorkspace("admin", "marketing")).toBe(false);
+    expect(canAccessAcademyWorkspace("admin", "management")).toBe(false);
+  });
+
+  it("assigns each operational workspace to its responsible role", () => {
+    expect(canAccessAcademyWorkspace("account_manager", "sales")).toBe(true);
+    expect(canAccessAcademyWorkspace("teacher", "teacher")).toBe(true);
+    expect(canAccessAcademyWorkspace("operations_director", "analytics")).toBe(true);
+    expect(canAccessAcademyWorkspace("smm_manager", "marketing")).toBe(true);
+    expect(canAccessAcademyWorkspace("head", "management")).toBe(true);
   });
 
   it("suggests course and age group from student age", () => {

@@ -8,6 +8,7 @@ import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import {
   ACTIVE_PIPELINE_STATUSES,
+  ACADEMY_WORKSPACE_ROLES,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_STATUSES,
@@ -57,10 +58,12 @@ const FINANCE_ROLES = new Set(['admin', 'head', 'operations_director']);
 const OPERATIONS_ROLES = new Set(['admin', 'head', 'operations_director']);
 const MARKETING_ROLES = new Set(['admin', 'head', 'smm_manager']);
 const SALES_ROLES = new Set(['admin', 'head', 'account_manager']);
-const TEACHER_WORKSPACE_ROLES = new Set(['admin', 'head', 'teacher']);
-const ANALYTICS_WORKSPACE_ROLES = new Set(['admin', 'head', 'operations_director']);
 const REPORT_ROLES = new Set(['admin', 'head', 'operations_director', 'smm_manager']);
 const LEAD_WRITE_ROLES = new Set(['admin', 'head', 'account_manager', 'smm_manager']);
+const SALES_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.sales);
+const TEACHER_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.teacher);
+const ANALYTICS_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.analytics);
+const MARKETING_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.marketing);
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -276,11 +279,17 @@ const ensureRoleAccess = (req: any, res: any, roles: Set<string>, message: strin
 const ensureSalesAccess = (req: any, res: any) =>
   ensureRoleAccess(req, res, SALES_ROLES, 'Sales access required');
 
+const ensureSalesWorkspaceAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, SALES_WORKSPACE_ROLES, 'Sales workspace access required');
+
 const ensureTeacherWorkspaceAccess = (req: any, res: any) =>
   ensureRoleAccess(req, res, TEACHER_WORKSPACE_ROLES, 'Teacher workspace access required');
 
 const ensureAnalyticsWorkspaceAccess = (req: any, res: any) =>
   ensureRoleAccess(req, res, ANALYTICS_WORKSPACE_ROLES, 'Analytics workspace access required');
+
+const ensureMarketingWorkspaceAccess = (req: any, res: any) =>
+  ensureRoleAccess(req, res, MARKETING_WORKSPACE_ROLES, 'Marketing workspace access required');
 
 const ensureAdminWorkspaceAccess = (req: any, res: any) =>
   ensureRoleAccess(req, res, HEAD_ROLES, 'Admin access required');
@@ -1790,7 +1799,7 @@ const createCsv = (rows: Row[]) => {
 };
 
 router.get('/workspaces/sales', async (req, res) => {
-  if (!ensureSalesAccess(req, res)) return;
+  if (!ensureSalesWorkspaceAccess(req, res)) return;
   try {
     const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
     const dataset = await getAcademyDataset(actor);
@@ -1901,7 +1910,7 @@ router.patch('/teachers/me/availability', async (req, res) => {
 });
 
 router.get('/workspaces/marketing', async (req, res) => {
-  if (!ensureMarketingAccess(req, res)) return;
+  if (!ensureMarketingWorkspaceAccess(req, res)) return;
   try {
     const [dataset, analytics] = await Promise.all([
       getMarketingWorkspaceDataset(),

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import fs from 'fs';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -12,6 +12,7 @@ import {
     type BoardTaskStatus,
 } from '@shared/schema';
 import type { User } from '@shared/schema';
+import { canAccessAcademyWorkspace } from '@shared/academy';
 
 const router = Router();
 
@@ -23,17 +24,26 @@ export function setBroadcastFunction(fn: (data: any) => void) {
 
 // --- Permission helpers -----------------------------------------------------
 
-const isAdminHead = (user?: User) => user?.role === 'admin' || user?.role === 'head';
+const requireBoardAccess = (req: Request, res: Response, next: NextFunction) => {
+    if (!canAccessAcademyWorkspace(req.user?.role, 'management')) {
+        return res.status(403).json({ error: 'Management workspace access required' });
+    }
+    next();
+};
+
+router.use(requireAuth, requireBoardAccess);
+
+const isTaskSupervisor = (user?: User) => user?.role === 'head';
 
 // Can edit core fields (title, description, priority, assignee, due date).
 const canManageTask = (user: User, task: BoardTask) =>
-    user.id === task.creatorId || user.id === task.assigneeId || isAdminHead(user);
+    user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor(user);
 
 // Accepting (Done -> Accepted) and re-opening (out of Accepted) are reserved
-// for the task creator. Admin/head retain an override so orphaned tasks (whose
+// for the task creator. The head retains an override so orphaned tasks (whose
 // creator was deactivated) never get stuck.
 const canAcceptOrReopen = (user: User, task: BoardTask) =>
-    user.id === task.creatorId || isAdminHead(user);
+    user.id === task.creatorId || isTaskSupervisor(user);
 
 const parseId = (raw: string) => {
     const id = Number.parseInt(raw, 10);
@@ -71,13 +81,13 @@ function validateTransition(
 }
 
 const broadcastTask = (type: string, task: { id: number; boardId: number }) => {
-    // Every employee can see the board, so broadcast to all connected clients.
+    // Read access remains enforced when each client refreshes the board.
     broadcastToClients({ type, data: { id: task.id, boardId: task.boardId } });
 };
 
 // --- Boards -----------------------------------------------------------------
 
-router.get('/boards', requireAuth, async (_req, res) => {
+router.get('/boards', async (_req, res) => {
     try {
         const boards = await storage.board.getBoards();
         res.json(boards);
@@ -90,7 +100,7 @@ router.get('/boards', requireAuth, async (_req, res) => {
 // --- Tasks ------------------------------------------------------------------
 
 // List tasks for a board (defaults to the shared board when boardId is omitted).
-router.get('/tasks', requireAuth, async (req, res) => {
+router.get('/tasks', async (req, res) => {
     try {
         let boardId = req.query.boardId ? parseId(String(req.query.boardId)) : null;
         if (!boardId) {
@@ -110,7 +120,7 @@ router.get('/tasks', requireAuth, async (req, res) => {
     }
 });
 
-router.get('/tasks/:id', requireAuth, async (req, res) => {
+router.get('/tasks/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
@@ -123,7 +133,7 @@ router.get('/tasks/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/tasks', requireAuth, async (req, res) => {
+router.post('/tasks', async (req, res) => {
     try {
         const { title, description, priority, status, assigneeId, dueAt } = req.body;
         let { boardId } = req.body;
@@ -186,7 +196,7 @@ router.post('/tasks', requireAuth, async (req, res) => {
 });
 
 // Update core fields (title, description, priority, assignee, due date).
-router.patch('/tasks/:id', requireAuth, async (req, res) => {
+router.patch('/tasks/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
@@ -256,7 +266,7 @@ router.patch('/tasks/:id', requireAuth, async (req, res) => {
 });
 
 // Move a task to another column (with the creator-only accept/reopen rules).
-router.patch('/tasks/:id/status', requireAuth, async (req, res) => {
+router.patch('/tasks/:id/status', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
@@ -310,14 +320,14 @@ router.patch('/tasks/:id/status', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/tasks/:id', requireAuth, async (req, res) => {
+router.delete('/tasks/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (req.user!.id !== task.creatorId && !isAdminHead(req.user!)) {
+        if (req.user!.id !== task.creatorId && !isTaskSupervisor(req.user!)) {
             return res.status(403).json({ error: 'Only the creator can delete this task' });
         }
 
@@ -332,7 +342,7 @@ router.delete('/tasks/:id', requireAuth, async (req, res) => {
 
 // --- Comments ---------------------------------------------------------------
 
-router.post('/tasks/:id/comments', requireAuth, async (req, res) => {
+router.post('/tasks/:id/comments', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
@@ -364,7 +374,7 @@ router.post('/tasks/:id/comments', requireAuth, async (req, res) => {
     }
 });
 
-router.patch('/comments/:id', requireAuth, async (req, res) => {
+router.patch('/comments/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid comment id' });
@@ -373,7 +383,7 @@ router.patch('/comments/:id', requireAuth, async (req, res) => {
 
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
-        if (req.user!.id !== comment.authorId && !isAdminHead(req.user!)) {
+        if (req.user!.id !== comment.authorId && !isTaskSupervisor(req.user!)) {
             return res.status(403).json({ error: 'You can only edit your own comments' });
         }
 
@@ -386,14 +396,14 @@ router.patch('/comments/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/comments/:id', requireAuth, async (req, res) => {
+router.delete('/comments/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid comment id' });
 
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
-        if (req.user!.id !== comment.authorId && !isAdminHead(req.user!)) {
+        if (req.user!.id !== comment.authorId && !isTaskSupervisor(req.user!)) {
             return res.status(403).json({ error: 'You can only delete your own comments' });
         }
 
@@ -408,7 +418,7 @@ router.delete('/comments/:id', requireAuth, async (req, res) => {
 
 // --- Checklist --------------------------------------------------------------
 
-router.post('/tasks/:id/checklist', requireAuth, async (req, res) => {
+router.post('/tasks/:id/checklist', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
@@ -433,7 +443,7 @@ router.post('/tasks/:id/checklist', requireAuth, async (req, res) => {
     }
 });
 
-router.patch('/checklist/:id', requireAuth, async (req, res) => {
+router.patch('/checklist/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid item id' });
@@ -457,7 +467,7 @@ router.patch('/checklist/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/checklist/:id', requireAuth, async (req, res) => {
+router.delete('/checklist/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid item id' });
@@ -476,7 +486,7 @@ router.delete('/checklist/:id', requireAuth, async (req, res) => {
 
 // --- Attachments ------------------------------------------------------------
 
-router.post('/tasks/:id/attachments', requireAuth, boardAttachmentUpload.single('file'), async (req, res) => {
+router.post('/tasks/:id/attachments', boardAttachmentUpload.single('file'), async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
@@ -514,7 +524,7 @@ router.post('/tasks/:id/attachments', requireAuth, boardAttachmentUpload.single(
     }
 });
 
-router.get('/attachments/:id/download', requireAuth, async (req, res) => {
+router.get('/attachments/:id/download', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid attachment id' });
@@ -532,7 +542,7 @@ router.get('/attachments/:id/download', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/attachments/:id', requireAuth, async (req, res) => {
+router.delete('/attachments/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid attachment id' });
@@ -544,7 +554,7 @@ router.delete('/attachments/:id', requireAuth, async (req, res) => {
         const canDelete =
             req.user!.id === attachment.uploadedBy ||
             (task && req.user!.id === task.creatorId) ||
-            isAdminHead(req.user!);
+            isTaskSupervisor(req.user!);
         if (!canDelete) return res.status(403).json({ error: 'Not allowed to delete this attachment' });
 
         await storage.board.deleteAttachment(id);

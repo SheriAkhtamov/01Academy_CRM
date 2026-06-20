@@ -6,6 +6,7 @@ import {
   formatUserRole,
   canAccessReports,
 } from '@/lib/auth';
+import { canAccessAcademyWorkspace } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import {
@@ -37,6 +38,7 @@ import {
   UserCircle,
   SlidersHorizontal,
   KanbanSquare,
+  ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -146,59 +148,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     if (role === 'admin' || role === 'head') {
       return [
         {
-          label: t('salesPipeline'),
-          items: [
-            { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
-            { name: t('myLeads'), href: '/sales/leads', icon: Users },
-            { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
-            { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-            { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
-          ],
-        },
-        {
-          label: t('teacher'),
-          items: [
-            { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
-            { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
-            { name: t('navGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
-            { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
-            { name: t('lessonRatings'), href: '/teacher-workspace/ratings', icon: Star },
-          ],
-        },
-        {
-          label: t('navAnalytics'),
-          items: [
-            { name: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
-            { name: t('salesPipeline'), href: '/analytics-workspace/funnel', icon: Flame },
-            { name: t('byCourses'), href: '/analytics-workspace/courses', icon: BookOpen },
-            { name: t('bySources'), href: '/analytics-workspace/sources', icon: Megaphone },
-            { name: t('navTeachers'), href: '/analytics-workspace/teachers', icon: UserRoundCheck },
-            { name: t('navGroups'), href: '/analytics-workspace/groups', icon: Layers3 },
-            { name: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
-          ],
-        },
-        {
-          label: t('marketingTab'),
-          items: [
-            { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
-            { name: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
-            { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
-            { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
-            { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
-            { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
-          ],
-        },
-        {
           label: t('systemAdministration'),
           items: [
-            { name: t('reportsActivityLogs'), href: '/admin', icon: ListChecks },
+            { name: t('administration'), href: '/admin', icon: ShieldCheck },
             { name: t('employees'), href: '/employees', icon: Users },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-          ],
-        },
-        {
-          label: t('sectionSystem'),
-          items: [
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
             { name: t('settings'), href: '/settings', icon: Settings },
           ],
@@ -209,15 +163,16 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     return [];
   };
 
-  // The management board is available to every role, so it is appended to
-  // whatever role-specific sections were built above.
   const managementSection: NavSection = {
     label: t('management'),
     items: [
       { name: t('taskBoard'), href: '/management', icon: KanbanSquare },
     ],
   };
-  const sections = [...buildSections(), managementSection];
+  const roleSections = buildSections();
+  const sections = canAccessAcademyWorkspace(role, 'management')
+    ? [...roleSections, managementSection]
+    : roleSections;
 
   const toggleSection = (label: string) => {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));

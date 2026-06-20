@@ -5,7 +5,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { AcademyRole } from '@shared/academy';
+import {
+  ACADEMY_WORKSPACE_ROLES,
+  type AcademyRole,
+} from '@shared/academy';
 import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
@@ -32,16 +35,20 @@ function RoleBasedHome() {
 }
 
 function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'accessDeniedWorkspace' | 'noWorkspaceAssigned' }) {
+  const { user } = useAuth();
   const { t } = useTranslation();
   const title = titleKey === 'noWorkspaceAssigned'
     ? t('noWorkspaceAssigned')
     : t('accessDeniedWorkspace');
+  const description = user?.role === 'admin'
+    ? t('adminWorkspaceBoundaryDescription')
+    : t('contactAdministratorForAccess');
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <div className="rounded-xl border border-slate-200/70 bg-white p-8 text-center">
         <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-        <p className="mt-2 text-sm text-slate-500">{t('contactAdministratorForAccess')}</p>
+        <p className="mt-2 text-sm text-slate-500">{description}</p>
       </div>
     </div>
   );
@@ -51,7 +58,7 @@ function RoleGuard({
   allowedRoles,
   children,
 }: {
-  allowedRoles: AcademyRole[];
+  allowedRoles: readonly AcademyRole[];
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
@@ -61,11 +68,12 @@ function RoleGuard({
   return <>{children}</>;
 }
 
-const adminRoles: AcademyRole[] = ['admin', 'head'];
-const salesRoles: AcademyRole[] = ['admin', 'head', 'account_manager'];
-const teacherRoles: AcademyRole[] = ['admin', 'head', 'teacher'];
-const analyticsRoles: AcademyRole[] = ['admin', 'head', 'operations_director'];
-const marketingRoles: AcademyRole[] = ['admin', 'head', 'smm_manager'];
+const adminRoles = ACADEMY_WORKSPACE_ROLES.administration;
+const salesRoles = ACADEMY_WORKSPACE_ROLES.sales;
+const teacherRoles = ACADEMY_WORKSPACE_ROLES.teacher;
+const analyticsRoles = ACADEMY_WORKSPACE_ROLES.analytics;
+const marketingRoles = ACADEMY_WORKSPACE_ROLES.marketing;
+const managementRoles = ACADEMY_WORKSPACE_ROLES.management;
 
 type AcademySection =
   | 'integrations'
@@ -247,8 +255,11 @@ function Router() {
             <AcademySettings />
           </RoleGuard>
         )} />
-        {/* Management board — available to every authenticated employee. */}
-        <Route path="/management" component={ManagementBoard} />
+        <Route path="/management" component={() => (
+          <RoleGuard allowedRoles={managementRoles}>
+            <ManagementBoard />
+          </RoleGuard>
+        )} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

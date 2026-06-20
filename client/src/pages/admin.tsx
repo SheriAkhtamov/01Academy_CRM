@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -54,7 +55,11 @@ import {
   Trash2,
   UserCheck,
   UserX,
-  Key
+  Key,
+  ArrowRight,
+  Plug,
+  Settings,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
@@ -328,6 +333,33 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     { value: 'admin', label: t('admin') },
   ];
 
+  const administrationSections = [
+    {
+      href: '/employees',
+      icon: Users,
+      title: t('employees'),
+      description: t('adminEmployeesDescription'),
+    },
+    {
+      href: '/admin/academy-settings',
+      icon: SlidersHorizontal,
+      title: t('academyConfiguration'),
+      description: t('academyConfigurationDescription'),
+    },
+    {
+      href: '/integrations',
+      icon: Plug,
+      title: t('navIntegrations'),
+      description: t('adminIntegrationsDescription'),
+    },
+    {
+      href: '/settings',
+      icon: Settings,
+      title: t('settings'),
+      description: t('adminSystemSettingsDescription'),
+    },
+  ];
+
   const userColumns: DataTableColumn<any>[] = [
     {
       key: 'user',
@@ -426,11 +458,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
-        title={isEmployeesPage ? t('employees') : t('reportsActivityLogs')}
-        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('viewSystemActivity')}
+        title={isEmployeesPage ? t('employees') : t('administration')}
+        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminControlCenterSubtitle')}
         breadcrumbs={isEmployeesPage
           ? [{ label: t('systemAdministration'), href: '/admin' }, { label: t('employees') }]
-          : [{ label: t('reportsActivityLogs') }]}
+          : [{ label: t('administration') }]}
         actions={isEmployeesPage ? (
           <Button
             className="bg-primary-600 hover:bg-primary-700"
@@ -765,8 +797,36 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         </TabsContent>
         )}
 
-        {/* Reports & Logs Tab */}
+        {/* Administration control center */}
         <TabsContent value="reports" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {administrationSections.map((section) => {
+              const Icon = section.icon;
+              return (
+                <Link
+                  key={section.href}
+                  href={section.href}
+                  className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <Card className="h-full cursor-pointer hover:shadow-md">
+                    <CardContent className="flex h-full items-start gap-4 p-5">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <h2 className="font-semibold text-slate-900">{section.title}</h2>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-slate-500">{section.description}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>{t('systemStatistics')}</CardTitle>

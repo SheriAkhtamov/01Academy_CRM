@@ -34,6 +34,9 @@ import {
   FileText,
   AlertTriangle,
   UserCircle,
+  KanbanSquare,
+  ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface SearchItem {
@@ -78,32 +81,26 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const navigationItems: SearchItem[] = useMemo(
     () => {
+      const administrationItems: SearchItem[] = [
+        { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
+        { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
+        { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
+        { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
+        { id: 'nav-settings', type: t('systemAdministration'), title: t('settings'), href: '/settings', icon: Settings },
+      ];
+      const managementItem: SearchItem = {
+        id: 'nav-management',
+        type: t('management'),
+        title: t('taskBoard'),
+        href: '/management',
+        icon: KanbanSquare,
+      };
+
       switch (user?.role) {
         case 'admin':
+          return administrationItems;
         case 'head':
-          return [
-            { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
-            { id: 'nav-sales-leads', type: t('myLeads'), title: t('myLeads'), href: '/sales/leads', icon: Users },
-            { id: 'nav-sales-pipeline', type: t('pipeline'), title: t('pipeline'), href: '/sales/pipeline', icon: Flame },
-            { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-            { id: 'nav-teacher', type: t('teacherWorkspace'), title: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
-            { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
-            { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
-            { id: 'nav-teacher-ratings', type: t('lessonRatings'), title: t('lessonRatings'), href: '/teacher-workspace/ratings', icon: Star },
-            { id: 'nav-analytics', type: t('navAnalytics'), title: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
-            { id: 'nav-analytics-funnel', type: t('salesPipeline'), title: t('salesPipeline'), href: '/analytics-workspace/funnel', icon: Flame },
-            { id: 'nav-analytics-courses', type: t('byCourses'), title: t('byCourses'), href: '/analytics-workspace/courses', icon: BookOpen },
-            { id: 'nav-analytics-teachers', type: t('navTeachers'), title: t('navTeachers'), href: '/analytics-workspace/teachers', icon: UserRoundCheck },
-            { id: 'nav-analytics-risks', type: t('navRisks'), title: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
-            { id: 'nav-marketing', type: t('marketingTab'), title: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
-            { id: 'nav-marketing-sources', type: t('leadSources'), title: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
-            { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
-            { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
-            { id: 'nav-admin-reports', type: t('systemAdministration'), title: t('reportsActivityLogs'), href: '/admin', icon: FileText },
-            { id: 'nav-employees', type: t('employees'), title: t('employees'), href: '/employees', icon: Users },
-            { id: 'nav-integrations', type: t('navIntegrations'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
-            { id: 'nav-settings', type: t('settings'), title: t('settings'), href: '/settings', icon: Settings },
-          ];
+          return [...administrationItems, managementItem];
         case 'account_manager':
           return [
             { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
@@ -111,6 +108,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-sales-pipeline', type: t('pipeline'), title: t('pipeline'), href: '/sales/pipeline', icon: Flame },
             { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
             { id: 'nav-sales-tasks', type: t('myTasks'), title: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
+            managementItem,
           ];
         case 'teacher':
           return [
@@ -120,6 +118,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
             { id: 'nav-teacher-ratings', type: t('lessonRatings'), title: t('lessonRatings'), href: '/teacher-workspace/ratings', icon: Star },
             { id: 'nav-teacher-profile', type: t('myProfile'), title: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
+            managementItem,
           ];
         case 'operations_director':
           return [
@@ -131,6 +130,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-analytics-groups', type: t('navGroups'), title: t('navGroups'), href: '/analytics-workspace/groups', icon: Layers3 },
             { id: 'nav-analytics-risks', type: t('navRisks'), title: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
             { id: 'nav-analytics-cohorts', type: t('cohortsTab'), title: t('cohortsTab'), href: '/analytics-workspace/cohorts', icon: Users },
+            managementItem,
           ];
         case 'smm_manager':
           return [
@@ -141,6 +141,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
             { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
             { id: 'nav-marketing-reports', type: t('reports'), title: t('reports'), href: '/marketing-workspace/reports', icon: FileText },
+            managementItem,
           ];
         default:
           return [];

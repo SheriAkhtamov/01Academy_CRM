@@ -152,9 +152,9 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
         queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
     };
 
-    const isAdminHead = user?.role === 'admin' || user?.role === 'head';
-    const canManage = !!task && !!user && (user.id === task.creatorId || user.id === task.assigneeId || isAdminHead);
-    const canAcceptReopen = !!task && !!user && (user.id === task.creatorId || isAdminHead);
+    const isTaskSupervisor = user?.role === 'head';
+    const canManage = !!task && !!user && (user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor);
+    const canAcceptReopen = !!task && !!user && (user.id === task.creatorId || isTaskSupervisor);
     const canDelete = canAcceptReopen;
 
     const onError = (error: Error) => toast({ title: error.message, variant: 'destructive' });
@@ -414,7 +414,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                             <span className="text-xs font-medium text-foreground">{c.author?.fullName ?? '—'}</span>
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt)}</span>
                                                         </div>
-                                                        {user && (user.id === c.author?.id || isAdminHead) ? (
+                                                        {user && (user.id === c.author?.id || isTaskSupervisor) ? (
                                                             <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => deleteCommentMutation.mutate(c.id)}><Trash2 className="size-3.5" /></Button>
                                                         ) : null}
                                                     </div>
@@ -476,7 +476,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                     <a href={`/api/board/attachments/${a.id}/download`} className="inline-flex">
                                                         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground"><Download className="size-3.5" /></Button>
                                                     </a>
-                                                    {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isAdminHead) ? (
+                                                    {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isTaskSupervisor) ? (
                                                         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => deleteAttachmentMutation.mutate(a.id)}><Trash2 className="size-3.5" /></Button>
                                                     ) : null}
                                                 </li>

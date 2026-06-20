@@ -240,7 +240,6 @@ export const translations = {
   referralCodeField: { en: 'Code:', ru: 'Код:' },
   referralCodeLabel: { en: 'Ref. Code:', ru: 'Реф. код:' },
   reportsAccess: { en: 'Reports Access', ru: 'Доступ к отчётам' },
-  reportsActivityLogs: { en: 'Activity Logs', ru: 'Логи активности' },
   resetPassword: { en: 'Reset Password', ru: 'Сбросить пароль' },
   resettingPassword: { en: 'Resetting...', ru: 'Сброс...' },
   revenue: { en: 'Revenue', ru: 'Выручка' },
@@ -314,7 +313,6 @@ export const translations = {
   uzs: { en: ' UZS', ru: ' сум' },
   validEmailRequired: { en: 'Valid email is required', ru: 'Требуется корректный адрес электронной почты' },
   viewCredentials: { en: 'View credentials', ru: 'Просмотр учётных данных' },
-  viewSystemActivity: { en: 'View system activity and user actions', ru: 'Просмотр системной активности и действий пользователей' },
   waiting: { en: 'waiting', ru: 'ожидает' },
   warmBase: { en: 'Warm Base', ru: 'Тёплая база' },
   warmReasonDefault: { en: 'Moved to the warm base by the manager', ru: 'Перенесён менеджером в тёплую базу' },
@@ -758,7 +756,7 @@ export const translations = {
   noChecklistYet: { en: 'No checklist items yet', ru: 'В чеклисте пока нет пунктов' },
   noCommentsYet: { en: 'No comments yet', ru: 'Комментариев пока нет' },
   noDueDate: { en: 'No due date', ru: 'Без срока' },
-  onlyCreatorCanAcceptHint: { en: 'Only the task creator or an administrator can accept or reopen it.', ru: 'Принять или вернуть задачу в работу может только автор или администратор.' },
+  onlyCreatorCanAcceptHint: { en: 'Only the task creator or the head can accept or reopen it.', ru: 'Принять или вернуть задачу в работу может только автор или руководитель.' },
   priorityLabel: { en: 'Priority', ru: 'Приоритет' },
   priorityLow: { en: 'Low priority', ru: 'Низкий приоритет' },
   priorityNormal: { en: 'Normal priority', ru: 'Обычный приоритет' },
@@ -772,6 +770,28 @@ export const translations = {
   taskTitlePlaceholder: { en: 'What needs to be done?', ru: 'Что нужно сделать?' },
   titleRequired: { en: 'Enter a task title', ru: 'Укажите название задачи' },
   unassigned: { en: 'Unassigned', ru: 'Без исполнителя' },
+
+  // UX improvements — administration workspace boundaries
+  adminControlCenterSubtitle: {
+    en: 'Manage employees, academy structure, integrations, and system settings without entering operational workspaces.',
+    ru: 'Управляйте сотрудниками, структурой академии, интеграциями и настройками системы, не переходя в операционные рабочие области.',
+  },
+  adminEmployeesDescription: {
+    en: 'Create accounts, assign roles and workspaces, reset passwords, and deactivate access.',
+    ru: 'Создавайте учётные записи, назначайте роли и рабочие области, сбрасывайте пароли и отключайте доступ.',
+  },
+  adminIntegrationsDescription: {
+    en: 'Configure and test connected communication and automation services.',
+    ru: 'Настраивайте и проверяйте подключённые сервисы коммуникаций и автоматизации.',
+  },
+  adminSystemSettingsDescription: {
+    en: 'Manage lead sources, exports, and system-wide CRM settings.',
+    ru: 'Управляйте источниками лидов, экспортами и общесистемными настройками CRM.',
+  },
+  adminWorkspaceBoundaryDescription: {
+    en: 'This is an operational workspace for another role. Use Administration to configure the system.',
+    ru: 'Это операционная рабочая область другой роли. Для настройки системы используйте раздел «Администрирование».',
+  },
 } as const;
 
 

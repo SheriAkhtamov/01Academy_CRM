@@ -11,6 +11,25 @@ export const ACADEMY_ROLES = [
 
 export type AcademyRole = (typeof ACADEMY_ROLES)[number];
 
+export const ACADEMY_WORKSPACE_ROLES = {
+  administration: ["admin", "head"],
+  sales: ["account_manager"],
+  teacher: ["teacher"],
+  analytics: ["operations_director"],
+  marketing: ["smm_manager"],
+  management: ["head", "account_manager", "teacher", "operations_director", "smm_manager"],
+} as const satisfies Record<string, readonly AcademyRole[]>;
+
+export type AcademyWorkspace = keyof typeof ACADEMY_WORKSPACE_ROLES;
+
+export function canAccessAcademyWorkspace(
+  role: string | null | undefined,
+  workspace: AcademyWorkspace,
+): boolean {
+  if (!role) return false;
+  return (ACADEMY_WORKSPACE_ROLES[workspace] as readonly string[]).includes(role);
+}
+
 export const LEAD_STATUSES = [
   { code: "new_request", name: "Новая заявка", translationKey: "leadStatusNewRequest", color: "#2563eb", sortOrder: 10, activePipeline: true },
   { code: "first_contact", name: "Первый контакт", translationKey: "leadStatusFirstContact", color: "#0ea5e9", sortOrder: 20, activePipeline: true },

@@ -3,8 +3,10 @@ import {
   closestCorners,
   DndContext,
   DragOverlay,
+  KeyboardCode,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -18,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import {
   ArrowRight,
   Clock3,
-  GripVertical,
+  MousePointer2,
   MoreHorizontal,
   Phone,
   Send,
@@ -76,8 +78,6 @@ interface LeadCardContentProps {
   isPending?: boolean;
   showPaymentAction: boolean;
   t: (key: TranslationKey) => string;
-  onLeadClick?: KanbanBoardProps['onLeadClick'];
-  dragHandle?: React.ReactNode;
 }
 
 function LeadCardContent({
@@ -89,8 +89,6 @@ function LeadCardContent({
   isPending,
   showPaymentAction,
   t,
-  onLeadClick,
-  dragHandle,
 }: LeadCardContentProps) {
   const nextStatuses = statuses.filter((status) => status.sortOrder > currentStatus.sortOrder);
   const prevStatuses = currentStatus.code === 'paid'
@@ -103,17 +101,12 @@ function LeadCardContent({
     <>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <button
-            type="button"
-            className="block max-w-full truncate text-left text-sm font-medium text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            onClick={() => onLeadClick?.(lead)}
-          >
+          <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
             {lead.contactName}
-          </button>
+          </p>
           {lead.phone ? <div className="truncate text-xs text-muted-foreground">{lead.phone}</div> : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          {dragHandle}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -121,6 +114,9 @@ function LeadCardContent({
                 size="icon"
                 className="size-7 opacity-50 transition-opacity group-hover:opacity-100"
                 onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onTouchStart={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
               >
                 <MoreHorizontal />
                 <span className="sr-only">{t('actions')}</span>
@@ -182,6 +178,9 @@ function LeadCardContent({
       <div
         className="mt-3 flex flex-wrap gap-1"
         onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         {nextStatuses.slice(0, 1).map((nextStatus) => (
           <Button
@@ -222,14 +221,15 @@ function LeadCardContent({
   );
 }
 
-interface DraggableLeadCardProps extends Omit<LeadCardContentProps, 'dragHandle'> {}
+interface DraggableLeadCardProps extends LeadCardContentProps {
+  onLeadClick?: KanbanBoardProps['onLeadClick'];
+}
 
 function DraggableLeadCard(props: DraggableLeadCardProps) {
   const { lead, currentStatus, isPending, t, onLeadClick } = props;
   const {
     attributes,
     listeners,
-    setActivatorNodeRef,
     setNodeRef,
     transform,
     isDragging,
@@ -244,27 +244,19 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
       className={cn(
-        'group rounded-lg border border-border/80 bg-card p-3 shadow-2xs transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md',
+        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         isDragging && 'opacity-30',
       )}
-      onDoubleClick={() => onLeadClick?.(lead)}
+      aria-label={`${lead.contactName}. ${t('openLead')}. ${t('dragLeadHint')}`}
+      {...attributes}
+      {...listeners}
+      onClick={() => onLeadClick?.(lead)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onLeadClick?.(lead);
+        listeners?.onKeyDown?.(event);
+      }}
     >
-      <LeadCardContent
-        {...props}
-        dragHandle={(
-          <Button
-            ref={setActivatorNodeRef}
-            variant="ghost"
-            size="icon"
-            className="size-7 cursor-grab text-muted-foreground active:cursor-grabbing"
-            aria-label={t('dragLeadHint')}
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical />
-          </Button>
-        )}
-      />
+      <LeadCardContent {...props} />
     </div>
   );
 }
@@ -360,8 +352,17 @@ export function KanbanBoard({
   const [boardLeads, setBoardLeads] = useState(leads);
   const [activeLeadId, setActiveLeadId] = useState<number | null>(null);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 180, tolerance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      keyboardCodes: {
+        start: [KeyboardCode.Space],
+        cancel: [KeyboardCode.Esc],
+        end: [KeyboardCode.Space, KeyboardCode.Tab],
+      },
+    }),
   );
 
   useEffect(() => {
@@ -440,7 +441,7 @@ export function KanbanBoard({
   return (
     <div className="flex min-w-0 max-w-full flex-1 flex-col gap-2">
       <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-        <GripVertical />
+        <MousePointer2 />
         <span>{t('dragLeadHint')}</span>
       </div>
       <DndContext
@@ -487,7 +488,6 @@ export function KanbanBoard({
                 onQuickAction={undefined}
                 showPaymentAction={showPaymentAction}
                 t={t}
-                onLeadClick={onLeadClick}
               />
             </div>
           ) : null}

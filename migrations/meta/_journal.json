@@ -64,6 +64,13 @@
       "when": 1781926200000,
       "tag": "0008_enforce_group_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782028800000,
+      "tag": "0009_move_schedule_to_groups",
+      "breakpoints": true
     }
   ]
 }

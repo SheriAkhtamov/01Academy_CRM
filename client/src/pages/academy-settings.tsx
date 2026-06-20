@@ -46,6 +46,7 @@ import {
   WeekScheduleEditor,
   type WeekScheduleItem,
 } from '@/components/ux/WeekScheduleEditor';
+import { getGroupScheduleValidationError } from '@shared/scheduling';
 import {
   ArrowDown,
   ArrowUp,
@@ -82,7 +83,6 @@ interface Course {
   lessonCount: number;
   lessonDurationMinutes: number;
   durationDays: number;
-  schedule: WeekScheduleItem[];
   description?: string | null;
   frequency?: string | null;
   basePriceUzs: number;
@@ -286,7 +286,6 @@ export default function AcademySettings() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [editingStatus, setEditingStatus] = useState<PipelineStatus | null>(null);
-  const [courseSchedule, setCourseSchedule] = useState<WeekScheduleItem[]>([]);
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
   const [courseTeacherIds, setCourseTeacherIds] = useState<number[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -401,10 +400,9 @@ export default function AcademySettings() {
 
   const saveCourse = useMutation({
     mutationFn: async (values: CourseValues) => {
-      const payload = { ...values, schedule: courseSchedule };
       const course = editingCourse
-        ? await apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}`, payload)
-        : await apiRequest('POST', '/api/academy/courses', payload);
+        ? await apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}`, values)
+        : await apiRequest('POST', '/api/academy/courses', values);
 
       const courseId = Number(course.id);
       const teachers = configuration.data?.teachers ?? [];
@@ -423,7 +421,6 @@ export default function AcademySettings() {
       toast({ title: editingCourse ? t('courseUpdated') : t('courseCreated') });
       setCourseDialogOpen(false);
       setEditingCourse(null);
-      setCourseSchedule([]);
       setCourseTeacherIds([]);
       courseForm.reset();
       invalidate();
@@ -608,7 +605,6 @@ export default function AcademySettings() {
       basePriceUzs: 0,
       isActive: true,
     });
-    setCourseSchedule(normalizeSchedule(course?.schedule));
     setCourseTeacherIds((configuration.data?.teachers ?? [])
       .filter((teacher) => course?.id && (teacher.courseIds ?? []).map(Number).includes(course.id))
       .map((teacher) => teacher.id));
@@ -757,21 +753,6 @@ export default function AcademySettings() {
       sortable: true,
       accessor: (row) => row.durationDays,
       render: (row) => `${row.durationDays} ${t('dayShort')}`,
-    },
-    {
-      key: 'schedule',
-      header: t('schedule'),
-      accessor: (row) => row.schedule?.length ?? 0,
-      render: (row) => (
-        <div className="flex flex-wrap gap-1">
-          {normalizeSchedule(row.schedule).slice(0, 3).map((item) => (
-            <Badge key={`${row.id}-${item.dayOfWeek}`} variant="outline">
-              {dayNames[item.dayOfWeek - 1]} {item.startTime}
-            </Badge>
-          ))}
-          {(row.schedule?.length ?? 0) > 3 ? <Badge variant="secondary">+{row.schedule.length - 3}</Badge> : null}
-        </div>
-      ),
     },
     {
       key: 'status',
@@ -1324,13 +1305,7 @@ export default function AcademySettings() {
             <DialogDescription>{t('courseFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...courseForm}>
-            <form className="flex flex-col gap-5" onSubmit={courseForm.handleSubmit((values) => {
-              if (courseSchedule.length === 0) {
-                toast({ title: t('courseScheduleRequired'), variant: 'destructive' });
-                return;
-              }
-              saveCourse.mutate(values);
-            })}>
+            <form className="flex flex-col gap-5" onSubmit={courseForm.handleSubmit((values) => saveCourse.mutate(values))}>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <FormField control={courseForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
@@ -1402,20 +1377,6 @@ export default function AcademySettings() {
 
               <div className="flex flex-col gap-2">
                 <div>
-                  <p className="text-sm font-medium text-foreground">{t('courseSchedule')}</p>
-                  <p className="text-xs text-muted-foreground">{t('courseScheduleDescription')}</p>
-                </div>
-                <WeekScheduleEditor
-                  value={courseSchedule}
-                  onChange={setCourseSchedule}
-                  dayNames={dayNames}
-                  startLabel={t('start')}
-                  endLabel={t('end')}
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div>
                   <p className="text-sm font-medium text-foreground">{t('eligibleTeachers')}</p>
                   <p className="text-xs text-muted-foreground">{t('eligibleTeachersDescription')}</p>
                 </div>
@@ -1466,8 +1427,14 @@ export default function AcademySettings() {
             <form
               className="flex flex-col gap-5"
               onSubmit={groupForm.handleSubmit((values) => {
-                if (groupSchedule.length === 0) {
-                  toast({ title: t('groupScheduleRequired'), variant: 'destructive' });
+                const scheduleError = getGroupScheduleValidationError(groupSchedule);
+                if (scheduleError) {
+                  const title = scheduleError === 'groupScheduleRequired'
+                    ? t('groupScheduleRequired')
+                    : scheduleError === 'groupScheduleInvalid'
+                      ? t('groupScheduleInvalid')
+                      : t('groupScheduleOverlap');
+                  toast({ title, variant: 'destructive' });
                   return;
                 }
                 saveGroup.mutate(values);
@@ -1507,13 +1474,7 @@ export default function AcademySettings() {
                     <FormLabel>{t('course')}</FormLabel>
                     <Select
                       value={field.value}
-                      onValueChange={(value) => {
-                        field.onChange(value);
-                        if (groupSchedule.length === 0) {
-                          const course = courses.find((item) => item.id === Number(value));
-                          setGroupSchedule(normalizeSchedule(course?.schedule));
-                        }
-                      }}
+                      onValueChange={field.onChange}
                     >
                       <FormControl><SelectTrigger><SelectValue placeholder={t('selectCourse')} /></SelectTrigger></FormControl>
                       <SelectContent>

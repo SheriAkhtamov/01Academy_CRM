@@ -84,7 +84,6 @@ export const academyCourses = pgTable("academy_courses", {
   lessonCount: integer("lesson_count").notNull().default(0),
   lessonDurationMinutes: integer("lesson_duration_minutes").notNull().default(120),
   durationDays: integer("duration_days").notNull().default(0),
-  schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   description: text("description"),
   frequency: varchar("frequency", { length: 255 }),
   basePriceUzs: integer("base_price_uzs").notNull().default(0),

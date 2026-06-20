@@ -44,6 +44,15 @@ import {
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
+import {
+  getGroupScheduleValidationError,
+  normalizeWeeklySchedule,
+  parseScheduleTimeToMinutes,
+  scheduleDateRangesOverlap,
+  scheduleIntervalsOverlap,
+  weeklySchedulesOverlap,
+  type NormalizedWeeklyScheduleItem,
+} from '@shared/scheduling';
 
 const router = Router();
 
@@ -399,26 +408,14 @@ const logIntegration = async (provider: string, direction: string, status: strin
 const getSourceByCode = async (code: string) =>
   queryOne(`SELECT * FROM academy_lead_sources WHERE code = $1`, [code]);
 
-const parseTimeToMinutes = (value: unknown): number | null => {
-  const match = String(value ?? '').match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-  return hours * 60 + minutes;
-};
+const parseTimeToMinutes = parseScheduleTimeToMinutes;
 
 const academyDayOfWeek = (date: Date) => {
   const day = date.getDay();
   return day === 0 ? 7 : day;
 };
 
-type NormalizedScheduleItem = {
-  dayOfWeek: number;
-  startMinutes: number;
-  endMinutes: number;
-  schoolId: number | null;
-};
+type NormalizedScheduleItem = NormalizedWeeklyScheduleItem;
 
 const readJsonArray = (value: unknown): Row[] => {
   if (Array.isArray(value)) return value as Row[];
@@ -431,43 +428,9 @@ const readJsonArray = (value: unknown): Row[] => {
   }
 };
 
-const normalizeScheduleItems = (value: unknown, fallbackDurationMinutes = 60): NormalizedScheduleItem[] =>
-  readJsonArray(value).flatMap((item) => {
-    const dayOfWeek = Number(item.dayOfWeek);
-    const startMinutes = parseTimeToMinutes(item.startTime ?? item.time);
-    const parsedEnd = parseTimeToMinutes(item.endTime ?? item.time);
-    if (dayOfWeek < 1 || dayOfWeek > 7 || startMinutes === null) return [];
-    const endMinutes = parsedEnd === null || parsedEnd <= startMinutes
-      ? startMinutes + fallbackDurationMinutes
-      : parsedEnd;
-    if (endMinutes > 24 * 60) return [];
-    return [{
-      dayOfWeek,
-      startMinutes,
-      endMinutes,
-      schoolId: item.schoolId ? Number(item.schoolId) : null,
-    }];
-  });
-
-const intervalsOverlap = (
-  leftStart: number,
-  leftEnd: number,
-  rightStart: number,
-  rightEnd: number,
-) => leftStart < rightEnd && leftEnd > rightStart;
-
-const dateRangesOverlap = (
-  leftStart?: Date | null,
-  leftEnd?: Date | null,
-  rightStart?: Date | null,
-  rightEnd?: Date | null,
-) => {
-  const leftStartTime = leftStart?.getTime() ?? Number.NEGATIVE_INFINITY;
-  const leftEndTime = leftEnd?.getTime() ?? Number.POSITIVE_INFINITY;
-  const rightStartTime = rightStart?.getTime() ?? Number.NEGATIVE_INFINITY;
-  const rightEndTime = rightEnd?.getTime() ?? Number.POSITIVE_INFINITY;
-  return leftStartTime <= rightEndTime && leftEndTime >= rightStartTime;
-};
+const normalizeScheduleItems = normalizeWeeklySchedule;
+const intervalsOverlap = scheduleIntervalsOverlap;
+const dateRangesOverlap = scheduleDateRangesOverlap;
 
 const isDateInsideRange = (date: Date, start?: Date | null, end?: Date | null) => {
   const value = date.getTime();
@@ -653,20 +616,16 @@ const assertGroupScheduleAvailable = async (options: {
   endDate?: Date | null;
   excludeGroupId?: number | null;
 }) => {
-  const requestedSchedule = normalizeScheduleItems(options.schedule);
-  if (requestedSchedule.length === 0) {
-    throw Object.assign(new Error('groupScheduleRequired'), { statusCode: 400 });
+  const validationError = getGroupScheduleValidationError(options.schedule);
+  if (validationError) {
+    throw Object.assign(new Error(validationError), {
+      statusCode: validationError === 'groupScheduleRequired' || validationError === 'groupScheduleInvalid'
+        ? 400
+        : 409,
+    });
   }
 
-  const hasInternalOverlap = requestedSchedule.some((item, index) =>
-    requestedSchedule.slice(index + 1).some((other) =>
-      item.dayOfWeek === other.dayOfWeek
-      && intervalsOverlap(item.startMinutes, item.endMinutes, other.startMinutes, other.endMinutes)
-    )
-  );
-  if (hasInternalOverlap) {
-    throw Object.assign(new Error('groupScheduleOverlap'), { statusCode: 409 });
-  }
+  const requestedSchedule = normalizeScheduleItems(options.schedule);
 
   const existingGroups = await query(
     `SELECT * FROM academy_groups
@@ -683,29 +642,21 @@ const assertGroupScheduleAvailable = async (options: {
       group.startDate ? new Date(group.startDate) : null,
       group.endDate ? new Date(group.endDate) : null,
     )) return false;
-    const groupSchedule = normalizeScheduleItems(group.schedule);
-    return requestedSchedule.some((item) =>
-      scheduleConflictsWithSlot(
-        groupSchedule,
-        item.dayOfWeek,
-        item.startMinutes,
-        item.endMinutes,
-      )
-    );
+    return weeklySchedulesOverlap(requestedSchedule, normalizeScheduleItems(group.schedule));
   });
   if (recurringConflict) {
-    throw Object.assign(new Error('schoolRoomBusy'), { statusCode: 409 });
+    throw Object.assign(new Error('groupSchoolScheduleConflict'), { statusCode: 409 });
   }
 
-  const rangeStart = options.startDate ?? new Date();
-  const rangeEnd = options.endDate ?? addDays(rangeStart, 180);
+  const rangeStart = startOfDay(options.startDate ?? new Date());
+  const rangeEnd = options.endDate ? addDays(startOfDay(options.endDate), 1) : null;
   const lessons = await query(
     `SELECT scheduled_at, duration_minutes
      FROM academy_lessons
      WHERE school_id = $1
        AND status <> 'cancelled'
        AND scheduled_at >= $2
-       AND scheduled_at < $3`,
+       AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
     [options.schoolId, rangeStart, rangeEnd],
   );
   const lessonConflict = lessons.some((lesson) => {
@@ -718,7 +669,32 @@ const assertGroupScheduleAvailable = async (options: {
     );
   });
   if (lessonConflict) {
-    throw Object.assign(new Error('schoolRoomBusy'), { statusCode: 409 });
+    throw Object.assign(new Error('groupSchoolScheduleConflict'), { statusCode: 409 });
+  }
+
+  const demos = await query(
+    `SELECT demo_at, COALESCE(c.lesson_duration_minutes, 60) AS duration_minutes
+     FROM academy_leads l
+     LEFT JOIN academy_courses c ON c.id = l.demo_course_id
+     WHERE l.school_id = $1
+       AND l.demo_at IS NOT NULL
+       AND COALESCE(l.demo_format, 'offline') <> 'online'
+       AND l.status_code <> 'not_now'
+       AND l.demo_at >= $2
+       AND ($3::timestamp IS NULL OR l.demo_at < $3)`,
+    [options.schoolId, rangeStart, rangeEnd],
+  );
+  const demoConflict = demos.some((demo) => {
+    const demoAt = new Date(demo.demoAt);
+    const startMinutes = demoAt.getHours() * 60 + demoAt.getMinutes();
+    const endMinutes = startMinutes + Number(demo.durationMinutes || 60);
+    return requestedSchedule.some((item) =>
+      item.dayOfWeek === academyDayOfWeek(demoAt)
+      && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
+    );
+  });
+  if (demoConflict) {
+    throw Object.assign(new Error('groupSchoolScheduleConflict'), { statusCode: 409 });
   }
 };
 
@@ -1145,6 +1121,9 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
       await createStageHistory(lead.id, lead.statusCode, 'paid', req.user!.id, 'Подтверждена оплата существующего клиента');
     }
     return existingStudent;
+  }
+  if (!lead.enrolledGroupId) {
+    throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
   }
 
   await ensureGroupCapacity(lead.enrolledGroupId, lead.id);
@@ -2267,6 +2246,9 @@ router.post('/leads', async (req, res) => {
     if (duplicate) {
       return res.status(409).json({ error: 'Duplicate lead or student', duplicate });
     }
+    if (req.body.demoAt) {
+      return res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
+    }
 
     const lead = await withTransaction(async () => {
       const studentAge = toIntegerOrNull(req.body.studentAge) as number | null | undefined;
@@ -2280,21 +2262,17 @@ router.post('/leads', async (req, res) => {
       if (enrolledGroup) {
         courseId = Number(enrolledGroup.courseId);
       }
-      const schoolId = enrolledGroup?.schoolId
-        ? Number(enrolledGroup.schoolId)
-        : parseId(req.body.schoolId);
-      const demoAt = nullableDate(req.body.demoAt);
-      const demoFormat = demoAt ? (nullableText(req.body.demoFormat) ?? 'offline') : null;
-      if (demoAt && demoFormat !== 'online') {
-        if (!schoolId || !courseId) {
-          throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
-        }
-        await query(`SELECT pg_advisory_xact_lock($1)`, [schoolId]);
-        await assertBookableOfflineSlot({
-          schoolId,
-          courseId,
-          startsAt: demoAt,
-        });
+      const schoolId = enrolledGroup?.schoolId ? Number(enrolledGroup.schoolId) : null;
+      const statusCode = nullableText(req.body.statusCode) ?? 'new_request';
+      const validationError = validateLeadForStatusChange({
+        nextStatus: statusCode,
+        studentName: nullableText(req.body.studentName),
+        studentAge: studentAge ?? null,
+        courseId,
+        enrolledGroupId,
+      });
+      if (validationError) {
+        throw Object.assign(new Error(validationError), { statusCode: 400 });
       }
 
       const source = await queryOne(`SELECT * FROM academy_lead_sources WHERE id = $1`, [sourceId]);
@@ -2310,15 +2288,11 @@ router.post('/leads', async (req, res) => {
         sourceId,
         advertisingCampaign: nullableText(req.body.advertisingCampaign) ?? nullableText(source?.campaignName) ?? null,
         acquisitionCostUzs: normalizeMoney(req.body.acquisitionCostUzs ?? source?.costPerLeadUzs),
-        statusCode: demoAt ? 'demo_invited' : nullableText(req.body.statusCode) ?? 'new_request',
+        statusCode,
         managerId,
         language: nullableText(req.body.language) ?? 'ru',
         comment: nullableText(req.body.comment) ?? null,
         enrolledGroupId,
-        demoAt,
-        demoCourseId: demoAt ? courseId : null,
-        demoFormat,
-        demoLocation: demoAt ? nullableText(req.body.demoLocation) : null,
         referralCode: nullableText(req.body.referralCode) ?? null,
         referrerStudentId: parseId(req.body.referrerStudentId),
         createdBy: req.user!.id,
@@ -2328,7 +2302,7 @@ router.post('/leads', async (req, res) => {
         null,
         createdLead.statusCode,
         req.user!.id,
-        demoAt ? 'Создание лида и запись в свободный слот' : 'Создание лида',
+        enrolledGroupId ? 'Создание лида и добавление в группу' : 'Создание лида',
       );
       return createdLead;
     });
@@ -2365,6 +2339,14 @@ router.get('/leads/:id', async (req, res) => {
 router.patch('/leads/:id', async (req, res) => {
   if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
   try {
+    if (
+      req.body.demoAt !== undefined
+      || req.body.demoCourseId !== undefined
+      || req.body.demoFormat !== undefined
+      || req.body.demoLocation !== undefined
+    ) {
+      return res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
+    }
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const oldLead = await getLead(id);
@@ -2386,7 +2368,11 @@ router.patch('/leads/:id', async (req, res) => {
       studentAge: toIntegerOrNull(req.body.studentAge) ?? oldLead.studentAge,
       courseId: requestedGroup?.courseId
         ? Number(requestedGroup.courseId)
-        : parseId(req.body.courseId) ?? oldLead.courseId };
+        : parseId(req.body.courseId) ?? oldLead.courseId,
+      enrolledGroupId: req.body.enrolledGroupId === undefined
+        ? oldLead.enrolledGroupId
+        : requestedGroupId,
+    };
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
 
@@ -2399,12 +2385,20 @@ router.patch('/leads/:id', async (req, res) => {
       messenger: nullableText(req.body.messenger),
       studentName: nullableText(req.body.studentName),
       studentAge: toIntegerOrNull(req.body.studentAge),
-      courseId: requestedGroup?.courseId
-        ? Number(requestedGroup.courseId)
-        : parseId(req.body.courseId),
-      schoolId: requestedGroup?.schoolId
-        ? Number(requestedGroup.schoolId)
-        : parseId(req.body.schoolId),
+      courseId: req.body.enrolledGroupId !== undefined
+        ? requestedGroup?.courseId
+          ? Number(requestedGroup.courseId)
+          : req.body.courseId !== undefined
+            ? parseId(req.body.courseId)
+            : oldLead.courseId
+        : req.body.courseId !== undefined
+          ? parseId(req.body.courseId)
+          : undefined,
+      schoolId: req.body.enrolledGroupId === undefined
+        ? undefined
+        : requestedGroup?.schoolId
+          ? Number(requestedGroup.schoolId)
+          : null,
       sourceId: parseId(req.body.sourceId) ?? oldLead.sourceId,
       advertisingCampaign: nullableText(req.body.advertisingCampaign),
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
@@ -2415,10 +2409,6 @@ router.patch('/leads/:id', async (req, res) => {
       firstContactAt: nullableDate(req.body.firstContactAt),
       firstContactChannel: nullableText(req.body.firstContactChannel),
       firstContactResult: nullableText(req.body.firstContactResult),
-      demoAt: nullableDate(req.body.demoAt),
-      demoCourseId: parseId(req.body.demoCourseId),
-      demoFormat: nullableText(req.body.demoFormat),
-      demoLocation: nullableText(req.body.demoLocation),
       demoAttended: req.body.demoAttended === undefined ? undefined : Boolean(req.body.demoAttended),
       demoResult: nullableText(req.body.demoResult),
       offerCourseId: parseId(req.body.offerCourseId),
@@ -2501,53 +2491,7 @@ router.post('/leads/:id/contact', async (req, res) => {
 
 router.post('/leads/:id/demo', async (req, res) => {
   if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
-  try {
-    const id = parseId(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-    const oldLead = await getLead(id);
-    if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, oldLead)) return;
-    const transitionError = validateLeadStatusTransition(oldLead.statusCode, 'demo_invited');
-    if (transitionError) return res.status(400).json({ error: transitionError });
-
-    const lead = await withTransaction(async () => {
-      const demoAt = nullableDate(req.body.demoAt);
-      if (!demoAt) throw Object.assign(new Error('demoDateRequired'), { statusCode: 400 });
-      const demoCourseId = parseId(req.body.demoCourseId) ?? oldLead.courseId ?? null;
-      const schoolId = parseId(req.body.schoolId) ?? oldLead.schoolId ?? null;
-      const demoFormat = nullableText(req.body.demoFormat) ?? 'offline';
-      if (demoFormat !== 'online') {
-        if (!schoolId || !demoCourseId) {
-          throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
-        }
-        await query(`SELECT pg_advisory_xact_lock($1)`, [Number(schoolId)]);
-        await assertBookableOfflineSlot({
-          schoolId: Number(schoolId),
-          courseId: Number(demoCourseId),
-          startsAt: demoAt,
-          excludeLeadId: id,
-        });
-      }
-
-      const updated = await updateRow('academy_leads', id, {
-        schoolId,
-        demoAt,
-        demoCourseId,
-        demoFormat,
-        demoLocation: nullableText(req.body.demoLocation) ?? null,
-        statusCode: 'demo_invited',
-      });
-      if (!updated) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
-      return updated;
-    });
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    await createStageHistory(id, oldLead.statusCode, 'demo_invited', req.user!.id, 'Назначено демо');
-    await handleLeadAutomation(req, lead, oldLead.statusCode);
-    res.json(lead);
-  } catch (error: any) {
-    logger.error('Failed to schedule demo', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to schedule demo' });
-  }
+  res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
 });
 
 router.post('/leads/:id/demo-attendance', async (req, res) => {
@@ -2644,6 +2588,59 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   return { whereSql: '', params };
 };
 
+const prepareGroupMutation = async (options: {
+  values: Row;
+  oldRow?: Row | null;
+  excludeGroupId?: number | null;
+  forceAutoAssign?: boolean;
+}) => {
+  const courseId = Number(options.values.courseId ?? options.oldRow?.courseId);
+  const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId);
+  const schedule = options.values.schedule ?? options.oldRow?.schedule;
+  const maxStudents = Number(options.values.maxStudents ?? options.oldRow?.maxStudents ?? 12);
+  const status = String(options.values.status ?? options.oldRow?.status ?? 'open');
+  if (!courseId || !schoolId) {
+    throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
+  }
+  if (maxStudents < 1 || maxStudents > 12) {
+    throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
+  }
+  options.values.maxStudents = maxStudents;
+  const startDate = (options.values.startDate ?? options.oldRow?.startDate) as Date | null | undefined;
+  const endDate = (options.values.endDate ?? options.oldRow?.endDate) as Date | null | undefined;
+  if (startDate && endDate && new Date(endDate).getTime() < new Date(startDate).getTime()) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+
+  await query(`SELECT pg_advisory_xact_lock($1)`, [schoolId]);
+  if (status === 'completed') {
+    const validationError = getGroupScheduleValidationError(schedule);
+    if (validationError) {
+      throw Object.assign(new Error(validationError), {
+        statusCode: validationError === 'groupScheduleOverlap' ? 409 : 400,
+      });
+    }
+  } else {
+    await assertGroupScheduleAvailable({
+      schoolId,
+      schedule,
+      startDate,
+      endDate,
+      excludeGroupId: options.excludeGroupId,
+    });
+  }
+
+  if (options.forceAutoAssign || (!options.values.teacherId && !options.oldRow?.teacherId)) {
+    const teacher = await findTeacherForGroupSchedule({
+      courseId,
+      schoolId,
+      schedule,
+      excludeGroupId: options.excludeGroupId,
+    });
+    options.values.teacherId = teacher ? Number(teacher.id) : null;
+  }
+};
+
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
   requireAdmin?: boolean;
@@ -2731,39 +2728,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (table === 'academy_schools' && values.rooms !== undefined) {
         values.rooms = safeJson(readJsonArray(values.rooms).slice(0, 1), []);
       }
-      if (table === 'academy_groups') {
-        const courseId = Number(values.courseId || 0);
-        const schoolId = Number(values.schoolId || 0);
-        if (!courseId || !schoolId) {
-          throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
-        }
-        const maxStudents = Number(values.maxStudents ?? 12);
-        if (maxStudents < 1 || maxStudents > 12) {
-          throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
-        }
-        values.maxStudents = maxStudents;
-        if (
-          values.startDate instanceof Date
-          && values.endDate instanceof Date
-          && values.endDate < values.startDate
-        ) {
-          throw Object.assign(new Error('invalidData'), { statusCode: 400 });
-        }
-        await assertGroupScheduleAvailable({
-          schoolId,
-          schedule: values.schedule,
-          startDate: values.startDate as Date | null | undefined,
-          endDate: values.endDate as Date | null | undefined,
-        });
-        if (!values.teacherId) {
-          const teacher = await findTeacherForGroupSchedule({
-            courseId,
-            schoolId,
-            schedule: values.schedule,
-          });
-          values.teacherId = teacher ? Number(teacher.id) : null;
-        }
-      }
       if (table === 'academy_lessons') {
         const groupId = Number(values.groupId || 0);
         const group = groupId
@@ -2802,7 +2766,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         }
       }
 
-      const row = await insertRow(table, values);
+      const row = table === 'academy_groups'
+        ? await withTransaction(async () => {
+          await prepareGroupMutation({ values, forceAutoAssign: true });
+          return insertRow(table, values);
+        })
+        : await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
       res.status(201).json(row);
     } catch (error: any) {
@@ -2877,45 +2846,24 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 409 });
         }
       }
-      if (table === 'academy_groups') {
-        const courseId = Number(values.courseId ?? oldRow.courseId);
-        const schoolId = Number(values.schoolId ?? oldRow.schoolId);
-        const schedule = values.schedule ?? oldRow.schedule;
-        const maxStudents = Number(values.maxStudents ?? oldRow.maxStudents ?? 12);
-        if (!courseId || !schoolId) {
-          throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
-        }
-        if (maxStudents < 1 || maxStudents > 12) {
-          throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
-        }
-        values.maxStudents = maxStudents;
-        const startDate = (values.startDate ?? oldRow.startDate) as Date | null | undefined;
-        const endDate = (values.endDate ?? oldRow.endDate) as Date | null | undefined;
-        if (
-          startDate
-          && endDate
-          && new Date(endDate).getTime() < new Date(startDate).getTime()
-        ) {
-          throw Object.assign(new Error('invalidData'), { statusCode: 400 });
-        }
-        await assertGroupScheduleAvailable({
-          schoolId,
-          schedule,
-          startDate,
-          endDate,
-          excludeGroupId: id,
-        });
-        if (req.body.autoAssign === true || (!values.teacherId && !oldRow.teacherId)) {
-          const teacher = await findTeacherForGroupSchedule({
-            courseId,
-            schoolId,
-            schedule,
+      const row = table === 'academy_groups'
+        ? await withTransaction(async () => {
+          const lockedRow = await queryOne(
+            `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
+            [id],
+          );
+          if (!lockedRow) {
+            throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+          }
+          await prepareGroupMutation({
+            values,
+            oldRow: lockedRow,
             excludeGroupId: id,
+            forceAutoAssign: req.body.autoAssign === true,
           });
-          values.teacherId = teacher ? Number(teacher.id) : null;
-        }
-      }
-      const row = await updateRow(table, id, values);
+          return updateRow(table, id, values);
+        })
+        : await updateRow(table, id, values);
       if (table === 'academy_lessons' && values.status !== undefined && oldRow.status !== row?.status) {
         await insertRow('academy_lesson_status_history', {
                     lessonId: id,
@@ -3512,7 +3460,7 @@ registerSimpleCrud('schools', 'academy_schools', [
 
 registerSimpleCrud('courses', 'academy_courses', [
   'name', 'slug', 'ageCategory', 'lessonCount', 'lessonDurationMinutes', 'durationDays',
-  'schedule', 'description', 'frequency', 'basePriceUzs', 'discountedPriceUzs',
+  'description', 'frequency', 'basePriceUzs', 'discountedPriceUzs',
   'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
 ], { orderBy: 'is_active DESC, name', requireAdmin: true });
 

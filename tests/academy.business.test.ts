@@ -66,6 +66,22 @@ describe("01 Academy business rules", () => {
     })).toBeNull();
   });
 
+  it("requires a group before enrolling a lead", () => {
+    expect(validateLeadForStatusChange({
+      nextStatus: "enrolled",
+      studentName: "Student",
+      studentAge: 12,
+      courseId: 1,
+    })).toBe("groupRequiredForEnrollment");
+    expect(validateLeadForStatusChange({
+      nextStatus: "enrolled",
+      studentName: "Student",
+      studentAge: 12,
+      courseId: 1,
+      enrolledGroupId: 10,
+    })).toBeNull();
+  });
+
   it("keeps paid clients terminal and requires a payment to enter paid", () => {
     expect(validateLeadStatusTransition("qualified", "paid")).toBe("paymentRequiredBeforePaid");
     expect(validateLeadStatusTransition("paid", "thinking")).toBe("paidLeadCannotReturn");

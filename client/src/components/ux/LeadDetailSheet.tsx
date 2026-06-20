@@ -8,7 +8,6 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
-import { AvailabilityCalendar } from '@/components/ux/AvailabilityCalendar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +42,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { getInitials } from '@/lib/auth';
 import {
-  CalendarClock,
   AlertCircle,
   CheckCircle2,
   ClipboardList,
@@ -81,9 +79,6 @@ interface LeadDetails {
   expectedPaymentUzs?: number | null;
   offerPriceUzs?: number | null;
   firstContactAt?: string | null;
-  demoAt?: string | null;
-  demoFormat?: string | null;
-  demoLocation?: string | null;
   createdAt: string;
   history?: Array<{
     id: number;
@@ -137,7 +132,6 @@ interface LeadDetailSheetProps {
     maxStudents?: number;
   }>;
   sources: Array<{ id: number; name: string }>;
-  schools: Array<{ id: number; name: string; isActive?: boolean }>;
   statuses: Array<{ code: string; name: string; isActive?: boolean }>;
   currentUserId?: number;
   leadStatusName: (code: string) => string;
@@ -158,7 +152,6 @@ const leadSchema = z.object({
   studentName: z.string(),
   studentAge: optionalNumberString,
   courseId: z.string(),
-  schoolId: z.string(),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   enrolledGroupId: z.string(),
   language: z.string(),
@@ -171,12 +164,6 @@ const contactSchema = z.object({
   channel: z.string().min(1, 'fillRequiredFields'),
   result: z.string().trim().min(1, 'fillRequiredFields'),
   comment: z.string(),
-});
-
-const demoSchema = z.object({
-  demoAt: z.string().min(1, 'fillRequiredFields'),
-  demoFormat: z.string().min(1, 'fillRequiredFields'),
-  demoLocation: z.string(),
 });
 
 const paymentSchema = z.object({
@@ -215,17 +202,8 @@ const taskSchema = z.object({
 
 type LeadFormValues = z.infer<typeof leadSchema>;
 type ContactFormValues = z.infer<typeof contactSchema>;
-type DemoFormValues = z.infer<typeof demoSchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type TaskFormValues = z.infer<typeof taskSchema>;
-
-const toInputDateTime = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-};
 
 const toInputDate = (value?: string | null) => {
   if (!value) return '';
@@ -264,7 +242,6 @@ export function LeadDetailSheet({
   courses,
   groups,
   sources,
-  schools,
   statuses,
   currentUserId,
   leadStatusName,
@@ -290,7 +267,6 @@ export function LeadDetailSheet({
       studentName: '',
       studentAge: '',
       courseId: '',
-      schoolId: '',
       sourceId: '',
       enrolledGroupId: '',
       language: 'ru',
@@ -302,10 +278,6 @@ export function LeadDetailSheet({
   const contactForm = useForm<ContactFormValues>({
     resolver: zodResolver(contactSchema),
     defaultValues: { channel: 'call', result: '', comment: '' },
-  });
-  const demoForm = useForm<DemoFormValues>({
-    resolver: zodResolver(demoSchema),
-    defaultValues: { demoAt: '', demoFormat: 'offline', demoLocation: '' },
   });
   const paymentForm = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -345,7 +317,6 @@ export function LeadDetailSheet({
       lead.studentName ?? '',
       lead.studentAge ?? '',
       lead.courseId ?? '',
-      lead.schoolId ?? '',
       lead.sourceId ?? '',
       lead.enrolledGroupId ?? '',
       lead.language ?? '',
@@ -360,9 +331,6 @@ export function LeadDetailSheet({
     if (!lead) return null;
     return [
       lead.id,
-      lead.demoAt ?? '',
-      lead.demoFormat ?? '',
-      lead.demoLocation ?? '',
       lead.expectedPaymentUzs ?? '',
       lead.offerPriceUzs ?? '',
       (lead.payments ?? []).map((p) => `${p.id}:${p.paidUntil ?? ''}`).join(','),
@@ -385,7 +353,6 @@ export function LeadDetailSheet({
           studentName: lead.studentName ?? '',
           studentAge: lead.studentAge ? String(lead.studentAge) : '',
           courseId: lead.courseId ? String(lead.courseId) : '',
-          schoolId: lead.schoolId ? String(lead.schoolId) : '',
           sourceId: lead.sourceId ? String(lead.sourceId) : '',
           enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
           language: lead.language ?? 'ru',
@@ -397,12 +364,10 @@ export function LeadDetailSheet({
       hydratedLeadKey.current = leadSnapshotKey;
     }
 
-    // Payment & demo forms are transient (single-shot actions). Only reseed them on
-    // first load of the lead or when the underlying amounts/demo data changed AND
-    // the user hasn't started filling them in.
+    // The payment form is a transient single-shot action. Only reseed it on first
+    // load or when the underlying amount changed and the user is not editing it.
     if (hydratedTransientKey.current !== transientSnapshotKey) {
       const paymentDirty = paymentForm.formState.isDirty;
-      const demoDirty = demoForm.formState.isDirty;
       if (!paymentDirty || hydratedTransientKey.current === null) {
         paymentForm.reset({
           amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
@@ -413,16 +378,9 @@ export function LeadDetailSheet({
           comment: '',
         });
       }
-      if (!demoDirty || hydratedTransientKey.current === null) {
-        demoForm.reset({
-          demoAt: toInputDateTime(lead.demoAt),
-          demoFormat: lead.demoFormat ?? 'offline',
-          demoLocation: lead.demoLocation ?? '',
-        });
-      }
       hydratedTransientKey.current = transientSnapshotKey;
     }
-  }, [leadQuery.data, leadSnapshotKey, transientSnapshotKey, leadForm, demoForm, paymentForm]);
+  }, [leadQuery.data, leadSnapshotKey, transientSnapshotKey, leadForm, paymentForm]);
 
   // Reset hydration tracking when the sheet closes so reopening reseeds cleanly.
   useEffect(() => {
@@ -443,7 +401,6 @@ export function LeadDetailSheet({
       ...values,
       studentAge: values.studentAge ? Number(values.studentAge) : null,
       courseId: values.courseId ? Number(values.courseId) : null,
-      schoolId: values.schoolId ? Number(values.schoolId) : null,
       sourceId: Number(values.sourceId),
       enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : null,
       expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
@@ -460,20 +417,6 @@ export function LeadDetailSheet({
       await finishMutation(t('contactRecorded'));
     },
     onError: (error: Error) => toast({ title: t('contactRecordFailed'), description: error.message, variant: 'destructive' }),
-  });
-
-  const scheduleDemo = useMutation({
-    mutationFn: (values: DemoFormValues) =>
-      apiRequest('POST', `/api/academy/leads/${leadId}/demo`, {
-        ...values,
-        schoolId: leadForm.getValues('schoolId') ? Number(leadForm.getValues('schoolId')) : undefined,
-        demoCourseId: leadForm.getValues('courseId') ? Number(leadForm.getValues('courseId')) : undefined,
-        demoLocation: values.demoFormat === 'offline'
-          ? schools.find((school) => school.id === Number(leadForm.getValues('schoolId')))?.name
-          : values.demoLocation,
-      }),
-    onSuccess: () => finishMutation(t('demoScheduled')),
-    onError: (error: Error) => toast({ title: t('demoScheduleFailed'), description: error.message, variant: 'destructive' }),
   });
 
   const createPayment = useMutation({
@@ -524,18 +467,15 @@ export function LeadDetailSheet({
   });
 
   const selectedCourseId = leadForm.watch('courseId');
-  const selectedSchoolId = leadForm.watch('schoolId');
   const selectedGroupId = leadForm.watch('enrolledGroupId');
-  const demoFormat = demoForm.watch('demoFormat');
   const availableGroups = useMemo(() => {
     return groups.filter((group) => {
       const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
       return (!selectedCourseId || !group.courseId || Number(group.courseId) === Number(selectedCourseId))
-        && (!selectedSchoolId || !group.schoolId || Number(group.schoolId) === Number(selectedSchoolId))
         && (occupied < Number(group.maxStudents || 12) || String(group.id) === selectedGroupId)
         && ['open', 'in_progress'].includes(String(group.status));
     });
-  }, [groups, selectedCourseId, selectedGroupId, selectedSchoolId]);
+  }, [groups, selectedCourseId, selectedGroupId]);
 
   const lead = leadQuery.data;
   const phoneHref = lead?.phone ? `tel:${lead.phone.replace(/[^\d+]/g, '')}` : undefined;
@@ -792,27 +732,6 @@ export function LeadDetailSheet({
                           />
                           <FormField
                             control={leadForm.control}
-                            name="schoolId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('school')}</FormLabel>
-                                <Select value={field.value || 'none'} onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}>
-                                  <FormControl><SelectTrigger><SelectValue placeholder={t('schoolNotSelected')} /></SelectTrigger></FormControl>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      <SelectItem value="none">{t('schoolNotSelected')}</SelectItem>
-                                      {schools.filter((school) => school.isActive !== false).map((school) => (
-                                        <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={leadForm.control}
                             name="enrolledGroupId"
                             render={({ field }) => (
                               <FormItem>
@@ -822,7 +741,6 @@ export function LeadDetailSheet({
                                   field.onChange(nextValue);
                                   const group = groups.find((item) => String(item.id) === nextValue);
                                   if (group?.courseId) leadForm.setValue('courseId', String(group.courseId), { shouldDirty: true });
-                                  if (group?.schoolId) leadForm.setValue('schoolId', String(group.schoolId), { shouldDirty: true });
                                 }}>
                                   <FormControl><SelectTrigger><SelectValue placeholder={t('noGroup')} /></SelectTrigger></FormControl>
                                   <SelectContent>
@@ -839,6 +757,7 @@ export function LeadDetailSheet({
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
+                                <p className="text-xs text-muted-foreground">{t('leadGroupAssignmentHint')}</p>
                                 <LocalizedFormMessage />
                               </FormItem>
                             )}
@@ -937,87 +856,6 @@ export function LeadDetailSheet({
                         </Form>
                       </CardContent>
                     </Card>
-
-                    {lead.statusCode !== 'paid' ? (
-                      <Card>
-                        <CardHeader><CardTitle>{t('scheduleDemo')}</CardTitle></CardHeader>
-                        <CardContent>
-                          <Form {...demoForm}>
-                            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={demoForm.handleSubmit((values) => scheduleDemo.mutate(values))}>
-                              <FormField
-                                control={demoForm.control}
-                                name="demoFormat"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('demoFormat')}</FormLabel>
-                                    <Select value={field.value} onValueChange={field.onChange}>
-                                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                      <SelectContent>
-                                        <SelectGroup>
-                                          <SelectItem value="online">{t('online')}</SelectItem>
-                                          <SelectItem value="offline">{t('offline')}</SelectItem>
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              {demoFormat === 'offline' ? (
-                                <FormField
-                                  control={demoForm.control}
-                                  name="demoAt"
-                                  render={({ field }) => (
-                                    <FormItem className="md:col-span-2">
-                                      <FormLabel>{t('availableSlots')}</FormLabel>
-                                      <AvailabilityCalendar
-                                        schoolId={Number(selectedSchoolId) || null}
-                                        courseId={Number(selectedCourseId) || null}
-                                        value={field.value}
-                                        onChange={field.onChange}
-                                        excludeLeadId={leadId}
-                                      />
-                                      <LocalizedFormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                              ) : (
-                                <>
-                                  <FormField
-                                    control={demoForm.control}
-                                    name="demoAt"
-                                    render={({ field, fieldState }) => (
-                                      <FormItem>
-                                        <FormLabel>{t('dateTimeLabel')}</FormLabel>
-                                        <FormControl><Input {...field} type="datetime-local" aria-invalid={fieldState.invalid} /></FormControl>
-                                        <LocalizedFormMessage />
-                                      </FormItem>
-                                    )}
-                                  />
-                                  <FormField
-                                    control={demoForm.control}
-                                    name="demoLocation"
-                                    render={({ field }) => (
-                                      <FormItem>
-                                        <FormLabel>{t('location')}</FormLabel>
-                                        <FormControl><Input {...field} /></FormControl>
-                                        <LocalizedFormMessage />
-                                      </FormItem>
-                                    )}
-                                  />
-                                </>
-                              )}
-                              <div className="flex justify-end md:col-span-2">
-                                <Button type="submit" variant="outline" disabled={scheduleDemo.isPending}>
-                                  <CalendarClock data-icon="inline-start" />
-                                  {t('scheduleDemo')}
-                                </Button>
-                              </div>
-                            </form>
-                          </Form>
-                        </CardContent>
-                      </Card>
-                    ) : null}
 
                     <ActivityTimeline
                       lead={lead}

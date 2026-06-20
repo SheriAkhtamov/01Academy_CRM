@@ -192,7 +192,12 @@ export function validateLeadForStatusChange(input: {
   studentName?: string | null;
   studentAge?: number | null;
   courseId?: number | null;
+  enrolledGroupId?: number | null;
 }): string | null {
+  if (input.nextStatus === "enrolled" && !input.enrolledGroupId) {
+    return "groupRequiredForEnrollment";
+  }
+
   if (!requiresQualificationFields(input.nextStatus)) {
     return null;
   }

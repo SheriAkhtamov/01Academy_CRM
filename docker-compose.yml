@@ -27,6 +27,7 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./logs:/app/logs
+      - ./uploads:/app/uploads
     environment:
       - NODE_ENV=production
 

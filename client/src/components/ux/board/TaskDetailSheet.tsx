@@ -107,8 +107,8 @@ function columnLabel(status: string | null, t: (k: any) => string): string {
     switch (status) {
         case 'backlog': return t('colBacklog');
         case 'todo': return t('colTodo');
-        case 'in_progress': return t('colInProgress');
-        case 'done': return t('colDone');
+        case 'in_progress': return t('taskInProgress');
+        case 'done': return t('taskDone');
         case 'accepted': return t('colAccepted');
         default: return status ?? '';
     }
@@ -266,7 +266,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                     {canManage ? (
                                         editing ? (
                                             <>
-                                                <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{t('save')}</Button>
+                                                <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{t('saveChanges')}</Button>
                                                 <Button size="icon" variant="ghost" className="size-8" onClick={() => setEditing(false)}><X className="size-4" /></Button>
                                             </>
                                         ) : (
@@ -384,7 +384,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                     <TabsTrigger value="comments">{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
                                     <TabsTrigger value="checklist">{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
                                     <TabsTrigger value="attachments">{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>
-                                    <TabsTrigger value="activity">{t('activityLabel')}</TabsTrigger>
+                                    <TabsTrigger value="activity">{t('activityTab')}</TabsTrigger>
                                 </TabsList>
 
                                 {/* Comments */}
@@ -434,7 +434,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             placeholder={t('addChecklistPlaceholder')}
                                             onKeyDown={(e) => { if (e.key === 'Enter' && checklistText.trim()) addChecklistMutation.mutate(); }}
                                         />
-                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={() => addChecklistMutation.mutate()}>{t('addTask')}</Button>
+                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={() => addChecklistMutation.mutate()}>{t('addChecklistItem')}</Button>
                                     </div>
                                     {task.checklist.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noChecklistYet')}</p>

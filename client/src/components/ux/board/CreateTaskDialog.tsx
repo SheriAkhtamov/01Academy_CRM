@@ -88,7 +88,7 @@ export function CreateTaskDialog({ open, onOpenChange, users }: CreateTaskDialog
 
                 <div className="space-y-4">
                     <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">{t('taskTitleLabel')}</Label>
+                        <Label className="text-xs text-slate-500">{t('taskTitle')}</Label>
                         <Input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}

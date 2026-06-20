@@ -110,8 +110,8 @@ export interface BoardTasksResponse {
 export const BOARD_COLUMNS: { status: BoardStatus; labelKey: TranslationKey }[] = [
     { status: 'backlog', labelKey: 'colBacklog' },
     { status: 'todo', labelKey: 'colTodo' },
-    { status: 'in_progress', labelKey: 'colInProgress' },
-    { status: 'done', labelKey: 'colDone' },
+    { status: 'in_progress', labelKey: 'taskInProgress' },
+    { status: 'done', labelKey: 'taskDone' },
     { status: 'accepted', labelKey: 'colAccepted' },
 ];
 

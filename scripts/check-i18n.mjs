@@ -275,9 +275,33 @@ const collectTranslationReferences = (files, keySet) => {
         ts.isSatisfiesExpression(node) &&
         node.type.getText(sourceFile).includes('TranslationKey')
       ) {
+        const satisfiesType = node.type.getText(sourceFile);
+        const rootExpression = unwrapExpression(node.expression);
+        const directValuesAreTranslationKeys =
+          /Record<[\s\S]*,\s*TranslationKey\s*>/.test(satisfiesType) ||
+          /^TranslationKey(?:\[\]|Array<TranslationKey>)$/.test(satisfiesType.replace(/\s+/g, ''));
+
         const collectKeys = (candidate) => {
-          if (ts.isStringLiteralLike(candidate) && keySet.has(candidate.text)) {
-            addReference(candidate.text, `${relativePath}:${getLineColumn(sourceFile, candidate)}`);
+          if (ts.isStringLiteralLike(candidate)) {
+            const parentProperty = ts.isPropertyAssignment(candidate.parent)
+              ? getPropertyName(candidate.parent.name)
+              : null;
+            const isDirectObjectValue =
+              directValuesAreTranslationKeys &&
+              ts.isPropertyAssignment(candidate.parent) &&
+              candidate.parent.parent === rootExpression;
+            const isTranslationKeyCandidate =
+              parentProperty?.endsWith('Key') ||
+              isDirectObjectValue ||
+              ts.isArrayLiteralExpression(candidate.parent);
+            if (!isTranslationKeyCandidate) return;
+
+            const location = `${relativePath}:${getLineColumn(sourceFile, candidate)}`;
+            if (keySet.has(candidate.text)) {
+              addReference(candidate.text, location);
+            } else {
+              missing.push(`${location} missing translation key '${candidate.text}'`);
+            }
           }
           ts.forEachChild(candidate, collectKeys);
         };

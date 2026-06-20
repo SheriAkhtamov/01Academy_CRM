@@ -20,9 +20,9 @@ COPY --from=build /app/package*.json ./
 COPY --from=build /app/apply-migrations.js ./
 COPY --from=build /app/tsconfig.json ./
 
-RUN mkdir -p /app/logs \
+RUN mkdir -p /app/logs /app/uploads/board \
     && chmod -R a+rX /app/migrations \
-    && chown -R node:node /app/logs
+    && chown -R node:node /app/logs /app/uploads
 
 EXPOSE 5001
 USER node

@@ -104,7 +104,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         case 'account_manager':
           return [
             { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
-            { id: 'nav-sales-leads', type: t('myLeads'), title: t('myLeads'), href: '/sales/leads', icon: Users },
             { id: 'nav-sales-pipeline', type: t('pipeline'), title: t('pipeline'), href: '/sales/pipeline', icon: Flame },
             { id: 'nav-sales-schedule', type: t('salesPipeline'), title: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
             { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },

@@ -1,4 +1,4 @@
-import { Switch, Route } from 'wouter';
+import { Redirect, Switch, Route } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
@@ -110,11 +110,7 @@ function Router() {
         <Route path="/" component={RoleBasedHome} />
         <Route path="/integrations" component={() => adminPage('integrations')} />
         <Route path="/settings" component={() => adminPage('settings')} />
-        <Route path="/sales/leads" component={() => (
-          <RoleGuard allowedRoles={salesRoles}>
-            <SalesDashboard section="leads" />
-          </RoleGuard>
-        )} />
+        <Route path="/sales/leads" component={() => <Redirect to="/sales/pipeline" />} />
         <Route path="/sales/pipeline" component={() => (
           <RoleGuard allowedRoles={salesRoles}>
             <SalesDashboard section="pipeline" />

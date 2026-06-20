@@ -77,7 +77,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('salesPipeline'),
           items: [
             { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
-            { name: t('myLeads'), href: '/sales/leads', icon: Users },
             { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
             { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
             { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },

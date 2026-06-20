@@ -19,7 +19,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   ArrowRight,
-  Clock3,
   MoreHorizontal,
   Phone,
   Send,
@@ -62,7 +61,7 @@ interface KanbanBoardProps {
   statuses: readonly KanbanStatus[];
   leads: KanbanLead[];
   onStatusChange: (leadId: number, statusCode: string) => boolean | void | Promise<boolean | void>;
-  onQuickAction?: (action: 'qualify' | 'warm' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
+  onQuickAction?: (action: 'qualify' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
   onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction?: boolean;
@@ -94,7 +93,6 @@ function LeadCardContent({
     ? []
     : statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
   const canQualify = currentStatus.code === 'new_request' || currentStatus.code === 'first_contact';
-  const canMoveToWarmBase = currentStatus.code !== 'paid' && currentStatus.code !== 'not_now';
 
   return (
     <>
@@ -154,14 +152,6 @@ function LeadCardContent({
                 <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)}>
                   <Send /> {t('write')}
                 </DropdownMenuItem>
-                {canMoveToWarmBase ? (
-                  <DropdownMenuItem
-                    onClick={() => onQuickAction?.('warm', lead)}
-                    disabled={isPending}
-                  >
-                    <Clock3 /> {t('warmBase')}
-                  </DropdownMenuItem>
-                ) : null}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>

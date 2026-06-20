@@ -51,7 +51,6 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
-  CreditCard,
   GraduationCap,
   Megaphone,
   Percent,
@@ -61,9 +60,9 @@ import {
   UserCheck,
 } from 'lucide-react';
 
-type SalesSection = 'overview' | 'leads' | 'pipeline' | 'schedule' | 'students' | 'tasks';
+type SalesSection = 'overview' | 'pipeline' | 'schedule' | 'students' | 'tasks';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
-type QuickAction = 'qualify' | 'warm' | 'payment' | 'call' | 'message';
+type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
 
 interface Lead {
   id: number;
@@ -148,7 +147,6 @@ const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
 
 const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   overview: '/sales',
-  leads: '/sales/leads',
   pipeline: '/sales/pipeline',
   schedule: '/sales/schedule',
   students: '/sales/clients',
@@ -264,13 +262,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
   };
 
-  const dateOnly = (value: string | null | undefined) => {
-    if (!value) return t('noData');
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return t('noData');
-    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-  };
-
   const paymentStatusName = (code: string | null | undefined) => {
     if (!code) return t('noData');
     const key = paymentStatusTranslationKeys[code];
@@ -278,8 +269,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   };
 
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sourceFilter, setSourceFilter] = useState('all');
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [leadSheetTab, setLeadSheetTab] = useState<LeadSheetTab>('deal');
@@ -322,14 +311,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (!data?.payments) return [];
     return data.payments;
   }, [data?.payments]);
-
-  const filteredLeads = useMemo(() => {
-    return myLeads.filter((lead) => {
-      const matchesStatus = statusFilter === 'all' || lead.statusCode === statusFilter;
-      const matchesSource = sourceFilter === 'all' || String(lead.sourceId) === sourceFilter;
-      return matchesStatus && matchesSource;
-    });
-  }, [myLeads, sourceFilter, statusFilter]);
 
   const activePipelineStatuses = useMemo(
     () => [...(data?.statuses ?? [])]
@@ -491,9 +472,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
       return;
     }
-    if (action === 'warm') {
-      updateLead.mutate({ id: lead.id, payload: { statusCode: 'not_now', warmReason: t('warmReasonDefault') } });
-    }
   }, [openLead, t, updateLead]);
 
   const handleLeadDialogState = useCallback((open: boolean) => {
@@ -551,7 +529,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const sectionTitle: Record<SalesSection, string> = {
     overview: `${t('welcome')}, ${user?.fullName || t('manager')}!`,
-    leads: t('myLeads'),
     pipeline: t('pipeline'),
     schedule: t('salesSchedule'),
     students: t('myStudents'),
@@ -568,7 +545,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
-          section === 'overview' || section === 'leads' || section === 'pipeline' ? (
+          section === 'overview' || section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">
               {section === 'pipeline' && (user?.role === 'admin' || user?.role === 'head') ? (
                 <Button
@@ -608,24 +585,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             openLead={openLead}
           />
         </div>
-      ) : null}
-
-      {section === 'leads' ? (
-        <LeadsTab
-          t={t}
-          leadStatusName={leadStatusName}
-          statusColor={statusColor}
-          dateOnly={dateOnly}
-          filteredLeads={filteredLeads}
-          statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
-          sourceFilter={sourceFilter}
-          setSourceFilter={setSourceFilter}
-          sources={data.sources ?? []}
-          statuses={data.statuses ?? []}
-          openLead={openLead}
-          onQuickAction={handleQuickAction}
-        />
       ) : null}
 
       {section === 'pipeline' ? (
@@ -789,196 +748,6 @@ function OverviewTab({
               </button>
             ))
           )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function LeadsTab({
-  t,
-  leadStatusName,
-  statusColor,
-  dateOnly,
-  filteredLeads,
-  statusFilter,
-  setStatusFilter,
-  sourceFilter,
-  setSourceFilter,
-  sources,
-  statuses,
-  openLead,
-  onQuickAction,
-}: {
-  t: (key: TranslationKey) => string;
-  leadStatusName: (code: string) => string;
-  statusColor: (code: string) => string;
-  dateOnly: (v: string | null | undefined) => string;
-  filteredLeads: Lead[];
-  statusFilter: string;
-  setStatusFilter: (v: string) => void;
-  sourceFilter: string;
-  setSourceFilter: (v: string) => void;
-  sources: Array<{ id: number; name: string }>;
-  statuses: Array<{ code: string; name: string; color: string; sortOrder: number; isActive?: boolean }>;
-  openLead: (leadId: number, tab?: LeadSheetTab) => void;
-  onQuickAction: (action: QuickAction, lead: Lead) => void;
-}) {
-  const columns = [
-    {
-      key: 'contact',
-      header: t('contact'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.contactName,
-      render: (lead: Lead) => {
-        const firstContactOverdue = !lead.firstContactAt && lead.statusCode === 'new_request' &&
-          Date.now() - new Date(lead.createdAt).getTime() > 15 * 60 * 1000;
-        return (
-          <div>
-            <div className="font-medium text-slate-900">{lead.contactName}</div>
-            <div className="text-xs text-slate-500">{lead.phone} {lead.messenger ? `• ${lead.messenger}` : ''}</div>
-            {firstContactOverdue && (
-              <div className="text-xs text-red-600 font-medium mt-0.5">{t('contactTime')} {t('waiting')}</div>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: 'phone',
-      header: t('phone'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.phone,
-      render: (lead: Lead) => <span className="text-slate-600 text-sm">{lead.phone}</span>,
-      cellClassName: 'whitespace-nowrap',
-    },
-    {
-      key: 'statusCode',
-      header: t('status'),
-      sortable: true,
-      accessor: (lead: Lead) => leadStatusName(lead.statusCode),
-      render: (lead: Lead) => (
-        <Badge style={{ backgroundColor: statuses.find((status) => status.code === lead.statusCode)?.color ?? statusColor(lead.statusCode), color: 'white' }}>
-          {leadStatusName(lead.statusCode)}
-        </Badge>
-      ),
-    },
-    {
-      key: 'courseId',
-      header: t('course'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.courseName,
-      render: (lead: Lead) => <span className="text-slate-600">{lead.courseName || t('noData')}</span>,
-    },
-    {
-      key: 'schoolId',
-      header: t('school'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.schoolName,
-      render: (lead: Lead) => <span className="text-slate-600">{lead.schoolName || t('schoolNotSelected')}</span>,
-    },
-    {
-      key: 'sourceId',
-      header: t('source'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.sourceName,
-      render: (lead: Lead) => <span className="text-slate-600">{lead.sourceName || t('noData')}</span>,
-    },
-    {
-      key: 'createdAt',
-      header: t('created'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.createdAt,
-      render: (lead: Lead) => <span className="text-slate-500 text-sm">{dateOnly(lead.createdAt)}</span>,
-      cellClassName: 'whitespace-nowrap',
-    },
-    {
-      key: 'actions',
-      header: t('actions'),
-      render: (lead: Lead) => {
-        const canQualify = lead.statusCode === 'new_request' || lead.statusCode === 'first_contact';
-        const canMoveToWarmBase = lead.statusCode !== 'paid' && lead.statusCode !== 'not_now';
-        return (
-          <div className="flex flex-wrap gap-1.5">
-            {canQualify ? (
-              <Button size="sm" variant="outline" className="h-7 text-xs"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onQuickAction('qualify', lead);
-                }}>
-                {t('qualify')}
-              </Button>
-            ) : null}
-            <Button size="sm" variant="outline" className="h-7 text-xs"
-              onClick={(event) => {
-                event.stopPropagation();
-                openLead(lead.id, 'payment');
-              }}>
-              <CreditCard data-icon="inline-start" />
-              {t('payment')}
-            </Button>
-            {canMoveToWarmBase ? (
-              <Button size="sm" variant="ghost" className="h-7 text-xs"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onQuickAction('warm', lead);
-                }}>
-                {t('warmBase')}
-              </Button>
-            ) : null}
-          </div>
-        );
-      },
-    },
-  ];
-
-  return (
-    <div className="space-y-5">
-      <Card className="hover-lift">
-        <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4">
-          <CardTitle>{t('myLeads')}</CardTitle>
-          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48"><SelectValue placeholder={t('status')} /></SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">{t('allStatuses')}</SelectItem>
-                  {statuses.filter((status) => status.isActive !== false).map((status) => (
-                    <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-48"><SelectValue placeholder={t('source')} /></SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">{t('allSources')}</SelectItem>
-                  {sources.map((source) => (
-                    <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={filteredLeads}
-            keyExtractor={(lead: Lead) => `lead-${lead.id}`}
-            emptyState={
-              <div className="p-8">
-                <EmptyState title={t('noLeadsFound')} text={t('noLeadsFoundDesc')} />
-              </div>
-            }
-            rowClassName={(lead: Lead) => {
-              const firstContactOverdue = !lead.firstContactAt && lead.statusCode === 'new_request' &&
-                Date.now() - new Date(lead.createdAt).getTime() > 15 * 60 * 1000;
-              return firstContactOverdue ? 'bg-red-50/60' : '';
-            }}
-            onRowClick={(lead: Lead) => openLead(lead.id)}
-          />
         </CardContent>
       </Card>
     </div>

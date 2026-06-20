@@ -2036,7 +2036,7 @@ router.get('/search', async (req, res) => {
     };
 
     if (role === 'account_manager') {
-      await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/leads');
+      await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/pipeline');
       await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
     } else if (role === 'teacher') {
       const teacherId = await resolveTeacherId(req.user!.id);

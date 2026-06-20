@@ -146,7 +146,7 @@ export const academyGroups = pgTable("academy_groups", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "restrict" }).notNull(),
-  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "restrict" }).notNull(),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   maxStudents: integer("max_students").notNull().default(12),
@@ -159,6 +159,7 @@ export const academyGroups = pgTable("academy_groups", {
   courseIdx: index("academy_groups_course_idx").on(table.courseId),
   schoolIdx: index("academy_groups_school_idx").on(table.schoolId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
+  capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} BETWEEN 1 AND 12`),
 }));
 
 export const academyLeads = pgTable("academy_leads", {

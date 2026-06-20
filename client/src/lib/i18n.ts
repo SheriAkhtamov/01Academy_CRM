@@ -347,11 +347,6 @@ export const translations = {
   conversionFunnel: { en: 'Conversion Funnel', ru: 'Воронка конверсии' },
   noPaymentData: { en: 'No payment data available', ru: 'Нет данных о платежах' },
   noFunnelData: { en: 'No funnel data available', ru: 'Нет данных по воронке' },
-  dragLeadHint: {
-    en: 'Click a card to open it or drag it between stages',
-    ru: 'Нажмите на карточку, чтобы открыть её, или перетащите между этапами',
-  },
-  dragLeadAnnouncement: { en: 'Lead moved to a new stage', ru: 'Лид перемещён на новый этап' },
   unsavedChangesTitle: { en: 'Discard unsaved changes?', ru: 'Отменить несохранённые изменения?' },
   unsavedChangesDescription: { en: 'The data entered in this form will be lost.', ru: 'Введённые в форме данные будут потеряны.' },
   discardChanges: { en: 'Discard changes', ru: 'Выйти без сохранения' },

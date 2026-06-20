@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import {
   ArrowRight,
   Clock3,
-  MousePointer2,
   MoreHorizontal,
   Phone,
   Send,
@@ -247,7 +246,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
         'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         isDragging && 'opacity-30',
       )}
-      aria-label={`${lead.contactName}. ${t('openLead')}. ${t('dragLeadHint')}`}
+      aria-label={`${lead.contactName}. ${t('openLead')}`}
       {...attributes}
       {...listeners}
       onClick={() => onLeadClick?.(lead)}
@@ -440,24 +439,12 @@ export function KanbanBoard({
 
   return (
     <div className="flex min-w-0 max-w-full flex-1 flex-col gap-2">
-      <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-        <MousePointer2 />
-        <span>{t('dragLeadHint')}</span>
-      </div>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragCancel={() => setActiveLeadId(null)}
         onDragEnd={handleDragEnd}
-        accessibility={{
-          announcements: {
-            onDragStart: () => t('dragLeadHint'),
-            onDragOver: () => t('dragLeadHint'),
-            onDragEnd: ({ over }) => over ? t('dragLeadAnnouncement') : t('dragLeadHint'),
-            onDragCancel: () => t('dragLeadHint'),
-          },
-        }}
       >
         <div className="-mx-2 min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain pb-2">
           <div className="flex min-h-full min-w-max items-stretch gap-4 px-2">

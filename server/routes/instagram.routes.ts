@@ -58,6 +58,7 @@ router.post('/oauth/start', async (req, res) => {
   if (!ensureAdministration(req, res)) return;
   try {
     const state = crypto.randomBytes(24).toString('base64url');
+    const url = buildInstagramAuthorizationUrl(state);
     req.session.instagramOAuth = {
       state,
       createdAt: Date.now(),
@@ -68,7 +69,7 @@ router.post('/oauth/start', async (req, res) => {
         res.status(500).json({ error: 'sessionSaveFailed' });
         return;
       }
-      res.json({ url: buildInstagramAuthorizationUrl(state) });
+      res.json({ url });
     });
   } catch (error: any) {
     logger.error('Failed to start Instagram OAuth', { error });

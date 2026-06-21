@@ -114,8 +114,6 @@ export const translations = {
   inactive: { en: 'Inactive', ru: 'Неактивный' },
   inactiveBadge: { en: 'disabled', ru: 'отключён' },
   inactiveUsers: { en: 'Inactive users', ru: 'Неактивные пользователи' },
-  integrationStatus: { en: 'Integration Status', ru: 'Статус интеграций' },
-  integrationTestLogged: { en: 'Integration test logged', ru: 'Тест интеграции записан в лог' },
   invalidCredentialsMessage: { en: 'Invalid credentials. Please check your login and password.', ru: 'Неверные учётные данные. Проверьте, пожалуйста, логин и пароль.' },
   invalidEmailAddress: { en: 'Invalid email address', ru: 'Неверный адрес электронной почты' },
   lastUpdated: { en: 'Last updated', ru: 'Последнее обновление' },
@@ -271,9 +269,7 @@ export const translations = {
   targetGreaterThan: { en: 'target > ', ru: 'цель > ' },
   teacher: { en: 'Teacher', ru: 'Преподаватель' },
   telegramWhatsapp: { en: 'Telegram/WhatsApp', ru: 'Telegram/WhatsApp' },
-  test: { en: 'Test', ru: 'Тест' },
   testReportCreated: { en: 'Test report created', ru: 'Тестовый отчёт создан' },
-  testWeeklyReport: { en: 'Test Weekly Report', ru: 'Тест еженедельного отчёта' },
   thisActionCannotBeUndone: { en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' },
   totalUsers: { en: 'Total Users', ru: 'Всего пользователей' },
   trendColumn: { en: 'Trend', ru: 'Тренд' },
@@ -540,7 +536,6 @@ export const translations = {
   freeTrainingAiAmbassador: { en: 'Free training and AI Ambassador status', ru: 'Бесплатное обучение и статус AI-амбассадора' },
   groupStatusCompleted: { en: 'Completed', ru: 'Завершена' },
   groupStatusInProgress: { en: 'In progress', ru: 'Идут занятия' },
-  integrationStubMode: { en: 'Safe stub', ru: 'Безопасная заглушка' },
   ltvLabel: { en: 'LTV', ru: 'LTV' },
   paidLeadCannotReturn: { en: 'A paid client cannot be moved back to a lead stage', ru: 'Оплаченного клиента нельзя вернуть на этап лида' },
   paymentAmountRequired: { en: 'Payment amount is required', ru: 'Нельзя отметить оплату без суммы' },
@@ -871,15 +866,6 @@ export const translations = {
   transferLead: { en: 'Transfer lead', ru: 'Передать лида' },
 
   // UX improvements — Instagram lead source and sales inbox
-  connected: { en: 'Connected', ru: 'Подключён' },
-  copy: { en: 'Copy', ru: 'Копировать' },
-  disconnect: { en: 'Disconnect', ru: 'Отключить' },
-  disconnected: { en: 'Disconnected', ru: 'Отключён' },
-  disconnectInstagram: { en: 'Disconnect Instagram', ru: 'Отключить Instagram' },
-  disconnectInstagramDesc: {
-    en: 'The CRM will stop receiving and sending messages for this account. Existing leads and message history will remain.',
-    ru: 'CRM перестанет получать и отправлять сообщения этого аккаунта. Существующие лиды и история переписки сохранятся.',
-  },
   instagramAccountDisconnected: {
     en: 'The Instagram account is disconnected.',
     ru: 'Instagram-аккаунт отключён.',
@@ -887,10 +873,6 @@ export const translations = {
   instagramAccountIdMissing: {
     en: 'Instagram did not return the account ID.',
     ru: 'Instagram не вернул идентификатор аккаунта.',
-  },
-  instagramApiConfigured: {
-    en: 'Instagram API credentials are configured',
-    ru: 'Данные Instagram API настроены',
   },
   instagramConnected: {
     en: 'Instagram account connected',
@@ -909,14 +891,6 @@ export const translations = {
     ru: 'Проверьте настройки приложения Meta, Redirect URL, разрешения и роль аккаунта.',
   },
   instagramDialogs: { en: 'Conversations', ru: 'Диалоги' },
-  instagramDisconnected: {
-    en: 'Instagram account disconnected',
-    ru: 'Instagram-аккаунт отключён',
-  },
-  instagramDisconnectFailed: {
-    en: 'Could not disconnect Instagram',
-    ru: 'Не удалось отключить Instagram',
-  },
   instagramIntegration: { en: 'Instagram', ru: 'Instagram-интеграция' },
   instagramIntegrationDesc: {
     en: 'Connect a professional account. New Direct conversations become leads and are assigned to sales managers.',
@@ -954,10 +928,6 @@ export const translations = {
     en: 'Reply window is closed',
     ru: 'Окно ответа закрыто',
   },
-  instagramOAuthRedirect: {
-    en: 'OAuth Redirect URL',
-    ru: 'URL перенаправления OAuth',
-  },
   instagramReplyPolicyHint: {
     en: 'Messages are sent from the connected Instagram account. Enter sends; Shift+Enter adds a new line.',
     ru: 'Сообщения отправляются от подключённого Instagram-аккаунта. Enter — отправить, Shift+Enter — новая строка.',
@@ -971,14 +941,10 @@ export const translations = {
     ru: 'Нужно настроить приложение Meta',
   },
   instagramSetupRequiredDesc: {
-    en: 'Fill integrations.instagram in config/app.config.json, then add the Redirect URL and Webhook Callback URL below in Meta for Developers.',
-    ru: 'Заполните integrations.instagram в config/app.config.json, затем добавьте указанные ниже Redirect URL и Webhook Callback URL в Meta for Developers.',
+    en: 'Fill integrations.instagram in config/app.config.json.',
+    ru: 'Заполните integrations.instagram в config/app.config.json.',
   },
   instagramUser: { en: 'Instagram user', ru: 'Пользователь Instagram' },
-  instagramWebhookCallback: {
-    en: 'Webhook Callback URL',
-    ru: 'URL обратного вызова Webhook',
-  },
   integrationLeadSourcesDesc: {
     en: 'Instagram accounts create their own source automatically. You can add other lead sources here.',
     ru: 'Для Instagram-аккаунтов источник создаётся автоматически. Здесь можно добавить и другие источники лидов.',
@@ -987,14 +953,6 @@ export const translations = {
     en: 'Log in with Instagram',
     ru: 'Войти через Instagram',
   },
-  noInstagramAccounts: {
-    en: 'No Instagram accounts connected',
-    ru: 'Нет подключённых Instagram-аккаунтов',
-  },
-  noInstagramAccountsDesc: {
-    en: 'Connect a professional Instagram account to start receiving Direct messages.',
-    ru: 'Подключите профессиональный Instagram-аккаунт, чтобы получать сообщения Direct.',
-  },
   noInstagramConversations: {
     en: 'No Instagram conversations yet',
     ru: 'Пока нет диалогов Instagram',
@@ -1002,10 +960,6 @@ export const translations = {
   noInstagramConversationsDesc: {
     en: 'A conversation will appear here when a client writes to a connected Instagram account.',
     ru: 'Диалог появится здесь, когда клиент напишет в подключённый Instagram-аккаунт.',
-  },
-  otherIntegrations: {
-    en: 'Other integrations',
-    ru: 'Другие интеграции',
   },
   replyWindowClosed: {
     en: 'Reply window closed',
@@ -1020,10 +974,6 @@ export const translations = {
     ru: 'Выберите диалог',
   },
   sendMessage: { en: 'Send message', ru: 'Отправить сообщение' },
-  tokenValidUntil: {
-    en: 'Token valid until',
-    ru: 'Токен действителен до',
-  },
 } as const;
 
 

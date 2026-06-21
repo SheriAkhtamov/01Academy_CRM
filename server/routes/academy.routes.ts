@@ -68,6 +68,7 @@ const MARKETING_WORKSPACES = new Set(['marketing']);
 const SALES_WORKSPACES = new Set(['sales']);
 const REPORT_WORKSPACES = new Set(['administration', 'analytics', 'marketing']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
+const SOURCE_MANAGEMENT_WORKSPACES = new Set(['administration', 'marketing']);
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -2895,12 +2896,14 @@ const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) =
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
+  allowedWorkspaces?: Set<string>;
   requireAdministration?: boolean;
   requireFinance?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
+    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
@@ -2921,6 +2924,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.get(`/${path}/:id`, async (req, res) => {
+    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
@@ -2941,6 +2945,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.post(`/${path}`, async (req, res) => {
+    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
@@ -3033,6 +3038,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.patch(`/${path}/:id`, async (req, res) => {
+    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
@@ -3139,6 +3145,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.delete(`/${path}/:id`, async (req, res) => {
+    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
@@ -3745,7 +3752,7 @@ registerSimpleCrud('groups', 'academy_groups', [
 
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
-], { orderBy: 'name', requireMarketing: true });
+], { orderBy: 'name', allowedWorkspaces: SOURCE_MANAGEMENT_WORKSPACES });
 
 registerSimpleCrud('lessons', 'academy_lessons', [
   'groupId', 'courseId', 'schoolId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',

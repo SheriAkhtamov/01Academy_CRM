@@ -102,6 +102,18 @@
   --app-bg: radial-gradient(1200px 600px at 100% -10%, hsl(214, 100%, 98%) 0%, transparent 55%),
             radial-gradient(900px 500px at -10% 110%, hsl(270, 80%, 99%) 0%, transparent 50%),
             hsl(210, 40%, 99%);
+  --glass-background: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --backdrop-background: rgba(255, 255, 255, 0.75);
+  --shimmer-start: hsl(210, 13%, 97%);
+  --shimmer-middle: hsl(220, 12%, 94%);
+  --login-bg: radial-gradient(900px 500px at 12% 18%, hsl(214, 100%, 96%) 0%, transparent 60%),
+              radial-gradient(800px 460px at 88% 82%, hsl(270, 80%, 97%) 0%, transparent 55%),
+              hsl(210, 40%, 99%);
+  --login-card-background: hsl(0 0% 100% / 0.9);
+  --login-card-border: hsl(0 0% 100% / 0.6);
+  --login-glow-blue: hsla(221, 83%, 60%, 0.18);
+  --login-glow-purple: hsla(271, 81%, 60%, 0.16);
 }
 
 .dark {
@@ -124,7 +136,65 @@
   --destructive: hsl(0, 62.8%, 30.6%);
   --destructive-foreground: hsl(0, 0%, 98%);
   --ring: hsl(240, 4.9%, 83.9%);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
+
+  --primary-50: hsl(221, 48%, 14%);
+  --primary-100: hsl(221, 52%, 20%);
+  --primary-500: hsl(217, 91%, 60%);
+  --primary-600: hsl(217, 91%, 60%);
+  --primary-700: hsl(213, 94%, 68%);
+
+  --emerald-100: hsl(160, 40%, 14%);
+  --emerald-500: hsl(160, 84%, 39%);
+  --emerald-600: hsl(158, 64%, 52%);
+
+  --amber-100: hsl(38, 46%, 15%);
+  --amber-500: hsl(43, 96%, 56%);
+  --amber-600: hsl(43, 96%, 62%);
+
+  --purple-100: hsl(272, 38%, 16%);
+  --purple-500: hsl(271, 91%, 65%);
+  --purple-600: hsl(270, 95%, 75%);
+
+  --slate-50: hsl(240, 5%, 10%);
+  --slate-100: hsl(240, 4%, 16%);
+  --slate-200: hsl(240, 4%, 23%);
+  --slate-300: hsl(240, 4%, 32%);
+  --slate-400: hsl(240, 5%, 52%);
+  --slate-500: hsl(240, 5%, 65%);
+  --slate-600: hsl(240, 5%, 75%);
+  --slate-700: hsl(240, 5%, 84%);
+  --slate-900: hsl(0, 0%, 98%);
+
+  --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.18);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.22);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.28), 0 1px 2px -1px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.38), 0 2px 6px -2px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 12px 28px -6px rgba(0, 0, 0, 0.46), 0 6px 12px -6px rgba(0, 0, 0, 0.34);
+  --shadow-xl: 0 20px 44px -10px rgba(0, 0, 0, 0.52), 0 10px 20px -10px rgba(0, 0, 0, 0.40);
+  --shadow-2xl: 0 28px 64px -16px rgba(0, 0, 0, 0.62);
+
+  --tint-blue: hsl(221, 48%, 14%);
+  --tint-green: hsl(160, 40%, 13%);
+  --tint-amber: hsl(32, 46%, 14%);
+  --tint-red: hsl(0, 42%, 14%);
+  --tint-purple: hsl(272, 38%, 16%);
+
+  --app-bg: radial-gradient(1200px 600px at 100% -10%, hsl(221, 45%, 10%) 0%, transparent 55%),
+            radial-gradient(900px 500px at -10% 110%, hsl(272, 34%, 10%) 0%, transparent 50%),
+            hsl(240, 10%, 4%);
+  --glass-background: rgba(9, 9, 11, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --backdrop-background: rgba(9, 9, 11, 0.76);
+  --shimmer-start: hsl(240, 4%, 13%);
+  --shimmer-middle: hsl(240, 4%, 18%);
+  --login-bg: radial-gradient(900px 500px at 12% 18%, hsl(221, 45%, 11%) 0%, transparent 60%),
+              radial-gradient(800px 460px at 88% 82%, hsl(272, 34%, 11%) 0%, transparent 55%),
+              hsl(240, 10%, 4%);
+  --login-card-background: hsl(240 10% 6% / 0.9);
+  --login-card-border: hsl(240 4% 24% / 0.75);
+  --login-glow-blue: hsla(217, 91%, 60%, 0.16);
+  --login-glow-purple: hsla(271, 81%, 60%, 0.14);
 
   --calendar-blue-background: hsl(224, 44%, 16%);
   --calendar-blue-border: hsl(217, 70%, 46%);
@@ -159,6 +229,7 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    min-height: 100vh;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: 'cv11', 'ss01';
     font-variation-settings: 'opsz' 32;
@@ -166,6 +237,7 @@
 
   /* App canvas background — soft, premium, never flat */
   #root {
+    min-height: 100vh;
     background: var(--app-bg);
     background-attachment: fixed;
   }
@@ -239,10 +311,10 @@
 @layer components {
   /* Glassmorphism Effect */
   .glass {
-    background: rgba(255, 255, 255, 0.78);
+    background: var(--glass-background);
     backdrop-filter: blur(14px) saturate(180%);
     -webkit-backdrop-filter: blur(14px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--glass-border);
   }
 
   .glass-dark {
@@ -395,10 +467,10 @@
     animation: shimmer 2s infinite;
     background: linear-gradient(
       to right,
-      #f6f7f8 0%,
-      #edeef1 20%,
-      #f6f7f8 40%,
-      #f6f7f8 100%
+      var(--shimmer-start) 0%,
+      var(--shimmer-middle) 20%,
+      var(--shimmer-start) 40%,
+      var(--shimmer-start) 100%
     );
     background-size: 1000px 100%;
   }
@@ -545,17 +617,18 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-slate-100;
+    background-color: var(--slate-100);
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full;
+    @apply rounded-full;
+    background-color: var(--slate-300);
     border: 2px solid transparent;
     background-clip: padding-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-400;
+    background-color: var(--slate-400);
   }
 
   /* Loading Spinner */
@@ -576,7 +649,7 @@
   .backdrop-modern {
     backdrop-filter: blur(8px) saturate(180%);
     -webkit-backdrop-filter: blur(8px) saturate(180%);
-    background-color: rgba(255, 255, 255, 0.75);
+    background-color: var(--backdrop-background);
   }
 
   /* Modal Overlay Animation */
@@ -630,10 +703,7 @@
   /* Login Page */
   .login-page {
     @apply min-h-screen flex items-center justify-center relative overflow-hidden;
-    background:
-      radial-gradient(900px 500px at 12% 18%, hsl(214, 100%, 96%) 0%, transparent 60%),
-      radial-gradient(800px 460px at 88% 82%, hsl(270, 80%, 97%) 0%, transparent 55%),
-      hsl(210, 40%, 99%);
+    background: var(--login-bg);
   }
 
   .login-page::before,
@@ -647,7 +717,7 @@
     height: 420px;
     top: -120px;
     left: -80px;
-    background: radial-gradient(circle, hsla(221, 83%, 60%, 0.18), transparent 70%);
+    background: radial-gradient(circle, var(--login-glow-blue), transparent 70%);
   }
 
   .login-page::after {
@@ -655,13 +725,14 @@
     height: 460px;
     bottom: -160px;
     right: -100px;
-    background: radial-gradient(circle, hsla(271, 81%, 60%, 0.16), transparent 70%);
+    background: radial-gradient(circle, var(--login-glow-purple), transparent 70%);
   }
 
   .login-card {
-    @apply w-full max-w-md mx-auto bg-white/90 backdrop-blur-xl rounded-2xl p-8 relative;
+    @apply w-full max-w-md mx-auto backdrop-blur-xl rounded-2xl p-8 relative;
+    background: var(--login-card-background);
     box-shadow: var(--shadow-xl);
-    border: 1px solid hsl(0 0% 100% / 0.6);
+    border: 1px solid var(--login-card-border);
   }
 
   .login-card__header {
@@ -703,7 +774,7 @@
 
   .sidebar-nav-item.active {
     @apply text-primary-700;
-    background: linear-gradient(90deg, var(--primary-50), hsl(214, 100%, 98%));
+    background: linear-gradient(90deg, var(--primary-50), var(--primary-100));
   }
 
   /* Animated active indicator bar on the left edge */

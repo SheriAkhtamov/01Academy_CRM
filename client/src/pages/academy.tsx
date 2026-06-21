@@ -197,7 +197,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               {integrations.map((integration) => (
                 <div
                   key={integration.provider}
-                  className="rounded-xl border border-slate-200/70 p-4 transition-shadow hover:shadow-md"
+                  className="rounded-xl border border-border/70 p-4 transition-shadow hover:shadow-md"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <strong className="truncate text-slate-900">{integration.provider}</strong>
@@ -254,7 +254,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 {sources.map((source) => (
                   <div
                     key={source.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/70 p-4"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border/70 p-4"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-medium text-slate-900">{source.name}</p>

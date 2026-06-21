@@ -98,12 +98,12 @@ export default function Header({
             <Button
               variant="ghost"
               size="sm"
-              className="hidden md:flex items-center gap-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full px-3"
+              className="hidden items-center gap-2 rounded-full px-3 text-muted-foreground hover:bg-accent hover:text-foreground md:flex"
               onClick={() => setCommandOpen(true)}
             >
               <Search className="h-4 w-4" />
               <span className="text-sm">{t('search')}</span>
-              <kbd className="hidden lg:inline-flex h-5 select-none items-center gap-1 rounded border bg-slate-100 dark:bg-slate-800 px-1.5 font-mono text-[10px] font-medium text-slate-500">
+              <kbd className="hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground lg:inline-flex">
                 <span className="text-xs">⌘</span>K
               </kbd>
             </Button>
@@ -112,12 +112,12 @@ export default function Header({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-slate-100 dark:hover:bg-slate-800">
+                <Button variant="ghost" size="icon" className="relative rounded-full">
                   <Bell className="h-5 w-5" />
                   {unreadCount > 0 && (
                     <Badge
                       variant="destructive"
-                      className="absolute -top-0.5 -right-0.5 h-5 w-5 flex items-center justify-center p-0 text-[10px] font-bold ring-2 ring-white dark:ring-slate-900"
+                      className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center p-0 text-[10px] font-bold ring-2 ring-background"
                     >
                       {unreadCount}
                     </Badge>

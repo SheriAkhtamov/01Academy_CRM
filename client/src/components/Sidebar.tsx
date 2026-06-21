@@ -177,13 +177,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="w-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-r border-slate-200/70 dark:border-slate-800/70 flex flex-col h-full">
+      <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm">
         {/* Logo */}
-        <div className="flex items-center px-5 py-4 border-b border-slate-200/70 dark:border-slate-800/70">
+        <div className="flex items-center border-b border-border/70 px-5 py-4">
           <div className="flex items-center w-full">
             <Logo size="md" />
             <div className="ml-3 flex flex-col flex-1 min-w-0">
-              <span className="text-lg font-semibold text-slate-900 dark:text-slate-100 truncate tracking-tight leading-tight">
+              <span className="text-lg font-semibold text-slate-900 truncate tracking-tight leading-tight">
                 {t('platformName')}
               </span>
               <span className="text-xs text-slate-400">{t('schoolCrm')}</span>
@@ -260,18 +260,18 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         </nav>
 
         {/* Language Switcher */}
-        <div className="px-4 py-2 border-t border-slate-200/70 dark:border-slate-800/70">
+        <div className="border-t border-border/70 px-4 py-2">
           <LanguageSwitcher />
         </div>
 
         {/* User Profile */}
-        <div className="px-3 py-3 border-t border-slate-200/70 dark:border-slate-800/70">
+        <div className="border-t border-border/70 px-3 py-3">
           <div className="sidebar-user-card">
             <div className="sidebar-user-avatar">
               {getInitials(user.fullName)}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user.fullName}</p>
+              <p className="text-sm font-medium text-slate-900 truncate">{user.fullName}</p>
               <p className="text-xs text-slate-500 truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
               {user.position && (
                 <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>

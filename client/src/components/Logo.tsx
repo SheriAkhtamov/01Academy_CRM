@@ -18,7 +18,7 @@ export default function Logo({ size = 'md', className = '' }: LogoProps) {
       <img
         src="/logo.png"
         alt={ACADEMY_BRAND_NAME}
-        className="w-full h-full object-contain"
+        className="h-full w-full object-contain transition-[filter] duration-200 dark:brightness-0 dark:invert"
       />
     </div>
   );

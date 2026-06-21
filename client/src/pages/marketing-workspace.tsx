@@ -74,7 +74,7 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   }[tone];
 
   return (
-    <Card className="border-slate-200/70 hover-lift group">
+    <Card className="border-border/70 hover-lift group">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -566,7 +566,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
                 <CardTitle>{t('funnelMetrics')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 text-center">
+                <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-center">
                   <p className="text-sm text-slate-500">{t('avgDealCycle')}</p>
                   <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">
                     {typeof avgDealCycle === 'number' ? `${avgDealCycle} ${t('days')}` : avgDealCycle}
@@ -771,7 +771,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
               )}
 
               {reportPreview && (
-                <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/50 p-4">
+                <div className="mt-4 rounded-xl border border-border/70 bg-muted/50 p-4">
                   <h4 className="text-sm font-semibold text-slate-700 mb-2">{t('reportPreview')}</h4>
                   <pre className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">{reportPreview}</pre>
                 </div>

@@ -1,6 +1,14 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
+type ResolvedTheme = Exclude<Theme, 'system'>;
 
 interface ThemeProviderProps {
   children: React.ReactNode;
@@ -11,60 +19,73 @@ interface ThemeProviderProps {
 interface ThemeProviderState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-  resolvedTheme: 'light' | 'dark';
+  resolvedTheme: ResolvedTheme;
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined);
+const supportedThemes = new Set<Theme>(['light', 'dark', 'system']);
+
+function resolveTheme(theme: Theme): ResolvedTheme {
+  if (theme !== 'system') return theme;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function readStoredTheme(storageKey: string, defaultTheme: Theme): Theme {
+  if (typeof window === 'undefined') return defaultTheme;
+
+  try {
+    const storedTheme = window.localStorage.getItem(storageKey) as Theme | null;
+    return storedTheme && supportedThemes.has(storedTheme) ? storedTheme : defaultTheme;
+  } catch {
+    return defaultTheme;
+  }
+}
 
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
   storageKey = 'academy-crm-theme',
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return defaultTheme;
-    return (localStorage.getItem(storageKey) as Theme) || defaultTheme;
-  });
+  const [theme, setThemeState] = useState<Theme>(() => readStoredTheme(storageKey, defaultTheme));
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => (
+    typeof window === 'undefined' ? 'light' : resolveTheme(readStoredTheme(storageKey, defaultTheme))
+  ));
 
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = (nextResolvedTheme: ResolvedTheme) => {
+      root.classList.remove('light', 'dark');
+      root.classList.add(nextResolvedTheme);
+      root.style.colorScheme = nextResolvedTheme;
+      setResolvedTheme(nextResolvedTheme);
+    };
 
-    let resolved: 'light' | 'dark';
-    if (theme === 'system') {
-      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    } else {
-      resolved = theme;
-    }
+    applyTheme(theme === 'system' ? (media.matches ? 'dark' : 'light') : theme);
 
-    root.classList.add(resolved);
-    setResolvedTheme(resolved);
+    if (theme !== 'system') return undefined;
+
+    const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+      applyTheme(event.matches ? 'dark' : 'light');
+    };
+
+    media.addEventListener('change', handleSystemThemeChange);
+    return () => media.removeEventListener('change', handleSystemThemeChange);
   }, [theme]);
 
-  useEffect(() => {
-    if (theme === 'system') {
-      const media = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = (e: MediaQueryListEvent) => {
-        const root = window.document.documentElement;
-        root.classList.remove('light', 'dark');
-        root.classList.add(e.matches ? 'dark' : 'light');
-        setResolvedTheme(e.matches ? 'dark' : 'light');
-      };
-      media.addEventListener('change', handler);
-      return () => media.removeEventListener('change', handler);
+  const setTheme = useCallback((newTheme: Theme) => {
+    try {
+      window.localStorage.setItem(storageKey, newTheme);
+    } catch {
+      // The UI should still switch when storage is unavailable.
     }
-  }, [theme]);
+    setThemeState(newTheme);
+  }, [storageKey]);
 
-  const value = {
-    theme,
-    setTheme: (newTheme: Theme) => {
-      localStorage.setItem(storageKey, newTheme);
-      setTheme(newTheme);
-    },
-    resolvedTheme,
-  };
+  const value = useMemo(
+    () => ({ theme, setTheme, resolvedTheme }),
+    [resolvedTheme, setTheme, theme],
+  );
 
   return (
     <ThemeProviderContext.Provider value={value}>

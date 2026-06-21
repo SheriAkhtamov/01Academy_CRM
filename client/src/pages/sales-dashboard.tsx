@@ -199,7 +199,7 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   }[tone];
 
   return (
-    <Card className="border-slate-200/70 hover-lift group">
+    <Card className="border-border/70 hover-lift group">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -961,8 +961,8 @@ function TasksTab({
             return (
               <div
                 key={task.id}
-                className={`rounded-lg border p-3 transition-colors hover:border-slate-300 hover:bg-slate-50/50 ${
-                  isOverdue ? 'border-red-200 bg-red-50/40' : 'border-slate-200/70'
+                className={`rounded-lg border p-3 transition-colors hover:border-border hover:bg-muted/50 ${
+                  isOverdue ? 'border-destructive/30 bg-destructive/10' : 'border-border/70'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">

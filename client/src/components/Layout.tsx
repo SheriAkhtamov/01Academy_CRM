@@ -5,13 +5,12 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useLocation } from 'wouter';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { ThemeProvider } from './ux/ThemeProvider';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-function LayoutInner({ children }: LayoutProps) {
+export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const { t } = useTranslation();
   const [location] = useLocation();
@@ -58,13 +57,5 @@ function LayoutInner({ children }: LayoutProps) {
         </main>
       </div>
     </div>
-  );
-}
-
-export default function Layout({ children }: LayoutProps) {
-  return (
-    <ThemeProvider defaultTheme="system" storageKey="academy-crm-theme">
-      <LayoutInner>{children}</LayoutInner>
-    </ThemeProvider>
   );
 }

@@ -254,7 +254,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             )}
 
             {/* Current workspace info */}
-            <div className="bg-slate-50/60 border border-slate-200/70 p-4 rounded-xl">
+            <div className="rounded-xl border border-border/70 bg-muted/60 p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentWorkspace')}</h3>
               <p className="text-slate-700 font-medium">
                 {formatUserWorkspace(user?.workspace || 'sales', t)}

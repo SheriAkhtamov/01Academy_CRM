@@ -18,6 +18,7 @@ import Admin from '@/pages/admin';
 import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
 import ManagementBoard from '@/pages/management';
+import { ThemeProvider } from '@/components/ux/ThemeProvider';
 
 function WorkspaceBasedHome() {
   const { user } = useAuth();
@@ -44,7 +45,7 @@ function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'acce
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-      <div className="rounded-xl border border-slate-200/70 bg-white p-8 text-center">
+      <div className="rounded-xl border border-border/70 bg-card p-8 text-center">
         <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
         <p className="mt-2 text-sm text-slate-500">{description}</p>
       </div>
@@ -265,14 +266,16 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ThemeProvider defaultTheme="system" storageKey="academy-crm-theme">
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 

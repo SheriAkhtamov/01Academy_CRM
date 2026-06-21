@@ -129,7 +129,7 @@ function KpiCard({
   }[tone];
 
   return (
-    <Card className="border-slate-200/70 hover-lift group">
+    <Card className="border-border/70 hover-lift group">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -524,7 +524,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <Card
                   key={idx}
                   className={cn(
-                    'border-slate-200/70',
+                    'border-border/70',
                     isTodayFlag && 'ring-2 ring-primary-500/30 border-primary-300'
                   )}
                 >
@@ -554,7 +554,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                           'rounded-lg border p-2.5 text-xs space-y-1 transition-all hover:shadow-sm',
                           isToday(lesson.scheduledAt)
                             ? 'bg-blue-50/60 border-blue-200/70'
-                            : 'bg-slate-50/40 border-slate-200/50'
+                            : 'border-border/50 bg-muted/40'
                         )}
                       >
                         <div className="flex items-center justify-between gap-1">
@@ -586,7 +586,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
           {/* Today's lessons list */}
           {todayLessons.length > 0 && (
-            <Card className="border-slate-200/70">
+            <Card className="border-border/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base">{t('todayLessons')}</CardTitle>
               </CardHeader>
@@ -599,7 +599,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   .map((lesson) => (
                     <div
                       key={lesson.id}
-                      className="flex items-center justify-between rounded-lg border border-slate-200/70 p-3 hover:bg-slate-50/50 transition-colors"
+                      className="flex items-center justify-between rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/50"
                     >
                       <div className="flex items-center gap-4">
                         <div className="text-sm font-semibold text-slate-900 tabular-nums">
@@ -647,7 +647,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   {t('backToGroups')}
                 </Button>
               </div>
-              <Card className="border-slate-200/70">
+              <Card className="border-border/70">
                 <CardHeader className="pb-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -740,7 +740,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               {groups.map((group) => (
                 <Card
                   key={group.id}
-                  className="border-slate-200/70 hover-lift cursor-pointer group"
+                  className="border-border/70 hover-lift cursor-pointer group"
                   onClick={() => setSelectedGroup(group)}
                 >
                   <CardContent className="p-5 space-y-3">
@@ -817,7 +817,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
         {/* Attendance Tab */}
         <TabsContent value="attendance" className="mt-6 space-y-4">
-          <Card className="border-slate-200/70">
+          <Card className="border-border/70">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">{t('attendanceChecklist')}</CardTitle>
             </CardHeader>
@@ -853,7 +853,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               </div>
 
               {selectedLesson && (
-                <div className="rounded-lg border border-slate-200/70 bg-slate-50/50 p-3 text-sm">
+                <div className="rounded-lg border border-border/70 bg-muted/50 p-3 text-sm">
                   <div className="font-medium text-slate-900">
                     {selectedLesson.groupName || t('noGroup')} — {selectedLesson.topic}
                   </div>
@@ -891,8 +891,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50/80">
-                        <tr className="border-b border-slate-200/70">
+                      <thead className="bg-muted/70">
+                        <tr className="border-b border-border/70">
                           <th className="text-left p-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
                             {t('studentName')}
                           </th>
@@ -993,7 +993,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             {Object.entries(surveyGroups).map(([gid, { surveys: groupSurveys, avgScore }]) => {
               const group = groups.find((g) => g.id === Number(gid));
               return (
-                <Card key={gid} className="border-slate-200/70">
+                <Card key={gid} className="border-border/70">
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -1034,7 +1034,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
           {/* Rating chart over time */}
           {ratingChartData.length > 1 && (
-            <Card className="border-slate-200/70">
+            <Card className="border-border/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-slate-500" />
@@ -1086,7 +1086,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           )}
 
           {/* Surveys table */}
-          <Card className="border-slate-200/70">
+          <Card className="border-border/70">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">{t('lessonColumn')} - {t('studentLessonRatings')}</CardTitle>
             </CardHeader>
@@ -1168,7 +1168,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         <TabsContent value="profile" className="mt-6 space-y-4">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
             {/* Main info */}
-            <Card className="border-slate-200/70 xl:col-span-2">
+            <Card className="border-border/70 xl:col-span-2">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
                   <UserCircle className="h-4 w-4 text-slate-500" />
@@ -1200,7 +1200,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             </Card>
 
             {/* Stats */}
-            <Card className="border-slate-200/70">
+            <Card className="border-border/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-slate-500" />
@@ -1233,7 +1233,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           </div>
 
           {/* Courses */}
-          <Card className="border-slate-200/70">
+          <Card className="border-border/70">
             <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
                 <BookOpen className="h-4 w-4 text-slate-500" />
@@ -1260,7 +1260,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           </Card>
 
           {user?.workspace === 'teacher' ? (
-            <Card className="border-slate-200/70">
+            <Card className="border-border/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-slate-500" />
@@ -1273,7 +1273,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <Label className="text-xs text-slate-500">{t('availableSchools')}</Label>
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                     {schools.map((school) => (
-                      <label key={school.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200/70 p-3">
+                      <label key={school.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/70 p-3">
                         <Checkbox
                           checked={availabilitySchoolIds.includes(school.id)}
                           onCheckedChange={(checked) => setAvailabilitySchoolIds((current) => (
@@ -1308,7 +1308,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           ) : null}
 
           {/* Schedule summary */}
-          <Card className="border-slate-200/70">
+          <Card className="border-border/70">
             <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
                 <Clock className="h-4 w-4 text-slate-500" />

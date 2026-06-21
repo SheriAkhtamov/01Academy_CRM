@@ -316,7 +316,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 </ScrollArea>
 
                 {/* Message Input */}
-                <div className="p-4 border-t border-slate-200/70">
+                <div className="border-t border-border/70 p-4">
                   <div className="flex gap-2">
                     <Input
                       placeholder={t('typeMessage')}

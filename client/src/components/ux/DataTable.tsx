@@ -106,13 +106,13 @@ export function DataTable<T extends Record<string, any>>({
   return (
     <div className={cn('overflow-x-auto', className)}>
       <Table>
-        <TableHeader className="bg-slate-50/80 sticky top-0 z-10">
-          <TableRow className="border-b border-slate-200/70 hover:bg-transparent">
+        <TableHeader className="sticky top-0 z-10 bg-muted/70">
+          <TableRow className="border-b border-border/70 hover:bg-transparent">
             {columns.map((column) => (
               <TableHead
                 key={column.key}
                 className={cn(
-                  'text-[11px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap',
+                  'whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground',
                   column.sortable && 'cursor-pointer select-none group',
                   column.className
                 )}
@@ -132,7 +132,7 @@ export function DataTable<T extends Record<string, any>>({
               <TableRow
                 key={keyExtractor(row, index)}
                 className={cn(
-                  'border-b border-slate-100 transition-colors hover:bg-primary/[0.035]',
+                  'border-b border-border/50 transition-colors hover:bg-accent/40',
                   onRowClick && 'cursor-pointer',
                   rowClassName?.(row)
                 )}

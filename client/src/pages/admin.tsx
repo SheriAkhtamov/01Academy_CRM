@@ -78,7 +78,6 @@ const createUserSchema = (t: any) => z.object({
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),
-  hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
 
@@ -110,7 +109,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       phone: '',
       position: '',
       workspace: 'sales',
-      hasReportAccess: false,
       isActive: true,
     },
   });
@@ -274,7 +272,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       phone: user.phone || '',
       position: user.position || '',
       workspace: user.workspace,
-      hasReportAccess: user.hasReportAccess,
       isActive: user.isActive,
     });
     setShowCreateUserModal(true);
@@ -522,7 +519,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                               ) : (
                                 <FormItem>
                                   <FormLabel>{t('loginLabel')}</FormLabel>
-                                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/70 p-3">
+                                  <div className="rounded-lg border border-dashed border-border bg-muted/70 p-3">
                                     <p className="text-sm font-medium text-slate-700">{t('employeeLoginGenerated')}</p>
                                     <p className="mt-1 text-xs text-slate-500">{t('employeeLoginHint')}</p>
                                   </div>
@@ -612,51 +609,27 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           />
                         </div>
 
-                        <div className="space-y-4">
-                          <FormField
-                            control={userForm.control}
-                            name="hasReportAccess"
-                            render={({ field }) => (
-                              <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
-                                <div className="min-w-0 space-y-0.5">
-                                  <FormLabel className="text-base">{t('reportsAccess')}</FormLabel>
-                                  <div className="text-sm text-slate-500">
-                                    {t('allowReportsAccess')}
-                                  </div>
+                        <FormField
+                          control={userForm.control}
+                          name="isActive"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
+                              <div className="min-w-0 space-y-0.5">
+                                <FormLabel className="text-base">{t('activeAccount')}</FormLabel>
+                                <div className="text-sm text-slate-500">
+                                  {t('canLoginAccess')}
                                 </div>
-                                <FormControl>
-                                  <Switch
-                                    className="shrink-0"
-                                    checked={field.value}
-                                    onCheckedChange={field.onChange}
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={userForm.control}
-                            name="isActive"
-                            render={({ field }) => (
-                              <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
-                                <div className="min-w-0 space-y-0.5">
-                                  <FormLabel className="text-base">{t('activeAccount')}</FormLabel>
-                                  <div className="text-sm text-slate-500">
-                                    {t('canLoginAccess')}
-                                  </div>
-                                </div>
-                                <FormControl>
-                                  <Switch
-                                    className="shrink-0"
-                                    checked={field.value}
-                                    onCheckedChange={field.onChange}
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                        </div>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  className="shrink-0"
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
                         </div>
                       </div>
 

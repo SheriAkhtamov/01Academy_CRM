@@ -86,7 +86,7 @@ function KpiCard({
   }[tone];
 
   return (
-    <Card className="border-slate-200/70 hover-lift group">
+    <Card className="border-border/70 hover-lift group">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

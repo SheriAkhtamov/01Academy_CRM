@@ -52,7 +52,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      role: "admin",
+      workspace: "administration",
       hasReportAccess: true,
       isActive: true,
     };
@@ -90,7 +90,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      role: "admin",
+      workspace: "administration",
       hasReportAccess: true,
       isActive: true,
     });
@@ -112,7 +112,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      role: "admin",
+      workspace: "administration",
       hasReportAccess: true,
       isActive: true,
     };

@@ -1,33 +1,21 @@
 export const ACADEMY_BRAND_NAME = "01 Academy CRM";
 
-export const ACADEMY_ROLES = [
-  "admin",
-  "head",
-  "account_manager",
+export const ACADEMY_WORKSPACES = [
+  "administration",
+  "sales",
   "teacher",
-  "operations_director",
-  "smm_manager",
+  "analytics",
+  "marketing",
+  "management",
 ] as const;
 
-export type AcademyRole = (typeof ACADEMY_ROLES)[number];
-
-export const ACADEMY_WORKSPACE_ROLES = {
-  administration: ["admin", "head"],
-  sales: ["account_manager"],
-  teacher: ["teacher"],
-  analytics: ["operations_director"],
-  marketing: ["smm_manager"],
-  management: ["head", "account_manager", "teacher", "operations_director", "smm_manager"],
-} as const satisfies Record<string, readonly AcademyRole[]>;
-
-export type AcademyWorkspace = keyof typeof ACADEMY_WORKSPACE_ROLES;
+export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];
 
 export function canAccessAcademyWorkspace(
-  role: string | null | undefined,
+  assignedWorkspace: string | null | undefined,
   workspace: AcademyWorkspace,
 ): boolean {
-  if (!role) return false;
-  return (ACADEMY_WORKSPACE_ROLES[workspace] as readonly string[]).includes(role);
+  return assignedWorkspace === workspace;
 }
 
 export const LEAD_STATUSES = [

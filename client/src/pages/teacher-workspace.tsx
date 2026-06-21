@@ -1182,8 +1182,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <Input value={fullName} readOnly className="bg-slate-50" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">{t('role')}</Label>
-                    <Input value={t('teacher')} readOnly className="bg-slate-50" />
+                    <Label className="text-xs text-slate-500">{t('position')}</Label>
+                    <Input value={user?.position || '—'} readOnly className="bg-slate-50" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-slate-500">{t('email')}</Label>
@@ -1259,7 +1259,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             </CardContent>
           </Card>
 
-          {user?.role === 'teacher' ? (
+          {user?.workspace === 'teacher' ? (
             <Card className="border-slate-200/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">

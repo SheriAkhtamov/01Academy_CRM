@@ -1,15 +1,15 @@
 import type { SanitizedUser } from '@shared/auth';
-import type { AcademyRole } from '@shared/academy';
+import type { AcademyWorkspace } from '@shared/academy';
 import type { TranslationKey } from '@/lib/i18n';
 
-const roleTranslationKeys = {
-  admin: 'admin',
-  head: 'roleHead',
-  account_manager: 'roleAccountManager',
+const workspaceTranslationKeys = {
+  administration: 'administrationWorkspace',
+  sales: 'salesDepartmentWorkspace',
   teacher: 'teacher',
-  operations_director: 'roleOperationsDirector',
-  smm_manager: 'roleSmmManager',
-} as const satisfies Record<AcademyRole, TranslationKey>;
+  analytics: 'analyticsDepartmentWorkspace',
+  marketing: 'marketingDepartmentWorkspace',
+  management: 'teamManagementWorkspace',
+} as const satisfies Record<AcademyWorkspace, TranslationKey>;
 
 export function getInitials(fullName: string): string {
   return fullName
@@ -19,22 +19,22 @@ export function getInitials(fullName: string): string {
     .slice(0, 2);
 }
 
-export function formatUserRole(
-  role: string,
+export function formatUserWorkspace(
+  workspace: string,
   t: (key: TranslationKey) => string,
 ): string {
-  const key = roleTranslationKeys[role as AcademyRole];
-  return key ? t(key) : role;
+  const key = workspaceTranslationKeys[workspace as AcademyWorkspace];
+  return key ? t(key) : workspace;
 }
 
 export function canAccessReports(user: SanitizedUser): boolean {
-  return ['admin', 'head', 'operations_director', 'smm_manager'].includes(user.role) || Boolean(user.hasReportAccess);
+  return ['administration', 'analytics', 'marketing'].includes(user.workspace) || Boolean(user.hasReportAccess);
 }
 
 export function canManageUsers(user: SanitizedUser): boolean {
-  return ['admin', 'head'].includes(user.role);
+  return user.workspace === 'administration';
 }
 
 export function canAccessAnalytics(user: SanitizedUser): boolean {
-  return ['admin', 'head', 'operations_director', 'smm_manager'].includes(user.role) || Boolean(user.hasReportAccess);
+  return ['administration', 'analytics', 'marketing'].includes(user.workspace) || Boolean(user.hasReportAccess);
 }

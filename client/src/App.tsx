@@ -5,10 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import {
-  ACADEMY_WORKSPACE_ROLES,
-  type AcademyRole,
-} from '@shared/academy';
+import type { AcademyWorkspace } from '@shared/academy';
 import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
@@ -21,15 +18,15 @@ import Admin from '@/pages/admin';
 import AcademySettings from '@/pages/academy-settings';
 import ManagementBoard from '@/pages/management';
 
-function RoleBasedHome() {
+function WorkspaceBasedHome() {
   const { user } = useAuth();
-  switch (user?.role) {
-    case 'admin':
-    case 'head': return <Admin />;
-    case 'account_manager': return <SalesDashboard />;
+  switch (user?.workspace) {
+    case 'administration': return <Admin />;
+    case 'sales': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
-    case 'operations_director': return <AnalyticsWorkspace />;
-    case 'smm_manager': return <MarketingWorkspace />;
+    case 'analytics': return <AnalyticsWorkspace />;
+    case 'marketing': return <MarketingWorkspace />;
+    case 'management': return <ManagementBoard />;
     default: return <AccessDenied titleKey="noWorkspaceAssigned" />;
   }
 }
@@ -40,7 +37,7 @@ function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'acce
   const title = titleKey === 'noWorkspaceAssigned'
     ? t('noWorkspaceAssigned')
     : t('accessDeniedWorkspace');
-  const description = user?.role === 'admin'
+  const description = user?.workspace === 'administration'
     ? t('adminWorkspaceBoundaryDescription')
     : t('contactAdministratorForAccess');
 
@@ -54,35 +51,28 @@ function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'acce
   );
 }
 
-function RoleGuard({
-  allowedRoles,
+function WorkspaceGuard({
+  workspace,
   children,
 }: {
-  allowedRoles: readonly AcademyRole[];
+  workspace: AcademyWorkspace;
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
-  if (!user || !allowedRoles.includes(user.role as AcademyRole)) {
+  if (!user || user.workspace !== workspace) {
     return <AccessDenied />;
   }
   return <>{children}</>;
 }
-
-const adminRoles = ACADEMY_WORKSPACE_ROLES.administration;
-const salesRoles = ACADEMY_WORKSPACE_ROLES.sales;
-const teacherRoles = ACADEMY_WORKSPACE_ROLES.teacher;
-const analyticsRoles = ACADEMY_WORKSPACE_ROLES.analytics;
-const marketingRoles = ACADEMY_WORKSPACE_ROLES.marketing;
-const managementRoles = ACADEMY_WORKSPACE_ROLES.management;
 
 type AcademySection =
   | 'integrations'
   | 'settings';
 
 const adminPage = (section: AcademySection) => (
-  <RoleGuard allowedRoles={adminRoles}>
+  <WorkspaceGuard workspace="administration">
     <AcademyPage section={section} />
-  </RoleGuard>
+  </WorkspaceGuard>
 );
 
 function Router() {
@@ -107,159 +97,159 @@ function Router() {
   return (
     <Layout>
       <Switch>
-        <Route path="/" component={RoleBasedHome} />
+        <Route path="/" component={WorkspaceBasedHome} />
         <Route path="/integrations" component={() => adminPage('integrations')} />
         <Route path="/settings" component={() => adminPage('settings')} />
         <Route path="/sales/leads" component={() => <Redirect to="/sales/pipeline" />} />
         <Route path="/sales/pipeline" component={() => (
-          <RoleGuard allowedRoles={salesRoles}>
+          <WorkspaceGuard workspace="sales">
             <SalesDashboard section="pipeline" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/sales/schedule" component={() => (
-          <RoleGuard allowedRoles={salesRoles}>
+          <WorkspaceGuard workspace="sales">
             <SalesDashboard section="schedule" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/sales/clients" component={() => (
-          <RoleGuard allowedRoles={salesRoles}>
+          <WorkspaceGuard workspace="sales">
             <SalesDashboard section="students" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/sales/tasks" component={() => (
-          <RoleGuard allowedRoles={salesRoles}>
+          <WorkspaceGuard workspace="sales">
             <SalesDashboard section="tasks" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/sales" component={() => (
-          <RoleGuard allowedRoles={salesRoles}>
+          <WorkspaceGuard workspace="sales">
             <SalesDashboard section="overview" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/funnel" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="funnel" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/courses" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="courses" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/sources" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="sources" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/teachers" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="teachers" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/groups" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="groups" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/risks" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="risks" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace/cohorts" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="cohorts" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/analytics-workspace" component={() => (
-          <RoleGuard allowedRoles={analyticsRoles}>
+          <WorkspaceGuard workspace="analytics">
             <AnalyticsWorkspace section="overview" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/schedule" component={() => (
-          <RoleGuard allowedRoles={teacherRoles}>
+          <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="schedule" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/groups" component={() => (
-          <RoleGuard allowedRoles={teacherRoles}>
+          <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="groups" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/attendance" component={() => (
-          <RoleGuard allowedRoles={teacherRoles}>
+          <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="attendance" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/ratings" component={() => (
-          <RoleGuard allowedRoles={teacherRoles}>
+          <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="ratings" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/profile" component={() => (
-          <RoleGuard allowedRoles={teacherRoles}>
+          <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="profile" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace" component={() => (
-          <RoleGuard allowedRoles={teacherRoles}>
+          <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="overview" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace/sources" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="sources" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace/funnel" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="funnel" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace/warm-base" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="warm" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace/referrals" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="referrals" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace/expenses" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="expenses" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace/reports" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="reports" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/marketing-workspace" component={() => (
-          <RoleGuard allowedRoles={marketingRoles}>
+          <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="overview" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/admin" component={() => (
-          <RoleGuard allowedRoles={adminRoles}>
+          <WorkspaceGuard workspace="administration">
             <Admin />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/employees" component={() => (
-          <RoleGuard allowedRoles={adminRoles}>
+          <WorkspaceGuard workspace="administration">
             <Admin mode="employees" />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/admin/academy-settings" component={() => (
-          <RoleGuard allowedRoles={adminRoles}>
+          <WorkspaceGuard workspace="administration">
             <AcademySettings />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route path="/management" component={() => (
-          <RoleGuard allowedRoles={managementRoles}>
+          <WorkspaceGuard workspace="management">
             <ManagementBoard />
-          </RoleGuard>
+          </WorkspaceGuard>
         )} />
         <Route component={NotFound} />
       </Switch>

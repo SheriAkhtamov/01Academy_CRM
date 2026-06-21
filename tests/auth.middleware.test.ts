@@ -19,7 +19,7 @@ describe("auth middleware", () => {
   const createApp = async () => {
     const {
       requireAuth,
-      requireAdmin,
+      requireAdministration,
     } = await import("../server/middleware/auth.middleware");
 
     const app = express();
@@ -39,7 +39,7 @@ describe("auth middleware", () => {
 
     app.get("/auth-only", requireAuth, (_req, res) => res.json({ ok: true }));
     app.post("/auth-only", requireAuth, (_req, res) => res.json({ ok: true }));
-    app.get("/admin-only", requireAdmin, (_req, res) => res.json({ ok: true }));
+    app.get("/admin-only", requireAdministration, (_req, res) => res.json({ ok: true }));
   return app;
   };
 
@@ -58,7 +58,7 @@ describe("auth middleware", () => {
       fullName: "Teacher User",
       email: "teacher@example.com",
       password: "hashed",
-      role: "teacher",
+      workspace: "teacher",
       isActive: true,
       hasReportAccess: false,
     });

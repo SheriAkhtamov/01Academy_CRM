@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { canManageUsers, formatUserRole } from '@/lib/auth';
+import { canManageUsers, formatUserWorkspace } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -65,7 +65,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ACADEMY_ROLES } from '@shared/academy';
+import { ACADEMY_WORKSPACES } from '@shared/academy';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -77,7 +77,7 @@ const createUserSchema = (t: any) => z.object({
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
-  role: z.enum(ACADEMY_ROLES),
+  workspace: z.enum(ACADEMY_WORKSPACES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
@@ -94,7 +94,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userCredentials, setUserCredentials] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -109,7 +109,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       fullName: '',
       phone: '',
       position: '',
-      role: 'account_manager',
+      workspace: 'sales',
       hasReportAccess: false,
       isActive: true,
     },
@@ -273,7 +273,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       fullName: user.fullName,
       phone: user.phone || '',
       position: user.position || '',
-      role: user.role,
+      workspace: user.workspace,
       hasReportAccess: user.hasReportAccess,
       isActive: user.isActive,
     });
@@ -283,29 +283,30 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const filteredUsers = users.filter((user: any) => {
     const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-    return matchesSearch && matchesRole;
+    const matchesWorkspace = workspaceFilter === 'all' || user.workspace === workspaceFilter;
+    return matchesSearch && matchesWorkspace;
   });
 
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'admin':
-      case 'head':
+  const getWorkspaceColor = (workspace: string) => {
+    switch (workspace) {
+      case 'administration':
         return 'bg-red-100 text-red-800';
-      case 'operations_director':
+      case 'analytics':
         return 'bg-purple-100 text-purple-800';
-      case 'account_manager':
+      case 'sales':
         return 'bg-blue-100 text-blue-800';
       case 'teacher':
         return 'bg-amber-100 text-amber-800';
-      case 'smm_manager':
+      case 'marketing':
         return 'bg-pink-100 text-pink-800';
+      case 'management':
+        return 'bg-emerald-100 text-emerald-800';
       default:
         return 'bg-slate-100 text-slate-800';
     }
   };
 
-  const getRoleLabel = (role: string) => formatUserRole(role, t);
+  const getWorkspaceLabel = (workspace: string) => formatUserWorkspace(workspace, t);
 
   const getStatusColor = (isActive: boolean) => {
     return isActive
@@ -313,25 +314,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       : 'bg-red-100 text-red-800';
   };
 
-  const roleWorkspaceMap: Record<string, { label: string; href: string | null }> = {
-    admin: { label: t('administration'), href: '/admin' },
-    head: { label: t('administration'), href: '/admin' },
-    account_manager: { label: t('salesManagerWorkspace'), href: '/sales' },
-    teacher: { label: t('teacherWorkspace'), href: '/teacher-workspace' },
-    operations_director: { label: t('navAnalytics'), href: '/analytics-workspace' },
-    smm_manager: { label: t('marketingTab'), href: '/marketing-workspace' },
-  };
-
-  const selectedRole = userForm.watch('role');
-  const selectedWorkspace = roleWorkspaceMap[selectedRole] ?? roleWorkspaceMap.account_manager;
-
-  const roleOptions = [
-    { value: 'account_manager', label: t('roleAccountManager') },
+  const workspaceOptions = [
+    { value: 'administration', label: t('administrationWorkspace') },
+    { value: 'sales', label: t('salesDepartmentWorkspace') },
     { value: 'teacher', label: t('teacher') },
-    { value: 'operations_director', label: t('roleOperationsDirector') },
-    { value: 'smm_manager', label: t('roleSmmManager') },
-    { value: 'head', label: t('roleHead') },
-    { value: 'admin', label: t('admin') },
+    { value: 'analytics', label: t('analyticsDepartmentWorkspace') },
+    { value: 'marketing', label: t('marketingDepartmentWorkspace') },
+    { value: 'management', label: t('teamManagementWorkspace') },
   ];
 
   const administrationSections = [
@@ -386,21 +375,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       ),
     },
     {
-      key: 'role',
-      header: t('role'),
-      sortable: true,
-      accessor: (row) => getRoleLabel(row.role),
-      render: (row) => <Badge className={getRoleColor(row.role)}>{getRoleLabel(row.role)}</Badge>,
-    },
-    {
       key: 'workspace',
       header: t('workspaceLabel'),
       sortable: true,
-      accessor: (row) => roleWorkspaceMap[row.role]?.label ?? t('noWorkspaceAssigned'),
+      accessor: (row) => getWorkspaceLabel(row.workspace),
       render: (row) => (
-        <span className="text-sm text-slate-600">
-          {roleWorkspaceMap[row.role]?.label ?? t('noWorkspaceAssigned')}
-        </span>
+        <Badge className={getWorkspaceColor(row.workspace)}>
+          {getWorkspaceLabel(row.workspace)}
+        </Badge>
       ),
     },
     {
@@ -584,10 +566,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField
                             control={userForm.control}
-                            name="role"
+                            name="workspace"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('role')}</FormLabel>
+                                <FormLabel>{t('workspaceLabel')}</FormLabel>
                                 <Select onValueChange={field.onChange} value={field.value}>
                                   <FormControl>
                                     <SelectTrigger>
@@ -596,14 +578,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   </FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      {roleOptions.map((option) => (
+                                      {workspaceOptions.map((option) => (
                                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                                       ))}
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
                                 <p className="text-xs text-slate-500">
-                                  {t('workspaceLabel')}: {selectedWorkspace.label}
+                                  {t('workspaceAssignmentHint')}
                                 </p>
                                 <FormMessage />
                               </FormItem>
@@ -753,18 +735,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     className="pl-10"
                   />
                 </div>
-                <Select value={roleFilter} onValueChange={setRoleFilter}>
-                  <SelectTrigger className="w-40">
+                <Select value={workspaceFilter} onValueChange={setWorkspaceFilter}>
+                  <SelectTrigger className="w-52">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t('allRoles')}</SelectItem>
-                    <SelectItem value="admin">{t('administrators')}</SelectItem>
-                    <SelectItem value="head">{t('roleHeads')}</SelectItem>
-                    <SelectItem value="account_manager">{t('roleAccountManagers')}</SelectItem>
-                    <SelectItem value="teacher">{t('navTeachers')}</SelectItem>
-                    <SelectItem value="operations_director">{t('roleOperationsDirectors')}</SelectItem>
-                    <SelectItem value="smm_manager">{t('roleSmmManagers')}</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="all">{t('allWorkspaces')}</SelectItem>
+                      {workspaceOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
@@ -799,7 +780,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                       <h3 className="text-lg font-medium text-slate-900 mb-2">{t('noUsersFound')}</h3>
                       <p className="text-slate-500 mb-4">
-                        {searchTerm || roleFilter !== 'all'
+                        {searchTerm || workspaceFilter !== 'all'
                           ? t('adjustSearchCriteria')
                           : t('createFirstUser')}
                       </p>
@@ -859,15 +840,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">{t('administrators')}</span>
+                  <span className="text-sm text-slate-600">{t('administrationWorkspace')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => u.role === 'admin').length}
+                    {users.filter((u: any) => u.workspace === 'administration').length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">{t('roleAccountManagers')}</span>
+                  <span className="text-sm text-slate-600">{t('salesDepartmentWorkspace')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => u.role === 'account_manager').length}
+                    {users.filter((u: any) => u.workspace === 'sales').length}
                   </span>
                 </div>
               </div>
@@ -878,15 +859,18 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
       {/* User Credentials Modal */}
       <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
               <Key className="h-5 w-5" />
               <span>{t('userCredentials')}</span>
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              {t('employeeLoginHint')}
+            </DialogDescription>
           </DialogHeader>
           {userCredentials && (
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">{t('fullName')}</label>
                 <div className="p-3 bg-slate-50 rounded-md text-sm">
@@ -896,14 +880,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">{t('emailLogin')}</label>
-                <div className="p-3 bg-slate-50 rounded-md text-sm font-mono">
+                <div className="min-w-0 break-all p-3 bg-slate-50 rounded-md text-sm font-mono">
                   {userCredentials.email}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">{t('password')}</label>
-                <div className={`p-3 rounded-md text-sm font-mono ${userCredentials.temporaryPassword ? 'bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-500 italic'}`}>
+                <div className={`min-w-0 break-all p-3 rounded-md text-sm font-mono ${userCredentials.temporaryPassword ? 'bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-500 italic'}`}>
                   {userCredentials.temporaryPassword || t('passwordNotAvailable')}
                 </div>
                 {!userCredentials.temporaryPassword && (
@@ -921,22 +905,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('role')}</label>
+                <label className="text-sm font-medium text-slate-700">{t('workspaceLabel')}</label>
                 <div className="p-3 bg-slate-50 rounded-md text-sm">
-                  <Badge className={getRoleColor(userCredentials.role)}>
-                    {getRoleLabel(userCredentials.role)}
+                  <Badge className={getWorkspaceColor(userCredentials.workspace)}>
+                    {getWorkspaceLabel(userCredentials.workspace)}
                   </Badge>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('workspaceLabel')}</label>
-                <div className="p-3 bg-slate-50 rounded-md text-sm">
-                  {roleWorkspaceMap[userCredentials.role]?.label ?? t('noWorkspaceAssigned')}
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-4">
+              <div className="flex flex-wrap justify-end gap-2 pt-4">
                 {userCredentials.id && (
                   <Button
                     variant="outline"
@@ -954,7 +931,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     if (userCredentials.temporaryPassword) {
                       credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
                     }
-                    credentialLines.push(`${t('workspaceLabel')}: ${roleWorkspaceMap[userCredentials.role]?.label ?? t('noWorkspaceAssigned')}`);
+                    credentialLines.push(`${t('workspaceLabel')}: ${getWorkspaceLabel(userCredentials.workspace)}`);
                     navigator.clipboard.writeText(credentialLines.join('\n'));
                     toast({
                       title: t('copiedToClipboard'),

@@ -25,16 +25,7 @@ interface WorkspaceDefinition {
   icon: LucideIcon;
 }
 
-const roleWorkspaces: Record<string, WorkspaceType> = {
-  admin: 'administration',
-  head: 'administration',
-  account_manager: 'sales',
-  teacher: 'teacher',
-  operations_director: 'analytics',
-  smm_manager: 'marketing',
-};
-
-function resolveWorkspaceType(location: string, role?: string): WorkspaceType {
+function resolveWorkspaceType(location: string, assignedWorkspace?: string): WorkspaceType {
   if (location === '/management' || location.startsWith('/management/')) {
     return 'management';
   }
@@ -65,7 +56,17 @@ function resolveWorkspaceType(location: string, role?: string): WorkspaceType {
     return 'administration';
   }
 
-  return roleWorkspaces[role ?? ''] ?? 'administration';
+  const knownWorkspaces: WorkspaceType[] = [
+    'administration',
+    'sales',
+    'teacher',
+    'analytics',
+    'marketing',
+    'management',
+  ];
+  return knownWorkspaces.includes(assignedWorkspace as WorkspaceType)
+    ? assignedWorkspace as WorkspaceType
+    : 'administration';
 }
 
 interface WorkspaceIdentityProps {
@@ -109,7 +110,7 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
       icon: KanbanSquare,
     },
   };
-  const workspace = workspaceDefinitions[resolveWorkspaceType(location, user?.role)];
+  const workspace = workspaceDefinitions[resolveWorkspaceType(location, user?.workspace)];
   const Icon = workspace.icon;
 
   return (

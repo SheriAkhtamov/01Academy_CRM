@@ -3,10 +3,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   getInitials,
-  formatUserRole,
+  formatUserWorkspace,
   canAccessReports,
 } from '@/lib/auth';
-import { canAccessAcademyWorkspace } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import {
@@ -62,7 +61,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   if (!user) return null;
 
-  const { role } = user;
+  const { workspace } = user;
 
   const isItemActive = (href: string) => {
     if (href === '/') return location === '/';
@@ -70,8 +69,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const buildSections = (): NavSection[] => {
-    // ── ACCOUNT MANAGER ──
-    if (role === 'account_manager') {
+    if (workspace === 'sales') {
       return [
         {
           label: t('salesPipeline'),
@@ -86,8 +84,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
-    // ── TEACHER ──
-    if (role === 'teacher') {
+    if (workspace === 'teacher') {
       return [
         {
           label: t('teacher'),
@@ -103,8 +100,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
-    // ── OPERATIONS DIRECTOR ──
-    if (role === 'operations_director') {
+    if (workspace === 'analytics') {
       return [
         {
           label: t('navAnalytics'),
@@ -122,8 +118,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
-    // ── SMM MANAGER ──
-    if (role === 'smm_manager') {
+    if (workspace === 'marketing') {
       return [
         {
           label: t('marketingTab'),
@@ -144,8 +139,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
-    // ── ADMIN / HEAD ──
-    if (role === 'admin' || role === 'head') {
+    if (workspace === 'administration') {
       return [
         {
           label: t('systemAdministration'),
@@ -160,19 +154,21 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
+    if (workspace === 'management') {
+      return [
+        {
+          label: t('management'),
+          items: [
+            { name: t('taskBoard'), href: '/management', icon: KanbanSquare },
+          ],
+        },
+      ];
+    }
+
     return [];
   };
 
-  const managementSection: NavSection = {
-    label: t('management'),
-    items: [
-      { name: t('taskBoard'), href: '/management', icon: KanbanSquare },
-    ],
-  };
-  const roleSections = buildSections();
-  const sections = canAccessAcademyWorkspace(role, 'management')
-    ? [...roleSections, managementSection]
-    : roleSections;
+  const sections = buildSections();
 
   const toggleSection = (label: string) => {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -275,7 +271,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user.fullName}</p>
-              <p className="text-xs text-slate-500 truncate">{formatUserRole(user.role, t)}</p>
+              <p className="text-xs text-slate-500 truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
+              {user.position && (
+                <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>
+              )}
               {canAccessReports(user) && (
                 <p className="text-[10px] text-emerald-600">{t('reportsAccess')}</p>
               )}

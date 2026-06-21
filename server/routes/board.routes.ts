@@ -25,7 +25,7 @@ export function setBroadcastFunction(fn: (data: any) => void) {
 // --- Permission helpers -----------------------------------------------------
 
 const requireBoardAccess = (req: Request, res: Response, next: NextFunction) => {
-    if (!canAccessAcademyWorkspace(req.user?.role, 'management')) {
+    if (!canAccessAcademyWorkspace(req.user?.workspace, 'management')) {
         return res.status(403).json({ error: 'Management workspace access required' });
     }
     next();
@@ -33,7 +33,7 @@ const requireBoardAccess = (req: Request, res: Response, next: NextFunction) => 
 
 router.use(requireAuth, requireBoardAccess);
 
-const isTaskSupervisor = (user?: User) => user?.role === 'head';
+const isTaskSupervisor = (user?: User) => user?.workspace === 'management';
 
 // Can edit core fields (title, description, priority, assignee, due date).
 const canManageTask = (user: User, task: BoardTask) =>

@@ -55,7 +55,6 @@ import {
   Megaphone,
   Percent,
   Plus,
-  Settings2,
   TrendingUp,
   UserCheck,
 } from 'lucide-react';
@@ -357,7 +356,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       courseId: values.courseId ? Number(values.courseId) : undefined,
       enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
       sourceId: Number(values.sourceId),
-      managerId: user?.role === 'account_manager' ? user.id : undefined,
+      managerId: user?.workspace === 'sales' ? user.id : undefined,
     }),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
@@ -547,15 +546,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         actions={
           section === 'overview' || section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">
-              {section === 'pipeline' && (user?.role === 'admin' || user?.role === 'head') ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLocation('/admin/academy-settings?tab=pipeline')}
-                >
-                  <Settings2 data-icon="inline-start" />{t('configurePipeline')}
-                </Button>
-              ) : null}
               <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
               </Button>

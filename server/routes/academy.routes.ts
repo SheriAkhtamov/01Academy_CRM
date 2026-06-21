@@ -8,7 +8,6 @@ import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import {
   ACTIVE_PIPELINE_STATUSES,
-  ACADEMY_WORKSPACE_ROLES,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_STATUSES,
@@ -62,17 +61,13 @@ type DbValue = string | number | boolean | Date | null | unknown[] | Record<stri
 type Row = Record<string, any>;
 const transactionContext = new AsyncLocalStorage<PoolClient>();
 
-const HEAD_ROLES = new Set(['admin', 'head']);
-const FINANCE_ROLES = new Set(['admin', 'head', 'operations_director']);
-const OPERATIONS_ROLES = new Set(['admin', 'head', 'operations_director']);
-const MARKETING_ROLES = new Set(['admin', 'head', 'smm_manager']);
-const SALES_ROLES = new Set(['admin', 'head', 'account_manager']);
-const REPORT_ROLES = new Set(['admin', 'head', 'operations_director', 'smm_manager']);
-const LEAD_WRITE_ROLES = new Set(['admin', 'head', 'account_manager', 'smm_manager']);
-const SALES_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.sales);
-const TEACHER_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.teacher);
-const ANALYTICS_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.analytics);
-const MARKETING_WORKSPACE_ROLES = new Set<string>(ACADEMY_WORKSPACE_ROLES.marketing);
+const ADMINISTRATION_WORKSPACES = new Set(['administration']);
+const FINANCE_WORKSPACES = new Set(['analytics']);
+const OPERATIONS_WORKSPACES = new Set(['analytics']);
+const MARKETING_WORKSPACES = new Set(['marketing']);
+const SALES_WORKSPACES = new Set(['sales']);
+const REPORT_WORKSPACES = new Set(['administration', 'analytics', 'marketing']);
+const LEAD_WORKSPACES = new Set(['sales', 'marketing']);
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -180,7 +175,7 @@ const normalizeDbValue = (value: DbValue) => {
 };
 
 const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
-  if (req.user?.role === 'account_manager') {
+  if (req.user?.workspace === 'sales') {
     return Number(req.user.id);
   }
 
@@ -196,7 +191,7 @@ const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<
     const manager = await queryOne<{ id: string }>(
       `SELECT id
        FROM users
-       WHERE id = $1 AND role = 'account_manager' AND is_active = true`,
+       WHERE id = $1 AND workspace = 'sales' AND is_active = true`,
       [requestedId],
     );
     if (!manager) {
@@ -211,7 +206,7 @@ const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
       AND l.status_code NOT IN ('paid', 'not_now')
-     WHERE u.role = 'account_manager' AND u.is_active = true
+     WHERE u.workspace = 'sales' AND u.is_active = true
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,
@@ -262,55 +257,58 @@ const deleteRow = async (table: string, id: number) => {
 };
 
 const ensureFinanceAccess = (req: any, res: any) => {
-  if (FINANCE_ROLES.has(req.user?.role)) return true;
+  if (FINANCE_WORKSPACES.has(req.user?.workspace)) return true;
   res.status(403).json({ error: 'Finance access required' });
   return false;
 };
 
 const ensureOperationsAccess = (req: any, res: any) => {
-  if (OPERATIONS_ROLES.has(req.user?.role) || req.user?.role === 'teacher') return true;
+  if (OPERATIONS_WORKSPACES.has(req.user?.workspace) || req.user?.workspace === 'teacher') return true;
   res.status(403).json({ error: 'Operations access required' });
   return false;
 };
 
 const ensureMarketingAccess = (req: any, res: any) => {
-  if (MARKETING_ROLES.has(req.user?.role)) return true;
+  if (MARKETING_WORKSPACES.has(req.user?.workspace)) return true;
   res.status(403).json({ error: 'Marketing access required' });
   return false;
 };
 
-const ensureRoleAccess = (req: any, res: any, roles: Set<string>, message: string) => {
-  if (roles.has(String(req.user?.role))) return true;
+const ensureWorkspaceAccess = (req: any, res: any, workspaces: Set<string>, message: string) => {
+  if (workspaces.has(String(req.user?.workspace))) return true;
   res.status(403).json({ error: message });
   return false;
 };
 
 const ensureSalesAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, SALES_ROLES, 'Sales access required');
+  ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Sales access required');
 
 const ensureSalesWorkspaceAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, SALES_WORKSPACE_ROLES, 'Sales workspace access required');
+  ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Sales workspace access required');
 
 const ensureTeacherWorkspaceAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, TEACHER_WORKSPACE_ROLES, 'Teacher workspace access required');
+  ensureWorkspaceAccess(req, res, new Set(['teacher']), 'Teacher workspace access required');
 
 const ensureAnalyticsWorkspaceAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, ANALYTICS_WORKSPACE_ROLES, 'Analytics workspace access required');
+  ensureWorkspaceAccess(req, res, new Set(['analytics']), 'Analytics workspace access required');
 
 const ensureMarketingWorkspaceAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, MARKETING_WORKSPACE_ROLES, 'Marketing workspace access required');
+  ensureWorkspaceAccess(req, res, MARKETING_WORKSPACES, 'Marketing workspace access required');
 
-const ensureAdminWorkspaceAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, HEAD_ROLES, 'Admin access required');
+const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
+  ensureWorkspaceAccess(req, res, ADMINISTRATION_WORKSPACES, 'Admin access required');
 
-const ensureReportRouteAccess = (req: any, res: any) =>
-  ensureRoleAccess(req, res, REPORT_ROLES, 'Report access required');
+const ensureReportRouteAccess = (req: any, res: any) => {
+  if (REPORT_WORKSPACES.has(req.user?.workspace) || req.user?.hasReportAccess) return true;
+  res.status(403).json({ error: 'Report access required' });
+  return false;
+};
 
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
-  const role = String(req.user?.role);
-  if (HEAD_ROLES.has(role) || MARKETING_ROLES.has(role)) return true;
-  return role === 'account_manager' && Number(lead.managerId) === Number(req.user?.id);
+  const workspace = String(req.user?.workspace);
+  if (workspace === 'marketing') return true;
+  return workspace === 'sales' && Number(lead.managerId) === Number(req.user?.id);
 };
 
 const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
@@ -338,14 +336,6 @@ const academyConstants = () => ({
     attendance: TARGET_ATTENDANCE_PERCENT,
   },
 });
-
-// Read-only marketing data (e.g. sources for SMM): mutations restricted to head/admin.
-const ensureHeadOnlyForMutations = (req: any, res: any, requireMarketingReadOnly?: boolean) => {
-  if (!requireMarketingReadOnly) return true;
-  if (HEAD_ROLES.has(req.user?.role)) return true;
-  res.status(403).json({ error: 'Read-only access: only leadership can modify this entity' });
-  return false;
-};
 
 const createAudit = async (req: any, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
   await storage.createAuditLog({
@@ -1327,7 +1317,7 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
 
 interface DatasetActor {
   userId: number;
-  role: string;
+  workspace: string;
 }
 
 const resolveTeacherId = async (userId: number): Promise<number | null> => {
@@ -1336,11 +1326,11 @@ const resolveTeacherId = async (userId: number): Promise<number | null> => {
 };
 
 const getAcademyDataset = async (actor?: DatasetActor) => {
-  // Role-based scoping: teachers see only their own groups; account managers see only
-  // their own leads/students; everyone else sees everything.
-  const teacherId = actor?.role === 'teacher' ? await resolveTeacherId(actor.userId) : null;
+  // Workspace scoping: teachers see only their own groups; sales employees see only
+  // their own leads/students; analytics and marketing receive their workspace datasets.
+  const teacherId = actor?.workspace === 'teacher' ? await resolveTeacherId(actor.userId) : null;
   const isTeacherScoped = teacherId !== null;
-  const isManagerScoped = actor?.role === 'account_manager';
+  const isManagerScoped = actor?.workspace === 'sales';
 
   const managerParams = isManagerScoped ? [actor!.userId] : [];
 
@@ -1780,7 +1770,7 @@ const createCsv = (rows: Row[]) => {
 router.get('/workspaces/sales', async (req, res) => {
   if (!ensureSalesWorkspaceAccess(req, res)) return;
   try {
-    const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
+    const actor: DatasetActor = { userId: req.user!.id, workspace: req.user!.workspace };
     const dataset = await getAcademyDataset(actor);
 
     res.json({
@@ -1833,12 +1823,12 @@ router.get('/availability/slots', async (req, res) => {
 router.get('/workspaces/teacher', async (req, res) => {
   if (!ensureTeacherWorkspaceAccess(req, res)) return;
   try {
-    const actor: DatasetActor = { userId: req.user!.id, role: req.user!.role };
+    const actor: DatasetActor = { userId: req.user!.id, workspace: req.user!.workspace };
     const dataset = await getAcademyDataset(actor);
     res.json({
       schools: dataset.schools,
       courses: dataset.courses,
-      teacher: req.user!.role === 'teacher' ? dataset.teachers[0] ?? null : null,
+      teacher: req.user!.workspace === 'teacher' ? dataset.teachers[0] ?? null : null,
       groups: dataset.groups,
       students: dataset.students,
       lessons: dataset.lessons,
@@ -1854,7 +1844,7 @@ router.get('/workspaces/teacher', async (req, res) => {
 });
 
 router.get('/configuration', async (req, res) => {
-  if (!ensureAdminWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
     const dataset = await getAcademyDataset();
     res.json({
@@ -1934,7 +1924,7 @@ router.get('/search', async (req, res) => {
     }
 
     const like = `%${term.toLowerCase()}%`;
-    const role = String(req.user?.role);
+    const workspace = String(req.user?.workspace);
     const results: Row[] = [];
     const remaining = () => Math.max(limit - results.length, 0);
 
@@ -2035,16 +2025,16 @@ router.get('/search', async (req, res) => {
       })));
     };
 
-    if (role === 'account_manager') {
+    if (workspace === 'sales') {
       await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/pipeline');
       await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
-    } else if (role === 'teacher') {
+    } else if (workspace === 'teacher') {
       const teacherId = await resolveTeacherId(req.user!.id);
       if (!teacherId) return res.json([]);
       await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
       await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace/groups');
       await pushCourses('/teacher-workspace/groups');
-    } else if (role === 'operations_director') {
+    } else if (workspace === 'analytics') {
       await pushGroups(`TRUE`, [], '/analytics-workspace/groups');
       if (remaining() > 0) {
         const teachers = await query(
@@ -2064,7 +2054,7 @@ router.get('/search', async (req, res) => {
         })));
       }
       await pushCourses('/analytics-workspace/courses');
-    } else if (role === 'smm_manager') {
+    } else if (workspace === 'marketing') {
       if (remaining() > 0) {
         const sources = await query(
           `SELECT id, name, channel, campaign_name
@@ -2083,12 +2073,12 @@ router.get('/search', async (req, res) => {
         })));
       }
       await pushLeads(`TRUE`, [], '/marketing-workspace/warm-base');
-    } else if (HEAD_ROLES.has(role)) {
+    } else if (workspace === 'administration') {
       if (remaining() > 0) {
         const users = await query(
-          `SELECT id, full_name, role
+          `SELECT id, full_name, workspace
            FROM users
-           WHERE LOWER(full_name) LIKE $1 OR LOWER(role) LIKE $1
+           WHERE LOWER(full_name) LIKE $1 OR LOWER(workspace) LIKE $1
            ORDER BY full_name
            LIMIT $2`,
           [like, remaining()],
@@ -2097,7 +2087,7 @@ router.get('/search', async (req, res) => {
           id: `user-${user.id}`,
           entityType: 'user',
           title: user.fullName,
-          subtitle: user.role,
+          subtitle: user.workspace,
           href: '/employees',
         })));
       }
@@ -2170,13 +2160,13 @@ router.get('/analytics/cohorts', async (req, res) => {
 });
 
 router.get('/leads', async (req, res) => {
-  if (!ensureRoleAccess(req, res, new Set([...Array.from(HEAD_ROLES), 'account_manager', 'smm_manager']), 'Lead access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead access required')) return;
   try {
     const conditions: string[] = [];
     const params: DbValue[] = [];
-    const role = String(req.user?.role);
+    const workspace = String(req.user?.workspace);
 
-    if (role === 'account_manager') {
+    if (workspace === 'sales') {
       params.push(req.user!.id);
       conditions.push(`l.manager_id = $${params.length}`);
     }
@@ -2231,7 +2221,7 @@ router.get('/leads', async (req, res) => {
 });
 
 router.post('/leads', async (req, res) => {
-  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   try {
     const contactName = nullableText(req.body.contactName);
     const phone = nullableText(req.body.phone);
@@ -2337,7 +2327,7 @@ router.get('/leads/:id', async (req, res) => {
 });
 
 router.patch('/leads/:id', async (req, res) => {
-  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   try {
     if (
       req.body.demoAt !== undefined
@@ -2376,7 +2366,7 @@ router.patch('/leads/:id', async (req, res) => {
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
 
-    const managerId = req.user!.role !== 'account_manager' && req.body.managerId !== undefined
+    const managerId = req.user!.workspace !== 'sales' && req.body.managerId !== undefined
       ? await resolveLeadManagerId(req, req.body.managerId)
       : undefined;
     const updates: Row = {
@@ -2445,7 +2435,7 @@ router.patch('/leads/:id', async (req, res) => {
 });
 
 router.post('/leads/:id/contact', async (req, res) => {
-  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -2490,12 +2480,12 @@ router.post('/leads/:id/contact', async (req, res) => {
 });
 
 router.post('/leads/:id/demo', async (req, res) => {
-  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
 });
 
 router.post('/leads/:id/demo-attendance', async (req, res) => {
-  if (!ensureRoleAccess(req, res, LEAD_WRITE_ROLES, 'Lead write access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -2524,7 +2514,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
 });
 
 router.post('/leads/:id/convert-to-student', async (req, res) => {
-  if (!ensureRoleAccess(req, res, new Set([...Array.from(HEAD_ROLES), 'account_manager']), 'Student conversion access required')) return;
+  if (!ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Student conversion access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -2557,7 +2547,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   params: DbValue[];
   denied?: boolean;
 }> => {
-  const role = String(req.user?.role);
+  const workspace = String(req.user?.workspace);
   const params: DbValue[] = [];
   const pushParam = (value: DbValue) => {
     params.push(value);
@@ -2569,16 +2559,17 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
     return teacherId ? pushParam(teacherId) : null;
   };
 
-  if (HEAD_ROLES.has(role)) return { whereSql: '', params };
-
   if (table === 'academy_tasks') {
-    if (role === 'operations_director') return { whereSql: '', params };
+    if (workspace === 'analytics') return { whereSql: '', params };
+    if (!['sales', 'teacher', 'marketing'].includes(workspace)) {
+      return { whereSql: 'FALSE', params, denied: true };
+    }
     return { whereSql: `responsible_id = ${ownUserParam()}`, params };
   }
 
   if (table === 'academy_lessons') {
-    if (role === 'operations_director') return { whereSql: '', params };
-    if (role === 'teacher') {
+    if (workspace === 'analytics') return { whereSql: '', params };
+    if (workspace === 'teacher') {
       const placeholder = await teacherParam();
       return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
     }
@@ -2643,18 +2634,16 @@ const prepareGroupMutation = async (options: {
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
-  requireAdmin?: boolean;
+  requireAdministration?: boolean;
   requireFinance?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
-  // SMM can read but not mutate: GET allowed for marketing roles, mutations admin/head only.
-  requireMarketingReadOnly?: boolean;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
-    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
+    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
-    if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
+    if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     try {
       const scope = await buildCrudScope(req, table);
       if (scope.denied) return res.status(403).json({ error: `${path} access required` });
@@ -2671,10 +2660,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.get(`/${path}/:id`, async (req, res) => {
-    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
+    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
-    if ((options.requireMarketing || options.requireMarketingReadOnly) && !ensureMarketingAccess(req, res)) return;
+    if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
@@ -2691,15 +2680,14 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.post(`/${path}`, async (req, res) => {
-    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
+    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
-    if (options.requireOperations && req.user?.role === 'teacher') {
+    if (options.requireOperations && req.user?.workspace === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
-    if (table === 'academy_tasks' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director') {
+    if (table === 'academy_tasks' && req.user?.workspace !== 'analytics') {
       const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
       if (Number(responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
@@ -2781,12 +2769,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.patch(`/${path}/:id`, async (req, res) => {
-    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
+    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
-    if (options.requireOperations && req.user?.role === 'teacher') {
+    if (options.requireOperations && req.user?.workspace === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {
@@ -2794,7 +2781,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
       const oldRow = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
-      if (table === 'academy_tasks' && !HEAD_ROLES.has(String(req.user?.role)) && req.user?.role !== 'operations_director' && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
+      if (table === 'academy_tasks' && req.user?.workspace !== 'analytics' && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
       }
       const values: Row = {};
@@ -2881,12 +2868,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.delete(`/${path}/:id`, async (req, res) => {
-    if (options.requireAdmin && !ensureAdminWorkspaceAccess(req, res)) return;
+    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (!ensureHeadOnlyForMutations(req, res, options.requireMarketingReadOnly)) return;
-    if (options.requireOperations && req.user?.role === 'teacher') {
+    if (options.requireOperations && req.user?.workspace === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {
@@ -2922,7 +2908,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     );
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
     if (lesson.status === 'cancelled') return res.status(400).json({ error: 'cancelledLessonAttendanceNotAllowed' });
-    if (req.user!.role === 'teacher' && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)) {
+    if (req.user!.workspace === 'teacher' && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)) {
       return res.status(403).json({ error: 'Teacher can mark only own lessons' });
     }
 
@@ -2993,7 +2979,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
 });
 
 router.post('/students/:id/transfer', async (req, res) => {
-  if (!ensureRoleAccess(req, res, OPERATIONS_ROLES, 'Operations access required')) return;
+  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const toGroupId = parseId(req.body.toGroupId);
@@ -3016,7 +3002,7 @@ router.post('/students/:id/transfer', async (req, res) => {
 });
 
 router.post('/payments', async (req, res) => {
-  if (!ensureRoleAccess(req, res, new Set([...Array.from(FINANCE_ROLES), 'account_manager']), 'Payment access required')) return;
+  if (!ensureWorkspaceAccess(req, res, new Set([...FINANCE_WORKSPACES, ...SALES_WORKSPACES]), 'Payment access required')) return;
   try {
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
@@ -3047,7 +3033,7 @@ router.post('/payments', async (req, res) => {
       if (lead && existingStudent && Number(existingStudent.leadId) !== Number(lead.id)) {
         throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
       }
-      if (req.user!.role === 'account_manager') {
+      if (req.user!.workspace === 'sales') {
         const ownsLead = !lead || Number(lead.managerId) === Number(req.user!.id);
         const ownsStudent = !existingStudent || Number(existingStudent.managerId) === Number(req.user!.id);
         if (!ownsLead || !ownsStudent) {
@@ -3117,9 +3103,9 @@ router.post('/surveys/lesson', async (req, res) => {
       improve: nullableText(req.body.improve) });
     await recalculateStudentMetrics(studentId);
     if (score < 3) {
-      // TZ 2.4: low score → notify leadership (admin/head), not just the submitter.
+      // TZ 2.4: low score → notify the administration workspace, not just the submitter.
       const leader = await queryOne<{ id: string }>(
-        `SELECT id FROM users WHERE role IN ('admin','head') AND is_active=true ORDER BY id LIMIT 1`);
+        `SELECT id FROM users WHERE workspace = 'administration' AND is_active=true ORDER BY id LIMIT 1`);
       const responsibleId = leader ? Number(leader.id) : req.user!.id;
       await createTask('Оценка урока ниже 3 — связаться с учеником', {
         responsibleId,
@@ -3173,7 +3159,7 @@ router.post('/surveys/parent', async (req, res) => {
 });
 
 router.get('/integrations/status', async (req, res) => {
-  if (!ensureAdminWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
     const logs = await query(
       `SELECT DISTINCT ON (provider) provider, status, error_message, updated_at, created_at
@@ -3208,7 +3194,7 @@ router.get('/integrations/status', async (req, res) => {
 });
 
 router.post('/integrations/:provider/test', async (req, res) => {
-  if (!ensureAdminWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
     const provider = String(req.params.provider);
     // Actually exercise the channel so the test reflects real connectivity.
@@ -3235,7 +3221,7 @@ router.post('/integrations/:provider/test', async (req, res) => {
 });
 
 router.post('/integrations/notion/export', async (req, res) => {
-  if (!ensureAdminWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
     const dataset = await getAcademyDataset();
     const payload = {
@@ -3262,7 +3248,7 @@ router.post('/reports/weekly/test', async (req, res) => {
   try {
     const analytics = await buildAnalytics();
     const recipient = nullableText(req.body.recipient) ?? 'leadership';
-    const isMarketingReport = req.user?.role === 'smm_manager';
+    const isMarketingReport = req.user?.workspace === 'marketing';
     const message = isMarketingReport
       ? [
         'Еженедельный маркетинг-отчёт 01 Academy',
@@ -3293,7 +3279,7 @@ router.post('/reports/weekly/test', async (req, res) => {
 });
 
 router.post('/automations/run', async (req, res) => {
-  if (!ensureRoleAccess(req, res, OPERATIONS_ROLES, 'Operations access required')) return;
+  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
   try {
     const now = new Date();
     const actions: string[] = [];
@@ -3456,29 +3442,29 @@ router.get('/exports/:entity', async (req, res) => {
 
 registerSimpleCrud('schools', 'academy_schools', [
   'name', 'code', 'address', 'rooms', 'timezone', 'isActive',
-], { orderBy: 'is_active DESC, name', requireAdmin: true });
+], { orderBy: 'is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('courses', 'academy_courses', [
   'name', 'slug', 'ageCategory', 'lessonCount', 'lessonDurationMinutes', 'durationDays',
   'description', 'frequency', 'basePriceUzs', 'discountedPriceUzs',
   'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
-], { orderBy: 'is_active DESC, name', requireAdmin: true });
+], { orderBy: 'is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
   'code', 'name', 'color', 'sortOrder', 'isPipeline', 'isSystem', 'isActive',
-], { orderBy: 'sort_order, id', requireAdmin: true });
+], { orderBy: 'sort_order, id', requireAdministration: true });
 
 registerSimpleCrud('teachers', 'academy_teachers', [
   'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'status',
-], { orderBy: 'full_name', requireAdmin: true });
+], { orderBy: 'full_name', requireAdministration: true });
 
 registerSimpleCrud('groups', 'academy_groups', [
   'name', 'courseId', 'schoolId', 'teacherId', 'schedule', 'maxStudents', 'status', 'startDate', 'endDate',
-], { orderBy: 'created_at DESC', requireAdmin: true });
+], { orderBy: 'created_at DESC', requireAdministration: true });
 
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
-], { orderBy: 'name', requireMarketingReadOnly: true });
+], { orderBy: 'name', requireMarketing: true });
 
 registerSimpleCrud('lessons', 'academy_lessons', [
   'groupId', 'courseId', 'schoolId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',

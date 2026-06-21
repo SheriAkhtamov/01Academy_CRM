@@ -71,6 +71,13 @@
       "when": 1782028800000,
       "tag": "0009_move_schedule_to_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782043200000,
+      "tag": "0010_replace_roles_with_workspaces",
+      "breakpoints": true
     }
   ]
 }

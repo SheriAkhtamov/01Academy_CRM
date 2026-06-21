@@ -7,7 +7,7 @@ export interface UserMini {
     id: number;
     fullName: string;
     position: string | null;
-    role: string;
+    workspace: string;
 }
 
 export interface TaskSummary {

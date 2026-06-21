@@ -214,7 +214,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const expenses = data?.expenses ?? [];
   const referrals = data?.referrals ?? [];
   const students = data?.students ?? [];
-  const canManageExpenses = user?.role === 'admin' || user?.role === 'head';
+  const canManageExpenses = user?.workspace === 'marketing';
 
   const warmLeads = useMemo(() => {
     return leads.filter((lead: any) => lead.statusCode === 'not_now');

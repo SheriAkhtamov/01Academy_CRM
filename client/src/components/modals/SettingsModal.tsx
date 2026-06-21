@@ -9,7 +9,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
-import { formatUserRole } from '@/lib/auth';
+import { formatUserWorkspace } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -32,16 +32,8 @@ import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { User, Mail, Briefcase, Phone, MapPin, Save } from 'lucide-react';
-import { ACADEMY_ROLES, type AcademyRole } from '@shared/academy';
 
 const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
@@ -49,7 +41,6 @@ const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   position: z.string().min(1, t('positionRequired')),
   phone: z.string().optional(),
   location: z.string().optional(),
-  role: z.enum(ACADEMY_ROLES),
   hasReportAccess: z.boolean().optional(),
 });
 
@@ -74,7 +65,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       position: user?.position || '',
       phone: user?.phone || '',
       location: '',
-      role: (user?.role as AcademyRole) || 'account_manager',
       hasReportAccess: user?.hasReportAccess || false,
     },
   });
@@ -93,7 +83,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         position: user.position || '',
         phone: user.phone || '',
         location: '',
-        role: (user.role as AcademyRole) || 'account_manager',
         hasReportAccess: user.hasReportAccess || false,
       });
     }
@@ -238,44 +227,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 )}
               />
 
-              {/* Role */}
-              <FormField
-                control={form.control}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('role')}</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled={user?.role !== 'admin'}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ACADEMY_ROLES.map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {formatUserRole(role, t)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                    {user?.role !== 'admin' && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        {t('roleChangeAdminOnly')}
-                      </p>
-                    )}
-                  </FormItem>
-                )}
-              />
             </div>
 
             {/* Analytics Access - Only for Admins */}
-            {user?.role === 'admin' && (
+            {user?.workspace === 'administration' && (
               <FormField
                 control={form.control}
                 name="hasReportAccess"
@@ -298,10 +253,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               />
             )}
 
-            {/* Current Role Info */}
+            {/* Current workspace info */}
             <div className="bg-slate-50/60 border border-slate-200/70 p-4 rounded-xl">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentRole')}</h3>
-              <p className="text-slate-700 font-medium">{formatUserRole(user?.role || 'account_manager', t)}</p>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentWorkspace')}</h3>
+              <p className="text-slate-700 font-medium">
+                {formatUserWorkspace(user?.workspace || 'sales', t)}
+              </p>
             </div>
 
             {/* Form Actions */}

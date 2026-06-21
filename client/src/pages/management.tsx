@@ -15,7 +15,7 @@ interface ApiUser {
     id: number;
     fullName: string;
     position: string | null;
-    role: string;
+    workspace: string;
     isActive?: boolean;
 }
 
@@ -39,7 +39,7 @@ export default function ManagementBoard() {
         () =>
             (usersData ?? [])
                 .filter((u) => u.isActive !== false)
-                .map((u) => ({ id: u.id, fullName: u.fullName, position: u.position, role: u.role })),
+                .map((u) => ({ id: u.id, fullName: u.fullName, position: u.position, workspace: u.workspace })),
         [usersData],
     );
 

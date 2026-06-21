@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { ACADEMY_ROLES } from "./academy";
+import { ACADEMY_WORKSPACES } from "./academy";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
@@ -27,7 +27,7 @@ export const users = pgTable("users", {
   phone: varchar("phone", { length: 50 }),
   dateOfBirth: timestamp("date_of_birth"),
   position: varchar("position", { length: 255 }),
-  role: varchar("role", { length: 50 }).notNull(),
+  workspace: varchar("workspace", { length: 50 }).notNull(),
   hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
@@ -36,7 +36,8 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
-  roleCheck: check("users_role_check", sql`${table.role} IN ('admin', 'head', 'account_manager', 'teacher', 'operations_director', 'smm_manager')`),
+  workspaceIdx: index("users_workspace_idx").on(table.workspace),
+  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'analytics', 'marketing', 'management')`),
 }));
 
 export const notifications = pgTable("notifications", {
@@ -510,7 +511,7 @@ export const insertUserSchema = z.object({
   phone: z.string().optional(),
   dateOfBirth: z.coerce.date().optional().nullable(),
   position: z.string().optional(),
-  role: z.enum(ACADEMY_ROLES),
+  workspace: z.enum(ACADEMY_WORKSPACES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });

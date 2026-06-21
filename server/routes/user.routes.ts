@@ -3,20 +3,20 @@ import crypto from 'crypto';
 import { storage } from '../storage';
 import { pool } from '../db';
 import { authService } from '../services/auth';
-import { requireAuth, requireAdmin } from '../middleware/auth.middleware';
+import { requireAuth, requireAdministration } from '../middleware/auth.middleware';
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
-import { ACADEMY_ROLES, type AcademyRole } from '@shared/academy';
+import { ACADEMY_WORKSPACES, type AcademyWorkspace } from '@shared/academy';
 
 const router = Router();
-const roleSet = new Set<string>(ACADEMY_ROLES);
-const roleLoginPrefix: Record<AcademyRole, string> = {
-    admin: 'admin',
-    head: 'head',
-    account_manager: 'sales',
+const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
+    administration: 'admin',
+    sales: 'sales',
     teacher: 'teacher',
-    operations_director: 'ops',
-    smm_manager: 'smm',
+    analytics: 'analytics',
+    marketing: 'marketing',
+    management: 'management',
 };
 
 const translitMap: Record<string, string> = {
@@ -42,8 +42,8 @@ const slugifyName = (fullName: string) => {
     return slug || 'user';
 };
 
-const generateLogin = (fullName: string, role: AcademyRole, existingUsers: Array<{ email: string }>) => {
-    const prefix = roleLoginPrefix[role];
+const generateLogin = (fullName: string, workspace: AcademyWorkspace, existingUsers: Array<{ email: string }>) => {
+    const prefix = workspaceLoginPrefix[workspace];
     const base = `${prefix}.${slugifyName(fullName)}`;
     const existing = new Set(existingUsers.map((user) => user.email.toLowerCase()));
 
@@ -61,7 +61,7 @@ const generateLogin = (fullName: string, role: AcademyRole, existingUsers: Array
 const syncAcademyTeacherForUser = async (user: {
     id: number;
     fullName: string;
-    role: string;
+    workspace: string;
     isActive?: boolean | null;
 }) => {
     const existing = await pool.query<{ id: number }>(
@@ -70,7 +70,7 @@ const syncAcademyTeacherForUser = async (user: {
     );
     const teacherRecord = existing.rows[0];
 
-    if (user.role === 'teacher') {
+    if (user.workspace === 'teacher') {
         const status = user.isActive === false ? 'dismissed' : 'active';
 
         if (teacherRecord) {
@@ -119,21 +119,21 @@ router.get('/online-status', requireAuth, async (_req, res) => {
     }
 });
 
-router.post('/', requireAdmin, async (req, res) => {
+router.post('/', requireAdministration, async (req, res) => {
     try {
         const { fullName, phone, position, hasReportAccess, isActive } = req.body;
         if (!fullName || typeof fullName !== 'string' || !fullName.trim()) {
             return res.status(400).json({ error: 'Full name is required' });
         }
 
-        if (!roleSet.has(req.body.role)) {
-            return res.status(400).json({ error: 'A valid role is required' });
+        if (!workspaceSet.has(req.body.workspace)) {
+            return res.status(400).json({ error: 'A valid workspace is required' });
         }
-        const role = req.body.role as AcademyRole;
+        const workspace = req.body.workspace as AcademyWorkspace;
 
         const existingUsers = await storage.getUsers();
         const providedEmail = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-        const email = providedEmail || generateLogin(fullName, role, existingUsers);
+        const email = providedEmail || generateLogin(fullName, workspace, existingUsers);
         const userExists = existingUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
 
         if (userExists) {
@@ -148,7 +148,7 @@ router.post('/', requireAdmin, async (req, res) => {
             fullName,
             phone: phone || null,
             position: position || null,
-            role,
+            workspace,
             hasReportAccess: hasReportAccess || false,
             isActive: isActive !== undefined ? isActive : true,
         });
@@ -182,7 +182,7 @@ router.post('/', requireAdmin, async (req, res) => {
     }
 });
 
-router.get('/:id/credentials', requireAdmin, async (req, res) => {
+router.get('/:id/credentials', requireAdministration, async (req, res) => {
     try {
         const id = Number.parseInt(req.params.id, 10);
 
@@ -201,7 +201,7 @@ router.get('/:id/credentials', requireAdmin, async (req, res) => {
             fullName: user.fullName,
             email: user.email,
             position: user.position,
-            role: user.role,
+            workspace: user.workspace,
         });
     } catch (error) {
         logger.error('Error fetching user credentials', { error, userId: req.params.id });
@@ -209,7 +209,7 @@ router.get('/:id/credentials', requireAdmin, async (req, res) => {
     }
 });
 
-router.post('/:id/reset-password', requireAdmin, async (req, res) => {
+router.post('/:id/reset-password', requireAdministration, async (req, res) => {
     try {
         const id = Number.parseInt(req.params.id, 10);
 
@@ -246,7 +246,7 @@ router.post('/:id/reset-password', requireAdmin, async (req, res) => {
             fullName: user.fullName,
             email: user.email,
             position: user.position,
-            role: user.role,
+            workspace: user.workspace,
             temporaryPassword,
         });
     } catch (error) {
@@ -264,7 +264,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
-        if (currentUser?.id !== id && currentUser?.role !== 'admin') {
+        if (currentUser?.id !== id && currentUser?.workspace !== 'administration') {
             return res.status(403).json({ error: 'Cannot update other users profile' });
         }
 
@@ -284,12 +284,12 @@ router.put('/:id', requireAuth, async (req, res) => {
             updateData.dateOfBirth = req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : null;
         }
 
-        if (currentUser?.role === 'admin') {
-            if (req.body.role !== undefined) {
-                if (!roleSet.has(req.body.role)) {
-                    return res.status(400).json({ error: 'A valid role is required' });
+        if (currentUser?.workspace === 'administration') {
+            if (req.body.workspace !== undefined) {
+                if (!workspaceSet.has(req.body.workspace)) {
+                    return res.status(400).json({ error: 'A valid workspace is required' });
                 }
-                updateData.role = req.body.role;
+                updateData.workspace = req.body.workspace;
             }
             if (req.body.hasReportAccess !== undefined) {
                 updateData.hasReportAccess = Boolean(req.body.hasReportAccess);
@@ -299,22 +299,22 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
         }
 
-        const isRemovingActiveAdminRole =
-            existingUser.role === 'admin' &&
+        const isRemovingActiveAdministrationAccess =
+            existingUser.workspace === 'administration' &&
             existingUser.isActive &&
             (
-                (updateData.role !== undefined && updateData.role !== 'admin') ||
+                (updateData.workspace !== undefined && updateData.workspace !== 'administration') ||
                 updateData.isActive === false
             );
 
-        if (isRemovingActiveAdminRole) {
+        if (isRemovingActiveAdministrationAccess) {
             const allUsers = await storage.getUsers();
-            const activeAdmins = allUsers.filter((u: any) => (
-                u.role === 'admin' &&
+            const activeAdministrators = allUsers.filter((u: any) => (
+                u.workspace === 'administration' &&
                 u.isActive
             ));
 
-            if (activeAdmins.length <= 1) {
+            if (activeAdministrators.length <= 1) {
                 return res.status(403).json({
                     error: 'Cannot remove or deactivate the last active administrator account.',
                 });
@@ -334,7 +334,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', requireAdministration, async (req, res) => {
     try {
         const id = Number.parseInt(req.params.id, 10);
 
@@ -352,8 +352,8 @@ router.delete('/:id', requireAdmin, async (req, res) => {
         }
 
         const allUsers = await storage.getUsers();
-        const activeAdmins = allUsers.filter((u: any) => u.role === 'admin' && u.isActive);
-        if (user.role === 'admin' && user.isActive && activeAdmins.length <= 1) {
+        const activeAdministrators = allUsers.filter((u: any) => u.workspace === 'administration' && u.isActive);
+        if (user.workspace === 'administration' && user.isActive && activeAdministrators.length <= 1) {
             return res.status(403).json({ error: 'Cannot delete the last active administrator account.' });
         }
 

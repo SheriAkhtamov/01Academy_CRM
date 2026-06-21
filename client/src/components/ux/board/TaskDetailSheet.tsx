@@ -152,7 +152,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
         queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
     };
 
-    const isTaskSupervisor = user?.role === 'head';
+    const isTaskSupervisor = user?.workspace === 'management';
     const canManage = !!task && !!user && (user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor);
     const canAcceptReopen = !!task && !!user && (user.id === task.creatorId || isTaskSupervisor);
     const canDelete = canAcceptReopen;

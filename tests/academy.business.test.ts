@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACADEMY_ROLES,
-  ACADEMY_WORKSPACE_ROLES,
+  ACADEMY_WORKSPACES,
   buildReferralCode,
   calculateAttendancePercent,
   calculateCac,
@@ -18,33 +17,29 @@ import {
 } from "../shared/academy";
 
 describe("01 Academy business rules", () => {
-  it("only exposes roles that have an assigned workspace", () => {
-    expect(ACADEMY_ROLES).toEqual([
-      "admin",
-      "head",
-      "account_manager",
+  it("exposes the supported employee workspaces", () => {
+    expect(ACADEMY_WORKSPACES).toEqual([
+      "administration",
+      "sales",
       "teacher",
-      "operations_director",
-      "smm_manager",
+      "analytics",
+      "marketing",
+      "management",
     ]);
   });
 
-  it("keeps system administrators out of operational workspaces", () => {
-    expect(ACADEMY_WORKSPACE_ROLES.administration).toEqual(["admin", "head"]);
-    expect(canAccessAcademyWorkspace("admin", "administration")).toBe(true);
-    expect(canAccessAcademyWorkspace("admin", "sales")).toBe(false);
-    expect(canAccessAcademyWorkspace("admin", "teacher")).toBe(false);
-    expect(canAccessAcademyWorkspace("admin", "analytics")).toBe(false);
-    expect(canAccessAcademyWorkspace("admin", "marketing")).toBe(false);
-    expect(canAccessAcademyWorkspace("admin", "management")).toBe(false);
+  it("keeps each employee inside the assigned workspace", () => {
+    expect(canAccessAcademyWorkspace("administration", "administration")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(false);
+    expect(canAccessAcademyWorkspace("sales", "sales")).toBe(true);
+    expect(canAccessAcademyWorkspace("sales", "management")).toBe(false);
   });
 
-  it("assigns each operational workspace to its responsible role", () => {
-    expect(canAccessAcademyWorkspace("account_manager", "sales")).toBe(true);
+  it("uses workspace assignment as the system access model", () => {
     expect(canAccessAcademyWorkspace("teacher", "teacher")).toBe(true);
-    expect(canAccessAcademyWorkspace("operations_director", "analytics")).toBe(true);
-    expect(canAccessAcademyWorkspace("smm_manager", "marketing")).toBe(true);
-    expect(canAccessAcademyWorkspace("head", "management")).toBe(true);
+    expect(canAccessAcademyWorkspace("analytics", "analytics")).toBe(true);
+    expect(canAccessAcademyWorkspace("marketing", "marketing")).toBe(true);
+    expect(canAccessAcademyWorkspace("management", "management")).toBe(true);
   });
 
   it("suggests course and age group from student age", () => {

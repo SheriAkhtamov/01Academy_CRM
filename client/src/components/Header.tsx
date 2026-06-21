@@ -19,6 +19,7 @@ import ChatSheet from './ux/ChatSheet';
 import SettingsModal from './modals/SettingsModal';
 import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
+import { WorkspaceIdentity } from './ux/WorkspaceIdentity';
 
 interface HeaderProps {
   title?: string;
@@ -79,25 +80,21 @@ export default function Header({
 
   return (
     <>
-      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/70 dark:border-slate-800/70 px-6 py-3.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {onMenuToggle && (
-              <button
-                onClick={onMenuToggle}
-                className="md:hidden p-2 -ml-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-            )}
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">{title || t('dashboard')}</h1>
-              </div>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">{subtitle || t('welcomeMessage')}</p>
-            </div>
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 px-4 py-3 backdrop-blur-xl md:px-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
+          {onMenuToggle && (
+            <button
+              onClick={onMenuToggle}
+              className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+              aria-label={t('openNavigation')}
+            >
+              <Menu className="size-5" />
+            </button>
+          )}
+          <div className="order-2 min-w-0 w-full md:order-none md:flex-1">
+            <WorkspaceIdentity title={title} subtitle={subtitle} />
           </div>
-          <div className="flex items-center space-x-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button
               variant="ghost"
               size="sm"

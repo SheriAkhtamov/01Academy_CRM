@@ -312,7 +312,6 @@ export const translations = {
   viewCredentials: { en: 'View credentials', ru: 'Просмотр учётных данных' },
   warmBase: { en: 'Warm Base', ru: 'Тёплая база' },
   weeklyLeads: { en: 'Weekly Leads', ru: 'Лиды за неделю' },
-  welcomeMessage: { en: 'Welcome to 01 Academy CRM', ru: 'Добро пожаловать в CRM 01 Academy' },
 
   averageRatingLabel: { en: 'Average Rating:', ru: 'Средняя оценка:' },
   occupancyColumn: { en: 'Occupancy', ru: 'Заполненность' },
@@ -808,6 +807,60 @@ export const translations = {
   },
   today: { en: 'Today', ru: 'Сегодня' },
   weeklySchedule: { en: 'Weekly schedule', ru: 'Недельное расписание' },
+
+  // UX improvements — persistent workspace identity
+  administrationWorkspace: {
+    en: 'Administrator control center',
+    ru: 'Панель управления администратора',
+  },
+  administrationWorkspaceDescription: {
+    en: 'Employees, academy structure, integrations, and system settings.',
+    ru: 'Сотрудники, структура академии, интеграции и системные настройки.',
+  },
+  analyticsDepartmentWorkspace: {
+    en: 'Analytics department',
+    ru: 'Отдел аналитики',
+  },
+  analyticsDepartmentWorkspaceDescription: {
+    en: 'Sales, learning, and academy performance metrics.',
+    ru: 'Показатели продаж, обучения и эффективности академии.',
+  },
+  currentWorkspace: {
+    en: 'Current workspace',
+    ru: 'Текущая рабочая область',
+  },
+  marketingDepartmentWorkspace: {
+    en: 'Marketing department',
+    ru: 'Отдел маркетинга',
+  },
+  marketingDepartmentWorkspaceDescription: {
+    en: 'Lead sources, funnel performance, expenses, and reports.',
+    ru: 'Источники лидов, воронка, расходы и отчётность.',
+  },
+  openNavigation: {
+    en: 'Open navigation',
+    ru: 'Открыть навигацию',
+  },
+  salesDepartmentWorkspace: {
+    en: 'Sales department',
+    ru: 'Отдел продаж',
+  },
+  salesDepartmentWorkspaceDescription: {
+    en: 'Leads, deals, clients, and manager tasks.',
+    ru: 'Лиды, сделки, клиенты и задачи менеджера.',
+  },
+  teacherWorkplaceWorkspaceDescription: {
+    en: 'Schedule, groups, attendance, and lesson ratings.',
+    ru: 'Расписание, группы, посещаемость и оценки занятий.',
+  },
+  teamManagementWorkspace: {
+    en: 'Team management',
+    ru: 'Управление командой',
+  },
+  teamManagementWorkspaceDescription: {
+    en: 'Tasks, owners, and progress across academy departments.',
+    ru: 'Задачи, ответственные и прогресс по отделам академии.',
+  },
 } as const;
 
 

@@ -277,6 +277,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/sales'],
   });
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ['/api/users'],
+  });
 
   const leadStatusName = (code: string) => {
     const key = leadStatusTranslationKeys[code];
@@ -310,6 +313,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (!data?.payments) return [];
     return data.payments;
   }, [data?.payments]);
+
+  const salesManagers = useMemo(
+    () => users
+      .filter((employee) => employee.workspace === 'sales' && employee.isActive)
+      .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
+    [users],
+  );
 
   const activePipelineStatuses = useMemo(
     () => [...(data?.statuses ?? [])]
@@ -659,6 +669,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         groups={data.groups ?? []}
         sources={data.sources ?? []}
         statuses={data.statuses ?? []}
+        managers={salesManagers}
         currentUserId={user?.id}
         leadStatusName={leadStatusName}
         dateTime={dateTime}

@@ -828,6 +828,47 @@ export const translations = {
     en: 'Tasks, owners, and progress across academy departments.',
     ru: 'Задачи, ответственные и прогресс по отделам академии.',
   },
+
+  // UX improvements — lead ownership and assignment
+  adjustFilters: { en: 'Change the filters to see other leads.', ru: 'Измените фильтры, чтобы увидеть другие лиды.' },
+  allManagers: { en: 'All managers', ru: 'Все менеджеры' },
+  allStatuses: { en: 'All statuses', ru: 'Все статусы' },
+  assignSelected: { en: 'Assign selected', ru: 'Назначить выбранных' },
+  bulkAssignmentHint: {
+    en: 'Open lead and client tasks will move to the new manager.',
+    ru: 'Открытые задачи по лидам и клиентам перейдут новому менеджеру.',
+  },
+  changedBy: { en: 'Changed by', ru: 'Изменил' },
+  confirmBulkAssignment: { en: 'Reassign selected leads?', ru: 'Переназначить выбранные лиды?' },
+  confirmBulkAssignmentDescription: {
+    en: 'Assign {count} leads to {manager}. Open related tasks will also be transferred.',
+    ru: 'Назначить {count} лидов менеджеру {manager}? Открытые связанные задачи тоже будут переданы.',
+  },
+  confirmLeadTransfer: { en: 'Transfer this lead?', ru: 'Передать этого лида?' },
+  confirmLeadTransferDescription: {
+    en: 'The lead and open related tasks will be transferred to {manager}.',
+    ru: 'Лид и открытые связанные задачи будут переданы менеджеру {manager}.',
+  },
+  leadAssignment: { en: 'Lead assignment', ru: 'Распределение лидов' },
+  leadAssignmentSubtitle: {
+    en: 'Review ownership, reassign individual leads, or transfer several leads at once.',
+    ru: 'Контролируйте ответственных, переназначайте отдельные лиды или передавайте несколько лидов сразу.',
+  },
+  leadFilters: { en: 'Lead filters', ru: 'Фильтры лидов' },
+  noLeadsFound: { en: 'No leads found', ru: 'Лиды не найдены' },
+  leadTransferFailed: { en: 'Lead transfer failed', ru: 'Не удалось передать лида' },
+  leadTransferHint: {
+    en: 'After transfer, this lead will disappear from your pipeline.',
+    ru: 'После передачи этот лид исчезнет из вашей воронки.',
+  },
+  leadTransferred: { en: 'Lead transferred', ru: 'Лид передан' },
+  leadsTransferred: { en: 'Leads transferred', ru: 'Лиды переданы' },
+  leadsTransferredCount: { en: 'Updated leads: {count}', ru: 'Переназначено лидов: {count}' },
+  responsibleManager: { en: 'Responsible manager', ru: 'Ответственный менеджер' },
+  selectLead: { en: 'Select lead', ru: 'Выбрать лида' },
+  selectManager: { en: 'Select a manager', ru: 'Выберите менеджера' },
+  selectedLeadsCount: { en: 'Selected leads: {count}', ru: 'Выбрано лидов: {count}' },
+  transferLead: { en: 'Transfer lead', ru: 'Передать лида' },
 } as const;
 
 

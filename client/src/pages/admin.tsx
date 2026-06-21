@@ -331,6 +331,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       description: t('adminEmployeesDescription'),
     },
     {
+      href: '/admin/leads',
+      icon: UserCheck,
+      title: t('leadAssignment'),
+      description: t('leadAssignmentSubtitle'),
+    },
+    {
       href: '/admin/academy-settings',
       icon: SlidersHorizontal,
       title: t('academyConfiguration'),

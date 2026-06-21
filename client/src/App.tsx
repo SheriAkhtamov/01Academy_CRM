@@ -15,6 +15,7 @@ import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
+import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
 import ManagementBoard from '@/pages/management';
 
@@ -239,6 +240,11 @@ function Router() {
         <Route path="/employees" component={() => (
           <WorkspaceGuard workspace="administration">
             <Admin mode="employees" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/admin/leads" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <AdminLeadsPage />
           </WorkspaceGuard>
         )} />
         <Route path="/admin/academy-settings" component={() => (

@@ -222,6 +222,19 @@ export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
   leadIdx: index("academy_lead_stage_history_lead_idx").on(table.leadId),
 }));
 
+export const academyLeadAssignmentHistory = pgTable("academy_lead_assignment_history", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  fromManagerId: integer("from_manager_id").references(() => users.id, { onDelete: "set null" }),
+  toManagerId: integer("to_manager_id").references(() => users.id, { onDelete: "set null" }).notNull(),
+  changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  leadIdx: index("academy_lead_assignment_history_lead_idx").on(table.leadId),
+  toManagerIdx: index("academy_lead_assignment_history_to_manager_idx").on(table.toManagerId),
+}));
+
 export const academyStudents = pgTable("academy_students", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
@@ -574,6 +587,11 @@ export const insertAcademyLeadStageHistorySchema = createInsertSchema(academyLea
   id: true,
 });
 
+export const insertAcademyLeadAssignmentHistorySchema = createInsertSchema(academyLeadAssignmentHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertAcademyStudentSchema = createInsertSchema(academyStudents).omit({
   id: true,
   createdAt: true,
@@ -694,6 +712,8 @@ export type AcademyLead = typeof academyLeads.$inferSelect;
 export type InsertAcademyLead = z.infer<typeof insertAcademyLeadSchema>;
 export type AcademyLeadStageHistory = typeof academyLeadStageHistory.$inferSelect;
 export type InsertAcademyLeadStageHistory = z.infer<typeof insertAcademyLeadStageHistorySchema>;
+export type AcademyLeadAssignmentHistory = typeof academyLeadAssignmentHistory.$inferSelect;
+export type InsertAcademyLeadAssignmentHistory = z.infer<typeof insertAcademyLeadAssignmentHistorySchema>;
 export type AcademyStudent = typeof academyStudents.$inferSelect;
 export type InsertAcademyStudent = z.infer<typeof insertAcademyStudentSchema>;
 export type AcademyStudentStatusHistory = typeof academyStudentStatusHistory.$inferSelect;

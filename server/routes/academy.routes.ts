@@ -67,7 +67,7 @@ const OPERATIONS_WORKSPACES = new Set(['analytics']);
 const MARKETING_WORKSPACES = new Set(['marketing']);
 const SALES_WORKSPACES = new Set(['sales']);
 const REPORT_WORKSPACES = new Set(['administration', 'analytics', 'marketing']);
-const LEAD_WORKSPACES = new Set(['sales', 'marketing']);
+const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -81,6 +81,7 @@ const camelizeRows = (rows: Row[]) => rows.map(camelize);
 const quoteIdent = (identifier: string) => `"${identifier.replace(/"/g, '""')}"`;
 const TABLES_WITHOUT_UPDATED_AT = new Set([
   'academy_lead_stage_history',
+  'academy_lead_assignment_history',
   'academy_communications',
   'academy_student_transfers',
   'academy_student_status_history',
@@ -307,7 +308,7 @@ const ensureReportRouteAccess = (req: any, res: any) => {
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
   const workspace = String(req.user?.workspace);
-  if (workspace === 'marketing') return true;
+  if (workspace === 'administration' || workspace === 'marketing') return true;
   return workspace === 'sales' && Number(lead.managerId) === Number(req.user?.id);
 };
 
@@ -970,11 +971,13 @@ const findDuplicate = async (phone?: string | null, messenger?: string | null) =
 
 const getLead = (id: number) =>
   queryOne(
-    `SELECT l.*, c.name AS course_name, s.name AS source_name, sc.name AS school_name
+    `SELECT l.*, c.name AS course_name, s.name AS source_name, sc.name AS school_name,
+        u.full_name AS manager_name
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
      LEFT JOIN academy_schools sc ON sc.id = l.school_id
+     LEFT JOIN users u ON u.id = l.manager_id
      WHERE l.id = $1`,
     [id],
   );
@@ -986,6 +989,75 @@ const createStageHistory = async (leadId: number, fromStatusCode: string | null,
     toStatusCode,
     changedBy,
     comment: comment ?? null });
+
+const getActiveSalesManager = async (managerId: number) => {
+  const manager = await queryOne<{ id: number; fullName: string }>(
+    `SELECT id, full_name
+     FROM users
+     WHERE id = $1 AND workspace = 'sales' AND is_active = true`,
+    [managerId],
+  );
+  if (!manager) {
+    throw Object.assign(new Error('Active account manager is required'), { statusCode: 400 });
+  }
+  return manager;
+};
+
+const reassignLead = async (
+  req: any,
+  lead: Row,
+  manager: { id: number; fullName: string },
+  comment?: string | null,
+): Promise<Row> => {
+  if (Number(lead.managerId) === Number(manager.id)) {
+    return { ...lead, managerId: manager.id, managerName: manager.fullName };
+  }
+
+  const updatedLead = await withTransaction(async () => {
+    const updated = await updateRow('academy_leads', lead.id, { managerId: manager.id });
+    if (!updated) {
+      throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+    }
+
+    await query(
+      `UPDATE academy_students
+       SET manager_id = $1, updated_at = NOW()
+       WHERE lead_id = $2`,
+      [manager.id, lead.id],
+    );
+    await query(
+      `UPDATE academy_tasks
+       SET responsible_id = $1, updated_at = NOW()
+       WHERE status <> 'done'
+         AND (
+           (entity_type = 'lead' AND entity_id = $2)
+           OR (
+             entity_type = 'student'
+             AND entity_id IN (SELECT id FROM academy_students WHERE lead_id = $2)
+           )
+         )`,
+      [manager.id, lead.id],
+    );
+    await insertRow('academy_lead_assignment_history', {
+      leadId: lead.id,
+      fromManagerId: lead.managerId ?? null,
+      toManagerId: manager.id,
+      changedBy: req.user!.id,
+      comment: comment ?? null,
+    });
+
+    return { ...updated, managerName: manager.fullName };
+  });
+
+  await createNotification(
+    manager.id,
+    'Вам назначен лид',
+    `${lead.contactName}: ${lead.phone}`,
+    'lead',
+    lead.id,
+  );
+  return updatedLead;
+};
 
 const buildLeadStageDurations = (history: Row[]) => {
   const sorted = [...history].sort((left, right) =>
@@ -2308,6 +2380,101 @@ router.post('/leads', async (req, res) => {
   }
 });
 
+router.post('/leads/bulk-assign', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const leadIds = Array.from(new Set(
+      (Array.isArray(req.body.leadIds) ? req.body.leadIds : [])
+        .map(parseId)
+        .filter((id: number | null): id is number => Boolean(id)),
+    ));
+    if (leadIds.length === 0) {
+      return res.status(400).json({ error: 'Select at least one lead' });
+    }
+    if (leadIds.length > 500) {
+      return res.status(400).json({ error: 'Too many leads selected' });
+    }
+
+    const managerId = parseId(req.body.managerId);
+    if (!managerId) {
+      return res.status(400).json({ error: 'Active account manager is required' });
+    }
+    const manager = await getActiveSalesManager(managerId);
+    const comment = nullableText(req.body.comment) ?? 'Массовое переназначение администратором';
+    const leads = await query(
+      `SELECT l.*, u.full_name AS manager_name
+       FROM academy_leads l
+       LEFT JOIN users u ON u.id = l.manager_id
+       WHERE l.id = ANY($1::int[])`,
+      [leadIds],
+    );
+    if (leads.length !== leadIds.length) {
+      return res.status(404).json({ error: 'One or more leads were not found' });
+    }
+
+    const changedLeads = leads.filter((lead) => Number(lead.managerId) !== Number(manager.id));
+    if (changedLeads.length > 0) {
+      const changedIds = changedLeads.map((lead) => Number(lead.id));
+      await withTransaction(async () => {
+        await query(
+          `UPDATE academy_leads
+           SET manager_id = $1, updated_at = NOW()
+           WHERE id = ANY($2::int[])`,
+          [manager.id, changedIds],
+        );
+        await query(
+          `UPDATE academy_students
+           SET manager_id = $1, updated_at = NOW()
+           WHERE lead_id = ANY($2::int[])`,
+          [manager.id, changedIds],
+        );
+        await query(
+          `UPDATE academy_tasks
+           SET responsible_id = $1, updated_at = NOW()
+           WHERE status <> 'done'
+             AND (
+               (entity_type = 'lead' AND entity_id = ANY($2::int[]))
+               OR (
+                 entity_type = 'student'
+                 AND entity_id IN (
+                   SELECT id FROM academy_students WHERE lead_id = ANY($2::int[])
+                 )
+               )
+             )`,
+          [manager.id, changedIds],
+        );
+        for (const lead of changedLeads) {
+          await insertRow('academy_lead_assignment_history', {
+            leadId: lead.id,
+            fromManagerId: lead.managerId ?? null,
+            toManagerId: manager.id,
+            changedBy: req.user!.id,
+            comment,
+          });
+        }
+      });
+
+      await createNotification(
+        manager.id,
+        'Вам назначены лиды',
+        `Назначено лидов: ${changedLeads.length}`,
+        'lead_assignment',
+      );
+      await createAudit(req, 'BULK_ASSIGN_ACADEMY_LEADS', 'academy_lead', 0, {
+        leadIds: changedIds,
+        managerId: manager.id,
+      }, {
+        assignments: changedLeads.map((lead) => ({ leadId: lead.id, managerId: lead.managerId ?? null })),
+      });
+    }
+
+    res.json({ updatedCount: changedLeads.length, manager });
+  } catch (error: any) {
+    logger.error('Failed to bulk assign leads', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign leads' });
+  }
+});
+
 router.get('/leads/:id', async (req, res) => {
   try {
     const id = parseId(req.params.id);
@@ -2315,16 +2482,59 @@ router.get('/leads/:id', async (req, res) => {
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, lead)) return;
-    const [history, communications, tasks, payments] = await Promise.all([
+    const [history, assignmentHistory, communications, tasks, payments] = await Promise.all([
       query(`SELECT * FROM academy_lead_stage_history WHERE lead_id = $1 ORDER BY entered_at DESC`, [id]),
+      query(
+        `SELECT h.*,
+            previous.full_name AS from_manager_name,
+            next.full_name AS to_manager_name,
+            actor.full_name AS changed_by_name
+         FROM academy_lead_assignment_history h
+         LEFT JOIN users previous ON previous.id = h.from_manager_id
+         LEFT JOIN users next ON next.id = h.to_manager_id
+         LEFT JOIN users actor ON actor.id = h.changed_by
+         WHERE h.lead_id = $1
+         ORDER BY h.created_at DESC`,
+        [id],
+      ),
       query(`SELECT * FROM academy_communications WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
       query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
       query(`SELECT * FROM academy_payments WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
     ]);
-    res.json({ ...lead, history, stageDurations: buildLeadStageDurations(history), communications, tasks, payments });
+    res.json({
+      ...lead,
+      history,
+      assignmentHistory,
+      stageDurations: buildLeadStageDurations(history),
+      communications,
+      tasks,
+      payments,
+    });
   } catch (error) {
     logger.error('Failed to fetch lead', { error });
     res.status(500).json({ error: 'Failed to fetch lead' });
+  }
+});
+
+router.post('/leads/:id/assign', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, new Set(['administration', 'sales']), 'Lead assignment access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    const managerId = parseId(req.body.managerId);
+    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+    if (!managerId) return res.status(400).json({ error: 'Active account manager is required' });
+
+    const oldLead = await getLead(id);
+    if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+
+    const manager = await getActiveSalesManager(managerId);
+    const lead = await reassignLead(req, oldLead, manager, nullableText(req.body.comment));
+    await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
+    res.json(lead);
+  } catch (error: any) {
+    logger.error('Failed to assign lead', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign lead' });
   }
 });
 

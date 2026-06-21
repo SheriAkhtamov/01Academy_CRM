@@ -78,6 +78,13 @@
       "when": 1782043200000,
       "tag": "0010_replace_roles_with_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782050400000,
+      "tag": "0011_add_lead_assignment_history",
+      "breakpoints": true
     }
   ]
 }

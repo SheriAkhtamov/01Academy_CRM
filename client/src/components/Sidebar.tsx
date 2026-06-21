@@ -146,6 +146,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           items: [
             { name: t('administration'), href: '/admin', icon: ShieldCheck },
             { name: t('employees'), href: '/employees', icon: Users },
+            { name: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
             { name: t('settings'), href: '/settings', icon: Settings },

@@ -9,6 +9,16 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,6 +62,7 @@ import {
   MessageSquare,
   Phone,
   Save,
+  UserRoundCog,
   UserRound,
 } from 'lucide-react';
 import { LEAD_STATUSES, PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
@@ -72,6 +83,7 @@ interface LeadDetails {
   sourceId?: number | null;
   sourceName?: string | null;
   statusCode: string;
+  managerId?: number | null;
   managerName?: string | null;
   comment?: string | null;
   language?: string | null;
@@ -86,6 +98,17 @@ interface LeadDetails {
     toStatusCode: string;
     enteredAt?: string | null;
     comment?: string | null;
+  }>;
+  assignmentHistory?: Array<{
+    id: number;
+    fromManagerId?: number | null;
+    fromManagerName?: string | null;
+    toManagerId: number;
+    toManagerName?: string | null;
+    changedBy?: number | null;
+    changedByName?: string | null;
+    comment?: string | null;
+    createdAt?: string | null;
   }>;
   communications?: Array<{
     id: number;
@@ -133,6 +156,7 @@ interface LeadDetailSheetProps {
   }>;
   sources: Array<{ id: number; name: string }>;
   statuses: Array<{ code: string; name: string; isActive?: boolean }>;
+  managers: Array<{ id: number; fullName: string }>;
   currentUserId?: number;
   leadStatusName: (code: string) => string;
   dateTime: (value: string | null | undefined) => string;
@@ -243,6 +267,7 @@ export function LeadDetailSheet({
   groups,
   sources,
   statuses,
+  managers,
   currentUserId,
   leadStatusName,
   dateTime,
@@ -251,6 +276,7 @@ export function LeadDetailSheet({
 }: LeadDetailSheetProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
+  const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
 
   const leadQuery = useQuery<LeadDetails>({
     queryKey: ['/api/academy/leads', leadId],
@@ -387,6 +413,7 @@ export function LeadDetailSheet({
     if (!open) {
       hydratedLeadKey.current = null;
       hydratedTransientKey.current = null;
+      setPendingManagerId(null);
     }
   }, [open]);
 
@@ -407,6 +434,20 @@ export function LeadDetailSheet({
     }),
     onSuccess: () => finishMutation(t('leadSaved')),
     onError: (error: Error) => toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' }),
+  });
+
+  const assignLead = useMutation({
+    mutationFn: (managerId: number) => apiRequest('POST', `/api/academy/leads/${leadId}/assign`, { managerId }),
+    onSuccess: async () => {
+      setPendingManagerId(null);
+      toast({ title: t('leadTransferred') });
+      onChanged();
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      setPendingManagerId(null);
+      toast({ title: t('leadTransferFailed'), description: error.message, variant: 'destructive' });
+    },
   });
 
   const addContact = useMutation({
@@ -531,6 +572,10 @@ export function LeadDetailSheet({
                     {lead.courseName ? <span>• {lead.courseName}</span> : null}
                     {lead.schoolName ? <span>• {lead.schoolName}</span> : null}
                   </SheetDescription>
+                  <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <UserRoundCog />
+                    <span>{t('responsibleManager')}: {lead.managerName || t('notAssigned')}</span>
+                  </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {phoneHref ? (
                       <Button asChild size="sm" variant="outline">
@@ -657,6 +702,33 @@ export function LeadDetailSheet({
                       <Card>
                         <CardHeader><CardTitle>{t('dealDetails')}</CardTitle></CardHeader>
                         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <FormItem>
+                            <FormLabel>{t('responsibleManager')}</FormLabel>
+                            <Select
+                              value={lead.managerId ? String(lead.managerId) : undefined}
+                              onValueChange={(value) => {
+                                const nextManagerId = Number(value);
+                                if (nextManagerId !== Number(lead.managerId)) setPendingManagerId(nextManagerId);
+                              }}
+                              disabled={assignLead.isPending}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={t('selectManager')} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectGroup>
+                                  {managers.map((manager) => (
+                                    <SelectItem key={manager.id} value={String(manager.id)}>
+                                      {manager.fullName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">{t('leadTransferHint')}</p>
+                          </FormItem>
                           <FormField
                             control={leadForm.control}
                             name="statusCode"
@@ -1124,6 +1196,31 @@ export function LeadDetailSheet({
           </>
         )}
       </SheetContent>
+      <AlertDialog open={pendingManagerId !== null} onOpenChange={(nextOpen) => {
+        if (!nextOpen && !assignLead.isPending) setPendingManagerId(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('confirmLeadTransfer')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('confirmLeadTransferDescription')
+                .replace('{manager}', managers.find((manager) => manager.id === pendingManagerId)?.fullName ?? '')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={assignLead.isPending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={assignLead.isPending || pendingManagerId === null}
+              onClick={(event) => {
+                event.preventDefault();
+                if (pendingManagerId !== null) assignLead.mutate(pendingManagerId);
+              }}
+            >
+              {assignLead.isPending ? t('saving') : t('transferLead')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }
@@ -1154,6 +1251,17 @@ function ActivityTimeline({
       title: `${t('contact')}: ${item.channel}`,
       text: [item.result, item.comment].filter(Boolean).join(' — '),
       icon: MessageSquare,
+    })),
+    ...(lead.assignmentHistory ?? []).map((item) => ({
+      id: `assignment-${item.id}`,
+      at: item.createdAt,
+      title: t('leadTransferred'),
+      text: [
+        `${item.fromManagerName || t('notAssigned')} → ${item.toManagerName || t('notAssigned')}`,
+        item.changedByName ? `${t('changedBy')}: ${item.changedByName}` : null,
+        item.comment,
+      ].filter(Boolean).join(' • '),
+      icon: UserRoundCog,
     })),
     ...(lead.payments ?? []).map((item) => ({
       id: `payment-${item.id}`,

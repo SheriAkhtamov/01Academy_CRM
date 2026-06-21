@@ -55,6 +55,16 @@
       "phoneNumberId": "",
       "apiUrl": "https://graph.facebook.com/v19.0"
     },
+    "instagram": {
+      "_comment": "Create a Meta Business app with Instagram API with Instagram Login. Add the OAuth redirect and webhook callback shown on the CRM Integrations page.",
+      "appId": "",
+      "appSecret": "",
+      "verifyToken": "CHANGE-ME-instagram-webhook-verify-token",
+      "tokenEncryptionKey": "CHANGE-ME-use-a-separate-long-random-secret",
+      "apiVersion": "v25.0",
+      "graphApiUrl": "https://graph.instagram.com",
+      "oauthUrl": "https://www.instagram.com/oauth/authorize"
+    },
     "metaAds": {
       "accessToken": "",
       "adAccountId": ""

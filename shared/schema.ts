@@ -488,6 +488,71 @@ export const academyIntegrationLogs = pgTable("academy_integration_logs", {
   providerIdx: index("academy_integration_logs_provider_idx").on(table.provider),
 }));
 
+export const instagramAccounts = pgTable("instagram_accounts", {
+  id: serial("id").primaryKey(),
+  igUserId: varchar("ig_user_id", { length: 80 }).notNull(),
+  username: varchar("username", { length: 255 }).notNull(),
+  displayName: varchar("display_name", { length: 255 }),
+  profilePictureUrl: text("profile_picture_url"),
+  accessTokenEncrypted: text("access_token_encrypted"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  sourceId: integer("source_id").references(() => academyLeadSources.id, { onDelete: "restrict" }).notNull(),
+  status: varchar("status", { length: 40 }).notNull().default("connected"),
+  lastWebhookAt: timestamp("last_webhook_at"),
+  lastError: text("last_error"),
+  connectedBy: integer("connected_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  igUserUnique: uniqueIndex("instagram_accounts_ig_user_unique").on(table.igUserId),
+  sourceUnique: uniqueIndex("instagram_accounts_source_unique").on(table.sourceId),
+  statusIdx: index("instagram_accounts_status_idx").on(table.status),
+}));
+
+export const instagramConversations = pgTable("instagram_conversations", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id").references(() => instagramAccounts.id, { onDelete: "cascade" }).notNull(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
+  participantIgsid: varchar("participant_igsid", { length: 80 }).notNull(),
+  participantUsername: varchar("participant_username", { length: 255 }),
+  participantName: varchar("participant_name", { length: 255 }),
+  participantProfilePictureUrl: text("participant_profile_picture_url"),
+  unreadCount: integer("unread_count").notNull().default(0),
+  lastMessageAt: timestamp("last_message_at"),
+  lastInboundAt: timestamp("last_inbound_at"),
+  lastOutboundAt: timestamp("last_outbound_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  participantUnique: uniqueIndex("instagram_conversations_account_participant_unique").on(
+    table.accountId,
+    table.participantIgsid,
+  ),
+  accountIdx: index("instagram_conversations_account_idx").on(table.accountId),
+  leadIdx: index("instagram_conversations_lead_idx").on(table.leadId),
+  lastMessageIdx: index("instagram_conversations_last_message_idx").on(table.lastMessageAt),
+}));
+
+export const instagramMessages = pgTable("instagram_messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").references(() => instagramConversations.id, { onDelete: "cascade" }).notNull(),
+  externalMessageId: varchar("external_message_id", { length: 255 }),
+  direction: varchar("direction", { length: 20 }).notNull(),
+  senderIgsid: varchar("sender_igsid", { length: 80 }).notNull(),
+  recipientIgsid: varchar("recipient_igsid", { length: 80 }).notNull(),
+  content: text("content").notNull(),
+  messageType: varchar("message_type", { length: 50 }).notNull().default("text"),
+  status: varchar("status", { length: 40 }).notNull().default("received"),
+  sentBy: integer("sent_by").references(() => users.id, { onDelete: "set null" }),
+  rawPayload: jsonb("raw_payload"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  externalMessageUnique: uniqueIndex("instagram_messages_external_message_unique").on(table.externalMessageId),
+  conversationIdx: index("instagram_messages_conversation_idx").on(table.conversationId),
+  createdIdx: index("instagram_messages_created_idx").on(table.createdAt),
+}));
+
 export const academyNotificationOutbox = pgTable("academy_notification_outbox", {
   id: serial("id").primaryKey(),
   channel: varchar("channel", { length: 80 }).notNull(),
@@ -675,6 +740,24 @@ export const insertAcademyIntegrationLogSchema = createInsertSchema(academyInteg
   updatedAt: true,
 });
 
+export const insertInstagramAccountSchema = createInsertSchema(instagramAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInstagramConversationSchema = createInsertSchema(instagramConversations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInstagramMessageSchema = createInsertSchema(instagramMessages).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyNotificationOutboxSchema = createInsertSchema(academyNotificationOutbox).omit({
   id: true,
   createdAt: true,
@@ -744,6 +827,12 @@ export type AcademyReferralReward = typeof academyReferralRewards.$inferSelect;
 export type InsertAcademyReferralReward = z.infer<typeof insertAcademyReferralRewardSchema>;
 export type AcademyIntegrationLog = typeof academyIntegrationLogs.$inferSelect;
 export type InsertAcademyIntegrationLog = z.infer<typeof insertAcademyIntegrationLogSchema>;
+export type InstagramAccount = typeof instagramAccounts.$inferSelect;
+export type InsertInstagramAccount = z.infer<typeof insertInstagramAccountSchema>;
+export type InstagramConversation = typeof instagramConversations.$inferSelect;
+export type InsertInstagramConversation = z.infer<typeof insertInstagramConversationSchema>;
+export type InstagramMessage = typeof instagramMessages.$inferSelect;
+export type InsertInstagramMessage = z.infer<typeof insertInstagramMessageSchema>;
 export type AcademyNotificationOutbox = typeof academyNotificationOutbox.$inferSelect;
 export type InsertAcademyNotificationOutbox = z.infer<typeof insertAcademyNotificationOutboxSchema>;
 export type Message = typeof messages.$inferSelect;

@@ -38,6 +38,7 @@ import {
   SlidersHorizontal,
   KanbanSquare,
   ShieldCheck,
+  MessagesSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -79,6 +80,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
             { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
             { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
+            { name: t('instagramMessages'), href: '/sales/messages', icon: MessagesSquare },
           ],
         },
       ];

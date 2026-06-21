@@ -869,6 +869,161 @@ export const translations = {
   selectManager: { en: 'Select a manager', ru: 'Выберите менеджера' },
   selectedLeadsCount: { en: 'Selected leads: {count}', ru: 'Выбрано лидов: {count}' },
   transferLead: { en: 'Transfer lead', ru: 'Передать лида' },
+
+  // UX improvements — Instagram lead source and sales inbox
+  connected: { en: 'Connected', ru: 'Подключён' },
+  copy: { en: 'Copy', ru: 'Копировать' },
+  disconnect: { en: 'Disconnect', ru: 'Отключить' },
+  disconnected: { en: 'Disconnected', ru: 'Отключён' },
+  disconnectInstagram: { en: 'Disconnect Instagram', ru: 'Отключить Instagram' },
+  disconnectInstagramDesc: {
+    en: 'The CRM will stop receiving and sending messages for this account. Existing leads and message history will remain.',
+    ru: 'CRM перестанет получать и отправлять сообщения этого аккаунта. Существующие лиды и история переписки сохранятся.',
+  },
+  instagramAccountDisconnected: {
+    en: 'The Instagram account is disconnected.',
+    ru: 'Instagram-аккаунт отключён.',
+  },
+  instagramAccountIdMissing: {
+    en: 'Instagram did not return the account ID.',
+    ru: 'Instagram не вернул идентификатор аккаунта.',
+  },
+  instagramApiConfigured: {
+    en: 'Instagram API credentials are configured',
+    ru: 'Данные Instagram API настроены',
+  },
+  instagramConnected: {
+    en: 'Instagram account connected',
+    ru: 'Instagram-аккаунт подключён',
+  },
+  instagramConnectionCancelled: {
+    en: 'Instagram connection was cancelled',
+    ru: 'Подключение Instagram отменено',
+  },
+  instagramConnectionFailed: {
+    en: 'Instagram connection failed',
+    ru: 'Не удалось подключить Instagram',
+  },
+  instagramConnectionFailedDesc: {
+    en: 'Check the Meta app settings, redirect URL, permissions, and account role.',
+    ru: 'Проверьте настройки приложения Meta, Redirect URL, разрешения и роль аккаунта.',
+  },
+  instagramDialogs: { en: 'Conversations', ru: 'Диалоги' },
+  instagramDisconnected: {
+    en: 'Instagram account disconnected',
+    ru: 'Instagram-аккаунт отключён',
+  },
+  instagramDisconnectFailed: {
+    en: 'Could not disconnect Instagram',
+    ru: 'Не удалось отключить Instagram',
+  },
+  instagramIntegration: { en: 'Instagram', ru: 'Instagram-интеграция' },
+  instagramIntegrationDesc: {
+    en: 'Connect a professional account. New Direct conversations become leads and are assigned to sales managers.',
+    ru: 'Подключите профессиональный аккаунт. Новые диалоги Direct станут лидами и распределятся между менеджерами продаж.',
+  },
+  instagramIntegrationNotConfigured: {
+    en: 'Instagram integration is not configured.',
+    ru: 'Интеграция Instagram не настроена.',
+  },
+  instagramMessageNotSent: {
+    en: 'Instagram message was not sent',
+    ru: 'Сообщение в Instagram не отправлено',
+  },
+  instagramMessagePlaceholder: {
+    en: 'Write a message…',
+    ru: 'Напишите сообщение…',
+  },
+  instagramMessages: {
+    en: 'Instagram messages',
+    ru: 'Сообщения Instagram',
+  },
+  instagramMessagesDesc: {
+    en: 'Reply to assigned leads in Instagram Direct without leaving the CRM.',
+    ru: 'Общайтесь с назначенными лидами в Instagram Direct, не выходя из CRM.',
+  },
+  instagramMessagingWindowExpired: {
+    en: 'The 24-hour Instagram reply window has expired.',
+    ru: '24-часовое окно ответа Instagram истекло.',
+  },
+  instagramMessagingWindowExpiredDesc: {
+    en: 'Instagram allows a normal reply for 24 hours after the client’s latest message.',
+    ru: 'Instagram разрешает обычный ответ в течение 24 часов после последнего сообщения клиента.',
+  },
+  instagramMessagingWindowExpiredTitle: {
+    en: 'Reply window is closed',
+    ru: 'Окно ответа закрыто',
+  },
+  instagramOAuthRedirect: {
+    en: 'OAuth Redirect URL',
+    ru: 'URL перенаправления OAuth',
+  },
+  instagramReplyPolicyHint: {
+    en: 'Messages are sent from the connected Instagram account. Enter sends; Shift+Enter adds a new line.',
+    ru: 'Сообщения отправляются от подключённого Instagram-аккаунта. Enter — отправить, Shift+Enter — новая строка.',
+  },
+  instagramSendFailed: {
+    en: 'Instagram could not send the message.',
+    ru: 'Instagram не смог отправить сообщение.',
+  },
+  instagramSetupRequired: {
+    en: 'Meta app setup is required',
+    ru: 'Нужно настроить приложение Meta',
+  },
+  instagramSetupRequiredDesc: {
+    en: 'Fill integrations.instagram in config/app.config.json, then add the Redirect URL and Webhook Callback URL below in Meta for Developers.',
+    ru: 'Заполните integrations.instagram в config/app.config.json, затем добавьте указанные ниже Redirect URL и Webhook Callback URL в Meta for Developers.',
+  },
+  instagramUser: { en: 'Instagram user', ru: 'Пользователь Instagram' },
+  instagramWebhookCallback: {
+    en: 'Webhook Callback URL',
+    ru: 'URL обратного вызова Webhook',
+  },
+  integrationLeadSourcesDesc: {
+    en: 'Instagram accounts create their own source automatically. You can add other lead sources here.',
+    ru: 'Для Instagram-аккаунтов источник создаётся автоматически. Здесь можно добавить и другие источники лидов.',
+  },
+  loginWithInstagram: {
+    en: 'Log in with Instagram',
+    ru: 'Войти через Instagram',
+  },
+  noInstagramAccounts: {
+    en: 'No Instagram accounts connected',
+    ru: 'Нет подключённых Instagram-аккаунтов',
+  },
+  noInstagramAccountsDesc: {
+    en: 'Connect a professional Instagram account to start receiving Direct messages.',
+    ru: 'Подключите профессиональный Instagram-аккаунт, чтобы получать сообщения Direct.',
+  },
+  noInstagramConversations: {
+    en: 'No Instagram conversations yet',
+    ru: 'Пока нет диалогов Instagram',
+  },
+  noInstagramConversationsDesc: {
+    en: 'A conversation will appear here when a client writes to a connected Instagram account.',
+    ru: 'Диалог появится здесь, когда клиент напишет в подключённый Instagram-аккаунт.',
+  },
+  otherIntegrations: {
+    en: 'Other integrations',
+    ru: 'Другие интеграции',
+  },
+  replyWindowClosed: {
+    en: 'Reply window closed',
+    ru: 'Окно ответа закрыто',
+  },
+  replyWindowOpen: {
+    en: 'Reply available',
+    ru: 'Можно ответить',
+  },
+  selectConversation: {
+    en: 'Select a conversation',
+    ru: 'Выберите диалог',
+  },
+  sendMessage: { en: 'Send message', ru: 'Отправить сообщение' },
+  tokenValidUntil: {
+    en: 'Token valid until',
+    ru: 'Токен действителен до',
+  },
 } as const;
 
 

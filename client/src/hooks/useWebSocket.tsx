@@ -84,6 +84,14 @@ export function useWebSocket() {
             queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
           }
           break;
+        case 'INSTAGRAM_CONVERSATION_UPDATED':
+          queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+          if (message.data?.conversationId) {
+            queryClient.invalidateQueries({
+              queryKey: ['/api/instagram/conversations', message.data.conversationId, 'messages'],
+            });
+          }
+          break;
         case 'USER_STATUS_CHANGED':
           queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
           break;

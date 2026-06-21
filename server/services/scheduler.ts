@@ -4,6 +4,7 @@ import { logger } from "../lib/logger";
 import { processOutbox } from "./outbox-worker";
 import { runAutomations } from "./automations";
 import { buildWeeklyReport } from "./weekly-report";
+import { refreshExpiringInstagramTokens } from "./instagram";
 
 let started = false;
 
@@ -35,8 +36,14 @@ export const startScheduler = () => {
     const actorId = await getSystemUserId();
     if (!actorId) return;
     try {
-      const actions = await runAutomations(actorId);
+      const [actions, refreshedInstagramTokens] = await Promise.all([
+        runAutomations(actorId),
+        refreshExpiringInstagramTokens(),
+      ]);
       logger.info(`[scheduler] daily automations completed (${actions.length} actions)`);
+      if (refreshedInstagramTokens > 0) {
+        logger.info(`[scheduler] refreshed ${refreshedInstagramTokens} Instagram tokens`);
+      }
     } catch (error) {
       logger.error("[scheduler] daily automations error", { error });
     }

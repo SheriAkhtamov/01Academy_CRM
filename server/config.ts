@@ -49,6 +49,15 @@ interface AppConfig {
       phoneNumberId?: string;
       apiUrl?: string;
     };
+    instagram?: {
+      appId?: string;
+      appSecret?: string;
+      verifyToken?: string;
+      tokenEncryptionKey?: string;
+      apiVersion?: string;
+      graphApiUrl?: string;
+      oauthUrl?: string;
+    };
     metaAds?: {
       accessToken?: string;
       adAccountId?: string;

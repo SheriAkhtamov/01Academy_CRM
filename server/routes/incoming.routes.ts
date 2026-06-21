@@ -4,10 +4,36 @@ import { pool } from '../db';
 import { appConfig } from '../config';
 import { logger } from '../lib/logger';
 import { buildReferralCode } from '@shared/academy';
+import {
+  processInstagramWebhook,
+  verifyInstagramWebhookChallenge,
+  verifyInstagramWebhookSignature,
+} from '../services/instagram';
 
 const router = Router();
 
 router.use(expressRawJson);
+
+router.get('/instagram', (req, res) => {
+  if (!verifyInstagramWebhookChallenge(req.query['hub.mode'], req.query['hub.verify_token'])) {
+    return res.status(403).send('Invalid Instagram webhook verification token');
+  }
+  return res.status(200).send(String(req.query['hub.challenge'] ?? ''));
+});
+
+router.post('/instagram', async (req, res) => {
+  const signature = req.get('x-hub-signature-256');
+  if (!verifyInstagramWebhookSignature(req.rawBody, signature)) {
+    return res.status(401).json({ error: 'Invalid Instagram webhook signature' });
+  }
+  try {
+    const result = await processInstagramWebhook(req.body);
+    return res.status(200).json({ ok: true, ...result });
+  } catch (error) {
+    logger.error('Failed to process Instagram webhook', { error });
+    return res.status(500).json({ error: 'Failed to process Instagram webhook' });
+  }
+});
 
 // Webhook secrets are optional in dev (so local testing works), but when a secret is
 // configured every inbound payload must carry it in the x-webhook-secret header.

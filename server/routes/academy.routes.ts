@@ -3438,8 +3438,18 @@ router.get('/integrations/status', async (req, res) => {
        ORDER BY provider, created_at DESC`,
       [],
     );
+    const instagramAccounts = await query<{ connectedCount: number }>(
+      `SELECT COUNT(*)::int AS connected_count
+       FROM instagram_accounts
+       WHERE status = 'connected'`,
+    );
     const integ = appConfig.integrations ?? {};
     const providers = [
+      {
+        provider: 'instagram',
+        connected: Number(instagramAccounts[0]?.connectedCount ?? 0) > 0,
+        note: 'Instagram Login, Direct messages and automatic lead creation',
+      },
       { provider: 'chatplace', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Instagram DM inbound webhook' },
       { provider: 'telegram', connected: Boolean(integ.telegram?.botToken), note: 'Outbound bot messages + leadership reports' },
       { provider: 'whatsapp', connected: Boolean(integ.whatsapp?.apiToken && integ.whatsapp?.phoneNumberId), note: 'WhatsApp Business Cloud API' },

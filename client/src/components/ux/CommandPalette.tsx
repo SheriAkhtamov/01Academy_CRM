@@ -37,6 +37,7 @@ import {
   KanbanSquare,
   ShieldCheck,
   SlidersHorizontal,
+  MessagesSquare,
 } from 'lucide-react';
 
 interface SearchItem {
@@ -106,6 +107,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-sales-schedule', type: t('salesPipeline'), title: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
             { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
             { id: 'nav-sales-tasks', type: t('myTasks'), title: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
+            { id: 'nav-sales-instagram', type: t('instagramMessages'), title: t('instagramMessages'), href: '/sales/messages', icon: MessagesSquare },
           ];
         case 'teacher':
           return [

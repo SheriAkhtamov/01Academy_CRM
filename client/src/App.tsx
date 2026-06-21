@@ -11,6 +11,7 @@ import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
 import AcademyPage from '@/pages/academy';
 import SalesDashboard from '@/pages/sales-dashboard';
+import InstagramMessagesPage from '@/pages/sales/InstagramMessagesPage';
 import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
@@ -121,6 +122,11 @@ function Router() {
         <Route path="/sales/tasks" component={() => (
           <WorkspaceGuard workspace="sales">
             <SalesDashboard section="tasks" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/sales/messages" component={() => (
+          <WorkspaceGuard workspace="sales">
+            <InstagramMessagesPage />
           </WorkspaceGuard>
         )} />
         <Route path="/sales" component={() => (

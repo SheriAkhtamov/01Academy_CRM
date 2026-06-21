@@ -138,7 +138,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
 
   const sourcesQuery = useQuery<LeadSource[]>({
     queryKey: ['/api/academy/sources'],
-    enabled: section === 'settings' || section === 'integrations',
+    enabled: section === 'settings',
   });
 
   const integrationsQuery = useQuery<IntegrationStatus[]>({
@@ -166,7 +166,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       toast({ title: t('instagramConnected') });
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/accounts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/sources'] });
     } else if (result === 'cancelled') {
       toast({ title: t('instagramConnectionCancelled') });
     } else {
@@ -259,7 +258,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   });
 
   const isPageLoading = section === 'integrations'
-    ? integrationsQuery.isLoading || instagramConfigQuery.isLoading || instagramAccountsQuery.isLoading || sourcesQuery.isLoading
+    ? integrationsQuery.isLoading || instagramConfigQuery.isLoading || instagramAccountsQuery.isLoading
     : sourcesQuery.isLoading;
 
   if (isPageLoading) {
@@ -279,7 +278,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       integrationsQuery.isError
       || instagramConfigQuery.isError
       || instagramAccountsQuery.isError
-      || sourcesQuery.isError
     ) return renderError();
     const integrations = (integrationsQuery.data ?? []).filter(
       (integration) => integration.provider !== 'instagram' && integration.provider !== 'chatplace',
@@ -405,8 +403,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             )}
           </CardContent>
         </Card>
-
-        {renderSourcesCard()}
 
         <Card>
           <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

@@ -2,6 +2,37 @@
 
 > This file defines the design system, reusable UX components, and page-building conventions for the 01 Academy CRM. **All new pages, features, and components must follow these rules.**
 
+## Mandatory Workspace Confirmation
+
+- Before adding or implementing any new feature or functionality, **always ask the user which workspace it should be added to**.
+- The workspace question must always include the complete list of currently available workspaces shown below. Do not ask only an open-ended question such as “Which workspace?”.
+- Do not infer the target workspace from the current directory, active page, recent context, or previous tasks.
+- Wait for the user to explicitly confirm the target workspace before making implementation changes.
+- If a feature should be available in multiple workspaces, ask the user to select every applicable workspace.
+
+### Current Workspaces
+
+1. **Administration** — routes: `/admin`, `/employees`, `/integrations`, `/settings`; roles: `admin`, `head`.
+2. **Sales** — route: `/sales`; role: `account_manager`.
+3. **Teacher** — route: `/teacher-workspace`; role: `teacher`.
+4. **Analytics** — route: `/analytics-workspace`; role: `operations_director`.
+5. **Marketing** — route: `/marketing-workspace`; role: `smm_manager`.
+6. **Team Management** — route: `/management`; roles: `head`, `account_manager`, `teacher`, `operations_director`, `smm_manager`.
+
+Use this question format:
+
+> Which workspace should this feature be added to?
+> 1. Administration
+> 2. Sales
+> 3. Teacher
+> 4. Analytics
+> 5. Marketing
+> 6. Team Management
+>
+> You may select one or multiple workspaces.
+
+Keep this list synchronized with `ACADEMY_WORKSPACE_ROLES` in `shared/academy.ts` whenever workspaces are added, renamed, or removed.
+
 ---
 
 ## Table of Contents
@@ -413,4 +444,4 @@ Add to `client/src/App.tsx`:
 - Skip empty states — always show `EmptyState`
 ---
 -maintainer: 01 Academy CRM
--updated: 2025-06-16
+-updated: 2026-06-21

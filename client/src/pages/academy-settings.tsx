@@ -51,17 +51,12 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
-  Bot,
   Building2,
-  CalendarClock,
-  Clock3,
   Edit3,
   GitBranch,
-  GraduationCap,
   MapPin,
   Plus,
   Trash2,
-  UserRoundCheck,
   UsersRound,
 } from 'lucide-react';
 
@@ -127,25 +122,12 @@ interface Group {
   endDate?: string | null;
 }
 
-interface Lesson {
-  id: number;
-  groupName?: string;
-  courseName?: string;
-  schoolName?: string;
-  teacherName?: string;
-  scheduledAt: string;
-  lessonNumber: number;
-  topic: string;
-  status: string;
-}
-
 interface ConfigurationData {
   schools: School[];
   courses: Course[];
   statuses: PipelineStatus[];
   teachers: Teacher[];
   groups: Group[];
-  lessons: Lesson[];
 }
 
 const schoolSchema = z.object({
@@ -195,18 +177,10 @@ const groupSchema = z.object({
   }
 });
 
-const lessonSchema = z.object({
-  groupId: z.string().min(1),
-  scheduledAt: z.string().min(1),
-  lessonNumber: z.coerce.number().int().min(1),
-  topic: z.string().trim().min(1),
-});
-
 type SchoolValues = z.infer<typeof schoolSchema>;
 type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
 type GroupValues = z.infer<typeof groupSchema>;
-type LessonValues = z.infer<typeof lessonSchema>;
 
 const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
   if (!Array.isArray(items)) return [];
@@ -249,13 +223,6 @@ const slugify = (value: string) => value
   .replace(/[^a-z0-9-]+/g, '')
   .replace(/^-+|-+$/g, '');
 
-const nextLessonNumber = (lessons: Lesson[], groupId: number) => {
-  const max = lessons.reduce((result, lesson: any) => (
-    Number(lesson.groupId) === groupId ? Math.max(result, Number(lesson.lessonNumber || 0)) : result
-  ), 0);
-  return max + 1;
-};
-
 function EmptyTableState({ title, description }: { title: string; description: string }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -274,7 +241,7 @@ export default function AcademySettings() {
   const routeSearch = useSearch();
   const requestedTab = new URLSearchParams(routeSearch).get('tab');
   const [activeTab, setActiveTab] = useState(
-    ['schools', 'courses', 'groups', 'pipeline', 'assignment'].includes(String(requestedTab))
+    ['schools', 'courses', 'groups', 'pipeline'].includes(String(requestedTab))
       ? String(requestedTab)
       : 'schools',
   );
@@ -364,16 +331,6 @@ export default function AcademySettings() {
     },
   });
 
-  const lessonForm = useForm<LessonValues>({
-    resolver: zodResolver(lessonSchema),
-    defaultValues: {
-      groupId: '',
-      scheduledAt: '',
-      lessonNumber: 1,
-      topic: '',
-    },
-  });
-
   const saveSchool = useMutation({
     mutationFn: (values: SchoolValues) => {
       const payload = {
@@ -449,8 +406,14 @@ export default function AcademySettings() {
         ? apiRequest('PATCH', `/api/academy/groups/${editingGroup.id}`, payload)
         : apiRequest('POST', '/api/academy/groups', payload);
     },
-    onSuccess: () => {
-      toast({ title: editingGroup ? t('groupUpdated') : t('groupCreated') });
+    onSuccess: (group: Group) => {
+      const teacher = configuration.data?.teachers.find(
+        (item) => item.id === Number(group.teacherId),
+      );
+      toast({
+        title: editingGroup ? t('groupUpdated') : t('groupCreated'),
+        description: teacher?.fullName ?? t('teacherAssignmentPendingDescription'),
+      });
       setGroupDialogOpen(false);
       setEditingGroup(null);
       setGroupSchedule([]);
@@ -524,40 +487,6 @@ export default function AcademySettings() {
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
-  });
-
-  const createLesson = useMutation({
-    mutationFn: (values: LessonValues) => {
-      const group = configuration.data?.groups.find((item) => item.id === Number(values.groupId));
-      if (!group) throw new Error(t('selectGroup'));
-      const course = configuration.data?.courses.find((item) => item.id === group.courseId);
-      return apiRequest('POST', '/api/academy/lessons', {
-        groupId: group.id,
-        courseId: group.courseId,
-        schoolId: group.schoolId,
-        lessonNumber: values.lessonNumber,
-        topic: values.topic,
-        scheduledAt: values.scheduledAt,
-        durationMinutes: course?.lessonDurationMinutes ?? 120,
-        status: 'scheduled',
-      });
-    },
-    onSuccess: (lesson) => {
-      const teacher = configuration.data?.teachers.find((item) => item.id === Number(lesson.teacherId));
-      toast({
-        title: t('teacherAssigned'),
-        description: teacher?.fullName ?? t('teacherAssignedAutomatically'),
-      });
-      lessonForm.reset({ groupId: '', scheduledAt: '', lessonNumber: 1, topic: '' });
-      invalidate();
-    },
-    onError: (error: Error) => toast({
-      title: error.message === 'noAvailableTeacher' ? t('noAvailableTeacher') : t('error'),
-      description: error.message === 'noAvailableTeacher'
-        ? t('noAvailableTeacherDescription')
-        : error.message,
-      variant: 'destructive',
-    }),
   });
 
   const openSchool = (school?: School) => {
@@ -662,7 +591,6 @@ export default function AcademySettings() {
   );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
-  const lessons = configuration.data?.lessons ?? [];
 
   const schoolColumns: DataTableColumn<School>[] = [
     {
@@ -884,45 +812,6 @@ export default function AcademySettings() {
     },
   ];
 
-  const lessonColumns: DataTableColumn<Lesson>[] = [
-    {
-      key: 'scheduledAt',
-      header: t('dateTimeLabel'),
-      sortable: true,
-      accessor: (row) => new Date(row.scheduledAt).getTime(),
-      render: (row) => new Date(row.scheduledAt).toLocaleString('ru-RU', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }),
-    },
-    {
-      key: 'topic',
-      header: t('lessonColumn'),
-      sortable: true,
-      accessor: (row) => row.topic,
-      render: (row) => (
-        <div>
-          <p className="font-medium text-foreground">{row.topic}</p>
-          <p className="text-xs text-muted-foreground">{row.groupName} · {row.courseName}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'school',
-      header: t('school'),
-      accessor: (row) => row.schoolName ?? '',
-      render: (row) => row.schoolName ?? '—',
-    },
-    {
-      key: 'teacher',
-      header: t('teacher'),
-      accessor: (row) => row.teacherName ?? '',
-      render: (row) => row.teacherName
-        ? <Badge variant="secondary"><UserRoundCheck data-icon="inline-start" />{row.teacherName}</Badge>
-        : <Badge variant="outline">{t('notAssigned')}</Badge>,
-    },
-  ];
-
   if (configuration.isLoading) {
     return (
       <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6 lg:p-8">
@@ -970,9 +859,6 @@ export default function AcademySettings() {
           </TabsTrigger>
           <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <GitBranch />{t('pipelineStages')}
-          </TabsTrigger>
-          <TabsTrigger value="assignment" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <Bot />{t('autoAssignment')}
           </TabsTrigger>
         </TabsList>
 
@@ -1113,128 +999,6 @@ export default function AcademySettings() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="assignment" className="mt-0">
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('scheduleLesson')}</CardTitle>
-                <CardDescription>{t('autoAssignmentDescription')}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...lessonForm}>
-                  <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={lessonForm.handleSubmit((values) => createLesson.mutate(values))}>
-                    <FormField
-                      control={lessonForm.control}
-                      name="groupId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('group')}</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={(value) => {
-                              field.onChange(value);
-                              lessonForm.setValue('lessonNumber', nextLessonNumber(lessons, Number(value)));
-                            }}
-                          >
-                            <FormControl><SelectTrigger><SelectValue placeholder={t('selectGroup')} /></SelectTrigger></FormControl>
-                            <SelectContent>
-                              <SelectGroup>
-                                {groups.map((group) => (
-                                  <SelectItem key={group.id} value={String(group.id)}>
-                                    {group.name} · {group.courseName} · {group.schoolName ?? t('schoolNotSelected')}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={lessonForm.control}
-                      name="scheduledAt"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('dateTimeLabel')}</FormLabel>
-                          <FormControl><Input type="datetime-local" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={lessonForm.control}
-                      name="lessonNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('lessonNumber')}</FormLabel>
-                          <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={lessonForm.control}
-                      name="topic"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('lessonTopic')}</FormLabel>
-                          <FormControl><Input {...field} placeholder={t('lessonTopicPlaceholder')} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="flex justify-end md:col-span-2">
-                      <Button type="submit" disabled={createLesson.isPending}>
-                        <Bot data-icon="inline-start" />
-                        {createLesson.isPending ? t('assigningTeacher') : t('createAndAssign')}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('assignmentRules')}</CardTitle>
-                <CardDescription>{t('assignmentRulesDescription')}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                {[
-                  { icon: GraduationCap, title: t('teacherSkillMatch'), text: t('teacherSkillMatchDescription') },
-                  { icon: Clock3, title: t('teacherAvailability'), text: t('teacherAvailabilityDescription') },
-                  { icon: Building2, title: t('schoolCompatibility'), text: t('schoolCompatibilityDescription') },
-                  { icon: CalendarClock, title: t('lessonConflictCheck'), text: t('lessonConflictCheckDescription') },
-                ].map(({ icon: Icon, title, text }) => (
-                  <div key={title} className="flex gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                      <Icon className="text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{title}</p>
-                      <p className="text-xs leading-relaxed text-muted-foreground">{text}</p>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="mt-5">
-            <CardHeader>
-              <CardTitle>{t('recentAssignments')}</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                columns={lessonColumns}
-                data={[...lessons].sort((left, right) => new Date(right.scheduledAt).getTime() - new Date(left.scheduledAt).getTime()).slice(0, 12)}
-                keyExtractor={(row) => `lesson-${row.id}`}
-                emptyState={<EmptyTableState title={t('noLessons')} description={t('noLessonsDescription')} />}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
       <Dialog open={schoolDialogOpen} onOpenChange={setSchoolDialogOpen}>

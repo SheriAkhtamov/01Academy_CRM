@@ -539,6 +539,7 @@ const findTeacherForGroupSchedule = async (options: {
   schoolId: number;
   schedule: unknown;
   excludeGroupId?: number | null;
+  preferredTeacherId?: number | null;
 }) => {
   const requestedSchedule = normalizeScheduleItems(options.schedule);
   if (requestedSchedule.length === 0) return null;
@@ -550,8 +551,8 @@ const findTeacherForGroupSchedule = async (options: {
      FROM academy_teachers t
      WHERE t.status = 'active'
        AND t.course_ids @> $1::jsonb
-     ORDER BY active_groups, t.id`,
-    [JSON.stringify([options.courseId])],
+     ORDER BY CASE WHEN t.id = $2 THEN 0 ELSE 1 END, active_groups, t.id`,
+    [JSON.stringify([options.courseId]), options.preferredTeacherId ?? null],
   );
 
   const teacherIds = candidates.map((teacher) => Number(teacher.id));
@@ -1871,6 +1872,7 @@ router.patch('/teachers/me/availability', async (req, res) => {
       availability: safeJson(req.body.availability, []),
       schoolIds: safeJson(req.body.schoolIds, []),
     });
+    await reconcileAutomaticTeacherAssignments(teacherId);
     await createAudit(req, 'UPDATE_TEACHER_AVAILABILITY', 'academy_teacher', teacherId, teacher, oldTeacher);
     res.json(teacher);
   } catch (error: any) {
@@ -2627,9 +2629,58 @@ const prepareGroupMutation = async (options: {
       schoolId,
       schedule,
       excludeGroupId: options.excludeGroupId,
+      preferredTeacherId: Number(options.oldRow?.teacherId) || null,
     });
     options.values.teacherId = teacher ? Number(teacher.id) : null;
   }
+};
+
+const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) => {
+  const groups = await query<{ id: number }>(
+    `SELECT id
+     FROM academy_groups
+     WHERE status IN ('open', 'in_progress')
+       AND (teacher_id IS NULL OR teacher_id = $1)
+     ORDER BY created_at, id`,
+    [teacherId ?? null],
+  );
+
+  let updatedCount = 0;
+  for (const group of groups) {
+    try {
+      const updated = await withTransaction(async () => {
+        const lockedGroup = await queryOne(
+          `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
+          [group.id],
+        );
+        if (!lockedGroup) return false;
+
+        const values: Row = {};
+        await prepareGroupMutation({
+          values,
+          oldRow: lockedGroup,
+          excludeGroupId: Number(lockedGroup.id),
+          forceAutoAssign: true,
+        });
+        const previousTeacherId = Number(lockedGroup.teacherId) || null;
+        const nextTeacherId = Number(values.teacherId) || null;
+        if (previousTeacherId === nextTeacherId) return false;
+
+        await updateRow('academy_groups', Number(lockedGroup.id), {
+          teacherId: nextTeacherId,
+        });
+        return true;
+      });
+      if (updated) updatedCount += 1;
+    } catch (error) {
+      logger.warn('Skipped automatic teacher assignment reconciliation for group', {
+        groupId: group.id,
+        error,
+      });
+    }
+  }
+
+  return updatedCount;
 };
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
@@ -2761,6 +2812,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         })
         : await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
+      if (table === 'academy_teachers') {
+        await reconcileAutomaticTeacherAssignments(Number(row.id));
+      }
       res.status(201).json(row);
     } catch (error: any) {
       logger.error(`Failed to create ${path}`, { error });
@@ -2858,6 +2912,13 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           toStatus: row?.status ?? String(values.status),
           changedBy: req.user!.id,
           comment: nullableText(req.body.statusComment) ?? null });
+      }
+      if (
+        table === 'academy_teachers'
+        && ['courseIds', 'schoolIds', 'availability', 'schedule', 'status']
+          .some((field) => field in req.body)
+      ) {
+        await reconcileAutomaticTeacherAssignments(id);
       }
       await createAudit(req, `UPDATE_${table.toUpperCase()}`, table, id, row, oldRow);
       res.json(row);

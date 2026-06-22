@@ -37,7 +37,6 @@ import {
   UserCircle,
   SlidersHorizontal,
   KanbanSquare,
-  ShieldCheck,
   MessagesSquare,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -146,7 +145,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         {
           label: t('systemAdministration'),
           items: [
-            { name: t('administration'), href: '/admin', icon: ShieldCheck },
+            { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
             { name: t('employees'), href: '/employees', icon: Users },
             { name: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },

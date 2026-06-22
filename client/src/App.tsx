@@ -16,6 +16,7 @@ import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
+import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
 import ManagementBoard from '@/pages/management';
@@ -24,7 +25,7 @@ import { ThemeProvider } from '@/components/ux/ThemeProvider';
 function WorkspaceBasedHome() {
   const { user } = useAuth();
   switch (user?.workspace) {
-    case 'administration': return <Admin />;
+    case 'administration': return <AdminDashboardPage />;
     case 'sales': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
     case 'analytics': return <AnalyticsWorkspace />;
@@ -241,7 +242,7 @@ function Router() {
         )} />
         <Route path="/admin" component={() => (
           <WorkspaceGuard workspace="administration">
-            <Admin />
+            <AdminDashboardPage />
           </WorkspaceGuard>
         )} />
         <Route path="/employees" component={() => (

@@ -447,7 +447,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         title={isEmployeesPage ? t('employees') : t('administration')}
         subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminControlCenterSubtitle')}
         breadcrumbs={isEmployeesPage
-          ? [{ label: t('systemAdministration'), href: '/admin' }, { label: t('employees') }]
+          ? [{ label: t('adminDashboardTitle'), href: '/admin' }, { label: t('employees') }]
           : [{ label: t('administration') }]}
         actions={isEmployeesPage ? (
           <Button

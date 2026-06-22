@@ -1788,6 +1788,199 @@ const buildAnalytics = async () => {
     data };
 };
 
+const buildAdministrationDashboard = async () => {
+  const [analytics, users] = await Promise.all([
+    buildAnalytics(),
+    storage.getUsers(),
+  ]);
+  const data = analytics.data;
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const activeGroups = data.groups.filter((group) => ['open', 'in_progress'].includes(group.status));
+  const activeTeachers = data.teachers.filter((teacher) => teacher.status === 'active');
+  const activeUsers = users.filter((user) => user.isActive);
+  const onlineUsers = activeUsers.filter((user) => user.isOnline);
+
+  const percentageChange = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return Number((((current - previous) / previous) * 100).toFixed(1));
+  };
+
+  const inRange = (value: unknown, start: Date, end: Date) => {
+    if (!value) return false;
+    const date = new Date(String(value));
+    return !Number.isNaN(date.getTime()) && date >= start && date < end;
+  };
+
+  const paidPayments = data.payments.filter(
+    (payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid' && payment.paidAt,
+  );
+  const currentMonthRevenue = paidPayments
+    .filter((payment) => inRange(payment.paidAt, currentMonthStart, nextMonthStart))
+    .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
+  const previousMonthRevenue = paidPayments
+    .filter((payment) => inRange(payment.paidAt, previousMonthStart, currentMonthStart))
+    .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
+  const currentMonthLeads = data.leads.filter(
+    (lead) => inRange(lead.createdAt, currentMonthStart, nextMonthStart),
+  ).length;
+  const previousMonthLeads = data.leads.filter(
+    (lead) => inRange(lead.createdAt, previousMonthStart, currentMonthStart),
+  ).length;
+  const currentMonthStudents = data.students.filter(
+    (student) => inRange(student.enrolledAt || student.createdAt, currentMonthStart, nextMonthStart),
+  ).length;
+  const previousMonthStudents = data.students.filter(
+    (student) => inRange(student.enrolledAt || student.createdAt, previousMonthStart, currentMonthStart),
+  ).length;
+
+  const monthStarts = Array.from({ length: 6 }, (_, index) =>
+    new Date(now.getFullYear(), now.getMonth() - (5 - index), 1));
+  const trends = monthStarts.map((start) => {
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    return {
+      month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+      revenue: paidPayments
+        .filter((payment) => inRange(payment.paidAt, start, end))
+        .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
+      students: data.students.filter(
+        (student) => inRange(student.enrolledAt || student.createdAt, start, end),
+      ).length,
+      leads: data.leads.filter((lead) => inRange(lead.createdAt, start, end)).length,
+    };
+  });
+
+  const courseLoad = data.courses
+    .map((course) => {
+      const courseGroups = activeGroups.filter((group) => Number(group.courseId) === Number(course.id));
+      const capacity = courseGroups.reduce((sum, group) => sum + Number(group.maxStudents || 0), 0);
+      const students = data.students.filter(
+        (student) => Number(student.courseId) === Number(course.id) && student.status === 'studying',
+      ).length;
+      return {
+        courseId: course.id,
+        courseName: course.name,
+        groups: courseGroups.length,
+        students,
+        capacity,
+        loadPercent: capacity > 0 ? Math.min(100, Math.round((students / capacity) * 100)) : 0,
+      };
+    })
+    .filter((course) => course.groups > 0 || course.students > 0)
+    .sort((left, right) => right.students - left.students)
+    .slice(0, 6);
+
+  const todayStart = startOfDay(now);
+  const tomorrowStart = addDays(todayStart, 1);
+  const dayAfterTomorrowStart = addDays(todayStart, 2);
+  const scheduledLessons = data.lessons.filter((lesson) =>
+    lesson.status === 'scheduled' && lesson.scheduledAt && new Date(lesson.scheduledAt) >= now);
+  const upcomingLessons = [...scheduledLessons]
+    .sort((left, right) =>
+      new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime())
+    .slice(0, 5)
+    .map((lesson) => ({
+      id: lesson.id,
+      topic: lesson.topic,
+      groupName: lesson.groupName,
+      courseName: lesson.courseName,
+      teacherName: lesson.teacherName,
+      schoolName: lesson.schoolName,
+      scheduledAt: lesson.scheduledAt,
+    }));
+
+  const recentActivity = [
+    ...data.payments
+      .filter((payment) => payment.status === 'paid' && payment.paidAt)
+      .map((payment) => ({
+        id: `payment-${payment.id}`,
+        type: 'payment',
+        occurredAt: payment.paidAt,
+        subject: payment.studentName || payment.leadName,
+        amountUzs: Number(payment.amountUzs || 0),
+      })),
+    ...data.leads.map((lead) => ({
+      id: `lead-${lead.id}`,
+      type: 'lead',
+      occurredAt: lead.createdAt,
+      subject: lead.contactName,
+      meta: lead.courseName,
+    })),
+    ...data.students.map((student) => ({
+      id: `student-${student.id}`,
+      type: 'student',
+      occurredAt: student.enrolledAt || student.createdAt,
+      subject: student.studentName || student.contactName,
+      meta: student.courseName,
+    })),
+    ...data.groups.map((group) => ({
+      id: `group-${group.id}`,
+      type: 'group',
+      occurredAt: group.createdAt,
+      subject: group.name,
+      meta: group.courseName,
+    })),
+  ]
+    .filter((item) => item.occurredAt)
+    .sort((left, right) =>
+      new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
+    .slice(0, 6);
+
+  const overdueAmount = analytics.risks.overduePayments.reduce(
+    (sum: number, payment: Row) => sum + Number(payment.amountUzs || 0),
+    0,
+  );
+  const groupsWithoutTeacher = activeGroups.filter((group) => !group.teacherId).length;
+  const totalActiveCapacity = activeGroups.reduce(
+    (sum, group) => sum + Number(group.maxStudents || 0),
+    0,
+  );
+  const occupiedActiveSeats = activeGroups.reduce(
+    (sum, group) => sum + Number(group.currentStudents || 0),
+    0,
+  );
+
+  return {
+    summary: {
+      ...analytics.summary,
+      activeGroups: activeGroups.length,
+      activeTeachers: activeTeachers.length,
+      activeUsers: activeUsers.length,
+      totalUsers: users.length,
+      onlineUsers: onlineUsers.length,
+      newStudentsMonth: currentMonthStudents,
+      groupLoadPercent: totalActiveCapacity > 0
+        ? Math.round((occupiedActiveSeats / totalActiveCapacity) * 100)
+        : 0,
+      lessonsToday: scheduledLessons.filter((lesson) =>
+        inRange(lesson.scheduledAt, todayStart, tomorrowStart)).length,
+      lessonsTomorrow: scheduledLessons.filter((lesson) =>
+        inRange(lesson.scheduledAt, tomorrowStart, dayAfterTomorrowStart)).length,
+      revenueChangePercent: percentageChange(currentMonthRevenue, previousMonthRevenue),
+      leadsChangePercent: percentageChange(currentMonthLeads, previousMonthLeads),
+      studentsChangePercent: percentageChange(currentMonthStudents, previousMonthStudents),
+      overdueAmount,
+      groupsWithoutTeacher,
+    },
+    trends,
+    funnel: analytics.funnel,
+    courseLoad,
+    targets: analytics.targets,
+    alerts: {
+      overduePayments: analytics.risks.overduePayments.length,
+      lowAttendanceStudents: analytics.risks.lowAttendanceStudents.length,
+      overdueTasks: analytics.risks.overdueTasks.length,
+      longThinkingLeads: analytics.risks.longThinkingLeads.length,
+      groupsWithoutTeacher,
+    },
+    recentActivity,
+    upcomingLessons,
+    generatedAt: now.toISOString(),
+  };
+};
+
 const getMarketingWorkspaceDataset = async () => {
   const [sources, leads, students, expenses, referrals] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
@@ -1840,6 +2033,16 @@ const createCsv = (rows: Row[]) => {
   };
   return [columns.join(','), ...rows.map((row) => columns.map((column) => escape(row[column])).join(','))].join('\n');
 };
+
+router.get('/workspaces/administration', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    res.json(await buildAdministrationDashboard());
+  } catch (error) {
+    logger.error('Failed to fetch administration dashboard', { error });
+    res.status(500).json({ error: 'Failed to fetch administration dashboard' });
+  }
+});
 
 router.get('/workspaces/sales', async (req, res) => {
   if (!ensureSalesWorkspaceAccess(req, res)) return;

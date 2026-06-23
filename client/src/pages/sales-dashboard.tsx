@@ -246,6 +246,7 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const isAdministrationWorkspace = user?.workspace === 'administration';
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
@@ -537,20 +538,25 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }
 
   const sectionTitle: Record<SalesSection, string> = {
-    overview: `${t('welcome')}, ${user?.fullName || t('manager')}!`,
+    overview: isAdministrationWorkspace
+      ? t('salesWorkspace')
+      : `${t('welcome')}, ${user?.fullName || t('manager')}!`,
     pipeline: t('pipeline'),
     schedule: t('salesSchedule'),
-    students: t('myStudents'),
-    tasks: t('myTasks'),
+    students: isAdministrationWorkspace ? t('allClients') : t('myStudents'),
+    tasks: isAdministrationWorkspace ? t('allTasks') : t('myTasks'),
   };
+  const salesWorkspaceDescription = isAdministrationWorkspace
+    ? t('globalSalesWorkspaceDescription')
+    : t('salesManagerWorkspace');
 
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={section === 'schedule' ? t('salesScheduleSubtitle') : t('salesManagerWorkspace')}
+        subtitle={section === 'schedule' ? t('salesScheduleSubtitle') : salesWorkspaceDescription}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/sales' },
+          { label: t('salesWorkspace'), href: '/sales' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
@@ -567,11 +573,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       {section === 'overview' ? (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-            <KpiCard title={t('myNewLeadsWeek')} value={managerStats.newLeadsWeek} detail={t('last7Days')} icon={Megaphone} tone="blue" />
-            <KpiCard title={t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
-            <KpiCard title={t('myStudents')} value={managerStats.totalStudents} detail={t('assignedToMe')} icon={GraduationCap} tone="green" />
-            <KpiCard title={t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
-            <KpiCard title={t('overdueTasks')} value={managerStats.overdueTasks} detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')} icon={AlertCircle} tone={managerStats.overdueTasks > 0 ? 'red' : 'green'} />
+            <KpiCard title={isAdministrationWorkspace ? t('newLeadsWeek') : t('myNewLeadsWeek')} value={managerStats.newLeadsWeek} detail={t('last7Days')} icon={Megaphone} tone="blue" />
+            <KpiCard title={isAdministrationWorkspace ? t('activeLeads') : t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
+            <KpiCard title={isAdministrationWorkspace ? t('allClients') : t('myStudents')} value={managerStats.totalStudents} detail={isAdministrationWorkspace ? t('allManagers') : t('assignedToMe')} icon={GraduationCap} tone="green" />
+            <KpiCard title={isAdministrationWorkspace ? t('conversionRate') : t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
+            <KpiCard title={isAdministrationWorkspace ? t('allTasks') : t('overdueTasks')} value={managerStats.overdueTasks} detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')} icon={AlertCircle} tone={managerStats.overdueTasks > 0 ? 'red' : 'green'} />
           </div>
           <OverviewTab
             t={t}
@@ -583,6 +589,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             myTasks={myTasks}
             dateTime={dateTime}
             openLead={openLead}
+            noTasksText={isAdministrationWorkspace ? t('noSalesTasks') : t('noTasksAssigned')}
           />
         </div>
       ) : null}
@@ -604,6 +611,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             return true;
           }}
           isPending={updateLead.isPending}
+          showManager={isAdministrationWorkspace}
         />
       ) : null}
 
@@ -628,6 +636,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           openStudent={openStudent}
           openLead={openLead}
           onStudentSheetOpenChange={handleStudentSheetState}
+          title={sectionTitle.students}
+          showManager={isAdministrationWorkspace}
         />
       ) : null}
 
@@ -638,6 +648,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           updateTask={updateTask}
           dateTime={dateTime}
           openLead={(leadId) => openLead(leadId, 'tasks')}
+          title={sectionTitle.tasks}
+          noTasksText={isAdministrationWorkspace ? t('noSalesTasks') : t('noTasksAssigned')}
+          showResponsible={isAdministrationWorkspace}
         />
       ) : null}
 
@@ -691,6 +704,7 @@ function OverviewTab({
   myTasks,
   dateTime,
   openLead,
+  noTasksText,
 }: {
   t: (key: TranslationKey) => string;
   payments: any[];
@@ -707,6 +721,7 @@ function OverviewTab({
   myTasks: Task[];
   dateTime: (value: string | null | undefined) => string;
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
+  noTasksText: string;
 }) {
   const priorityTasks = myTasks
     .filter((task) => task.status !== 'done')
@@ -729,7 +744,7 @@ function OverviewTab({
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {priorityTasks.length === 0 ? (
-            <EmptyState title={t('noTasks')} text={t('noTasksAssigned')} icon={ClipboardList} />
+            <EmptyState title={t('noTasks')} text={noTasksText} icon={ClipboardList} />
           ) : (
             priorityTasks.map((task) => (
               <button
@@ -764,6 +779,7 @@ function PipelineTab({
   onQuickAction,
   onStatusChange,
   isPending,
+  showManager,
 }: {
   t: (key: TranslationKey) => string;
   leadStatusName: (code: string) => string;
@@ -773,6 +789,7 @@ function PipelineTab({
   onQuickAction: (action: QuickAction, lead: Lead) => void;
   onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
   isPending: boolean;
+  showManager: boolean;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -792,6 +809,7 @@ function PipelineTab({
         onLeadClick={(lead) => onLeadClick(lead as Lead)}
         isPending={isPending}
         showPaymentAction
+        showManager={showManager}
       />
     </div>
   );
@@ -808,6 +826,8 @@ function StudentsTab({
   openStudent,
   openLead,
   onStudentSheetOpenChange,
+  title,
+  showManager,
 }: {
   t: (key: TranslationKey) => string;
   myStudents: Student[];
@@ -819,6 +839,8 @@ function StudentsTab({
   openStudent: (student: Student) => void;
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
   onStudentSheetOpenChange: (open: boolean) => void;
+  title: string;
+  showManager: boolean;
 }) {
   const columns = [
     {
@@ -847,6 +869,13 @@ function StudentsTab({
       accessor: (student: Student) => student.courseName,
       render: (student: Student) => <span className="text-slate-600">{student.courseName || t('noCourse')}</span>,
     },
+    ...(showManager ? [{
+      key: 'managerName',
+      header: t('manager'),
+      sortable: true,
+      accessor: (student: Student) => student.managerName || t('noData'),
+      render: (student: Student) => <span className="text-slate-600">{student.managerName || t('noData')}</span>,
+    }] : []),
     {
       key: 'attendancePercent',
       header: t('attendanceLabel'),
@@ -896,7 +925,7 @@ function StudentsTab({
     <div className="space-y-5">
       <Card className="hover-lift">
         <CardHeader className="pb-4">
-          <CardTitle>{t('myStudents')}</CardTitle>
+          <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <DataTable
@@ -930,12 +959,18 @@ function TasksTab({
   updateTask,
   dateTime,
   openLead,
+  title,
+  noTasksText,
+  showResponsible,
 }: {
   t: (key: TranslationKey) => string;
   myTasks: Task[];
   updateTask: any;
   dateTime: (v: string | null | undefined) => string;
   openLead: (leadId: number) => void;
+  title: string;
+  noTasksText: string;
+  showResponsible: boolean;
 }) {
   const now = new Date();
   const sortedTasks = [...myTasks].sort((a, b) => {
@@ -950,11 +985,11 @@ function TasksTab({
     <div className="space-y-5">
       <Card className="hover-lift">
         <CardHeader className="pb-4">
-          <CardTitle>{t('myTasks')}</CardTitle>
+          <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2.5">
           {sortedTasks.length === 0 && (
-            <EmptyState title={t('noTasks')} text={t('noTasksAssigned')} icon={ClipboardList} />
+            <EmptyState title={t('noTasks')} text={noTasksText} icon={ClipboardList} />
           )}
           {sortedTasks.map((task) => {
             const isOverdue = task.deadlineAt && new Date(task.deadlineAt) < now && task.status !== 'done';
@@ -1000,6 +1035,9 @@ function TasksTab({
                 </div>
                 {task.description && (
                   <p className="mt-1 text-xs text-slate-500 ml-6">{task.description}</p>
+                )}
+                {showResponsible && task.responsibleName && (
+                  <p className="mt-1 text-xs text-slate-500 ml-6">{t('managerLabel')} {task.responsibleName}</p>
                 )}
                 <div className="flex items-center gap-3 mt-1.5 ml-6">
                   {task.deadlineAt && (

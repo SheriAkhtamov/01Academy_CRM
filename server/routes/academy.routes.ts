@@ -64,8 +64,9 @@ const transactionContext = new AsyncLocalStorage<PoolClient>();
 const ADMINISTRATION_WORKSPACES = new Set(['administration']);
 const FINANCE_WORKSPACES = new Set(['analytics']);
 const OPERATIONS_WORKSPACES = new Set(['analytics']);
-const MARKETING_WORKSPACES = new Set(['marketing']);
-const SALES_WORKSPACES = new Set(['sales']);
+const ANALYTICS_WORKSPACES = new Set(['analytics', 'administration']);
+const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
+const SALES_WORKSPACES = new Set(['sales', 'administration']);
 const REPORT_WORKSPACES = new Set(['administration', 'analytics', 'marketing']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
 const SOURCE_MANAGEMENT_WORKSPACES = new Set(['administration', 'marketing']);
@@ -292,7 +293,7 @@ const ensureTeacherWorkspaceAccess = (req: any, res: any) =>
   ensureWorkspaceAccess(req, res, new Set(['teacher']), 'Teacher workspace access required');
 
 const ensureAnalyticsWorkspaceAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, new Set(['analytics']), 'Analytics workspace access required');
+  ensureWorkspaceAccess(req, res, ANALYTICS_WORKSPACES, 'Analytics workspace access required');
 
 const ensureMarketingWorkspaceAccess = (req: any, res: any) =>
   ensureWorkspaceAccess(req, res, MARKETING_WORKSPACES, 'Marketing workspace access required');
@@ -2976,7 +2977,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   };
 
   if (table === 'academy_tasks') {
-    if (workspace === 'analytics') return { whereSql: '', params };
+    if (workspace === 'analytics' || workspace === 'administration') return { whereSql: '', params };
     if (!['sales', 'teacher', 'marketing'].includes(workspace)) {
       return { whereSql: 'FALSE', params, denied: true };
     }
@@ -3156,7 +3157,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireOperations && req.user?.workspace === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
-    if (table === 'academy_tasks' && req.user?.workspace !== 'analytics') {
+    if (table === 'academy_tasks' && !['analytics', 'administration'].includes(String(req.user?.workspace))) {
       const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
       if (Number(responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
@@ -3254,7 +3255,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
       const oldRow = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
-      if (table === 'academy_tasks' && req.user?.workspace !== 'analytics' && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
+      if (table === 'academy_tasks' && !['analytics', 'administration'].includes(String(req.user?.workspace)) && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
       }
       const values: Row = {};

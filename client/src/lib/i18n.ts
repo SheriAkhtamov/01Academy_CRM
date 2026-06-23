@@ -844,6 +844,19 @@ export const translations = {
     en: 'The lead and open related tasks will be transferred to {manager}.',
     ru: 'Лид и открытые связанные задачи будут переданы менеджеру {manager}.',
   },
+  globalSalesWorkspaceDescription: {
+    en: 'All sales managers, leads, clients, and tasks.',
+    ru: 'Все менеджеры, лиды, клиенты и задачи отдела продаж.',
+  },
+  salesWorkspace: { en: 'Sales workspace', ru: 'Рабочее место продаж' },
+  newLeadsWeek: { en: 'New leads this week', ru: 'Новые лиды за неделю' },
+  activeLeads: { en: 'Active leads', ru: 'Активные лиды' },
+  allClients: { en: 'All clients', ru: 'Все клиенты' },
+  allTasks: { en: 'All tasks', ru: 'Все задачи' },
+  noSalesTasks: {
+    en: 'There are no sales-team tasks yet.',
+    ru: 'Задач отдела продаж пока нет.',
+  },
   leadAssignment: { en: 'Lead assignment', ru: 'Распределение лидов' },
   leadAssignmentSubtitle: {
     en: 'Review ownership, reassign individual leads, or transfer several leads at once.',

@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, type AcademyWorkspace } from '@shared/academy';
 import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
@@ -63,7 +63,7 @@ function WorkspaceGuard({
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
-  if (!user || user.workspace !== workspace) {
+  if (!user || !canAccessAcademyWorkspace(user.workspace, workspace)) {
     return <AccessDenied />;
   }
   return <>{children}</>;

@@ -28,9 +28,16 @@ describe("01 Academy business rules", () => {
     ]);
   });
 
-  it("keeps each employee inside the assigned workspace", () => {
+  it("gives administration access to the supervised operational modules", () => {
     expect(canAccessAcademyWorkspace("administration", "administration")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(false);
+    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "analytics")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(false);
+    expect(canAccessAcademyWorkspace("administration", "management")).toBe(false);
+  });
+
+  it("keeps other employees inside the assigned workspace", () => {
     expect(canAccessAcademyWorkspace("sales", "sales")).toBe(true);
     expect(canAccessAcademyWorkspace("sales", "management")).toBe(false);
   });

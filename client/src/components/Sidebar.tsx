@@ -153,6 +153,42 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('settings'), href: '/settings', icon: Settings },
           ],
         },
+        {
+          label: t('salesDepartmentWorkspace'),
+          items: [
+            { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
+            { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
+            { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
+            { name: t('allClients'), href: '/sales/clients', icon: GraduationCap },
+            { name: t('allTasks'), href: '/sales/tasks', icon: ListChecks },
+            { name: t('instagramMessages'), href: '/sales/messages', icon: MessagesSquare },
+          ],
+        },
+        {
+          label: t('marketingTab'),
+          items: [
+            { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
+            { name: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
+            { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
+            { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
+            { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
+            { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
+            { name: t('reports'), href: '/marketing-workspace/reports', icon: ListChecks },
+          ],
+        },
+        {
+          label: t('navAnalytics'),
+          items: [
+            { name: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
+            { name: t('salesPipeline'), href: '/analytics-workspace/funnel', icon: Flame },
+            { name: t('byCourses'), href: '/analytics-workspace/courses', icon: BookOpen },
+            { name: t('bySources'), href: '/analytics-workspace/sources', icon: Megaphone },
+            { name: t('navTeachers'), href: '/analytics-workspace/teachers', icon: UserRoundCheck },
+            { name: t('navGroups'), href: '/analytics-workspace/groups', icon: Layers3 },
+            { name: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
+            { name: t('cohortsTab'), href: '/analytics-workspace/cohorts', icon: Users },
+          ],
+        },
       ];
     }
 

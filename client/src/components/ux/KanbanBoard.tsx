@@ -65,6 +65,7 @@ interface KanbanBoardProps {
   onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction?: boolean;
+  showManager?: boolean;
 }
 
 interface LeadCardContentProps {
@@ -75,6 +76,7 @@ interface LeadCardContentProps {
   onQuickAction?: KanbanBoardProps['onQuickAction'];
   isPending?: boolean;
   showPaymentAction: boolean;
+  showManager: boolean;
   t: (key: TranslationKey) => string;
 }
 
@@ -86,6 +88,7 @@ function LeadCardContent({
   onQuickAction,
   isPending,
   showPaymentAction,
+  showManager,
   t,
 }: LeadCardContentProps) {
   const nextStatuses = statuses.filter((status) => status.sortOrder > currentStatus.sortOrder);
@@ -162,6 +165,7 @@ function LeadCardContent({
         {lead.courseName ? <Badge variant="secondary">{lead.courseName}</Badge> : null}
         {lead.sourceName ? <Badge variant="outline">{lead.sourceName}</Badge> : null}
         {lead.studentAge ? <Badge variant="outline">{lead.studentAge} {t('years')}</Badge> : null}
+        {showManager && lead.managerName ? <Badge variant="outline">{t('managerLabel')} {lead.managerName}</Badge> : null}
       </div>
 
       <div
@@ -258,6 +262,7 @@ interface KanbanColumnProps {
   onQuickAction?: KanbanBoardProps['onQuickAction'];
   isPending?: boolean;
   showPaymentAction: boolean;
+  showManager: boolean;
   t: (key: TranslationKey) => string;
   onLeadClick?: KanbanBoardProps['onLeadClick'];
 }
@@ -270,6 +275,7 @@ function KanbanColumn({
   onQuickAction,
   isPending,
   showPaymentAction,
+  showManager,
   t,
   onLeadClick,
 }: KanbanColumnProps) {
@@ -311,6 +317,7 @@ function KanbanColumn({
             onQuickAction={onQuickAction}
             isPending={isPending}
             showPaymentAction={showPaymentAction}
+            showManager={showManager}
             t={t}
             onLeadClick={onLeadClick}
           />
@@ -336,6 +343,7 @@ export function KanbanBoard({
   onLeadClick,
   isPending,
   showPaymentAction = true,
+  showManager = false,
 }: KanbanBoardProps) {
   const { t } = useTranslation();
   const [boardLeads, setBoardLeads] = useState(leads);
@@ -448,6 +456,7 @@ export function KanbanBoard({
                 onQuickAction={onQuickAction}
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}
+                showManager={showManager}
                 t={t}
                 onLeadClick={onLeadClick}
               />
@@ -464,6 +473,7 @@ export function KanbanBoard({
                 onMove={() => undefined}
                 onQuickAction={undefined}
                 showPaymentAction={showPaymentAction}
+                showManager={showManager}
                 t={t}
               />
             </div>

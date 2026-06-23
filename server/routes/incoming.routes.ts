@@ -132,8 +132,11 @@ router.post('/chatplace', async (req, res) => {
       const duplicate = await findIncomingDuplicate(client, phone, messenger);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
-      const { rows: sourceRows } = await client.query(`SELECT id FROM academy_lead_sources WHERE code='instagram_dm' LIMIT 1`);
-      const sourceId = sourceRows[0]?.id ?? (await fallbackSourceId(client));
+      const sourceId = await ensureIncomingSourceId(client, {
+        code: 'instagram_dm',
+        name: 'Instagram Direct',
+        channel: 'instagram',
+      });
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
@@ -185,8 +188,11 @@ router.post('/google-forms', async (req, res) => {
       const duplicate = await findIncomingDuplicate(client, phone);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
-      const { rows: sourceRows } = await client.query(`SELECT id FROM academy_lead_sources WHERE code='website' LIMIT 1`);
-      const sourceId = sourceRows[0]?.id ?? (await fallbackSourceId(client));
+      const sourceId = await ensureIncomingSourceId(client, {
+        code: 'website',
+        name: 'Website',
+        channel: 'website',
+      });
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
@@ -356,14 +362,31 @@ router.post('/bank', async (req, res) => {
   }
 });
 
-const fallbackSourceId = async (executor: QueryExecutor = pool): Promise<number> => {
-  const { rows } = await executor.query(`SELECT id FROM academy_lead_sources WHERE code='organic' LIMIT 1`);
-  if (rows[0]?.id) return Number(rows[0].id);
+const ensureIncomingSourceId = async (
+  executor: QueryExecutor,
+  source: { code: string; name: string; channel: string },
+): Promise<number> => {
   const { rows: created } = await executor.query(
-    `INSERT INTO academy_lead_sources (code, name, channel, is_system, is_active) VALUES ('organic','Organic','organic',true,true) RETURNING id`,
+    `INSERT INTO academy_lead_sources (code, name, channel, is_system, is_active)
+     VALUES ($1, $2, $3, true, true)
+     ON CONFLICT (code) DO UPDATE
+     SET name = EXCLUDED.name,
+         channel = EXCLUDED.channel,
+         is_system = true,
+         is_active = true,
+         updated_at = NOW()
+     RETURNING id`,
+    [source.code, source.name, source.channel],
   );
   return Number(created[0].id);
 };
+
+const fallbackSourceId = (executor: QueryExecutor = pool): Promise<number> =>
+  ensureIncomingSourceId(executor, {
+    code: 'organic',
+    name: 'Organic',
+    channel: 'organic',
+  });
 
 const logIntegration = async (provider: string, direction: string, status: string, payload: unknown) => {
   try {

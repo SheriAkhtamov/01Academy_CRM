@@ -4,7 +4,6 @@ import bcrypt from 'bcrypt';
 import { pool } from '../server/db';
 import {
   DEFAULT_COURSES,
-  DEFAULT_LEAD_SOURCES,
   LEAD_STATUSES,
 } from '../shared/academy';
 
@@ -74,18 +73,6 @@ async function seedStatuses() {
   console.log(`[ok] lead statuses ensured (${LEAD_STATUSES.length})`);
 }
 
-async function seedSources() {
-  for (const code of DEFAULT_LEAD_SOURCES) {
-    if (await exists('academy_lead_sources', 'code = $1', [code])) continue;
-    await exec(
-      `INSERT INTO academy_lead_sources (code, name, channel, is_system, is_active)
-       VALUES ($1,$2,$3,true,true)`,
-      [code, code, code.split('_')[0]],
-    );
-  }
-  console.log(`[ok] lead sources ensured (${DEFAULT_LEAD_SOURCES.length})`);
-}
-
 async function seedCourses() {
   for (const c of DEFAULT_COURSES) {
     if (await exists('academy_courses', 'slug = $1', [c.slug])) continue;
@@ -108,7 +95,6 @@ async function main() {
   try {
     await seedSuperAdmin();
     await seedStatuses();
-    await seedSources();
     await seedCourses();
     const r = await exec(
       `SELECT

@@ -141,22 +141,6 @@ export const DEFAULT_COURSES = [
   },
 ] as const;
 
-export const DEFAULT_LEAD_SOURCES = [
-  "instagram_dm",
-  "instagram_ad_default",
-  "instagram_reels",
-  "tiktok",
-  "telegram_channel",
-  "telegram_chat",
-  "telegram_ad",
-  "blogger_default",
-  "school_default",
-  "event_default",
-  "referral_default",
-  "website",
-  "organic",
-] as const;
-
 export function suggestCourseSlugByAge(age?: number | null): string | null {
   if (!age || age < 1) return null;
   if (age <= 10) return "ai-kids";

@@ -3327,6 +3327,7 @@ const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) =
 
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
+  listWhere?: string;
   allowedWorkspaces?: Set<string>;
   requireAdministration?: boolean;
   requireFinance?: boolean;
@@ -3342,7 +3343,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     try {
       const scope = await buildCrudScope(req, table);
       if (scope.denied) return res.status(403).json({ error: `${path} access required` });
-      const whereSql = scope.whereSql ? `WHERE ${scope.whereSql}` : '';
+      const filters = [scope.whereSql, options.listWhere].filter(Boolean);
+      const whereSql = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
       const rows = await query(
         `SELECT * FROM ${quoteIdent(table)} ${whereSql} ORDER BY ${options.orderBy ?? 'created_at DESC, id DESC'}`,
         scope.params,
@@ -4135,7 +4137,11 @@ registerSimpleCrud('groups', 'academy_groups', [
 
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
-], { orderBy: 'name', allowedWorkspaces: SOURCE_MANAGEMENT_WORKSPACES });
+], {
+  orderBy: 'name',
+  listWhere: 'is_active = true',
+  allowedWorkspaces: SOURCE_MANAGEMENT_WORKSPACES,
+});
 
 registerSimpleCrud('lessons', 'academy_lessons', [
   'groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',

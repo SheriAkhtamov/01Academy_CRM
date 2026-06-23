@@ -28,11 +28,11 @@ describe("01 Academy business rules", () => {
     ]);
   });
 
-  it("gives administration access to the supervised operational modules", () => {
+  it("keeps administration inside its own workspace", () => {
     expect(canAccessAcademyWorkspace("administration", "administration")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "analytics")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(false);
+    expect(canAccessAcademyWorkspace("administration", "analytics")).toBe(false);
+    expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(false);
     expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(false);
     expect(canAccessAcademyWorkspace("administration", "management")).toBe(false);
   });
@@ -82,6 +82,12 @@ describe("01 Academy business rules", () => {
       courseId: 1,
       enrolledGroupId: 10,
     })).toBeNull();
+    expect(validateLeadForStatusChange({
+      nextStatus: "paid",
+      studentName: "Student",
+      studentAge: 12,
+      courseId: 1,
+    })).toBe("groupRequiredForEnrollment");
   });
 
   it("keeps paid clients terminal and requires a payment to enter paid", () => {

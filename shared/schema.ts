@@ -77,6 +77,24 @@ export const academySchools = pgTable("academy_schools", {
   codeUnique: uniqueIndex("academy_schools_code_unique").on(table.code),
 }));
 
+/**
+ * Bookable physical resources. The legacy academy_schools.rooms JSON is kept
+ * solely to allow existing installations to migrate without losing data.
+ */
+export const academyRooms = pgTable("academy_rooms", {
+  id: serial("id").primaryKey(),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  capacity: integer("capacity").notNull().default(12),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  schoolIdx: index("academy_rooms_school_idx").on(table.schoolId),
+  activeIdx: index("academy_rooms_active_idx").on(table.schoolId, table.isActive),
+  capacityCheck: check("academy_rooms_capacity_check", sql`${table.capacity} > 0`),
+}));
+
 export const academyCourses = pgTable("academy_courses", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -147,6 +165,7 @@ export const academyGroups = pgTable("academy_groups", {
   name: varchar("name", { length: 255 }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "restrict" }).notNull(),
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "restrict" }).notNull(),
+  roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }).notNull(),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   maxStudents: integer("max_students").notNull().default(12),
@@ -158,6 +177,7 @@ export const academyGroups = pgTable("academy_groups", {
 }, (table) => ({
   courseIdx: index("academy_groups_course_idx").on(table.courseId),
   schoolIdx: index("academy_groups_school_idx").on(table.schoolId),
+  roomIdx: index("academy_groups_room_idx").on(table.roomId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
   capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} BETWEEN 1 AND 12`),
 }));
@@ -288,6 +308,7 @@ export const academyLessons = pgTable("academy_lessons", {
   groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
+  roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }).notNull(),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   lessonNumber: integer("lesson_number").notNull(),
   topic: varchar("topic", { length: 255 }).notNull(),
@@ -300,6 +321,7 @@ export const academyLessons = pgTable("academy_lessons", {
 }, (table) => ({
   groupIdx: index("academy_lessons_group_idx").on(table.groupId),
   schoolIdx: index("academy_lessons_school_idx").on(table.schoolId),
+  roomIdx: index("academy_lessons_room_idx").on(table.roomId),
   teacherIdx: index("academy_lessons_teacher_idx").on(table.teacherId),
 }));
 
@@ -612,6 +634,12 @@ export const insertAcademySchoolSchema = createInsertSchema(academySchools).omit
   updatedAt: true,
 });
 
+export const insertAcademyRoomSchema = createInsertSchema(academyRooms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyCourseSchema = createInsertSchema(academyCourses).omit({
   id: true,
   createdAt: true,
@@ -781,6 +809,8 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AcademySchool = typeof academySchools.$inferSelect;
 export type InsertAcademySchool = z.infer<typeof insertAcademySchoolSchema>;
+export type AcademyRoom = typeof academyRooms.$inferSelect;
+export type InsertAcademyRoom = z.infer<typeof insertAcademyRoomSchema>;
 export type AcademyCourse = typeof academyCourses.$inferSelect;
 export type InsertAcademyCourse = z.infer<typeof insertAcademyCourseSchema>;
 export type AcademyLeadSource = typeof academyLeadSources.$inferSelect;

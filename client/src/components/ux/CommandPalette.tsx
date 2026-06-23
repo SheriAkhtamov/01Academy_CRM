@@ -86,6 +86,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
+        { id: 'nav-resource-calendar', type: t('systemAdministration'), title: t('resourceCalendar'), href: '/admin/academy-settings?tab=schedule', icon: Calendar },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
         { id: 'nav-settings', type: t('systemAdministration'), title: t('settings'), href: '/settings', icon: Settings },
       ];
@@ -115,7 +116,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
             { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
             { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
-            { id: 'nav-teacher-ratings', type: t('lessonRatings'), title: t('lessonRatings'), href: '/teacher-workspace/ratings', icon: Star },
             { id: 'nav-teacher-profile', type: t('myProfile'), title: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
           ];
         case 'analytics':

@@ -496,6 +496,14 @@ const findAvailableTeacher = async (options: {
   const endMinutes = startMinutes + options.durationMinutes;
   const dayOfWeek = academyDayOfWeek(options.scheduledAt);
   const lessonEnd = addMinutes(options.scheduledAt, options.durationMinutes);
+  const teacherIds = candidates.map((teacher) => Number(teacher.id));
+  const existingGroups = teacherIds.length > 0
+    ? await query(
+      `SELECT * FROM academy_groups
+       WHERE teacher_id = ANY($1::int[]) AND status IN ('open', 'in_progress')`,
+      [teacherIds],
+    )
+    : [];
 
   for (const teacher of candidates) {
     const schoolIds = Array.isArray(teacher.schoolIds) ? teacher.schoolIds.map(Number) : [];
@@ -521,6 +529,23 @@ const findAvailableTeacher = async (options: {
     });
     if (!canWork) continue;
 
+    const groupConflict = existingGroups
+      .filter((group) => Number(group.teacherId) === Number(teacher.id))
+      .some((group) =>
+        isDateInsideRange(
+          options.scheduledAt,
+          group.startDate ? new Date(group.startDate) : null,
+          group.endDate ? new Date(group.endDate) : null,
+        )
+        && scheduleConflictsWithSlot(
+          normalizeScheduleItems(group.schedule),
+          dayOfWeek,
+          startMinutes,
+          endMinutes,
+        )
+      );
+    if (groupConflict) continue;
+
     const conflict = await queryOne(
       `SELECT id
        FROM academy_lessons
@@ -541,8 +566,9 @@ const findTeacherForGroupSchedule = async (options: {
   courseId: number;
   schoolId: number;
   schedule: unknown;
+  startDate?: Date | null;
+  endDate?: Date | null;
   excludeGroupId?: number | null;
-  preferredTeacherId?: number | null;
 }) => {
   const requestedSchedule = normalizeScheduleItems(options.schedule);
   if (requestedSchedule.length === 0) return null;
@@ -554,8 +580,8 @@ const findTeacherForGroupSchedule = async (options: {
      FROM academy_teachers t
      WHERE t.status = 'active'
        AND t.course_ids @> $1::jsonb
-     ORDER BY CASE WHEN t.id = $2 THEN 0 ELSE 1 END, active_groups, t.id`,
-    [JSON.stringify([options.courseId]), options.preferredTeacherId ?? null],
+     ORDER BY active_groups, t.id`,
+    [JSON.stringify([options.courseId])],
   );
 
   const teacherIds = candidates.map((teacher) => Number(teacher.id));
@@ -566,6 +592,19 @@ const findTeacherForGroupSchedule = async (options: {
          AND teacher_id = ANY($1::int[])
          AND ($2::int IS NULL OR id <> $2)`,
       [teacherIds, options.excludeGroupId ?? null],
+    )
+    : [];
+  const rangeStart = startOfDay(options.startDate ?? new Date());
+  const rangeEnd = options.endDate ? addDays(startOfDay(options.endDate), 1) : null;
+  const existingLessons = teacherIds.length > 0
+    ? await query(
+      `SELECT teacher_id, scheduled_at, duration_minutes
+       FROM academy_lessons
+       WHERE teacher_id = ANY($1::int[])
+         AND status <> 'cancelled'
+         AND scheduled_at >= $2
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+      [teacherIds, rangeStart, rangeEnd],
     )
     : [];
 
@@ -597,19 +636,43 @@ const findTeacherForGroupSchedule = async (options: {
           )
         );
       });
-    if (!hasRecurringConflict) return teacher;
+    if (hasRecurringConflict) continue;
+
+    const hasLessonConflict = existingLessons
+      .filter((lesson) => Number(lesson.teacherId) === Number(teacher.id))
+      .some((lesson) => {
+        const scheduledAt = new Date(lesson.scheduledAt);
+        const startMinutes = scheduledAt.getHours() * 60 + scheduledAt.getMinutes();
+        const endMinutes = startMinutes + Number(lesson.durationMinutes || 60);
+        return requestedSchedule.some((item) =>
+          item.dayOfWeek === academyDayOfWeek(scheduledAt)
+          && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
+        );
+      });
+    if (!hasLessonConflict) return teacher;
   }
 
   return null;
 };
 
-const assertGroupScheduleAvailable = async (options: {
+const assertActiveRoomInSchool = async (roomId: number, schoolId: number) => {
+  const room = await queryOne(
+    `SELECT * FROM academy_rooms WHERE id = $1 AND school_id = $2 AND is_active = true`,
+    [roomId, schoolId],
+  );
+  if (!room) throw Object.assign(new Error('roomNotFound'), { statusCode: 404 });
+  return room;
+};
+
+const assertRoomScheduleAvailable = async (options: {
   schoolId: number;
+  roomId: number;
   schedule: unknown;
   startDate?: Date | null;
   endDate?: Date | null;
   excludeGroupId?: number | null;
 }) => {
+  await assertActiveRoomInSchool(options.roomId, options.schoolId);
   const validationError = getGroupScheduleValidationError(options.schedule);
   if (validationError) {
     throw Object.assign(new Error(validationError), {
@@ -623,10 +686,10 @@ const assertGroupScheduleAvailable = async (options: {
 
   const existingGroups = await query(
     `SELECT * FROM academy_groups
-     WHERE school_id = $1
+     WHERE room_id = $1
        AND status IN ('open', 'in_progress')
        AND ($2::int IS NULL OR id <> $2)`,
-    [options.schoolId, options.excludeGroupId ?? null],
+    [options.roomId, options.excludeGroupId ?? null],
   );
 
   const recurringConflict = existingGroups.some((group) => {
@@ -639,7 +702,7 @@ const assertGroupScheduleAvailable = async (options: {
     return weeklySchedulesOverlap(requestedSchedule, normalizeScheduleItems(group.schedule));
   });
   if (recurringConflict) {
-    throw Object.assign(new Error('groupSchoolScheduleConflict'), { statusCode: 409 });
+    throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
   }
 
   const rangeStart = startOfDay(options.startDate ?? new Date());
@@ -647,11 +710,11 @@ const assertGroupScheduleAvailable = async (options: {
   const lessons = await query(
     `SELECT scheduled_at, duration_minutes
      FROM academy_lessons
-     WHERE school_id = $1
+     WHERE room_id = $1
        AND status <> 'cancelled'
        AND scheduled_at >= $2
        AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-    [options.schoolId, rangeStart, rangeEnd],
+    [options.roomId, rangeStart, rangeEnd],
   );
   const lessonConflict = lessons.some((lesson) => {
     const scheduledAt = new Date(lesson.scheduledAt);
@@ -663,33 +726,61 @@ const assertGroupScheduleAvailable = async (options: {
     );
   });
   if (lessonConflict) {
-    throw Object.assign(new Error('groupSchoolScheduleConflict'), { statusCode: 409 });
+    throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
   }
+};
 
-  const demos = await query(
-    `SELECT demo_at, COALESCE(c.lesson_duration_minutes, 60) AS duration_minutes
-     FROM academy_leads l
-     LEFT JOIN academy_courses c ON c.id = l.demo_course_id
-     WHERE l.school_id = $1
-       AND l.demo_at IS NOT NULL
-       AND COALESCE(l.demo_format, 'offline') <> 'online'
-       AND l.status_code <> 'not_now'
-       AND l.demo_at >= $2
-       AND ($3::timestamp IS NULL OR l.demo_at < $3)`,
-    [options.schoolId, rangeStart, rangeEnd],
+const assertLessonRoomAvailable = async (options: {
+  schoolId: number;
+  roomId: number;
+  scheduledAt: Date;
+  durationMinutes: number;
+  excludeLessonId?: number | null;
+  excludeGroupId?: number | null;
+}) => {
+  await assertActiveRoomInSchool(options.roomId, options.schoolId);
+  const startsAt = new Date(options.scheduledAt);
+  const endsAt = addMinutes(startsAt, options.durationMinutes);
+  const dayOfWeek = academyDayOfWeek(startsAt);
+  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+  const endMinutes = startMinutes + options.durationMinutes;
+
+  const [lessonConflict, groups] = await Promise.all([
+    queryOne(
+      `SELECT id FROM academy_lessons
+       WHERE room_id = $1
+         AND status <> 'cancelled'
+         AND scheduled_at < $3
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+         AND ($4::int IS NULL OR id <> $4)
+       LIMIT 1`,
+      [options.roomId, startsAt, endsAt, options.excludeLessonId ?? null],
+    ),
+    query(
+      `SELECT * FROM academy_groups
+       WHERE room_id = $1
+         AND status IN ('open', 'in_progress')
+         AND ($2::int IS NULL OR id <> $2)`,
+      [options.roomId, options.excludeGroupId ?? null],
+    ),
+  ]);
+
+  if (lessonConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
+
+  const recurringConflict = groups.some((group) =>
+    isDateInsideRange(
+      startsAt,
+      group.startDate ? new Date(group.startDate) : null,
+      group.endDate ? new Date(group.endDate) : null,
+    )
+    && scheduleConflictsWithSlot(
+      normalizeScheduleItems(group.schedule),
+      dayOfWeek,
+      startMinutes,
+      endMinutes,
+    )
   );
-  const demoConflict = demos.some((demo) => {
-    const demoAt = new Date(demo.demoAt);
-    const startMinutes = demoAt.getHours() * 60 + demoAt.getMinutes();
-    const endMinutes = startMinutes + Number(demo.durationMinutes || 60);
-    return requestedSchedule.some((item) =>
-      item.dayOfWeek === academyDayOfWeek(demoAt)
-      && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
-    );
-  });
-  if (demoConflict) {
-    throw Object.assign(new Error('groupSchoolScheduleConflict'), { statusCode: 409 });
-  }
+  if (recurringConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
 };
 
 const listAvailableSchoolSlots = async (options: {
@@ -1411,6 +1502,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
 
   const [
     schools,
+    rooms,
     courses,
     sources,
     statuses,
@@ -1429,6 +1521,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     referrals,
   ] = await Promise.all([
     query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`),
+    query(`SELECT * FROM academy_rooms ORDER BY school_id, is_active DESC, name`),
     query(`SELECT * FROM academy_courses ORDER BY name`),
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
     query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order`),
@@ -1447,6 +1540,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           LEFT JOIN academy_courses c ON c.id = g.course_id
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
+          LEFT JOIN academy_rooms r ON r.id = g.room_id
           WHERE g.teacher_id = $1
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
@@ -1460,6 +1554,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           LEFT JOIN academy_courses c ON c.id = g.course_id
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
+          LEFT JOIN academy_rooms r ON r.id = g.room_id
           ORDER BY g.created_at DESC`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
         sc.name AS school_name
@@ -1496,6 +1591,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_teachers t ON t.id = l.teacher_id
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
+      LEFT JOIN academy_rooms r ON r.id = l.room_id
       WHERE 1=1 ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}
       ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : []),
     query(`SELECT a.* FROM academy_attendance a ${isTeacherScoped ? 'JOIN academy_lessons l ON l.id = a.lesson_id WHERE l.teacher_id = $1' : ''}`, isTeacherScoped ? [teacherId] : []),
@@ -1568,7 +1664,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
   ]);
 
-  return { schools, courses, sources, statuses, teachers, groups, leads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
+  return { schools, rooms, courses, sources, statuses, teachers, groups, leads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
 };
 
 const buildAnalytics = async () => {
@@ -2053,6 +2149,7 @@ router.get('/workspaces/sales', async (req, res) => {
 
     res.json({
       schools: dataset.schools,
+      rooms: dataset.rooms,
       courses: dataset.courses,
       groups: dataset.groups,
       sources: dataset.sources,
@@ -2105,6 +2202,7 @@ router.get('/workspaces/teacher', async (req, res) => {
     const dataset = await getAcademyDataset(actor);
     res.json({
       schools: dataset.schools,
+      rooms: dataset.rooms,
       courses: dataset.courses,
       teacher: req.user!.workspace === 'teacher' ? dataset.teachers[0] ?? null : null,
       groups: dataset.groups,
@@ -2127,6 +2225,7 @@ router.get('/configuration', async (req, res) => {
     const dataset = await getAcademyDataset();
     res.json({
       schools: dataset.schools,
+      rooms: dataset.rooms,
       courses: dataset.courses,
       statuses: dataset.statuses,
       teachers: dataset.teachers,
@@ -2136,6 +2235,58 @@ router.get('/configuration', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch academy configuration', { error });
     res.status(500).json({ error: 'Failed to fetch academy configuration' });
+  }
+});
+
+router.get('/schedule/resource', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const schoolId = parseId(req.query.schoolId);
+    if (!schoolId) return res.status(400).json({ error: 'schoolRequired' });
+    const selectedDate = parseDateOnly(req.query.date) ?? startOfDay(new Date());
+    const nextDate = addDays(selectedDate, 1);
+
+    const [school, rooms, groups, lessons] = await Promise.all([
+      queryOne(`SELECT id, name FROM academy_schools WHERE id = $1`, [schoolId]),
+      query(`SELECT * FROM academy_rooms WHERE school_id = $1 AND is_active = true ORDER BY name`, [schoolId]),
+      query(
+        `SELECT g.*, c.name AS course_name, c.lesson_duration_minutes AS duration_minutes,
+                t.full_name AS teacher_name
+         FROM academy_groups g
+         LEFT JOIN academy_courses c ON c.id = g.course_id
+         LEFT JOIN academy_teachers t ON t.id = g.teacher_id
+         WHERE g.school_id = $1 AND g.status IN ('open', 'in_progress')
+         ORDER BY g.room_id, g.name`,
+        [schoolId],
+      ),
+      query(
+        `SELECT l.*, g.name AS group_name, c.name AS course_name, t.full_name AS teacher_name
+         FROM academy_lessons l
+         LEFT JOIN academy_groups g ON g.id = l.group_id
+         LEFT JOIN academy_courses c ON c.id = l.course_id
+         LEFT JOIN academy_teachers t ON t.id = l.teacher_id
+         WHERE l.school_id = $1
+           AND l.status <> 'cancelled'
+           AND l.scheduled_at >= $2
+           AND l.scheduled_at < $3
+         ORDER BY l.room_id, l.scheduled_at`,
+        [schoolId, selectedDate, nextDate],
+      ),
+    ]);
+    if (!school) return res.status(404).json({ error: 'resourceNotFound' });
+
+    res.json({
+      school,
+      date: selectedDate.toISOString(),
+      rooms: rooms.map((room) => ({
+        ...room,
+        groups: groups.filter((group) => Number(group.roomId) === Number(room.id)),
+        lessons: lessons.filter((lesson) => Number(lesson.roomId) === Number(room.id)),
+      })),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch resource schedule', { error });
+    res.status(500).json({ error: 'failedToLoadData' });
   }
 });
 
@@ -2782,7 +2933,6 @@ router.patch('/leads/:id', async (req, res) => {
     };
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
-
     const managerId = req.user!.workspace !== 'sales' && req.body.managerId !== undefined
       ? await resolveLeadManagerId(req, req.body.managerId)
       : undefined;
@@ -2831,7 +2981,16 @@ router.patch('/leads/:id', async (req, res) => {
       referralCode: nullableText(req.body.referralCode),
       referrerStudentId: parseId(req.body.referrerStudentId) };
 
-    const lead = await updateRow('academy_leads', id, updates);
+    const lead = await withTransaction(async () => {
+      const groupToReserve = Number(merged.enrolledGroupId || 0);
+      const mustValidateCapacity = Boolean(requestedGroupId)
+        || ['enrolled', 'paid'].includes(nextStatus);
+      if (mustValidateCapacity && groupToReserve) {
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupToReserve]);
+        await validateEnrollmentGroup(groupToReserve, id);
+      }
+      return updateRow('academy_leads', id, updates);
+    });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     if (oldLead.statusCode !== lead.statusCode) {
@@ -3001,26 +3160,35 @@ const prepareGroupMutation = async (options: {
   oldRow?: Row | null;
   excludeGroupId?: number | null;
   forceAutoAssign?: boolean;
+  allowUnassigned?: boolean;
 }) => {
   const courseId = Number(options.values.courseId ?? options.oldRow?.courseId);
   const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId);
+  const roomId = Number(options.values.roomId ?? options.oldRow?.roomId);
   const schedule = options.values.schedule ?? options.oldRow?.schedule;
   const maxStudents = Number(options.values.maxStudents ?? options.oldRow?.maxStudents ?? 12);
   const status = String(options.values.status ?? options.oldRow?.status ?? 'open');
   if (!courseId || !schoolId) {
     throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
   }
+  if (!roomId) {
+    throw Object.assign(new Error('roomRequired'), { statusCode: 400 });
+  }
   if (maxStudents < 1 || maxStudents > 12) {
     throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
   }
   options.values.maxStudents = maxStudents;
+  const room = await assertActiveRoomInSchool(roomId, schoolId);
+  if (maxStudents > Number(room.capacity)) {
+    throw Object.assign(new Error('groupExceedsRoomCapacity'), { statusCode: 400 });
+  }
   const startDate = (options.values.startDate ?? options.oldRow?.startDate) as Date | null | undefined;
   const endDate = (options.values.endDate ?? options.oldRow?.endDate) as Date | null | undefined;
   if (startDate && endDate && new Date(endDate).getTime() < new Date(startDate).getTime()) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
 
-  await query(`SELECT pg_advisory_xact_lock($1)`, [schoolId]);
+  await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
   if (status === 'completed') {
     const validationError = getGroupScheduleValidationError(schedule);
     if (validationError) {
@@ -3029,8 +3197,9 @@ const prepareGroupMutation = async (options: {
       });
     }
   } else {
-    await assertGroupScheduleAvailable({
+    await assertRoomScheduleAvailable({
       schoolId,
+      roomId,
       schedule,
       startDate,
       endDate,
@@ -3043,10 +3212,67 @@ const prepareGroupMutation = async (options: {
       courseId,
       schoolId,
       schedule,
+      startDate,
+      endDate,
       excludeGroupId: options.excludeGroupId,
-      preferredTeacherId: Number(options.oldRow?.teacherId) || null,
     });
+    if (!teacher && !options.allowUnassigned) {
+      throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
+    }
     options.values.teacherId = teacher ? Number(teacher.id) : null;
+  }
+};
+
+const prepareLessonMutation = async (options: {
+  values: Row;
+  oldRow?: Row | null;
+  excludeLessonId?: number | null;
+  forceAutoAssign?: boolean;
+}) => {
+  const groupId = Number(options.values.groupId ?? options.oldRow?.groupId);
+  const group = groupId
+    ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId])
+    : null;
+  if (!group) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+
+  const courseId = Number(options.values.courseId ?? options.oldRow?.courseId ?? group.courseId);
+  const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId ?? group.schoolId);
+  const roomId = Number(options.values.roomId ?? options.oldRow?.roomId ?? group.roomId);
+  const scheduledAt = new Date(options.values.scheduledAt ?? options.oldRow?.scheduledAt);
+  const durationMinutes = Number(
+    options.values.durationMinutes
+      ?? options.oldRow?.durationMinutes
+      ?? (await queryOne(`SELECT lesson_duration_minutes FROM academy_courses WHERE id = $1`, [courseId]))?.lessonDurationMinutes
+      ?? 120,
+  );
+
+  if (!courseId || !schoolId || !roomId || Number.isNaN(scheduledAt.getTime()) || durationMinutes < 15) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+
+  options.values.courseId = courseId;
+  options.values.schoolId = schoolId;
+  options.values.roomId = roomId;
+  options.values.durationMinutes = durationMinutes;
+  await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
+  await assertLessonRoomAvailable({
+    schoolId,
+    roomId,
+    scheduledAt,
+    durationMinutes,
+    excludeLessonId: options.excludeLessonId,
+    excludeGroupId: groupId,
+  });
+
+  if (options.forceAutoAssign || (!options.values.teacherId && !options.oldRow?.teacherId)) {
+    const teacher = await findAvailableTeacher({
+      courseId,
+      schoolId,
+      scheduledAt,
+      durationMinutes,
+    });
+    if (!teacher) throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
+    options.values.teacherId = Number(teacher.id);
   }
 };
 
@@ -3076,6 +3302,7 @@ const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) =
           oldRow: lockedGroup,
           excludeGroupId: Number(lockedGroup.id),
           forceAutoAssign: true,
+          allowUnassigned: true,
         });
         const previousTeacherId = Number(lockedGroup.teacherId) || null;
         const nextTeacherId = Number(values.teacherId) || null;
@@ -3169,7 +3396,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         const value = req.body[column];
         if (column.endsWith('At') || column.endsWith('Date') || column === 'periodStart' || column === 'periodEnd') {
           values[column] = nullableDate(value);
-        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'lessonNumber' || column === 'sortOrder') {
+        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
         } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
@@ -3183,52 +3410,16 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (table === 'academy_marketing_expenses') {
         values.createdBy = req.user!.id;
       }
-      if (table === 'academy_schools' && values.rooms !== undefined) {
-        values.rooms = safeJson(readJsonArray(values.rooms).slice(0, 1), []);
-      }
-      if (table === 'academy_lessons') {
-        const groupId = Number(values.groupId || 0);
-        const group = groupId
-          ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId])
-          : null;
-        values.courseId = values.courseId ?? group?.courseId ?? null;
-        values.schoolId = values.schoolId ?? group?.schoolId ?? null;
-        values.durationMinutes = values.durationMinutes ?? (
-          values.courseId
-            ? (await queryOne(`SELECT lesson_duration_minutes FROM academy_courses WHERE id = $1`, [values.courseId]))?.lessonDurationMinutes
-            : null
-        ) ?? 120;
-        let availableSlot: Row | null = null;
-        if (values.courseId && values.schoolId && values.scheduledAt) {
-          await query(`SELECT pg_advisory_xact_lock($1)`, [Number(values.schoolId)]);
-          availableSlot = await assertBookableOfflineSlot({
-            courseId: Number(values.courseId),
-            schoolId: Number(values.schoolId),
-            startsAt: values.scheduledAt as Date,
-            excludeGroupId: groupId || null,
-          });
-        }
-        if (!values.teacherId && values.courseId && values.scheduledAt) {
-          const teacherId = availableSlot?.teacherId ?? (
-            await findAvailableTeacher({
-              courseId: Number(values.courseId),
-              schoolId: values.schoolId ? Number(values.schoolId) : null,
-              scheduledAt: values.scheduledAt as Date,
-              durationMinutes: Number(values.durationMinutes),
-            })
-          )?.id;
-          if (!teacherId) {
-            throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 409 });
-          }
-          values.teacherId = Number(teacherId);
-        }
-      }
-
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
           await prepareGroupMutation({ values, forceAutoAssign: true });
           return insertRow(table, values);
         })
+        : table === 'academy_lessons'
+          ? await withTransaction(async () => {
+            await prepareLessonMutation({ values, forceAutoAssign: true });
+            return insertRow(table, values);
+          })
         : await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
       if (table === 'academy_teachers') {
@@ -3264,7 +3455,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         const value = req.body[column];
         if (column.endsWith('At') || column.endsWith('Date') || column === 'periodStart' || column === 'periodEnd') {
           values[column] = nullableDate(value);
-        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'lessonNumber' || column === 'sortOrder') {
+        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
         } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
@@ -3272,39 +3463,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           values[column] = toBoolean(value);
         } else {
           values[column] = nullableText(value);
-        }
-      }
-      if (table === 'academy_schools' && values.rooms !== undefined) {
-        values.rooms = safeJson(readJsonArray(values.rooms).slice(0, 1), []);
-      }
-      if (table === 'academy_lessons' && (
-        req.body.autoAssign === true
-        || req.body.scheduledAt !== undefined
-        || req.body.schoolId !== undefined
-        || req.body.groupId !== undefined
-        || req.body.courseId !== undefined
-      )) {
-        const courseId = Number(values.courseId ?? oldRow.courseId);
-        const schoolId = Number(values.schoolId ?? oldRow.schoolId) || null;
-        const scheduledAt = (values.scheduledAt ?? oldRow.scheduledAt) as Date;
-        const durationMinutes = Number(values.durationMinutes ?? oldRow.durationMinutes ?? 120);
-        const groupId = Number(values.groupId ?? oldRow.groupId) || null;
-        if (!schoolId) {
-          throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
-        }
-        await query(`SELECT pg_advisory_xact_lock($1)`, [schoolId]);
-        const slot = await assertBookableOfflineSlot({
-          courseId,
-          schoolId,
-          startsAt: scheduledAt,
-          excludeGroupId: groupId,
-          excludeLessonId: id,
-        });
-        if (req.body.autoAssign === true || !oldRow.teacherId) {
-          values.teacherId = Number(slot.teacherId);
-        }
-        if (!values.teacherId && !oldRow.teacherId) {
-          throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 409 });
         }
       }
       const row = table === 'academy_groups'
@@ -3324,6 +3482,23 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           });
           return updateRow(table, id, values);
         })
+        : table === 'academy_lessons'
+          ? await withTransaction(async () => {
+            const lockedRow = await queryOne(
+              `SELECT * FROM academy_lessons WHERE id = $1 FOR UPDATE`,
+              [id],
+            );
+            if (!lockedRow) {
+              throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+            }
+            await prepareLessonMutation({
+              values,
+              oldRow: lockedRow,
+              excludeLessonId: id,
+              forceAutoAssign: req.body.autoAssign === true,
+            });
+            return updateRow(table, id, values);
+          })
         : await updateRow(table, id, values);
       if (table === 'academy_lessons' && values.status !== undefined && oldRow.status !== row?.status) {
         await insertRow('academy_lesson_status_history', {
@@ -3933,8 +4108,12 @@ router.get('/exports/:entity', async (req, res) => {
 });
 
 registerSimpleCrud('schools', 'academy_schools', [
-  'name', 'code', 'address', 'rooms', 'timezone', 'isActive',
+  'name', 'code', 'address', 'timezone', 'isActive',
 ], { orderBy: 'is_active DESC, name', requireAdministration: true });
+
+registerSimpleCrud('rooms', 'academy_rooms', [
+  'schoolId', 'name', 'capacity', 'isActive',
+], { orderBy: 'school_id, is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('courses', 'academy_courses', [
   'name', 'slug', 'ageCategory', 'lessonCount', 'lessonDurationMinutes', 'durationDays',
@@ -3951,7 +4130,7 @@ registerSimpleCrud('teachers', 'academy_teachers', [
 ], { orderBy: 'full_name', requireAdministration: true });
 
 registerSimpleCrud('groups', 'academy_groups', [
-  'name', 'courseId', 'schoolId', 'teacherId', 'schedule', 'maxStudents', 'status', 'startDate', 'endDate',
+  'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule', 'maxStudents', 'status', 'startDate', 'endDate',
 ], { orderBy: 'created_at DESC', requireAdministration: true });
 
 registerSimpleCrud('sources', 'academy_lead_sources', [
@@ -3959,7 +4138,7 @@ registerSimpleCrud('sources', 'academy_lead_sources', [
 ], { orderBy: 'name', allowedWorkspaces: SOURCE_MANAGEMENT_WORKSPACES });
 
 registerSimpleCrud('lessons', 'academy_lessons', [
-  'groupId', 'courseId', 'schoolId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',
+  'groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',
 ], { orderBy: 'scheduled_at DESC', requireOperations: true });
 
 registerSimpleCrud('tasks', 'academy_tasks', [

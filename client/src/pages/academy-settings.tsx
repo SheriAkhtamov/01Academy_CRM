@@ -42,6 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
 import {
   WeekScheduleEditor,
   type WeekScheduleItem,
@@ -52,6 +53,7 @@ import {
   ArrowUp,
   BookOpen,
   Building2,
+  DoorOpen,
   Edit3,
   GitBranch,
   MapPin,
@@ -65,8 +67,15 @@ interface School {
   name: string;
   code: string;
   address: string;
-  rooms: string[];
   timezone: string;
+  isActive: boolean;
+}
+
+interface Room {
+  id: number;
+  schoolId: number;
+  name: string;
+  capacity: number;
   isActive: boolean;
 }
 
@@ -111,6 +120,8 @@ interface Group {
   courseName?: string;
   schoolId: number;
   schoolName?: string;
+  roomId: number;
+  roomName?: string;
   teacherId?: number | null;
   teacherName?: string | null;
   schedule: WeekScheduleItem[];
@@ -124,6 +135,7 @@ interface Group {
 
 interface ConfigurationData {
   schools: School[];
+  rooms: Room[];
   courses: Course[];
   statuses: PipelineStatus[];
   teachers: Teacher[];
@@ -134,8 +146,14 @@ const schoolSchema = z.object({
   name: z.string().trim().min(1),
   code: z.string().trim().min(1).regex(/^[a-z0-9_-]+$/),
   address: z.string().trim().min(1),
-  rooms: z.string(),
   timezone: z.string().trim().min(1),
+  isActive: z.boolean(),
+});
+
+const roomSchema = z.object({
+  schoolId: z.string().min(1),
+  name: z.string().trim().min(1),
+  capacity: z.coerce.number().int().min(1),
   isActive: z.boolean(),
 });
 
@@ -165,6 +183,7 @@ const groupSchema = z.object({
   name: z.string().trim().min(1),
   courseId: z.string().min(1),
   schoolId: z.string().min(1),
+  roomId: z.string().min(1),
   status: z.enum(['open', 'in_progress', 'completed']),
   startDate: z.string(),
   endDate: z.string(),
@@ -178,6 +197,7 @@ const groupSchema = z.object({
 });
 
 type SchoolValues = z.infer<typeof schoolSchema>;
+type RoomValues = z.infer<typeof roomSchema>;
 type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
 type GroupValues = z.infer<typeof groupSchema>;
@@ -241,22 +261,24 @@ export default function AcademySettings() {
   const routeSearch = useSearch();
   const requestedTab = new URLSearchParams(routeSearch).get('tab');
   const [activeTab, setActiveTab] = useState(
-    ['schools', 'courses', 'groups', 'pipeline'].includes(String(requestedTab))
+    ['schools', 'rooms', 'courses', 'groups', 'schedule', 'pipeline'].includes(String(requestedTab))
       ? String(requestedTab)
       : 'schools',
   );
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
+  const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [editingStatus, setEditingStatus] = useState<PipelineStatus | null>(null);
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
   const [courseTeacherIds, setCourseTeacherIds] = useState<number[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
-    resource: 'schools' | 'courses' | 'groups' | 'pipeline-statuses';
+    resource: 'schools' | 'rooms' | 'courses' | 'groups' | 'pipeline-statuses';
     id: number;
     name: string;
   } | null>(null);
@@ -285,8 +307,17 @@ export default function AcademySettings() {
       name: '',
       code: '',
       address: '',
-      rooms: '',
       timezone: 'Asia/Tashkent',
+      isActive: true,
+    },
+  });
+
+  const roomForm = useForm<RoomValues>({
+    resolver: zodResolver(roomSchema),
+    defaultValues: {
+      schoolId: '',
+      name: '',
+      capacity: 12,
       isActive: true,
     },
   });
@@ -325,6 +356,7 @@ export default function AcademySettings() {
       name: '',
       courseId: '',
       schoolId: '',
+      roomId: '',
       status: 'open',
       startDate: '',
       endDate: '',
@@ -333,19 +365,40 @@ export default function AcademySettings() {
 
   const saveSchool = useMutation({
     mutationFn: (values: SchoolValues) => {
-      const payload = {
-        ...values,
-        rooms: values.rooms.trim() ? [values.rooms.trim()] : [],
-      };
       return editingSchool
-        ? apiRequest('PATCH', `/api/academy/schools/${editingSchool.id}`, payload)
-        : apiRequest('POST', '/api/academy/schools', payload);
+        ? apiRequest('PATCH', `/api/academy/schools/${editingSchool.id}`, values)
+        : apiRequest('POST', '/api/academy/schools', values);
     },
     onSuccess: () => {
       toast({ title: editingSchool ? t('schoolUpdated') : t('schoolCreated') });
       setSchoolDialogOpen(false);
       setEditingSchool(null);
       schoolForm.reset();
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: t('error'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const saveRoom = useMutation({
+    mutationFn: (values: RoomValues) => {
+      const payload = {
+        ...values,
+        schoolId: Number(values.schoolId),
+        capacity: Number(values.capacity),
+      };
+      return editingRoom
+        ? apiRequest('PATCH', `/api/academy/rooms/${editingRoom.id}`, payload)
+        : apiRequest('POST', '/api/academy/rooms', payload);
+    },
+    onSuccess: () => {
+      toast({ title: editingRoom ? t('roomUpdated') : t('roomCreated') });
+      setRoomDialogOpen(false);
+      setEditingRoom(null);
+      roomForm.reset();
       invalidate();
     },
     onError: (error: Error) => toast({
@@ -395,6 +448,7 @@ export default function AcademySettings() {
         name: values.name,
         courseId: Number(values.courseId),
         schoolId: Number(values.schoolId),
+        roomId: Number(values.roomId),
         schedule: groupSchedule,
         maxStudents: 12,
         status: values.status,
@@ -495,18 +549,32 @@ export default function AcademySettings() {
       name: school.name,
       code: school.code,
       address: school.address,
-      rooms: school.rooms?.[0] ?? '',
       timezone: school.timezone,
       isActive: school.isActive,
     } : {
       name: '',
       code: '',
       address: '',
-      rooms: '',
       timezone: 'Asia/Tashkent',
       isActive: true,
     });
     setSchoolDialogOpen(true);
+  };
+
+  const openRoom = (room?: Room) => {
+    setEditingRoom(room ?? null);
+    roomForm.reset(room ? {
+      schoolId: String(room.schoolId),
+      name: room.name,
+      capacity: room.capacity,
+      isActive: room.isActive,
+    } : {
+      schoolId: '',
+      name: '',
+      capacity: 12,
+      isActive: true,
+    });
+    setRoomDialogOpen(true);
   };
 
   const openCourse = (course?: Course) => {
@@ -546,6 +614,7 @@ export default function AcademySettings() {
       name: group.name,
       courseId: String(group.courseId),
       schoolId: String(group.schoolId),
+      roomId: String(group.roomId),
       status: ['open', 'in_progress', 'completed'].includes(group.status)
         ? group.status as GroupValues['status']
         : 'open',
@@ -555,6 +624,7 @@ export default function AcademySettings() {
       name: '',
       courseId: '',
       schoolId: '',
+      roomId: '',
       status: 'open',
       startDate: '',
       endDate: '',
@@ -584,6 +654,7 @@ export default function AcademySettings() {
   };
 
   const schools = configuration.data?.schools ?? [];
+  const rooms = configuration.data?.rooms ?? [];
   const courses = configuration.data?.courses ?? [];
   const statuses = useMemo(
     () => [...(configuration.data?.statuses ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),
@@ -591,6 +662,17 @@ export default function AcademySettings() {
   );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
+  const selectedGroupSchoolId = groupForm.watch('schoolId');
+  const groupRooms = useMemo(
+    () => rooms.filter((room) => (
+      room.isActive !== false && String(room.schoolId) === selectedGroupSchoolId
+    )),
+    [rooms, selectedGroupSchoolId],
+  );
+  const schoolNameById = useMemo(
+    () => new Map(schools.map((school) => [school.id, school.name])),
+    [schools],
+  );
 
   const schoolColumns: DataTableColumn<School>[] = [
     {
@@ -618,14 +700,6 @@ export default function AcademySettings() {
       ),
     },
     {
-      key: 'rooms',
-      header: t('rooms'),
-      accessor: (row) => row.rooms.length,
-      render: (row) => row.rooms.length > 0
-        ? <div className="flex flex-wrap gap-1">{row.rooms.map((room) => <Badge key={room} variant="outline">{room}</Badge>)}</div>
-        : <span className="text-muted-foreground">—</span>,
-    },
-    {
       key: 'status',
       header: t('status'),
       accessor: (row) => row.isActive ? 1 : 0,
@@ -641,6 +715,52 @@ export default function AcademySettings() {
             <span className="sr-only">{t('edit')}</span>
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ resource: 'schools', id: row.id, name: row.name })}>
+            <Trash2 />
+            <span className="sr-only">{t('delete')}</span>
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const roomColumns: DataTableColumn<Room>[] = [
+    {
+      key: 'name',
+      header: t('room'),
+      sortable: true,
+      accessor: (row) => row.name,
+      render: (row) => <div className="flex items-center gap-2 font-medium text-foreground"><DoorOpen />{row.name}</div>,
+    },
+    {
+      key: 'school',
+      header: t('school'),
+      sortable: true,
+      accessor: (row) => schoolNameById.get(row.schoolId) ?? '',
+      render: (row) => <span className="text-muted-foreground">{schoolNameById.get(row.schoolId) ?? '—'}</span>,
+    },
+    {
+      key: 'capacity',
+      header: t('roomCapacity'),
+      sortable: true,
+      accessor: (row) => row.capacity,
+      render: (row) => `${row.capacity} ${t('students')}`,
+    },
+    {
+      key: 'status',
+      header: t('status'),
+      accessor: (row) => row.isActive ? 1 : 0,
+      render: (row) => <Badge variant={row.isActive ? 'default' : 'secondary'}>{row.isActive ? t('active') : t('inactive')}</Badge>,
+    },
+    {
+      key: 'actions',
+      header: t('actions'),
+      render: (row) => (
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="icon" onClick={() => openRoom(row)}>
+            <Edit3 />
+            <span className="sr-only">{t('edit')}</span>
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ resource: 'rooms', id: row.id, name: row.name })}>
             <Trash2 />
             <span className="sr-only">{t('delete')}</span>
           </Button>
@@ -729,7 +849,7 @@ export default function AcademySettings() {
       render: (row) => (
         <div>
           <p className="font-medium text-foreground">{row.courseName ?? '—'}</p>
-          <p className="text-xs text-muted-foreground">{row.schoolName ?? '—'}</p>
+          <p className="text-xs text-muted-foreground">{row.schoolName ?? '—'} · {row.roomName ?? t('roomNotFound')}</p>
         </div>
       ),
     },
@@ -851,11 +971,17 @@ export default function AcademySettings() {
           <TabsTrigger value="schools" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <Building2 />{t('schools')}
           </TabsTrigger>
+          <TabsTrigger value="rooms" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+            <DoorOpen />{t('rooms')}
+          </TabsTrigger>
           <TabsTrigger value="courses" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <BookOpen />{t('courses')}
           </TabsTrigger>
           <TabsTrigger value="groups" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <UsersRound />{t('navGroups')}
+          </TabsTrigger>
+          <TabsTrigger value="schedule" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+            <Building2 />{t('resourceCalendar')}
           </TabsTrigger>
           <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <GitBranch />{t('pipelineStages')}
@@ -880,6 +1006,29 @@ export default function AcademySettings() {
                 keyExtractor={(row) => `school-${row.id}`}
                 defaultSortKey="name"
                 emptyState={<EmptyTableState title={t('noSchools')} description={t('noSchoolsDescription')} />}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="rooms" className="mt-0">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle>{t('rooms')}</CardTitle>
+                <CardDescription>{t('noRoomsDescription')}</CardDescription>
+              </div>
+              <Button onClick={() => openRoom()}>
+                <Plus data-icon="inline-start" />{t('addRoom')}
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <DataTable
+                columns={roomColumns}
+                data={rooms}
+                keyExtractor={(row) => `room-${row.id}`}
+                defaultSortKey="name"
+                emptyState={<EmptyTableState title={t('noRooms')} description={t('noRoomsDescription')} />}
               />
             </CardContent>
           </Card>
@@ -929,6 +1078,10 @@ export default function AcademySettings() {
               />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="schedule" className="mt-0">
+          <AdminScheduleCalendar schools={schools} />
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-0">
@@ -1033,13 +1186,6 @@ export default function AcademySettings() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={schoolForm.control} name="rooms" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('room')}</FormLabel>
-                  <FormControl><Input {...field} placeholder={t('roomPlaceholder')} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
               <FormField control={schoolForm.control} name="timezone" render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t('timezone')}</FormLabel>
@@ -1056,6 +1202,59 @@ export default function AcademySettings() {
               <div className="flex justify-end gap-2 md:col-span-2">
                 <Button type="button" variant="outline" onClick={() => setSchoolDialogOpen(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveSchool.isPending}>{t('save')}</Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
+            <DialogDescription>{t('noRoomsDescription')}</DialogDescription>
+          </DialogHeader>
+          <Form {...roomForm}>
+            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>
+              <FormField control={roomForm.control} name="schoolId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('school')}</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectGroup>
+                        {schools.filter((school) => school.isActive !== false).map((school) => (
+                          <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomForm.control} name="name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('roomName')}</FormLabel>
+                  <FormControl><Input {...field} placeholder={t('roomPlaceholder')} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomForm.control} name="capacity" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('roomCapacity')}</FormLabel>
+                  <FormControl><Input type="number" min="1" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={roomForm.control} name="isActive" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
+                  <FormLabel>{t('active')}</FormLabel>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <div className="flex justify-end gap-2 md:col-span-2">
+                <Button type="button" variant="outline" onClick={() => setRoomDialogOpen(false)}>{t('cancel')}</Button>
+                <Button type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
               </div>
             </form>
           </Form>
@@ -1255,12 +1454,33 @@ export default function AcademySettings() {
                 <FormField control={groupForm.control} name="schoolId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('school')}</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={(value) => {
+                      field.onChange(value);
+                      if (value !== selectedGroupSchoolId) groupForm.setValue('roomId', '');
+                    }}>
                       <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectGroup>
                           {schools.filter((school) => school.isActive !== false).map((school) => (
                             <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="roomId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('room')}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={!selectedGroupSchoolId}>
+                      <FormControl><SelectTrigger><SelectValue placeholder={t('roomRequired')} /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectGroup>
+                          {groupRooms.map((room) => (
+                            <SelectItem key={room.id} value={String(room.id)}>
+                              {room.name} · {room.capacity} {t('students')}
+                            </SelectItem>
                           ))}
                         </SelectGroup>
                       </SelectContent>
@@ -1288,7 +1508,7 @@ export default function AcademySettings() {
                 <div>
                   <p className="text-sm font-medium text-foreground">{t('schedule')}</p>
                   <p className="text-xs text-muted-foreground">
-                    {t('singleRoomRule')} · {t('teacherWillBeAssigned')}
+                    {t('roomScheduleRule')} · {t('teacherWillBeAssigned')}
                   </p>
                 </div>
                 <WeekScheduleEditor

@@ -10,6 +10,22 @@ const translations = {
         en: 'Too many login attempts. Please try again later.',
         ru: 'Слишком много попыток входа. Попробуйте позже.',
     },
+    groupIsFull: {
+        en: 'This group is already full.',
+        ru: 'В этой группе уже нет свободных мест.',
+    },
+    noAvailableTeacher: {
+        en: 'No available teacher for this time.',
+        ru: 'Нет доступных преподавателей на это время.',
+    },
+    roomOccupied: {
+        en: 'Room is occupied by another group.',
+        ru: 'Кабинет занят другой группой.',
+    },
+    roomRequired: {
+        en: 'Select a room for this group.',
+        ru: 'Выберите кабинет для группы.',
+    },
 } as const;
 
 type TranslationKey = keyof typeof translations;

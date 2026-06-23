@@ -190,11 +190,7 @@ function Router() {
             <TeacherWorkspace section="attendance" />
           </WorkspaceGuard>
         )} />
-        <Route path="/teacher-workspace/ratings" component={() => (
-          <WorkspaceGuard workspace="teacher">
-            <TeacherWorkspace section="ratings" />
-          </WorkspaceGuard>
-        )} />
+        <Route path="/teacher-workspace/ratings" component={() => <Redirect to="/teacher-workspace/profile" />} />
         <Route path="/teacher-workspace/profile" component={() => (
           <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="profile" />

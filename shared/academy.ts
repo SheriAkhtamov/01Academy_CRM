@@ -11,26 +11,10 @@ export const ACADEMY_WORKSPACES = [
 
 export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];
 
-/**
- * Administration is the only cross-functional workspace. It can supervise the
- * operational sales, marketing, and analytics modules, while the remaining
- * workspaces stay limited to their own module.
- */
-export const ADMINISTRATION_MODULE_WORKSPACES: ReadonlySet<AcademyWorkspace> = new Set([
-  "administration",
-  "sales",
-  "analytics",
-  "marketing",
-]);
-
 export function canAccessAcademyWorkspace(
   assignedWorkspace: string | null | undefined,
   workspace: AcademyWorkspace,
 ): boolean {
-  if (assignedWorkspace === "administration") {
-    return ADMINISTRATION_MODULE_WORKSPACES.has(workspace);
-  }
-
   return assignedWorkspace === workspace;
 }
 
@@ -198,7 +182,7 @@ export function validateLeadForStatusChange(input: {
   courseId?: number | null;
   enrolledGroupId?: number | null;
 }): string | null {
-  if (input.nextStatus === "enrolled" && !input.enrolledGroupId) {
+  if (["enrolled", "paid"].includes(input.nextStatus) && !input.enrolledGroupId) {
     return "groupRequiredForEnrollment";
   }
 

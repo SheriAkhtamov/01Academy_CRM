@@ -399,7 +399,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-6 w-48" />
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-28" />
           ))}
@@ -497,15 +497,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               detail={t('byActiveStudents')}
               icon={ClipboardCheck}
               tone="blue"
-            />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('avgLessonRating')}
-              value={avgLessonRating}
-              detail={`${surveys.length} ${t('ratingsCount')}`}
-              icon={Star}
-              tone="green"
             />
           </div>
         </div>
@@ -1223,10 +1214,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-500">{t('averageAttendance')}</span>
                   <span className="font-semibold text-slate-900">{avgAttendance}%</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">{t('avgLessonRating')}</span>
-                  <span className="font-semibold text-slate-900">{avgLessonRating}</span>
                 </div>
               </CardContent>
             </Card>

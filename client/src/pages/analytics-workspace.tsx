@@ -274,15 +274,15 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
   };
 
   const exportTeachers = () => {
-    const headers = [t('teacher'), t('hoursSuffix'), t('averageRatingLabel'), t('attendanceLabel'), t('groupsLabel'), t('trendColumn')];
-    const rows = byTeacher.map((tr: any) => [tr.teacherName, `${Math.round(tr.hours)}${t('hoursSuffix')}`, (tr.avgScore ?? 0).toFixed(1), `${tr.attendance}%`, tr.groupCount ?? '-', tr.trend === 'up' ? t('trendUp') : tr.trend === 'down' ? t('trendDown') : t('trendStable')]);
+    const headers = [t('teacher'), t('hoursSuffix'), t('attendanceLabel'), t('groupsLabel'), t('trendColumn')];
+    const rows = byTeacher.map((tr: any) => [tr.teacherName, `${Math.round(tr.hours)}${t('hoursSuffix')}`, `${tr.attendance}%`, tr.groupCount ?? '-', tr.trend === 'up' ? t('trendUp') : tr.trend === 'down' ? t('trendDown') : t('trendStable')]);
     exportToCSV('analytics-by-teacher.csv', headers, rows);
     toast({ title: t('exportLabel'), description: t('csvExported') });
   };
 
   const exportGroups = () => {
-    const headers = [t('group'), t('course'), t('occupancyColumn'), t('attendanceLabel'), t('progressLabel'), t('averageRatingLabel')];
-    const rows = byGroupProgress.map((g: any) => [g.groupName, g.courseName || '-', `${g.capacity}/${g.maxCapacity}`, `${g.attendanceAvg ?? 0}%`, `${g.progressAvg ?? 0}%`, (g.avgScore ?? 0).toFixed(1)]);
+    const headers = [t('group'), t('course'), t('occupancyColumn'), t('attendanceLabel'), t('progressLabel')];
+    const rows = byGroupProgress.map((g: any) => [g.groupName, g.courseName || '-', `${g.capacity}/${g.maxCapacity}`, `${g.attendanceAvg ?? 0}%`, `${g.progressAvg ?? 0}%`]);
     exportToCSV('analytics-by-group.csv', headers, rows);
     toast({ title: t('exportLabel'), description: t('csvExported') });
   };
@@ -352,7 +352,6 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
   const teacherColumns: DataTableColumn<any>[] = [
     { key: 'teacherName', header: t('teacher'), sortable: true, accessor: (tr: any) => tr.teacherName, render: (tr: any) => <span className="font-medium text-slate-900">{tr.teacherName}</span> },
     { key: 'hours', header: t('hoursSuffix'), sortable: true, accessor: (tr: any) => tr.hours, render: (tr: any) => <span className="tabular-nums">{Math.round(tr.hours)}{t('hoursSuffix')}</span>, cellClassName: 'text-right' },
-    { key: 'avgScore', header: t('averageRatingLabel'), sortable: true, accessor: (tr: any) => tr.avgScore || 0, render: (tr: any) => <span className="tabular-nums text-amber-600 font-medium">{(tr.avgScore ?? 0).toFixed(1)}</span>, cellClassName: 'text-right' },
     { key: 'attendance', header: t('attendanceLabel'), sortable: true, accessor: (tr: any) => tr.attendance, render: (tr: any) => <span className="tabular-nums">{tr.attendance}%</span>, cellClassName: 'text-right' },
     { key: 'groupCount', header: t('groupsLabel'), sortable: true, accessor: (tr: any) => tr.groupCount || 0, render: (tr: any) => <span className="tabular-nums">{tr.groupCount ?? '-'}</span>, cellClassName: 'text-right' },
     {
@@ -417,14 +416,6 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
           <span className="text-xs text-slate-500 tabular-nums">{g.progressAvg ?? 0}%</span>
         </div>
       ),
-    },
-    {
-      key: 'avgScore',
-      header: t('averageRatingLabel'),
-      sortable: true,
-      accessor: (g: any) => g.avgScore || 0,
-      render: (g: any) => <span className="tabular-nums text-amber-600 font-medium">{(g.avgScore ?? 0).toFixed(1)}</span>,
-      cellClassName: 'text-right',
     },
   ];
 
@@ -544,24 +535,11 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
               tone={roasTone}
             />
             <KpiCard
-              title={t('npsTab')}
-              value={analytics.summary.nps ?? 0}
-              detail={`${t('targetGreaterThan')}${targets.nps ?? 50}`}
-              icon={Star}
-              tone={npsTone}
-            />
-            <KpiCard
               title={t('averageAttendance')}
               value={`${analytics.summary.avgAttendance ?? 0}%`}
               detail={`${t('targetGreaterThan')}${targets.attendance ?? 70}%`}
               icon={UserRoundCheck}
               tone={attendanceTone}
-            />
-            <KpiCard
-              title={t('avgLessonRating')}
-              value={`${(analytics.summary.avgLessonScore ?? 0).toFixed(1)} / 5`}
-              icon={Star}
-              tone="blue"
             />
           </div>
 
@@ -714,17 +692,6 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
                 <div className="flex items-center justify-between">
                   <span>{student.studentName}</span>
                   <Badge variant="destructive" className="text-xs">{student.attendancePercent}%</Badge>
-                </div>
-              )}
-              emptyText={t('noData')}
-            />
-            <RiskCard
-              title={t('ratingsBelow3')}
-              items={risks.lowScores || []}
-              render={(survey: any) => (
-                <div className="flex items-center justify-between">
-                  <span>{t('student')} #{survey.studentId}</span>
-                  <Badge variant="destructive" className="text-xs">{survey.score}</Badge>
                 </div>
               )}
               emptyText={t('noData')}

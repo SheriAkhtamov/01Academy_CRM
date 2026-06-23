@@ -138,6 +138,10 @@ export function SalesScheduleCalendar({
   );
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [now, setNow] = useState(() => new Date());
+  const dayNames = [
+    t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
+    t('fridayShort'), t('saturdayShort'), t('sundayShort'),
+  ];
   const scheduleGroups = useMemo(
     () => getGroupsWithSchedule(groups, lessons),
     [groups, lessons],
@@ -237,6 +241,19 @@ export function SalesScheduleCalendar({
       return next;
     });
   };
+
+  const availableSeats = (group: SalesScheduleGroup) => Math.max(
+    0,
+    Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0),
+  );
+  const groupScheduleSummary = (group: SalesScheduleGroup) => (group.schedule ?? [])
+    .map((item) => {
+      const day = dayNames[Number(item.dayOfWeek) - 1];
+      const start = item.startTime ?? item.time ?? '';
+      const end = item.endTime ? `–${item.endTime}` : '';
+      return `${day} ${start}${end}`.trim();
+    })
+    .join(', ');
 
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
@@ -363,7 +380,7 @@ export function SalesScheduleCalendar({
                                           {group.name}
                                         </span>
                                         <span className="block truncate text-[11px] text-muted-foreground">
-                                          {group.teacherName || t('teacherWillBeAssigned')}
+                                          {group.schoolName || t('schoolNotSelected')} · {groupScheduleSummary(group)} · {availableSeats(group)}/{group.maxStudents ?? 12} {t('seatsAvailable')}
                                         </span>
                                       </span>
                                     </Label>
@@ -526,6 +543,11 @@ export function SalesScheduleCalendar({
                                 <p className="truncate text-[10px] opacity-75">
                                   {event.teacherName || t('teacherWillBeAssigned')}
                                 </p>
+                                {event.availableSeats !== null && event.availableSeats !== undefined ? (
+                                  <p className="truncate text-[10px] opacity-75">
+                                    {event.availableSeats}/{event.maxStudents ?? 12} {t('seatsAvailable')}
+                                  </p>
+                                ) : null}
                               </>
                             ) : null}
                           </article>
@@ -550,6 +572,12 @@ export function SalesScheduleCalendar({
                               <div className="flex items-center gap-2 text-xs">
                                 <MapPin className="size-3.5" />
                                 {event.schoolName}
+                              </div>
+                            ) : null}
+                            {event.availableSeats !== null && event.availableSeats !== undefined ? (
+                              <div className="flex items-center gap-2 text-xs">
+                                <UserRoundCheck className="size-3.5" />
+                                {event.availableSeats}/{event.maxStudents ?? 12} {t('seatsAvailable')}
                               </div>
                             ) : null}
                           </div>

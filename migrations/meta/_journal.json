@@ -92,6 +92,13 @@
       "when": 1782057600000,
       "tag": "0012_add_instagram_messaging",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782144000000,
+      "tag": "0013_normalize_academy_rooms",
+      "breakpoints": true
     }
   ]
 }

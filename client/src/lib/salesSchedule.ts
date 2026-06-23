@@ -9,6 +9,9 @@ export interface SalesScheduleGroup {
   schoolId?: number | null;
   teacherName?: string | null;
   schoolName?: string | null;
+  maxStudents?: number | null;
+  currentStudents?: number | null;
+  reservedStudents?: number | null;
   schedule?: AcademyScheduleItem[] | null;
   status?: string | null;
   startDate?: string | null;
@@ -24,6 +27,8 @@ export interface SalesScheduleLesson {
   teacherName?: string | null;
   schoolName?: string | null;
   topic?: string | null;
+  availableSeats?: number | null;
+  maxStudents?: number | null;
   scheduledAt: string;
   durationMinutes?: number | null;
   status?: string | null;
@@ -63,6 +68,8 @@ export interface SalesScheduleEvent {
   teacherName?: string | null;
   schoolName?: string | null;
   topic?: string | null;
+  availableSeats?: number | null;
+  maxStudents?: number | null;
   startsAt: Date;
   endsAt: Date;
   dayIndex: number;
@@ -113,6 +120,10 @@ const toEvent = (
     courseName: lesson.courseName || group?.courseName,
     teacherName: lesson.teacherName || group?.teacherName,
     schoolName: lesson.schoolName || group?.schoolName,
+    availableSeats: group
+      ? Math.max(0, Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0))
+      : null,
+    maxStudents: group?.maxStudents ?? null,
     topic: lesson.topic,
     startsAt,
     endsAt,
@@ -196,6 +207,8 @@ export function buildSalesScheduleEvents({
         courseName: group.courseName,
         teacherName: group.teacherName,
         schoolName: group.schoolName,
+        availableSeats: Math.max(0, Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0)),
+        maxStudents: group.maxStudents ?? 12,
         startsAt,
         endsAt,
         dayIndex: dayOfWeek - 1,

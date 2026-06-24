@@ -20,6 +20,8 @@ import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
 import ManagementBoard from '@/pages/management';
+import AuditPage from '@/pages/admin/audit';
+import FinancePage from '@/pages/admin/finance';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
 
 function WorkspaceBasedHome() {
@@ -254,6 +256,16 @@ function Router() {
         <Route path="/admin/academy-settings" component={() => (
           <WorkspaceGuard workspace="administration">
             <AcademySettings />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/admin/audit" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <AuditPage />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/admin/finance" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <FinancePage />
           </WorkspaceGuard>
         )} />
         <Route path="/management" component={() => (

@@ -40,6 +40,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
+import { ceoCopy } from '@/components/ui/ceo-copy';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -251,6 +252,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
   const pagePath = SALES_SECTION_PATHS[section];
+  const riskFilter = new URLSearchParams(routeSearch).get('risk');
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString('ru-RU')} ${t('uzs')}`;
@@ -304,6 +306,20 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (!data?.students) return [];
     return data.students;
   }, [data?.students]);
+
+  const studentsForCurrentRisk = useMemo(() => {
+    if (riskFilter === 'overdue') {
+      const now = new Date();
+      return myStudents.filter((student) => student.paymentStatus === 'overdue'
+        || Boolean(student.nextPaymentAt && new Date(student.nextPaymentAt) < now));
+    }
+    if (riskFilter === 'low-attendance') {
+      const attendanceTarget = Number(data?.constants?.targets?.attendance ?? 70);
+      return myStudents.filter((student) => Number(student.attendancePercent || 0) > 0
+        && Number(student.attendancePercent || 0) < attendanceTarget);
+    }
+    return myStudents;
+  }, [data?.constants?.targets?.attendance, myStudents, riskFilter]);
 
   const myTasks = useMemo<Task[]>(() => {
     if (!data?.tasks) return [];
@@ -396,6 +412,17 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       invalidate();
     },
     onError: (error: any) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
+  });
+
+  const updateStudentStatus = useMutation({
+    mutationFn: ({ id, status, exitReason }: { id: number; status: string; exitReason?: string }) =>
+      apiRequest('PATCH', `/api/academy/students/${id}/status`, { status, exitReason }),
+    onSuccess: (student) => {
+      toast({ title: ceoCopy.student.updated });
+      setSelectedStudent((current) => current?.id === student.id ? { ...current, ...student } : current);
+      invalidate();
+    },
+    onError: (error: Error) => toast({ title: ceoCopy.student.updateFailed, description: error.message, variant: 'destructive' }),
   });
 
   const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
@@ -627,7 +654,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       {section === 'students' ? (
         <StudentsTab
           t={t}
-          myStudents={myStudents}
+          myStudents={studentsForCurrentRisk}
           paymentStatusName={paymentStatusName}
           dateTime={dateTime}
           data={data}
@@ -636,7 +663,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           openStudent={openStudent}
           openLead={openLead}
           onStudentSheetOpenChange={handleStudentSheetState}
-          title={sectionTitle.students}
+          onUpdateStudentStatus={isAdministrationWorkspace
+            ? (id, status, exitReason) => updateStudentStatus.mutateAsync({ id, status, exitReason })
+            : undefined}
+          title={riskFilter === 'overdue'
+            ? ceoCopy.student.overdueStudents
+            : riskFilter === 'low-attendance'
+              ? ceoCopy.student.lowAttendanceStudents
+              : sectionTitle.students}
           showManager={isAdministrationWorkspace}
         />
       ) : null}
@@ -826,6 +860,7 @@ function StudentsTab({
   openStudent,
   openLead,
   onStudentSheetOpenChange,
+  onUpdateStudentStatus,
   title,
   showManager,
 }: {
@@ -839,6 +874,7 @@ function StudentsTab({
   openStudent: (student: Student) => void;
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
   onStudentSheetOpenChange: (open: boolean) => void;
+  onUpdateStudentStatus?: (id: number, status: string, exitReason?: string) => Promise<unknown>;
   title: string;
   showManager: boolean;
 }) {
@@ -946,6 +982,7 @@ function StudentsTab({
         open={studentSheetOpen}
         onOpenChange={onStudentSheetOpenChange}
         onRecordPayment={(leadId) => openLead(leadId, 'payment')}
+        onUpdateStatus={onUpdateStudentStatus}
         data={{ projects: data.projects, payments: data.payments, referrals: data.referrals }}
         dateTime={dateTime}
       />

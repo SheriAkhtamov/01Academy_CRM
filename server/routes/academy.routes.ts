@@ -8,6 +8,7 @@ import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import {
   ACTIVE_PIPELINE_STATUSES,
+  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_STATUSES,
@@ -62,8 +63,8 @@ type Row = Record<string, any>;
 const transactionContext = new AsyncLocalStorage<PoolClient>();
 
 const ADMINISTRATION_WORKSPACES = new Set(['administration']);
-const FINANCE_WORKSPACES = new Set(['analytics']);
-const OPERATIONS_WORKSPACES = new Set(['analytics']);
+const FINANCE_WORKSPACES = new Set(['analytics', 'administration']);
+const OPERATIONS_WORKSPACES = new Set(['analytics', 'administration']);
 const ANALYTICS_WORKSPACES = new Set(['analytics', 'administration']);
 const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
 const SALES_WORKSPACES = new Set(['sales', 'administration']);
@@ -260,13 +261,13 @@ const deleteRow = async (table: string, id: number) => {
 };
 
 const ensureFinanceAccess = (req: any, res: any) => {
-  if (FINANCE_WORKSPACES.has(req.user?.workspace)) return true;
+  if (req.user?.workspace === 'administration' || FINANCE_WORKSPACES.has(req.user?.workspace)) return true;
   res.status(403).json({ error: 'Finance access required' });
   return false;
 };
 
 const ensureOperationsAccess = (req: any, res: any) => {
-  if (OPERATIONS_WORKSPACES.has(req.user?.workspace) || req.user?.workspace === 'teacher') return true;
+  if (req.user?.workspace === 'administration' || OPERATIONS_WORKSPACES.has(req.user?.workspace) || req.user?.workspace === 'teacher') return true;
   res.status(403).json({ error: 'Operations access required' });
   return false;
 };
@@ -278,7 +279,7 @@ const ensureMarketingAccess = (req: any, res: any) => {
 };
 
 const ensureWorkspaceAccess = (req: any, res: any, workspaces: Set<string>, message: string) => {
-  if (workspaces.has(String(req.user?.workspace))) return true;
+  if (req.user?.workspace === 'administration' || workspaces.has(String(req.user?.workspace))) return true;
   res.status(403).json({ error: message });
   return false;
 };
@@ -338,6 +339,33 @@ const academyConstants = () => ({
     roas: TARGET_ROAS,
     attendance: TARGET_ATTENDANCE_PERCENT,
   },
+});
+
+const defaultCompanyTargets = {
+  targetRevenueMonthlyUzs: 0,
+  targetNewLeadsMonthly: 0,
+  maxCacUzs: TARGET_CAC_UZS,
+  maxCplUzs: 0,
+  targetRoas: TARGET_ROAS,
+  targetAttendancePercent: TARGET_ATTENDANCE_PERCENT,
+  targetNps: TARGET_NPS,
+};
+
+const getCompanySettings = async () => {
+  const existing = await queryOne(`SELECT * FROM academy_company_settings ORDER BY id LIMIT 1`);
+  if (existing) return existing;
+  return insertRow('academy_company_settings', defaultCompanyTargets);
+};
+
+const toAnalyticsTargets = (settings: Row) => ({
+  revenue: Number(settings.targetRevenueMonthlyUzs || 0),
+  newLeads: Number(settings.targetNewLeadsMonthly || 0),
+  nps: Number(settings.targetNps || TARGET_NPS),
+  cac: Number(settings.maxCacUzs || TARGET_CAC_UZS),
+  cpl: Number(settings.maxCplUzs || 0),
+  ltvCac: TARGET_LTV_CAC_RATIO,
+  roas: Number(settings.targetRoas || TARGET_ROAS),
+  attendance: Number(settings.targetAttendancePercent || TARGET_ATTENDANCE_PERCENT),
 });
 
 const createAudit = async (req: any, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
@@ -1638,7 +1666,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         : query(`SELECT * FROM academy_parent_surveys ORDER BY created_at DESC`),
     isManagerScoped || isTeacherScoped
       ? Promise.resolve([])
-      : query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
+      : query(`SELECT * FROM academy_marketing_expenses WHERE status = 'approved' ORDER BY period_start DESC`),
     isTeacherScoped
       ? query(`SELECT p.*
         FROM academy_portfolio_projects p
@@ -1668,7 +1696,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
 };
 
 const buildAnalytics = async () => {
-  const data = await getAcademyDataset();
+  const [data, companySettings] = await Promise.all([getAcademyDataset(), getCompanySettings()]);
+  const targets = toAnalyticsTargets(companySettings);
   const now = new Date();
   const weekStart = addDays(now, -7);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1692,12 +1721,23 @@ const buildAnalytics = async () => {
   const averageLtv = calculateAverage(ltvByStudent.map((item) => item.ltv)) ?? 0;
   const overduePayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'overdue');
   const overdueTasks = data.tasks.filter((task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now);
-  const lowAttendanceStudents = data.students.filter((student) => Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < 70);
+  const lowAttendanceStudents = data.students.filter((student) => Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance);
   const lowScores = data.lessonSurveys.filter((survey) => Number(survey.score) < 3);
   const longThinkingLeads = data.leads.filter((lead) =>
     lead.statusCode === 'thinking' && lead.updatedAt && new Date(lead.updatedAt) < addDays(now, -7)
   );
   const nps = calculateNps(data.parentSurveys.map((survey) => Number(survey.npsScore)).filter(Number.isFinite)) ?? 0;
+  const churnByReason = data.students
+    .filter((student) => ['paused', 'expelled'].includes(String(student.status))
+      && student.exitReason
+      && student.updatedAt
+      && new Date(student.updatedAt) >= monthStart
+      && new Date(student.updatedAt) <= monthEnd)
+    .reduce<Record<string, number>>((acc, student) => {
+      const reason = String(student.exitReason);
+      acc[reason] = (acc[reason] ?? 0) + 1;
+      return acc;
+    }, {});
 
   const funnel = LEAD_STATUSES.map((status) => ({
     ...status,
@@ -1815,7 +1855,7 @@ const buildAnalytics = async () => {
       avgAttendance: calculateAverage(data.students.map((student) => Number(student.attendancePercent || 0)).filter(Boolean)) ?? 0,
       avgLessonScore,
       nps,
-      npsBelowTarget: nps < TARGET_NPS,
+      npsBelowTarget: nps < targets.nps,
       teacherHours,
       avgDealCycleDays,
       leadToDemoConversion,
@@ -1881,7 +1921,8 @@ const buildAnalytics = async () => {
     byCourseLessonNps,
     byGroupProgress,
     retentionByCourse,
-    targets: { nps: TARGET_NPS, cac: TARGET_CAC_UZS, ltvCac: TARGET_LTV_CAC_RATIO, roas: TARGET_ROAS, attendance: TARGET_ATTENDANCE_PERCENT },
+    churnByReason,
+    targets,
     data };
 };
 
@@ -2038,6 +2079,22 @@ const buildAdministrationDashboard = async () => {
     (sum, group) => sum + Number(group.currentStudents || 0),
     0,
   );
+  const discountsMonth = paidPayments
+    .filter((payment) => inRange(payment.paidAt, currentMonthStart, nextMonthStart) && payment.discount !== 'none')
+    .reduce((sum, payment) => {
+      const student = data.students.find((item) => Number(item.id) === Number(payment.studentId));
+      const course = data.courses.find((item) => Number(item.id) === Number(student?.courseId));
+      return sum + Math.max(0, Number(course?.basePriceUzs || 0) - Number(payment.amountUzs || 0));
+    }, 0);
+  const churnByReason = data.students
+    .filter((student) => ['paused', 'expelled'].includes(String(student.status))
+      && student.exitReason
+      && inRange(student.updatedAt, currentMonthStart, nextMonthStart))
+    .reduce<Record<string, number>>((acc, student) => {
+      const reason = String(student.exitReason);
+      acc[reason] = (acc[reason] ?? 0) + 1;
+      return acc;
+    }, {});
 
   return {
     summary: {
@@ -2074,6 +2131,8 @@ const buildAdministrationDashboard = async () => {
     },
     recentActivity,
     upcomingLessons,
+    discountsMonth,
+    churnByReason,
     generatedAt: now.toISOString(),
   };
 };
@@ -2145,7 +2204,7 @@ router.get('/workspaces/sales', async (req, res) => {
   if (!ensureSalesWorkspaceAccess(req, res)) return;
   try {
     const actor: DatasetActor = { userId: req.user!.id, workspace: req.user!.workspace };
-    const dataset = await getAcademyDataset(actor);
+    const [dataset, companySettings] = await Promise.all([getAcademyDataset(actor), getCompanySettings()]);
 
     res.json({
       schools: dataset.schools,
@@ -2161,7 +2220,7 @@ router.get('/workspaces/sales', async (req, res) => {
       tasks: dataset.tasks,
       projects: dataset.projects,
       referrals: dataset.referrals,
-      constants: academyConstants(),
+      constants: { ...academyConstants(), targets: toAnalyticsTargets(companySettings) },
     });
   } catch (error) {
     logger.error('Failed to fetch sales workspace', { error });
@@ -2235,6 +2294,227 @@ router.get('/configuration', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch academy configuration', { error });
     res.status(500).json({ error: 'Failed to fetch academy configuration' });
+  }
+});
+
+router.get('/company-settings', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    res.json(await getCompanySettings());
+  } catch (error) {
+    logger.error('Failed to fetch company settings', { error });
+    res.status(500).json({ error: 'Failed to fetch company settings' });
+  }
+});
+
+router.patch('/company-settings', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const current = await getCompanySettings();
+    const values = {
+      targetRevenueMonthlyUzs: Math.max(0, Number(req.body.targetRevenueMonthlyUzs ?? current.targetRevenueMonthlyUzs) || 0),
+      targetNewLeadsMonthly: Math.max(0, Number(req.body.targetNewLeadsMonthly ?? current.targetNewLeadsMonthly) || 0),
+      maxCacUzs: Math.max(0, Number(req.body.maxCacUzs ?? current.maxCacUzs) || 0),
+      maxCplUzs: Math.max(0, Number(req.body.maxCplUzs ?? current.maxCplUzs) || 0),
+      targetRoas: Math.max(0, Number(req.body.targetRoas ?? current.targetRoas) || 0),
+      targetAttendancePercent: Math.min(100, Math.max(0, Number(req.body.targetAttendancePercent ?? current.targetAttendancePercent) || 0)),
+      targetNps: Math.min(100, Math.max(-100, Number(req.body.targetNps ?? current.targetNps) || 0)),
+      updatedBy: req.user!.id,
+    };
+    const settings = await updateRow('academy_company_settings', Number(current.id), values);
+    await createAudit(req, 'UPDATE_COMPANY_KPI_TARGETS', 'academy_company_settings', Number(current.id), settings, current);
+    res.json(settings);
+  } catch (error) {
+    logger.error('Failed to update company settings', { error });
+    res.status(500).json({ error: 'Failed to update company settings' });
+  }
+});
+
+router.get('/audit', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const filters: string[] = [];
+    const params: DbValue[] = [];
+    const add = (value: DbValue) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    const userId = parseId(req.query.userId);
+    const action = nullableText(req.query.action);
+    const entityType = nullableText(req.query.entityType);
+    const from = nullableDate(req.query.from);
+    const to = nullableDate(req.query.to);
+    if (userId) filters.push(`a.user_id = ${add(userId)}`);
+    if (action) filters.push(`a.action ILIKE ${add(`%${action}%`)}`);
+    if (entityType) filters.push(`a.entity_type ILIKE ${add(`%${entityType}%`)}`);
+    if (from instanceof Date) filters.push(`a.created_at >= ${add(from)}`);
+    if (to instanceof Date) filters.push(`a.created_at < ${add(addDays(to, 1))}`);
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+    const logs = await query(
+      `SELECT a.*, u.full_name AS user_name, u.workspace AS user_workspace
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       ${where}
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT ${add(limit)}`,
+      params,
+    );
+    const integrationLogs = await query(
+      `SELECT id, provider, direction, status, payload, error_message, retry_count, created_at, updated_at
+       FROM academy_integration_logs
+       ORDER BY created_at DESC, id DESC
+       LIMIT 100`,
+    );
+    const employees = await query(
+      `SELECT id, full_name, workspace FROM users WHERE is_active = true ORDER BY full_name`,
+    );
+    res.json({ logs, integrationLogs, employees });
+  } catch (error) {
+    logger.error('Failed to fetch audit trail', { error });
+    res.status(500).json({ error: 'Failed to fetch audit trail' });
+  }
+});
+
+router.get('/finance', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const [payments, expenses] = await Promise.all([
+      query(`SELECT p.*, st.student_name, st.contact_name, l.contact_name AS lead_name,
+                    c.base_price_uzs
+             FROM academy_payments p
+             LEFT JOIN academy_students st ON st.id = p.student_id
+             LEFT JOIN academy_leads l ON l.id = p.lead_id
+             LEFT JOIN academy_courses c ON c.id = st.course_id
+             ORDER BY COALESCE(p.paid_at, p.created_at) DESC, p.id DESC`),
+      query(`SELECT e.*, s.name AS source_name, creator.full_name AS created_by_name,
+                    approver.full_name AS approved_by_name
+             FROM academy_marketing_expenses e
+             LEFT JOIN academy_lead_sources s ON s.id = e.source_id
+             LEFT JOIN users creator ON creator.id = e.created_by
+             LEFT JOIN users approver ON approver.id = e.approved_by
+             ORDER BY e.period_start DESC, e.id DESC`),
+    ]);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const inCurrentMonth = (value: unknown) => {
+      const date = new Date(String(value));
+      return !Number.isNaN(date.getTime()) && date >= monthStart && date < nextMonthStart;
+    };
+    const approvedExpenses = expenses
+      .filter((expense) => expense.status === 'approved')
+      .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
+    const confirmedRevenue = payments
+      .filter((payment) => payment.status === 'paid')
+      .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
+    const discountsMonth = payments
+      .filter((payment) => payment.status === 'paid' && payment.discount !== 'none' && inCurrentMonth(payment.paidAt || payment.createdAt))
+      .reduce((sum, payment) => sum + Math.max(0, Number(payment.basePriceUzs || 0) - Number(payment.amountUzs || 0)), 0);
+    res.json({
+      payments,
+      expenses,
+      summary: {
+        confirmedRevenue,
+        approvedExpenses,
+        pnl: confirmedRevenue - approvedExpenses,
+        discountsMonth,
+        pendingExpenses: expenses.filter((expense) => expense.status === 'pending').length,
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to fetch finance register', { error });
+    res.status(500).json({ error: 'Failed to fetch finance register' });
+  }
+});
+
+router.post('/expenses/:id/approve', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid expense id' });
+    const current = await queryOne(`SELECT * FROM academy_marketing_expenses WHERE id = $1`, [id]);
+    if (!current) return res.status(404).json({ error: 'Expense not found' });
+    if (current.status === 'approved') return res.json(current);
+    const expense = await updateRow('academy_marketing_expenses', id, {
+      status: 'approved',
+      approvedBy: req.user!.id,
+      approvedAt: new Date(),
+      approvalComment: nullableText(req.body.comment) ?? null,
+    });
+    await createAudit(req, 'APPROVE_MARKETING_EXPENSE', 'academy_marketing_expense', id, expense, current);
+    res.json(expense);
+  } catch (error) {
+    logger.error('Failed to approve marketing expense', { error });
+    res.status(500).json({ error: 'Failed to approve marketing expense' });
+  }
+});
+
+router.post('/payments/:id/refund', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    const comment = nullableText(req.body.comment);
+    if (!id) return res.status(400).json({ error: 'Invalid payment id' });
+    if (!comment) return res.status(400).json({ error: 'Refund comment is required' });
+    const current = await queryOne(`SELECT * FROM academy_payments WHERE id = $1`, [id]);
+    if (!current) return res.status(404).json({ error: 'Payment not found' });
+    if (current.status !== 'paid') return res.status(409).json({ error: 'Only paid payments can be refunded' });
+    const payment = await updateRow('academy_payments', id, {
+      status: 'refunded',
+      refundedBy: req.user!.id,
+      refundedAt: new Date(),
+      refundComment: comment,
+    });
+    await createAudit(req, 'REFUND_ACADEMY_PAYMENT', 'academy_payment', id, payment, current);
+    res.json(payment);
+  } catch (error) {
+    logger.error('Failed to refund payment', { error });
+    res.status(500).json({ error: 'Failed to refund payment' });
+  }
+});
+
+router.post('/dashboard/alerts/:key/task', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const key = String(req.params.key);
+    const tasks: Record<string, { title: string; description: string; entityType: string; targetWorkspace: string }> = {
+      payments: {
+        title: 'Позвонить должникам',
+        description: 'Проверить и закрыть просроченные оплаты из CEO Dashboard.',
+        entityType: 'payment',
+        targetWorkspace: 'sales',
+      },
+      attendance: {
+        title: 'Связаться с учениками с низкой посещаемостью',
+        description: 'Разобрать причины посещаемости ниже установленной нормы.',
+        entityType: 'student',
+        targetWorkspace: 'sales',
+      },
+      teachers: {
+        title: 'Назначить преподавателя в группы',
+        description: 'Закрыть группы без назначенного преподавателя.',
+        entityType: 'group',
+        targetWorkspace: 'teacher',
+      },
+    };
+    const definition = tasks[key];
+    if (!definition) return res.status(404).json({ error: 'Unknown dashboard alert' });
+    const responsible = await queryOne(
+      `SELECT id FROM users WHERE workspace = $1 AND is_active = true ORDER BY id LIMIT 1`,
+      [definition.targetWorkspace],
+    );
+    const task = await createTask(definition.title, {
+      responsibleId: responsible ? Number(responsible.id) : req.user!.id,
+      description: definition.description,
+      entityType: definition.entityType,
+      deadlineAt: addDays(new Date(), 1),
+    });
+    await createAudit(req, 'CREATE_DASHBOARD_ACTION_TASK', 'academy_task', Number(task.id), task);
+    res.status(201).json(task);
+  } catch (error) {
+    logger.error('Failed to create dashboard task', { error });
+    res.status(500).json({ error: 'Failed to create dashboard task' });
   }
 });
 
@@ -3144,7 +3424,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   }
 
   if (table === 'academy_lessons') {
-    if (workspace === 'analytics') return { whereSql: '', params };
+    if (workspace === 'analytics' || workspace === 'administration') return { whereSql: '', params };
     if (workspace === 'teacher') {
       const placeholder = await teacherParam();
       return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
@@ -3411,6 +3691,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
 
       if (table === 'academy_marketing_expenses') {
         values.createdBy = req.user!.id;
+        values.status = 'pending';
+        values.approvedBy = null;
+        values.approvedAt = null;
       }
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
@@ -3657,6 +3940,42 @@ router.post('/students/:id/transfer', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to transfer student', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to transfer student' });
+  }
+});
+
+router.patch('/students/:id/status', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    const status = nullableText(req.body.status);
+    const exitReason = nullableText(req.body.exitReason);
+    if (!id) return res.status(400).json({ error: 'Invalid student id' });
+    if (!status || !STUDENT_STATUSES.some((item) => item.code === status)) {
+      return res.status(400).json({ error: 'Invalid student status' });
+    }
+    if (['paused', 'expelled'].includes(status) && (!exitReason || !CHURN_REASONS.includes(exitReason as typeof CHURN_REASONS[number]))) {
+      return res.status(400).json({ error: 'Churn reason is required for paused or expelled students' });
+    }
+    const current = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [id]);
+    if (!current) return res.status(404).json({ error: 'Student not found' });
+    const student = await updateRow('academy_students', id, {
+      status,
+      exitReason: ['paused', 'expelled'].includes(status) ? exitReason : null,
+    });
+    if (current.status !== status) {
+      await insertRow('academy_student_status_history', {
+        studentId: id,
+        fromStatus: current.status,
+        toStatus: status,
+        changedBy: req.user!.id,
+        comment: nullableText(req.body.comment) ?? null,
+      });
+    }
+    await createAudit(req, 'UPDATE_ACADEMY_STUDENT_STATUS', 'academy_student', id, student, current);
+    res.json(student);
+  } catch (error) {
+    logger.error('Failed to update student status', { error });
+    res.status(500).json({ error: 'Failed to update student status' });
   }
 });
 

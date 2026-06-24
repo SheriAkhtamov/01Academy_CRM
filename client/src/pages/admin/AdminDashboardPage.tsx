@@ -1,10 +1,14 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 import {
   Area,
   AreaChart,
   CartesianGrid,
+  Cell,
   Line,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -46,6 +50,9 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { cn } from '@/lib/utils';
+import { apiRequest } from '@/lib/queryClient';
+import { toast } from '@/hooks/use-toast';
+import { ceoCopy } from '@/components/ui/ceo-copy';
 
 interface DashboardTrendPoint {
   month: string;
@@ -115,6 +122,12 @@ interface AdministrationDashboardData {
   courseLoad: DashboardCourseLoad[];
   targets: {
     attendance: number;
+    revenue: number;
+    newLeads: number;
+    nps: number;
+    cac: number;
+    cpl: number;
+    roas: number;
   };
   alerts: {
     overduePayments: number;
@@ -125,8 +138,20 @@ interface AdministrationDashboardData {
   };
   recentActivity: DashboardActivityItem[];
   upcomingLessons: DashboardLesson[];
+  discountsMonth: number;
+  churnByReason: Record<string, number>;
   generatedAt: string;
 }
+
+const CHURN_LABELS: Record<string, string> = {
+  relocation: ceoCopy.student.relocation,
+  price: ceoCopy.student.price,
+  quality: ceoCopy.student.quality,
+  schedule_conflict: ceoCopy.student.scheduleConflict,
+  lost_interest: ceoCopy.student.lostInterest,
+};
+
+const CHURN_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#0891b2'];
 
 const FUNNEL_STAGE_KEYS: Record<string, TranslationKey> = {
   new_request: 'leadStatusNewRequest',
@@ -245,11 +270,17 @@ function DashboardSkeleton() {
 
 export default function AdminDashboardPage() {
   const { t, language } = useTranslation();
+  const [, navigate] = useLocation();
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<AdministrationDashboardData>({
     queryKey: ['/api/academy/workspaces/administration'],
   });
 
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const createAlertTask = useMutation({
+    mutationFn: (key: string) => apiRequest('POST', `/api/academy/dashboard/alerts/${key}/task`),
+    onSuccess: () => toast({ title: ceoCopy.dashboard.taskCreated }),
+    onError: (error: Error) => toast({ title: ceoCopy.dashboard.taskFailed, description: error.message, variant: 'destructive' }),
+  });
   const money = (value: number) =>
     new Intl.NumberFormat(locale, {
       notation: Math.abs(value) >= 1_000_000 ? 'compact' : 'standard',
@@ -326,6 +357,15 @@ export default function AdminDashboardPage() {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(data.generatedAt));
+  const revenuePlan = Number(data.targets.revenue || 0);
+  const leadsPlan = Number(data.targets.newLeads || 0);
+  const revenueProgress = revenuePlan > 0 ? Math.min(100, Math.round((summary.revenueMonth / revenuePlan) * 100)) : 0;
+  const leadsProgress = leadsPlan > 0 ? Math.min(100, Math.round((summary.newLeadsMonth / leadsPlan) * 100)) : 0;
+  const churnData = Object.entries(data.churnByReason ?? {}).map(([reason, value], index) => ({
+    name: CHURN_LABELS[reason] ?? reason,
+    value,
+    color: CHURN_COLORS[index % CHURN_COLORS.length],
+  }));
 
   const alerts = [
     {
@@ -335,6 +375,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.overduePayments,
       icon: Banknote,
       tone: 'bg-destructive/10 text-destructive',
+      href: '/sales/clients?risk=overdue',
     },
     {
       key: 'attendance',
@@ -343,6 +384,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.lowAttendanceStudents,
       icon: UserRoundX,
       tone: 'bg-amber-100 text-amber-600',
+      href: '/sales/clients?risk=low-attendance',
     },
     {
       key: 'teachers',
@@ -351,6 +393,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.groupsWithoutTeacher,
       icon: BookOpenCheck,
       tone: 'bg-primary-50 text-primary-600',
+      href: '/admin/academy-settings?tab=groups&filter=without-teacher',
     },
     {
       key: 'tasks',
@@ -359,6 +402,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.overdueTasks,
       icon: ListTodo,
       tone: 'bg-purple-100 text-purple-600',
+      href: '/sales/tasks',
     },
   ];
 
@@ -465,6 +509,44 @@ export default function AdminDashboardPage() {
           icon={CheckCircle2}
           tone="bg-emerald-100 text-emerald-600"
         />
+      </section>
+
+      <section aria-label={ceoCopy.dashboard.planFact} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {[
+          {
+            title: ceoCopy.dashboard.revenue,
+            fact: fullMoney(summary.revenueMonth),
+            plan: revenuePlan > 0 ? fullMoney(revenuePlan) : ceoCopy.dashboard.planUnset,
+            value: revenueProgress,
+            href: '/admin/academy-settings?tab=kpi',
+          },
+          {
+            title: ceoCopy.dashboard.newLeads,
+            fact: new Intl.NumberFormat(locale).format(summary.newLeadsMonth),
+            plan: leadsPlan > 0 ? new Intl.NumberFormat(locale).format(leadsPlan) : ceoCopy.dashboard.planUnset,
+            value: leadsProgress,
+            href: '/admin/academy-settings?tab=kpi',
+          },
+        ].map((item) => (
+          <button
+            key={item.title}
+            type="button"
+            onClick={() => navigate(item.href)}
+            className="rounded-xl border border-border/70 bg-card p-5 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-slate-700">{item.title}</p>
+                <p className="mt-2 text-2xl font-bold tabular-nums">{item.fact}</p>
+              </div>
+              <span className={cn('text-xl font-semibold tabular-nums', item.value >= 100 ? 'text-emerald-600' : 'text-primary-600')}>
+                {item.value}%
+              </span>
+            </div>
+            <Progress className="mt-4 h-2" value={item.value} />
+            <p className="mt-2 text-xs text-slate-500">{ceoCopy.dashboard.plan} {item.plan}</p>
+          </button>
+        ))}
       </section>
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2 2xl:grid-cols-12">
@@ -608,21 +690,68 @@ export default function AdminDashboardPage() {
                   key={item.key}
                   className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/70"
                 >
-                  <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', resolvedTone)}>
-                    {item.value === 0 ? <CheckCircle2 className="size-4" /> : <Icon className="size-4" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium leading-5">{item.title}</p>
-                    <p className="truncate text-xs text-slate-500">
-                      {item.value === 0 ? t('adminNoIssues') : item.detail}
-                    </p>
-                  </div>
-                  <Badge variant={item.value === 0 ? 'success' : 'secondary'}>
-                    {item.value}
-                  </Badge>
+                  <button
+                    type="button"
+                    onClick={() => navigate(item.href)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`${ceoCopy.dashboard.open} ${item.title}`}
+                  >
+                    <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', resolvedTone)}>
+                      {item.value === 0 ? <CheckCircle2 className="size-4" /> : <Icon className="size-4" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium leading-5">{item.title}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {item.value === 0 ? t('adminNoIssues') : item.detail}
+                      </p>
+                    </div>
+                    <Badge variant={item.value === 0 ? 'success' : 'secondary'}>
+                      {item.value}
+                    </Badge>
+                  </button>
+                  {['payments', 'attendance', 'teachers'].includes(item.key) && item.value > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 text-xs"
+                      disabled={createAlertTask.isPending}
+                      onClick={() => createAlertTask.mutate(item.key)}
+                    >
+                      {ceoCopy.dashboard.createTask}
+                    </Button>
+                  ) : null}
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        <Card className="self-start 2xl:col-span-3">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{ceoCopy.dashboard.churnReasons}</CardTitle>
+            <CardDescription>{ceoCopy.dashboard.churnStatuses}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {churnData.length > 0 ? (
+              <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+                <ResponsiveContainer width="100%" height={120}>
+                  <PieChart>
+                    <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={54} paddingAngle={2}>
+                      {churnData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => [value, ceoCopy.dashboard.students]} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {churnData.map((item) => (
+                    <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="flex min-w-0 items-center gap-2"><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /> <span className="truncate">{item.name}</span></span>
+                      <span className="font-semibold tabular-nums">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : <p className="py-8 text-center text-sm text-slate-500">{ceoCopy.dashboard.noChurn}</p>}
           </CardContent>
         </Card>
 
@@ -696,6 +825,15 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
       </section>
+
+      <button
+        type="button"
+        onClick={() => navigate('/admin/finance')}
+        className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-5 py-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span><span className="block text-sm font-medium">{ceoCopy.dashboard.discounts}</span><span className="mt-1 block text-xs text-slate-500">{ceoCopy.dashboard.discountsDescription}</span></span>
+        <span className="text-xl font-bold tabular-nums text-amber-600">{fullMoney(data.discountsMonth)}</span>
+      </button>
 
       <section aria-labelledby="project-pulse-title" className="flex flex-col gap-4">
         <div>

@@ -15,7 +15,10 @@ export function canAccessAcademyWorkspace(
   assignedWorkspace: string | null | undefined,
   workspace: AcademyWorkspace,
 ): boolean {
-  return assignedWorkspace === workspace;
+  // Administration is the CEO workspace. It intentionally bypasses
+  // workspace boundaries so the director can investigate and act in any
+  // department without needing a second account.
+  return assignedWorkspace === "administration" || assignedWorkspace === workspace;
 }
 
 export const LEAD_STATUSES = [
@@ -78,7 +81,24 @@ export const PAYMENT_STATUSES = [
   { code: "paid", translationKey: "paymentStatusPaid", color: "#16a34a" },
   { code: "pending", translationKey: "paymentStatusPending", color: "#f59e0b" },
   { code: "overdue", translationKey: "paymentStatusOverdue", color: "#dc2626" },
+  { code: "refunded", translationKey: "paymentStatusRefunded", color: "#64748b" },
 ] as const;
+
+export const CHURN_REASONS = [
+  "relocation",
+  "price",
+  "quality",
+  "schedule_conflict",
+  "lost_interest",
+] as const;
+
+export const CHURN_REASON_LABELS: Record<(typeof CHURN_REASONS)[number], string> = {
+  relocation: "Переезд",
+  price: "Дорого",
+  quality: "Не понравилось качество",
+  schedule_conflict: "Конфликт расписания",
+  lost_interest: "Потеря интереса",
+};
 
 export const PAYMENT_TYPES = ["full", "installment_1_2", "installment_2_2"] as const;
 export const PAYMENT_METHODS = ["cash", "transfer", "card"] as const;

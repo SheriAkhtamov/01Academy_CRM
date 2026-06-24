@@ -25,6 +25,8 @@ import {
   Layers3,
   ClipboardCheck,
   Banknote,
+  ClipboardList,
+  Landmark,
   AlertTriangle,
   HeartHandshake,
   Plug,
@@ -41,6 +43,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { ceoCopy } from '@/components/ui/ceo-copy';
 
 interface NavItem {
   name: string;
@@ -142,13 +145,29 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     if (workspace === 'administration') {
       return [
         {
+          label: ceoCopy.workspace.desk,
+          items: [
+            { name: ceoCopy.workspace.deskTitle, href: '/admin', icon: BarChart3 },
+          ],
+        },
+        {
+          label: ceoCopy.workspace.departments,
+          items: [
+            { name: ceoCopy.workspace.sales, href: '/sales', icon: Flame },
+            { name: ceoCopy.workspace.marketing, href: '/marketing-workspace', icon: Megaphone },
+            { name: ceoCopy.workspace.analytics, href: '/analytics-workspace', icon: BarChart3 },
+            { name: ceoCopy.workspace.teachers, href: '/teacher-workspace', icon: GraduationCap },
+          ],
+        },
+        {
           label: t('systemAdministration'),
           items: [
-            { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
             { name: t('employees'), href: '/employees', icon: Users },
             { name: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
             { name: t('resourceCalendar'), href: '/admin/academy-settings?tab=schedule', icon: Calendar },
+            { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
+            { name: ceoCopy.workspace.finance, href: '/admin/finance', icon: Landmark },
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
             { name: t('settings'), href: '/settings', icon: Settings },
           ],

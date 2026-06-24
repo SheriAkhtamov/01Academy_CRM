@@ -28,13 +28,13 @@ describe("01 Academy business rules", () => {
     ]);
   });
 
-  it("keeps administration inside its own workspace", () => {
+  it("gives administration global workspace access", () => {
     expect(canAccessAcademyWorkspace("administration", "administration")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(false);
-    expect(canAccessAcademyWorkspace("administration", "analytics")).toBe(false);
-    expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(false);
-    expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(false);
-    expect(canAccessAcademyWorkspace("administration", "management")).toBe(false);
+    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "analytics")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(true);
+    expect(canAccessAcademyWorkspace("administration", "management")).toBe(true);
   });
 
   it("keeps other employees inside the assigned workspace", () => {

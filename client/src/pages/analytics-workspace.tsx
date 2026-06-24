@@ -15,7 +15,9 @@ import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { ceoCopy } from '@/components/ui/ceo-copy';
 import { LEAD_STATUSES } from '@shared/academy';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import {
   ArrowRight,
   BarChart3,
@@ -52,6 +54,15 @@ const leadStatusTranslationKeys: Record<string, TranslationKey> = {
   enrolled: 'leadStatusEnrolled',
   paid: 'leadStatusPaid',
   not_now: 'leadStatusNotNow',
+};
+
+const churnColors = ['#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#0891b2'];
+const churnLabels: Record<string, string> = {
+  relocation: ceoCopy.student.relocation,
+  price: ceoCopy.student.price,
+  quality: ceoCopy.student.quality,
+  schedule_conflict: ceoCopy.student.scheduleConflict,
+  lost_interest: ceoCopy.student.lostInterest,
 };
 
 const translateEnumValue = (value: string | null | undefined, labels: Record<string, TranslationKey>, t: (key: TranslationKey) => string) => {
@@ -228,10 +239,13 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
   };
 
   const cacTone = getTone(analytics.summary.cac || 0, targets.cac || 300000, 'lt');
+  const cplTone = targets.cpl > 0 ? getTone(analytics.summary.cpl || 0, targets.cpl, 'lt') : 'slate';
   const roasTone = getTone(analytics.summary.roas || 0, targets.roas || 5, 'gt');
   const ltvCacTone = getTone(analytics.summary.ltvCac || 0, targets.ltvCac || 10, 'gt');
   const npsTone = getTone(analytics.summary.nps || 0, targets.nps || 50, 'gt');
   const attendanceTone = getTone(analytics.summary.avgAttendance || 0, targets.attendance || 70, 'gt');
+  const revenueTone = targets.revenue > 0 ? getTone(analytics.summary.revenueMonth || 0, targets.revenue, 'gt') : 'slate';
+  const leadsTone = targets.newLeads > 0 ? getTone(analytics.summary.newLeadsMonth || 0, targets.newLeads, 'gt') : 'slate';
   const sectionTitle: Record<AnalyticsSection, string> = {
     overview: t('navAnalytics'),
     funnel: t('salesPipeline'),
@@ -251,6 +265,11 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
   const byGroupProgress = (analytics.byGroupProgress || []) as any[];
   const risks = analytics.risks || {};
   const retentionByCourse = (analytics.retentionByCourse || []) as any[];
+  const churnData = Object.entries(analytics.churnByReason || {}).map(([reason, value], index) => ({
+    name: churnLabels[reason] ?? reason,
+    value: Number(value),
+    color: churnColors[index % churnColors.length],
+  }));
   /* ── funnel conversion ── */
   const newRequestCount = funnelData.find((f) => f.code === 'new_request')?.count || 0;
   const demoAttendedCount = funnelData.find((f) => f.code === 'demo_attended')?.count || 0;
@@ -488,9 +507,9 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
             <KpiCard
               title={t('weeklyLeads')}
               value={analytics.summary.newLeadsWeek ?? 0}
-              detail={`${t('marketingAndSales')} • ${t('newLeadsMonth')}: ${analytics.summary.newLeadsMonth ?? 0}`}
+              detail={targets.newLeads > 0 ? `${ceoCopy.analytics.month} ${analytics.summary.newLeadsMonth ?? 0} / ${targets.newLeads}` : `${t('marketingAndSales')} • ${t('newLeadsMonth')}: ${analytics.summary.newLeadsMonth ?? 0}`}
               icon={Megaphone}
-              tone="blue"
+              tone={leadsTone}
             />
             <KpiCard
               title={t('activeStudents')}
@@ -502,9 +521,9 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
             <KpiCard
               title={t('monthlyRevenue')}
               value={money(analytics.summary.revenueMonth)}
-              detail={`${t('averageCheck')}: ${money(analytics.summary.avgCheck)}`}
+              detail={targets.revenue > 0 ? `${ceoCopy.analytics.plan} ${money(targets.revenue)}` : `${t('averageCheck')}: ${money(analytics.summary.avgCheck)}`}
               icon={Banknote}
-              tone="green"
+              tone={revenueTone}
             />
             <KpiCard
               title={t('averageCheck')}
@@ -516,7 +535,7 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
             <KpiCard
               title={t('cacLabel')}
               value={money(analytics.summary.cac)}
-              detail={`${t('cacTarget')}`}
+              detail={`${ceoCopy.analytics.goalNoHigher} ${money(targets.cac)}`}
               icon={Target}
               tone={cacTone}
             />
@@ -530,7 +549,7 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
             <KpiCard
               title={t('roasLabel')}
               value={`${analytics.summary.roas}x`}
-              detail={`${t('roasTarget')}`}
+              detail={`${ceoCopy.analytics.goal} ${targets.roas}x`}
               icon={BarChart3}
               tone={roasTone}
             />
@@ -540,6 +559,13 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
               detail={`${t('targetGreaterThan')}${targets.attendance ?? 70}%`}
               icon={UserRoundCheck}
               tone={attendanceTone}
+            />
+            <KpiCard
+              title={ceoCopy.analytics.nps}
+              value={analytics.summary.nps ?? 0}
+              detail={`${ceoCopy.analytics.goal} ${targets.nps ?? 50}`}
+              icon={Star}
+              tone={npsTone}
             />
           </div>
 
@@ -553,6 +579,33 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
               money={money}
             />
           </div>
+          <Card className="mb-6 max-w-2xl">
+            <CardHeader className="pb-3">
+              <CardTitle>{ceoCopy.dashboard.churnReasons}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {churnData.length > 0 ? (
+                <div className="grid grid-cols-[160px_1fr] items-center gap-5">
+                  <ResponsiveContainer width="100%" height={160}>
+                    <PieChart>
+                      <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={66} paddingAngle={2}>
+                        {churnData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => [value, ceoCopy.dashboard.students]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2">
+                    {churnData.map((item) => (
+                      <div key={item.name} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="flex min-w-0 items-center gap-2"><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /> <span className="truncate">{item.name}</span></span>
+                        <span className="font-semibold tabular-nums">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : <p className="py-6 text-sm text-muted-foreground">{ceoCopy.dashboard.noChurn}</p>}
+            </CardContent>
+          </Card>
         </>
       ) : null}
 
@@ -563,7 +616,13 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <KpiCard title={t('conversionApplicationToDemo')} value={`${leadToDemoPct}%`} detail={`${demoAttendedCount} / ${newRequestCount}`} icon={ArrowRight} tone="blue" />
             <KpiCard title={t('conversionDemoToPayment')} value={`${demoToPaidPct}%`} detail={`${paidCount} / ${demoAttendedCount}`} icon={ArrowRight} tone="green" />
-            <KpiCard title={t('cplLabel')} value={money(analytics.summary.cpl ?? 0)} detail={t('cplLabel')} icon={Megaphone} tone="amber" />
+            <KpiCard
+              title={t('cplLabel')}
+              value={money(analytics.summary.cpl ?? 0)}
+              detail={targets.cpl > 0 ? `${ceoCopy.analytics.goalNoHigher} ${money(targets.cpl)}` : t('cplLabel')}
+              icon={Megaphone}
+              tone={cplTone}
+            />
             <KpiCard title={t('avgDealCycle')} value={`${analytics.summary.avgDealCycleDays ?? 0}${t('days')}`} detail={t('avgDealCycle')} icon={CalendarDays} tone="slate" />
           </div>
 

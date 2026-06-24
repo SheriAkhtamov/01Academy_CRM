@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -43,6 +44,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
+import { ceoCopy } from '@/components/ui/ceo-copy';
 import {
   WeekScheduleEditor,
   type WeekScheduleItem,
@@ -59,6 +61,7 @@ import {
   MapPin,
   Plus,
   Trash2,
+  Target,
   UsersRound,
 } from 'lucide-react';
 
@@ -141,6 +144,26 @@ interface ConfigurationData {
   teachers: Teacher[];
   groups: Group[];
 }
+
+interface CompanySettings {
+  targetRevenueMonthlyUzs: number;
+  targetNewLeadsMonthly: number;
+  maxCacUzs: number;
+  maxCplUzs: number;
+  targetRoas: number;
+  targetAttendancePercent: number;
+  targetNps: number;
+}
+
+const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
+  targetRevenueMonthlyUzs: 0,
+  targetNewLeadsMonthly: 0,
+  maxCacUzs: 300000,
+  maxCplUzs: 0,
+  targetRoas: 5,
+  targetAttendancePercent: 70,
+  targetNps: 50,
+};
 
 const schoolSchema = z.object({
   name: z.string().trim().min(1),
@@ -260,8 +283,9 @@ export default function AcademySettings() {
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const requestedTab = new URLSearchParams(routeSearch).get('tab');
+  const requestedFilter = new URLSearchParams(routeSearch).get('filter');
   const [activeTab, setActiveTab] = useState(
-    ['schools', 'rooms', 'courses', 'groups', 'schedule', 'pipeline'].includes(String(requestedTab))
+    ['schools', 'rooms', 'courses', 'groups', 'schedule', 'pipeline', 'kpi'].includes(String(requestedTab))
       ? String(requestedTab)
       : 'schools',
   );
@@ -286,6 +310,14 @@ export default function AcademySettings() {
   const configuration = useQuery<ConfigurationData>({
     queryKey: ['/api/academy/configuration'],
   });
+  const companySettings = useQuery<CompanySettings>({
+    queryKey: ['/api/academy/company-settings'],
+  });
+  const [kpiDraft, setKpiDraft] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
+
+  useEffect(() => {
+    if (companySettings.data) setKpiDraft({ ...DEFAULT_COMPANY_SETTINGS, ...companySettings.data });
+  }, [companySettings.data]);
 
   const invalidate = () => queryClient.invalidateQueries({
     queryKey: ['/api/academy/configuration'],
@@ -504,6 +536,21 @@ export default function AcademySettings() {
     }),
   });
 
+  const saveCompanySettings = useMutation({
+    mutationFn: () => apiRequest('PATCH', '/api/academy/company-settings', kpiDraft),
+    onSuccess: () => {
+      toast({ title: ceoCopy.settings.saved });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/company-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/analytics'] });
+    },
+    onError: (error: Error) => toast({
+      title: ceoCopy.settings.failed,
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
   const deleteResource = useMutation({
     mutationFn: ({ resource, id }: NonNullable<typeof deleteTarget>) =>
       apiRequest('DELETE', `/api/academy/${resource}/${id}`),
@@ -662,6 +709,12 @@ export default function AcademySettings() {
   );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
+  const displayedGroups = useMemo(
+    () => requestedFilter === 'without-teacher'
+      ? groups.filter((group) => !group.teacherId)
+      : groups,
+    [groups, requestedFilter],
+  );
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const groupRooms = useMemo(
     () => rooms.filter((room) => (
@@ -986,6 +1039,9 @@ export default function AcademySettings() {
           <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <GitBranch />{t('pipelineStages')}
           </TabsTrigger>
+          <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+            <Target />{ceoCopy.settings.title}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="schools" className="mt-0">
@@ -1071,10 +1127,10 @@ export default function AcademySettings() {
             <CardContent className="p-0">
               <DataTable
                 columns={groupColumns}
-                data={groups}
+                data={displayedGroups}
                 keyExtractor={(row) => `group-${row.id}`}
                 defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noGroups')} description={t('noGroupsDescription')} />}
+                emptyState={<EmptyTableState title={requestedFilter === 'without-teacher' ? ceoCopy.settings.noGroupsWithoutTeacher : t('noGroups')} description={requestedFilter === 'without-teacher' ? ceoCopy.settings.allGroupsStaffed : t('noGroupsDescription')} />}
               />
             </CardContent>
           </Card>
@@ -1148,6 +1204,52 @@ export default function AcademySettings() {
               {statuses.length === 0 ? (
                 <EmptyTableState title={t('noPipelineStages')} description={t('noPipelineStagesDescription')} />
               ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="kpi" className="mt-0">
+          <Card>
+            <CardHeader>
+              <CardTitle>{ceoCopy.settings.title}</CardTitle>
+              <CardDescription>{ceoCopy.settings.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {[
+                  ['targetRevenueMonthlyUzs', ceoCopy.settings.revenue, ceoCopy.settings.sum],
+                  ['targetNewLeadsMonthly', ceoCopy.settings.newLeads, ceoCopy.settings.leads],
+                  ['maxCacUzs', ceoCopy.settings.maxCac, ceoCopy.settings.sum],
+                  ['maxCplUzs', ceoCopy.settings.maxCpl, ceoCopy.settings.sum],
+                  ['targetRoas', ceoCopy.settings.roas, 'x'],
+                  ['targetAttendancePercent', ceoCopy.settings.attendance, '%'],
+                  ['targetNps', ceoCopy.settings.nps, ''],
+                ].map(([key, label, suffix]) => (
+                  <div key={key} className="space-y-2 rounded-lg border border-border/70 p-4">
+                    <Label htmlFor={`kpi-${key}`}>{label}</Label>
+                    <div className="relative">
+                      <Input
+                        id={`kpi-${key}`}
+                        type="number"
+                        min={key === 'targetNps' ? -100 : 0}
+                        max={key === 'targetAttendancePercent' ? 100 : undefined}
+                        value={kpiDraft[key as keyof CompanySettings]}
+                        onChange={(event) => setKpiDraft((current) => ({
+                          ...current,
+                          [key]: Number(event.target.value) || 0,
+                        }))}
+                        className="pr-12"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{suffix}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 flex justify-end">
+                <Button onClick={() => saveCompanySettings.mutate()} disabled={saveCompanySettings.isPending}>
+                  {saveCompanySettings.isPending ? t('saving') : ceoCopy.settings.save}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

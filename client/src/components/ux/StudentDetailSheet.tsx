@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
+import { ceoCopy } from '@/components/ui/ceo-copy';
 import {
   BookOpen,
   Calendar,
@@ -32,6 +33,7 @@ interface StudentDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRecordPayment?: (leadId: number) => void;
+  onUpdateStatus?: (studentId: number, status: string, exitReason?: string) => Promise<unknown>;
   data?: {
     projects?: any[];
     payments?: any[];
@@ -45,11 +47,15 @@ export function StudentDetailSheet({
   open,
   onOpenChange,
   onRecordPayment,
+  onUpdateStatus,
   data,
   dateTime,
 }: StudentDetailSheetProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('info');
+  const [statusDraft, setStatusDraft] = useState(String(student?.status ?? 'studying'));
+  const [exitReason, setExitReason] = useState(String(student?.exitReason ?? ''));
+  const [savingStatus, setSavingStatus] = useState(false);
   // Hold onto the last non-null student so the sheet can animate out on close
   // instead of unmounting the instant the parent clears the selection.
   const [heldStudent, setHeldStudent] = useState(student);
@@ -60,6 +66,13 @@ export function StudentDetailSheet({
   useEffect(() => {
     if (open) setActiveTab('info');
   }, [open, student?.id]);
+
+  useEffect(() => {
+    if (student) {
+      setStatusDraft(String(student.status ?? 'studying'));
+      setExitReason(String(student.exitReason ?? ''));
+    }
+  }, [student]);
 
   if (!heldStudent) return null;
   const currentStudent = heldStudent;
@@ -198,6 +211,50 @@ export function StudentDetailSheet({
             <InfoRow label={t('managerLabel')} value={currentStudent.managerName || t('noData')} />
             <InfoRow label={t('referralCodeLabel')} value={currentStudent.referralCode || t('noData')} />
             <InfoRow label={t('nextPaymentLabel')} value={dateTime(currentStudent.nextPaymentAt)} />
+            {onUpdateStatus ? (
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                <p className="text-sm font-medium text-foreground">{ceoCopy.student.learningStatus}</p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    {ceoCopy.student.status}
+                    <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" value={statusDraft} onChange={(event) => setStatusDraft(event.target.value)}>
+                      <option value="studying">{ceoCopy.student.studying}</option>
+                      <option value="paused">{ceoCopy.student.paused}</option>
+                      <option value="completed">{ceoCopy.student.completed}</option>
+                      <option value="expelled">{ceoCopy.student.expelled}</option>
+                    </select>
+                  </label>
+                  {['paused', 'expelled'].includes(statusDraft) ? (
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      {ceoCopy.student.churnReason}
+                      <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" value={exitReason} onChange={(event) => setExitReason(event.target.value)}>
+                        <option value="">{ceoCopy.student.chooseReason}</option>
+                        <option value="relocation">{ceoCopy.student.relocation}</option>
+                        <option value="price">{ceoCopy.student.price}</option>
+                        <option value="quality">{ceoCopy.student.quality}</option>
+                        <option value="schedule_conflict">{ceoCopy.student.scheduleConflict}</option>
+                        <option value="lost_interest">{ceoCopy.student.lostInterest}</option>
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+                <Button
+                  className="mt-3"
+                  size="sm"
+                  disabled={savingStatus || (['paused', 'expelled'].includes(statusDraft) && !exitReason)}
+                  onClick={async () => {
+                    setSavingStatus(true);
+                    try {
+                      await onUpdateStatus(currentStudent.id, statusDraft, exitReason || undefined);
+                    } finally {
+                      setSavingStatus(false);
+                    }
+                  }}
+                >
+                  {savingStatus ? ceoCopy.student.saving : ceoCopy.student.saveStatus}
+                </Button>
+              </div>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="schedule" className="space-y-3">

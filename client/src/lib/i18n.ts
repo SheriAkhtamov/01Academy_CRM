@@ -211,6 +211,7 @@ export const translations = {
   paymentStatusOverdue: { en: 'Overdue', ru: 'Просрочено' },
   paymentStatusPaid: { en: 'Paid', ru: 'Оплачено' },
   paymentStatusPending: { en: 'Pending', ru: 'Ожидает' },
+  paymentStatusRefunded: { en: 'Refunded', ru: 'Возвращено' },
   period: { en: 'Period', ru: 'Период' },
   phone: { en: 'Phone', ru: 'Телефон' },
   phonePlaceholder: { en: '+1 (555) 123-45-67', ru: '+7 (999) 123-45-67' },

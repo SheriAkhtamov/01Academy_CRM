@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
@@ -26,7 +25,6 @@ import {
   Download,
   GraduationCap,
   Megaphone,
-  Send,
   ShieldAlert,
   Sparkles,
   Star,
@@ -181,15 +179,6 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
   const { data, isLoading } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/analytics'],
   });
-
-  const handleSendTelegram = async () => {
-    try {
-      await apiRequest('POST', '/api/academy/reports/weekly/test', { recipient: 'leadership' });
-      toast({ title: t('testReportCreated') });
-    } catch (e: any) {
-      toast({ title: t('error'), description: e.message, variant: 'destructive' });
-    }
-  };
 
   /* ── access check ── */
   if (!user || !canAccessAnalytics(user)) {
@@ -490,14 +479,6 @@ export default function AnalyticsWorkspace({ section = 'overview' }: { section?:
           { label: t('navDashboard'), href: '/analytics-workspace' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleSendTelegram}>
-              <Send className="h-4 w-4 mr-2" />
-              {t('sendReport')}
-            </Button>
-          </div>
-        }
       />
 
       {/* ── KPI Grid ── */}

@@ -132,7 +132,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
             { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
             { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
-            { name: t('reports'), href: '/marketing-workspace/reports', icon: ListChecks },
           ],
         },
         {
@@ -165,7 +164,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('employees'), href: '/employees', icon: Users },
             { name: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-            { name: t('resourceCalendar'), href: '/admin/academy-settings?tab=schedule', icon: Calendar },
             { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
             { name: ceoCopy.workspace.finance, href: '/admin/finance', icon: Landmark },
             { name: ceoCopy.workspace.payroll, href: '/admin/payroll', icon: Banknote },
@@ -231,7 +229,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               <div key={section.label} className="mb-2">
                 <button
                   onClick={() => toggleSection(section.label)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-500 transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-500 transition-colors"
                 >
                   <span>{section.label}</span>
                   <ChevronDown

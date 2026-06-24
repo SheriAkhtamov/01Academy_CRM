@@ -69,7 +69,6 @@ const OPERATIONS_WORKSPACES = new Set(['analytics', 'administration']);
 const ANALYTICS_WORKSPACES = new Set(['analytics', 'administration']);
 const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
 const SALES_WORKSPACES = new Set(['sales', 'administration']);
-const REPORT_WORKSPACES = new Set(['administration', 'analytics', 'marketing']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
 const SOURCE_MANAGEMENT_WORKSPACES = new Set(['administration', 'marketing']);
 
@@ -302,12 +301,6 @@ const ensureMarketingWorkspaceAccess = (req: any, res: any) =>
 
 const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
   ensureWorkspaceAccess(req, res, ADMINISTRATION_WORKSPACES, 'Admin access required');
-
-const ensureReportRouteAccess = (req: any, res: any) => {
-  if (REPORT_WORKSPACES.has(req.user?.workspace) || req.user?.hasReportAccess) return true;
-  res.status(403).json({ error: 'Report access required' });
-  return false;
-};
 
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
@@ -4555,64 +4548,6 @@ router.post('/integrations/:provider/test', async (req, res) => {
   } catch (error) {
     logger.error('Failed to test integration', { error });
     res.status(500).json({ error: 'Failed to test integration' });
-  }
-});
-
-router.post('/integrations/notion/export', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
-  try {
-    const dataset = await getAcademyDataset();
-    const payload = {
-      leads: dataset.leads.length,
-      students: dataset.students.length,
-      payments: dataset.payments.length,
-      attendance: dataset.attendance.length,
-      mode: 'safe_stub' };
-    const log = await logIntegration('notion', 'outbound', 'stub_exported', payload);
-    res.json({
-      ok: true,
-      mode: 'safe_stub',
-      message: 'Notion export prepared in safe stub mode. Connect a Notion token to send pages externally.',
-      log,
-      payload });
-  } catch (error) {
-    logger.error('Failed to prepare Notion export', { error });
-    res.status(500).json({ error: 'Failed to prepare Notion export' });
-  }
-});
-
-router.post('/reports/weekly/test', async (req, res) => {
-  if (!ensureReportRouteAccess(req, res)) return;
-  try {
-    const analytics = await buildAnalytics();
-    const recipient = nullableText(req.body.recipient) ?? 'leadership';
-    const isMarketingReport = req.user?.workspace === 'marketing';
-    const message = isMarketingReport
-      ? [
-        'Еженедельный маркетинг-отчёт 01 Academy',
-        `Новые лиды: ${analytics.summary.newLeadsWeek}`,
-        `Конверсия заявка → демо: ${analytics.summary.leadToDemoConversion}%`,
-        `Конверсия демо → оплата: ${analytics.summary.demoToPaidConversion}%`,
-        `CPL: ${analytics.summary.cpl} сум`,
-        `CAC: ${analytics.summary.cac} сум`,
-        `ROAS: ${analytics.summary.roas}x`,
-        `Тёплая база: ${analytics.summary.warmBaseSize}`,
-      ].join('\n')
-      : [
-        'Еженедельный отчёт 01 Academy',
-        `Новые лиды: ${analytics.summary.newLeadsWeek}`,
-        `Были на демо: ${analytics.funnel.find((item) => item.code === 'demo_attended')?.count ?? 0}`,
-        `Новые оплатившие: ${analytics.summary.newPaidStudents}`,
-        `Выручка: ${analytics.summary.revenueMonth} сум`,
-        `Средняя посещаемость: ${analytics.summary.avgAttendance}%`,
-        `NPS родителей: ${analytics.summary.nps}`,
-        `Красные флаги: ${analytics.risks.lowAttendanceStudents.length + analytics.risks.lowScores.length + analytics.risks.overduePayments.length + analytics.risks.longThinkingLeads.length}`,
-      ].join('\n');
-    const outbox = await createOutbox('telegram', recipient, message, { entityType: 'weekly_report' });
-    res.json({ ok: true, outbox, preview: message });
-  } catch (error) {
-    logger.error('Failed to send weekly test report', { error });
-    res.status(500).json({ error: 'Failed to send weekly test report' });
   }
 });
 

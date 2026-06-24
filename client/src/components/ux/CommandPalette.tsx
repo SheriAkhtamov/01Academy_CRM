@@ -31,7 +31,6 @@ import {
   ListChecks,
   Star,
   Wallet,
-  FileText,
   AlertTriangle,
   UserCircle,
   KanbanSquare,
@@ -86,7 +85,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-        { id: 'nav-resource-calendar', type: t('systemAdministration'), title: t('resourceCalendar'), href: '/admin/academy-settings?tab=schedule', icon: Calendar },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
         { id: 'nav-settings', type: t('systemAdministration'), title: t('settings'), href: '/settings', icon: Settings },
       ];
@@ -137,7 +135,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-marketing-warm', type: t('warmBase'), title: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
             { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
             { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
-            { id: 'nav-marketing-reports', type: t('reports'), title: t('reports'), href: '/marketing-workspace/reports', icon: FileText },
           ];
         case 'management':
           return [managementItem];

@@ -38,11 +38,9 @@ import {
   Flame,
   HeartHandshake,
   Wallet,
-  FileText,
   Plus,
   ArrowRight,
   RotateCcw,
-  Send,
   Calculator,
 } from 'lucide-react';
 
@@ -55,7 +53,7 @@ const EMPTY_EXPENSE_FORM = {
   periodEnd: '',
 };
 
-type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses' | 'reports';
+type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses';
 
 function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   title: string;
@@ -154,7 +152,6 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
   const [warmDateFilter, setWarmDateFilter] = useState('');
   const [expensePeriodFilter, setExpensePeriodFilter] = useState('');
-  const [reportPreview, setReportPreview] = useState<string | null>(null);
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString('ru-RU')}${t('uzs')}`;
@@ -195,14 +192,6 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
       invalidate();
     },
     onError: (error: any) => toast({ title: t('error'), description: error.message, variant: 'destructive' }),
-  });
-
-  const sendWeeklyReport = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/academy/reports/weekly/test', { recipient: 'leadership' }),
-    onSuccess: (result) => {
-      toast({ title: t('testReportCreated'), description: result.preview?.split('\n')[0] });
-      setReportPreview(result.preview || null);
-    },
   });
 
   /* ─── derived data ─── */
@@ -402,7 +391,6 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     warm: t('warmBase'),
     referrals: t('navReferrals'),
     expenses: t('expenses'),
-    reports: t('reports'),
   };
 
   return (
@@ -733,60 +721,6 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
           </Card>
         </TabsContent>
 
-        {/* ─── Tab: Reports ─── */}
-        <TabsContent value="reports" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle>{t('weeklyReport')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  onClick={() => sendWeeklyReport.mutate()}
-                  disabled={sendWeeklyReport.isPending}
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  {t('generateWeeklyReport')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (reportPreview) {
-                      const text = encodeURIComponent(reportPreview);
-                      window.open(`https://t.me/share/url?url=&text=${text}`, '_blank');
-                    }
-                  }}
-                  disabled={!reportPreview}
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  {t('sendToTelegram')}
-                </Button>
-              </div>
-
-              {sendWeeklyReport.isPending && (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Skeleton className="h-4 w-4 rounded-full" />
-                  {t('generating')}...
-                </div>
-              )}
-
-              {reportPreview && (
-                <div className="mt-4 rounded-xl border border-border/70 bg-muted/50 p-4">
-                  <h4 className="text-sm font-semibold text-slate-700 mb-2">{t('reportPreview')}</h4>
-                  <pre className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">{reportPreview}</pre>
-                </div>
-              )}
-
-              {!reportPreview && !sendWeeklyReport.isPending && (
-                <EmptyState
-                  title={t('noReportsYet')}
-                  text={t('generateReportToSeePreview')}
-                  icon={FileText}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
       ) : null}
 

@@ -229,11 +229,6 @@ function Router() {
             <MarketingWorkspace section="expenses" />
           </WorkspaceGuard>
         )} />
-        <Route path="/marketing-workspace/reports" component={() => (
-          <WorkspaceGuard workspace="marketing">
-            <MarketingWorkspace section="reports" />
-          </WorkspaceGuard>
-        )} />
         <Route path="/marketing-workspace" component={() => (
           <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="overview" />

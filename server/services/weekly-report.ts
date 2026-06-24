@@ -8,7 +8,7 @@ interface WeeklyReportResult {
 
 /**
  * Builds the weekly leadership report (TZ 4.4) and enqueues it to the Telegram outbox.
- * Runs both from the scheduler (cron) and from the manual /reports/weekly/test endpoint.
+ * Runs from the scheduler (cron).
  */
 export const buildWeeklyReport = async (
   _actorUserId: number,

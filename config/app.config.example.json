@@ -76,9 +76,6 @@
     "googleSheets": {
       "credentialsPath": "",
       "spreadsheetId": ""
-    },
-    "bank": {
-      "webhookSecret": ""
     }
   }
 }

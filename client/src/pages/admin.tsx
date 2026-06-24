@@ -77,6 +77,7 @@ const createUserSchema = (t: any) => z.object({
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
+  baseSalaryUzs: z.coerce.number().int().min(0).default(0),
   workspace: z.enum(ACADEMY_WORKSPACES),
   isActive: z.boolean().default(true),
 });
@@ -108,6 +109,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       fullName: '',
       phone: '',
       position: '',
+      baseSalaryUzs: 0,
       workspace: 'sales',
       isActive: true,
     },
@@ -271,6 +273,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       fullName: user.fullName,
       phone: user.phone || '',
       position: user.position || '',
+      baseSalaryUzs: Number(user.baseSalaryUzs || 0),
       workspace: user.workspace,
       isActive: user.isActive,
     });
@@ -602,6 +605,19 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                 <FormLabel>{t('dateOfBirth')}</FormLabel>
                                 <FormControl>
                                   <Input type="date" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={userForm.control}
+                            name="baseSalaryUzs"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t('baseSalary')}</FormLabel>
+                                <FormControl>
+                                  <Input type="number" min="0" step="1000" {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>

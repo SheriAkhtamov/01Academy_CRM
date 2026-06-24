@@ -105,6 +105,7 @@ type TeacherProfile = {
   id: number;
   schoolIds?: number[];
   availability?: WeekScheduleItem[];
+  ratePerLessonUzs?: number;
 };
 
 function KpiCard({
@@ -1185,6 +1186,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <div className="flex items-center gap-2">
                       <Badge className="bg-emerald-100 text-emerald-700">{t('active')}</Badge>
                     </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-500">{t('teacherRatePerLesson')}</Label>
+                    <Input value={Number(teacherProfile?.ratePerLessonUzs || 0).toLocaleString('ru-RU')} readOnly className="bg-slate-50" />
                   </div>
                 </div>
               </CardContent>

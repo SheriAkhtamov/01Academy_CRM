@@ -6,6 +6,7 @@ import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
+import { getWorkforcePolicy, isRestrictedAtCurrentTime, maskPhone } from '../services/workforce-policy';
 import {
   ACTIVE_PIPELINE_STATUSES,
   CHURN_REASONS,
@@ -321,6 +322,18 @@ const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
   return false;
 };
 
+const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
+  if (actor?.workspace !== 'sales') return leads;
+  const policy = await getWorkforcePolicy();
+  return leads.map((lead) => {
+    const ownsLead = Number(lead.managerId) === Number(actor.userId);
+    const shouldMask = policy.salesPhoneVisibility === 'own_leads'
+      ? !ownsLead
+      : !lead.managerId || !ownsLead;
+    return shouldMask ? { ...lead, phone: maskPhone(lead.phone) } : lead;
+  });
+};
+
 const academyConstants = () => ({
   leadStatuses: LEAD_STATUSES,
   studentStatuses: STUDENT_STATUSES,
@@ -349,12 +362,203 @@ const defaultCompanyTargets = {
   targetRoas: TARGET_ROAS,
   targetAttendancePercent: TARGET_ATTENDANCE_PERCENT,
   targetNps: TARGET_NPS,
+  salesCommissionPercent: 0,
+  groupMinFillPercent: 60,
+  currentCashBalanceUzs: 0,
+  salesPhoneVisibility: 'own_leads',
+  workdayStartHour: 8,
+  workdayEndHour: 20,
+  workdays: [1, 2, 3, 4, 5],
 };
 
 const getCompanySettings = async () => {
   const existing = await queryOne(`SELECT * FROM academy_company_settings ORDER BY id LIMIT 1`);
   if (existing) return existing;
   return insertRow('academy_company_settings', defaultCompanyTargets);
+};
+
+const payrollPeriodPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+const getPayrollPeriodBounds = (period: unknown) => {
+  const normalized = String(period ?? '');
+  if (!payrollPeriodPattern.test(normalized)) return null;
+  const [year, month] = normalized.split('-').map(Number);
+  return {
+    period: normalized,
+    from: new Date(year, month - 1, 1),
+    to: new Date(year, month, 1),
+  };
+};
+
+const currentPayrollPeriod = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const calculatePayroll = async (periodValue: unknown) => {
+  const bounds = getPayrollPeriodBounds(periodValue);
+  if (!bounds) {
+    throw Object.assign(new Error('Payroll period must use YYYY-MM format'), { statusCode: 400 });
+  }
+
+  const [settings, teachers, managers, recordedEntries] = await Promise.all([
+    getCompanySettings(),
+    query(
+      `SELECT t.id AS teacher_id, t.user_id AS employee_user_id, t.full_name AS employee_name,
+              t.rate_per_lesson_uzs,
+              COUNT(l.id)::int AS conducted_lessons
+       FROM academy_teachers t
+       LEFT JOIN academy_lessons l
+         ON l.teacher_id = t.id
+        AND l.status = 'conducted'
+        AND l.scheduled_at >= $1
+        AND l.scheduled_at < $2
+       WHERE t.status = 'active'
+       GROUP BY t.id, t.user_id, t.full_name, t.rate_per_lesson_uzs
+       ORDER BY t.full_name`,
+      [bounds.from, bounds.to],
+    ),
+    query(
+      `SELECT u.id AS employee_user_id, u.full_name AS employee_name, u.base_salary_uzs,
+              COALESCE(SUM(p.amount_uzs), 0)::int AS commission_base_uzs
+       FROM users u
+       LEFT JOIN academy_payments p
+         ON p.status = 'paid'
+        AND p.paid_at >= $1
+        AND p.paid_at < $2
+        AND COALESCE(
+          (SELECT st.manager_id FROM academy_students st WHERE st.id = p.student_id),
+          (SELECT l.manager_id FROM academy_leads l WHERE l.id = p.lead_id)
+        ) = u.id
+       WHERE u.workspace = 'sales' AND u.is_active = true
+       GROUP BY u.id, u.full_name, u.base_salary_uzs
+       ORDER BY u.full_name`,
+      [bounds.from, bounds.to],
+    ),
+    query(
+      `SELECT * FROM academy_payroll_entries WHERE period = $1`,
+      [bounds.period],
+    ),
+  ]);
+
+  const paidEntries = new Map(
+    recordedEntries.map((entry) => [
+      `${entry.entryType}:${entry.entryType === 'teacher' ? entry.teacherId : entry.employeeUserId}`,
+      entry,
+    ]),
+  );
+  const commissionPercent = Math.min(100, Math.max(0, Number(settings.salesCommissionPercent || 0)));
+  const entries = [
+    ...teachers.map((teacher) => {
+      const conductedLessons = Number(teacher.conductedLessons || 0);
+      const ratePerLessonUzs = Number(teacher.ratePerLessonUzs || 0);
+      const calculatedAmountUzs = conductedLessons * ratePerLessonUzs;
+      const paid = paidEntries.get(`teacher:${teacher.teacherId}`);
+      return {
+        id: paid?.id ?? null,
+        entryType: 'teacher',
+        teacherId: Number(teacher.teacherId),
+        employeeUserId: teacher.employeeUserId ? Number(teacher.employeeUserId) : null,
+        employeeName: teacher.employeeName,
+        conductedLessons,
+        ratePerLessonUzs,
+        baseSalaryUzs: 0,
+        commissionPercent: 0,
+        commissionBaseUzs: 0,
+        calculatedAmountUzs,
+        amountUzs: Number(paid?.amountUzs ?? calculatedAmountUzs),
+        status: paid?.status ?? 'pending',
+        paidAt: paid?.paidAt ?? null,
+      };
+    }),
+    ...managers.map((manager) => {
+      const baseSalaryUzs = Number(manager.baseSalaryUzs || 0);
+      const commissionBaseUzs = Number(manager.commissionBaseUzs || 0);
+      const calculatedAmountUzs = baseSalaryUzs + Math.round((commissionBaseUzs * commissionPercent) / 100);
+      const paid = paidEntries.get(`manager:${manager.employeeUserId}`);
+      return {
+        id: paid?.id ?? null,
+        entryType: 'manager',
+        teacherId: null,
+        employeeUserId: Number(manager.employeeUserId),
+        employeeName: manager.employeeName,
+        conductedLessons: 0,
+        ratePerLessonUzs: 0,
+        baseSalaryUzs,
+        commissionPercent,
+        commissionBaseUzs,
+        calculatedAmountUzs,
+        amountUzs: Number(paid?.amountUzs ?? calculatedAmountUzs),
+        status: paid?.status ?? 'pending',
+        paidAt: paid?.paidAt ?? null,
+      };
+    }),
+  ];
+
+  return {
+    period: bounds.period,
+    entries,
+    summary: {
+      pendingAmountUzs: entries.filter((entry) => entry.status !== 'paid').reduce((sum, entry) => sum + entry.amountUzs, 0),
+      paidAmountUzs: entries.filter((entry) => entry.status === 'paid').reduce((sum, entry) => sum + entry.amountUzs, 0),
+      totalAmountUzs: entries.reduce((sum, entry) => sum + entry.amountUzs, 0),
+      teacherCount: teachers.length,
+      managerCount: managers.length,
+      commissionPercent,
+    },
+  };
+};
+
+const getGroupProfitability = async () => {
+  const [settings, groups] = await Promise.all([
+    getCompanySettings(),
+    query(
+      `SELECT g.id, g.name, g.max_students, g.status,
+              c.name AS course_name, sc.name AS school_name, r.name AS room_name,
+              COALESCE((SELECT COUNT(*) FROM academy_students st
+                        WHERE st.group_id = g.id AND st.status = 'studying'), 0)::int AS current_students,
+              COALESCE((SELECT SUM(p.amount_uzs) FROM academy_payments p
+                        WHERE p.group_id = g.id AND p.status = 'paid'), 0)::int AS revenue_uzs,
+              COALESCE((SELECT COUNT(*) FROM academy_lessons lesson
+                        WHERE lesson.group_id = g.id AND lesson.status = 'conducted'), 0)::int AS conducted_lessons,
+              COALESCE((SELECT SUM(COALESCE(teacher.rate_per_lesson_uzs, 0))
+                        FROM academy_lessons lesson
+                        LEFT JOIN academy_teachers teacher ON teacher.id = lesson.teacher_id
+                        WHERE lesson.group_id = g.id AND lesson.status = 'conducted'), 0)::int AS teacher_cost_uzs,
+              COALESCE((SELECT ROUND(SUM((lesson.duration_minutes::numeric / 60) * COALESCE(room.rent_per_hour_uzs, 0)))
+                        FROM academy_lessons lesson
+                        LEFT JOIN academy_rooms room ON room.id = lesson.room_id
+                        WHERE lesson.group_id = g.id AND lesson.status = 'conducted'), 0)::int AS rent_cost_uzs
+       FROM academy_groups g
+       LEFT JOIN academy_courses c ON c.id = g.course_id
+       LEFT JOIN academy_schools sc ON sc.id = g.school_id
+       LEFT JOIN academy_rooms r ON r.id = g.room_id
+       ORDER BY g.created_at DESC`,
+    ),
+  ]);
+  const minFillPercent = Math.min(100, Math.max(0, Number(settings.groupMinFillPercent || 0)));
+  return groups.map((group) => {
+    const maxStudents = Math.max(1, Number(group.maxStudents || 1));
+    const currentStudents = Number(group.currentStudents || 0);
+    const revenueUzs = Number(group.revenueUzs || 0);
+    const teacherCostUzs = Number(group.teacherCostUzs || 0);
+    const rentCostUzs = Number(group.rentCostUzs || 0);
+    const totalCostsUzs = teacherCostUzs + rentCostUzs;
+    const profitUzs = revenueUzs - totalCostsUzs;
+    const fillPercent = Math.round((currentStudents / maxStudents) * 100);
+    return {
+      ...group,
+      maxStudents,
+      currentStudents,
+      revenueUzs,
+      teacherCostUzs,
+      rentCostUzs,
+      totalCostsUzs,
+      profitUzs,
+      fillPercent,
+      isLossMaking: fillPercent < minFillPercent && profitUzs < 0,
+    };
+  });
 };
 
 const toAnalyticsTargets = (settings: Row) => ({
@@ -1488,6 +1692,7 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
   if (lead.statusCode === 'enrolled' && previousStatus !== 'enrolled') {
     await insertRow('academy_payments', {
       leadId: lead.id,
+      groupId: lead.enrolledGroupId ?? null,
       amountUzs: normalizeMoney(lead.expectedPaymentUzs || lead.offerPriceUzs),
       type: 'full',
       method: lead.paymentMethod || 'transfer',
@@ -1692,7 +1897,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
   ]);
 
-  return { schools, rooms, courses, sources, statuses, teachers, groups, leads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
+  const visibleLeads = await redactLeadPhonesForActor(actor, leads);
+  return { schools, rooms, courses, sources, statuses, teachers, groups, leads: visibleLeads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
 };
 
 const buildAnalytics = async () => {
@@ -1927,9 +2133,16 @@ const buildAnalytics = async () => {
 };
 
 const buildAdministrationDashboard = async () => {
-  const [analytics, users] = await Promise.all([
+  const [analytics, users, profitability, escalatedTasks] = await Promise.all([
     buildAnalytics(),
     storage.getUsers(),
+    getGroupProfitability(),
+    query(`SELECT t.id, t.title, t.deadline_at, u.full_name AS responsible_name
+           FROM academy_tasks t
+           LEFT JOIN users u ON u.id = t.responsible_id
+           WHERE t.status <> 'done' AND t.escalated_at IS NOT NULL
+           ORDER BY t.escalated_at DESC
+           LIMIT 20`),
   ]);
   const data = analytics.data;
   const now = new Date();
@@ -2125,7 +2338,7 @@ const buildAdministrationDashboard = async () => {
     alerts: {
       overduePayments: analytics.risks.overduePayments.length,
       lowAttendanceStudents: analytics.risks.lowAttendanceStudents.length,
-      overdueTasks: analytics.risks.overdueTasks.length,
+      overdueTasks: escalatedTasks.length,
       longThinkingLeads: analytics.risks.longThinkingLeads.length,
       groupsWithoutTeacher,
     },
@@ -2133,6 +2346,8 @@ const buildAdministrationDashboard = async () => {
     upcomingLessons,
     discountsMonth,
     churnByReason,
+    escalatedTasks,
+    lossMakingGroups: profitability.filter((group) => group.isLossMaking),
     generatedAt: now.toISOString(),
   };
 };
@@ -2319,6 +2534,20 @@ router.patch('/company-settings', async (req, res) => {
       targetRoas: Math.max(0, Number(req.body.targetRoas ?? current.targetRoas) || 0),
       targetAttendancePercent: Math.min(100, Math.max(0, Number(req.body.targetAttendancePercent ?? current.targetAttendancePercent) || 0)),
       targetNps: Math.min(100, Math.max(-100, Number(req.body.targetNps ?? current.targetNps) || 0)),
+      salesCommissionPercent: Math.min(100, Math.max(0, Number(req.body.salesCommissionPercent ?? current.salesCommissionPercent) || 0)),
+      groupMinFillPercent: Math.min(100, Math.max(0, Number(req.body.groupMinFillPercent ?? current.groupMinFillPercent) || 0)),
+      currentCashBalanceUzs: Math.max(0, Number(req.body.currentCashBalanceUzs ?? current.currentCashBalanceUzs) || 0),
+      salesPhoneVisibility: ['own_leads', 'mask_until_assigned'].includes(String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility))
+        ? String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility)
+        : 'own_leads',
+      workdayStartHour: Math.min(23, Math.max(0, Number(req.body.workdayStartHour ?? current.workdayStartHour) || 0)),
+      workdayEndHour: Math.min(24, Math.max(0, Number(req.body.workdayEndHour ?? current.workdayEndHour) || 0)),
+      workdays: safeJson(
+        Array.isArray(req.body.workdays)
+          ? req.body.workdays.map(Number).filter((day: number) => Number.isInteger(day) && day >= 1 && day <= 7)
+          : current.workdays,
+        [1, 2, 3, 4, 5],
+      ),
       updatedBy: req.user!.id,
     };
     const settings = await updateRow('academy_company_settings', Number(current.id), values);
@@ -2379,7 +2608,7 @@ router.get('/audit', async (req, res) => {
 router.get('/finance', async (req, res) => {
   if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
-    const [payments, expenses] = await Promise.all([
+    const [payments, expenses, payrollPayouts] = await Promise.all([
       query(`SELECT p.*, st.student_name, st.contact_name, l.contact_name AS lead_name,
                     c.base_price_uzs
              FROM academy_payments p
@@ -2394,6 +2623,11 @@ router.get('/finance', async (req, res) => {
              LEFT JOIN users creator ON creator.id = e.created_by
              LEFT JOIN users approver ON approver.id = e.approved_by
              ORDER BY e.period_start DESC, e.id DESC`),
+      query(`SELECT pe.*, payer.full_name AS paid_by_name
+             FROM academy_payroll_entries pe
+             LEFT JOIN users payer ON payer.id = pe.paid_by
+             WHERE pe.status = 'paid'
+             ORDER BY pe.paid_at DESC, pe.id DESC`),
     ]);
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2408,16 +2642,19 @@ router.get('/finance', async (req, res) => {
     const confirmedRevenue = payments
       .filter((payment) => payment.status === 'paid')
       .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
+    const paidPayroll = payrollPayouts.reduce((sum, entry) => sum + Number(entry.amountUzs || 0), 0);
     const discountsMonth = payments
       .filter((payment) => payment.status === 'paid' && payment.discount !== 'none' && inCurrentMonth(payment.paidAt || payment.createdAt))
       .reduce((sum, payment) => sum + Math.max(0, Number(payment.basePriceUzs || 0) - Number(payment.amountUzs || 0)), 0);
     res.json({
       payments,
       expenses,
+      payrollPayouts,
       summary: {
         confirmedRevenue,
         approvedExpenses,
-        pnl: confirmedRevenue - approvedExpenses,
+        paidPayroll,
+        pnl: confirmedRevenue - approvedExpenses - paidPayroll,
         discountsMonth,
         pendingExpenses: expenses.filter((expense) => expense.status === 'pending').length,
       },
@@ -2471,6 +2708,101 @@ router.post('/payments/:id/refund', async (req, res) => {
   } catch (error) {
     logger.error('Failed to refund payment', { error });
     res.status(500).json({ error: 'Failed to refund payment' });
+  }
+});
+
+router.get('/payroll', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const period = String(req.query.period ?? currentPayrollPeriod());
+    res.json(await calculatePayroll(period));
+  } catch (error: any) {
+    logger.error('Failed to calculate payroll', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to calculate payroll' });
+  }
+});
+
+router.post('/payroll/payout', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const period = String(req.body.period ?? currentPayrollPeriod());
+    const entryType = String(req.body.entryType ?? '');
+    const employeeUserId = parseId(req.body.employeeUserId);
+    const teacherId = parseId(req.body.teacherId);
+    if (!['teacher', 'manager'].includes(entryType)) {
+      return res.status(400).json({ error: 'Invalid payroll entry type' });
+    }
+    if (entryType === 'teacher' && !teacherId) {
+      return res.status(400).json({ error: 'Teacher is required' });
+    }
+    if (entryType === 'manager' && !employeeUserId) {
+      return res.status(400).json({ error: 'Manager is required' });
+    }
+
+    const entry = await withTransaction(async () => {
+      const payroll = await calculatePayroll(period);
+      const calculated = payroll.entries.find((item) => (
+        item.entryType === entryType
+        && (entryType === 'teacher' ? item.teacherId === teacherId : item.employeeUserId === employeeUserId)
+      ));
+      if (!calculated) {
+        throw Object.assign(new Error('Payroll entry not found'), { statusCode: 404 });
+      }
+      if (calculated.status === 'paid' && calculated.id) {
+        return queryOne(`SELECT * FROM academy_payroll_entries WHERE id = $1`, [calculated.id]);
+      }
+      if (calculated.amountUzs <= 0) {
+        throw Object.assign(new Error('No payable amount for this employee'), { statusCode: 409 });
+      }
+      return insertRow('academy_payroll_entries', {
+        period: payroll.period,
+        entryType,
+        employeeUserId: calculated.employeeUserId,
+        teacherId: calculated.teacherId,
+        employeeName: calculated.employeeName,
+        baseSalaryUzs: calculated.baseSalaryUzs,
+        commissionPercent: calculated.commissionPercent,
+        commissionBaseUzs: calculated.commissionBaseUzs,
+        conductedLessons: calculated.conductedLessons,
+        ratePerLessonUzs: calculated.ratePerLessonUzs,
+        amountUzs: calculated.amountUzs,
+        status: 'paid',
+        paidBy: req.user!.id,
+        paidAt: new Date(),
+      });
+    });
+    if (!entry) return res.status(500).json({ error: 'Failed to record payroll payout' });
+    await createAudit(req, 'PAY_ACADEMY_PAYROLL', 'academy_payroll_entry', Number(entry.id), entry);
+    res.status(201).json(entry);
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      const period = String(req.body.period ?? currentPayrollPeriod());
+      const entryType = String(req.body.entryType ?? '');
+      const id = entryType === 'teacher' ? parseId(req.body.teacherId) : parseId(req.body.employeeUserId);
+      const column = entryType === 'teacher' ? 'teacher_id' : 'employee_user_id';
+      const existing = id
+        ? await queryOne(`SELECT * FROM academy_payroll_entries WHERE period = $1 AND entry_type = $2 AND ${column} = $3`, [period, entryType, id])
+        : undefined;
+      if (existing) return res.json(existing);
+    }
+    logger.error('Failed to pay payroll entry', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to pay payroll entry' });
+  }
+});
+
+router.get('/groups/profitability', async (req, res) => {
+  if (!ensureFinanceAccess(req, res)) return;
+  try {
+    const groups = await getGroupProfitability();
+    const settings = await getCompanySettings();
+    res.json({
+      groups,
+      minFillPercent: Number(settings.groupMinFillPercent || 0),
+      lossMakingGroups: groups.filter((group) => group.isLossMaking),
+    });
+  } catch (error) {
+    logger.error('Failed to calculate group profitability', { error });
+    res.status(500).json({ error: 'Failed to calculate group profitability' });
   }
 });
 
@@ -2923,7 +3255,10 @@ router.get('/leads', async (req, res) => {
        ORDER BY l.created_at DESC`,
       params,
     );
-    res.json(leads);
+    res.json(await redactLeadPhonesForActor(
+      { userId: req.user!.id, workspace: String(req.user!.workspace) },
+      leads,
+    ));
   } catch (error) {
     logger.error('Failed to fetch leads', { error });
     res.status(500).json({ error: 'Failed to fetch leads' });
@@ -3395,7 +3730,7 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
   }
 });
 
-// Inbound webhooks (ChatPlace, Google Forms, bank) live in ./incoming.routes.ts as
+// Inbound webhooks (ChatPlace, Google Forms) live in ./incoming.routes.ts as
 // PUBLIC routes verified by per-provider secrets, not session auth.
 
 const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Promise<{
@@ -4027,6 +4362,7 @@ router.post('/payments', async (req, res) => {
       const payment = await insertRow('academy_payments', {
         leadId,
         studentId: existingStudent?.id ?? studentId,
+        groupId: existingStudent?.groupId ?? lead?.enrolledGroupId ?? parseId(req.body.groupId),
         amountUzs,
         type: nullableText(req.body.type) ?? 'full',
         method: nullableText(req.body.method) ?? 'transfer',
@@ -4081,20 +4417,19 @@ router.post('/surveys/lesson', async (req, res) => {
       improve: nullableText(req.body.improve) });
     await recalculateStudentMetrics(studentId);
     if (score < 3) {
-      // TZ 2.4: low score → notify the administration workspace, not just the submitter.
+      const student = await queryOne(`SELECT manager_id FROM academy_students WHERE id = $1`, [studentId]);
       const leader = await queryOne<{ id: string }>(
         `SELECT id FROM users WHERE workspace = 'administration' AND is_active=true ORDER BY id LIMIT 1`);
-      const responsibleId = leader ? Number(leader.id) : req.user!.id;
-      await createTask('Оценка урока ниже 3 — связаться с учеником', {
+      const responsibleId = Number(student?.managerId ?? leader?.id ?? req.user!.id);
+      const task = await createTask('Оценка урока ниже 3 — связаться с учеником', {
         responsibleId,
         description: `Ученик поставил ${score}/5. Свяжитесь и узнайте причину.`,
-        entityType: 'student',
-        entityId: studentId,
-        deadlineAt: addDays(new Date(), 1) });
-      if (leader) {
-        await createNotification(Number(leader.id), 'Низкая оценка урока', `Оценка ${score}/5`, 'student', studentId);
+        entityType: 'lesson_survey',
+        entityId: Number(survey.id),
+        deadlineAt: addMinutes(new Date(), 12 * 60) });
+      if (student?.managerId) {
+        await createNotification(Number(student.managerId), 'Низкая оценка урока', `Оценка ${score}/5 — задача закрывается за 12 часов.`, 'academy_task', Number(task.id));
       }
-      await createOutbox('telegram', 'leadership', `⚠️ Низкая оценка урока ${score}/5 по ученику id:${studentId}. Требуется внимание.`, { entityType: 'student', entityId: studentId });
     }
     res.status(201).json(survey);
   } catch (error) {
@@ -4121,6 +4456,22 @@ router.post('/surveys/parent', async (req, res) => {
       comment: nullableText(req.body.comment),
       period });
     await updateRow('academy_students', studentId, { parentFeedback: nullableText(req.body.comment) });
+    const npsScore = Number(survey.npsScore);
+    if (Number.isFinite(npsScore) && npsScore <= 6) {
+      const leader = await queryOne<{ id: string }>(
+        `SELECT id FROM users WHERE workspace = 'administration' AND is_active=true ORDER BY id LIMIT 1`);
+      const responsibleId = Number(student.managerId ?? leader?.id ?? req.user!.id);
+      const task = await createTask('Низкий NPS родителя — связаться с семьёй', {
+        responsibleId,
+        description: `Родитель поставил NPS ${npsScore}/10. Уточните причину и зафиксируйте решение.`,
+        entityType: 'parent_survey',
+        entityId: Number(survey.id),
+        deadlineAt: addMinutes(new Date(), 12 * 60),
+      });
+      if (student.managerId) {
+        await createNotification(Number(student.managerId), 'Низкий NPS родителя', `Создана задача со сроком 12 часов.`, 'academy_task', Number(task.id));
+      }
+    }
     if (['Не уверен', 'Нет', 'not_sure', 'no'].includes(String(req.body.continueAnswer))) {
       await createTask('Родитель сомневается в продолжении', {
         responsibleId: student.managerId ?? req.user!.id,
@@ -4162,7 +4513,6 @@ router.get('/integrations/status', async (req, res) => {
       { provider: 'whatsapp', connected: Boolean(integ.whatsapp?.apiToken && integ.whatsapp?.phoneNumberId), note: 'WhatsApp Business Cloud API' },
       { provider: 'google_forms', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Demo registration inbound webhook' },
       { provider: 'meta_ads', connected: Boolean(integ.metaAds?.accessToken && integ.metaAds?.adAccountId), note: 'Ad spend import (manual expenses until connected)' },
-      { provider: 'bank', connected: Boolean(integ.bank?.webhookSecret), note: 'Payment confirmation inbound webhook' },
       { provider: 'google_sheets', connected: Boolean(integ.googleSheets?.spreadsheetId), note: 'CSV export available; Sheets sync requires credentials' },
       { provider: 'notion', connected: Boolean(integ.notion?.token && integ.notion?.databaseId), note: 'CSV export available; Notion pages require token' },
     ];
@@ -4405,8 +4755,14 @@ router.post('/mailings/:id/event', async (req, res) => {
 });
 
 router.get('/exports/:entity', async (req, res) => {
-  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
   try {
+    const workspace = String(req.user?.workspace);
+    if (!['administration', 'analytics', 'sales'].includes(workspace)) {
+      return res.status(403).json({ error: 'Export access required' });
+    }
+    if (await isRestrictedAtCurrentTime(workspace)) {
+      return res.status(403).json({ error: 'Exports are unavailable outside configured working hours' });
+    }
     const entityMap: Record<string, string> = {
       leads: 'academy_leads',
       students: 'academy_students',
@@ -4416,9 +4772,39 @@ router.get('/exports/:entity', async (req, res) => {
       marketing: 'academy_marketing_expenses' };
     const table = entityMap[req.params.entity];
     if (!table) return res.status(404).json({ error: 'Export entity not found' });
+    if (workspace === 'sales' && !['leads', 'students'].includes(req.params.entity)) {
+      return res.status(403).json({ error: 'Sales exports are limited to own leads and students' });
+    }
     if (['payments', 'marketing'].includes(req.params.entity) && !ensureFinanceAccess(req, res)) return;
-    const rows = await query(`SELECT * FROM ${quoteIdent(table)} ORDER BY id DESC`, []);
+    const rows = workspace === 'sales'
+      ? await query(
+        req.params.entity === 'leads'
+          ? `SELECT * FROM academy_leads WHERE manager_id = $1 ORDER BY id DESC`
+          : `SELECT * FROM academy_students WHERE manager_id = $1 ORDER BY id DESC`,
+        [req.user!.id],
+      )
+      : await query(`SELECT * FROM ${quoteIdent(table)} ORDER BY id DESC`, []);
     await createAudit(req, 'EXPORT_ACADEMY_DATA', req.params.entity, 0, { count: rows.length });
+    if (workspace === 'sales') {
+      const message = `⚠️ Экспорт базы: менеджер ${req.user!.fullName} выгрузил ${rows.length} записей (${req.params.entity}).`;
+      const { sendTelegramMessage } = await import('../services/telegram');
+      const result = await sendTelegramMessage('leadership', message);
+      await logIntegration('telegram', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', {
+        kind: 'sales_export_alert',
+        employeeId: req.user!.id,
+        entity: req.params.entity,
+        count: rows.length,
+      }, result.error ?? null);
+      const leaders = await query<{ id: number }>(
+        `SELECT id FROM users WHERE workspace = 'administration' AND is_active = true`,
+      );
+      await Promise.all(leaders.map((leader) => createNotification(
+        Number(leader.id),
+        'Экспорт клиентской базы',
+        `${req.user!.fullName}: ${rows.length} записей (${req.params.entity}).`,
+        'export',
+      )));
+    }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.entity}.csv"`);
     res.send(createCsv(rows));
@@ -4433,7 +4819,7 @@ registerSimpleCrud('schools', 'academy_schools', [
 ], { orderBy: 'is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('rooms', 'academy_rooms', [
-  'schoolId', 'name', 'capacity', 'isActive',
+  'schoolId', 'name', 'capacity', 'rentPerHourUzs', 'isActive',
 ], { orderBy: 'school_id, is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('courses', 'academy_courses', [
@@ -4447,7 +4833,7 @@ registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
 ], { orderBy: 'sort_order, id', requireAdministration: true });
 
 registerSimpleCrud('teachers', 'academy_teachers', [
-  'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'status',
+  'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'ratePerLessonUzs', 'status',
 ], { orderBy: 'full_name', requireAdministration: true });
 
 registerSimpleCrud('groups', 'academy_groups', [

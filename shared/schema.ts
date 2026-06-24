@@ -686,6 +686,7 @@ export const insertUserSchema = z.object({
   phone: z.string().optional(),
   dateOfBirth: z.coerce.date().optional().nullable(),
   position: z.string().optional(),
+  baseSalaryUzs: z.number().int().min(0).default(0),
   workspace: z.enum(ACADEMY_WORKSPACES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),

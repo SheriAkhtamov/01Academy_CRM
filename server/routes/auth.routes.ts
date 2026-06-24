@@ -4,6 +4,7 @@ import { authService } from '../services/auth';
 import { resolveAuthSession } from '../services/authSession';
 import { t } from '../lib/i18n';
 import { appConfig } from '../config';
+import { isRestrictedAtCurrentTime } from '../services/workforce-policy';
 
 const router = Router();
 
@@ -39,6 +40,10 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        if (await isRestrictedAtCurrentTime(user.workspace)) {
+            return res.status(403).json({ error: 'System access is available only during configured working hours' });
         }
 
         const sanitizedUser = authService.sanitizeUser(user);

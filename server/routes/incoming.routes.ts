@@ -3,7 +3,6 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
 import { logger } from '../lib/logger';
-import { buildReferralCode } from '@shared/academy';
 import {
   processInstagramWebhook,
   verifyInstagramWebhookChallenge,
@@ -37,7 +36,7 @@ router.post('/instagram', async (req, res) => {
 
 // Webhook secrets are optional in dev (so local testing works), but when a secret is
 // configured every inbound payload must carry it in the x-webhook-secret header.
-const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace' | 'bank'): boolean => {
+const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace'): boolean => {
   const configured = appConfig.integrations?.[secretKey]?.webhookSecret;
   if (!configured) {
     // No secret configured → allow (development mode). Log so it's visible.
@@ -229,136 +228,6 @@ router.post('/google-forms', async (req, res) => {
   } catch (error) {
     logger.error('Failed to receive Google Forms lead', { error });
     res.status(500).json({ error: 'Failed to receive Google Forms lead' });
-  }
-});
-
-// Bank / payment provider → CRM (TZ 6): payment confirmation.
-router.post('/bank', async (req, res) => {
-  if (!verifyWebhookSecret(req, res, 'bank')) return;
-  let client: PoolClient | undefined;
-  try {
-    client = await pool.connect();
-    await client.query('BEGIN');
-    const body = req.body ?? {};
-    const amountUzs = Math.round(Number(body.amountUzs ?? body.amount ?? 0));
-    const studentId = body.studentId ? Number(body.studentId) : null;
-    const leadId = body.leadId ? Number(body.leadId) : null;
-    if (!Number.isFinite(amountUzs) || amountUzs <= 0 || (!studentId && !leadId)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'amountUzs and (studentId or leadId) are required' });
-    }
-
-    const systemUserId = await getSystemUserId(client);
-    const { rows: leadRows } = leadId
-      ? await client.query(`SELECT * FROM academy_leads WHERE id=$1 FOR UPDATE`, [leadId])
-      : { rows: [] };
-    const lead = leadRows[0];
-    if (leadId && !lead) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Lead not found' });
-    }
-
-    const { rows: studentRows } = studentId
-      ? await client.query(`SELECT * FROM academy_students WHERE id=$1 FOR UPDATE`, [studentId])
-      : leadId
-        ? await client.query(`SELECT * FROM academy_students WHERE lead_id=$1 FOR UPDATE`, [leadId])
-        : { rows: [] };
-    let student = studentRows[0] ?? null;
-    if (studentId && !student) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Student not found' });
-    }
-    if (lead && student && Number(student.lead_id) !== Number(lead.id)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Payment lead and student do not match' });
-    }
-
-    if (!student && lead) {
-      if (lead.enrolled_group_id) {
-        const { rows: capacityRows } = await client.query(
-          `SELECT g.max_students,
-             (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id=g.id AND s.status='studying') AS current_students
-           FROM academy_groups g WHERE g.id=$1 FOR UPDATE`,
-          [lead.enrolled_group_id],
-        );
-        const capacity = capacityRows[0];
-        if (capacity && Number(capacity.current_students) >= Number(capacity.max_students)) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({ error: 'Selected group is full' });
-        }
-      }
-
-      let courseId = lead.course_id;
-      if (!courseId && lead.student_age) {
-        const slug = Number(lead.student_age) <= 10
-          ? 'ai-kids'
-          : Number(lead.student_age) <= 15
-            ? 'ai-creator'
-            : 'vibe-coding';
-        const { rows: courseRows } = await client.query(
-          `SELECT id FROM academy_courses WHERE slug=$1 AND is_active=true ORDER BY id LIMIT 1`,
-          [slug],
-        );
-        courseId = courseRows[0]?.id ?? null;
-      }
-
-      const referralCode = buildReferralCode(lead.student_name || lead.contact_name, lead.id);
-      const { rows: createdStudents } = await client.query(
-        `INSERT INTO academy_students
-          (lead_id, group_id, contact_name, phone, messenger, student_name, student_age, course_id,
-           manager_id, status, enrolled_at, next_payment_at, referral_code, risk_flags)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'studying',NOW(),NOW() + INTERVAL '30 days',$10,'[]'::jsonb)
-         RETURNING *`,
-        [
-          lead.id,
-          lead.enrolled_group_id ?? null,
-          lead.contact_name,
-          lead.phone,
-          lead.messenger ?? null,
-          lead.student_name || lead.contact_name,
-          lead.student_age ?? null,
-          courseId,
-          lead.manager_id ?? systemUserId,
-          referralCode,
-        ],
-      );
-      student = createdStudents[0];
-    }
-
-    const { rows: inserted } = await client.query(
-      `INSERT INTO academy_payments
-        (lead_id, student_id, amount_uzs, type, method, paid_at, paid_until, period, discount, status, receipt_url, confirmed_by)
-       VALUES ($1,$2,$3,'full',COALESCE($4,'transfer'),NOW(),NOW() + INTERVAL '30 days',
-         COALESCE($5,'month_1'),'none','paid',COALESCE($6,NULL),$7)
-       RETURNING *`,
-      [leadId, student?.id ?? studentId, amountUzs, body.method ?? null, body.period ?? null, body.receiptUrl ?? null, systemUserId],
-    );
-
-    if (student) {
-      await client.query(
-        `UPDATE academy_students SET next_payment_at=$1, updated_at=NOW() WHERE id=$2`,
-        [inserted[0].paid_until, student.id],
-      );
-    }
-    if (lead && lead.status_code !== 'paid') {
-      await client.query(`UPDATE academy_leads SET status_code='paid', updated_at=NOW() WHERE id=$1`, [lead.id]);
-      await client.query(
-        `INSERT INTO academy_lead_stage_history
-          (lead_id, from_status_code, to_status_code, changed_by, comment)
-         VALUES ($1,$2,'paid',$3,'Автоматическое подтверждение оплаты банком')`,
-        [lead.id, lead.status_code, systemUserId],
-      );
-    }
-
-    await client.query('COMMIT');
-    await logIntegration('bank', 'inbound', 'received', body);
-    res.status(201).json(camelize(inserted[0]));
-  } catch (error) {
-    await client?.query('ROLLBACK').catch(() => undefined);
-    logger.error('Failed to receive bank payment webhook', { error });
-    res.status(500).json({ error: 'Failed to receive bank payment webhook' });
-  } finally {
-    client?.release();
   }
 });
 

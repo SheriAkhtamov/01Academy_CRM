@@ -5,6 +5,7 @@ import { processOutbox } from "./outbox-worker";
 import { runAutomations } from "./automations";
 import { buildWeeklyReport } from "./weekly-report";
 import { refreshExpiringInstagramTokens } from "./instagram";
+import { runEscalations } from "./escalations";
 
 let started = false;
 
@@ -28,6 +29,14 @@ export const startScheduler = () => {
       }
     } catch (error) {
       logger.error("[scheduler] outbox worker error", { error });
+    }
+  });
+
+  // The escalation monitor makes overdue work and cash risks push themselves to leadership.
+  cron.schedule("0 * * * *", async () => {
+    const actions = await runEscalations();
+    if (actions.length > 0) {
+      logger.warn(`[scheduler] escalations raised (${actions.join(', ')})`);
     }
   });
 
@@ -61,7 +70,7 @@ export const startScheduler = () => {
     }
   });
 
-  logger.info("Scheduler started (outbox: 1m, automations: daily 09:00, weekly report: Mon 09:00)");
+  logger.info("Scheduler started (outbox: 1m, escalations: hourly, automations: daily 09:00, weekly report: Mon 09:00)");
 };
 
 const getSystemUserId = async (): Promise<number | null> => {

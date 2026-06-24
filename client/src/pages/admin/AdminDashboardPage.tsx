@@ -94,6 +94,16 @@ interface DashboardLesson {
   scheduledAt: string;
 }
 
+interface LossMakingGroup {
+  id: number;
+  name: string;
+  fillPercent: number;
+  profitUzs: number;
+  revenueUzs: number;
+  teacherCostUzs: number;
+  rentCostUzs: number;
+}
+
 interface AdministrationDashboardData {
   summary: {
     activeStudents: number;
@@ -140,6 +150,8 @@ interface AdministrationDashboardData {
   upcomingLessons: DashboardLesson[];
   discountsMonth: number;
   churnByReason: Record<string, number>;
+  escalatedTasks: Array<{ id: number; title: string; responsibleName?: string | null }>;
+  lossMakingGroups: LossMakingGroup[];
   generatedAt: string;
 }
 
@@ -397,11 +409,11 @@ export default function AdminDashboardPage() {
     },
     {
       key: 'tasks',
-      title: t('overdueTasks'),
-      detail: t('adminTeamDeadlines'),
+      title: ceoCopy.dashboard.escalatedTasks,
+      detail: ceoCopy.dashboard.escalatedTasksDetail,
       value: data.alerts.overdueTasks,
       icon: ListTodo,
-      tone: 'bg-purple-100 text-purple-600',
+      tone: 'bg-destructive/10 text-destructive',
       href: '/sales/tasks',
     },
   ];
@@ -723,6 +735,26 @@ export default function AdminDashboardPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        <Card className="self-start border-destructive/30 2xl:col-span-3">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{ceoCopy.profitability.title}</CardTitle>
+            <CardDescription>{ceoCopy.profitability.subtitle}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {data.lossMakingGroups.length > 0 ? data.lossMakingGroups.slice(0, 5).map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => navigate('/admin/academy-settings?tab=groups')}
+                className="flex items-center justify-between gap-3 rounded-lg bg-destructive/5 px-3 py-2 text-left hover:bg-destructive/10"
+              >
+                <span className="min-w-0"><span className="block truncate text-sm font-medium">{group.name}</span><span className="block text-xs text-muted-foreground">{ceoCopy.profitability.fill}: {group.fillPercent}%</span></span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-destructive">{fullMoney(group.profitUzs)}</span>
+              </button>
+            )) : <p className="py-5 text-center text-sm text-muted-foreground">{ceoCopy.profitability.noLosses}</p>}
           </CardContent>
         </Card>
 

@@ -70,9 +70,6 @@ interface AppConfig {
       credentialsPath?: string;
       spreadsheetId?: string;
     };
-    bank?: {
-      webhookSecret?: string;
-    };
   };
 }
 

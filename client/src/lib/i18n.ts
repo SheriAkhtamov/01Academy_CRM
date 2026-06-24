@@ -22,6 +22,7 @@ export const translations = {
   allWorkspaces: { en: 'All workspaces', ru: 'Все рабочие области' },
   allowReportsAccess: { en: 'Allow access to reports and analytics', ru: 'Разрешить доступ к отчётам и аналитике' },
   amount: { en: 'Amount', ru: 'Сумма' },
+  baseSalary: { en: 'Base monthly salary', ru: 'Оклад за месяц' },
   areYouSureDeleteUser: { en: 'Are you sure you want to delete this user?', ru: 'Вы уверены, что хотите удалить этого пользователя?' },
   attendanceChecklist: { en: 'Attendance Checklist', ru: 'Чеклист посещаемости' },
   attendanceLabel: { en: 'Attendance', ru: 'Посещаемость' },
@@ -265,6 +266,7 @@ export const translations = {
   systemStatistics: { en: 'System Statistics', ru: 'Системная статистика' },
   targetGreaterThan: { en: 'target > ', ru: 'цель > ' },
   teacher: { en: 'Teacher', ru: 'Преподаватель' },
+  teacherRatePerLesson: { en: 'Rate per lesson', ru: 'Ставка за урок' },
   telegramWhatsapp: { en: 'Telegram/WhatsApp', ru: 'Telegram/WhatsApp' },
   testReportCreated: { en: 'Test report created', ru: 'Тестовый отчёт создан' },
   thisActionCannotBeUndone: { en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' },
@@ -1043,7 +1045,6 @@ export const translations = {
     en: 'the schedule needs attention',
     ru: 'расписание требует внимания',
   },
-  adminTeamDeadlines: { en: 'team deadlines', ru: 'сроки команды' },
   adminNoIssues: { en: 'No issues', ru: 'Проблем нет' },
   adminCourseLoad: { en: 'Course and group load', ru: 'Загрузка курсов и групп' },
   adminCourseLoadDescription: {

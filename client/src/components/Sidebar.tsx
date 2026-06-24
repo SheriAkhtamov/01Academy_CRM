@@ -168,6 +168,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('resourceCalendar'), href: '/admin/academy-settings?tab=schedule', icon: Calendar },
             { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
             { name: ceoCopy.workspace.finance, href: '/admin/finance', icon: Landmark },
+            { name: ceoCopy.workspace.payroll, href: '/admin/payroll', icon: Banknote },
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
             { name: t('settings'), href: '/settings', icon: Settings },
           ],

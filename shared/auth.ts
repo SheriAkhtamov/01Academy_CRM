@@ -15,7 +15,15 @@ export type AuthSession =
   | AnonymousSession
   | UserSession;
 
+export type SavedAccountEntry = {
+  id: number;
+  accountUser: SanitizedUser;
+  label: string | null;
+  createdAt: Date | string;
+};
+
 export const AUTH_SESSION_QUERY_KEY = ["/api/auth/session"] as const;
+export const SAVED_ACCOUNTS_QUERY_KEY = ["/api/auth/accounts"] as const;
 
 export const isAnonymousSession = (
   session: AuthSession | null | undefined,

@@ -20,6 +20,7 @@ import SettingsModal from './modals/SettingsModal';
 import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
 import { WorkspaceIdentity } from './ux/WorkspaceIdentity';
+import AccountSwitcher from './ux/AccountSwitcher';
 
 interface HeaderProps {
   title?: string;
@@ -109,6 +110,8 @@ export default function Header({
             </Button>
 
             <ThemeToggle />
+
+            <AccountSwitcher />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

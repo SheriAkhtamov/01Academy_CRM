@@ -1,4 +1,4 @@
-import type { AuthSession } from "@shared/auth";
+import type { AuthSession, SavedAccountEntry } from "@shared/auth";
 import { apiRequest } from "@/lib/queryClient";
 
 export async function fetchAuthSession(): Promise<AuthSession> {
@@ -22,4 +22,34 @@ export async function loginUserSession(
 
 export async function logoutSession() {
   return apiRequest("POST", "/api/auth/logout");
+}
+
+// ── Multi-account switching ──────────────────────────────────────────
+
+export async function fetchSavedAccounts(): Promise<SavedAccountEntry[]> {
+  const response = await fetch("/api/auth/accounts", {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch saved accounts");
+  }
+
+  return response.json();
+}
+
+export async function addSavedAccount(
+  login: string,
+  password: string,
+  label?: string,
+): Promise<{ id: number; user: any; token: string; label: string | null }> {
+  return apiRequest("POST", "/api/auth/accounts", { login, password, label });
+}
+
+export async function switchAccount(token: string) {
+  return apiRequest("POST", "/api/auth/switch-account", { token });
+}
+
+export async function removeSavedAccount(id: number) {
+  return apiRequest("DELETE", `/api/auth/accounts/${id}`);
 }

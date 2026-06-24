@@ -678,6 +678,19 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+export const savedAccounts = pgTable("saved_accounts", {
+  id: serial("id").primaryKey(),
+  ownerUserId: integer("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  accountUserId: integer("account_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  label: varchar("label", { length: 255 }),
+  tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  ownerIdx: index("saved_accounts_owner_idx").on(table.ownerUserId),
+  tokenHashUnique: uniqueIndex("saved_accounts_token_hash_unique").on(table.tokenHash),
+  ownerAccountUnique: uniqueIndex("saved_accounts_owner_account_unique").on(table.ownerUserId, table.accountUserId),
+}));
+
 // Insert schemas
 export const insertUserSchema = z.object({
   email: z.string().email(),
@@ -893,6 +906,11 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   isRead: true,
 });
 
+export const insertSavedAccountSchema = createInsertSchema(savedAccounts).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -966,6 +984,8 @@ export type AcademyNotificationOutbox = typeof academyNotificationOutbox.$inferS
 export type InsertAcademyNotificationOutbox = z.infer<typeof insertAcademyNotificationOutboxSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type SavedAccount = typeof savedAccounts.$inferSelect;
+export type InsertSavedAccount = z.infer<typeof insertSavedAccountSchema>;
 
 // ---------------------------------------------------------------------------
 // Management board (Kanban task management).

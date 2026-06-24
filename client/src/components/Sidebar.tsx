@@ -44,6 +44,10 @@ import {
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useAccounts } from '@/hooks/useAccounts';
+import { useToast } from '@/hooks/use-toast';
+import AddAccountModal from '@/components/modals/AddAccountModal';
+import { UserPlus, ArrowLeftRight, Loader2, Trash2 } from 'lucide-react';
 
 interface NavItem {
   name: string;
@@ -61,6 +65,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user } = useAuth();
   const { t } = useTranslation();
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const { accounts, switchToAccount, removeAccount, isSwitching } = useAccounts();
+  const { toast } = useToast();
 
   if (!user) return null;
 
@@ -287,22 +295,92 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
         {/* User Profile */}
         <div className="border-t border-border/70 px-3 py-3">
-          <div className="sidebar-user-card">
-            <div className="sidebar-user-avatar">
-              {getInitials(user.fullName)}
+          {/* Saved Accounts (collapsible) */}
+          {showAccounts && accounts.length > 0 && (
+            <div className="mb-2 space-y-1">
+              {accounts.map((account) => (
+                <div
+                  key={account.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/50 cursor-pointer group transition-colors"
+                  onClick={async () => {
+                    try {
+                      await switchToAccount(account.accountUser.id);
+                      toast({ title: t('accountSwitched') });
+                      window.location.reload();
+                    } catch (err: any) {
+                      toast({ title: t('error'), description: err?.message, variant: 'destructive' });
+                    }
+                  }}
+                >
+                  {isSwitching ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />
+                  ) : (
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0"
+                      style={{ background: 'linear-gradient(135deg, var(--color-muted), var(--color-muted-foreground))' }}
+                    >
+                      {getInitials(account.accountUser.fullName)}
+                    </div>
+                  )}
+                  <span className="text-xs text-slate-600 truncate flex-1">{account.accountUser.fullName}</span>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        await removeAccount(account.id);
+                        toast({ title: t('accountRemoved') });
+                      } catch (err: any) {
+                        toast({ title: t('error'), description: err?.message, variant: 'destructive' });
+                      }
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-900 truncate">{user.fullName}</p>
-              <p className="text-xs text-slate-500 truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
-              {user.position && (
-                <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>
-              )}
-              {canAccessReports(user) && (
-                <p className="text-[10px] text-emerald-600">{t('reportsAccess')}</p>
-              )}
+          )}
+
+          <div className="flex items-center gap-2">
+            <div className="sidebar-user-card flex-1 min-w-0">
+              <div className="sidebar-user-avatar">
+                {getInitials(user.fullName)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900 truncate">{user.fullName}</p>
+                <p className="text-xs text-slate-500 truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
+                {user.position && (
+                  <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>
+                )}
+                {canAccessReports(user) && (
+                  <p className="text-[10px] text-emerald-600">{t('reportsAccess')}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 shrink-0">
+              <button
+                onClick={() => setShowAccounts(!showAccounts)}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  showAccounts ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+                title={t('accounts')}
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+                title={t('addAccount')}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         </div>
+
+        <AddAccountModal open={showAddModal} onOpenChange={setShowAddModal} />
       </div>
     </TooltipProvider>
   );

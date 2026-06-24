@@ -17,6 +17,13 @@ export const storage = {
     updateUserOnlineStatus: userStorage.updateUserOnlineStatus.bind(userStorage),
     getUsersWithOnlineStatus: userStorage.getUsersWithOnlineStatus.bind(userStorage),
 
+    // Saved accounts (multi-account switching)
+    getSavedAccounts: userStorage.getSavedAccounts.bind(userStorage),
+    addSavedAccount: userStorage.addSavedAccount.bind(userStorage),
+    findSavedAccountByTokenHash: userStorage.findSavedAccountByTokenHash.bind(userStorage),
+    deleteSavedAccount: userStorage.deleteSavedAccount.bind(userStorage),
+    deleteSavedAccountById: userStorage.deleteSavedAccountById.bind(userStorage),
+
     // Notification operations
     getNotificationsByUser: notificationStorage.getNotificationsByUser.bind(notificationStorage),
     createNotification: notificationStorage.createNotification.bind(notificationStorage),

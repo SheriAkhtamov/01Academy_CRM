@@ -41,12 +41,12 @@ export async function fetchSavedAccounts(): Promise<SavedAccountEntry[]> {
 export async function addSavedAccount(
   login: string,
   password: string,
-): Promise<{ id: number; user: any; token: string }> {
+): Promise<{ id: number; savedAccountId: number; user: any; token: string }> {
   return apiRequest("POST", "/api/auth/accounts", { login, password });
 }
 
-export async function switchAccount(token: string) {
-  return apiRequest("POST", "/api/auth/switch-account", { token });
+export async function switchAccount(tokens: string[], targetAccountId: number): Promise<{ matchedTokenIndex: number }> {
+  return apiRequest("POST", "/api/auth/switch-account", { tokens, targetAccountId });
 }
 
 export async function removeSavedAccount(id: number) {

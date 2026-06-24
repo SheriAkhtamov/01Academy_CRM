@@ -94,6 +94,33 @@ class UserStorage {
         return rows;
     }
 
+    /**
+     * Saved-account links are shared by both participants. This keeps the
+     * original account available after switching into a linked account.
+     */
+    async getSavedAccountsForUser(userId: number): Promise<(SavedAccount & { accountUser: User })[]> {
+        const [ownedAccounts, linkedAccounts] = await Promise.all([
+            this.getSavedAccounts(userId),
+            db
+                .select({
+                    id: savedAccounts.id,
+                    ownerUserId: savedAccounts.ownerUserId,
+                    accountUserId: savedAccounts.accountUserId,
+                    label: savedAccounts.label,
+                    tokenHash: savedAccounts.tokenHash,
+                    createdAt: savedAccounts.createdAt,
+                    accountUser: users,
+                })
+                .from(savedAccounts)
+                .innerJoin(users, eq(savedAccounts.ownerUserId, users.id))
+                .where(eq(savedAccounts.accountUserId, userId))
+                .orderBy(asc(savedAccounts.createdAt)),
+        ]);
+
+        return [...ownedAccounts, ...linkedAccounts]
+            .sort((left, right) => (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0));
+    }
+
     async addSavedAccount(ownerUserId: number, accountUserId: number, label: string | null, tokenHash: string): Promise<SavedAccount> {
         const result = await db
             .insert(savedAccounts)
@@ -139,6 +166,23 @@ class UserStorage {
                     eq(savedAccounts.id, savedAccountId)
                 )
             );
+    }
+
+    async deleteSavedAccountByIdForUser(userId: number, savedAccountId: number): Promise<SavedAccount | undefined> {
+        const result = await db
+            .delete(savedAccounts)
+            .where(
+                and(
+                    eq(savedAccounts.id, savedAccountId),
+                    or(
+                        eq(savedAccounts.ownerUserId, userId),
+                        eq(savedAccounts.accountUserId, userId),
+                    ),
+                ),
+            )
+            .returning();
+
+        return result[0];
     }
 }
 

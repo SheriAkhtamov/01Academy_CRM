@@ -10,6 +10,7 @@ import { t } from '../lib/i18n';
 import { appConfig } from '../config';
 import { isRestrictedAtCurrentTime } from '../services/workforce-policy';
 import { logger } from '../lib/logger';
+import { getLinkedAccountId } from '@shared/account-switching';
 
 const router = Router();
 
@@ -111,8 +112,8 @@ router.post('/logout', (req, res) => {
 // List saved accounts for the current user
 router.get('/accounts', requireAuth, async (req: Request, res: Response) => {
     try {
-        const ownerUserId = req.session.userId!;
-        const accounts = await storage.getSavedAccounts(ownerUserId);
+        const userId = req.session.userId!;
+        const accounts = await storage.getSavedAccountsForUser(userId);
         const sanitized = accounts.map((a) => ({
             id: a.id,
             accountUser: authService.sanitizeUser(a.accountUser),
@@ -150,8 +151,8 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
         }
 
         // Check if already saved
-        const existing = await storage.getSavedAccounts(ownerUserId);
-        if (existing.some((a) => a.accountUserId === user.id)) {
+        const existing = await storage.getSavedAccountsForUser(ownerUserId);
+        if (existing.some((account) => account.accountUser.id === user.id)) {
             return res.status(409).json({ error: 'Account already saved' });
         }
 
@@ -159,10 +160,11 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
         const token = crypto.randomBytes(32).toString('hex');
         const tokenHash = await bcrypt.hash(token, 10);
 
-        await storage.addSavedAccount(ownerUserId, user.id, label || null, tokenHash);
+        const savedAccount = await storage.addSavedAccount(ownerUserId, user.id, label || null, tokenHash);
 
         res.json({
             id: user.id,
+            savedAccountId: savedAccount.id,
             user: authService.sanitizeUser(user),
             token,
             label: label || null,
@@ -176,21 +178,43 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
 // Switch to a saved account by token
 router.post('/switch-account', accountLimiter, requireAuth, async (req: Request, res: Response) => {
     try {
-        const { token } = req.body;
+        const { token, tokens, targetAccountId } = req.body;
+        const candidateTokens = Array.from(new Set(
+            (Array.isArray(tokens) ? tokens : [token])
+                .filter((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0),
+        )).slice(0, 25);
+        const requestedTargetId = targetAccountId === undefined
+            ? null
+            : Number(targetAccountId);
 
-        if (!token) {
+        if (candidateTokens.length === 0) {
             return res.status(400).json({ error: 'Token is required' });
         }
 
-        // Find all saved accounts for this owner and compare token hashes
-        const ownerUserId = req.session.userId!;
-        const savedAccounts = await storage.getSavedAccounts(ownerUserId);
+        if (requestedTargetId !== null && (!Number.isInteger(requestedTargetId) || requestedTargetId <= 0)) {
+            return res.status(400).json({ error: 'Target account ID is invalid' });
+        }
+
+        const currentUserId = req.session.userId!;
+        const savedAccounts = await storage.getSavedAccountsForUser(currentUserId);
 
         let matchedAccount: typeof savedAccounts[0] | undefined;
-        for (const sa of savedAccounts) {
-            const matches = await bcrypt.compare(token, sa.tokenHash);
-            if (matches) {
-                matchedAccount = sa;
+        let matchedTokenIndex = -1;
+        for (const savedAccount of savedAccounts) {
+            const linkedAccountId = getLinkedAccountId(savedAccount, currentUserId);
+            if (!linkedAccountId || (requestedTargetId !== null && linkedAccountId !== requestedTargetId)) {
+                continue;
+            }
+
+            for (const [index, candidateToken] of candidateTokens.entries()) {
+                if (await bcrypt.compare(candidateToken, savedAccount.tokenHash)) {
+                    matchedAccount = savedAccount;
+                    matchedTokenIndex = index;
+                    break;
+                }
+            }
+
+            if (matchedAccount) {
                 break;
             }
         }
@@ -201,6 +225,10 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
 
         if (!matchedAccount.accountUser.isActive) {
             return res.status(403).json({ error: 'Target account is inactive' });
+        }
+
+        if (await isRestrictedAtCurrentTime(matchedAccount.accountUser.workspace)) {
+            return res.status(403).json({ error: 'System access is available only during configured working hours' });
         }
 
         const sanitizedUser = authService.sanitizeUser(matchedAccount.accountUser);
@@ -217,7 +245,7 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
                     return res.status(500).json({ error: 'Session save failed' });
                 }
 
-                res.json({ user: sanitizedUser });
+                res.json({ user: sanitizedUser, matchedTokenIndex });
             });
         });
     } catch (error) {
@@ -229,14 +257,17 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
 // Remove a saved account
 router.delete('/accounts/:id', requireAuth, async (req: Request, res: Response) => {
     try {
-        const ownerUserId = req.session.userId!;
+        const userId = req.session.userId!;
         const savedAccountId = parseInt(req.params.id, 10);
 
         if (isNaN(savedAccountId)) {
             return res.status(400).json({ error: 'Invalid account ID' });
         }
 
-        await storage.deleteSavedAccountById(ownerUserId, savedAccountId);
+        const deletedAccount = await storage.deleteSavedAccountByIdForUser(userId, savedAccountId);
+        if (!deletedAccount) {
+            return res.status(404).json({ error: 'Saved account not found' });
+        }
         res.json({ success: true });
     } catch (error) {
         logger.error('Failed to remove saved account', { error });

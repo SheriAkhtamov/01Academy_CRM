@@ -19,10 +19,12 @@ export const storage = {
 
     // Saved accounts (multi-account switching)
     getSavedAccounts: userStorage.getSavedAccounts.bind(userStorage),
+    getSavedAccountsForUser: userStorage.getSavedAccountsForUser.bind(userStorage),
     addSavedAccount: userStorage.addSavedAccount.bind(userStorage),
     findSavedAccountByTokenHash: userStorage.findSavedAccountByTokenHash.bind(userStorage),
     deleteSavedAccount: userStorage.deleteSavedAccount.bind(userStorage),
     deleteSavedAccountById: userStorage.deleteSavedAccountById.bind(userStorage),
+    deleteSavedAccountByIdForUser: userStorage.deleteSavedAccountByIdForUser.bind(userStorage),
 
     // Notification operations
     getNotificationsByUser: notificationStorage.getNotificationsByUser.bind(notificationStorage),

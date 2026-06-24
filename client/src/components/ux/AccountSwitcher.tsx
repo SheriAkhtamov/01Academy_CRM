@@ -4,6 +4,7 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useToast } from '@/hooks/use-toast';
 import { getInitials, formatUserWorkspace } from '@/lib/auth';
+import type { SavedAccountEntry } from '@shared/auth';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,13 +24,13 @@ export default function AccountSwitcher() {
   const { toast } = useToast();
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const handleSwitch = async (accountId: number) => {
+  const handleSwitch = async (account: SavedAccountEntry) => {
     try {
-      await switchToAccount(accountId);
+      await switchToAccount(account);
       toast({
         title: t('accountSwitched'),
       });
-      window.location.reload();
+      window.location.assign('/');
     } catch (err: any) {
       toast({
         title: t('error'),
@@ -39,10 +40,10 @@ export default function AccountSwitcher() {
     }
   };
 
-  const handleRemove = async (accountId: number, e: React.MouseEvent) => {
+  const handleRemove = async (account: SavedAccountEntry, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await removeAccount(accountId);
+      await removeAccount(account);
       toast({
         title: t('accountRemoved'),
       });
@@ -95,7 +96,7 @@ export default function AccountSwitcher() {
               {accounts.map((account) => (
                 <DropdownMenuItem
                   key={account.id}
-                  onClick={() => handleSwitch(account.accountUser.id)}
+                  onClick={() => handleSwitch(account)}
                   disabled={isSwitching}
                   className="cursor-pointer"
                 >
@@ -123,7 +124,7 @@ export default function AccountSwitcher() {
                       <Loader2 className="h-4 w-4 animate-spin shrink-0" />
                     ) : (
                       <button
-                        onClick={(e) => handleRemove(account.id, e)}
+                        onClick={(e) => handleRemove(account, e)}
                         className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
                         title={t('removeAccount')}
                       >

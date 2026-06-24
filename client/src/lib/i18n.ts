@@ -68,6 +68,7 @@ export const translations = {
   communicationLanguage: { en: 'Communication Language', ru: 'Язык общения' },
   contact: { en: 'Contact', ru: 'Контакт' },
   contactPersonName: { en: 'Contact Person Name', ru: 'Имя контактного лица' },
+  conversations: { en: 'Conversations', ru: 'Диалоги' },
   conversionApplicationToDemo: { en: 'Application → Demo Conversion', ru: 'Конверсия заявка → демо' },
   conversionDemoToPayment: { en: 'Demo → Payment Conversion', ru: 'Конверсия демо → оплата' },
   copiedToClipboard: { en: 'Copied to clipboard', ru: 'Скопировано в буфер' },
@@ -166,6 +167,10 @@ export const translations = {
   marketingTab: { en: 'Marketing', ru: 'Маркетинг' },
   maxStudents: { en: 'Max Students', ru: 'Максимум' },
   messages: { en: 'Messages', ru: 'Сообщения' },
+  messagesDesc: {
+    en: 'Manage conversations from every connected channel in one place.',
+    ru: 'Работайте с диалогами из всех подключённых каналов в одном разделе.',
+  },
   minutes: { en: ' min', ru: ' мин' },
   month1: { en: 'Month 1', ru: 'Мес. 1' },
   month2: { en: 'Month 2', ru: 'Мес. 2' },
@@ -926,7 +931,6 @@ export const translations = {
     en: 'Check the Meta app settings, redirect URL, permissions, and account role.',
     ru: 'Проверьте настройки приложения Meta, Redirect URL, разрешения и роль аккаунта.',
   },
-  instagramDialogs: { en: 'Conversations', ru: 'Диалоги' },
   instagramIntegration: { en: 'Instagram', ru: 'Instagram-интеграция' },
   instagramIntegrationDesc: {
     en: 'Connect a professional account. New Direct conversations become leads and are assigned to sales managers.',
@@ -943,14 +947,6 @@ export const translations = {
   instagramMessagePlaceholder: {
     en: 'Write a message…',
     ru: 'Напишите сообщение…',
-  },
-  instagramMessages: {
-    en: 'Instagram messages',
-    ru: 'Сообщения Instagram',
-  },
-  instagramMessagesDesc: {
-    en: 'Reply to assigned leads in Instagram Direct without leaving the CRM.',
-    ru: 'Общайтесь с назначенными лидами в Instagram Direct, не выходя из CRM.',
   },
   instagramMessagingWindowExpired: {
     en: 'The 24-hour Instagram reply window has expired.',
@@ -989,13 +985,13 @@ export const translations = {
     en: 'Log in with Instagram',
     ru: 'Войти через Instagram',
   },
-  noInstagramConversations: {
-    en: 'No Instagram conversations yet',
-    ru: 'Пока нет диалогов Instagram',
+  noConversations: {
+    en: 'No conversations yet',
+    ru: 'Пока нет диалогов',
   },
-  noInstagramConversationsDesc: {
-    en: 'A conversation will appear here when a client writes to a connected Instagram account.',
-    ru: 'Диалог появится здесь, когда клиент напишет в подключённый Instagram-аккаунт.',
+  noConversationsDesc: {
+    en: 'Conversations from connected channels will appear here.',
+    ru: 'Здесь появятся диалоги из подключённых каналов.',
   },
   replyWindowClosed: {
     en: 'Reply window closed',

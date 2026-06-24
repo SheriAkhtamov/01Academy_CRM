@@ -11,7 +11,7 @@ import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
 import AcademyPage from '@/pages/academy';
 import SalesDashboard from '@/pages/sales-dashboard';
-import InstagramMessagesPage from '@/pages/sales/InstagramMessagesPage';
+import MessagesPage from '@/pages/sales/InstagramMessagesPage';
 import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
@@ -130,7 +130,7 @@ function Router() {
         )} />
         <Route path="/sales/messages" component={() => (
           <WorkspaceGuard workspace="sales">
-            <InstagramMessagesPage />
+            <MessagesPage />
           </WorkspaceGuard>
         )} />
         <Route path="/sales" component={() => (

@@ -237,9 +237,9 @@ export default function Header({
                         disabled={isSwitching}
                         onClick={async () => {
                           try {
-                            await switchToAccount(account.accountUser.id);
+                            await switchToAccount(account);
                             toast({ title: t('accountSwitched') });
-                            window.location.reload();
+                            window.location.assign('/');
                           } catch (err: any) {
                             toast({ title: t('error'), description: err?.message, variant: 'destructive' });
                           }
@@ -261,7 +261,7 @@ export default function Header({
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  await removeAccount(account.id);
+                                  await removeAccount(account);
                                   toast({ title: t('accountRemoved') });
                                 } catch (err: any) {
                                   toast({ title: t('error'), description: err?.message, variant: 'destructive' });

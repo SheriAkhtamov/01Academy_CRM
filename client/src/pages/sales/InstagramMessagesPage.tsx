@@ -75,7 +75,7 @@ function MessagesSkeleton() {
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'IG';
 
-export default function InstagramMessagesPage() {
+export default function MessagesPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
@@ -192,11 +192,11 @@ export default function InstagramMessagesPage() {
   return (
     <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
       <PageHeader
-        title={t('instagramMessages')}
-        subtitle={t('instagramMessagesDesc')}
+        title={t('messages')}
+        subtitle={t('messagesDesc')}
         breadcrumbs={[
           { label: t('navDashboard'), href: '/sales' },
-          { label: t('instagramMessages') },
+          { label: t('messages') },
         ]}
       />
 
@@ -207,9 +207,9 @@ export default function InstagramMessagesPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
                 <MessageCircle className="h-7 w-7" />
               </div>
-              <h2 className="mt-4 font-semibold text-slate-900">{t('noInstagramConversations')}</h2>
+              <h2 className="mt-4 font-semibold text-slate-900">{t('noConversations')}</h2>
               <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-                {t('noInstagramConversationsDesc')}
+                {t('noConversationsDesc')}
               </p>
             </div>
           </div>
@@ -219,7 +219,7 @@ export default function InstagramMessagesPage() {
               <div className="border-b border-border p-4">
                 <div className="flex items-center gap-2">
                   <Instagram className="h-5 w-5 text-primary" />
-                  <h2 className="font-semibold text-slate-900">{t('instagramDialogs')}</h2>
+                  <h2 className="font-semibold text-slate-900">{t('conversations')}</h2>
                   <Badge className="ml-auto" variant="secondary">{conversations.length}</Badge>
                 </div>
               </div>

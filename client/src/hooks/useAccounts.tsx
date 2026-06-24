@@ -2,9 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   SAVED_ACCOUNTS_QUERY_KEY,
-  AUTH_SESSION_QUERY_KEY,
   type SavedAccountEntry,
-  type AuthSession,
 } from '@shared/auth';
 import {
   fetchSavedAccounts,
@@ -14,8 +12,10 @@ import {
 } from '@/lib/session';
 
 const STORAGE_KEY_TOKENS = 'academy-saved-account-tokens';
+const linkTokenKey = (savedAccountId: number) => `link:${savedAccountId}`;
+const userTokenKey = (userId: number) => `user:${userId}`;
 
-function loadTokenMap(): Record<number, string> {
+function loadTokenMap(): Record<string, string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_TOKENS);
     return raw ? JSON.parse(raw) : {};
@@ -24,32 +24,46 @@ function loadTokenMap(): Record<number, string> {
   }
 }
 
-function saveTokenMap(map: Record<number, string>): void {
+function saveTokenMap(map: Record<string, string>): void {
   localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(map));
 }
 
-function addToken(accountId: number, token: string): void {
+function addToken(accountId: number, savedAccountId: number, token: string): void {
   const map = loadTokenMap();
-  map[accountId] = token;
+  map[linkTokenKey(savedAccountId)] = token;
+  map[userTokenKey(accountId)] = token;
   saveTokenMap(map);
 }
 
-function removeToken(accountId: number): void {
+function removeToken(account: SavedAccountEntry): void {
   const map = loadTokenMap();
-  delete map[accountId];
+  delete map[linkTokenKey(account.id)];
+  delete map[userTokenKey(account.accountUser.id)];
+  delete map[account.accountUser.id];
   saveTokenMap(map);
 }
 
-function getTokenForAccount(accountId: number): string | null {
-  return loadTokenMap()[accountId] || null;
+function getTokenCandidates(account: SavedAccountEntry): string[] {
+  const map = loadTokenMap();
+  const preferredTokens = [
+    map[linkTokenKey(account.id)],
+    map[userTokenKey(account.accountUser.id)],
+    // Supports saved links created before link-specific keys were introduced.
+    map[account.accountUser.id],
+  ];
+
+  return Array.from(new Set([
+    ...preferredTokens,
+    ...Object.values(map),
+  ].filter((token): token is string => Boolean(token))));
 }
 
 interface UseAccountsReturn {
   accounts: SavedAccountEntry[];
   isLoading: boolean;
   addAccount: (login: string, password: string) => Promise<void>;
-  switchToAccount: (accountId: number) => Promise<void>;
-  removeAccount: (accountId: number) => Promise<void>;
+  switchToAccount: (account: SavedAccountEntry) => Promise<void>;
+  removeAccount: (account: SavedAccountEntry) => Promise<void>;
   isAdding: boolean;
   isSwitching: boolean;
   isRemoving: boolean;
@@ -67,7 +81,7 @@ export function useAccounts(): UseAccountsReturn {
   const addMutation = useMutation({
     mutationFn: async ({ login, password }: { login: string; password: string }) => {
       const result = await addSavedAccount(login, password);
-      addToken(result.id, result.token);
+      addToken(result.id, result.savedAccountId, result.token);
       return result;
     },
     onSuccess: () => {
@@ -76,25 +90,31 @@ export function useAccounts(): UseAccountsReturn {
   });
 
   const switchMutation = useMutation({
-    mutationFn: async (accountId: number) => {
-      const token = getTokenForAccount(accountId);
-      if (!token) {
+    mutationFn: async (account: SavedAccountEntry) => {
+      const tokenCandidates = getTokenCandidates(account);
+      if (tokenCandidates.length === 0) {
         throw new Error('No token found for this account. Please re-add the account.');
       }
-      return switchAccount(token);
+      const result = await switchAccount(tokenCandidates, account.accountUser.id);
+      const matchedToken = tokenCandidates[result.matchedTokenIndex];
+      if (matchedToken) {
+        addToken(account.accountUser.id, account.id, matchedToken);
+      }
+      return result;
     },
     onSuccess: () => {
-      queryClient.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, (current) => current);
-      queryClient.invalidateQueries();
+      // The next account has a different permission boundary. Clear all
+      // account-scoped cache before the UI navigates to its workspace home.
+      queryClient.clear();
     },
   });
 
   const removeMutation = useMutation({
-    mutationFn: async (accountId: number) => {
-      removeToken(accountId);
-      return removeSavedAccount(accountId);
+    mutationFn: async (account: SavedAccountEntry) => {
+      return removeSavedAccount(account.id);
     },
-    onSuccess: () => {
+    onSuccess: (_result, account) => {
+      removeToken(account);
       queryClient.invalidateQueries({ queryKey: SAVED_ACCOUNTS_QUERY_KEY });
     },
   });
@@ -107,15 +127,15 @@ export function useAccounts(): UseAccountsReturn {
   );
 
   const switchToAccount = useCallback(
-    async (accountId: number) => {
-      await switchMutation.mutateAsync(accountId);
+    async (account: SavedAccountEntry) => {
+      await switchMutation.mutateAsync(account);
     },
     [switchMutation],
   );
 
   const removeAccount = useCallback(
-    async (accountId: number) => {
-      await removeMutation.mutateAsync(accountId);
+    async (account: SavedAccountEntry) => {
+      await removeMutation.mutateAsync(account);
     },
     [removeMutation],
   );

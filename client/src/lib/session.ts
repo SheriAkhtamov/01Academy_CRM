@@ -41,9 +41,8 @@ export async function fetchSavedAccounts(): Promise<SavedAccountEntry[]> {
 export async function addSavedAccount(
   login: string,
   password: string,
-  label?: string,
-): Promise<{ id: number; user: any; token: string; label: string | null }> {
-  return apiRequest("POST", "/api/auth/accounts", { login, password, label });
+): Promise<{ id: number; user: any; token: string }> {
+  return apiRequest("POST", "/api/auth/accounts", { login, password });
 }
 
 export async function switchAccount(token: string) {

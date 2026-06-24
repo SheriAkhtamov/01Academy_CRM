@@ -47,7 +47,7 @@ function getTokenForAccount(accountId: number): string | null {
 interface UseAccountsReturn {
   accounts: SavedAccountEntry[];
   isLoading: boolean;
-  addAccount: (login: string, password: string, label?: string) => Promise<void>;
+  addAccount: (login: string, password: string) => Promise<void>;
   switchToAccount: (accountId: number) => Promise<void>;
   removeAccount: (accountId: number) => Promise<void>;
   isAdding: boolean;
@@ -65,8 +65,8 @@ export function useAccounts(): UseAccountsReturn {
   });
 
   const addMutation = useMutation({
-    mutationFn: async ({ login, password, label }: { login: string; password: string; label?: string }) => {
-      const result = await addSavedAccount(login, password, label);
+    mutationFn: async ({ login, password }: { login: string; password: string }) => {
+      const result = await addSavedAccount(login, password);
       addToken(result.id, result.token);
       return result;
     },
@@ -100,8 +100,8 @@ export function useAccounts(): UseAccountsReturn {
   });
 
   const addAccount = useCallback(
-    async (login: string, password: string, label?: string) => {
-      await addMutation.mutateAsync({ login, password, label });
+    async (login: string, password: string) => {
+      await addMutation.mutateAsync({ login, password });
     },
     [addMutation],
   );

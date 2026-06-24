@@ -38,7 +38,6 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
   const formSchema = z.object({
     login: z.string().min(1, t('loginOrEmailRequired')),
     password: z.string().min(1, t('passwordRequired')),
-    label: z.string().optional(),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -46,14 +45,13 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
     defaultValues: {
       login: '',
       password: '',
-      label: '',
     },
   });
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setError('');
     try {
-      await addAccount(data.login, data.password, data.label || undefined);
+      await addAccount(data.login, data.password);
       toast({
         title: t('accountAdded'),
         description: t('accountAddedDesc'),
@@ -123,23 +121,6 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
                         setError('');
                         field.onChange(e);
                       }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="label"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('accountLabel')} ({t('optional')})</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t('accountLabelPlaceholder')}
-                      {...field}
                     />
                   </FormControl>
                   <FormMessage />

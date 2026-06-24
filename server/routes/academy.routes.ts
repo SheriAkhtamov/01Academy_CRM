@@ -6,7 +6,7 @@ import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
-import { getWorkforcePolicy, isRestrictedAtCurrentTime, maskPhone } from '../services/workforce-policy';
+import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
 import {
   ACTIVE_PIPELINE_STATUSES,
   CHURN_REASONS,
@@ -359,9 +359,6 @@ const defaultCompanyTargets = {
   groupMinFillPercent: 60,
   currentCashBalanceUzs: 0,
   salesPhoneVisibility: 'own_leads',
-  workdayStartHour: 8,
-  workdayEndHour: 20,
-  workdays: [1, 2, 3, 4, 5],
 };
 
 const getCompanySettings = async () => {
@@ -2533,14 +2530,6 @@ router.patch('/company-settings', async (req, res) => {
       salesPhoneVisibility: ['own_leads', 'mask_until_assigned'].includes(String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility))
         ? String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility)
         : 'own_leads',
-      workdayStartHour: Math.min(23, Math.max(0, Number(req.body.workdayStartHour ?? current.workdayStartHour) || 0)),
-      workdayEndHour: Math.min(24, Math.max(0, Number(req.body.workdayEndHour ?? current.workdayEndHour) || 0)),
-      workdays: safeJson(
-        Array.isArray(req.body.workdays)
-          ? req.body.workdays.map(Number).filter((day: number) => Number.isInteger(day) && day >= 1 && day <= 7)
-          : current.workdays,
-        [1, 2, 3, 4, 5],
-      ),
       updatedBy: req.user!.id,
     };
     const settings = await updateRow('academy_company_settings', Number(current.id), values);
@@ -4694,9 +4683,6 @@ router.get('/exports/:entity', async (req, res) => {
     const workspace = String(req.user?.workspace);
     if (!['administration', 'analytics', 'sales'].includes(workspace)) {
       return res.status(403).json({ error: 'Export access required' });
-    }
-    if (await isRestrictedAtCurrentTime(workspace)) {
-      return res.status(403).json({ error: 'Exports are unavailable outside configured working hours' });
     }
     const entityMap: Record<string, string> = {
       leads: 'academy_leads',

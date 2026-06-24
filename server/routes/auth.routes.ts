@@ -8,7 +8,6 @@ import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
 import { t } from '../lib/i18n';
 import { appConfig } from '../config';
-import { isRestrictedAtCurrentTime } from '../services/workforce-policy';
 import { logger } from '../lib/logger';
 import { getLinkedAccountId } from '@shared/account-switching';
 
@@ -54,10 +53,6 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
-        }
-
-        if (await isRestrictedAtCurrentTime(user.workspace)) {
-            return res.status(403).json({ error: 'System access is available only during configured working hours' });
         }
 
         const sanitizedUser = authService.sanitizeUser(user);
@@ -225,10 +220,6 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
 
         if (!matchedAccount.accountUser.isActive) {
             return res.status(403).json({ error: 'Target account is inactive' });
-        }
-
-        if (await isRestrictedAtCurrentTime(matchedAccount.accountUser.workspace)) {
-            return res.status(403).json({ error: 'System access is available only during configured working hours' });
         }
 
         const sanitizedUser = authService.sanitizeUser(matchedAccount.accountUser);

@@ -158,9 +158,6 @@ interface CompanySettings {
   groupMinFillPercent: number;
   currentCashBalanceUzs: number;
   salesPhoneVisibility: 'own_leads' | 'mask_until_assigned';
-  workdayStartHour: number;
-  workdayEndHour: number;
-  workdays: number[];
 }
 
 interface GroupProfitability {
@@ -185,9 +182,6 @@ const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   groupMinFillPercent: 60,
   currentCashBalanceUzs: 0,
   salesPhoneVisibility: 'own_leads',
-  workdayStartHour: 8,
-  workdayEndHour: 20,
-  workdays: [1, 2, 3, 4, 5],
 };
 
 const schoolSchema = z.object({
@@ -251,7 +245,7 @@ type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
 type GroupValues = z.infer<typeof groupSchema>;
 type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
-type PolicyNumberSetting = 'salesCommissionPercent' | 'groupMinFillPercent' | 'currentCashBalanceUzs' | 'workdayStartHour' | 'workdayEndHour';
+type PolicyNumberSetting = 'salesCommissionPercent' | 'groupMinFillPercent' | 'currentCashBalanceUzs';
 
 const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
   if (!Array.isArray(items)) return [];
@@ -1310,8 +1304,6 @@ export default function AcademySettings() {
                   ['salesCommissionPercent', ceoCopy.settings.commission, '%', 100],
                   ['groupMinFillPercent', ceoCopy.settings.minGroupFill, '%', 100],
                   ['currentCashBalanceUzs', ceoCopy.settings.currentCash, ceoCopy.settings.sum, undefined],
-                  ['workdayStartHour', ceoCopy.settings.workdayStart, ':00', 23],
-                  ['workdayEndHour', ceoCopy.settings.workdayEnd, ':00', 24],
                 ].map(([key, label, suffix, max]) => {
                   const numericKey = key as PolicyNumberSetting;
                   return <div key={numericKey} className="space-y-2 rounded-lg border border-border/70 p-4">
@@ -1342,18 +1334,6 @@ export default function AcademySettings() {
                       <SelectItem value="mask_until_assigned">{ceoCopy.settings.maskUntilAssigned}</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-3 rounded-lg border border-border/70 p-4 md:col-span-2">
-                  <Label>{ceoCopy.settings.workdays}</Label>
-                  <div className="flex flex-wrap gap-3">
-                    {dayNames.map((dayName, index) => {
-                      const day = index + 1;
-                      return <label key={day} className="flex items-center gap-2 text-sm"><Checkbox checked={kpiDraft.workdays.includes(day)} onCheckedChange={(checked) => setKpiDraft((current) => ({
-                        ...current,
-                        workdays: checked === true ? [...new Set([...current.workdays, day])].sort() : current.workdays.filter((item) => item !== day),
-                      }))} />{dayName}</label>;
-                    })}
-                  </div>
                 </div>
               </div>
               <div className="mt-6 flex justify-end">

@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useAccounts } from '@/hooks/useAccounts';
+import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { getInitials } from '@/lib/auth';
+import { getInitials, formatUserWorkspace } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,13 +16,13 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck } from 'lucide-react';
+import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck, UserPlus, ArrowLeftRight, Loader2, Check } from 'lucide-react';
 import ChatSheet from './ux/ChatSheet';
 import SettingsModal from './modals/SettingsModal';
+import AddAccountModal from './modals/AddAccountModal';
 import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
 import { WorkspaceIdentity } from './ux/WorkspaceIdentity';
-import AccountSwitcher from './ux/AccountSwitcher';
 
 interface HeaderProps {
   title?: string;
@@ -35,8 +37,12 @@ export default function Header({
 }: HeaderProps) {
   const { logout, user } = useAuth();
   const { t } = useTranslation();
+  const { accounts, switchToAccount, removeAccount, isSwitching } = useAccounts();
+  const { toast } = useToast();
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showAccountList, setShowAccountList] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -110,8 +116,6 @@ export default function Header({
             </Button>
 
             <ThemeToggle />
-
-            <AccountSwitcher />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -202,7 +206,87 @@ export default function Header({
                   </div>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-64">
+                {/* Current account */}
+                <div className="px-3 py-2">
+                  <p className="text-xs text-muted-foreground">{t('currentAccount')}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0"
+                      style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
+                    >
+                      {getInitials(user?.fullName || '')}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{user?.fullName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                    </div>
+                    <Check className="h-4 w-4 text-primary shrink-0" />
+                  </div>
+                </div>
+
+                <DropdownMenuSeparator />
+
+                {/* Saved accounts */}
+                {accounts.length > 0 && (
+                  <>
+                    <DropdownMenuLabel className="text-xs">{t('savedAccounts')}</DropdownMenuLabel>
+                    {accounts.map((account) => (
+                      <DropdownMenuItem
+                        key={account.id}
+                        disabled={isSwitching}
+                        onClick={async () => {
+                          try {
+                            await switchToAccount(account.accountUser.id);
+                            toast({ title: t('accountSwitched') });
+                            window.location.reload();
+                          } catch (err: any) {
+                            toast({ title: t('error'), description: err?.message, variant: 'destructive' });
+                          }
+                        }}
+                        className="group"
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0"
+                            style={{ background: 'linear-gradient(135deg, var(--color-muted), var(--color-muted-foreground))' }}
+                          >
+                            {getInitials(account.accountUser.fullName)}
+                          </div>
+                          <span className="text-sm truncate flex-1">{account.accountUser.fullName}</span>
+                          {isSwitching ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                          ) : (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await removeAccount(account.id);
+                                  toast({ title: t('accountRemoved') });
+                                } catch (err: any) {
+                                  toast({ title: t('error'), description: err?.message, variant: 'destructive' });
+                                }
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+
+                {/* Add account */}
+                <DropdownMenuItem onClick={() => setShowAddAccount(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  {t('addAccount')}
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
                 <DropdownMenuItem onClick={() => setShowSettings(true)}>
                   <Settings className="h-4 w-4 mr-2" />
                   {t('settings')}
@@ -224,6 +308,11 @@ export default function Header({
       <SettingsModal
         open={showSettings}
         onOpenChange={setShowSettings}
+      />
+
+      <AddAccountModal
+        open={showAddAccount}
+        onOpenChange={setShowAddAccount}
       />
 
       <CommandPalette

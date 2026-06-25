@@ -148,6 +148,13 @@
       "when": 1782748800000,
       "tag": "0020_remove_finance_payroll_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782835200000,
+      "tag": "0021_add_director_workspace",
+      "breakpoints": true
     }
   ]
 }

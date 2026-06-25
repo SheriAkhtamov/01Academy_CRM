@@ -37,7 +37,7 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   workspaceIdx: index("users_workspace_idx").on(table.workspace),
-  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
+  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'director', 'sales', 'teacher', 'marketing')`),
 }));
 
 export const notifications = pgTable("notifications", {

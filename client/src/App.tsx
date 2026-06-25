@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { canAccessAcademyWorkspace, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, isLeadershipWorkspace, type AcademyWorkspace } from '@shared/academy';
 import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
@@ -25,7 +25,8 @@ import { ThemeProvider } from '@/components/ux/ThemeProvider';
 function WorkspaceBasedHome() {
   const { user } = useAuth();
   switch (user?.workspace) {
-    case 'administration': return <AdminDashboardPage />;
+    case 'administration':
+    case 'director': return <AdminDashboardPage />;
     case 'sales': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
     case 'marketing': return <MarketingWorkspace />;
@@ -39,7 +40,7 @@ function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'acce
   const title = titleKey === 'noWorkspaceAssigned'
     ? t('noWorkspaceAssigned')
     : t('accessDeniedWorkspace');
-  const description = user?.workspace === 'administration'
+  const description = isLeadershipWorkspace(user?.workspace)
     ? t('adminWorkspaceBoundaryDescription')
     : t('contactAdministratorForAccess');
 

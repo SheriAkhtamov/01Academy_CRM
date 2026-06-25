@@ -20,7 +20,7 @@ const createEventOnce = async (
 
 const notifyLeadership = async (title: string, message: string, entityType?: string, entityId?: number) => {
   const { rows: leaders } = await pool.query(
-    `SELECT id FROM users WHERE workspace = 'administration' AND is_active = true`,
+    `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active = true`,
   );
   await Promise.all([
     ...leaders.map((leader) => pool.query(

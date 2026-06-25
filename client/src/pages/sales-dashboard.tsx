@@ -46,6 +46,7 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import {
+  isLeadershipWorkspace,
   LEAD_STATUSES,
 } from '@shared/academy';
 import {
@@ -247,7 +248,7 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const isAdministrationWorkspace = user?.workspace === 'administration';
+  const isAdministrationWorkspace = isLeadershipWorkspace(user?.workspace);
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();

@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { formatUserWorkspace } from '@/lib/auth';
+import { isLeadershipWorkspace } from '@shared/academy';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -230,7 +231,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             </div>
 
             {/* Analytics Access - Only for Admins */}
-            {user?.workspace === 'administration' && (
+            {isLeadershipWorkspace(user?.workspace) && (
               <FormField
                 control={form.control}
                 name="hasReportAccess"

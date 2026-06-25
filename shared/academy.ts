@@ -2,6 +2,7 @@ export const ACADEMY_BRAND_NAME = "01 Academy CRM";
 
 export const ACADEMY_WORKSPACES = [
   "administration",
+  "director",
   "sales",
   "teacher",
   "marketing",
@@ -9,14 +10,24 @@ export const ACADEMY_WORKSPACES = [
 
 export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];
 
+export const LEADERSHIP_WORKSPACES = [
+  "administration",
+  "director",
+] as const;
+
+export function isLeadershipWorkspace(
+  workspace: string | null | undefined,
+): boolean {
+  return (LEADERSHIP_WORKSPACES as readonly string[]).includes(String(workspace));
+}
+
 export function canAccessAcademyWorkspace(
   assignedWorkspace: string | null | undefined,
   workspace: AcademyWorkspace,
 ): boolean {
-  // Administration is the CEO workspace. It intentionally bypasses
-  // workspace boundaries so the director can investigate and act in any
-  // department without needing a second account.
-  return assignedWorkspace === "administration" || assignedWorkspace === workspace;
+  // Leadership workspaces intentionally bypass department boundaries so
+  // the head can investigate and act in any area without a second account.
+  return isLeadershipWorkspace(assignedWorkspace) || assignedWorkspace === workspace;
 }
 
 export const LEAD_STATUSES = [

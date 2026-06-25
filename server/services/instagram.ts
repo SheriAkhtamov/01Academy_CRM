@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
 import { logger } from '../lib/logger';
+import { isLeadershipWorkspace } from '@shared/academy';
 
 type InstagramBroadcast = (data: any) => void;
 type InstagramUser = {
@@ -354,11 +355,11 @@ const getParticipantProfile = async (
 const getSystemUserId = async (client: PoolClient) => {
   const { rows } = await client.query(
     `SELECT id FROM users
-     WHERE workspace = 'administration' AND is_active = true
+     WHERE workspace IN ('administration', 'director') AND is_active = true
      ORDER BY id LIMIT 1`,
   );
   if (!rows[0]?.id) {
-    throw new Error('No active administration workspace user');
+    throw new Error('No active leadership workspace user');
   }
   return Number(rows[0].id);
 };
@@ -645,7 +646,7 @@ const assertConversationAccess = async (conversationId: number, user: InstagramU
   if (!conversation) {
     throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
   }
-  if (user.workspace !== 'administration' && Number(conversation.manager_id) !== Number(user.id)) {
+  if (!isLeadershipWorkspace(user.workspace) && Number(conversation.manager_id) !== Number(user.id)) {
     throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
   }
   return conversation;
@@ -669,7 +670,7 @@ export const listInstagramAccounts = async () => {
 
 export const listInstagramConversations = async (user: InstagramUser) => {
   const params: unknown[] = [];
-  const ownershipFilter = user.workspace === 'administration'
+  const ownershipFilter = isLeadershipWorkspace(user.workspace)
     ? ''
     : `AND l.manager_id = $${params.push(user.id)}`;
   const { rows } = await pool.query(

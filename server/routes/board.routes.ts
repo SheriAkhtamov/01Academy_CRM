@@ -11,6 +11,7 @@ import {
     type BoardTask,
     type BoardTaskStatus,
 } from '@shared/schema';
+import { isLeadershipWorkspace } from '@shared/academy';
 import type { User } from '@shared/schema';
 
 const router = Router();
@@ -23,7 +24,7 @@ export function setBroadcastFunction(fn: (data: any) => void) {
 
 // --- Permission helpers -----------------------------------------------------
 
-const isTaskSupervisor = (user?: User) => user?.workspace === 'administration';
+const isTaskSupervisor = (user?: User) => isLeadershipWorkspace(user?.workspace);
 
 const requireBoardAccess = (req: Request, res: Response, next: NextFunction) => {
     if (!isTaskSupervisor(req.user)) {

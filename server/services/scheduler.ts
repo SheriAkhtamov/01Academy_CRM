@@ -76,7 +76,7 @@ export const startScheduler = () => {
 const getSystemUserId = async (): Promise<number | null> => {
   if (!pool) return null;
   const { rows } = await pool.query(
-    `SELECT id FROM users WHERE workspace = 'administration' AND is_active=true ORDER BY id LIMIT 1`,
+    `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active=true ORDER BY id LIMIT 1`,
   );
   return rows[0]?.id ?? null;
 };

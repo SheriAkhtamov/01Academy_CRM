@@ -288,6 +288,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     switch (workspace) {
       case 'administration':
         return 'bg-red-100 text-red-800';
+      case 'director':
+        return 'bg-violet-100 text-violet-800';
       case 'sales':
         return 'bg-blue-100 text-blue-800';
       case 'teacher':
@@ -309,6 +311,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const workspaceOptions = [
     { value: 'administration', label: t('administrationWorkspace') },
+    { value: 'director', label: t('directorWorkspace') },
     { value: 'sales', label: t('salesDepartmentWorkspace') },
     { value: 'teacher', label: t('teacher') },
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
@@ -810,6 +813,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <span className="text-sm text-slate-600">{t('administrationWorkspace')}</span>
                   <span className="text-sm font-medium">
                     {users.filter((u: any) => u.workspace === 'administration').length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">{t('directorWorkspace')}</span>
+                  <span className="text-sm font-medium">
+                    {users.filter((u: any) => u.workspace === 'director').length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">

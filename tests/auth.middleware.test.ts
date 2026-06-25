@@ -73,4 +73,26 @@ describe("auth middleware", () => {
     expect(response.status).toBe(403);
     expect(response.body).toEqual({ error: "Admin access required" });
   });
+
+  it("allows director users through admin routes", async () => {
+    mockStorage.getUser.mockResolvedValue({
+      id: 9,
+      fullName: "Director User",
+      email: "director@example.com",
+      password: "hashed",
+      workspace: "director",
+      isActive: true,
+      hasReportAccess: true,
+    });
+
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: 9 });
+
+    const response = await agent.get("/admin-only");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+  });
 });

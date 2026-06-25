@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
+import { isLeadershipWorkspace } from '@shared/academy';
 import {
   buildInstagramAuthorizationUrl,
   disconnectInstagramAccount,
@@ -23,13 +24,13 @@ const messageSchema = z.object({
 router.use(requireAuth);
 
 const ensureAdministration = (req: any, res: any) => {
-  if (req.user?.workspace === 'administration') return true;
+  if (isLeadershipWorkspace(req.user?.workspace)) return true;
   res.status(403).json({ error: 'Admin access required' });
   return false;
 };
 
 const ensureMessagingAccess = (req: any, res: any) => {
-  if (req.user?.workspace === 'sales' || req.user?.workspace === 'administration') return true;
+  if (req.user?.workspace === 'sales' || isLeadershipWorkspace(req.user?.workspace)) return true;
   res.status(403).json({ error: 'Sales access required' });
   return false;
 };

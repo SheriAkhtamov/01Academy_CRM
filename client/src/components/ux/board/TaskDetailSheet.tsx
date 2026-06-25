@@ -47,6 +47,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
+import { isLeadershipWorkspace } from '@shared/academy';
 import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import {
@@ -152,7 +153,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
         queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
     };
 
-    const isTaskSupervisor = user?.workspace === 'administration';
+    const isTaskSupervisor = isLeadershipWorkspace(user?.workspace);
     const canManage = !!task && !!user && (user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor);
     const canAcceptReopen = !!task && !!user && (user.id === task.creatorId || isTaskSupervisor);
     const canDelete = canAcceptReopen;

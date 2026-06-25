@@ -26,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { TARGET_ROAS } from '@shared/academy';
+import { isLeadershipWorkspace, TARGET_ROAS } from '@shared/academy';
 import {
   Megaphone,
   TrendingUp,
@@ -203,7 +203,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const expenses = data?.expenses ?? [];
   const referrals = data?.referrals ?? [];
   const students = data?.students ?? [];
-  const canManageExpenses = ['marketing', 'administration'].includes(user?.workspace ?? '');
+  const canManageExpenses = user?.workspace === 'marketing' || isLeadershipWorkspace(user?.workspace);
 
   const warmLeads = useMemo(() => {
     return leads.filter((lead: any) => lead.statusCode === 'not_now');

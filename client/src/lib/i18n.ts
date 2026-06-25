@@ -236,7 +236,6 @@ export const translations = {
   schoolCrm: { en: 'School CRM', ru: 'CRM школы' },
   searchEmployees: { en: 'Search employees...', ru: 'Поиск сотрудников...' },
   searchUsers: { en: 'Search users...', ru: 'Поиск пользователей...' },
-  sectionSystem: { en: 'System', ru: 'Система' },
   selectEmployee: { en: 'Select an employee', ru: 'Выберите сотрудника' },
   selectLesson: { en: 'Select a Lesson', ru: 'Выберите занятие' },
   selectSource: { en: 'Select source', ru: 'Выберите источник' },
@@ -761,6 +760,14 @@ export const translations = {
   currentWorkspace: {
     en: 'Current workspace',
     ru: 'Текущая рабочая область',
+  },
+  directorWorkspace: {
+    en: 'Director workspace',
+    ru: 'Воркспейс руководителя',
+  },
+  directorWorkspaceDescription: {
+    en: 'All sales, education, marketing, and system sections in one workspace.',
+    ru: 'Все разделы продаж, обучения, маркетинга и системы в одном рабочем пространстве.',
   },
   marketingDepartmentWorkspace: {
     en: 'Marketing department',

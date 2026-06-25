@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
+import { isLeadershipWorkspace } from '@shared/academy';
 
 // Authentication middleware
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
@@ -25,7 +26,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 
 export const requireAdministration = async (req: Request, res: Response, next: NextFunction) => {
     await requireAuth(req, res, () => {
-        if (req.user?.workspace !== 'administration') {
+        if (!isLeadershipWorkspace(req.user?.workspace)) {
             return res.status(403).json({ error: 'Admin access required' });
         }
 

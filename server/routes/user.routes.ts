@@ -6,12 +6,13 @@ import { authService } from '../services/auth';
 import { requireAuth, requireAdministration } from '../middleware/auth.middleware';
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
-import { ACADEMY_WORKSPACES, type AcademyWorkspace } from '@shared/academy';
+import { ACADEMY_WORKSPACES, isLeadershipWorkspace, type AcademyWorkspace } from '@shared/academy';
 
 const router = Router();
 const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
 const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     administration: 'admin',
+    director: 'director',
     sales: 'sales',
     teacher: 'teacher',
     marketing: 'marketing',
@@ -262,7 +263,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
-        if (currentUser?.id !== id && currentUser?.workspace !== 'administration') {
+        if (currentUser?.id !== id && !isLeadershipWorkspace(currentUser?.workspace)) {
             return res.status(403).json({ error: 'Cannot update other users profile' });
         }
 
@@ -282,7 +283,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             updateData.dateOfBirth = req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : null;
         }
 
-        if (currentUser?.workspace === 'administration') {
+        if (isLeadershipWorkspace(currentUser?.workspace)) {
             if (req.body.workspace !== undefined) {
                 if (!workspaceSet.has(req.body.workspace)) {
                     return res.status(400).json({ error: 'A valid workspace is required' });
@@ -297,24 +298,21 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
         }
 
-        const isRemovingActiveAdministrationAccess =
-            existingUser.workspace === 'administration' &&
+        const isRemovingActiveLeadershipAccess =
+            isLeadershipWorkspace(existingUser.workspace) &&
             existingUser.isActive &&
             (
-                (updateData.workspace !== undefined && updateData.workspace !== 'administration') ||
+                (updateData.workspace !== undefined && !isLeadershipWorkspace(updateData.workspace)) ||
                 updateData.isActive === false
             );
 
-        if (isRemovingActiveAdministrationAccess) {
+        if (isRemovingActiveLeadershipAccess) {
             const allUsers = await storage.getUsers();
-            const activeAdministrators = allUsers.filter((u: any) => (
-                u.workspace === 'administration' &&
-                u.isActive
-            ));
+            const activeLeadershipUsers = allUsers.filter((u: any) => isLeadershipWorkspace(u.workspace) && u.isActive);
 
-            if (activeAdministrators.length <= 1) {
+            if (activeLeadershipUsers.length <= 1) {
                 return res.status(403).json({
-                    error: 'Cannot remove or deactivate the last active administrator account.',
+                    error: 'Cannot remove or deactivate the last active leadership account.',
                 });
             }
         }
@@ -350,9 +348,9 @@ router.delete('/:id', requireAdministration, async (req, res) => {
         }
 
         const allUsers = await storage.getUsers();
-        const activeAdministrators = allUsers.filter((u: any) => u.workspace === 'administration' && u.isActive);
-        if (user.workspace === 'administration' && user.isActive && activeAdministrators.length <= 1) {
-            return res.status(403).json({ error: 'Cannot delete the last active administrator account.' });
+        const activeLeadershipUsers = allUsers.filter((u: any) => isLeadershipWorkspace(u.workspace) && u.isActive);
+        if (isLeadershipWorkspace(user.workspace) && user.isActive && activeLeadershipUsers.length <= 1) {
+            return res.status(403).json({ error: 'Cannot delete the last active leadership account.' });
         }
 
         await pool.query(

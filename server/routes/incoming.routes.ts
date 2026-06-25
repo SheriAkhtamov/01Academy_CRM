@@ -69,9 +69,9 @@ const withIncomingTransaction = async <T>(callback: (client: PoolClient) => Prom
 
 const getSystemUserId = async (executor: QueryExecutor = pool): Promise<number> => {
   const { rows } = await executor.query(
-    `SELECT id FROM users WHERE workspace = 'administration' AND is_active=true ORDER BY id LIMIT 1`,
+    `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active=true ORDER BY id LIMIT 1`,
   );
-  if (!rows[0]?.id) throw new Error('No active administration workspace user to attribute webhook actions');
+  if (!rows[0]?.id) throw new Error('No active leadership workspace user to attribute webhook actions');
   return Number(rows[0].id);
 };
 

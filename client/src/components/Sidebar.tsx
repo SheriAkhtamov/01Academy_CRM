@@ -31,6 +31,7 @@ import {
   ChevronDown,
   ListChecks,
   UserCircle,
+  UserCheck,
   SlidersHorizontal,
   KanbanSquare,
   MessagesSquare,
@@ -70,69 +71,81 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const buildSections = (): NavSection[] => {
+    const salesSection: NavSection = {
+      label: t('salesPipeline'),
+      items: [
+        { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
+        { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
+        { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
+        { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
+        { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
+        { name: t('messages'), href: '/sales/messages', icon: MessagesSquare },
+      ],
+    };
+
+    const teacherSection: NavSection = {
+      label: t('teacher'),
+      items: [
+        { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
+        { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
+        { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
+        { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
+        { name: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
+      ],
+    };
+
+    const marketingSection: NavSection = {
+      label: t('marketingTab'),
+      items: [
+        { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
+        { name: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
+        { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
+        { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
+        { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
+        { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
+      ],
+    };
+
+    const systemSection: NavSection = {
+      label: t('systemAdministration'),
+      items: [
+        { name: t('employees'), href: '/employees', icon: Users },
+        { name: t('leadAssignment'), href: '/admin/leads', icon: UserCheck },
+        { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
+        { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
+        { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
+        { name: t('navIntegrations'), href: '/integrations', icon: Plug },
+      ],
+    };
+
     if (workspace === 'sales') {
-      return [
-        {
-          label: t('salesPipeline'),
-          items: [
-            { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
-            { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
-            { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
-            { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-            { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
-            { name: t('messages'), href: '/sales/messages', icon: MessagesSquare },
-          ],
-        },
-      ];
+      return [salesSection];
     }
 
     if (workspace === 'teacher') {
-      return [
-        {
-          label: t('teacher'),
-          items: [
-            { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
-            { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
-            { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
-            { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
-            { name: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
-          ],
-        },
-      ];
+      return [teacherSection];
     }
 
     if (workspace === 'marketing') {
-      return [
-        {
-          label: t('marketingTab'),
-          items: [
-            { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
-            { name: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
-            { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
-            { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
-            { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
-            { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
-          ],
-        },
-        {
-          label: t('sectionSystem'),
-          items: [],
-        },
-      ];
+      return [marketingSection];
     }
 
     if (workspace === 'administration') {
+      return [systemSection];
+    }
+
+    if (workspace === 'director') {
       return [
         {
-          label: t('systemAdministration'),
+          label: t('directorWorkspace'),
           items: [
-            { name: t('employees'), href: '/employees', icon: Users },
-            { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
-            { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-            { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
-            { name: t('navIntegrations'), href: '/integrations', icon: Plug },
+            { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
           ],
         },
+        salesSection,
+        teacherSection,
+        marketingSection,
+        systemSection,
       ];
     }
 

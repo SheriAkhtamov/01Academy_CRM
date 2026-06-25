@@ -4,7 +4,6 @@ export const ACADEMY_WORKSPACES = [
   "administration",
   "sales",
   "teacher",
-  "analytics",
   "marketing",
 ] as const;
 

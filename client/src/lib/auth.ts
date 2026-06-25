@@ -6,7 +6,6 @@ const workspaceTranslationKeys = {
   administration: 'administrationWorkspace',
   sales: 'salesDepartmentWorkspace',
   teacher: 'teacher',
-  analytics: 'analyticsDepartmentWorkspace',
   marketing: 'marketingDepartmentWorkspace',
 } as const satisfies Record<AcademyWorkspace, TranslationKey>;
 
@@ -27,13 +26,9 @@ export function formatUserWorkspace(
 }
 
 export function canAccessReports(user: SanitizedUser): boolean {
-  return ['administration', 'analytics', 'marketing'].includes(user.workspace) || Boolean(user.hasReportAccess);
+  return ['administration', 'marketing'].includes(user.workspace) || Boolean(user.hasReportAccess);
 }
 
 export function canManageUsers(user: SanitizedUser): boolean {
   return user.workspace === 'administration';
-}
-
-export function canAccessAnalytics(user: SanitizedUser): boolean {
-  return ['administration', 'analytics', 'marketing'].includes(user.workspace) || Boolean(user.hasReportAccess);
 }

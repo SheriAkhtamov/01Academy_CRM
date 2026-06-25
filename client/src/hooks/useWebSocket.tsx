@@ -68,7 +68,6 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
           queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
           queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] });
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/analytics'] });
           break;
         case 'NEW_MESSAGE':
           if (message.data?.senderId && message.data?.receiverId) {

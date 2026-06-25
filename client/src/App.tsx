@@ -12,7 +12,6 @@ import Login from '@/pages/login';
 import AcademyPage from '@/pages/academy';
 import SalesDashboard from '@/pages/sales-dashboard';
 import MessagesPage from '@/pages/sales/InstagramMessagesPage';
-import AnalyticsWorkspace from '@/pages/analytics-workspace';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
@@ -21,8 +20,6 @@ import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
 import AdminTasksPage from '@/pages/admin/tasks';
 import AuditPage from '@/pages/admin/audit';
-import FinancePage from '@/pages/admin/finance';
-import PayrollPage from '@/pages/admin/payroll';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
 
 function WorkspaceBasedHome() {
@@ -31,7 +28,6 @@ function WorkspaceBasedHome() {
     case 'administration': return <AdminDashboardPage />;
     case 'sales': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
-    case 'analytics': return <AnalyticsWorkspace />;
     case 'marketing': return <MarketingWorkspace />;
     default: return <AccessDenied titleKey="noWorkspaceAssigned" />;
   }
@@ -71,9 +67,7 @@ function WorkspaceGuard({
   return <>{children}</>;
 }
 
-type AcademySection =
-  | 'integrations'
-  | 'settings';
+type AcademySection = 'integrations';
 
 const adminPage = (section: AcademySection) => (
   <WorkspaceGuard workspace="administration">
@@ -105,7 +99,6 @@ function Router() {
       <Switch>
         <Route path="/" component={WorkspaceBasedHome} />
         <Route path="/integrations" component={() => adminPage('integrations')} />
-        <Route path="/settings" component={() => adminPage('settings')} />
         <Route path="/sales/leads" component={() => <Redirect to="/sales/pipeline" />} />
         <Route path="/sales/pipeline" component={() => (
           <WorkspaceGuard workspace="sales">
@@ -135,46 +128,6 @@ function Router() {
         <Route path="/sales" component={() => (
           <WorkspaceGuard workspace="sales">
             <SalesDashboard section="overview" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/funnel" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="funnel" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/courses" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="courses" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/sources" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="sources" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/teachers" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="teachers" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/groups" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="groups" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/risks" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="risks" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace/cohorts" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="cohorts" />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/analytics-workspace" component={() => (
-          <WorkspaceGuard workspace="analytics">
-            <AnalyticsWorkspace section="overview" />
           </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/schedule" component={() => (
@@ -261,16 +214,6 @@ function Router() {
         <Route path="/admin/audit" component={() => (
           <WorkspaceGuard workspace="administration">
             <AuditPage />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/admin/finance" component={() => (
-          <WorkspaceGuard workspace="administration">
-            <FinancePage />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/admin/payroll" component={() => (
-          <WorkspaceGuard workspace="administration">
-            <PayrollPage />
           </WorkspaceGuard>
         )} />
         <Route component={NotFound} />

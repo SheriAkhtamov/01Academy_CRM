@@ -14,7 +14,6 @@ const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     administration: 'admin',
     sales: 'sales',
     teacher: 'teacher',
-    analytics: 'analytics',
     marketing: 'marketing',
 };
 
@@ -147,7 +146,6 @@ router.post('/', requireAdministration, async (req, res) => {
             fullName,
             phone: phone || null,
             position: position || null,
-            baseSalaryUzs: Math.max(0, Math.round(Number(req.body.baseSalaryUzs) || 0)),
             workspace,
             hasReportAccess: hasReportAccess || false,
             isActive: isActive !== undefined ? isActive : true,
@@ -296,9 +294,6 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
             if (req.body.isActive !== undefined) {
                 updateData.isActive = Boolean(req.body.isActive);
-            }
-            if (req.body.baseSalaryUzs !== undefined) {
-                updateData.baseSalaryUzs = Math.max(0, Math.round(Number(req.body.baseSalaryUzs) || 0));
             }
         }
 

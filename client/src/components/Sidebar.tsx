@@ -17,25 +17,19 @@ import {
 import {
   BarChart3,
   Calendar,
-  Settings,
   Users,
   X,
   GraduationCap,
-  BookOpen,
   Layers3,
   ClipboardCheck,
   Banknote,
   ClipboardList,
-  Landmark,
-  AlertTriangle,
   HeartHandshake,
   Plug,
-  UserRoundCheck,
   Flame,
   Megaphone,
   ChevronDown,
   ListChecks,
-  Star,
   UserCircle,
   SlidersHorizontal,
   KanbanSquare,
@@ -67,8 +61,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { workspace } = user;
 
   const isItemActive = (href: string) => {
-    if (href === '/') return location === '/';
-    return location === href;
+    const currentPath = location.split('?')[0];
+    if (href === '/') return currentPath === '/';
+    if (href === '/admin/academy-settings') {
+      return currentPath === href || currentPath === '/admin/leads';
+    }
+    return currentPath === href;
   };
 
   const buildSections = (): NavSection[] => {
@@ -98,24 +96,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
             { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
             { name: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
-          ],
-        },
-      ];
-    }
-
-    if (workspace === 'analytics') {
-      return [
-        {
-          label: t('navAnalytics'),
-          items: [
-            { name: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
-            { name: t('salesPipeline'), href: '/analytics-workspace/funnel', icon: Flame },
-            { name: t('byCourses'), href: '/analytics-workspace/courses', icon: BookOpen },
-            { name: t('bySources'), href: '/analytics-workspace/sources', icon: Megaphone },
-            { name: t('navTeachers'), href: '/analytics-workspace/teachers', icon: UserRoundCheck },
-            { name: t('navGroups'), href: '/analytics-workspace/groups', icon: Layers3 },
-            { name: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
-            { name: t('cohortsTab'), href: '/analytics-workspace/cohorts', icon: Users },
           ],
         },
       ];
@@ -154,7 +134,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           items: [
             { name: ceoCopy.workspace.sales, href: '/sales', icon: Flame },
             { name: ceoCopy.workspace.marketing, href: '/marketing-workspace', icon: Megaphone },
-            { name: ceoCopy.workspace.analytics, href: '/analytics-workspace', icon: BarChart3 },
             { name: ceoCopy.workspace.teachers, href: '/teacher-workspace', icon: GraduationCap },
           ],
         },
@@ -162,14 +141,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           label: t('systemAdministration'),
           items: [
             { name: t('employees'), href: '/employees', icon: Users },
-            { name: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
             { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
             { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
-            { name: ceoCopy.workspace.finance, href: '/admin/finance', icon: Landmark },
-            { name: ceoCopy.workspace.payroll, href: '/admin/payroll', icon: Banknote },
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
-            { name: t('settings'), href: '/settings', icon: Settings },
           ],
         },
       ];

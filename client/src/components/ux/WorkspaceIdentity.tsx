@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart3,
   GraduationCap,
   Megaphone,
   ShieldCheck,
@@ -13,7 +12,6 @@ import { useTranslation } from '@/hooks/useTranslation';
 type WorkspaceType =
   | 'sales'
   | 'administration'
-  | 'analytics'
   | 'teacher'
   | 'marketing';
 
@@ -32,10 +30,6 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
     return 'teacher';
   }
 
-  if (location === '/analytics-workspace' || location.startsWith('/analytics-workspace/')) {
-    return 'analytics';
-  }
-
   if (location === '/marketing-workspace' || location.startsWith('/marketing-workspace/')) {
     return 'marketing';
   }
@@ -45,7 +39,6 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
     || location.startsWith('/admin/')
     || location === '/employees'
     || location === '/integrations'
-    || location === '/settings'
   ) {
     return 'administration';
   }
@@ -54,7 +47,6 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
     'administration',
     'sales',
     'teacher',
-    'analytics',
     'marketing',
   ];
   return knownWorkspaces.includes(assignedWorkspace as WorkspaceType)
@@ -81,11 +73,6 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
       title: t('administrationWorkspace'),
       description: t('administrationWorkspaceDescription'),
       icon: ShieldCheck,
-    },
-    analytics: {
-      title: t('analyticsDepartmentWorkspace'),
-      description: t('analyticsDepartmentWorkspaceDescription'),
-      icon: BarChart3,
     },
     teacher: {
       title: t('teacherWorkspace'),

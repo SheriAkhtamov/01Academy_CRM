@@ -36,8 +36,6 @@ const notifyLeadership = async (title: string, message: string, entityType?: str
   ]);
 };
 
-const dateKey = (date = new Date()) => date.toISOString().slice(0, 10);
-
 export const runEscalations = async (): Promise<string[]> => {
   const actions: string[] = [];
   try {
@@ -85,33 +83,6 @@ export const runEscalations = async (): Promise<string[]> => {
       actions.push(`feedback-sla:${task.id}`);
     }
 
-    // Cash-gap forecast: current cash plus scheduled receipts must cover approved obligations.
-    const { rows: [forecast] } = await pool.query(
-      `SELECT
-         COALESCE((SELECT current_cash_balance_uzs FROM academy_company_settings ORDER BY id LIMIT 1), 0)::int AS cash_balance,
-         COALESCE((SELECT SUM(amount_uzs) FROM academy_payments
-                   WHERE status IN ('pending', 'overdue')
-                     AND due_at >= date_trunc('day', NOW())
-                     AND due_at < date_trunc('day', NOW()) + INTERVAL '7 days'), 0)::int AS expected_receipts,
-         COALESCE((SELECT SUM(amount_uzs) FROM academy_marketing_expenses
-                   WHERE status = 'approved'
-                     AND period_start < date_trunc('day', NOW()) + INTERVAL '7 days'
-                     AND period_end >= date_trunc('day', NOW())), 0)::int AS approved_expenses`,
-    );
-    const cashBalance = Number(forecast?.cash_balance || 0);
-    const expectedReceipts = Number(forecast?.expected_receipts || 0);
-    const approvedExpenses = Number(forecast?.approved_expenses || 0);
-    if (approvedExpenses > cashBalance + expectedReceipts) {
-      const key = `cash-gap:${dateKey()}`;
-      if (await createEventOnce(key, 'cash_gap', 'finance', null, { cashBalance, expectedReceipts, approvedExpenses })) {
-        await notifyLeadership(
-          'Риск кассового разрыва',
-          `Одобренные расходы: ${approvedExpenses.toLocaleString('ru-RU')} сум. Доступно с ожидаемыми поступлениями: ${(cashBalance + expectedReceipts).toLocaleString('ru-RU')} сум.`,
-          'finance',
-        );
-        actions.push(key);
-      }
-    }
   } catch (error) {
     logger.error('Escalation monitor failed', { error });
   }

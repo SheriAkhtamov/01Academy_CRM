@@ -24,14 +24,12 @@ import {
   Layers3,
   Loader2,
   Megaphone,
+  Plug,
   Search,
-  Settings,
   Users,
   UserRoundCheck,
   ListChecks,
-  Star,
   Wallet,
-  AlertTriangle,
   UserCircle,
   KanbanSquare,
   ShieldCheck,
@@ -86,8 +84,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
         { id: 'nav-admin-tasks', type: t('systemAdministration'), title: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-        { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
-        { id: 'nav-settings', type: t('systemAdministration'), title: t('settings'), href: '/settings', icon: Settings },
+        { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
       ];
 
       switch (user?.workspace) {
@@ -109,17 +106,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
             { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
             { id: 'nav-teacher-profile', type: t('myProfile'), title: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
-          ];
-        case 'analytics':
-          return [
-            { id: 'nav-analytics', type: t('navAnalytics'), title: t('navDashboard'), href: '/analytics-workspace', icon: BarChart3 },
-            { id: 'nav-analytics-funnel', type: t('salesPipeline'), title: t('salesPipeline'), href: '/analytics-workspace/funnel', icon: Flame },
-            { id: 'nav-analytics-courses', type: t('byCourses'), title: t('byCourses'), href: '/analytics-workspace/courses', icon: BookOpen },
-            { id: 'nav-analytics-sources', type: t('bySources'), title: t('bySources'), href: '/analytics-workspace/sources', icon: Megaphone },
-            { id: 'nav-analytics-teachers', type: t('navTeachers'), title: t('navTeachers'), href: '/analytics-workspace/teachers', icon: UserRoundCheck },
-            { id: 'nav-analytics-groups', type: t('navGroups'), title: t('navGroups'), href: '/analytics-workspace/groups', icon: Layers3 },
-            { id: 'nav-analytics-risks', type: t('navRisks'), title: t('navRisks'), href: '/analytics-workspace/risks', icon: AlertTriangle },
-            { id: 'nav-analytics-cohorts', type: t('cohortsTab'), title: t('cohortsTab'), href: '/analytics-workspace/cohorts', icon: Users },
           ];
         case 'marketing':
           return [

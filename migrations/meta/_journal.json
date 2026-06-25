@@ -134,6 +134,20 @@
       "when": 1782576000000,
       "tag": "0018_remove_management_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782662400000,
+      "tag": "0019_remove_analytics_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782748800000,
+      "tag": "0020_remove_finance_payroll_settings",
+      "breakpoints": true
     }
   ]
 }

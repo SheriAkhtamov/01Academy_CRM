@@ -6,7 +6,7 @@ SET "workspace" = CASE "role"
   WHEN 'head' THEN 'administration'
   WHEN 'account_manager' THEN 'sales'
   WHEN 'teacher' THEN 'teacher'
-  WHEN 'operations_director' THEN 'analytics'
+  WHEN 'operations_director' THEN 'administration'
   WHEN 'smm_manager' THEN 'marketing'
   ELSE 'management'
 END;
@@ -14,7 +14,7 @@ END;
 ALTER TABLE "users" ALTER COLUMN "workspace" SET NOT NULL;
 --> statement-breakpoint
 ALTER TABLE "users" ADD CONSTRAINT "users_workspace_check"
-CHECK ("users"."workspace" IN ('administration', 'sales', 'teacher', 'analytics', 'marketing', 'management'));
+CHECK ("users"."workspace" IN ('administration', 'sales', 'teacher', 'marketing', 'management'));
 --> statement-breakpoint
 CREATE INDEX "users_workspace_idx" ON "users" USING btree ("workspace");
 --> statement-breakpoint

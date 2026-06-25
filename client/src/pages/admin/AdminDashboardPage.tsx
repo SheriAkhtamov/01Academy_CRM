@@ -94,16 +94,6 @@ interface DashboardLesson {
   scheduledAt: string;
 }
 
-interface LossMakingGroup {
-  id: number;
-  name: string;
-  fillPercent: number;
-  profitUzs: number;
-  revenueUzs: number;
-  teacherCostUzs: number;
-  rentCostUzs: number;
-}
-
 interface AdministrationDashboardData {
   summary: {
     activeStudents: number;
@@ -148,10 +138,8 @@ interface AdministrationDashboardData {
   };
   recentActivity: DashboardActivityItem[];
   upcomingLessons: DashboardLesson[];
-  discountsMonth: number;
   churnByReason: Record<string, number>;
   escalatedTasks: Array<{ id: number; title: string; responsibleName?: string | null }>;
-  lossMakingGroups: LossMakingGroup[];
   generatedAt: string;
 }
 
@@ -420,7 +408,7 @@ export default function AdminDashboardPage() {
 
   const pulseCards = [
     {
-      title: t('adminFinancialHealth'),
+      title: t('overduePayments'),
       value: data.alerts.overduePayments === 0 ? t('adminStatusHealthy') : t('adminStatusAttention'),
       detail: data.alerts.overduePayments === 0
         ? t('adminNoOverduePayments')
@@ -738,26 +726,6 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="self-start border-destructive/30 2xl:col-span-3">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{ceoCopy.profitability.title}</CardTitle>
-            <CardDescription>{ceoCopy.profitability.subtitle}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {data.lossMakingGroups.length > 0 ? data.lossMakingGroups.slice(0, 5).map((group) => (
-              <button
-                key={group.id}
-                type="button"
-                onClick={() => navigate('/admin/academy-settings?tab=groups')}
-                className="flex items-center justify-between gap-3 rounded-lg bg-destructive/5 px-3 py-2 text-left hover:bg-destructive/10"
-              >
-                <span className="min-w-0"><span className="block truncate text-sm font-medium">{group.name}</span><span className="block text-xs text-muted-foreground">{ceoCopy.profitability.fill}: {group.fillPercent}%</span></span>
-                <span className="shrink-0 text-sm font-semibold tabular-nums text-destructive">{fullMoney(group.profitUzs)}</span>
-              </button>
-            )) : <p className="py-5 text-center text-sm text-muted-foreground">{ceoCopy.profitability.noLosses}</p>}
-          </CardContent>
-        </Card>
-
         <Card className="self-start 2xl:col-span-3">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{ceoCopy.dashboard.churnReasons}</CardTitle>
@@ -857,15 +825,6 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
       </section>
-
-      <button
-        type="button"
-        onClick={() => navigate('/admin/finance')}
-        className="flex items-center justify-between rounded-xl border border-border/70 bg-card px-5 py-4 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span><span className="block text-sm font-medium">{ceoCopy.dashboard.discounts}</span><span className="mt-1 block text-xs text-slate-500">{ceoCopy.dashboard.discountsDescription}</span></span>
-        <span className="text-xl font-bold tabular-nums text-amber-600">{fullMoney(data.discountsMonth)}</span>
-      </button>
 
       <section aria-labelledby="project-pulse-title" className="flex flex-col gap-4">
         <div>

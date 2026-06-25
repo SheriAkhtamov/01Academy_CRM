@@ -27,7 +27,6 @@ export const users = pgTable("users", {
   phone: varchar("phone", { length: 50 }),
   dateOfBirth: timestamp("date_of_birth"),
   position: varchar("position", { length: 255 }),
-  baseSalaryUzs: integer("base_salary_uzs").notNull().default(0),
   workspace: varchar("workspace", { length: 50 }).notNull(),
   hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
@@ -38,7 +37,7 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   workspaceIdx: index("users_workspace_idx").on(table.workspace),
-  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'analytics', 'marketing')`),
+  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
 
 export const notifications = pgTable("notifications", {
@@ -74,9 +73,6 @@ export const academyCompanySettings = pgTable("academy_company_settings", {
   targetRoas: integer("target_roas").notNull().default(5),
   targetAttendancePercent: integer("target_attendance_percent").notNull().default(70),
   targetNps: integer("target_nps").notNull().default(50),
-  salesCommissionPercent: integer("sales_commission_percent").notNull().default(0),
-  groupMinFillPercent: integer("group_min_fill_percent").notNull().default(60),
-  currentCashBalanceUzs: integer("current_cash_balance_uzs").notNull().default(0),
   salesPhoneVisibility: varchar("sales_phone_visibility", { length: 40 }).notNull().default("own_leads"),
   workdayStartHour: integer("workday_start_hour").notNull().default(8),
   workdayEndHour: integer("workday_end_hour").notNull().default(20),
@@ -109,7 +105,6 @@ export const academyRooms = pgTable("academy_rooms", {
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "cascade" }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   capacity: integer("capacity").notNull().default(12),
-  rentPerHourUzs: integer("rent_per_hour_uzs").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -179,7 +174,6 @@ export const academyTeachers = pgTable("academy_teachers", {
   schoolIds: jsonb("school_ids").$type<number[]>().notNull().default([]),
   availability: jsonb("availability").$type<AcademyScheduleItem[]>().notNull().default([]),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
-  ratePerLessonUzs: integer("rate_per_lesson_uzs").notNull().default(0),
   status: varchar("status", { length: 50 }).notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -517,32 +511,7 @@ export const academyMarketingExpenses = pgTable("academy_marketing_expenses", {
   sourceIdx: index("academy_marketing_expenses_source_idx").on(table.sourceId),
 }));
 
-/** A frozen monthly result. It becomes a company expense only after payout. */
-export const academyPayrollEntries = pgTable("academy_payroll_entries", {
-  id: serial("id").primaryKey(),
-  period: varchar("period", { length: 7 }).notNull(),
-  entryType: varchar("entry_type", { length: 30 }).notNull(),
-  employeeUserId: integer("employee_user_id").references(() => users.id, { onDelete: "set null" }),
-  teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
-  employeeName: varchar("employee_name", { length: 255 }).notNull(),
-  baseSalaryUzs: integer("base_salary_uzs").notNull().default(0),
-  commissionPercent: integer("commission_percent").notNull().default(0),
-  commissionBaseUzs: integer("commission_base_uzs").notNull().default(0),
-  conductedLessons: integer("conducted_lessons").notNull().default(0),
-  ratePerLessonUzs: integer("rate_per_lesson_uzs").notNull().default(0),
-  amountUzs: integer("amount_uzs").notNull(),
-  status: varchar("status", { length: 30 }).notNull().default("pending"),
-  paidBy: integer("paid_by").references(() => users.id, { onDelete: "set null" }),
-  paidAt: timestamp("paid_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  periodIdx: index("academy_payroll_entries_period_idx").on(table.period),
-  userIdx: index("academy_payroll_entries_user_idx").on(table.employeeUserId),
-  teacherIdx: index("academy_payroll_entries_teacher_idx").on(table.teacherId),
-}));
-
-/** Deduplication ledger for CEO escalations and cash-gap alerts. */
+/** Deduplication ledger for CEO escalations. */
 export const academyEscalationEvents = pgTable("academy_escalation_events", {
   id: serial("id").primaryKey(),
   eventKey: varchar("event_key", { length: 255 }).notNull(),
@@ -699,7 +668,6 @@ export const insertUserSchema = z.object({
   phone: z.string().optional(),
   dateOfBirth: z.coerce.date().optional().nullable(),
   position: z.string().optional(),
-  baseSalaryUzs: z.number().int().min(0).default(0),
   workspace: z.enum(ACADEMY_WORKSPACES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
@@ -852,12 +820,6 @@ export const insertAcademyMarketingExpenseSchema = createInsertSchema(academyMar
   updatedAt: true,
 });
 
-export const insertAcademyPayrollEntrySchema = createInsertSchema(academyPayrollEntries).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
 export const insertAcademyEscalationEventSchema = createInsertSchema(academyEscalationEvents).omit({
   id: true,
   createdAt: true,
@@ -950,8 +912,6 @@ export type AcademyLessonStatusHistory = typeof academyLessonStatusHistory.$infe
 export type InsertAcademyLessonStatusHistory = z.infer<typeof insertAcademyLessonStatusHistorySchema>;
 export type AcademyAttendance = typeof academyAttendance.$inferSelect;
 export type InsertAcademyAttendance = z.infer<typeof insertAcademyAttendanceSchema>;
-export type AcademyPayrollEntry = typeof academyPayrollEntries.$inferSelect;
-export type InsertAcademyPayrollEntry = z.infer<typeof insertAcademyPayrollEntrySchema>;
 export type AcademyEscalationEvent = typeof academyEscalationEvents.$inferSelect;
 export type InsertAcademyEscalationEvent = z.infer<typeof insertAcademyEscalationEventSchema>;
 export type AcademyPayment = typeof academyPayments.$inferSelect;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { useSearch } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -62,6 +62,7 @@ import {
   Plus,
   Trash2,
   Target,
+  UserRoundCheck,
   UsersRound,
 } from 'lucide-react';
 
@@ -79,7 +80,6 @@ interface Room {
   schoolId: number;
   name: string;
   capacity: number;
-  rentPerHourUzs: number;
   isActive: boolean;
 }
 
@@ -154,20 +154,7 @@ interface CompanySettings {
   targetRoas: number;
   targetAttendancePercent: number;
   targetNps: number;
-  salesCommissionPercent: number;
-  groupMinFillPercent: number;
-  currentCashBalanceUzs: number;
   salesPhoneVisibility: 'own_leads' | 'mask_until_assigned';
-}
-
-interface GroupProfitability {
-  id: number;
-  revenueUzs: number;
-  teacherCostUzs: number;
-  rentCostUzs: number;
-  profitUzs: number;
-  fillPercent: number;
-  isLossMaking: boolean;
 }
 
 const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
@@ -178,9 +165,6 @@ const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   targetRoas: 5,
   targetAttendancePercent: 70,
   targetNps: 50,
-  salesCommissionPercent: 0,
-  groupMinFillPercent: 60,
-  currentCashBalanceUzs: 0,
   salesPhoneVisibility: 'own_leads',
 };
 
@@ -196,7 +180,6 @@ const roomSchema = z.object({
   schoolId: z.string().min(1),
   name: z.string().trim().min(1),
   capacity: z.coerce.number().int().min(1),
-  rentPerHourUzs: z.coerce.number().int().min(0),
   isActive: z.boolean(),
 });
 
@@ -245,7 +228,6 @@ type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
 type GroupValues = z.infer<typeof groupSchema>;
 type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
-type PolicyNumberSetting = 'salesCommissionPercent' | 'groupMinFillPercent' | 'currentCashBalanceUzs';
 
 const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
   if (!Array.isArray(items)) return [];
@@ -335,9 +317,6 @@ export default function AcademySettings() {
   const companySettings = useQuery<CompanySettings>({
     queryKey: ['/api/academy/company-settings'],
   });
-  const groupProfitability = useQuery<{ groups: GroupProfitability[] }>({
-    queryKey: ['/api/academy/groups/profitability'],
-  });
   const [kpiDraft, setKpiDraft] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
 
   useEffect(() => {
@@ -375,7 +354,6 @@ export default function AcademySettings() {
       schoolId: '',
       name: '',
       capacity: 12,
-      rentPerHourUzs: 0,
       isActive: true,
     },
   });
@@ -447,7 +425,6 @@ export default function AcademySettings() {
         ...values,
         schoolId: Number(values.schoolId),
         capacity: Number(values.capacity),
-        rentPerHourUzs: Number(values.rentPerHourUzs),
       };
       return editingRoom
         ? apiRequest('PATCH', `/api/academy/rooms/${editingRoom.id}`, payload)
@@ -569,8 +546,6 @@ export default function AcademySettings() {
       toast({ title: ceoCopy.settings.saved });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/company-settings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/analytics'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/groups/profitability'] });
     },
     onError: (error: Error) => toast({
       title: ceoCopy.settings.failed,
@@ -642,13 +617,11 @@ export default function AcademySettings() {
       schoolId: String(room.schoolId),
       name: room.name,
       capacity: room.capacity,
-      rentPerHourUzs: Number(room.rentPerHourUzs || 0),
       isActive: room.isActive,
     } : {
       schoolId: '',
       name: '',
       capacity: 12,
-      rentPerHourUzs: 0,
       isActive: true,
     });
     setRoomDialogOpen(true);
@@ -739,10 +712,6 @@ export default function AcademySettings() {
   );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
-  const profitabilityByGroup = useMemo(
-    () => new Map((groupProfitability.data?.groups ?? []).map((group) => [group.id, group])),
-    [groupProfitability.data?.groups],
-  );
   const displayedGroups = useMemo(
     () => requestedFilter === 'without-teacher'
       ? groups.filter((group) => !group.teacherId)
@@ -831,13 +800,6 @@ export default function AcademySettings() {
       sortable: true,
       accessor: (row) => row.capacity,
       render: (row) => `${row.capacity} ${t('students')}`,
-    },
-    {
-      key: 'rent',
-      header: ceoCopy.settings.roomRentPerHour,
-      sortable: true,
-      accessor: (row) => Number(row.rentPerHourUzs || 0),
-      render: (row) => `${Number(row.rentPerHourUzs || 0).toLocaleString('ru-RU')} ${ceoCopy.settings.sum}`,
     },
     {
       key: 'status',
@@ -1005,18 +967,6 @@ export default function AcademySettings() {
       ),
     },
     {
-      key: 'profitability',
-      header: ceoCopy.profitability.profit,
-      sortable: true,
-      accessor: (row) => Number(profitabilityByGroup.get(row.id)?.profitUzs || 0),
-      render: (row) => {
-        const profitability = profitabilityByGroup.get(row.id);
-        if (!profitability) return <span className="text-muted-foreground">—</span>;
-        const tone = profitability.profitUzs < 0 ? 'text-destructive' : 'text-emerald-700';
-        return <div className={`min-w-32 ${tone}`}><p className="font-semibold tabular-nums">{Number(profitability.profitUzs).toLocaleString('ru-RU')} {ceoCopy.settings.sum}</p><p className="text-xs text-muted-foreground">{ceoCopy.profitability.fill}: {profitability.fillPercent}%</p></div>;
-      },
-    },
-    {
       key: 'actions',
       header: t('actions'),
       render: (row) => (
@@ -1091,6 +1041,11 @@ export default function AcademySettings() {
           </TabsTrigger>
           <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <GitBranch />{t('pipelineStages')}
+          </TabsTrigger>
+          <TabsTrigger value="lead-assignment" asChild className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+            <Link href="/admin/leads">
+              <UserRoundCheck />{t('leadAssignment')}
+            </Link>
           </TabsTrigger>
           <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
             <Target />{ceoCopy.settings.title}
@@ -1300,31 +1255,6 @@ export default function AcademySettings() {
                 })}
               </div>
               <div className="mt-5 grid grid-cols-1 gap-4 border-t border-border/70 pt-5 md:grid-cols-2 xl:grid-cols-3">
-                {[
-                  ['salesCommissionPercent', ceoCopy.settings.commission, '%', 100],
-                  ['groupMinFillPercent', ceoCopy.settings.minGroupFill, '%', 100],
-                  ['currentCashBalanceUzs', ceoCopy.settings.currentCash, ceoCopy.settings.sum, undefined],
-                ].map(([key, label, suffix, max]) => {
-                  const numericKey = key as PolicyNumberSetting;
-                  return <div key={numericKey} className="space-y-2 rounded-lg border border-border/70 p-4">
-                    <Label htmlFor={`policy-${key}`}>{label}</Label>
-                    <div className="relative">
-                      <Input
-                        id={`policy-${key}`}
-                        type="number"
-                        min="0"
-                        max={max as number | undefined}
-                        value={kpiDraft[numericKey]}
-                        onChange={(event) => setKpiDraft((current) => ({
-                          ...current,
-                          [numericKey]: Number(event.target.value) || 0,
-                        }))}
-                        className="pr-12"
-                      />
-                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{suffix}</span>
-                    </div>
-                  </div>;
-                })}
                 <div className="space-y-2 rounded-lg border border-border/70 p-4">
                   <Label>{ceoCopy.settings.phoneVisibility}</Label>
                   <Select value={kpiDraft.salesPhoneVisibility} onValueChange={(value: CompanySettings['salesPhoneVisibility']) => setKpiDraft((current) => ({ ...current, salesPhoneVisibility: value }))}>
@@ -1436,13 +1366,6 @@ export default function AcademySettings() {
                 <FormItem>
                   <FormLabel>{t('roomCapacity')}</FormLabel>
                   <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={roomForm.control} name="rentPerHourUzs" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{ceoCopy.settings.roomRentPerHour}</FormLabel>
-                  <FormControl><Input type="number" min="0" step="1000" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

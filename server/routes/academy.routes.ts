@@ -36,7 +36,6 @@ import {
   calculateLtv,
   calculateNps,
   calculateProgressPercent,
-  calculateRetentionPercent,
   calculateRoas,
   calculateTrend,
   getComputedPaymentStatus,
@@ -64,9 +63,7 @@ type Row = Record<string, any>;
 const transactionContext = new AsyncLocalStorage<PoolClient>();
 
 const ADMINISTRATION_WORKSPACES = new Set(['administration']);
-const FINANCE_WORKSPACES = new Set(['analytics', 'administration']);
-const OPERATIONS_WORKSPACES = new Set(['analytics', 'administration']);
-const ANALYTICS_WORKSPACES = new Set(['analytics', 'administration']);
+const OPERATIONS_WORKSPACES = new Set(['administration']);
 const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
 const SALES_WORKSPACES = new Set(['sales', 'administration']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
@@ -260,12 +257,6 @@ const deleteRow = async (table: string, id: number) => {
   await pool.query(`DELETE FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
 };
 
-const ensureFinanceAccess = (req: any, res: any) => {
-  if (req.user?.workspace === 'administration' || FINANCE_WORKSPACES.has(req.user?.workspace)) return true;
-  res.status(403).json({ error: 'Finance access required' });
-  return false;
-};
-
 const ensureOperationsAccess = (req: any, res: any) => {
   if (req.user?.workspace === 'administration' || OPERATIONS_WORKSPACES.has(req.user?.workspace) || req.user?.workspace === 'teacher') return true;
   res.status(403).json({ error: 'Operations access required' });
@@ -292,9 +283,6 @@ const ensureSalesWorkspaceAccess = (req: any, res: any) =>
 
 const ensureTeacherWorkspaceAccess = (req: any, res: any) =>
   ensureWorkspaceAccess(req, res, new Set(['teacher']), 'Teacher workspace access required');
-
-const ensureAnalyticsWorkspaceAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, ANALYTICS_WORKSPACES, 'Analytics workspace access required');
 
 const ensureMarketingWorkspaceAccess = (req: any, res: any) =>
   ensureWorkspaceAccess(req, res, MARKETING_WORKSPACES, 'Marketing workspace access required');
@@ -355,9 +343,6 @@ const defaultCompanyTargets = {
   targetRoas: TARGET_ROAS,
   targetAttendancePercent: TARGET_ATTENDANCE_PERCENT,
   targetNps: TARGET_NPS,
-  salesCommissionPercent: 0,
-  groupMinFillPercent: 60,
-  currentCashBalanceUzs: 0,
   salesPhoneVisibility: 'own_leads',
 };
 
@@ -365,190 +350,6 @@ const getCompanySettings = async () => {
   const existing = await queryOne(`SELECT * FROM academy_company_settings ORDER BY id LIMIT 1`);
   if (existing) return existing;
   return insertRow('academy_company_settings', defaultCompanyTargets);
-};
-
-const payrollPeriodPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-const getPayrollPeriodBounds = (period: unknown) => {
-  const normalized = String(period ?? '');
-  if (!payrollPeriodPattern.test(normalized)) return null;
-  const [year, month] = normalized.split('-').map(Number);
-  return {
-    period: normalized,
-    from: new Date(year, month - 1, 1),
-    to: new Date(year, month, 1),
-  };
-};
-
-const currentPayrollPeriod = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-};
-
-const calculatePayroll = async (periodValue: unknown) => {
-  const bounds = getPayrollPeriodBounds(periodValue);
-  if (!bounds) {
-    throw Object.assign(new Error('Payroll period must use YYYY-MM format'), { statusCode: 400 });
-  }
-
-  const [settings, teachers, managers, recordedEntries] = await Promise.all([
-    getCompanySettings(),
-    query(
-      `SELECT t.id AS teacher_id, t.user_id AS employee_user_id, t.full_name AS employee_name,
-              t.rate_per_lesson_uzs,
-              COUNT(l.id)::int AS conducted_lessons
-       FROM academy_teachers t
-       LEFT JOIN academy_lessons l
-         ON l.teacher_id = t.id
-        AND l.status = 'conducted'
-        AND l.scheduled_at >= $1
-        AND l.scheduled_at < $2
-       WHERE t.status = 'active'
-       GROUP BY t.id, t.user_id, t.full_name, t.rate_per_lesson_uzs
-       ORDER BY t.full_name`,
-      [bounds.from, bounds.to],
-    ),
-    query(
-      `SELECT u.id AS employee_user_id, u.full_name AS employee_name, u.base_salary_uzs,
-              COALESCE(SUM(p.amount_uzs), 0)::int AS commission_base_uzs
-       FROM users u
-       LEFT JOIN academy_payments p
-         ON p.status = 'paid'
-        AND p.paid_at >= $1
-        AND p.paid_at < $2
-        AND COALESCE(
-          (SELECT st.manager_id FROM academy_students st WHERE st.id = p.student_id),
-          (SELECT l.manager_id FROM academy_leads l WHERE l.id = p.lead_id)
-        ) = u.id
-       WHERE u.workspace = 'sales' AND u.is_active = true
-       GROUP BY u.id, u.full_name, u.base_salary_uzs
-       ORDER BY u.full_name`,
-      [bounds.from, bounds.to],
-    ),
-    query(
-      `SELECT * FROM academy_payroll_entries WHERE period = $1`,
-      [bounds.period],
-    ),
-  ]);
-
-  const paidEntries = new Map(
-    recordedEntries.map((entry) => [
-      `${entry.entryType}:${entry.entryType === 'teacher' ? entry.teacherId : entry.employeeUserId}`,
-      entry,
-    ]),
-  );
-  const commissionPercent = Math.min(100, Math.max(0, Number(settings.salesCommissionPercent || 0)));
-  const entries = [
-    ...teachers.map((teacher) => {
-      const conductedLessons = Number(teacher.conductedLessons || 0);
-      const ratePerLessonUzs = Number(teacher.ratePerLessonUzs || 0);
-      const calculatedAmountUzs = conductedLessons * ratePerLessonUzs;
-      const paid = paidEntries.get(`teacher:${teacher.teacherId}`);
-      return {
-        id: paid?.id ?? null,
-        entryType: 'teacher',
-        teacherId: Number(teacher.teacherId),
-        employeeUserId: teacher.employeeUserId ? Number(teacher.employeeUserId) : null,
-        employeeName: teacher.employeeName,
-        conductedLessons,
-        ratePerLessonUzs,
-        baseSalaryUzs: 0,
-        commissionPercent: 0,
-        commissionBaseUzs: 0,
-        calculatedAmountUzs,
-        amountUzs: Number(paid?.amountUzs ?? calculatedAmountUzs),
-        status: paid?.status ?? 'pending',
-        paidAt: paid?.paidAt ?? null,
-      };
-    }),
-    ...managers.map((manager) => {
-      const baseSalaryUzs = Number(manager.baseSalaryUzs || 0);
-      const commissionBaseUzs = Number(manager.commissionBaseUzs || 0);
-      const calculatedAmountUzs = baseSalaryUzs + Math.round((commissionBaseUzs * commissionPercent) / 100);
-      const paid = paidEntries.get(`manager:${manager.employeeUserId}`);
-      return {
-        id: paid?.id ?? null,
-        entryType: 'manager',
-        teacherId: null,
-        employeeUserId: Number(manager.employeeUserId),
-        employeeName: manager.employeeName,
-        conductedLessons: 0,
-        ratePerLessonUzs: 0,
-        baseSalaryUzs,
-        commissionPercent,
-        commissionBaseUzs,
-        calculatedAmountUzs,
-        amountUzs: Number(paid?.amountUzs ?? calculatedAmountUzs),
-        status: paid?.status ?? 'pending',
-        paidAt: paid?.paidAt ?? null,
-      };
-    }),
-  ];
-
-  return {
-    period: bounds.period,
-    entries,
-    summary: {
-      pendingAmountUzs: entries.filter((entry) => entry.status !== 'paid').reduce((sum, entry) => sum + entry.amountUzs, 0),
-      paidAmountUzs: entries.filter((entry) => entry.status === 'paid').reduce((sum, entry) => sum + entry.amountUzs, 0),
-      totalAmountUzs: entries.reduce((sum, entry) => sum + entry.amountUzs, 0),
-      teacherCount: teachers.length,
-      managerCount: managers.length,
-      commissionPercent,
-    },
-  };
-};
-
-const getGroupProfitability = async () => {
-  const [settings, groups] = await Promise.all([
-    getCompanySettings(),
-    query(
-      `SELECT g.id, g.name, g.max_students, g.status,
-              c.name AS course_name, sc.name AS school_name, r.name AS room_name,
-              COALESCE((SELECT COUNT(*) FROM academy_students st
-                        WHERE st.group_id = g.id AND st.status = 'studying'), 0)::int AS current_students,
-              COALESCE((SELECT SUM(p.amount_uzs) FROM academy_payments p
-                        WHERE p.group_id = g.id AND p.status = 'paid'), 0)::int AS revenue_uzs,
-              COALESCE((SELECT COUNT(*) FROM academy_lessons lesson
-                        WHERE lesson.group_id = g.id AND lesson.status = 'conducted'), 0)::int AS conducted_lessons,
-              COALESCE((SELECT SUM(COALESCE(teacher.rate_per_lesson_uzs, 0))
-                        FROM academy_lessons lesson
-                        LEFT JOIN academy_teachers teacher ON teacher.id = lesson.teacher_id
-                        WHERE lesson.group_id = g.id AND lesson.status = 'conducted'), 0)::int AS teacher_cost_uzs,
-              COALESCE((SELECT ROUND(SUM((lesson.duration_minutes::numeric / 60) * COALESCE(room.rent_per_hour_uzs, 0)))
-                        FROM academy_lessons lesson
-                        LEFT JOIN academy_rooms room ON room.id = lesson.room_id
-                        WHERE lesson.group_id = g.id AND lesson.status = 'conducted'), 0)::int AS rent_cost_uzs
-       FROM academy_groups g
-       LEFT JOIN academy_courses c ON c.id = g.course_id
-       LEFT JOIN academy_schools sc ON sc.id = g.school_id
-       LEFT JOIN academy_rooms r ON r.id = g.room_id
-       ORDER BY g.created_at DESC`,
-    ),
-  ]);
-  const minFillPercent = Math.min(100, Math.max(0, Number(settings.groupMinFillPercent || 0)));
-  return groups.map((group) => {
-    const maxStudents = Math.max(1, Number(group.maxStudents || 1));
-    const currentStudents = Number(group.currentStudents || 0);
-    const revenueUzs = Number(group.revenueUzs || 0);
-    const teacherCostUzs = Number(group.teacherCostUzs || 0);
-    const rentCostUzs = Number(group.rentCostUzs || 0);
-    const totalCostsUzs = teacherCostUzs + rentCostUzs;
-    const profitUzs = revenueUzs - totalCostsUzs;
-    const fillPercent = Math.round((currentStudents / maxStudents) * 100);
-    return {
-      ...group,
-      maxStudents,
-      currentStudents,
-      revenueUzs,
-      teacherCostUzs,
-      rentCostUzs,
-      totalCostsUzs,
-      profitUzs,
-      fillPercent,
-      isLossMaking: fillPercent < minFillPercent && profitUzs < 0,
-    };
-  });
 };
 
 const toAnalyticsTargets = (settings: Row) => ({
@@ -1716,7 +1517,7 @@ const resolveTeacherId = async (userId: number): Promise<number | null> => {
 
 const getAcademyDataset = async (actor?: DatasetActor) => {
   // Workspace scoping: teachers see only their own groups; sales employees see only
-  // their own leads/students; analytics and marketing receive their workspace datasets.
+  // their own leads/students; marketing receives its workspace dataset.
   const teacherId = actor?.workspace === 'teacher' ? await resolveTeacherId(actor.userId) : null;
   const isTeacherScoped = teacherId !== null;
   const isManagerScoped = actor?.workspace === 'sales';
@@ -2123,10 +1924,9 @@ const buildAnalytics = async () => {
 };
 
 const buildAdministrationDashboard = async () => {
-  const [analytics, users, profitability, escalatedTasks] = await Promise.all([
+  const [analytics, users, escalatedTasks] = await Promise.all([
     buildAnalytics(),
     storage.getUsers(),
-    getGroupProfitability(),
     query(`SELECT t.id, t.title, t.deadline_at, u.full_name AS responsible_name
            FROM academy_tasks t
            LEFT JOIN users u ON u.id = t.responsible_id
@@ -2282,13 +2082,6 @@ const buildAdministrationDashboard = async () => {
     (sum, group) => sum + Number(group.currentStudents || 0),
     0,
   );
-  const discountsMonth = paidPayments
-    .filter((payment) => inRange(payment.paidAt, currentMonthStart, nextMonthStart) && payment.discount !== 'none')
-    .reduce((sum, payment) => {
-      const student = data.students.find((item) => Number(item.id) === Number(payment.studentId));
-      const course = data.courses.find((item) => Number(item.id) === Number(student?.courseId));
-      return sum + Math.max(0, Number(course?.basePriceUzs || 0) - Number(payment.amountUzs || 0));
-    }, 0);
   const churnByReason = data.students
     .filter((student) => ['paused', 'expelled'].includes(String(student.status))
       && student.exitReason
@@ -2334,10 +2127,8 @@ const buildAdministrationDashboard = async () => {
     },
     recentActivity,
     upcomingLessons,
-    discountsMonth,
     churnByReason,
     escalatedTasks,
-    lossMakingGroups: profitability.filter((group) => group.isLossMaking),
     generatedAt: now.toISOString(),
   };
 };
@@ -2384,16 +2175,6 @@ const buildMarketingAnalyticsPayload = (analytics: Row) => ({
   avgDealCycleDays: analytics.summary.avgDealCycleDays,
   targets: analytics.targets,
 });
-
-const createCsv = (rows: Row[]) => {
-  if (rows.length === 0) return 'нет данных\n';
-  const columns = Object.keys(rows[0]);
-  const escape = (value: unknown) => {
-    const text = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
-    return `"${text.replace(/"/g, '""')}"`;
-  };
-  return [columns.join(','), ...rows.map((row) => columns.map((column) => escape(row[column])).join(','))].join('\n');
-};
 
 router.get('/workspaces/administration', async (req, res) => {
   if (!ensureAdministrationWorkspaceAccess(req, res)) return;
@@ -2524,9 +2305,6 @@ router.patch('/company-settings', async (req, res) => {
       targetRoas: Math.max(0, Number(req.body.targetRoas ?? current.targetRoas) || 0),
       targetAttendancePercent: Math.min(100, Math.max(0, Number(req.body.targetAttendancePercent ?? current.targetAttendancePercent) || 0)),
       targetNps: Math.min(100, Math.max(-100, Number(req.body.targetNps ?? current.targetNps) || 0)),
-      salesCommissionPercent: Math.min(100, Math.max(0, Number(req.body.salesCommissionPercent ?? current.salesCommissionPercent) || 0)),
-      groupMinFillPercent: Math.min(100, Math.max(0, Number(req.body.groupMinFillPercent ?? current.groupMinFillPercent) || 0)),
-      currentCashBalanceUzs: Math.max(0, Number(req.body.currentCashBalanceUzs ?? current.currentCashBalanceUzs) || 0),
       salesPhoneVisibility: ['own_leads', 'mask_until_assigned'].includes(String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility))
         ? String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility)
         : 'own_leads',
@@ -2584,207 +2362,6 @@ router.get('/audit', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch audit trail', { error });
     res.status(500).json({ error: 'Failed to fetch audit trail' });
-  }
-});
-
-router.get('/finance', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
-  try {
-    const [payments, expenses, payrollPayouts] = await Promise.all([
-      query(`SELECT p.*, st.student_name, st.contact_name, l.contact_name AS lead_name,
-                    c.base_price_uzs
-             FROM academy_payments p
-             LEFT JOIN academy_students st ON st.id = p.student_id
-             LEFT JOIN academy_leads l ON l.id = p.lead_id
-             LEFT JOIN academy_courses c ON c.id = st.course_id
-             ORDER BY COALESCE(p.paid_at, p.created_at) DESC, p.id DESC`),
-      query(`SELECT e.*, s.name AS source_name, creator.full_name AS created_by_name,
-                    approver.full_name AS approved_by_name
-             FROM academy_marketing_expenses e
-             LEFT JOIN academy_lead_sources s ON s.id = e.source_id
-             LEFT JOIN users creator ON creator.id = e.created_by
-             LEFT JOIN users approver ON approver.id = e.approved_by
-             ORDER BY e.period_start DESC, e.id DESC`),
-      query(`SELECT pe.*, payer.full_name AS paid_by_name
-             FROM academy_payroll_entries pe
-             LEFT JOIN users payer ON payer.id = pe.paid_by
-             WHERE pe.status = 'paid'
-             ORDER BY pe.paid_at DESC, pe.id DESC`),
-    ]);
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const inCurrentMonth = (value: unknown) => {
-      const date = new Date(String(value));
-      return !Number.isNaN(date.getTime()) && date >= monthStart && date < nextMonthStart;
-    };
-    const approvedExpenses = expenses
-      .filter((expense) => expense.status === 'approved')
-      .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
-    const confirmedRevenue = payments
-      .filter((payment) => payment.status === 'paid')
-      .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
-    const paidPayroll = payrollPayouts.reduce((sum, entry) => sum + Number(entry.amountUzs || 0), 0);
-    const discountsMonth = payments
-      .filter((payment) => payment.status === 'paid' && payment.discount !== 'none' && inCurrentMonth(payment.paidAt || payment.createdAt))
-      .reduce((sum, payment) => sum + Math.max(0, Number(payment.basePriceUzs || 0) - Number(payment.amountUzs || 0)), 0);
-    res.json({
-      payments,
-      expenses,
-      payrollPayouts,
-      summary: {
-        confirmedRevenue,
-        approvedExpenses,
-        paidPayroll,
-        pnl: confirmedRevenue - approvedExpenses - paidPayroll,
-        discountsMonth,
-        pendingExpenses: expenses.filter((expense) => expense.status === 'pending').length,
-      },
-    });
-  } catch (error) {
-    logger.error('Failed to fetch finance register', { error });
-    res.status(500).json({ error: 'Failed to fetch finance register' });
-  }
-});
-
-router.post('/expenses/:id/approve', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
-  try {
-    const id = parseId(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Invalid expense id' });
-    const current = await queryOne(`SELECT * FROM academy_marketing_expenses WHERE id = $1`, [id]);
-    if (!current) return res.status(404).json({ error: 'Expense not found' });
-    if (current.status === 'approved') return res.json(current);
-    const expense = await updateRow('academy_marketing_expenses', id, {
-      status: 'approved',
-      approvedBy: req.user!.id,
-      approvedAt: new Date(),
-      approvalComment: nullableText(req.body.comment) ?? null,
-    });
-    await createAudit(req, 'APPROVE_MARKETING_EXPENSE', 'academy_marketing_expense', id, expense, current);
-    res.json(expense);
-  } catch (error) {
-    logger.error('Failed to approve marketing expense', { error });
-    res.status(500).json({ error: 'Failed to approve marketing expense' });
-  }
-});
-
-router.post('/payments/:id/refund', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
-  try {
-    const id = parseId(req.params.id);
-    const comment = nullableText(req.body.comment);
-    if (!id) return res.status(400).json({ error: 'Invalid payment id' });
-    if (!comment) return res.status(400).json({ error: 'Refund comment is required' });
-    const current = await queryOne(`SELECT * FROM academy_payments WHERE id = $1`, [id]);
-    if (!current) return res.status(404).json({ error: 'Payment not found' });
-    if (current.status !== 'paid') return res.status(409).json({ error: 'Only paid payments can be refunded' });
-    const payment = await updateRow('academy_payments', id, {
-      status: 'refunded',
-      refundedBy: req.user!.id,
-      refundedAt: new Date(),
-      refundComment: comment,
-    });
-    await createAudit(req, 'REFUND_ACADEMY_PAYMENT', 'academy_payment', id, payment, current);
-    res.json(payment);
-  } catch (error) {
-    logger.error('Failed to refund payment', { error });
-    res.status(500).json({ error: 'Failed to refund payment' });
-  }
-});
-
-router.get('/payroll', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
-  try {
-    const period = String(req.query.period ?? currentPayrollPeriod());
-    res.json(await calculatePayroll(period));
-  } catch (error: any) {
-    logger.error('Failed to calculate payroll', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to calculate payroll' });
-  }
-});
-
-router.post('/payroll/payout', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
-  try {
-    const period = String(req.body.period ?? currentPayrollPeriod());
-    const entryType = String(req.body.entryType ?? '');
-    const employeeUserId = parseId(req.body.employeeUserId);
-    const teacherId = parseId(req.body.teacherId);
-    if (!['teacher', 'manager'].includes(entryType)) {
-      return res.status(400).json({ error: 'Invalid payroll entry type' });
-    }
-    if (entryType === 'teacher' && !teacherId) {
-      return res.status(400).json({ error: 'Teacher is required' });
-    }
-    if (entryType === 'manager' && !employeeUserId) {
-      return res.status(400).json({ error: 'Manager is required' });
-    }
-
-    const entry = await withTransaction(async () => {
-      const payroll = await calculatePayroll(period);
-      const calculated = payroll.entries.find((item) => (
-        item.entryType === entryType
-        && (entryType === 'teacher' ? item.teacherId === teacherId : item.employeeUserId === employeeUserId)
-      ));
-      if (!calculated) {
-        throw Object.assign(new Error('Payroll entry not found'), { statusCode: 404 });
-      }
-      if (calculated.status === 'paid' && calculated.id) {
-        return queryOne(`SELECT * FROM academy_payroll_entries WHERE id = $1`, [calculated.id]);
-      }
-      if (calculated.amountUzs <= 0) {
-        throw Object.assign(new Error('No payable amount for this employee'), { statusCode: 409 });
-      }
-      return insertRow('academy_payroll_entries', {
-        period: payroll.period,
-        entryType,
-        employeeUserId: calculated.employeeUserId,
-        teacherId: calculated.teacherId,
-        employeeName: calculated.employeeName,
-        baseSalaryUzs: calculated.baseSalaryUzs,
-        commissionPercent: calculated.commissionPercent,
-        commissionBaseUzs: calculated.commissionBaseUzs,
-        conductedLessons: calculated.conductedLessons,
-        ratePerLessonUzs: calculated.ratePerLessonUzs,
-        amountUzs: calculated.amountUzs,
-        status: 'paid',
-        paidBy: req.user!.id,
-        paidAt: new Date(),
-      });
-    });
-    if (!entry) return res.status(500).json({ error: 'Failed to record payroll payout' });
-    await createAudit(req, 'PAY_ACADEMY_PAYROLL', 'academy_payroll_entry', Number(entry.id), entry);
-    res.status(201).json(entry);
-  } catch (error: any) {
-    if (error?.code === '23505') {
-      const period = String(req.body.period ?? currentPayrollPeriod());
-      const entryType = String(req.body.entryType ?? '');
-      const id = entryType === 'teacher' ? parseId(req.body.teacherId) : parseId(req.body.employeeUserId);
-      const column = entryType === 'teacher' ? 'teacher_id' : 'employee_user_id';
-      const existing = id
-        ? await queryOne(`SELECT * FROM academy_payroll_entries WHERE period = $1 AND entry_type = $2 AND ${column} = $3`, [period, entryType, id])
-        : undefined;
-      if (existing) return res.json(existing);
-    }
-    logger.error('Failed to pay payroll entry', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to pay payroll entry' });
-  }
-});
-
-router.get('/groups/profitability', async (req, res) => {
-  if (!ensureFinanceAccess(req, res)) return;
-  try {
-    const groups = await getGroupProfitability();
-    const settings = await getCompanySettings();
-    res.json({
-      groups,
-      minFillPercent: Number(settings.groupMinFillPercent || 0),
-      lossMakingGroups: groups.filter((group) => group.isLossMaking),
-    });
-  } catch (error) {
-    logger.error('Failed to calculate group profitability', { error });
-    res.status(500).json({ error: 'Failed to calculate group profitability' });
   }
 });
 
@@ -2921,24 +2498,6 @@ router.get('/workspaces/marketing', async (req, res) => {
   }
 });
 
-router.get('/workspaces/analytics', async (req, res) => {
-  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
-  try {
-    const [analytics, dataset] = await Promise.all([
-      buildAnalytics(),
-      getAcademyDataset(),
-    ]);
-    res.json({
-      analytics,
-      payments: dataset.payments,
-      constants: academyConstants(),
-    });
-  } catch (error) {
-    logger.error('Failed to fetch analytics workspace', { error });
-    res.status(500).json({ error: 'Failed to fetch analytics workspace' });
-  }
-});
-
 router.get('/search', async (req, res) => {
   try {
     const term = String(req.query.q ?? '').trim();
@@ -3058,26 +2617,6 @@ router.get('/search', async (req, res) => {
       await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
       await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace/groups');
       await pushCourses('/teacher-workspace/groups');
-    } else if (workspace === 'analytics') {
-      await pushGroups(`TRUE`, [], '/analytics-workspace/groups');
-      if (remaining() > 0) {
-        const teachers = await query(
-          `SELECT id, full_name, status
-           FROM academy_teachers
-           WHERE LOWER(full_name) LIKE $1
-           ORDER BY full_name
-           LIMIT $2`,
-          [like, remaining()],
-        );
-        results.push(...teachers.map((teacher) => ({
-          id: `teacher-${teacher.id}`,
-          entityType: 'teacher',
-          title: teacher.fullName,
-          subtitle: teacher.status,
-          href: '/analytics-workspace/teachers',
-        })));
-      }
-      await pushCourses('/analytics-workspace/courses');
     } else if (workspace === 'marketing') {
       if (remaining() > 0) {
         const sources = await query(
@@ -3121,65 +2660,6 @@ router.get('/search', async (req, res) => {
   } catch (error) {
     logger.error('Failed to search academy data', { error });
     res.status(500).json({ error: 'Failed to search academy data' });
-  }
-});
-
-router.get('/analytics/cohorts', async (req, res) => {
-  if (!ensureAnalyticsWorkspaceAccess(req, res)) return;
-  try {
-    const filters: string[] = [];
-    const params: DbValue[] = [];
-    if (req.query.courseId) {
-      params.push(Number(req.query.courseId));
-      filters.push(`s.course_id = $${params.length}`);
-    }
-    if (req.query.sourceId) {
-      params.push(Number(req.query.sourceId));
-      filters.push(`l.source_id = $${params.length}`);
-    }
-    if (req.query.managerId) {
-      params.push(Number(req.query.managerId));
-      filters.push(`s.manager_id = $${params.length}`);
-    }
-    const filterSql = filters.length ? `AND ${filters.join(' AND ')}` : '';
-    const rows = await query(
-      `WITH first_payments AS (
-        SELECT student_id, MIN(paid_at) AS first_paid_at
-        FROM academy_payments
-        WHERE status = 'paid' AND student_id IS NOT NULL
-        GROUP BY student_id
-      )
-      SELECT
-        TO_CHAR(DATE_TRUNC('month', fp.first_paid_at), 'YYYY-MM') AS cohort,
-        COUNT(DISTINCT fp.student_id)::int AS students,
-        COUNT(DISTINCT CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '2 months' THEN p.student_id END)::int AS month_2,
-        COUNT(DISTINCT CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '3 months' THEN p.student_id END)::int AS month_3,
-        COUNT(DISTINCT CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '4 months' THEN p.student_id END)::int AS month_4,
-        COALESCE(SUM(p.amount_uzs), 0)::int AS revenue,
-        COALESCE(SUM(CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '2 months' THEN p.amount_uzs ELSE 0 END), 0)::int AS revenue_month_2,
-        COALESCE(SUM(CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '3 months' THEN p.amount_uzs ELSE 0 END), 0)::int AS revenue_month_3,
-        COALESCE(SUM(CASE WHEN p.paid_at < fp.first_paid_at + INTERVAL '4 months' THEN p.amount_uzs ELSE 0 END), 0)::int AS revenue_month_4,
-        COALESCE(ROUND(AVG(p.amount_uzs) * COUNT(DISTINCT fp.student_id)), 0)::int AS forecast_revenue
-      FROM first_payments fp
-      LEFT JOIN academy_payments p ON p.student_id = fp.student_id AND p.status = 'paid'
-      LEFT JOIN academy_students s ON s.id = fp.student_id
-      LEFT JOIN academy_leads l ON l.id = s.lead_id
-      ${filterSql ? `WHERE ${filterSql.replace(/^AND /, '')}` : ''}
-      GROUP BY 1
-      ORDER BY 1 DESC`,
-      params,
-    );
-    // Enrich with retention percentages (TZ 3.4: "Retention rate по месяцам (% оставшихся)").
-    const enriched = rows.map((row) => ({
-      ...row,
-      retentionMonth2Percent: calculateRetentionPercent(Number(row.month2), Number(row.students)),
-      retentionMonth3Percent: calculateRetentionPercent(Number(row.month3), Number(row.students)),
-      retentionMonth4Percent: calculateRetentionPercent(Number(row.month4), Number(row.students)),
-    }));
-    res.json(enriched);
-  } catch (error) {
-    logger.error('Failed to fetch cohorts', { error });
-    res.status(500).json({ error: 'Failed to fetch cohorts' });
   }
 });
 
@@ -3733,7 +3213,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   };
 
   if (table === 'academy_tasks') {
-    if (workspace === 'analytics' || workspace === 'administration') return { whereSql: '', params };
+    if (workspace === 'administration') return { whereSql: '', params };
     if (!['sales', 'teacher', 'marketing'].includes(workspace)) {
       return { whereSql: 'FALSE', params, denied: true };
     }
@@ -3741,7 +3221,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   }
 
   if (table === 'academy_lessons') {
-    if (workspace === 'analytics' || workspace === 'administration') return { whereSql: '', params };
+    if (workspace === 'administration') return { whereSql: '', params };
     if (workspace === 'teacher') {
       const placeholder = await teacherParam();
       return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
@@ -3927,14 +3407,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   listWhere?: string;
   allowedWorkspaces?: Set<string>;
   requireAdministration?: boolean;
-  requireFinance?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
     if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
-    if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     try {
@@ -3956,7 +3434,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   router.get(`/${path}/:id`, async (req, res) => {
     if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
-    if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     try {
@@ -3977,13 +3454,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   router.post(`/${path}`, async (req, res) => {
     if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
-    if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (options.requireOperations && req.user?.workspace === 'teacher') {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
-    if (table === 'academy_tasks' && !['analytics', 'administration'].includes(String(req.user?.workspace))) {
+    if (table === 'academy_tasks' && req.user?.workspace !== 'administration') {
       const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
       if (Number(responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
@@ -4037,7 +3513,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   router.patch(`/${path}/:id`, async (req, res) => {
     if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
-    if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (options.requireOperations && req.user?.workspace === 'teacher') {
@@ -4048,7 +3523,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
       const oldRow = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
-      if (table === 'academy_tasks' && !['analytics', 'administration'].includes(String(req.user?.workspace)) && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
+      if (table === 'academy_tasks' && req.user?.workspace !== 'administration' && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
       }
       const values: Row = {};
@@ -4128,7 +3603,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   router.delete(`/${path}/:id`, async (req, res) => {
     if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
-    if (options.requireFinance && !ensureFinanceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (options.requireOperations && req.user?.workspace === 'teacher') {
@@ -4297,7 +3771,7 @@ router.patch('/students/:id/status', async (req, res) => {
 });
 
 router.post('/payments', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, new Set([...FINANCE_WORKSPACES, ...SALES_WORKSPACES]), 'Payment access required')) return;
+  if (!ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Payment access required')) return;
   try {
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
@@ -4678,69 +4152,25 @@ router.post('/mailings/:id/event', async (req, res) => {
   }
 });
 
-router.get('/exports/:entity', async (req, res) => {
-  try {
-    const workspace = String(req.user?.workspace);
-    if (!['administration', 'analytics', 'sales'].includes(workspace)) {
-      return res.status(403).json({ error: 'Export access required' });
-    }
-    const entityMap: Record<string, string> = {
-      leads: 'academy_leads',
-      students: 'academy_students',
-      payments: 'academy_payments',
-      attendance: 'academy_attendance',
-      surveys: 'academy_lesson_surveys',
-      marketing: 'academy_marketing_expenses' };
-    const table = entityMap[req.params.entity];
-    if (!table) return res.status(404).json({ error: 'Export entity not found' });
-    if (workspace === 'sales' && !['leads', 'students'].includes(req.params.entity)) {
-      return res.status(403).json({ error: 'Sales exports are limited to own leads and students' });
-    }
-    if (['payments', 'marketing'].includes(req.params.entity) && !ensureFinanceAccess(req, res)) return;
-    const rows = workspace === 'sales'
-      ? await query(
-        req.params.entity === 'leads'
-          ? `SELECT * FROM academy_leads WHERE manager_id = $1 ORDER BY id DESC`
-          : `SELECT * FROM academy_students WHERE manager_id = $1 ORDER BY id DESC`,
-        [req.user!.id],
-      )
-      : await query(`SELECT * FROM ${quoteIdent(table)} ORDER BY id DESC`, []);
-    await createAudit(req, 'EXPORT_ACADEMY_DATA', req.params.entity, 0, { count: rows.length });
-    if (workspace === 'sales') {
-      const message = `⚠️ Экспорт базы: менеджер ${req.user!.fullName} выгрузил ${rows.length} записей (${req.params.entity}).`;
-      const { sendTelegramMessage } = await import('../services/telegram');
-      const result = await sendTelegramMessage('leadership', message);
-      await logIntegration('telegram', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', {
-        kind: 'sales_export_alert',
-        employeeId: req.user!.id,
-        entity: req.params.entity,
-        count: rows.length,
-      }, result.error ?? null);
-      const leaders = await query<{ id: number }>(
-        `SELECT id FROM users WHERE workspace = 'administration' AND is_active = true`,
-      );
-      await Promise.all(leaders.map((leader) => createNotification(
-        Number(leader.id),
-        'Экспорт клиентской базы',
-        `${req.user!.fullName}: ${rows.length} записей (${req.params.entity}).`,
-        'export',
-      )));
-    }
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${req.params.entity}.csv"`);
-    res.send(createCsv(rows));
-  } catch (error) {
-    logger.error('Failed to export academy data', { error });
-    res.status(500).json({ error: 'Failed to export academy data' });
-  }
-});
+router.all(
+  [
+    '/finance',
+    '/payroll',
+    '/payroll/*',
+    '/exports/:entity',
+    '/groups/profitability',
+  ],
+  (_req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  },
+);
 
 registerSimpleCrud('schools', 'academy_schools', [
   'name', 'code', 'address', 'timezone', 'isActive',
 ], { orderBy: 'is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('rooms', 'academy_rooms', [
-  'schoolId', 'name', 'capacity', 'rentPerHourUzs', 'isActive',
+  'schoolId', 'name', 'capacity', 'isActive',
 ], { orderBy: 'school_id, is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('courses', 'academy_courses', [
@@ -4754,7 +4184,7 @@ registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
 ], { orderBy: 'sort_order, id', requireAdministration: true });
 
 registerSimpleCrud('teachers', 'academy_teachers', [
-  'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'ratePerLessonUzs', 'status',
+  'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'status',
 ], { orderBy: 'full_name', requireAdministration: true });
 
 registerSimpleCrud('groups', 'academy_groups', [

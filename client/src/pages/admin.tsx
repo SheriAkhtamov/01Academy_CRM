@@ -59,7 +59,6 @@ import {
   Key,
   ArrowRight,
   Plug,
-  Settings,
   SlidersHorizontal,
   KanbanSquare,
 } from 'lucide-react';
@@ -78,7 +77,6 @@ const createUserSchema = (t: any) => z.object({
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
-  baseSalaryUzs: z.coerce.number().int().min(0).default(0),
   workspace: z.enum(ACADEMY_WORKSPACES),
   isActive: z.boolean().default(true),
 });
@@ -110,7 +108,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       fullName: '',
       phone: '',
       position: '',
-      baseSalaryUzs: 0,
       workspace: 'sales',
       isActive: true,
     },
@@ -274,7 +271,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       fullName: user.fullName,
       phone: user.phone || '',
       position: user.position || '',
-      baseSalaryUzs: Number(user.baseSalaryUzs || 0),
       workspace: user.workspace,
       isActive: user.isActive,
     });
@@ -292,8 +288,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     switch (workspace) {
       case 'administration':
         return 'bg-red-100 text-red-800';
-      case 'analytics':
-        return 'bg-purple-100 text-purple-800';
       case 'sales':
         return 'bg-blue-100 text-blue-800';
       case 'teacher':
@@ -317,7 +311,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     { value: 'administration', label: t('administrationWorkspace') },
     { value: 'sales', label: t('salesDepartmentWorkspace') },
     { value: 'teacher', label: t('teacher') },
-    { value: 'analytics', label: t('analyticsDepartmentWorkspace') },
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
   ];
 
@@ -327,12 +320,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       icon: Users,
       title: t('employees'),
       description: t('adminEmployeesDescription'),
-    },
-    {
-      href: '/admin/leads',
-      icon: UserCheck,
-      title: t('leadAssignment'),
-      description: t('leadAssignmentSubtitle'),
     },
     {
       href: '/admin/tasks',
@@ -351,12 +338,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       icon: Plug,
       title: t('navIntegrations'),
       description: t('adminIntegrationsDescription'),
-    },
-    {
-      href: '/settings',
-      icon: Settings,
-      title: t('settings'),
-      description: t('adminSystemSettingsDescription'),
     },
   ];
 
@@ -609,19 +590,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                 <FormLabel>{t('dateOfBirth')}</FormLabel>
                                 <FormControl>
                                   <Input type="date" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={userForm.control}
-                            name="baseSalaryUzs"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('baseSalary')}</FormLabel>
-                                <FormControl>
-                                  <Input type="number" min="0" step="1000" {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>

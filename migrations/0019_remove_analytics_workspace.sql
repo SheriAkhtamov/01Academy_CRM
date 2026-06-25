@@ -1,6 +1,6 @@
 UPDATE "users"
 SET "workspace" = 'administration'
-WHERE "workspace" = 'management';
+WHERE "workspace" = 'analytics';
 --> statement-breakpoint
 ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_workspace_check";
 --> statement-breakpoint

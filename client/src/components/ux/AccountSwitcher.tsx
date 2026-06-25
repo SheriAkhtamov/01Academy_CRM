@@ -103,7 +103,7 @@ export default function AccountSwitcher() {
                   <div className="flex items-center gap-3 w-full">
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                      style={{ background: 'linear-gradient(135deg, var(--color-muted), var(--color-muted-foreground))' }}
+                      style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
                     >
                       {getInitials(account.accountUser.fullName)}
                     </div>

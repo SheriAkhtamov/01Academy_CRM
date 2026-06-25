@@ -249,7 +249,7 @@ export default function Header({
                         <div className="flex items-center gap-2 w-full">
                           <div
                             className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0"
-                            style={{ background: 'linear-gradient(135deg, var(--color-muted), var(--color-muted-foreground))' }}
+                            style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
                           >
                             {getInitials(account.accountUser.fullName)}
                           </div>

@@ -84,17 +84,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const administrationItems: SearchItem[] = [
         { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
+        { id: 'nav-admin-tasks', type: t('systemAdministration'), title: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Settings },
         { id: 'nav-settings', type: t('systemAdministration'), title: t('settings'), href: '/settings', icon: Settings },
       ];
-      const managementItem: SearchItem = {
-        id: 'nav-management',
-        type: t('management'),
-        title: t('taskBoard'),
-        href: '/management',
-        icon: KanbanSquare,
-      };
 
       switch (user?.workspace) {
         case 'administration':
@@ -136,8 +130,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
             { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
           ];
-        case 'management':
-          return [managementItem];
         default:
           return [];
       }

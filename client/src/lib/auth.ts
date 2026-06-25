@@ -8,7 +8,6 @@ const workspaceTranslationKeys = {
   teacher: 'teacher',
   analytics: 'analyticsDepartmentWorkspace',
   marketing: 'marketingDepartmentWorkspace',
-  management: 'teamManagementWorkspace',
 } as const satisfies Record<AcademyWorkspace, TranslationKey>;
 
 export function getInitials(fullName: string): string {

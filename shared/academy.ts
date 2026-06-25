@@ -6,7 +6,6 @@ export const ACADEMY_WORKSPACES = [
   "teacher",
   "analytics",
   "marketing",
-  "management",
 ] as const;
 
 export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];

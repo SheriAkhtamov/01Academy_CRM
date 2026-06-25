@@ -6,8 +6,6 @@ export const translations = {
   accessDenied: { en: 'Access Denied', ru: 'Доступ запрещён' },
   accountSettings: { en: 'Account Settings', ru: 'Настройки аккаунта' },
   accounts: { en: 'Accounts', ru: 'Аккаунты' },
-  accountLabel: { en: 'Label', ru: 'Метка' },
-  accountLabelPlaceholder: { en: 'e.g. Manager Aishat', ru: 'напр. Менеджер Айшат' },
   accountAdded: { en: 'Account added', ru: 'Аккаунт добавлен' },
   accountAddedDesc: { en: 'You can now switch to this account.', ru: 'Теперь вы можете переключиться на этот аккаунт.' },
   accountRemoved: { en: 'Account removed', ru: 'Аккаунт удалён' },
@@ -17,7 +15,6 @@ export const translations = {
   savedAccounts: { en: 'Saved Accounts', ru: 'Сохранённые аккаунты' },
   currentAccount: { en: 'Current Account', ru: 'Текущий аккаунт' },
   removeAccount: { en: 'Remove account', ru: 'Удалить аккаунт' },
-  optional: { en: 'optional', ru: 'необязательно' },
   actions: { en: 'Actions', ru: 'Действия' },
   active: { en: 'Active', ru: 'Активный' },
   activeAccount: { en: 'Active Account', ru: 'Активный аккаунт' },
@@ -700,7 +697,7 @@ export const translations = {
   schoolRequired: { en: 'Select a school first.', ru: 'Сначала выберите филиал.' },
   seatsAvailable: { en: 'seats free', ru: 'свободных мест' },
 
-  // UX improvements — management task board
+  // UX improvements — administration task board
   acceptTask: { en: 'Accept task', ru: 'Принять задачу' },
   activityAccepted: { en: 'accepted the task', ru: 'принял(а) задачу' },
   activityAssigned: { en: 'assigned the task', ru: 'назначил(а) исполнителя' },
@@ -728,12 +725,11 @@ export const translations = {
   deleteTaskTitle: { en: 'Delete task', ru: 'Удалить задачу' },
   dragTaskHint: { en: 'Drag the task to another column', ru: 'Перетащите задачу в другую колонку' },
   dueDateLabel: { en: 'Due date', ru: 'Срок выполнения' },
-  management: { en: 'Management', ru: 'Управление' },
   noAttachmentsYet: { en: 'No attachments yet', ru: 'Вложений пока нет' },
   noChecklistYet: { en: 'No checklist items yet', ru: 'В чеклисте пока нет пунктов' },
   noCommentsYet: { en: 'No comments yet', ru: 'Комментариев пока нет' },
   noDueDate: { en: 'No due date', ru: 'Без срока' },
-  onlyCreatorCanAcceptHint: { en: 'Only the task creator or the head can accept or reopen it.', ru: 'Принять или вернуть задачу в работу может только автор или руководитель.' },
+  onlyCreatorCanAcceptHint: { en: 'Only the task creator or an administrator can accept or reopen it.', ru: 'Принять или вернуть задачу в работу может только автор или администратор.' },
   priorityLabel: { en: 'Priority', ru: 'Приоритет' },
   priorityLow: { en: 'Low priority', ru: 'Низкий приоритет' },
   priorityNormal: { en: 'Normal priority', ru: 'Обычный приоритет' },
@@ -843,15 +839,6 @@ export const translations = {
     en: 'Schedule, groups, attendance, and lesson ratings.',
     ru: 'Расписание, группы, посещаемость и оценки занятий.',
   },
-  teamManagementWorkspace: {
-    en: 'Team management',
-    ru: 'Управление командой',
-  },
-  teamManagementWorkspaceDescription: {
-    en: 'Tasks, owners, and progress across academy departments.',
-    ru: 'Задачи, ответственные и прогресс по отделам академии.',
-  },
-
   // UX improvements — lead ownership and assignment
   adjustFilters: { en: 'Change the filters to see other leads.', ru: 'Измените фильтры, чтобы увидеть другие лиды.' },
   allManagers: { en: 'All managers', ru: 'Все менеджеры' },

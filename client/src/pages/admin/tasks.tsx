@@ -19,7 +19,7 @@ interface ApiUser {
     isActive?: boolean;
 }
 
-export default function ManagementBoard() {
+export default function AdminTasksPage() {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
 

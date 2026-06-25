@@ -61,6 +61,7 @@ import {
   Plug,
   Settings,
   SlidersHorizontal,
+  KanbanSquare,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
@@ -299,8 +300,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         return 'bg-amber-100 text-amber-800';
       case 'marketing':
         return 'bg-pink-100 text-pink-800';
-      case 'management':
-        return 'bg-emerald-100 text-emerald-800';
       default:
         return 'bg-slate-100 text-slate-800';
     }
@@ -320,7 +319,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     { value: 'teacher', label: t('teacher') },
     { value: 'analytics', label: t('analyticsDepartmentWorkspace') },
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
-    { value: 'management', label: t('teamManagementWorkspace') },
   ];
 
   const administrationSections = [
@@ -335,6 +333,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       icon: UserCheck,
       title: t('leadAssignment'),
       description: t('leadAssignmentSubtitle'),
+    },
+    {
+      href: '/admin/tasks',
+      icon: KanbanSquare,
+      title: t('taskBoard'),
+      description: t('taskBoardSubtitle'),
     },
     {
       href: '/admin/academy-settings',

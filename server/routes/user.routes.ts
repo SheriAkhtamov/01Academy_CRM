@@ -16,7 +16,6 @@ const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     teacher: 'teacher',
     analytics: 'analytics',
     marketing: 'marketing',
-    management: 'management',
 };
 
 const translitMap: Record<string, string> = {

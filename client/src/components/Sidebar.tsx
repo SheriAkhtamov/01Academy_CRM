@@ -163,23 +163,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           items: [
             { name: t('employees'), href: '/employees', icon: Users },
             { name: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
+            { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
             { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
             { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
             { name: ceoCopy.workspace.finance, href: '/admin/finance', icon: Landmark },
             { name: ceoCopy.workspace.payroll, href: '/admin/payroll', icon: Banknote },
             { name: t('navIntegrations'), href: '/integrations', icon: Plug },
             { name: t('settings'), href: '/settings', icon: Settings },
-          ],
-        },
-      ];
-    }
-
-    if (workspace === 'management') {
-      return [
-        {
-          label: t('management'),
-          items: [
-            { name: t('taskBoard'), href: '/management', icon: KanbanSquare },
           ],
         },
       ];

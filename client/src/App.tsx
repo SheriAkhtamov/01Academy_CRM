@@ -19,7 +19,7 @@ import Admin from '@/pages/admin';
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
-import ManagementBoard from '@/pages/management';
+import AdminTasksPage from '@/pages/admin/tasks';
 import AuditPage from '@/pages/admin/audit';
 import FinancePage from '@/pages/admin/finance';
 import PayrollPage from '@/pages/admin/payroll';
@@ -33,7 +33,6 @@ function WorkspaceBasedHome() {
     case 'teacher': return <TeacherWorkspace />;
     case 'analytics': return <AnalyticsWorkspace />;
     case 'marketing': return <MarketingWorkspace />;
-    case 'management': return <ManagementBoard />;
     default: return <AccessDenied titleKey="noWorkspaceAssigned" />;
   }
 }
@@ -249,6 +248,11 @@ function Router() {
             <AdminLeadsPage />
           </WorkspaceGuard>
         )} />
+        <Route path="/admin/tasks" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <AdminTasksPage />
+          </WorkspaceGuard>
+        )} />
         <Route path="/admin/academy-settings" component={() => (
           <WorkspaceGuard workspace="administration">
             <AcademySettings />
@@ -267,11 +271,6 @@ function Router() {
         <Route path="/admin/payroll" component={() => (
           <WorkspaceGuard workspace="administration">
             <PayrollPage />
-          </WorkspaceGuard>
-        )} />
-        <Route path="/management" component={() => (
-          <WorkspaceGuard workspace="management">
-            <ManagementBoard />
           </WorkspaceGuard>
         )} />
         <Route component={NotFound} />

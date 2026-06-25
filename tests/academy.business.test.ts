@@ -24,7 +24,6 @@ describe("01 Academy business rules", () => {
       "teacher",
       "analytics",
       "marketing",
-      "management",
     ]);
   });
 
@@ -34,19 +33,17 @@ describe("01 Academy business rules", () => {
     expect(canAccessAcademyWorkspace("administration", "analytics")).toBe(true);
     expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(true);
     expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "management")).toBe(true);
   });
 
   it("keeps other employees inside the assigned workspace", () => {
     expect(canAccessAcademyWorkspace("sales", "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace("sales", "management")).toBe(false);
+    expect(canAccessAcademyWorkspace("sales", "analytics")).toBe(false);
   });
 
   it("uses workspace assignment as the system access model", () => {
     expect(canAccessAcademyWorkspace("teacher", "teacher")).toBe(true);
     expect(canAccessAcademyWorkspace("analytics", "analytics")).toBe(true);
     expect(canAccessAcademyWorkspace("marketing", "marketing")).toBe(true);
-    expect(canAccessAcademyWorkspace("management", "management")).toBe(true);
   });
 
   it("suggests course and age group from student age", () => {

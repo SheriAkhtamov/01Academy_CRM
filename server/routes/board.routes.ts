@@ -12,7 +12,6 @@ import {
     type BoardTaskStatus,
 } from '@shared/schema';
 import type { User } from '@shared/schema';
-import { canAccessAcademyWorkspace } from '@shared/academy';
 
 const router = Router();
 
@@ -24,16 +23,16 @@ export function setBroadcastFunction(fn: (data: any) => void) {
 
 // --- Permission helpers -----------------------------------------------------
 
+const isTaskSupervisor = (user?: User) => user?.workspace === 'administration';
+
 const requireBoardAccess = (req: Request, res: Response, next: NextFunction) => {
-    if (!canAccessAcademyWorkspace(req.user?.workspace, 'management')) {
-        return res.status(403).json({ error: 'Management workspace access required' });
+    if (!isTaskSupervisor(req.user)) {
+        return res.status(403).json({ error: 'Administration workspace access required' });
     }
     next();
 };
 
 router.use(requireAuth, requireBoardAccess);
-
-const isTaskSupervisor = (user?: User) => user?.workspace === 'management';
 
 // Can edit core fields (title, description, priority, assignee, due date).
 const canManageTask = (user: User, task: BoardTask) =>

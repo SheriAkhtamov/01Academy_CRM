@@ -2,7 +2,6 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3,
   GraduationCap,
-  KanbanSquare,
   Megaphone,
   ShieldCheck,
   TrendingUp,
@@ -16,8 +15,7 @@ type WorkspaceType =
   | 'administration'
   | 'analytics'
   | 'teacher'
-  | 'marketing'
-  | 'management';
+  | 'marketing';
 
 interface WorkspaceDefinition {
   title: string;
@@ -26,10 +24,6 @@ interface WorkspaceDefinition {
 }
 
 function resolveWorkspaceType(location: string, assignedWorkspace?: string): WorkspaceType {
-  if (location === '/management' || location.startsWith('/management/')) {
-    return 'management';
-  }
-
   if (location === '/sales' || location.startsWith('/sales/')) {
     return 'sales';
   }
@@ -62,7 +56,6 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
     'teacher',
     'analytics',
     'marketing',
-    'management',
   ];
   return knownWorkspaces.includes(assignedWorkspace as WorkspaceType)
     ? assignedWorkspace as WorkspaceType
@@ -103,11 +96,6 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
       title: t('marketingDepartmentWorkspace'),
       description: t('marketingDepartmentWorkspaceDescription'),
       icon: Megaphone,
-    },
-    management: {
-      title: t('teamManagementWorkspace'),
-      description: t('teamManagementWorkspaceDescription'),
-      icon: KanbanSquare,
     },
   };
   const workspace = workspaceDefinitions[resolveWorkspaceType(location, user?.workspace)];

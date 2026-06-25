@@ -38,7 +38,7 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   workspaceIdx: index("users_workspace_idx").on(table.workspace),
-  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'analytics', 'marketing', 'management')`),
+  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'analytics', 'marketing')`),
 }));
 
 export const notifications = pgTable("notifications", {
@@ -988,7 +988,7 @@ export type SavedAccount = typeof savedAccounts.$inferSelect;
 export type InsertSavedAccount = z.infer<typeof insertSavedAccountSchema>;
 
 // ---------------------------------------------------------------------------
-// Management board (Kanban task management).
+// Administration task board (Kanban task management).
 // One shared board ships today; the `boards` table and `boardId` foreign keys
 // leave room to add more boards, per-board membership and access rules later
 // without breaking existing tasks or data.

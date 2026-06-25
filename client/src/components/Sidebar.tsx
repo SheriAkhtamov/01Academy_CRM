@@ -124,20 +124,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     if (workspace === 'administration') {
       return [
         {
-          label: ceoCopy.workspace.desk,
-          items: [
-            { name: ceoCopy.workspace.deskTitle, href: '/admin', icon: BarChart3 },
-          ],
-        },
-        {
-          label: ceoCopy.workspace.departments,
-          items: [
-            { name: ceoCopy.workspace.sales, href: '/sales', icon: Flame },
-            { name: ceoCopy.workspace.marketing, href: '/marketing-workspace', icon: Megaphone },
-            { name: ceoCopy.workspace.teachers, href: '/teacher-workspace', icon: GraduationCap },
-          ],
-        },
-        {
           label: t('systemAdministration'),
           items: [
             { name: t('employees'), href: '/employees', icon: Users },

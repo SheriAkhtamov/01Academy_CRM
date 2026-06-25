@@ -2,12 +2,6 @@
 // product-specific Russian terminology stays consistent across its screens.
 export const ceoCopy = {
   workspace: {
-    desk: 'Рабочий стол',
-    deskTitle: 'Рабочий стол руководителя',
-    departments: 'Отделы компании',
-    sales: 'Продажи',
-    marketing: 'Маркетинг',
-    teachers: 'Преподаватели',
     audit: 'Журнал действий',
   },
   student: {

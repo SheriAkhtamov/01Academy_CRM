@@ -57,6 +57,20 @@ const generateLogin = (fullName: string, workspace: AcademyWorkspace, existingUs
     return `${base}.${Date.now().toString(36)}@01academy.local`.toLowerCase();
 };
 
+const normalizeLogin = (value: unknown) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+const isValidLogin = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const findUserByLogin = async (login: string, exceptUserId?: number) => {
+    const users = await storage.getUsers();
+    return users.find((user) =>
+        user.email.toLowerCase() === login.toLowerCase() &&
+        user.id !== exceptUserId
+    );
+};
+
 const syncAcademyTeacherForUser = async (user: {
     id: number;
     fullName: string;
@@ -208,6 +222,117 @@ router.get('/:id/credentials', requireAdministration, async (req, res) => {
     }
 });
 
+router.patch('/:id/credentials', requireAdministration, async (req, res) => {
+    try {
+        const id = Number.parseInt(req.params.id, 10);
+
+        if (Number.isNaN(id)) {
+            return res.status(400).json({ error: 'Invalid user ID' });
+        }
+
+        const user = await storage.getUser(id);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const updateData: Record<string, unknown> = {};
+        let loginChanged = false;
+        let passwordChanged = false;
+        let plainPassword: string | undefined;
+
+        if (req.body.email !== undefined) {
+            const nextLogin = normalizeLogin(req.body.email);
+
+            if (!nextLogin) {
+                return res.status(400).json({ error: 'loginRequired' });
+            }
+
+            if (!isValidLogin(nextLogin)) {
+                return res.status(400).json({ error: 'invalidEmailAddress' });
+            }
+
+            if (nextLogin !== user.email.toLowerCase()) {
+                const existingUser = await findUserByLogin(nextLogin, user.id);
+                if (existingUser) {
+                    return res.status(400).json({ error: 'loginAlreadyExists' });
+                }
+
+                updateData.email = nextLogin;
+                loginChanged = true;
+            }
+        }
+
+        const newPassword =
+            typeof req.body.password === 'string'
+                ? req.body.password
+                : typeof req.body.newPassword === 'string'
+                    ? req.body.newPassword
+                    : '';
+        const confirmPassword =
+            typeof req.body.confirmPassword === 'string'
+                ? req.body.confirmPassword
+                : typeof req.body.confirmNewPassword === 'string'
+                    ? req.body.confirmNewPassword
+                    : '';
+
+        if (newPassword || confirmPassword) {
+            if (!newPassword) {
+                return res.status(400).json({ error: 'newPasswordRequired' });
+            }
+
+            if (newPassword.length < 8) {
+                return res.status(400).json({ error: 'passwordTooShort' });
+            }
+
+            if (newPassword !== confirmPassword) {
+                return res.status(400).json({ error: 'passwordsDoNotMatch' });
+            }
+
+            updateData.password = await authService.hashPassword(newPassword);
+            plainPassword = newPassword;
+            passwordChanged = true;
+        }
+
+        if (!loginChanged && !passwordChanged) {
+            return res.status(400).json({ error: 'credentialsUpdateRequired' });
+        }
+
+        const updatedUser = await storage.updateUser(id, updateData);
+
+        await storage.createAuditLog({
+            userId: req.user!.id,
+            action: 'UPDATE_USER_CREDENTIALS',
+            entityType: 'user',
+            entityId: updatedUser.id,
+            oldValues: [{ email: user.email }],
+            newValues: [{
+                email: updatedUser.email,
+                loginChanged,
+                passwordChanged,
+                updatedBy: req.user!.id,
+            }],
+        });
+
+        res.json({
+            id: updatedUser.id,
+            fullName: updatedUser.fullName,
+            email: updatedUser.email,
+            position: updatedUser.position,
+            workspace: updatedUser.workspace,
+            temporaryPassword: plainPassword,
+            loginChanged,
+            passwordChanged,
+        });
+    } catch (error: any) {
+        logger.error('Error updating user credentials', { error, userId: req.params.id });
+        if (error.code === '23505' && error.constraint === 'users_email_unique') {
+            return res.status(400).json({ error: 'loginAlreadyExists' });
+        }
+        res.status(500).json({ error: 'failedToUpdateCredentials' });
+    }
+});
+
 router.post('/:id/reset-password', requireAdministration, async (req, res) => {
     try {
         const id = Number.parseInt(req.params.id, 10);
@@ -274,10 +399,30 @@ router.put('/:id', requireAuth, async (req, res) => {
 
         const updateData: any = {
             fullName: req.body.fullName,
-            email: req.body.email,
             position: req.body.position,
             phone: req.body.phone || null,
         };
+
+        if (req.body.email !== undefined) {
+            const nextLogin = normalizeLogin(req.body.email);
+
+            if (!nextLogin) {
+                return res.status(400).json({ error: 'loginRequired' });
+            }
+
+            if (!isValidLogin(nextLogin)) {
+                return res.status(400).json({ error: 'invalidEmailAddress' });
+            }
+
+            if (nextLogin !== existingUser.email.toLowerCase()) {
+                const userWithLogin = await findUserByLogin(nextLogin, id);
+                if (userWithLogin) {
+                    return res.status(400).json({ error: 'loginAlreadyExists' });
+                }
+            }
+
+            updateData.email = nextLogin;
+        }
 
         if (req.body.dateOfBirth !== undefined) {
             updateData.dateOfBirth = req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : null;
@@ -324,7 +469,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     } catch (error) {
         logger.error('Error updating user', { error, userId: req.params.id });
         if ((error as any).code === '23505' && (error as any).constraint === 'users_email_unique') {
-            return res.status(400).json({ error: 'Email already exists' });
+            return res.status(400).json({ error: 'loginAlreadyExists' });
         }
         res.status(500).json({ error: 'Failed to update user' });
     }

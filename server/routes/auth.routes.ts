@@ -36,6 +36,20 @@ const accountLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+const normalizeLogin = (value: unknown) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+const isValidLogin = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const findUserByLogin = async (login: string, exceptUserId?: number) => {
+    const users = await storage.getUsers();
+    return users.find((user) =>
+        user.email.toLowerCase() === login.toLowerCase() &&
+        user.id !== exceptUserId
+    );
+};
+
 router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { login, email, password } = req.body;
@@ -100,6 +114,104 @@ router.post('/logout', (req, res) => {
         });
         res.json({ success: true });
     });
+});
+
+router.patch('/me/credentials', requireAuth, async (req: Request, res: Response) => {
+    try {
+        const currentUser = req.user!;
+        const updateData: Record<string, unknown> = {};
+        let loginChanged = false;
+        let passwordChanged = false;
+
+        if (req.body.email !== undefined) {
+            const nextLogin = normalizeLogin(req.body.email);
+
+            if (!nextLogin) {
+                return res.status(400).json({ error: 'loginRequired' });
+            }
+
+            if (!isValidLogin(nextLogin)) {
+                return res.status(400).json({ error: 'invalidEmailAddress' });
+            }
+
+            if (nextLogin !== currentUser.email.toLowerCase()) {
+                const existingUser = await findUserByLogin(nextLogin, currentUser.id);
+                if (existingUser) {
+                    return res.status(400).json({ error: 'loginAlreadyExists' });
+                }
+
+                updateData.email = nextLogin;
+                loginChanged = true;
+            }
+        }
+
+        const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
+        const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+        const confirmNewPassword =
+            typeof req.body.confirmNewPassword === 'string'
+                ? req.body.confirmNewPassword
+                : typeof req.body.confirmPassword === 'string'
+                    ? req.body.confirmPassword
+                    : '';
+        const wantsPasswordChange = Boolean(currentPassword || newPassword || confirmNewPassword);
+
+        if (wantsPasswordChange) {
+            if (!currentPassword) {
+                return res.status(400).json({ error: 'currentPasswordRequired' });
+            }
+
+            if (!newPassword) {
+                return res.status(400).json({ error: 'newPasswordRequired' });
+            }
+
+            if (newPassword.length < 8) {
+                return res.status(400).json({ error: 'passwordTooShort' });
+            }
+
+            if (newPassword !== confirmNewPassword) {
+                return res.status(400).json({ error: 'passwordsDoNotMatch' });
+            }
+
+            const currentPasswordValid = await authService.verifyPassword(currentPassword, currentUser.password);
+            if (!currentPasswordValid) {
+                return res.status(401).json({ error: 'currentPasswordInvalid' });
+            }
+
+            updateData.password = await authService.hashPassword(newPassword);
+            passwordChanged = true;
+        }
+
+        if (!loginChanged && !passwordChanged) {
+            return res.status(400).json({ error: 'credentialsUpdateRequired' });
+        }
+
+        const updatedUser = await storage.updateUser(currentUser.id, updateData);
+
+        await storage.createAuditLog({
+            userId: currentUser.id,
+            action: 'UPDATE_OWN_CREDENTIALS',
+            entityType: 'user',
+            entityId: currentUser.id,
+            oldValues: [{ email: currentUser.email }],
+            newValues: [{
+                email: updatedUser.email,
+                loginChanged,
+                passwordChanged,
+            }],
+        });
+
+        res.json({
+            user: authService.sanitizeUser(updatedUser),
+            loginChanged,
+            passwordChanged,
+        });
+    } catch (error: any) {
+        logger.error('Failed to update own credentials', { error, userId: req.user?.id });
+        if (error.code === '23505' && error.constraint === 'users_email_unique') {
+            return res.status(400).json({ error: 'loginAlreadyExists' });
+        }
+        res.status(500).json({ error: 'failedToUpdateCredentials' });
+    }
 });
 
 // ── Multi-account switching ──────────────────────────────────────────

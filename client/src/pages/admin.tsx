@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -81,6 +81,38 @@ const createUserSchema = (t: any) => z.object({
   isActive: z.boolean().default(true),
 });
 
+const createCredentialsSchema = (t: any) => z.object({
+  email: z.string().email(t('invalidEmailAddress')),
+  password: z.string().optional(),
+  confirmPassword: z.string().optional(),
+}).superRefine((values, ctx) => {
+  const wantsPasswordChange = Boolean(values.password || values.confirmPassword);
+
+  if (!wantsPasswordChange) return;
+
+  if (!values.password) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['password'],
+      message: t('newPasswordRequired'),
+    });
+  } else if (values.password.length < 8) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['password'],
+      message: t('passwordTooShort'),
+    });
+  }
+
+  if (values.password !== values.confirmPassword) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['confirmPassword'],
+      message: t('passwordsDoNotMatch'),
+    });
+  }
+});
+
 interface AdminProps {
   mode?: 'admin' | 'employees';
 }
@@ -92,6 +124,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [userToDelete, setUserToDelete] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userCredentials, setUserCredentials] = useState<any>(null);
+  const [pendingCredentialUpdate, setPendingCredentialUpdate] = useState<z.infer<ReturnType<typeof createCredentialsSchema>> | null>(null);
+  const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const { user } = useAuth();
@@ -101,6 +135,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   // Create schemas with translations
   const userSchema = createUserSchema(t);
+  const credentialsSchema = useMemo(() => createCredentialsSchema(t), [t]);
   const userForm = useForm<z.infer<typeof userSchema>>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -112,6 +147,23 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       isActive: true,
     },
   });
+  const credentialsForm = useForm<z.infer<typeof credentialsSchema>>({
+    resolver: zodResolver(credentialsSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+      confirmPassword: '',
+    },
+  });
+
+  useEffect(() => {
+    if (!userCredentials) return;
+    credentialsForm.reset({
+      email: userCredentials.email || '',
+      password: '',
+      confirmPassword: '',
+    });
+  }, [credentialsForm, userCredentials]);
 
   const handleUserModalState = (open: boolean) => {
     setShowCreateUserModal(open);
@@ -223,6 +275,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       return await apiRequest('POST', `/api/users/${userId}/reset-password`);
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       setUserCredentials(data);
       toast({
         title: t('passwordResetSuccessfullyTitle'),
@@ -233,6 +286,38 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       toast({
         title: t('error'),
         description: error.message || t('failedResetPasswordDescription'),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateUserCredentialsMutation = useMutation({
+    mutationFn: async ({
+      userId,
+      data,
+    }: {
+      userId: number;
+      data: z.infer<ReturnType<typeof createCredentialsSchema>>;
+    }) => {
+      return await apiRequest('PATCH', `/api/users/${userId}/credentials`, data);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      setUserCredentials(data);
+      credentialsForm.reset({
+        email: data.email || '',
+        password: '',
+        confirmPassword: '',
+      });
+      toast({
+        title: t('credentialsUpdatedTitle'),
+        description: t('credentialsUpdatedDescription'),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('error'),
+        description: error.message || t('failedToUpdateCredentials'),
         variant: 'destructive',
       });
     },
@@ -258,10 +343,33 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const onSubmitUser = (data: z.infer<ReturnType<typeof createUserSchema>>) => {
     if (selectedUser) {
-      updateUserMutation.mutate({ id: selectedUser.id, data });
+      const { email: _email, ...profileData } = data;
+      updateUserMutation.mutate({ id: selectedUser.id, data: profileData });
     } else {
       createUserMutation.mutate(data);
     }
+  };
+
+  const onSubmitCredentials = (data: z.infer<typeof credentialsSchema>) => {
+    if (!userCredentials?.id) return;
+
+    const normalizedEmail = data.email.trim().toLowerCase();
+    const loginChanged = normalizedEmail !== String(userCredentials.email || '').toLowerCase();
+    const passwordChanged = Boolean(data.password);
+
+    if (!loginChanged && !passwordChanged) {
+      toast({
+        title: t('noChangesTitle'),
+        description: t('credentialsNoChanges'),
+      });
+      return;
+    }
+
+    setPendingCredentialUpdate({
+      email: normalizedEmail,
+      password: data.password || '',
+      confirmPassword: data.confirmPassword || '',
+    });
   };
 
   const openEditUserModal = (user: any) => {
@@ -509,8 +617,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                 <FormItem>
                                   <FormLabel>{t('loginLabel')}</FormLabel>
                                   <FormControl>
-                                    <Input type="email" placeholder={t('emailPlaceholder')} {...field} />
+                                    <Input
+                                      type="email"
+                                      placeholder={t('emailPlaceholder')}
+                                      disabled
+                                      {...field}
+                                    />
                                   </FormControl>
+                                  <p className="text-xs text-slate-500">{t('loginManagedInCredentials')}</p>
                                   <FormMessage />
                                 </FormItem>
                               ) : (
@@ -841,7 +955,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
       {/* User Credentials Modal */}
       <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
-        <DialogContent className="max-w-md overflow-hidden">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
               <Key className="h-5 w-5" />
@@ -852,85 +966,167 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             </DialogDescription>
           </DialogHeader>
           {userCredentials && (
-            <div className="min-w-0 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('fullName')}</label>
-                <div className="p-3 bg-slate-50 rounded-md text-sm">
-                  {userCredentials.fullName}
+            <Form {...credentialsForm}>
+              <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="flex flex-col gap-4">
+                <div className="rounded-lg border border-border bg-muted/50 p-3">
+                  <p className="text-sm font-medium text-slate-900">{userCredentials.fullName}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge className={getWorkspaceColor(userCredentials.workspace)}>
+                      {getWorkspaceLabel(userCredentials.workspace)}
+                    </Badge>
+                    {userCredentials.position && (
+                      <span className="text-xs text-slate-500">{userCredentials.position}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('emailLogin')}</label>
-                <div className="min-w-0 break-all p-3 bg-slate-50 rounded-md text-sm font-mono">
-                  {userCredentials.email}
-                </div>
-              </div>
+                <FormField
+                  control={credentialsForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('loginLabel')}</FormLabel>
+                      <FormControl>
+                        <Input type="email" autoComplete="username" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('password')}</label>
-                <div className={`min-w-0 break-all p-3 rounded-md text-sm font-mono ${userCredentials.temporaryPassword ? 'bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-500 italic'}`}>
-                  {userCredentials.temporaryPassword || t('passwordNotAvailable')}
-                </div>
-                {!userCredentials.temporaryPassword && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-slate-700">{t('password')}</label>
+                  <div className={`min-w-0 break-all rounded-md p-3 font-mono text-sm ${userCredentials.temporaryPassword ? 'bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-500 italic'}`}>
+                    {userCredentials.temporaryPassword || t('passwordNotAvailable')}
+                  </div>
                   <p className="text-xs text-slate-500">
-                    {t('passwordResetHint')}
+                    {userCredentials.temporaryPassword ? t('temporaryPasswordVisibleHint') : t('passwordResetHint')}
                   </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('position')}</label>
-                <div className="p-3 bg-slate-50 rounded-md text-sm">
-                  {userCredentials.position}
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t('workspaceLabel')}</label>
-                <div className="p-3 bg-slate-50 rounded-md text-sm">
-                  <Badge className={getWorkspaceColor(userCredentials.workspace)}>
-                    {getWorkspaceLabel(userCredentials.workspace)}
-                  </Badge>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <FormField
+                    control={credentialsForm.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('newPassword')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder={t('newPassword')}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={credentialsForm.control}
+                    name="confirmPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('confirmNewPassword')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder={t('confirmNewPassword')}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-              </div>
 
-              <div className="flex flex-wrap justify-end gap-2 pt-4">
-                {userCredentials.id && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  {t('adminCredentialsWarning')}
+                </p>
+
+                <div className="flex flex-wrap justify-end gap-2 pt-2">
+                  {userCredentials.id && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPasswordResetUser(userCredentials)}
+                      disabled={resetUserPasswordMutation.isPending}
+                    >
+                      <Key className="h-4 w-4 mr-2" />
+                      {resetUserPasswordMutation.isPending ? t('resettingPassword') : t('resetPassword')}
+                    </Button>
+                  )}
                   <Button
+                    type="button"
                     variant="outline"
-                    onClick={() => resetUserPasswordMutation.mutate(userCredentials.id)}
-                    disabled={resetUserPasswordMutation.isPending}
+                    onClick={() => {
+                      const credentialLines = [`${t('email')}: ${userCredentials.email}`];
+                      if (userCredentials.temporaryPassword) {
+                        credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
+                      }
+                      credentialLines.push(`${t('workspaceLabel')}: ${getWorkspaceLabel(userCredentials.workspace)}`);
+                      navigator.clipboard.writeText(credentialLines.join('\n'));
+                      toast({
+                        title: t('copiedToClipboard'),
+                        description: t('credentialsCopied'),
+                      });
+                    }}
                   >
-                    <Key className="h-4 w-4 mr-2" />
-                    {resetUserPasswordMutation.isPending ? t('resettingPassword') : t('resetPassword')}
+                    {t('copyCredentials')}
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const credentialLines = [`${t('email')}: ${userCredentials.email}`];
-                    if (userCredentials.temporaryPassword) {
-                      credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
-                    }
-                    credentialLines.push(`${t('workspaceLabel')}: ${getWorkspaceLabel(userCredentials.workspace)}`);
-                    navigator.clipboard.writeText(credentialLines.join('\n'));
-                    toast({
-                      title: t('copiedToClipboard'),
-                      description: t('credentialsCopied'),
-                    });
-                  }}
-                >
-                  {t('copyCredentials')}
-                </Button>
-                <Button onClick={() => setShowCredentialsModal(false)}>
-                  {t('close')}
-                </Button>
-              </div>
-            </div>
+                  <Button
+                    type="submit"
+                    disabled={updateUserCredentialsMutation.isPending}
+                  >
+                    {updateUserCredentialsMutation.isPending ? t('saving') : t('saveCredentials')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setShowCredentialsModal(false)}>
+                    {t('close')}
+                  </Button>
+                </div>
+              </form>
+            </Form>
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!pendingCredentialUpdate}
+        onOpenChange={(open) => !open && setPendingCredentialUpdate(null)}
+        title={t('confirmCredentialsUpdateTitle')}
+        description={`${t('confirmCredentialsUpdateDescription')} ${userCredentials?.fullName || ''}`}
+        confirmLabel={t('saveCredentials')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          if (userCredentials?.id && pendingCredentialUpdate) {
+            updateUserCredentialsMutation.mutate({
+              userId: userCredentials.id,
+              data: pendingCredentialUpdate,
+            });
+            setPendingCredentialUpdate(null);
+          }
+        }}
+        variant="destructive"
+      />
+
+      <ConfirmDialog
+        open={!!passwordResetUser}
+        onOpenChange={(open) => !open && setPasswordResetUser(null)}
+        title={t('confirmPasswordResetTitle')}
+        description={`${t('confirmPasswordResetDescription')} ${passwordResetUser?.fullName || ''}`}
+        confirmLabel={t('resetPassword')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          if (passwordResetUser?.id) {
+            resetUserPasswordMutation.mutate(passwordResetUser.id);
+            setPasswordResetUser(null);
+          }
+        }}
+        variant="destructive"
+      />
 
       {/* Delete User Confirmation */}
       <ConfirmDialog

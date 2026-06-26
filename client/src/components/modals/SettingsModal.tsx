@@ -34,7 +34,7 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import { Switch } from '@/components/ui/switch';
-import { User, Mail, Briefcase, Phone, MapPin, Save } from 'lucide-react';
+import { User, Mail, Briefcase, Phone, MapPin, Save, KeyRound } from 'lucide-react';
 
 const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
@@ -43,6 +43,47 @@ const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   phone: z.string().optional(),
   location: z.string().optional(),
   hasReportAccess: z.boolean().optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().optional(),
+  confirmNewPassword: z.string().optional(),
+}).superRefine((values, ctx) => {
+  const wantsPasswordChange = Boolean(
+    values.currentPassword ||
+    values.newPassword ||
+    values.confirmNewPassword,
+  );
+
+  if (!wantsPasswordChange) return;
+
+  if (!values.currentPassword) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currentPassword'],
+      message: t('currentPasswordRequired'),
+    });
+  }
+
+  if (!values.newPassword) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['newPassword'],
+      message: t('newPasswordRequired'),
+    });
+  } else if (values.newPassword.length < 8) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['newPassword'],
+      message: t('passwordTooShort'),
+    });
+  }
+
+  if (values.newPassword !== values.confirmNewPassword) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['confirmNewPassword'],
+      message: t('passwordsDoNotMatch'),
+    });
+  }
 });
 
 interface SettingsModalProps {
@@ -67,6 +108,9 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       phone: user?.phone || '',
       location: '',
       hasReportAccess: user?.hasReportAccess || false,
+      currentPassword: '',
+      newPassword: '',
+      confirmNewPassword: '',
     },
   });
   const settingsDialogGuard = useUnsavedChangesGuard({
@@ -85,13 +129,41 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         phone: user.phone || '',
         location: '',
         hasReportAccess: user.hasReportAccess || false,
+        currentPassword: '',
+        newPassword: '',
+        confirmNewPassword: '',
       });
     }
   }, [user, open, form]);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: z.infer<typeof settingsSchema>) => {
-      return await apiRequest('PUT', `/api/users/${user?.id}`, data);
+      if (!user?.id) {
+        throw new Error(t('authenticationRequired'));
+      }
+
+      const {
+        currentPassword,
+        newPassword,
+        confirmNewPassword,
+        location: _location,
+        ...profileData
+      } = data;
+      const shouldChangePassword = Boolean(currentPassword || newPassword || confirmNewPassword);
+      const normalizedEmail = profileData.email.trim().toLowerCase();
+      const shouldChangeLogin = normalizedEmail !== user.email.toLowerCase();
+
+      if (shouldChangeLogin || shouldChangePassword) {
+        await apiRequest('PATCH', '/api/auth/me/credentials', {
+          ...(shouldChangeLogin ? { email: normalizedEmail } : {}),
+          ...(shouldChangePassword ? { currentPassword, newPassword, confirmNewPassword } : {}),
+        });
+      }
+
+      const { email: _email, ...profileWithoutCredentials } = profileData;
+      const updatedUser = await apiRequest('PUT', `/api/users/${user.id}`, profileWithoutCredentials);
+
+      return updatedUser;
     },
     onSuccess: (updatedUser) => {
       setUser(updatedUser);
@@ -156,7 +228,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                   <FormItem>
                     <FormLabel className="flex items-center gap-2">
                       <Mail className="h-4 w-4" />
-                      {t('email')}
+                      {t('loginLabel')}
                     </FormLabel>
                     <FormControl>
                       <Input {...field} type="email" placeholder={t('enterEmail')} />
@@ -228,6 +300,70 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 )}
               />
 
+            </div>
+
+            <div className="rounded-xl border border-border/70 p-4">
+              <div className="mb-4 flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-slate-500" />
+                <h3 className="text-sm font-semibold text-slate-900">{t('changePassword')}</h3>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <FormField
+                  control={form.control}
+                  name="currentPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('currentPassword')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          autoComplete="current-password"
+                          placeholder={t('currentPassword')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="newPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('newPassword')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          autoComplete="new-password"
+                          placeholder={t('newPassword')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="confirmNewPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('confirmNewPassword')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          autoComplete="new-password"
+                          placeholder={t('confirmNewPassword')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <p className="mt-3 text-xs text-slate-500">{t('passwordChangeHint')}</p>
             </div>
 
             {/* Analytics Access - Only for Admins */}

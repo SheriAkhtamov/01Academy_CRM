@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
@@ -65,7 +65,7 @@ const leadStatusTranslationKeys: Record<string, TranslationKey> = {
   not_now: 'leadStatusNotNow',
 };
 
-export default function AdminLeadsPage() {
+export function LeadAssignmentContent() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -271,28 +271,21 @@ export default function AdminLeadsPage() {
 
   if (leadsQuery.isError || usersQuery.isError) {
     return (
-      <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-          <AlertDescription>{t('retry')}</AlertDescription>
-        </Alert>
-      </div>
+      <Alert variant="destructive">
+        <AlertCircle />
+        <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+        <AlertDescription>{t('retry')}</AlertDescription>
+      </Alert>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-      <PageHeader
-        title={t('leadAssignment')}
-        subtitle={t('leadAssignmentSubtitle')}
-        breadcrumbs={[{ label: t('administration'), href: '/admin' }, { label: t('salesSettings') }, { label: t('leadAssignment') }]}
-      />
-
+    <>
       <div className="flex flex-col gap-5">
         <Card>
           <CardHeader>
             <CardTitle>{t('leadFilters')}</CardTitle>
+            <CardDescription>{t('leadAssignmentSubtitle')}</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Select value={managerFilter} onValueChange={setManagerFilter}>
@@ -413,6 +406,21 @@ export default function AdminLeadsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  );
+}
+
+export default function AdminLeadsPage() {
+  const { t } = useTranslation();
+
+  return (
+    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
+      <PageHeader
+        title={t('salesSettings')}
+        subtitle={t('salesSettingsDescription')}
+        breadcrumbs={[{ label: t('administration'), href: '/admin' }, { label: t('salesSettings') }]}
+      />
+      <LeadAssignmentContent />
     </div>
   );
 }

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Link, useLocation, useSearch } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
+import { LeadAssignmentContent } from '@/pages/admin-leads';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -283,19 +284,25 @@ function EmptyTableState({ title, description }: { title: string; description: s
 }
 
 const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'schedule'];
-const salesSettingsTabs = ['pipeline', 'kpi'];
-const allSettingsTabs = [...academyConfigurationTabs, ...salesSettingsTabs];
+const salesSettingsTabs = ['lead-assignment', 'pipeline', 'kpi'];
 
-export default function AcademySettings() {
+interface AcademySettingsProps {
+  mode?: 'academy' | 'sales';
+}
+
+export default function AcademySettings({ mode = 'academy' }: AcademySettingsProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const [, navigate] = useLocation();
   const requestedTab = new URLSearchParams(routeSearch).get('tab');
   const requestedFilter = new URLSearchParams(routeSearch).get('filter');
-  const requestedTabValue = allSettingsTabs.includes(String(requestedTab)) ? String(requestedTab) : 'schools';
+  const isSalesSettingsMode = mode === 'sales';
+  const availableTabs = isSalesSettingsMode ? salesSettingsTabs : academyConfigurationTabs;
+  const defaultTab = isSalesSettingsMode ? 'lead-assignment' : 'schools';
+  const basePath = isSalesSettingsMode ? '/admin/sales-settings' : '/admin/academy-settings';
+  const requestedTabValue = availableTabs.includes(String(requestedTab)) ? String(requestedTab) : defaultTab;
   const [activeTab, setActiveTab] = useState(requestedTabValue);
-  const isSalesSettingsTab = salesSettingsTabs.includes(activeTab);
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
@@ -335,13 +342,9 @@ export default function AcademySettings() {
   });
 
   const handleTabChange = (nextTab: string) => {
-    if (nextTab === 'lead-assignment') {
-      navigate('/admin/leads');
-      return;
-    }
-    if (!allSettingsTabs.includes(nextTab)) return;
+    if (!availableTabs.includes(nextTab)) return;
     setActiveTab(nextTab);
-    navigate(nextTab === 'schools' ? '/admin/academy-settings' : `/admin/academy-settings?tab=${nextTab}`);
+    navigate(nextTab === defaultTab ? basePath : `${basePath}?tab=${nextTab}`);
   };
 
   const dayNames = [
@@ -1034,25 +1037,23 @@ export default function AcademySettings() {
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] p-6 lg:p-8">
       <PageHeader
-        title={isSalesSettingsTab ? t('salesSettings') : t('academyConfiguration')}
-        subtitle={isSalesSettingsTab ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
+        title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
+        subtitle={isSalesSettingsMode ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
         breadcrumbs={[
           { label: t('administration'), href: '/admin' },
-          { label: isSalesSettingsTab ? t('salesSettings') : t('academyConfiguration') },
+          { label: isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration') },
         ]}
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
-          {isSalesSettingsTab ? (
+          {isSalesSettingsMode ? (
             <>
+              <TabsTrigger value="lead-assignment" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <UserRoundCheck />{t('leadAssignment')}
+              </TabsTrigger>
               <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
                 <GitBranch />{t('pipelineStages')}
-              </TabsTrigger>
-              <TabsTrigger value="lead-assignment" asChild className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-                <Link href="/admin/leads">
-                  <UserRoundCheck />{t('leadAssignment')}
-                </Link>
               </TabsTrigger>
               <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
                 <Target />{ceoCopy.settings.title}
@@ -1078,6 +1079,10 @@ export default function AcademySettings() {
             </>
           )}
         </TabsList>
+
+        <TabsContent value="lead-assignment" className="mt-0">
+          <LeadAssignmentContent />
+        </TabsContent>
 
         <TabsContent value="schools" className="mt-0">
           <Card>

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
-import { ceoCopy } from '@/components/ui/ceo-copy';
 import {
   CommandDialog,
   CommandEmpty,
@@ -36,7 +35,6 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   MessagesSquare,
-  Target,
 } from 'lucide-react';
 
 interface SearchItem {
@@ -86,9 +84,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
         { id: 'nav-admin-tasks', type: t('systemAdministration'), title: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-        { id: 'nav-admin-leads', type: t('salesSettings'), title: t('leadAssignment'), href: '/admin/leads', icon: UserRoundCheck },
-        { id: 'nav-admin-pipeline', type: t('salesSettings'), title: t('pipelineStages'), href: '/admin/academy-settings?tab=pipeline', icon: Flame },
-        { id: 'nav-admin-kpi', type: t('salesSettings'), title: ceoCopy.settings.title, href: '/admin/academy-settings?tab=kpi', icon: Target },
+        { id: 'nav-sales-settings', type: t('systemAdministration'), title: t('salesSettings'), href: '/admin/sales-settings', icon: UserRoundCheck },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
       ];
       const salesItems: SearchItem[] = [

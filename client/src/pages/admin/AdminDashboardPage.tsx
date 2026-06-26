@@ -518,14 +518,14 @@ export default function AdminDashboardPage() {
             fact: fullMoney(summary.revenueMonth),
             plan: revenuePlan > 0 ? fullMoney(revenuePlan) : ceoCopy.dashboard.planUnset,
             value: revenueProgress,
-            href: '/admin/academy-settings?tab=kpi',
+            href: '/admin/sales-settings?tab=kpi',
           },
           {
             title: ceoCopy.dashboard.newLeads,
             fact: new Intl.NumberFormat(locale).format(summary.newLeadsMonth),
             plan: leadsPlan > 0 ? new Intl.NumberFormat(locale).format(leadsPlan) : ceoCopy.dashboard.planUnset,
             value: leadsProgress,
-            href: '/admin/academy-settings?tab=kpi',
+            href: '/admin/sales-settings?tab=kpi',
           },
         ].map((item) => (
           <button

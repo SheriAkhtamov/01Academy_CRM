@@ -35,7 +35,6 @@ import {
   SlidersHorizontal,
   KanbanSquare,
   MessagesSquare,
-  Target,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -47,19 +46,10 @@ interface NavItem {
   icon: any;
 }
 
-interface NavGroup {
+interface NavSection {
   label: string;
   items: NavItem[];
 }
-
-type NavEntry = NavItem | NavGroup;
-
-interface NavSection {
-  label: string;
-  items: NavEntry[];
-}
-
-const isNavGroup = (entry: NavEntry): entry is NavGroup => 'items' in entry;
 
 export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
@@ -82,6 +72,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     }
 
     if (href === '/') return currentPath === '/';
+    if (href === '/admin/sales-settings') {
+      return currentPath === href || currentPath === '/admin/leads';
+    }
     if (href === '/admin/academy-settings') {
       const activeTab = currentParams.get('tab');
       return currentPath === href && (!activeTab || !['pipeline', 'kpi'].includes(activeTab));
@@ -131,14 +124,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('employees'), href: '/employees', icon: Users },
         { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-        {
-          label: t('salesSettings'),
-          items: [
-            { name: t('leadAssignment'), href: '/admin/leads', icon: UserCheck },
-            { name: t('pipelineStages'), href: '/admin/academy-settings?tab=pipeline', icon: Flame },
-            { name: ceoCopy.settings.title, href: '/admin/academy-settings?tab=kpi', icon: Target },
-          ],
-        },
+        { name: t('salesSettings'), href: '/admin/sales-settings', icon: UserCheck },
         { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
         { name: t('navIntegrations'), href: '/integrations', icon: Plug },
       ],
@@ -184,7 +170,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const renderNavItem = (item: NavItem, nested = false) => {
+  const renderNavItem = (item: NavItem) => {
     const Icon = item.icon;
     const isActive = isItemActive(item.href);
 
@@ -196,11 +182,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               onClick={() => onClose?.()}
               className={cn(
                 'sidebar-nav-item group',
-                nested && 'ml-3 py-1.5 text-[13px]',
                 isActive && 'active'
               )}
             >
-              <Icon className={cn('sidebar-nav-item__icon', nested && 'h-4 w-4')} />
+              <Icon className="sidebar-nav-item__icon" />
               <span className="truncate">{item.name}</span>
               {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600" />}
             </div>
@@ -264,22 +249,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                     isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
                   )}
                 >
-                  {visibleItems.map((entry) => {
-                    if (isNavGroup(entry)) {
-                      return (
-                        <div key={`group-${entry.label}`} className="pt-2">
-                          <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            {entry.label}
-                          </div>
-                          <div className="space-y-0.5">
-                            {entry.items.map((item) => renderNavItem(item, true))}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return renderNavItem(entry);
-                  })}
+                  {visibleItems.map((item) => renderNavItem(item))}
                 </div>
               </div>
             );

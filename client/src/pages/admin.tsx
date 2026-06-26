@@ -337,7 +337,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       description: t('academyConfigurationDescription'),
     },
     {
-      href: '/admin/academy-settings?tab=pipeline',
+      href: '/admin/sales-settings',
       icon: UserCheck,
       title: t('salesSettings'),
       description: t('salesSettingsDescription'),

@@ -16,7 +16,6 @@ import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
-import AdminLeadsPage from '@/pages/admin-leads';
 import AcademySettings from '@/pages/academy-settings';
 import AdminTasksPage from '@/pages/admin/tasks';
 import AuditPage from '@/pages/admin/audit';
@@ -197,11 +196,12 @@ function Router() {
             <Admin mode="employees" />
           </WorkspaceGuard>
         )} />
-        <Route path="/admin/leads" component={() => (
+        <Route path="/admin/sales-settings" component={() => (
           <WorkspaceGuard workspace="administration">
-            <AdminLeadsPage />
+            <AcademySettings mode="sales" />
           </WorkspaceGuard>
         )} />
+        <Route path="/admin/leads" component={() => <Redirect to="/admin/sales-settings" />} />
         <Route path="/admin/tasks" component={() => (
           <WorkspaceGuard workspace="administration">
             <AdminTasksPage />

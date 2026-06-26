@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Link, useSearch } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -282,17 +282,20 @@ function EmptyTableState({ title, description }: { title: string; description: s
   );
 }
 
+const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'schedule'];
+const salesSettingsTabs = ['pipeline', 'kpi'];
+const allSettingsTabs = [...academyConfigurationTabs, ...salesSettingsTabs];
+
 export default function AcademySettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
+  const [, navigate] = useLocation();
   const requestedTab = new URLSearchParams(routeSearch).get('tab');
   const requestedFilter = new URLSearchParams(routeSearch).get('filter');
-  const [activeTab, setActiveTab] = useState(
-    ['schools', 'rooms', 'courses', 'groups', 'schedule', 'pipeline', 'kpi'].includes(String(requestedTab))
-      ? String(requestedTab)
-      : 'schools',
-  );
+  const requestedTabValue = allSettingsTabs.includes(String(requestedTab)) ? String(requestedTab) : 'schools';
+  const [activeTab, setActiveTab] = useState(requestedTabValue);
+  const isSalesSettingsTab = salesSettingsTabs.includes(activeTab);
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
@@ -323,9 +326,23 @@ export default function AcademySettings() {
     if (companySettings.data) setKpiDraft({ ...DEFAULT_COMPANY_SETTINGS, ...companySettings.data });
   }, [companySettings.data]);
 
+  useEffect(() => {
+    setActiveTab(requestedTabValue);
+  }, [requestedTabValue]);
+
   const invalidate = () => queryClient.invalidateQueries({
     queryKey: ['/api/academy/configuration'],
   });
+
+  const handleTabChange = (nextTab: string) => {
+    if (nextTab === 'lead-assignment') {
+      navigate('/admin/leads');
+      return;
+    }
+    if (!allSettingsTabs.includes(nextTab)) return;
+    setActiveTab(nextTab);
+    navigate(nextTab === 'schools' ? '/admin/academy-settings' : `/admin/academy-settings?tab=${nextTab}`);
+  };
 
   const dayNames = [
     t('monday'),
@@ -1017,39 +1034,49 @@ export default function AcademySettings() {
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] p-6 lg:p-8">
       <PageHeader
-        title={t('academyConfiguration')}
-        subtitle={t('academyConfigurationDescription')}
-        breadcrumbs={[{ label: t('administration'), href: '/admin' }, { label: t('academyConfiguration') }]}
+        title={isSalesSettingsTab ? t('salesSettings') : t('academyConfiguration')}
+        subtitle={isSalesSettingsTab ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
+        breadcrumbs={[
+          { label: t('administration'), href: '/admin' },
+          { label: isSalesSettingsTab ? t('salesSettings') : t('academyConfiguration') },
+        ]}
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
-          <TabsTrigger value="schools" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <Building2 />{t('schools')}
-          </TabsTrigger>
-          <TabsTrigger value="rooms" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <DoorOpen />{t('rooms')}
-          </TabsTrigger>
-          <TabsTrigger value="courses" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <BookOpen />{t('courses')}
-          </TabsTrigger>
-          <TabsTrigger value="groups" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <UsersRound />{t('navGroups')}
-          </TabsTrigger>
-          <TabsTrigger value="schedule" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <Building2 />{t('resourceCalendar')}
-          </TabsTrigger>
-          <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <GitBranch />{t('pipelineStages')}
-          </TabsTrigger>
-          <TabsTrigger value="lead-assignment" asChild className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <Link href="/admin/leads">
-              <UserRoundCheck />{t('leadAssignment')}
-            </Link>
-          </TabsTrigger>
-          <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
-            <Target />{ceoCopy.settings.title}
-          </TabsTrigger>
+          {isSalesSettingsTab ? (
+            <>
+              <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <GitBranch />{t('pipelineStages')}
+              </TabsTrigger>
+              <TabsTrigger value="lead-assignment" asChild className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <Link href="/admin/leads">
+                  <UserRoundCheck />{t('leadAssignment')}
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <Target />{ceoCopy.settings.title}
+              </TabsTrigger>
+            </>
+          ) : (
+            <>
+              <TabsTrigger value="schools" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <Building2 />{t('schools')}
+              </TabsTrigger>
+              <TabsTrigger value="rooms" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <DoorOpen />{t('rooms')}
+              </TabsTrigger>
+              <TabsTrigger value="courses" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <BookOpen />{t('courses')}
+              </TabsTrigger>
+              <TabsTrigger value="groups" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <UsersRound />{t('navGroups')}
+              </TabsTrigger>
+              <TabsTrigger value="schedule" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <Building2 />{t('resourceCalendar')}
+              </TabsTrigger>
+            </>
+          )}
         </TabsList>
 
         <TabsContent value="schools" className="mt-0">

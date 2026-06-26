@@ -435,6 +435,11 @@ export const translations = {
   loginLabel: { en: 'Login', ru: 'Логин' },
   noWorkspaceAssigned: { en: 'No workspace assigned', ru: 'Рабочая область не назначена' },
   systemAdministration: { en: 'System Administration', ru: 'Администрирование системы' },
+  salesSettings: { en: 'Sales settings', ru: 'Настройки продаж' },
+  salesSettingsDescription: {
+    en: 'Manage lead distribution, pipeline stages, and sales goals.',
+    ru: 'Управляйте распределением лидов, этапами воронки и целями продаж.',
+  },
   workspaceLabel: { en: 'Workspace', ru: 'Рабочая область' },
   workspaceAssignmentHint: {
     en: 'The selected workspace determines the employee interface and system access.',
@@ -512,7 +517,7 @@ export const translations = {
 
   // UX improvements — academy configuration, schools, courses and scheduling
   academyConfiguration: { en: 'Academy configuration', ru: 'Настройки академии' },
-  academyConfigurationDescription: { en: 'Manage schools, courses, study groups and pipeline stages.', ru: 'Управляйте школами, курсами, учебными группами и этапами воронки.' },
+  academyConfigurationDescription: { en: 'Manage schools, courses, study groups and resource schedules.', ru: 'Управляйте школами, курсами, учебными группами и расписанием ресурсов.' },
   activeCourse: { en: 'Active course', ru: 'Активный курс' },
   activeCourseDescription: { en: 'The course is available for enrollment and scheduling.', ru: 'Курс доступен для записи и планирования занятий.' },
   activeSchool: { en: 'Active school', ru: 'Активная школа' },

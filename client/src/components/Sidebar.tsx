@@ -35,6 +35,7 @@ import {
   SlidersHorizontal,
   KanbanSquare,
   MessagesSquare,
+  Target,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -46,10 +47,19 @@ interface NavItem {
   icon: any;
 }
 
-interface NavSection {
+interface NavGroup {
   label: string;
   items: NavItem[];
 }
+
+type NavEntry = NavItem | NavGroup;
+
+interface NavSection {
+  label: string;
+  items: NavEntry[];
+}
+
+const isNavGroup = (entry: NavEntry): entry is NavGroup => 'items' in entry;
 
 export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
@@ -63,9 +73,18 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const isItemActive = (href: string) => {
     const currentPath = location.split('?')[0];
+    const currentParams = new URLSearchParams(location.split('?')[1] ?? '');
+    const [hrefPath, hrefSearch] = href.split('?');
+
+    if (hrefSearch) {
+      const hrefParams = new URLSearchParams(hrefSearch);
+      return currentPath === hrefPath && hrefParams.get('tab') === currentParams.get('tab');
+    }
+
     if (href === '/') return currentPath === '/';
     if (href === '/admin/academy-settings') {
-      return currentPath === href || currentPath === '/admin/leads';
+      const activeTab = currentParams.get('tab');
+      return currentPath === href && (!activeTab || !['pipeline', 'kpi'].includes(activeTab));
     }
     return currentPath === href;
   };
@@ -110,9 +129,16 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       label: t('systemAdministration'),
       items: [
         { name: t('employees'), href: '/employees', icon: Users },
-        { name: t('leadAssignment'), href: '/admin/leads', icon: UserCheck },
         { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
+        {
+          label: t('salesSettings'),
+          items: [
+            { name: t('leadAssignment'), href: '/admin/leads', icon: UserCheck },
+            { name: t('pipelineStages'), href: '/admin/academy-settings?tab=pipeline', icon: Flame },
+            { name: ceoCopy.settings.title, href: '/admin/academy-settings?tab=kpi', icon: Target },
+          ],
+        },
         { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
         { name: t('navIntegrations'), href: '/integrations', icon: Plug },
       ],
@@ -156,6 +182,35 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const toggleSection = (label: string) => {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
+
+  const renderNavItem = (item: NavItem, nested = false) => {
+    const Icon = item.icon;
+    const isActive = isItemActive(item.href);
+
+    return (
+      <Tooltip key={item.name + item.href}>
+        <TooltipTrigger asChild>
+          <Link href={item.href}>
+            <div
+              onClick={() => onClose?.()}
+              className={cn(
+                'sidebar-nav-item group',
+                nested && 'ml-3 py-1.5 text-[13px]',
+                isActive && 'active'
+              )}
+            >
+              <Icon className={cn('sidebar-nav-item__icon', nested && 'h-4 w-4')} />
+              <span className="truncate">{item.name}</span>
+              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600" />}
+            </div>
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="hidden md:block">
+          {item.name}
+        </TooltipContent>
+      </Tooltip>
+    );
   };
 
   return (
@@ -209,32 +264,21 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                     isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
                   )}
                 >
-                  {visibleItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = isItemActive(item.href);
+                  {visibleItems.map((entry) => {
+                    if (isNavGroup(entry)) {
+                      return (
+                        <div key={`group-${entry.label}`} className="pt-2">
+                          <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                            {entry.label}
+                          </div>
+                          <div className="space-y-0.5">
+                            {entry.items.map((item) => renderNavItem(item, true))}
+                          </div>
+                        </div>
+                      );
+                    }
 
-                    return (
-                      <Tooltip key={item.name + item.href}>
-                        <TooltipTrigger asChild>
-                          <Link href={item.href}>
-                            <div
-                              onClick={() => onClose?.()}
-                              className={cn(
-                                'sidebar-nav-item group',
-                                isActive && 'active'
-                              )}
-                            >
-                              <Icon className="sidebar-nav-item__icon" />
-                              <span className="truncate">{item.name}</span>
-                              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600" />}
-                            </div>
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="hidden md:block">
-                          {item.name}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
+                    return renderNavItem(entry);
                   })}
                 </div>
               </div>

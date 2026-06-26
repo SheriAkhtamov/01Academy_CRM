@@ -286,7 +286,7 @@ export default function AdminLeadsPage() {
       <PageHeader
         title={t('leadAssignment')}
         subtitle={t('leadAssignmentSubtitle')}
-        breadcrumbs={[{ label: t('systemAdministration'), href: '/admin' }, { label: t('navLeads') }]}
+        breadcrumbs={[{ label: t('administration'), href: '/admin' }, { label: t('salesSettings') }, { label: t('leadAssignment') }]}
       />
 
       <div className="flex flex-col gap-5">

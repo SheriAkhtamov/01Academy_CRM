@@ -1,6 +1,6 @@
 import type { User } from "./schema";
 
-export type SanitizedUser = Omit<User, "password">;
+export type SanitizedUser = Omit<User, "password" | "credentialPasswordCiphertext">;
 
 export type AnonymousSession = {
   kind: "anonymous";

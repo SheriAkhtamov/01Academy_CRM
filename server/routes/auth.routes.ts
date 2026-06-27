@@ -10,6 +10,7 @@ import { t } from '../lib/i18n';
 import { appConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getLinkedAccountId } from '@shared/account-switching';
+import { encryptCredentialPassword } from '../services/credential-password';
 
 const router = Router();
 
@@ -178,6 +179,7 @@ router.patch('/me/credentials', requireAuth, async (req: Request, res: Response)
             }
 
             updateData.password = await authService.hashPassword(newPassword);
+            updateData.credentialPasswordCiphertext = encryptCredentialPassword(newPassword);
             passwordChanged = true;
         }
 

@@ -229,14 +229,21 @@ export const translations = {
     ru: 'Оставьте поля пароля пустыми, если нужно изменить только данные профиля.',
   },
   passwordResetDescription: { en: 'A new temporary password has been generated for this user.', ru: 'Для этого пользователя сгенерирован новый временный пароль.' },
-  passwordResetHint: { en: 'Current passwords are not stored in readable form. Reset to generate a new temporary password.', ru: 'Текущие пароли не хранятся в читаемом виде. Выполните сброс, чтобы сгенерировать новый временный пароль.' },
+  passwordHiddenForNonAdministration: {
+    en: 'The password is visible only to employees in the Administration workspace.',
+    ru: 'Пароль виден только сотрудникам из воркспейса администрирования.',
+  },
   passwordResetSuccessfullyTitle: { en: 'Password reset successfully', ru: 'Пароль успешно сброшен' },
   passwordsDoNotMatch: { en: 'Passwords do not match', ru: 'Пароли не совпадают' },
   passwordTooShort: { en: 'Password must contain at least 8 characters', ru: 'Пароль должен содержать минимум 8 символов' },
+  passwordUnavailableAdminHint: {
+    en: 'The previous password cannot be restored from the hash. Reset or set a new password to show it here.',
+    ru: 'Предыдущий пароль нельзя восстановить из хэша. Сбросьте или задайте новый пароль, чтобы он появился здесь.',
+  },
   saveCredentials: { en: 'Save credentials', ru: 'Сохранить доступ' },
-  temporaryPasswordVisibleHint: {
-    en: 'This password is visible only after creation, reset, or manual update. Copy it before closing if needed.',
-    ru: 'Этот пароль виден только после создания, сброса или ручной смены. При необходимости скопируйте его до закрытия окна.',
+  storedCredentialPasswordHint: {
+    en: 'This is the current saved password for this employee account.',
+    ru: 'Это текущий сохранённый пароль от аккаунта сотрудника.',
   },
   payment: { en: 'Payment', ru: 'Оплата' },
   paymentDiscountFamily15: { en: 'Family 15%', ru: 'Семейная 15%' },

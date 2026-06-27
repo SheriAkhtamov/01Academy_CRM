@@ -23,6 +23,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: varchar("email", { length: 255 }).notNull(),
   password: text("password").notNull(),
+  credentialPasswordCiphertext: text("credential_password_ciphertext"),
   fullName: varchar("full_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 50 }),
   dateOfBirth: timestamp("date_of_birth"),
@@ -664,6 +665,7 @@ export const savedAccounts = pgTable("saved_accounts", {
 export const insertUserSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  credentialPasswordCiphertext: z.string().optional().nullable(),
   fullName: z.string().min(1),
   phone: z.string().optional(),
   dateOfBirth: z.coerce.date().optional().nullable(),

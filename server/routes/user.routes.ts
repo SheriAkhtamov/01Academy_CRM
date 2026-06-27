@@ -7,6 +7,10 @@ import { requireAuth, requireAdministration } from '../middleware/auth.middlewar
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
 import { ACADEMY_WORKSPACES, isLeadershipWorkspace, type AcademyWorkspace } from '@shared/academy';
+import {
+    decryptCredentialPassword,
+    encryptCredentialPassword,
+} from '../services/credential-password';
 
 const router = Router();
 const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
@@ -70,6 +74,28 @@ const findUserByLogin = async (login: string, exceptUserId?: number) => {
         user.id !== exceptUserId
     );
 };
+
+const canViewCredentialPassword = (req: any) => req.user?.workspace === 'administration';
+
+const buildCredentialPayload = (user: {
+    id: number;
+    fullName: string;
+    email: string;
+    position?: string | null;
+    workspace: string;
+    credentialPasswordCiphertext?: string | null;
+}, canViewPassword: boolean, fallbackPassword?: string) => ({
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    position: user.position,
+    workspace: user.workspace,
+    temporaryPassword: canViewPassword
+        ? fallbackPassword ?? decryptCredentialPassword(user.credentialPasswordCiphertext)
+        : undefined,
+    passwordStored: Boolean(user.credentialPasswordCiphertext || fallbackPassword),
+    passwordVisibleToAdministration: canViewPassword,
+});
 
 const syncAcademyTeacherForUser = async (user: {
     id: number;
@@ -158,6 +184,7 @@ router.post('/', requireAdministration, async (req, res) => {
         const newUser = await authService.createUser({
             email,
             password: temporaryPassword,
+            credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
             fullName,
             phone: phone || null,
             position: position || null,
@@ -184,7 +211,7 @@ router.post('/', requireAdministration, async (req, res) => {
 
         res.json({
             ...authService.sanitizeUser(newUser),
-            temporaryPassword
+            temporaryPassword: canViewCredentialPassword(req) ? temporaryPassword : undefined,
         });
     } catch (error: any) {
         logger.error('Error creating user', { error });
@@ -209,13 +236,7 @@ router.get('/:id/credentials', requireAdministration, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        res.json({
-            id: user.id,
-            fullName: user.fullName,
-            email: user.email,
-            position: user.position,
-            workspace: user.workspace,
-        });
+        res.json(buildCredentialPayload(user, canViewCredentialPassword(req)));
     } catch (error) {
         logger.error('Error fetching user credentials', { error, userId: req.params.id });
         res.status(500).json({ error: 'Failed to fetch credentials' });
@@ -290,6 +311,7 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
             }
 
             updateData.password = await authService.hashPassword(newPassword);
+            updateData.credentialPasswordCiphertext = encryptCredentialPassword(newPassword);
             plainPassword = newPassword;
             passwordChanged = true;
         }
@@ -315,12 +337,11 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
         });
 
         res.json({
-            id: updatedUser.id,
-            fullName: updatedUser.fullName,
-            email: updatedUser.email,
-            position: updatedUser.position,
-            workspace: updatedUser.workspace,
-            temporaryPassword: plainPassword,
+            ...buildCredentialPayload(
+                updatedUser,
+                canViewCredentialPassword(req),
+                plainPassword,
+            ),
             loginChanged,
             passwordChanged,
         });
@@ -350,7 +371,10 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
         const temporaryPassword = crypto.randomBytes(12).toString('base64url');
         const hashedPassword = await authService.hashPassword(temporaryPassword);
 
-        await storage.updateUser(id, { password: hashedPassword });
+        const updatedUser = await storage.updateUser(id, {
+            password: hashedPassword,
+            credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
+        });
 
         await storage.createAuditLog({
             userId: req.user!.id,
@@ -365,14 +389,11 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
             }],
         });
 
-        res.json({
-            id: user.id,
-            fullName: user.fullName,
-            email: user.email,
-            position: user.position,
-            workspace: user.workspace,
+        res.json(buildCredentialPayload(
+            updatedUser,
+            canViewCredentialPassword(req),
             temporaryPassword,
-        });
+        ));
     } catch (error) {
         logger.error('Error resetting user password', { error, userId: req.params.id });
         res.status(500).json({ error: 'Failed to reset password' });

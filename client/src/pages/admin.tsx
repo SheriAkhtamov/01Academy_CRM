@@ -328,7 +328,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       devLog('Fetching credentials for user ID:', userId);
 
       const credentials = await apiRequest('GET', `/api/users/${userId}/credentials`);
-      devLog('Credentials received:', credentials);
+      devLog('Credentials received for user ID:', userId);
       setUserCredentials(credentials);
       setShowCredentialsModal(true);
     } catch (error) {
@@ -1000,7 +1000,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     {userCredentials.temporaryPassword || t('passwordNotAvailable')}
                   </div>
                   <p className="text-xs text-slate-500">
-                    {userCredentials.temporaryPassword ? t('temporaryPasswordVisibleHint') : t('passwordResetHint')}
+                    {userCredentials.temporaryPassword
+                      ? t('storedCredentialPasswordHint')
+                      : userCredentials.passwordVisibleToAdministration
+                        ? t('passwordUnavailableAdminHint')
+                        : t('passwordHiddenForNonAdministration')}
                   </p>
                 </div>
 

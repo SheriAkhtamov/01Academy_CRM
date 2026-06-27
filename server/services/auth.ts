@@ -39,7 +39,7 @@ class AuthService {
   }
 
   sanitizeUser(user: User): SanitizedUser {
-    const { password, ...sanitizedUser } = user;
+    const { password, credentialPasswordCiphertext, ...sanitizedUser } = user;
     return sanitizedUser;
   }
 }

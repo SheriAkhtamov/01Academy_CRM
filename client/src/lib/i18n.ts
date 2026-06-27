@@ -187,10 +187,6 @@ export const translations = {
   paidReferrals: { en: 'Paid Referrals', ru: 'Оплатившие рефералы' },
   parentLabel: { en: 'Parent:', ru: 'Родитель:' },
   password: { en: 'Password', ru: 'Пароль' },
-  adminCredentialsWarning: {
-    en: 'Changing login or password immediately changes how this employee signs in. Confirm the change before sharing new credentials.',
-    ru: 'Изменение логина или пароля сразу меняет вход сотрудника. Подтвердите действие перед передачей новых данных.',
-  },
   changePassword: { en: 'Change password', ru: 'Сменить пароль' },
   confirmCredentialsUpdateDescription: {
     en: 'This will change login credentials for:',

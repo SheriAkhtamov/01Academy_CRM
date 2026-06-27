@@ -1047,10 +1047,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   />
                 </div>
 
-                <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                  {t('adminCredentialsWarning')}
-                </p>
-
                 <div className="flex flex-wrap justify-end gap-2 pt-2">
                   {userCredentials.id && (
                     <Button

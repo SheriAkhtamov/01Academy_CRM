@@ -132,8 +132,8 @@ router.post('/chatplace', async (req, res) => {
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
       const sourceId = await ensureIncomingSourceId(client, {
-        code: 'instagram_dm',
-        name: 'Instagram Direct',
+        code: 'instagram',
+        name: 'Instagram',
         channel: 'instagram',
       });
 
@@ -189,7 +189,7 @@ router.post('/google-forms', async (req, res) => {
 
       const sourceId = await ensureIncomingSourceId(client, {
         code: 'website',
-        name: 'Website',
+        name: 'Сайт',
         channel: 'website',
       });
 

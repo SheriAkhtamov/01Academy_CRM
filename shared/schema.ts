@@ -572,7 +572,6 @@ export const instagramAccounts = pgTable("instagram_accounts", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   igUserUnique: uniqueIndex("instagram_accounts_ig_user_unique").on(table.igUserId),
-  sourceUnique: uniqueIndex("instagram_accounts_source_unique").on(table.sourceId),
   statusIdx: index("instagram_accounts_status_idx").on(table.status),
 }));
 

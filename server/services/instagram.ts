@@ -196,31 +196,24 @@ export const exchangeInstagramAuthorizationCode = async (code: string, connected
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const existingAccount = await client.query(
-      `SELECT id, source_id FROM instagram_accounts WHERE ig_user_id = $1 FOR UPDATE`,
+    await client.query(
+      `SELECT id FROM instagram_accounts WHERE ig_user_id = $1 FOR UPDATE`,
       [igUserId],
     );
-    let sourceId = existingAccount.rows[0]?.source_id ? Number(existingAccount.rows[0].source_id) : null;
-
-    if (!sourceId) {
-      const sourceCode = `instagram_dm_${igUserId}`.slice(0, 120);
-      const source = await client.query(
-        `INSERT INTO academy_lead_sources
-          (code, name, channel, is_system, is_active)
-         VALUES ($1,$2,'instagram',true,true)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, is_active = true, updated_at = NOW()
-         RETURNING id`,
-        [sourceCode, `Instagram @${username}`],
-      );
-      sourceId = Number(source.rows[0].id);
-    } else {
-      await client.query(
-        `UPDATE academy_lead_sources
-         SET name = $1, channel = 'instagram', is_active = true, updated_at = NOW()
-         WHERE id = $2`,
-        [`Instagram @${username}`, sourceId],
-      );
-    }
+    const source = await client.query(
+      `INSERT INTO academy_lead_sources
+        (code, name, channel, is_system, is_active)
+       VALUES ($1,$2,'instagram',true,true)
+       ON CONFLICT (code) DO UPDATE
+       SET name = EXCLUDED.name,
+           channel = 'instagram',
+           is_system = true,
+           is_active = true,
+           updated_at = NOW()
+       RETURNING id`,
+      ['instagram', 'Instagram'],
+    );
+    const sourceId = Number(source.rows[0].id);
 
     const expiresAt = longToken.expires_in
       ? new Date(Date.now() + Number(longToken.expires_in) * 1000)

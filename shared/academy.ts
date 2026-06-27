@@ -43,6 +43,14 @@ export const LEAD_STATUSES = [
   { code: "not_now", name: "Не сейчас", translationKey: "leadStatusNotNow", color: "#64748b", sortOrder: 100, activePipeline: false },
 ] as const;
 
+export const DEFAULT_LEAD_SOURCES = [
+  { code: "telegram", name: "Telegram", channel: "telegram" },
+  { code: "instagram", name: "Instagram", channel: "instagram" },
+  { code: "referral", name: "Рекомендация знакомых", channel: "referral" },
+  { code: "website", name: "Сайт", channel: "website" },
+  { code: "facebook", name: "Facebook", channel: "facebook" },
+] as const;
+
 export const ACTIVE_PIPELINE_STATUSES = LEAD_STATUSES
   .filter((status) => status.activePipeline)
   .map((status) => status.code);

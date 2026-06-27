@@ -162,6 +162,13 @@
       "when": 1782921600000,
       "tag": "0022_add_visible_credential_password",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1783008000000,
+      "tag": "0023_add_default_lead_sources",
+      "breakpoints": true
     }
   ]
 }

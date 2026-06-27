@@ -1121,6 +1121,7 @@ function LeadForm({
 }) {
   const selectedCourseId = Number(form.watch('courseId')) || null;
   const selectedGroupId = form.watch('enrolledGroupId');
+  const activeSources = (data.sources ?? []).filter((source: any) => source.isActive !== false);
   const availableGroups = (data.groups ?? []).filter((group: any) => {
     const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
     const matchesCourse = !selectedCourseId || Number(group.courseId) === selectedCourseId;
@@ -1274,7 +1275,7 @@ function LeadForm({
                 <FormControl><SelectTrigger><SelectValue placeholder={t('selectSource')} /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectGroup>
-                    {(data.sources ?? []).map((source: any) => (
+                    {activeSources.map((source: any) => (
                       <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
                     ))}
                   </SelectGroup>

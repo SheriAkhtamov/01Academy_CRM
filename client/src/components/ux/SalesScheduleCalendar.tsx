@@ -177,8 +177,8 @@ export function SalesScheduleCalendar({
     [weekStart],
   );
   const allEvents = useMemo(
-    () => buildSalesScheduleEvents({ groups: scheduleGroups, lessons, courses, weekStart }),
-    [courses, lessons, scheduleGroups, weekStart],
+    () => buildSalesScheduleEvents({ groups: scheduleGroups, lessons, weekStart }),
+    [lessons, scheduleGroups, weekStart],
   );
   const visibleEvents = useMemo(
     () => allEvents.filter((event) => selectedGroupIds.has(event.groupId)),

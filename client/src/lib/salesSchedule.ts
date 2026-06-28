@@ -13,6 +13,7 @@ export interface SalesScheduleGroup {
   currentStudents?: number | null;
   reservedStudents?: number | null;
   schedule?: AcademyScheduleItem[] | null;
+  lessonDurationMinutes?: number | null;
   status?: string | null;
   startDate?: string | null;
   endDate?: string | null;
@@ -37,7 +38,6 @@ export interface SalesScheduleLesson {
 export interface SalesScheduleCourse {
   id: number;
   name?: string | null;
-  lessonDurationMinutes?: number | null;
 }
 
 export interface SalesScheduleSchool {
@@ -136,20 +136,15 @@ const toEvent = (
 export function buildSalesScheduleEvents({
   groups,
   lessons,
-  courses,
   weekStart,
 }: {
   groups: SalesScheduleGroup[];
   lessons: SalesScheduleLesson[];
-  courses: SalesScheduleCourse[];
   weekStart: Date;
 }): SalesScheduleEvent[] {
   const normalizedWeekStart = startOfDay(weekStart);
   const weekEnd = addDays(normalizedWeekStart, 7);
   const groupById = new Map(groups.map((group) => [group.id, group]));
-  const durationByCourseId = new Map(
-    courses.map((course) => [course.id, Math.max(15, Number(course.lessonDurationMinutes || 60))]),
-  );
 
   const actualEvents = lessons.flatMap((lesson) => {
     if (lesson.status === 'cancelled') return [];
@@ -167,7 +162,7 @@ export function buildSalesScheduleEvents({
 
   const recurringEvents = groups.flatMap((group) => {
     if (group.status === 'completed') return [];
-    const durationMinutes = durationByCourseId.get(Number(group.courseId)) ?? 60;
+    const durationMinutes = Math.max(15, Number(group.lessonDurationMinutes || 60));
 
     return (group.schedule ?? []).flatMap((item, scheduleIndex) => {
       const dayOfWeek = Number(item.dayOfWeek);

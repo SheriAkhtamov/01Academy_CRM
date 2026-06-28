@@ -89,11 +89,7 @@ interface Course {
   name: string;
   slug: string;
   ageCategory: string;
-  lessonCount: number;
-  lessonDurationMinutes: number;
-  durationDays: number;
   description?: string | null;
-  frequency?: string | null;
   basePriceUzs: number;
   isActive: boolean;
 }
@@ -130,6 +126,10 @@ interface Group {
   teacherId?: number | null;
   teacherName?: string | null;
   schedule: WeekScheduleItem[];
+  lessonCount: number;
+  lessonDurationMinutes: number;
+  durationDays: number;
+  frequency?: string | null;
   maxStudents: number;
   currentStudents: number;
   reservedStudents: number;
@@ -186,12 +186,7 @@ const roomSchema = z.object({
 
 const courseSchema = z.object({
   name: z.string().trim().min(1),
-  slug: z.string().trim().min(1).regex(/^[a-z0-9-]+$/),
   ageCategory: z.string().trim().min(1),
-  lessonCount: z.coerce.number().int().min(1),
-  lessonDurationMinutes: z.coerce.number().int().min(15),
-  durationDays: z.coerce.number().int().min(1),
-  frequency: z.string(),
   description: z.string(),
   basePriceUzs: z.coerce.number().int().min(0),
   isActive: z.boolean(),
@@ -211,6 +206,10 @@ const groupSchema = z.object({
   courseId: z.string().min(1),
   schoolId: z.string().min(1),
   roomId: z.string().min(1),
+  lessonCount: z.coerce.number().int().min(1),
+  lessonDurationMinutes: z.coerce.number().int().min(15),
+  durationDays: z.coerce.number().int().min(1),
+  frequency: z.string(),
   status: z.enum(['open', 'in_progress', 'completed']),
   startDate: z.string(),
   endDate: z.string(),
@@ -270,6 +269,20 @@ const slugify = (value: string) => value
   .replace(/[^a-z0-9а-яё]+/gi, '-')
   .replace(/[^a-z0-9-]+/g, '')
   .replace(/^-+|-+$/g, '');
+
+const buildUniqueCourseSlug = (name: string, courses: Course[], ignoredCourseId?: number | null) => {
+  const baseSlug = slugify(name) || 'course';
+  const usedSlugs = new Set(
+    courses
+      .filter((course) => course.id !== ignoredCourseId)
+      .map((course) => course.slug),
+  );
+  if (!usedSlugs.has(baseSlug)) return baseSlug;
+
+  let suffix = 2;
+  while (usedSlugs.has(`${baseSlug}-${suffix}`)) suffix += 1;
+  return `${baseSlug}-${suffix}`;
+};
 
 function EmptyTableState({ title, description }: { title: string; description: string }) {
   return (
@@ -382,12 +395,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     resolver: zodResolver(courseSchema),
     defaultValues: {
       name: '',
-      slug: '',
       ageCategory: '',
-      lessonCount: 10,
-      lessonDurationMinutes: 120,
-      durationDays: 30,
-      frequency: '',
       description: '',
       basePriceUzs: 0,
       isActive: true,
@@ -413,6 +421,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseId: '',
       schoolId: '',
       roomId: '',
+      lessonCount: 10,
+      lessonDurationMinutes: 120,
+      durationDays: 30,
+      frequency: '',
       status: 'open',
       startDate: '',
       endDate: '',
@@ -466,9 +478,17 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const saveCourse = useMutation({
     mutationFn: async (values: CourseValues) => {
+      const payload = {
+        ...values,
+        slug: editingCourse?.slug ?? buildUniqueCourseSlug(
+          values.name,
+          configuration.data?.courses ?? [],
+          editingCourse?.id,
+        ),
+      };
       const course = editingCourse
-        ? await apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}`, values)
-        : await apiRequest('POST', '/api/academy/courses', values);
+        ? await apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}`, payload)
+        : await apiRequest('POST', '/api/academy/courses', payload);
 
       const courseId = Number(course.id);
       const teachers = configuration.data?.teachers ?? [];
@@ -506,6 +526,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         schoolId: Number(values.schoolId),
         roomId: Number(values.roomId),
         schedule: groupSchedule,
+        lessonCount: Number(values.lessonCount),
+        lessonDurationMinutes: Number(values.lessonDurationMinutes),
+        durationDays: Number(values.durationDays),
+        frequency: values.frequency,
         maxStudents: 12,
         status: values.status,
         startDate: values.startDate || null,
@@ -651,23 +675,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setEditingCourse(course ?? null);
     courseForm.reset(course ? {
       name: course.name,
-      slug: course.slug,
       ageCategory: course.ageCategory,
-      lessonCount: course.lessonCount,
-      lessonDurationMinutes: course.lessonDurationMinutes,
-      durationDays: course.durationDays || 1,
-      frequency: course.frequency ?? '',
       description: course.description ?? '',
       basePriceUzs: course.basePriceUzs ?? 0,
       isActive: course.isActive,
     } : {
       name: '',
-      slug: '',
       ageCategory: '',
-      lessonCount: 10,
-      lessonDurationMinutes: 120,
-      durationDays: 30,
-      frequency: '',
       description: '',
       basePriceUzs: 0,
       isActive: true,
@@ -685,6 +699,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseId: String(group.courseId),
       schoolId: String(group.schoolId),
       roomId: String(group.roomId),
+      lessonCount: group.lessonCount || 10,
+      lessonDurationMinutes: group.lessonDurationMinutes || 120,
+      durationDays: group.durationDays || 30,
+      frequency: group.frequency ?? '',
       status: ['open', 'in_progress', 'completed'].includes(group.status)
         ? group.status as GroupValues['status']
         : 'open',
@@ -695,6 +713,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseId: '',
       schoolId: '',
       roomId: '',
+      lessonCount: 10,
+      lessonDurationMinutes: 120,
+      durationDays: 30,
+      frequency: '',
       status: 'open',
       startDate: '',
       endDate: '',
@@ -859,24 +881,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       ),
     },
     {
-      key: 'lessonCount',
-      header: t('lessonsCount'),
+      key: 'basePrice',
+      header: t('basePrice'),
       sortable: true,
-      accessor: (row) => row.lessonCount,
-    },
-    {
-      key: 'lessonDurationMinutes',
-      header: t('lessonDuration'),
-      sortable: true,
-      accessor: (row) => row.lessonDurationMinutes,
-      render: (row) => `${row.lessonDurationMinutes} ${t('minuteShort')}`,
-    },
-    {
-      key: 'durationDays',
-      header: t('courseDurationDays'),
-      sortable: true,
-      accessor: (row) => row.durationDays,
-      render: (row) => `${row.durationDays} ${t('dayShort')}`,
+      accessor: (row) => row.basePriceUzs,
+      render: (row) => `${Number(row.basePriceUzs || 0).toLocaleString('ru-RU')}${t('uzs')}`,
     },
     {
       key: 'status',
@@ -943,6 +952,22 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           {(row.schedule?.length ?? 0) > 3
             ? <Badge variant="secondary">+{row.schedule.length - 3}</Badge>
             : null}
+        </div>
+      ),
+    },
+    {
+      key: 'learningPlan',
+      header: t('groupLearningPlan'),
+      sortable: true,
+      accessor: (row) => row.lessonCount,
+      render: (row) => (
+        <div className="min-w-44">
+          <p className="font-medium text-foreground">
+            {row.lessonCount} {t('lessonsCount')} · {row.lessonDurationMinutes} {t('minuteShort')}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {row.durationDays} {t('dayShort')}{row.frequency ? ` · ${row.frequency}` : ''}
+          </p>
         </div>
       ),
     },
@@ -1428,16 +1453,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <FormField control={courseForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
                     <FormLabel>{t('courseName')}</FormLabel>
-                    <FormControl><Input {...field} onBlur={(event) => {
-                      field.onBlur();
-                      if (!courseForm.getValues('slug')) courseForm.setValue('slug', slugify(event.target.value));
-                    }} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="slug" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('code')}</FormLabel>
                     <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1449,38 +1464,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={courseForm.control} name="lessonCount" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('lessonsCount')}</FormLabel>
-                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="lessonDurationMinutes" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('lessonDurationMinutes')}</FormLabel>
-                    <FormControl><Input type="number" min="15" step="15" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="durationDays" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('courseDurationDays')}</FormLabel>
-                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
                 <FormField control={courseForm.control} name="basePriceUzs" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('basePrice')}</FormLabel>
                     <FormControl><Input type="number" min="0" step="1000" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="frequency" render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel>{t('frequency')}</FormLabel>
-                    <FormControl><Input {...field} placeholder={t('frequencyPlaceholder')} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -1640,6 +1627,34 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="lessonCount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('lessonsCount')}</FormLabel>
+                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="lessonDurationMinutes" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('lessonDurationMinutes')}</FormLabel>
+                    <FormControl><Input type="number" min="15" step="15" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="durationDays" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('courseDurationDays')}</FormLabel>
+                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={groupForm.control} name="frequency" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('frequency')}</FormLabel>
+                    <FormControl><Input {...field} placeholder={t('frequencyPlaceholder')} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />

@@ -20,6 +20,7 @@ describe('sales schedule calendar', () => {
       { dayOfWeek: 1, startTime: '10:00', endTime: '11:30' },
       { dayOfWeek: 3, startTime: '15:00', endTime: '16:30' },
     ],
+    lessonDurationMinutes: 90,
     status: 'in_progress',
   }];
 
@@ -27,7 +28,6 @@ describe('sales schedule calendar', () => {
     const events = buildSalesScheduleEvents({
       groups,
       lessons: [],
-      courses: [{ id: 10, lessonDurationMinutes: 90 }],
       weekStart,
     });
 
@@ -49,7 +49,6 @@ describe('sales schedule calendar', () => {
         durationMinutes: 90,
         status: 'scheduled',
       }],
-      courses: [{ id: 10, lessonDurationMinutes: 90 }],
       weekStart,
     });
 

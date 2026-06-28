@@ -1260,9 +1260,7 @@ const recalculateStudentMetrics = async (studentId: number) => {
      WHERE a.student_id = $1 AND a.status = 'present' AND l.status = 'conducted'`,
     [studentId],
   );
-  const course = student.courseId
-    ? await queryOne(`SELECT lesson_count FROM academy_courses WHERE id = $1`, [student.courseId])
-    : null;
+  const group = await queryOne(`SELECT lesson_count FROM academy_groups WHERE id = $1`, [student.groupId]);
   const surveyRows = await query<{ score: number }>(
     `SELECT score FROM academy_lesson_surveys WHERE student_id = $1`,
     [studentId],
@@ -1270,7 +1268,8 @@ const recalculateStudentMetrics = async (studentId: number) => {
 
   const presentCount = Number(presentRows[0]?.count ?? 0);
   const attendancePercent = calculateAttendancePercent(presentCount, conductedLessons.length);
-  const progressPercent = calculateProgressPercent(presentCount, Number(course?.lessonCount ?? conductedLessons.length));
+  const totalLessons = Number(group?.lessonCount) > 0 ? Number(group?.lessonCount) : conductedLessons.length;
+  const progressPercent = calculateProgressPercent(presentCount, totalLessons);
   const satisfactionAvg = calculateAverage(surveyRows.map((row) => Number(row.score))) ?? 0;
   const riskFlags = [
     attendancePercent > 0 && attendancePercent < 70 ? 'attendance_below_70' : null,
@@ -1555,7 +1554,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       : query(`SELECT * FROM academy_teachers ORDER BY full_name`),
     isTeacherScoped
       ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
-          sc.name AS school_name,
+          sc.name AS school_name, r.name AS room_name,
           (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students,
           (SELECT COUNT(*)::int FROM academy_leads l
            WHERE l.enrolled_group_id = g.id
@@ -1569,7 +1568,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           WHERE g.teacher_id = $1
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
-          sc.name AS school_name,
+          sc.name AS school_name, r.name AS room_name,
           (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students,
           (SELECT COUNT(*)::int FROM academy_leads l
            WHERE l.enrolled_group_id = g.id
@@ -2422,7 +2421,7 @@ router.get('/schedule/resource', async (req, res) => {
       queryOne(`SELECT id, name FROM academy_schools WHERE id = $1`, [schoolId]),
       query(`SELECT * FROM academy_rooms WHERE school_id = $1 AND is_active = true ORDER BY name`, [schoolId]),
       query(
-        `SELECT g.*, c.name AS course_name, c.lesson_duration_minutes AS duration_minutes,
+        `SELECT g.*, c.name AS course_name, g.lesson_duration_minutes AS duration_minutes,
                 t.full_name AS teacher_name
          FROM academy_groups g
          LEFT JOIN academy_courses c ON c.id = g.course_id
@@ -3273,6 +3272,53 @@ const prepareGroupMutation = async (options: {
   if (!roomId) {
     throw Object.assign(new Error('roomRequired'), { statusCode: 400 });
   }
+  const course = await queryOne(
+    `SELECT id, lesson_count, lesson_duration_minutes, duration_days, frequency
+     FROM academy_courses
+     WHERE id = $1`,
+    [courseId],
+  );
+  if (!course) {
+    throw Object.assign(new Error('Course not found'), { statusCode: 404 });
+  }
+
+  const lessonCount = Number(
+    options.values.lessonCount !== undefined
+      ? options.values.lessonCount
+      : Number(options.oldRow?.lessonCount) > 0
+        ? options.oldRow?.lessonCount
+        : Number(course.lessonCount) > 0
+          ? course.lessonCount
+          : 10,
+  );
+  const lessonDurationMinutes = Number(
+    options.values.lessonDurationMinutes !== undefined
+      ? options.values.lessonDurationMinutes
+      : Number(options.oldRow?.lessonDurationMinutes) >= 15
+        ? options.oldRow?.lessonDurationMinutes
+        : Number(course.lessonDurationMinutes) >= 15
+          ? course.lessonDurationMinutes
+          : 120,
+  );
+  const durationDays = Number(
+    options.values.durationDays !== undefined
+      ? options.values.durationDays
+      : Number(options.oldRow?.durationDays) > 0
+        ? options.oldRow?.durationDays
+        : Number(course.durationDays) > 0
+          ? course.durationDays
+          : 30,
+  );
+  if (lessonCount < 1 || lessonDurationMinutes < 15 || durationDays < 1) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  options.values.lessonCount = Math.round(lessonCount);
+  options.values.lessonDurationMinutes = Math.round(lessonDurationMinutes);
+  options.values.durationDays = Math.round(durationDays);
+  options.values.frequency = options.values.frequency !== undefined
+    ? nullableText(options.values.frequency)
+    : nullableText(options.oldRow?.frequency ?? course.frequency);
+
   if (maxStudents < 1 || maxStudents > 12) {
     throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
   }
@@ -3341,6 +3387,7 @@ const prepareLessonMutation = async (options: {
   const durationMinutes = Number(
     options.values.durationMinutes
       ?? options.oldRow?.durationMinutes
+      ?? group.lessonDurationMinutes
       ?? (await queryOne(`SELECT lesson_duration_minutes FROM academy_courses WHERE id = $1`, [courseId]))?.lessonDurationMinutes
       ?? 120,
   );
@@ -4196,8 +4243,8 @@ registerSimpleCrud('rooms', 'academy_rooms', [
 ], { orderBy: 'school_id, is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('courses', 'academy_courses', [
-  'name', 'slug', 'ageCategory', 'lessonCount', 'lessonDurationMinutes', 'durationDays',
-  'description', 'frequency', 'basePriceUzs', 'discountedPriceUzs',
+  'name', 'slug', 'ageCategory',
+  'description', 'basePriceUzs', 'discountedPriceUzs',
   'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
 ], { orderBy: 'is_active DESC, name', requireAdministration: true });
 
@@ -4210,7 +4257,9 @@ registerSimpleCrud('teachers', 'academy_teachers', [
 ], { orderBy: 'full_name', requireAdministration: true });
 
 registerSimpleCrud('groups', 'academy_groups', [
-  'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule', 'maxStudents', 'status', 'startDate', 'endDate',
+  'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule',
+  'lessonCount', 'lessonDurationMinutes', 'durationDays', 'frequency',
+  'maxStudents', 'status', 'startDate', 'endDate',
 ], { orderBy: 'created_at DESC', requireAdministration: true });
 
 registerSimpleCrud('sources', 'academy_lead_sources', [

@@ -152,7 +152,7 @@ const createOutbox = async (
 };
 
 const recalcStudent = async (studentId: number) => {
-  const { rows } = await pool.query(`SELECT group_id, course_id FROM academy_students WHERE id=$1`, [studentId]);
+  const { rows } = await pool.query(`SELECT group_id FROM academy_students WHERE id=$1`, [studentId]);
   const student = rows[0];
   if (!student?.group_id) return;
 
@@ -161,9 +161,7 @@ const recalcStudent = async (studentId: number) => {
   const { rows: present } = await pool.query(
     `SELECT COUNT(*)::int AS c FROM academy_attendance a JOIN academy_lessons l ON l.id=a.lesson_id
      WHERE a.student_id=$1 AND a.status='present' AND l.status='conducted'`, [studentId]);
-  const { rows: course } = student.course_id
-    ? await pool.query(`SELECT lesson_count FROM academy_courses WHERE id=$1`, [student.course_id])
-    : { rows: [] };
+  const { rows: group } = await pool.query(`SELECT lesson_count FROM academy_groups WHERE id=$1`, [student.group_id]);
   const { rows: monthPresent } = await pool.query(
     `SELECT COUNT(*)::int AS c FROM academy_attendance a JOIN academy_lessons l ON l.id=a.lesson_id
      WHERE a.student_id=$1 AND a.status='present' AND l.status='conducted'
@@ -177,7 +175,7 @@ const recalcStudent = async (studentId: number) => {
 
   const presentCount = present[0]?.c ?? 0;
   const conductedCount = conducted.length;
-  const lessonTotal = course[0]?.lesson_count ?? conductedCount;
+  const lessonTotal = Number(group[0]?.lesson_count) > 0 ? Number(group[0].lesson_count) : conductedCount;
   const attendancePercent = conductedCount > 0 ? Math.round((presentCount / conductedCount) * 100) : 0;
   const progressPercent = lessonTotal > 0 ? Math.min(100, Math.round((presentCount / lessonTotal) * 100)) : 0;
   const monthAttendance = (monthConducted[0]?.c ?? 0) > 0

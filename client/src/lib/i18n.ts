@@ -636,6 +636,7 @@ export const translations = {
   schoolsDescription: { en: 'Locations where students attend lessons.', ru: 'Локации, в которых ученики посещают занятия.' },
   selectGroup: { en: 'Select group', ru: 'Выберите группу' },
   selectSchool: { en: 'Select school', ru: 'Выберите школу' },
+  selectTeacher: { en: 'Select teacher', ru: 'Выберите преподавателя' },
   shownInPipeline: { en: 'Shown in pipeline', ru: 'Показывается в воронке' },
   sortOrder: { en: 'Sort order', ru: 'Порядок' },
   teacherAvailability: { en: 'Teacher availability', ru: 'Доступность преподавателя' },
@@ -655,7 +656,7 @@ export const translations = {
   groupCapacityLimit: { en: 'A group can contain from 1 to 12 students.', ru: 'В группе может быть от 1 до 12 учеников.' },
   groupCreated: { en: 'Group created', ru: 'Группа создана' },
   groupExceedsRoomCapacity: { en: 'The group capacity exceeds the room capacity.', ru: 'Вместимость группы превышает вместимость кабинета.' },
-  groupFormDescription: { en: 'Select a course, school, learning plan and weekly timetable. The room and teacher will be checked automatically.', ru: 'Выберите курс, школу, план обучения и недельное расписание. Кабинет и преподаватель будут проверены автоматически.' },
+  groupFormDescription: { en: 'Select a course, school, teacher, learning plan and weekly timetable. Availability will be checked automatically.', ru: 'Выберите курс, школу, преподавателя, план обучения и недельное расписание. Доступность будет проверена автоматически.' },
   groupLearningPlan: { en: 'Learning plan', ru: 'План обучения' },
   groupIsFull: { en: 'This group is already full.', ru: 'В этой группе уже нет свободных мест.' },
   groupName: { en: 'Group name', ru: 'Название группы' },
@@ -687,7 +688,11 @@ export const translations = {
   slotsShort: { en: 'slots', ru: 'сл.' },
   startDate: { en: 'Start date', ru: 'Дата начала' },
   teacherWillBeAssigned: { en: 'The teacher will be assigned automatically', ru: 'Преподаватель будет назначен автоматически' },
+  teacherScheduleWillBeChecked: { en: 'Teacher availability will be checked', ru: 'Доступность преподавателя будет проверена' },
   teacherAssignmentPendingDescription: { en: 'No suitable teacher is available yet. The system will assign one after availability or course access is updated.', ru: 'Подходящего преподавателя пока нет. Система назначит его после обновления доступности или закрепления за курсом.' },
+  teacherNotActive: { en: 'This teacher is not active.', ru: 'Этот преподаватель не активен.' },
+  teacherNotFound: { en: 'Teacher not found.', ru: 'Преподаватель не найден.' },
+  teacherUnavailableForGroup: { en: 'The selected teacher is unavailable for this group schedule.', ru: 'Выбранный преподаватель недоступен для расписания этой группы.' },
   teachersAvailableShort: { en: 'teachers available', ru: 'преп. свободно' },
 
   // ERP resource scheduling

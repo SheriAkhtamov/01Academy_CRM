@@ -206,6 +206,7 @@ const groupSchema = z.object({
   courseId: z.string().min(1),
   schoolId: z.string().min(1),
   roomId: z.string().min(1),
+  teacherId: z.string(),
   lessonCount: z.coerce.number().int().min(1),
   lessonDurationMinutes: z.coerce.number().int().min(15),
   durationDays: z.coerce.number().int().min(1),
@@ -228,6 +229,7 @@ type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
 type GroupValues = z.infer<typeof groupSchema>;
 type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
+const AUTO_TEACHER_VALUE = 'auto';
 
 const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
   if (!Array.isArray(items)) return [];
@@ -421,6 +423,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseId: '',
       schoolId: '',
       roomId: '',
+      teacherId: AUTO_TEACHER_VALUE,
       lessonCount: 10,
       lessonDurationMinutes: 120,
       durationDays: 30,
@@ -520,11 +523,15 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const saveGroup = useMutation({
     mutationFn: (values: GroupValues) => {
+      const teacherId = values.teacherId && values.teacherId !== AUTO_TEACHER_VALUE
+        ? Number(values.teacherId)
+        : null;
       const payload = {
         name: values.name,
         courseId: Number(values.courseId),
         schoolId: Number(values.schoolId),
         roomId: Number(values.roomId),
+        teacherId,
         schedule: groupSchedule,
         lessonCount: Number(values.lessonCount),
         lessonDurationMinutes: Number(values.lessonDurationMinutes),
@@ -534,7 +541,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         status: values.status,
         startDate: values.startDate || null,
         endDate: values.endDate || null,
-        autoAssign: true,
+        autoAssign: !teacherId,
       };
       return editingGroup
         ? apiRequest('PATCH', `/api/academy/groups/${editingGroup.id}`, payload)
@@ -699,6 +706,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseId: String(group.courseId),
       schoolId: String(group.schoolId),
       roomId: String(group.roomId),
+      teacherId: group.teacherId ? String(group.teacherId) : AUTO_TEACHER_VALUE,
       lessonCount: group.lessonCount || 10,
       lessonDurationMinutes: group.lessonDurationMinutes || 120,
       durationDays: group.durationDays || 30,
@@ -713,6 +721,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseId: '',
       schoolId: '',
       roomId: '',
+      teacherId: AUTO_TEACHER_VALUE,
       lessonCount: 10,
       lessonDurationMinutes: 120,
       durationDays: 30,
@@ -761,11 +770,18 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     [groups, requestedFilter],
   );
   const selectedGroupSchoolId = groupForm.watch('schoolId');
+  const selectedGroupTeacherId = groupForm.watch('teacherId');
   const groupRooms = useMemo(
     () => rooms.filter((room) => (
       room.isActive !== false && String(room.schoolId) === selectedGroupSchoolId
     )),
     [rooms, selectedGroupSchoolId],
+  );
+  const groupTeachers = useMemo(
+    () => teachers
+      .filter((teacher) => teacher.status === 'active' || String(teacher.id) === selectedGroupTeacherId)
+      .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
+    [selectedGroupTeacherId, teachers],
   );
   const schoolNameById = useMemo(
     () => new Map(schools.map((school) => [school.id, school.name])),
@@ -1630,6 +1646,28 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField control={groupForm.control} name="teacherId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('teacher')}</FormLabel>
+                    <Select value={field.value || AUTO_TEACHER_VALUE} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value={AUTO_TEACHER_VALUE}>{t('teacherWillBeAssigned')}</SelectItem>
+                          {groupTeachers.map((teacher) => (
+                            <SelectItem key={teacher.id} value={String(teacher.id)}>
+                              {teacher.fullName}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {groupTeachers.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">{t('noTeachers')}</p>
+                    ) : null}
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={groupForm.control} name="lessonCount" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('lessonsCount')}</FormLabel>
@@ -1678,7 +1716,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <div>
                   <p className="text-sm font-medium text-foreground">{t('schedule')}</p>
                   <p className="text-xs text-muted-foreground">
-                    {t('roomScheduleRule')} · {t('teacherWillBeAssigned')}
+                    {t('roomScheduleRule')} · {selectedGroupTeacherId === AUTO_TEACHER_VALUE
+                      ? t('teacherWillBeAssigned')
+                      : t('teacherScheduleWillBeChecked')}
                   </p>
                 </div>
                 <WeekScheduleEditor

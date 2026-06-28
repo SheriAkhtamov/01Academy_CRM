@@ -650,6 +650,12 @@ const findTeacherForGroupSchedule = async (options: {
     const hasRecurringConflict = existingGroups
       .filter((group) => Number(group.teacherId) === Number(teacher.id))
       .some((group) => {
+        if (!dateRangesOverlap(
+          options.startDate,
+          options.endDate,
+          group.startDate ? new Date(group.startDate) : null,
+          group.endDate ? new Date(group.endDate) : null,
+        )) return false;
         const groupSchedule = normalizeScheduleItems(group.schedule);
         return requestedSchedule.some((item) =>
           scheduleConflictsWithSlot(
@@ -677,6 +683,103 @@ const findTeacherForGroupSchedule = async (options: {
   }
 
   return null;
+};
+
+const ensureTeacherCourseAssignment = async (teacher: Row, courseId: number) => {
+  const currentCourseIds = readJsonArray(teacher.courseIds)
+    .map(Number)
+    .filter((id) => Number.isFinite(id) && id > 0);
+  if (currentCourseIds.includes(courseId)) return;
+
+  const nextCourseIds = [...new Set([...currentCourseIds, courseId])]
+    .sort((left, right) => left - right);
+  await updateRow('academy_teachers', Number(teacher.id), { courseIds: nextCourseIds });
+};
+
+const assertTeacherCanLeadGroupSchedule = async (options: {
+  teacherId: number;
+  courseId: number;
+  schoolId: number;
+  schedule: unknown;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  excludeGroupId?: number | null;
+}) => {
+  const teacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [options.teacherId]);
+  if (!teacher) {
+    throw Object.assign(new Error('teacherNotFound'), { statusCode: 404 });
+  }
+  if (teacher.status !== 'active') {
+    throw Object.assign(new Error('teacherNotActive'), { statusCode: 400 });
+  }
+
+  const requestedSchedule = normalizeScheduleItems(options.schedule);
+  const schoolIds = readJsonArray(teacher.schoolIds).map(Number);
+  if (schoolIds.length > 0 && !schoolIds.includes(options.schoolId)) {
+    throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
+  }
+
+  const availability = getTeacherAvailability(teacher, 60);
+  const coversSchedule = requestedSchedule.every((item) =>
+    scheduleCoversSlot(
+      availability,
+      item.dayOfWeek,
+      item.startMinutes,
+      item.endMinutes,
+      options.schoolId,
+    )
+  );
+  if (!coversSchedule) {
+    throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
+  }
+
+  const existingGroups = await query(
+    `SELECT *
+     FROM academy_groups
+     WHERE teacher_id = $1
+       AND status IN ('open', 'in_progress')
+       AND ($2::int IS NULL OR id <> $2)`,
+    [options.teacherId, options.excludeGroupId ?? null],
+  );
+  const recurringConflict = existingGroups.some((group) => {
+    if (!dateRangesOverlap(
+      options.startDate,
+      options.endDate,
+      group.startDate ? new Date(group.startDate) : null,
+      group.endDate ? new Date(group.endDate) : null,
+    )) return false;
+    return weeklySchedulesOverlap(requestedSchedule, normalizeScheduleItems(group.schedule));
+  });
+  if (recurringConflict) {
+    throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
+  }
+
+  const rangeStart = startOfDay(options.startDate ?? new Date());
+  const rangeEnd = options.endDate ? addDays(startOfDay(options.endDate), 1) : null;
+  const existingLessons = await query(
+    `SELECT scheduled_at, duration_minutes
+     FROM academy_lessons
+     WHERE teacher_id = $1
+       AND status <> 'cancelled'
+       AND scheduled_at >= $2
+       AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+    [options.teacherId, rangeStart, rangeEnd],
+  );
+  const lessonConflict = existingLessons.some((lesson) => {
+    const scheduledAt = new Date(lesson.scheduledAt);
+    const startMinutes = scheduledAt.getHours() * 60 + scheduledAt.getMinutes();
+    const endMinutes = startMinutes + Number(lesson.durationMinutes || 60);
+    return requestedSchedule.some((item) =>
+      item.dayOfWeek === academyDayOfWeek(scheduledAt)
+      && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
+    );
+  });
+  if (lessonConflict) {
+    throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
+  }
+
+  await ensureTeacherCourseAssignment(teacher, options.courseId);
+  return teacher;
 };
 
 const assertActiveRoomInSchool = async (roomId: number, schoolId: number) => {
@@ -3352,7 +3455,8 @@ const prepareGroupMutation = async (options: {
     });
   }
 
-  if (options.forceAutoAssign || (!options.values.teacherId && !options.oldRow?.teacherId)) {
+  const teacherId = Number(options.values.teacherId ?? options.oldRow?.teacherId) || null;
+  if (options.forceAutoAssign || !teacherId) {
     const teacher = await findTeacherForGroupSchedule({
       courseId,
       schoolId,
@@ -3365,6 +3469,18 @@ const prepareGroupMutation = async (options: {
       throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
     }
     options.values.teacherId = teacher ? Number(teacher.id) : null;
+  } else {
+    await query(`SELECT pg_advisory_xact_lock($1)`, [1_000_000 + teacherId]);
+    await assertTeacherCanLeadGroupSchedule({
+      teacherId,
+      courseId,
+      schoolId,
+      schedule,
+      startDate,
+      endDate,
+      excludeGroupId: options.excludeGroupId,
+    });
+    options.values.teacherId = teacherId;
   }
 };
 
@@ -3559,7 +3675,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       }
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
-          await prepareGroupMutation({ values, forceAutoAssign: true });
+          await prepareGroupMutation({ values, forceAutoAssign: req.body.autoAssign === true });
           return insertRow(table, values);
         })
         : table === 'academy_lessons'

@@ -6,6 +6,7 @@ import {
   formatUserWorkspace,
   canAccessReports,
 } from '@/lib/auth';
+import { getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import {
@@ -60,6 +61,8 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   if (!user) return null;
 
   const { workspace } = user;
+  const assignedWorkspaces = getAssignedWorkspaces(user);
+  const hasWorkspace = (workspaceName: AcademyWorkspace) => assignedWorkspaces.includes(workspaceName);
 
   const isItemActive = (href: string) => {
     const currentPath = location.split('?')[0];
@@ -130,23 +133,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ],
     };
 
-    if (workspace === 'sales') {
-      return [salesSection];
-    }
-
-    if (workspace === 'teacher') {
-      return [teacherSection];
-    }
-
-    if (workspace === 'marketing') {
-      return [marketingSection];
-    }
-
-    if (workspace === 'administration') {
-      return [systemSection];
-    }
-
-    if (workspace === 'director') {
+    if (hasWorkspace('director')) {
       return [
         {
           label: t('directorWorkspace'),
@@ -161,7 +148,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ];
     }
 
-    return [];
+    return [
+      hasWorkspace('sales') ? salesSection : null,
+      hasWorkspace('teacher') ? teacherSection : null,
+      hasWorkspace('marketing') ? marketingSection : null,
+      hasWorkspace('administration') ? systemSection : null,
+    ].filter((section): section is NavSection => Boolean(section));
   };
 
   const sections = buildSections();
@@ -272,6 +264,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               <p className="text-xs text-slate-500 truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
               {user.position && (
                 <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>
+              )}
+              {assignedWorkspaces.length > 1 && (
+                <p className="text-[10px] text-slate-400 truncate">
+                  {assignedWorkspaces.map((item) => formatUserWorkspace(item, t)).join(' · ')}
+                </p>
               )}
               {canAccessReports(user) && (
                 <p className="text-[10px] text-emerald-600">{t('reportsAccess')}</p>

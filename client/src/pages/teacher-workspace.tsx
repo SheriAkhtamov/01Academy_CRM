@@ -38,6 +38,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getAssignedWorkspaces } from '@shared/academy';
 
 type Lesson = {
   id: number;
@@ -1246,7 +1247,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             </CardContent>
           </Card>
 
-          {user?.workspace === 'teacher' ? (
+          {getAssignedWorkspaces(user).includes('teacher') ? (
             <Card className="border-border/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">

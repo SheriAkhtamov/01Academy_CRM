@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, ArrowRightLeft, UsersRound } from 'lucide-react';
-import { LEAD_STATUSES } from '@shared/academy';
+import { getAssignedWorkspaces, LEAD_STATUSES } from '@shared/academy';
 
 interface AdminLead {
   id: number;
@@ -80,7 +80,7 @@ export function LeadAssignmentContent() {
 
   const managers = useMemo<SalesManager[]>(
     () => (usersQuery.data ?? [])
-      .filter((employee) => employee.workspace === 'sales' && employee.isActive)
+      .filter((employee) => getAssignedWorkspaces(employee).includes('sales') && employee.isActive)
       .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
     [usersQuery.data],
   );

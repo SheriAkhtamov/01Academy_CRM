@@ -3,12 +3,13 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
 import { logger } from '../lib/logger';
-import { isLeadershipWorkspace } from '@shared/academy';
+import { hasLeadershipAccess } from '@shared/academy';
 
 type InstagramBroadcast = (data: any) => void;
 type InstagramUser = {
   id: number;
   workspace: string;
+  workspaces?: string[] | null;
 };
 
 type InstagramAccountRow = {
@@ -43,6 +44,27 @@ const INSTAGRAM_WEBHOOK_FIELDS = [
 const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 let broadcastToClients: InstagramBroadcast = () => undefined;
+
+const leadershipUserAccessSql = `
+  (
+    u.workspace IN ('administration', 'director')
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+    )
+  )
+`;
+const salesUserAccessSql = `
+  (
+    u.workspace = 'sales'
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+    )
+  )
+`;
 
 export const setInstagramBroadcastFunction = (broadcast: InstagramBroadcast) => {
   broadcastToClients = broadcast;
@@ -347,9 +369,9 @@ const getParticipantProfile = async (
 
 const getSystemUserId = async (client: PoolClient) => {
   const { rows } = await client.query(
-    `SELECT id FROM users
-     WHERE workspace IN ('administration', 'director') AND is_active = true
-     ORDER BY id LIMIT 1`,
+    `SELECT u.id FROM users u
+     WHERE ${leadershipUserAccessSql} AND u.is_active = true
+     ORDER BY u.id LIMIT 1`,
   );
   if (!rows[0]?.id) {
     throw new Error('No active leadership workspace user');
@@ -364,7 +386,7 @@ const getLeadAssigneeId = async (client: PoolClient, fallbackUserId: number) => 
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
       AND l.status_code NOT IN ('paid', 'not_now')
-     WHERE u.workspace = 'sales' AND u.is_active = true
+     WHERE ${salesUserAccessSql} AND u.is_active = true
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,
@@ -639,7 +661,7 @@ const assertConversationAccess = async (conversationId: number, user: InstagramU
   if (!conversation) {
     throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
   }
-  if (!isLeadershipWorkspace(user.workspace) && Number(conversation.manager_id) !== Number(user.id)) {
+  if (!hasLeadershipAccess(user) && Number(conversation.manager_id) !== Number(user.id)) {
     throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
   }
   return conversation;
@@ -663,7 +685,7 @@ export const listInstagramAccounts = async () => {
 
 export const listInstagramConversations = async (user: InstagramUser) => {
   const params: unknown[] = [];
-  const ownershipFilter = isLeadershipWorkspace(user.workspace)
+  const ownershipFilter = hasLeadershipAccess(user)
     ? ''
     : `AND l.manager_id = $${params.push(user.id)}`;
   const { rows } = await pool.query(

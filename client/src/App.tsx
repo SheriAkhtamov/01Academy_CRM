@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { canAccessAcademyWorkspace, isLeadershipWorkspace, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, hasLeadershipAccess, type AcademyWorkspace } from '@shared/academy';
 import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
@@ -39,7 +39,7 @@ function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'acce
   const title = titleKey === 'noWorkspaceAssigned'
     ? t('noWorkspaceAssigned')
     : t('accessDeniedWorkspace');
-  const description = isLeadershipWorkspace(user?.workspace)
+  const description = hasLeadershipAccess(user)
     ? t('adminWorkspaceBoundaryDescription')
     : t('contactAdministratorForAccess');
 
@@ -61,7 +61,7 @@ function WorkspaceGuard({
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
-  if (!user || !canAccessAcademyWorkspace(user.workspace, workspace)) {
+  if (!user || !canAccessAcademyWorkspace(user, workspace)) {
     return <AccessDenied />;
   }
   return <>{children}</>;

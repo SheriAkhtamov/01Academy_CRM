@@ -9,6 +9,19 @@ export const ACADEMY_WORKSPACES = [
 ] as const;
 
 export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];
+export type WorkspaceAccessSource =
+  | string
+  | readonly string[]
+  | {
+      workspace?: string | null;
+      workspaces?: readonly string[] | null;
+    }
+  | null
+  | undefined;
+
+const academyWorkspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const isWorkspaceArray = (source: WorkspaceAccessSource): source is readonly string[] =>
+  Array.isArray(source);
 
 export const LEADERSHIP_WORKSPACES = [
   "administration",
@@ -21,13 +34,42 @@ export function isLeadershipWorkspace(
   return (LEADERSHIP_WORKSPACES as readonly string[]).includes(String(workspace));
 }
 
+export function getAssignedWorkspaces(
+  source: WorkspaceAccessSource,
+): AcademyWorkspace[] {
+  let rawWorkspaces: readonly string[];
+  if (!source) {
+    rawWorkspaces = [];
+  } else if (typeof source === "string") {
+    rawWorkspaces = [source];
+  } else if (isWorkspaceArray(source)) {
+    rawWorkspaces = source;
+  } else {
+    rawWorkspaces = [
+      ...(source.workspaces ?? []),
+      ...(source.workspace ? [source.workspace] : []),
+    ];
+  }
+
+  const normalized = rawWorkspaces
+    .map((workspace) => String(workspace))
+    .filter((workspace): workspace is AcademyWorkspace => academyWorkspaceSet.has(workspace));
+
+  return [...new Set(normalized)];
+}
+
+export function hasLeadershipAccess(source: WorkspaceAccessSource): boolean {
+  return getAssignedWorkspaces(source).some(isLeadershipWorkspace);
+}
+
 export function canAccessAcademyWorkspace(
-  assignedWorkspace: string | null | undefined,
+  assignedWorkspace: WorkspaceAccessSource,
   workspace: AcademyWorkspace,
 ): boolean {
   // Leadership workspaces intentionally bypass department boundaries so
   // the head can investigate and act in any area without a second account.
-  return isLeadershipWorkspace(assignedWorkspace) || assignedWorkspace === workspace;
+  const assignedWorkspaces = getAssignedWorkspaces(assignedWorkspace);
+  return assignedWorkspaces.some(isLeadershipWorkspace) || assignedWorkspaces.includes(workspace);
 }
 
 export const LEAD_STATUSES = [

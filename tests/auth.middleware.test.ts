@@ -95,4 +95,27 @@ describe("auth middleware", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
   });
+
+  it("allows users with an administration module through admin routes", async () => {
+    mockStorage.getUser.mockResolvedValue({
+      id: 11,
+      fullName: "Teacher Admin",
+      email: "teacher-admin@example.com",
+      password: "hashed",
+      workspace: "teacher",
+      workspaces: ["teacher", "administration"],
+      isActive: true,
+      hasReportAccess: true,
+    });
+
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: 11 });
+
+    const response = await agent.get("/admin-only");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+  });
 });

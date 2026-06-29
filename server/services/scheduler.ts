@@ -7,6 +7,17 @@ import { buildWeeklyReport } from "./weekly-report";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
 
+const leadershipUserAccessSql = `
+  (
+    u.workspace IN ('administration', 'director')
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+    )
+  )
+`;
+
 let started = false;
 
 /**
@@ -76,7 +87,7 @@ export const startScheduler = () => {
 const getSystemUserId = async (): Promise<number | null> => {
   if (!pool) return null;
   const { rows } = await pool.query(
-    `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active=true ORDER BY id LIMIT 1`,
+    `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`,
   );
   return rows[0]?.id ?? null;
 };

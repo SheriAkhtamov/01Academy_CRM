@@ -1,5 +1,9 @@
 import type { SanitizedUser } from '@shared/auth';
-import { isLeadershipWorkspace, type AcademyWorkspace } from '@shared/academy';
+import {
+  canAccessAcademyWorkspace,
+  hasLeadershipAccess,
+  type AcademyWorkspace,
+} from '@shared/academy';
 import type { TranslationKey } from '@/lib/i18n';
 
 const workspaceTranslationKeys = {
@@ -27,9 +31,9 @@ export function formatUserWorkspace(
 }
 
 export function canAccessReports(user: SanitizedUser): boolean {
-  return isLeadershipWorkspace(user.workspace) || user.workspace === 'marketing' || Boolean(user.hasReportAccess);
+  return hasLeadershipAccess(user) || canAccessAcademyWorkspace(user, 'marketing') || Boolean(user.hasReportAccess);
 }
 
 export function canManageUsers(user: SanitizedUser): boolean {
-  return isLeadershipWorkspace(user.workspace);
+  return hasLeadershipAccess(user);
 }

@@ -9,7 +9,9 @@ import {
   calculateProgressPercent,
   calculateRoas,
   canAccessAcademyWorkspace,
+  getAssignedWorkspaces,
   getComputedPaymentStatus,
+  hasLeadershipAccess,
   suggestAgeGroup,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
@@ -49,6 +51,28 @@ describe("01 Academy business rules", () => {
   it("uses workspace assignment as the system access model", () => {
     expect(canAccessAcademyWorkspace("teacher", "teacher")).toBe(true);
     expect(canAccessAcademyWorkspace("marketing", "marketing")).toBe(true);
+  });
+
+  it("supports several workspace modules on the same employee", () => {
+    const employee = {
+      workspace: "teacher",
+      workspaces: ["teacher", "sales"],
+    };
+
+    expect(getAssignedWorkspaces(employee)).toEqual(["teacher", "sales"]);
+    expect(canAccessAcademyWorkspace(employee, "teacher")).toBe(true);
+    expect(canAccessAcademyWorkspace(employee, "sales")).toBe(true);
+    expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(false);
+  });
+
+  it("treats leadership modules as global access even when primary workspace differs", () => {
+    const employee = {
+      workspace: "teacher",
+      workspaces: ["teacher", "administration"],
+    };
+
+    expect(hasLeadershipAccess(employee)).toBe(true);
+    expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(true);
   });
 
   it("suggests course and age group from student age", () => {

@@ -176,6 +176,13 @@
       "when": 1783094400000,
       "tag": "0024_move_course_timing_to_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783180800000,
+      "tag": "0025_user_workspace_modules",
+      "breakpoints": true
     }
   ]
 }

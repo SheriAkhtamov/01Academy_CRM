@@ -1,5 +1,10 @@
 import 'express-session';
 import type { User } from '@shared/schema';
+import type { AcademyWorkspace } from '@shared/academy';
+
+type AuthenticatedUser = User & {
+  workspaces?: AcademyWorkspace[];
+};
 
 declare module 'express-session' {
   interface SessionData {
@@ -14,7 +19,7 @@ declare module 'express-session' {
 declare global {
   namespace Express {
     interface Request {
-      user?: User;
+      user?: AuthenticatedUser;
       requestId?: string;
       rawBody?: Buffer;
     }

@@ -38,8 +38,10 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
+  canAccessAcademyWorkspace,
+  getAssignedWorkspaces,
   getComputedPaymentStatus,
-  isLeadershipWorkspace,
+  hasLeadershipAccess,
   normalizeMoney,
   resolveReferralLevel,
   suggestCourseSlugByAge,
@@ -69,6 +71,26 @@ const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
 const SALES_WORKSPACES = new Set(['sales', 'administration']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
 const SOURCE_MANAGEMENT_WORKSPACES = new Set(['administration', 'marketing']);
+const salesUserAccessSql = `
+  (
+    u.workspace = 'sales'
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+    )
+  )
+`;
+const leadershipUserAccessSql = `
+  (
+    u.workspace IN ('administration', 'director')
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+    )
+  )
+`;
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -177,7 +199,7 @@ const normalizeDbValue = (value: DbValue) => {
 };
 
 const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
-  if (req.user?.workspace === 'sales') {
+  if (canAccessAcademyWorkspace(req.user, 'sales') && !hasLeadershipAccess(req.user)) {
     return Number(req.user.id);
   }
 
@@ -192,8 +214,8 @@ const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<
   if (requestedId) {
     const manager = await queryOne<{ id: string }>(
       `SELECT id
-       FROM users
-       WHERE id = $1 AND workspace = 'sales' AND is_active = true`,
+       FROM users u
+       WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
       [requestedId],
     );
     if (!manager) {
@@ -208,7 +230,7 @@ const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
       AND l.status_code NOT IN ('paid', 'not_now')
-     WHERE u.workspace = 'sales' AND u.is_active = true
+     WHERE ${salesUserAccessSql} AND u.is_active = true
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,
@@ -259,19 +281,26 @@ const deleteRow = async (table: string, id: number) => {
 };
 
 const ensureOperationsAccess = (req: any, res: any) => {
-  if (isLeadershipWorkspace(req.user?.workspace) || OPERATIONS_WORKSPACES.has(req.user?.workspace) || req.user?.workspace === 'teacher') return true;
+  if (
+    hasLeadershipAccess(req.user) ||
+    getAssignedWorkspaces(req.user).some((workspace) => OPERATIONS_WORKSPACES.has(workspace)) ||
+    canAccessAcademyWorkspace(req.user, 'teacher')
+  ) return true;
   res.status(403).json({ error: 'Operations access required' });
   return false;
 };
 
 const ensureMarketingAccess = (req: any, res: any) => {
-  if (isLeadershipWorkspace(req.user?.workspace) || MARKETING_WORKSPACES.has(req.user?.workspace)) return true;
+  if (
+    hasLeadershipAccess(req.user) ||
+    getAssignedWorkspaces(req.user).some((workspace) => MARKETING_WORKSPACES.has(workspace))
+  ) return true;
   res.status(403).json({ error: 'Marketing access required' });
   return false;
 };
 
 const ensureWorkspaceAccess = (req: any, res: any, workspaces: Set<string>, message: string) => {
-  if (isLeadershipWorkspace(req.user?.workspace) || workspaces.has(String(req.user?.workspace))) return true;
+  if (hasLeadershipAccess(req.user) || getAssignedWorkspaces(req.user).some((workspace) => workspaces.has(workspace))) return true;
   res.status(403).json({ error: message });
   return false;
 };
@@ -293,9 +322,8 @@ const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
 
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
-  const workspace = String(req.user?.workspace);
-  if (isLeadershipWorkspace(workspace) || workspace === 'marketing') return true;
-  return workspace === 'sales' && Number(lead.managerId) === Number(req.user?.id);
+  if (hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing')) return true;
+  return canAccessAcademyWorkspace(req.user, 'sales') && Number(lead.managerId) === Number(req.user?.id);
 };
 
 const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
@@ -305,7 +333,11 @@ const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
 };
 
 const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
-  if (actor?.workspace !== 'sales') return leads;
+  if (
+    actor?.scopeWorkspace !== 'sales' ||
+    !getAssignedWorkspaces(actor).includes('sales') ||
+    hasLeadershipAccess(actor)
+  ) return leads;
   const policy = await getWorkforcePolicy();
   return leads.map((lead) => {
     const ownsLead = Number(lead.managerId) === Number(actor.userId);
@@ -1213,8 +1245,8 @@ const createStageHistory = async (leadId: number, fromStatusCode: string | null,
 const getActiveSalesManager = async (managerId: number) => {
   const manager = await queryOne<{ id: number; fullName: string }>(
     `SELECT id, full_name
-     FROM users
-     WHERE id = $1 AND workspace = 'sales' AND is_active = true`,
+     FROM users u
+     WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
     [managerId],
   );
   if (!manager) {
@@ -1611,6 +1643,8 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
 interface DatasetActor {
   userId: number;
   workspace: string;
+  workspaces?: string[];
+  scopeWorkspace?: 'sales' | 'teacher' | 'marketing';
 }
 
 const resolveTeacherId = async (userId: number): Promise<number | null> => {
@@ -1621,9 +1655,15 @@ const resolveTeacherId = async (userId: number): Promise<number | null> => {
 const getAcademyDataset = async (actor?: DatasetActor) => {
   // Workspace scoping: teachers see only their own groups; sales employees see only
   // their own leads/students; marketing receives its workspace dataset.
-  const teacherId = actor?.workspace === 'teacher' ? await resolveTeacherId(actor.userId) : null;
+  const actorWorkspaces = getAssignedWorkspaces(actor);
+  const teacherId = actor?.scopeWorkspace === 'teacher' && actorWorkspaces.includes('teacher')
+    ? await resolveTeacherId(actor.userId)
+    : null;
   const isTeacherScoped = teacherId !== null;
-  const isManagerScoped = actor?.workspace === 'sales';
+  const isManagerScoped =
+    actor?.scopeWorkspace === 'sales' &&
+    actorWorkspaces.includes('sales') &&
+    !hasLeadershipAccess(actor);
 
   const managerParams = isManagerScoped ? [actor!.userId] : [];
 
@@ -2292,7 +2332,12 @@ router.get('/workspaces/administration', async (req, res) => {
 router.get('/workspaces/sales', async (req, res) => {
   if (!ensureSalesWorkspaceAccess(req, res)) return;
   try {
-    const actor: DatasetActor = { userId: req.user!.id, workspace: req.user!.workspace };
+    const actor: DatasetActor = {
+      userId: req.user!.id,
+      workspace: req.user!.workspace,
+      workspaces: getAssignedWorkspaces(req.user),
+      scopeWorkspace: 'sales',
+    };
     const [dataset, companySettings] = await Promise.all([getAcademyDataset(actor), getCompanySettings()]);
 
     res.json({
@@ -2346,13 +2391,21 @@ router.get('/availability/slots', async (req, res) => {
 router.get('/workspaces/teacher', async (req, res) => {
   if (!ensureTeacherWorkspaceAccess(req, res)) return;
   try {
-    const actor: DatasetActor = { userId: req.user!.id, workspace: req.user!.workspace };
+    const actor: DatasetActor = {
+      userId: req.user!.id,
+      workspace: req.user!.workspace,
+      workspaces: getAssignedWorkspaces(req.user),
+      scopeWorkspace: 'teacher',
+    };
     const dataset = await getAcademyDataset(actor);
+    const teacherId = getAssignedWorkspaces(req.user).includes('teacher')
+      ? await resolveTeacherId(req.user!.id)
+      : null;
     res.json({
       schools: dataset.schools,
       rooms: dataset.rooms,
       courses: dataset.courses,
-      teacher: req.user!.workspace === 'teacher' ? dataset.teachers[0] ?? null : null,
+      teacher: teacherId ? dataset.teachers[0] ?? null : null,
       groups: dataset.groups,
       students: dataset.students,
       lessons: dataset.lessons,
@@ -2610,7 +2663,8 @@ router.get('/search', async (req, res) => {
     }
 
     const like = `%${term.toLowerCase()}%`;
-    const workspace = String(req.user?.workspace);
+    const assignedWorkspaces = getAssignedWorkspaces(req.user);
+    const isLeadershipActor = hasLeadershipAccess(req.user);
     const results: Row[] = [];
     const remaining = () => Math.max(limit - results.length, 0);
 
@@ -2711,35 +2765,7 @@ router.get('/search', async (req, res) => {
       })));
     };
 
-    if (workspace === 'sales') {
-      await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/pipeline');
-      await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
-    } else if (workspace === 'teacher') {
-      const teacherId = await resolveTeacherId(req.user!.id);
-      if (!teacherId) return res.json([]);
-      await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
-      await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace/groups');
-      await pushCourses('/teacher-workspace/groups');
-    } else if (workspace === 'marketing') {
-      if (remaining() > 0) {
-        const sources = await query(
-          `SELECT id, name, channel, campaign_name
-           FROM academy_lead_sources
-           WHERE LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1
-           ORDER BY name
-           LIMIT $2`,
-          [like, remaining()],
-        );
-        results.push(...sources.map((source) => ({
-          id: `source-${source.id}`,
-          entityType: 'source',
-          title: source.name,
-          subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
-          href: '/marketing-workspace/sources',
-        })));
-      }
-      await pushLeads(`TRUE`, [], '/marketing-workspace/warm-base');
-    } else if (isLeadershipWorkspace(workspace)) {
+    if (isLeadershipActor) {
       await pushLeads(`TRUE`, [], '/sales/pipeline');
       await pushStudents(`TRUE`, [], '/sales/clients');
       await pushGroups(`TRUE`, [], '/teacher-workspace/groups');
@@ -2778,6 +2804,39 @@ router.get('/search', async (req, res) => {
           href: '/employees',
         })));
       }
+    } else {
+      if (assignedWorkspaces.includes('sales')) {
+        await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/pipeline');
+        await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
+      }
+      if (assignedWorkspaces.includes('teacher')) {
+        const teacherId = await resolveTeacherId(req.user!.id);
+        if (teacherId) {
+          await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
+          await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace/groups');
+          await pushCourses('/teacher-workspace/groups');
+        }
+      }
+      if (assignedWorkspaces.includes('marketing')) {
+        if (remaining() > 0) {
+          const sources = await query(
+            `SELECT id, name, channel, campaign_name
+             FROM academy_lead_sources
+             WHERE LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1
+             ORDER BY name
+             LIMIT $2`,
+            [like, remaining()],
+          );
+          results.push(...sources.map((source) => ({
+            id: `source-${source.id}`,
+            entityType: 'source',
+            title: source.name,
+            subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
+            href: '/marketing-workspace/sources',
+          })));
+        }
+        await pushLeads(`TRUE`, [], '/marketing-workspace/warm-base');
+      }
     }
 
     res.json(results.slice(0, limit));
@@ -2792,9 +2851,10 @@ router.get('/leads', async (req, res) => {
   try {
     const conditions: string[] = [];
     const params: DbValue[] = [];
-    const workspace = String(req.user?.workspace);
+    const assignedWorkspaces = getAssignedWorkspaces(req.user);
+    const canSeeAllLeads = hasLeadershipAccess(req.user) || assignedWorkspaces.includes('marketing');
 
-    if (workspace === 'sales') {
+    if (assignedWorkspaces.includes('sales') && !canSeeAllLeads) {
       params.push(req.user!.id);
       conditions.push(`l.manager_id = $${params.length}`);
     }
@@ -2842,7 +2902,12 @@ router.get('/leads', async (req, res) => {
       params,
     );
     res.json(await redactLeadPhonesForActor(
-      { userId: req.user!.id, workspace: String(req.user!.workspace) },
+      {
+        userId: req.user!.id,
+        workspace: String(req.user!.workspace),
+        workspaces: assignedWorkspaces,
+        scopeWorkspace: canSeeAllLeads ? 'marketing' : 'sales',
+      },
       leads,
     ));
   } catch (error) {
@@ -3134,7 +3199,8 @@ router.patch('/leads/:id', async (req, res) => {
     };
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
-    const managerId = req.user!.workspace !== 'sales' && req.body.managerId !== undefined
+    const canManageLeadAssignment = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
+    const managerId = canManageLeadAssignment && req.body.managerId !== undefined
       ? await resolveLeadManagerId(req, req.body.managerId)
       : undefined;
     const updates: Row = {
@@ -3324,7 +3390,7 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   params: DbValue[];
   denied?: boolean;
 }> => {
-  const workspace = String(req.user?.workspace);
+  const assignedWorkspaces = getAssignedWorkspaces(req.user);
   const params: DbValue[] = [];
   const pushParam = (value: DbValue) => {
     params.push(value);
@@ -3337,16 +3403,16 @@ const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Pro
   };
 
   if (table === 'academy_tasks') {
-    if (isLeadershipWorkspace(workspace)) return { whereSql: '', params };
-    if (!['sales', 'teacher', 'marketing'].includes(workspace)) {
+    if (hasLeadershipAccess(req.user)) return { whereSql: '', params };
+    if (!assignedWorkspaces.some((workspace) => ['sales', 'teacher', 'marketing'].includes(workspace))) {
       return { whereSql: 'FALSE', params, denied: true };
     }
     return { whereSql: `responsible_id = ${ownUserParam()}`, params };
   }
 
   if (table === 'academy_lessons') {
-    if (isLeadershipWorkspace(workspace)) return { whereSql: '', params };
-    if (workspace === 'teacher') {
+    if (hasLeadershipAccess(req.user)) return { whereSql: '', params };
+    if (assignedWorkspaces.includes('teacher')) {
       const placeholder = await teacherParam();
       return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
     }
@@ -3641,10 +3707,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (options.requireOperations && req.user?.workspace === 'teacher') {
+    if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
-    if (table === 'academy_tasks' && !isLeadershipWorkspace(req.user?.workspace)) {
+    if (table === 'academy_tasks' && !hasLeadershipAccess(req.user)) {
       const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
       if (Number(responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
@@ -3700,7 +3766,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (options.requireOperations && req.user?.workspace === 'teacher') {
+    if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {
@@ -3708,7 +3774,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
       const oldRow = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
-      if (table === 'academy_tasks' && !isLeadershipWorkspace(req.user?.workspace) && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
+      if (table === 'academy_tasks' && !hasLeadershipAccess(req.user) && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
         return res.status(403).json({ error: 'Task mutation access required' });
       }
       const values: Row = {};
@@ -3790,7 +3856,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (options.requireOperations && req.user?.workspace === 'teacher') {
+    if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {
@@ -3826,7 +3892,11 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     );
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
     if (lesson.status === 'cancelled') return res.status(400).json({ error: 'cancelledLessonAttendanceNotAllowed' });
-    if (req.user!.workspace === 'teacher' && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)) {
+    if (
+      getAssignedWorkspaces(req.user).includes('teacher') &&
+      !hasLeadershipAccess(req.user) &&
+      (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)
+    ) {
       return res.status(403).json({ error: 'Teacher can mark only own lessons' });
     }
 
@@ -3987,7 +4057,7 @@ router.post('/payments', async (req, res) => {
       if (lead && existingStudent && Number(existingStudent.leadId) !== Number(lead.id)) {
         throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
       }
-      if (req.user!.workspace === 'sales') {
+      if (getAssignedWorkspaces(req.user).includes('sales') && !hasLeadershipAccess(req.user)) {
         const ownsLead = !lead || Number(lead.managerId) === Number(req.user!.id);
         const ownsStudent = !existingStudent || Number(existingStudent.managerId) === Number(req.user!.id);
         if (!ownsLead || !ownsStudent) {
@@ -4060,7 +4130,7 @@ router.post('/surveys/lesson', async (req, res) => {
     if (score < 3) {
       const student = await queryOne(`SELECT manager_id FROM academy_students WHERE id = $1`, [studentId]);
       const leader = await queryOne<{ id: string }>(
-        `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active=true ORDER BY id LIMIT 1`);
+        `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`);
       const responsibleId = Number(student?.managerId ?? leader?.id ?? req.user!.id);
       const task = await createTask('Оценка урока ниже 3 — связаться с учеником', {
         responsibleId,
@@ -4100,7 +4170,7 @@ router.post('/surveys/parent', async (req, res) => {
     const npsScore = Number(survey.npsScore);
     if (Number.isFinite(npsScore) && npsScore <= 6) {
       const leader = await queryOne<{ id: string }>(
-        `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active=true ORDER BY id LIMIT 1`);
+        `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`);
       const responsibleId = Number(student.managerId ?? leader?.id ?? req.user!.id);
       const task = await createTask('Низкий NPS родителя — связаться с семьёй', {
         responsibleId,

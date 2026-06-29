@@ -46,7 +46,8 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import {
-  isLeadershipWorkspace,
+  getAssignedWorkspaces,
+  hasLeadershipAccess,
   LEAD_STATUSES,
 } from '@shared/academy';
 import {
@@ -248,7 +249,8 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const isAdministrationWorkspace = isLeadershipWorkspace(user?.workspace);
+  const isAdministrationWorkspace = hasLeadershipAccess(user);
+  const hasSalesModule = getAssignedWorkspaces(user).includes('sales');
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
@@ -334,7 +336,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const salesManagers = useMemo(
     () => users
-      .filter((employee) => employee.workspace === 'sales' && employee.isActive)
+      .filter((employee) => getAssignedWorkspaces(employee).includes('sales') && employee.isActive)
       .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
     [users],
   );
@@ -384,7 +386,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       courseId: values.courseId ? Number(values.courseId) : undefined,
       enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
       sourceId: Number(values.sourceId),
-      managerId: user?.workspace === 'sales' ? user.id : undefined,
+      managerId: hasSalesModule && !isAdministrationWorkspace ? user?.id : undefined,
     }),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });

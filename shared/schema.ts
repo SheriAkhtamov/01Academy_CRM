@@ -53,6 +53,19 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const userWorkspaces = pgTable("user_workspaces", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workspace: varchar("workspace", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("user_workspaces_user_idx").on(table.userId),
+  workspaceIdx: index("user_workspaces_workspace_idx").on(table.workspace),
+  userWorkspaceUnique: uniqueIndex("user_workspaces_user_workspace_unique").on(table.userId, table.workspace),
+  workspaceCheck: check("user_workspaces_workspace_check", sql`${table.workspace} IN ('administration', 'director', 'sales', 'teacher', 'marketing')`),
+}));
+
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
@@ -678,6 +691,12 @@ export const insertUserSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
+export const insertUserWorkspaceSchema = createInsertSchema(userWorkspaces).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserSchemaForAPI = insertUserSchema.omit({ password: true });
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
@@ -881,6 +900,8 @@ export const insertSavedAccountSchema = createInsertSchema(savedAccounts).omit({
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type UserWorkspace = typeof userWorkspaces.$inferSelect;
+export type InsertUserWorkspace = z.infer<typeof insertUserWorkspaceSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;

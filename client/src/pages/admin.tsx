@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -65,7 +66,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ACADEMY_WORKSPACES } from '@shared/academy';
+import { ACADEMY_WORKSPACES, getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -78,6 +79,7 @@ const createUserSchema = (t: any) => z.object({
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),
+  workspaces: z.array(z.enum(ACADEMY_WORKSPACES)).min(1, t('selectAtLeastOneWorkspace')),
   isActive: z.boolean().default(true),
 });
 
@@ -144,6 +146,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       phone: '',
       position: '',
       workspace: 'sales',
+      workspaces: ['sales'],
       isActive: true,
     },
   });
@@ -342,11 +345,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const onSubmitUser = (data: z.infer<ReturnType<typeof createUserSchema>>) => {
+    const workspaces = Array.from(new Set([data.workspace, ...data.workspaces]));
+    const payload = {
+      ...data,
+      workspaces,
+    };
+
     if (selectedUser) {
-      const { email: _email, ...profileData } = data;
+      const { email: _email, ...profileData } = payload;
       updateUserMutation.mutate({ id: selectedUser.id, data: profileData });
     } else {
-      createUserMutation.mutate(data);
+      createUserMutation.mutate(payload);
     }
   };
 
@@ -380,6 +389,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       phone: user.phone || '',
       position: user.position || '',
       workspace: user.workspace,
+      workspaces: getAssignedWorkspaces(user),
       isActive: user.isActive,
     });
     setShowCreateUserModal(true);
@@ -388,7 +398,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const filteredUsers = users.filter((user: any) => {
     const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesWorkspace = workspaceFilter === 'all' || user.workspace === workspaceFilter;
+    const matchesWorkspace = workspaceFilter === 'all' ||
+      getAssignedWorkspaces(user).includes(workspaceFilter as AcademyWorkspace);
     return matchesSearch && matchesWorkspace;
   });
 
@@ -410,6 +421,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const getWorkspaceLabel = (workspace: string) => formatUserWorkspace(workspace, t);
+  const getWorkspaceLabels = (user: any) => getAssignedWorkspaces(user).map(getWorkspaceLabel);
 
   const getStatusColor = (isActive: boolean) => {
     return isActive
@@ -423,7 +435,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     { value: 'sales', label: t('salesDepartmentWorkspace') },
     { value: 'teacher', label: t('teacher') },
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
-  ];
+  ] as const;
+  const primaryWorkspaceValue = userForm.watch('workspace');
 
   const administrationSections = [
     {
@@ -484,13 +497,22 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     },
     {
       key: 'workspace',
-      header: t('workspaceLabel'),
+      header: t('workspaceModules'),
       sortable: true,
-      accessor: (row) => getWorkspaceLabel(row.workspace),
+      accessor: (row) => getWorkspaceLabels(row).join(' '),
       render: (row) => (
-        <Badge className={getWorkspaceColor(row.workspace)}>
-          {getWorkspaceLabel(row.workspace)}
-        </Badge>
+        <div className="flex max-w-sm flex-wrap gap-1.5">
+          <Badge className={getWorkspaceColor(row.workspace)}>
+            {getWorkspaceLabel(row.workspace)}
+          </Badge>
+          {getAssignedWorkspaces(row)
+            .filter((workspace) => workspace !== row.workspace)
+            .map((workspace) => (
+              <Badge key={workspace} variant="outline" className={getWorkspaceColor(workspace)}>
+                {getWorkspaceLabel(workspace)}
+              </Badge>
+            ))}
+        </div>
       ),
     },
     {
@@ -683,8 +705,21 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             name="workspace"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('workspaceLabel')}</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
+                                <FormLabel>{t('primaryWorkspace')}</FormLabel>
+                                <Select
+                                  onValueChange={(value) => {
+                                    const nextWorkspace = value as AcademyWorkspace;
+                                    field.onChange(nextWorkspace);
+                                    const currentWorkspaces = userForm.getValues('workspaces') ?? [];
+                                    if (!currentWorkspaces.includes(nextWorkspace)) {
+                                      userForm.setValue('workspaces', [...currentWorkspaces, nextWorkspace], {
+                                        shouldDirty: true,
+                                        shouldValidate: true,
+                                      });
+                                    }
+                                  }}
+                                  value={field.value}
+                                >
                                   <FormControl>
                                     <SelectTrigger>
                                       <SelectValue />
@@ -719,6 +754,50 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             )}
                           />
                         </div>
+
+                        <FormField
+                          control={userForm.control}
+                          name="workspaces"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('workspaceModules')}</FormLabel>
+                              <div className="grid grid-cols-1 gap-2 rounded-lg border border-border p-3 sm:grid-cols-2">
+                                {workspaceOptions.map((option) => {
+                                  const value = option.value;
+                                  const checked = (field.value ?? []).includes(value);
+                                  const isPrimary = primaryWorkspaceValue === value;
+
+                                  return (
+                                    <label
+                                      key={value}
+                                      className="flex items-center gap-3 rounded-md px-2 py-2 text-sm hover:bg-muted/60"
+                                    >
+                                      <Checkbox
+                                        checked={checked || isPrimary}
+                                        disabled={isPrimary}
+                                        onCheckedChange={(nextChecked) => {
+                                          const currentWorkspaces = field.value ?? [];
+                                          if (nextChecked) {
+                                            field.onChange([...new Set([...currentWorkspaces, value])]);
+                                            return;
+                                          }
+
+                                          field.onChange(currentWorkspaces.filter((workspace) => workspace !== value));
+                                        }}
+                                      />
+                                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                                      {isPrimary && (
+                                        <span className="shrink-0 text-xs text-slate-500">{t('primaryWorkspaceShort')}</span>
+                                      )}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-xs text-slate-500">{t('workspaceModulesHint')}</p>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
                         <FormField
                           control={userForm.control}
@@ -932,19 +1011,19 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">{t('administrationWorkspace')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => u.workspace === 'administration').length}
+                    {users.filter((u: any) => getAssignedWorkspaces(u).includes('administration')).length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">{t('directorWorkspace')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => u.workspace === 'director').length}
+                    {users.filter((u: any) => getAssignedWorkspaces(u).includes('director')).length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">{t('salesDepartmentWorkspace')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => u.workspace === 'sales').length}
+                    {users.filter((u: any) => getAssignedWorkspaces(u).includes('sales')).length}
                   </span>
                 </div>
               </div>
@@ -974,6 +1053,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     <Badge className={getWorkspaceColor(userCredentials.workspace)}>
                       {getWorkspaceLabel(userCredentials.workspace)}
                     </Badge>
+                    {getAssignedWorkspaces(userCredentials)
+                      .filter((workspace) => workspace !== userCredentials.workspace)
+                      .map((workspace) => (
+                        <Badge key={workspace} variant="outline" className={getWorkspaceColor(workspace)}>
+                          {getWorkspaceLabel(workspace)}
+                        </Badge>
+                      ))}
                     {userCredentials.position && (
                       <span className="text-xs text-slate-500">{userCredentials.position}</span>
                     )}
@@ -1067,7 +1153,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       if (userCredentials.temporaryPassword) {
                         credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
                       }
-                      credentialLines.push(`${t('workspaceLabel')}: ${getWorkspaceLabel(userCredentials.workspace)}`);
+                      credentialLines.push(`${t('primaryWorkspace')}: ${getWorkspaceLabel(userCredentials.workspace)}`);
+                      credentialLines.push(`${t('workspaceModules')}: ${getWorkspaceLabels(userCredentials).join(', ')}`);
                       navigator.clipboard.writeText(credentialLines.join('\n'));
                       toast({
                         title: t('copiedToClipboard'),

@@ -1,6 +1,17 @@
 import { pool } from '../db';
 import { logger } from '../lib/logger';
 
+const leadershipUserAccessSql = `
+  (
+    u.workspace IN ('administration', 'director')
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+    )
+  )
+`;
+
 const createEventOnce = async (
   eventKey: string,
   eventType: string,
@@ -20,7 +31,7 @@ const createEventOnce = async (
 
 const notifyLeadership = async (title: string, message: string, entityType?: string, entityId?: number) => {
   const { rows: leaders } = await pool.query(
-    `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active = true`,
+    `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active = true`,
   );
   await Promise.all([
     ...leaders.map((leader) => pool.query(

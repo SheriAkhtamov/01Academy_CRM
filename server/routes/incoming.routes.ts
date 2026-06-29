@@ -52,6 +52,27 @@ type QueryExecutor = {
   query: (text: string, values?: any[]) => Promise<{ rows: any[] }>;
 };
 
+const leadershipUserAccessSql = `
+  (
+    u.workspace IN ('administration', 'director')
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+    )
+  )
+`;
+const salesUserAccessSql = `
+  (
+    u.workspace = 'sales'
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+    )
+  )
+`;
+
 const withIncomingTransaction = async <T>(callback: (client: PoolClient) => Promise<T>): Promise<T> => {
   const client = await pool.connect();
   try {
@@ -69,7 +90,7 @@ const withIncomingTransaction = async <T>(callback: (client: PoolClient) => Prom
 
 const getSystemUserId = async (executor: QueryExecutor = pool): Promise<number> => {
   const { rows } = await executor.query(
-    `SELECT id FROM users WHERE workspace IN ('administration', 'director') AND is_active=true ORDER BY id LIMIT 1`,
+    `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`,
   );
   if (!rows[0]?.id) throw new Error('No active leadership workspace user to attribute webhook actions');
   return Number(rows[0].id);
@@ -82,7 +103,7 @@ const getLeadAssigneeId = async (executor: QueryExecutor = pool): Promise<number
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
       AND l.status_code NOT IN ('paid', 'not_now')
-     WHERE u.workspace = 'sales' AND u.is_active = true
+     WHERE ${salesUserAccessSql} AND u.is_active = true
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,

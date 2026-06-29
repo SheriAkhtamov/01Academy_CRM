@@ -40,6 +40,17 @@ const localizeApiErrorMessage = (message: string, status: number) => {
     return i18n.t("sessionSaveFailed");
   }
   if (
+    lower.includes("email") &&
+    (
+      lower.includes("already exists") ||
+      lower.includes("already used") ||
+      lower.includes("already taken") ||
+      lower.includes("already occupied")
+    )
+  ) {
+    return i18n.t("loginAlreadyExists");
+  }
+  if (
     lower.includes("required") ||
     lower.includes("missing required")
   ) {

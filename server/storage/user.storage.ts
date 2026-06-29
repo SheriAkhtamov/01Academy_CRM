@@ -1,46 +1,94 @@
 import { db } from '../db';
 import {
     users,
+    userWorkspaces,
     savedAccounts,
     type User,
     type InsertUser,
     type SavedAccount,
 } from '@shared/schema';
-import { asc, desc, eq, or, and } from 'drizzle-orm';
+import { ACADEMY_WORKSPACES, type AcademyWorkspace } from '@shared/academy';
+import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
+
+export type UserWithWorkspaces = User & { workspaces: AcademyWorkspace[] };
+
+const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+
+const normalizeWorkspaceList = (
+    primaryWorkspace: string,
+    assignedWorkspaces: readonly string[] = [],
+): AcademyWorkspace[] => {
+    const normalized = [primaryWorkspace, ...assignedWorkspaces]
+        .map((workspace) => String(workspace))
+        .filter((workspace): workspace is AcademyWorkspace => workspaceSet.has(workspace));
+
+    return [...new Set(normalized)];
+};
 
 class UserStorage {
-    async getUser(id: number): Promise<User | undefined> {
+    private attachWorkspaces(user: User, assignedWorkspaces: readonly string[] = []): UserWithWorkspaces {
+        return {
+            ...user,
+            workspaces: normalizeWorkspaceList(user.workspace, assignedWorkspaces),
+        };
+    }
+
+    private async attachWorkspacesToUsers(userRows: User[]): Promise<UserWithWorkspaces[]> {
+        if (userRows.length === 0) return [];
+
+        const assignments = await db
+            .select({
+                userId: userWorkspaces.userId,
+                workspace: userWorkspaces.workspace,
+            })
+            .from(userWorkspaces)
+            .where(inArray(userWorkspaces.userId, userRows.map((user) => user.id)))
+            .orderBy(asc(userWorkspaces.userId), asc(userWorkspaces.workspace));
+
+        const workspacesByUser = new Map<number, string[]>();
+        for (const assignment of assignments) {
+            const existing = workspacesByUser.get(assignment.userId) ?? [];
+            existing.push(assignment.workspace);
+            workspacesByUser.set(assignment.userId, existing);
+        }
+
+        return userRows.map((user) => this.attachWorkspaces(user, workspacesByUser.get(user.id) ?? []));
+    }
+
+    async getUser(id: number): Promise<UserWithWorkspaces | undefined> {
         const result = await db.select().from(users).where(eq(users.id, id));
-        return result[0];
+        return result[0] ? (await this.attachWorkspacesToUsers(result))[0] : undefined;
     }
 
-    async getUserByEmail(email: string): Promise<User | undefined> {
+    async getUserByEmail(email: string): Promise<UserWithWorkspaces | undefined> {
         const result = await db.select().from(users).where(eq(users.email, email));
-        return result[0];
+        return result[0] ? (await this.attachWorkspacesToUsers(result))[0] : undefined;
     }
 
-    async getUserByLoginOrEmail(loginOrEmail: string): Promise<User | undefined> {
+    async getUserByLoginOrEmail(loginOrEmail: string): Promise<UserWithWorkspaces | undefined> {
         const result = await db
             .select()
             .from(users)
             .where(or(eq(users.email, loginOrEmail), eq(users.fullName, loginOrEmail)));
-        return result[0];
+        return result[0] ? (await this.attachWorkspacesToUsers(result))[0] : undefined;
     }
 
-    async getUsers(): Promise<User[]> {
-        return db.select().from(users).orderBy(asc(users.id));
+    async getUsers(): Promise<UserWithWorkspaces[]> {
+        const result = await db.select().from(users).orderBy(asc(users.id));
+        return this.attachWorkspacesToUsers(result);
     }
 
-    async getUserWithPassword(id: number): Promise<User | undefined> {
+    async getUserWithPassword(id: number): Promise<UserWithWorkspaces | undefined> {
         return this.getUser(id);
     }
 
-    async createUser(user: InsertUser): Promise<User> {
+    async createUser(user: InsertUser): Promise<UserWithWorkspaces> {
         const result = await db.insert(users).values(user).returning();
-        return result[0];
+        await this.setUserWorkspaces(result[0].id, [result[0].workspace]);
+        return this.attachWorkspaces(result[0], [result[0].workspace]);
     }
 
-    async updateUser(id: number, user: Partial<InsertUser>): Promise<User> {
+    async updateUser(id: number, user: Partial<InsertUser>): Promise<UserWithWorkspaces> {
         const result = await db
             .update(users)
             .set({ ...user, updatedAt: new Date() })
@@ -49,11 +97,48 @@ class UserStorage {
         if (!result[0]) {
             throw new Error('User not found or access denied');
         }
-        return result[0];
+        if (user.workspace) {
+            await this.ensureUserWorkspace(id, user.workspace);
+        }
+        return (await this.attachWorkspacesToUsers(result))[0];
     }
 
     async deleteUser(id: number): Promise<void> {
         await db.delete(users).where(eq(users.id, id));
+    }
+
+    async getUserWorkspaces(userId: number): Promise<AcademyWorkspace[]> {
+        const user = await this.getUser(userId);
+        return user?.workspaces ?? [];
+    }
+
+    async setUserWorkspaces(userId: number, workspaces: readonly string[]): Promise<AcademyWorkspace[]> {
+        const normalized = normalizeWorkspaceList('', workspaces);
+        if (normalized.length === 0) {
+            throw new Error('At least one workspace is required');
+        }
+
+        await db.transaction(async (tx) => {
+            await tx.delete(userWorkspaces).where(eq(userWorkspaces.userId, userId));
+            await tx.insert(userWorkspaces).values(
+                normalized.map((workspace) => ({
+                    userId,
+                    workspace,
+                })),
+            );
+        });
+
+        return normalized;
+    }
+
+    async ensureUserWorkspace(userId: number, workspace: string): Promise<void> {
+        const [normalized] = normalizeWorkspaceList(workspace);
+        if (!normalized) return;
+
+        await db
+            .insert(userWorkspaces)
+            .values({ userId, workspace: normalized })
+            .onConflictDoNothing();
     }
 
     async updateUserOnlineStatus(userId: number, isOnline: boolean): Promise<void> {
@@ -67,12 +152,13 @@ class UserStorage {
             .where(eq(users.id, userId));
     }
 
-    async getUsersWithOnlineStatus(): Promise<User[]> {
-        return db
+    async getUsersWithOnlineStatus(): Promise<UserWithWorkspaces[]> {
+        const result = await db
             .select()
             .from(users)
             .where(eq(users.isActive, true))
             .orderBy(asc(users.fullName), desc(users.createdAt));
+        return this.attachWorkspacesToUsers(result);
     }
 
     // Saved accounts (multi-account switching)

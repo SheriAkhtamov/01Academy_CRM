@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   MessagesSquare,
 } from 'lucide-react';
+import { getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
 
 interface SearchItem {
   id: string;
@@ -111,27 +112,26 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
       ];
 
-      switch (user?.workspace) {
-        case 'administration':
-          return administrationItems;
-        case 'director':
+      const assignedWorkspaces = getAssignedWorkspaces(user);
+      const hasWorkspace = (workspace: AcademyWorkspace) => assignedWorkspaces.includes(workspace);
+
+      if (hasWorkspace('director')) {
           return [
             ...administrationItems,
             ...salesItems,
             ...teacherItems,
             ...marketingItems,
           ];
-        case 'sales':
-          return salesItems;
-        case 'teacher':
-          return teacherItems;
-        case 'marketing':
-          return marketingItems;
-        default:
-          return [];
       }
+
+      return [
+        ...(hasWorkspace('administration') ? administrationItems : []),
+        ...(hasWorkspace('sales') ? salesItems : []),
+        ...(hasWorkspace('teacher') ? teacherItems : []),
+        ...(hasWorkspace('marketing') ? marketingItems : []),
+      ];
     },
-    [t, user?.workspace]
+    [t, user]
   );
 
   const normalizedSearch = search.trim().toLowerCase();

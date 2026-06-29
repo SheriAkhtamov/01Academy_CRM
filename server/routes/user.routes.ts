@@ -6,7 +6,13 @@ import { authService } from '../services/auth';
 import { requireAuth, requireAdministration } from '../middleware/auth.middleware';
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
-import { ACADEMY_WORKSPACES, isLeadershipWorkspace, type AcademyWorkspace } from '@shared/academy';
+import {
+    ACADEMY_WORKSPACES,
+    getAssignedWorkspaces,
+    hasLeadershipAccess,
+    isLeadershipWorkspace,
+    type AcademyWorkspace,
+} from '@shared/academy';
 import {
     decryptCredentialPassword,
     encryptCredentialPassword,
@@ -21,6 +27,7 @@ const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     teacher: 'teacher',
     marketing: 'marketing',
 };
+const maxGeneratedLoginAttempts = 8;
 
 const translitMap: Record<string, string> = {
     а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i',
@@ -45,20 +52,33 @@ const slugifyName = (fullName: string) => {
     return slug || 'user';
 };
 
-const generateLogin = (fullName: string, workspace: AcademyWorkspace, existingUsers: Array<{ email: string }>) => {
+const generateLogin = (fullName: string, workspace: AcademyWorkspace, unavailableLogins: Set<string>) => {
     const prefix = workspaceLoginPrefix[workspace];
     const base = `${prefix}.${slugifyName(fullName)}`;
-    const existing = new Set(existingUsers.map((user) => user.email.toLowerCase()));
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
         const suffix = crypto.randomBytes(2).toString('hex');
         const login = `${base}.${suffix}@01academy.local`.toLowerCase();
-        if (!existing.has(login)) {
+        if (!unavailableLogins.has(login)) {
             return login;
         }
     }
 
     return `${base}.${Date.now().toString(36)}@01academy.local`.toLowerCase();
+};
+
+const isUsersEmailUniqueViolation = (error: unknown) => {
+    const pgError = error as { code?: string; constraint?: string; detail?: string; message?: string };
+    if (pgError?.code !== '23505') return false;
+
+    const constraint = pgError.constraint?.toLowerCase() ?? '';
+    const detail = pgError.detail?.toLowerCase() ?? '';
+    const message = pgError.message?.toLowerCase() ?? '';
+
+    return constraint === 'users_email_unique' ||
+        (constraint.includes('users') && constraint.includes('email')) ||
+        detail.includes('email') ||
+        message.includes('users_email_unique');
 };
 
 const normalizeLogin = (value: unknown) =>
@@ -75,7 +95,18 @@ const findUserByLogin = async (login: string, exceptUserId?: number) => {
     );
 };
 
-const canViewCredentialPassword = (req: any) => req.user?.workspace === 'administration';
+const normalizeRequestedWorkspaces = (value: unknown, primaryWorkspace: AcademyWorkspace) => {
+    const requested = Array.isArray(value)
+        ? value
+            .map((workspace) => String(workspace))
+            .filter((workspace): workspace is AcademyWorkspace => workspaceSet.has(workspace))
+        : [];
+
+    return [...new Set([primaryWorkspace, ...requested])];
+};
+
+const canViewCredentialPassword = (req: any) =>
+    getAssignedWorkspaces(req.user).includes('administration');
 
 const buildCredentialPayload = (user: {
     id: number;
@@ -83,6 +114,7 @@ const buildCredentialPayload = (user: {
     email: string;
     position?: string | null;
     workspace: string;
+    workspaces?: string[] | null;
     credentialPasswordCiphertext?: string | null;
 }, canViewPassword: boolean, fallbackPassword?: string) => ({
     id: user.id,
@@ -90,6 +122,7 @@ const buildCredentialPayload = (user: {
     email: user.email,
     position: user.position,
     workspace: user.workspace,
+    workspaces: getAssignedWorkspaces(user),
     temporaryPassword: canViewPassword
         ? fallbackPassword ?? decryptCredentialPassword(user.credentialPasswordCiphertext)
         : undefined,
@@ -101,6 +134,7 @@ const syncAcademyTeacherForUser = async (user: {
     id: number;
     fullName: string;
     workspace: string;
+    workspaces?: string[] | null;
     isActive?: boolean | null;
 }) => {
     const existing = await pool.query<{ id: number }>(
@@ -109,7 +143,7 @@ const syncAcademyTeacherForUser = async (user: {
     );
     const teacherRecord = existing.rows[0];
 
-    if (user.workspace === 'teacher') {
+    if (getAssignedWorkspaces(user).includes('teacher')) {
         const status = user.isActive === false ? 'dismissed' : 'active';
 
         if (teacherRecord) {
@@ -169,34 +203,65 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(400).json({ error: 'A valid workspace is required' });
         }
         const workspace = req.body.workspace as AcademyWorkspace;
+        const workspaces = normalizeRequestedWorkspaces(req.body.workspaces, workspace);
 
         const existingUsers = await storage.getUsers();
-        const providedEmail = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-        const email = providedEmail || generateLogin(fullName, workspace, existingUsers);
-        const userExists = existingUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
+        const unavailableLogins = new Set(existingUsers.map((user) => user.email.toLowerCase()));
+        const providedEmail = normalizeLogin(req.body.email);
 
-        if (userExists) {
-            return res.status(400).json({ error: 'User with this email already exists' });
+        if (providedEmail && !isValidLogin(providedEmail)) {
+            return res.status(400).json({ error: 'invalidEmailAddress' });
+        }
+
+        if (providedEmail && unavailableLogins.has(providedEmail)) {
+            return res.status(409).json({ error: 'loginAlreadyExists' });
         }
 
         const temporaryPassword = crypto.randomBytes(12).toString('base64url');
+        let email = providedEmail || generateLogin(fullName, workspace, unavailableLogins);
+        let newUser: (Awaited<ReturnType<typeof authService.createUser>> & { workspaces?: AcademyWorkspace[] }) | null = null;
 
-        const newUser = await authService.createUser({
-            email,
-            password: temporaryPassword,
-            credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
-            fullName,
-            phone: phone || null,
-            position: position || null,
-            workspace,
-            hasReportAccess: hasReportAccess || false,
-            isActive: isActive !== undefined ? isActive : true,
-        });
+        for (let attempt = 0; attempt < maxGeneratedLoginAttempts; attempt += 1) {
+            try {
+                newUser = await authService.createUser({
+                    email,
+                    password: temporaryPassword,
+                    credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
+                    fullName,
+                    phone: phone || null,
+                    position: position || null,
+                    workspace,
+                    hasReportAccess: hasReportAccess || false,
+                    isActive: isActive !== undefined ? isActive : true,
+                });
+                const savedWorkspaces = await storage.setUserWorkspaces(newUser.id, workspaces);
+                newUser = {
+                    ...newUser,
+                    workspaces: savedWorkspaces,
+                };
+                break;
+            } catch (error) {
+                if (!isUsersEmailUniqueViolation(error)) {
+                    throw error;
+                }
+
+                if (providedEmail) {
+                    return res.status(409).json({ error: 'loginAlreadyExists' });
+                }
+
+                unavailableLogins.add(email.toLowerCase());
+                email = generateLogin(fullName, workspace, unavailableLogins);
+            }
+        }
+
+        if (!newUser) {
+            return res.status(500).json({ error: 'failedCreateUserDescription' });
+        }
 
         await syncAcademyTeacherForUser(newUser);
 
         try {
-            await emailService.sendWelcomeEmail(email, fullName, temporaryPassword);
+            await emailService.sendWelcomeEmail(newUser.email, fullName, temporaryPassword);
         } catch (emailError) {
             logger.error('Failed to send welcome email', { error: emailError, userId: newUser.id });
         }
@@ -215,8 +280,8 @@ router.post('/', requireAdministration, async (req, res) => {
         });
     } catch (error: any) {
         logger.error('Error creating user', { error });
-        if (error.code === '23505' && error.constraint === 'users_email_unique') {
-            return res.status(400).json({ error: 'Email already exists' });
+        if (isUsersEmailUniqueViolation(error)) {
+            return res.status(409).json({ error: 'loginAlreadyExists' });
         }
         res.status(500).json({ error: 'Failed to create user' });
     }
@@ -347,8 +412,8 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
         });
     } catch (error: any) {
         logger.error('Error updating user credentials', { error, userId: req.params.id });
-        if (error.code === '23505' && error.constraint === 'users_email_unique') {
-            return res.status(400).json({ error: 'loginAlreadyExists' });
+        if (isUsersEmailUniqueViolation(error)) {
+            return res.status(409).json({ error: 'loginAlreadyExists' });
         }
         res.status(500).json({ error: 'failedToUpdateCredentials' });
     }
@@ -409,7 +474,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
-        if (currentUser?.id !== id && !isLeadershipWorkspace(currentUser?.workspace)) {
+        if (currentUser?.id !== id && !hasLeadershipAccess(currentUser)) {
             return res.status(403).json({ error: 'Cannot update other users profile' });
         }
 
@@ -449,12 +514,20 @@ router.put('/:id', requireAuth, async (req, res) => {
             updateData.dateOfBirth = req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : null;
         }
 
-        if (isLeadershipWorkspace(currentUser?.workspace)) {
+        let requestedWorkspaces: AcademyWorkspace[] | null = null;
+
+        if (hasLeadershipAccess(currentUser)) {
             if (req.body.workspace !== undefined) {
                 if (!workspaceSet.has(req.body.workspace)) {
                     return res.status(400).json({ error: 'A valid workspace is required' });
                 }
                 updateData.workspace = req.body.workspace;
+            }
+            if (req.body.workspaces !== undefined) {
+                requestedWorkspaces = normalizeRequestedWorkspaces(
+                    req.body.workspaces,
+                    (updateData.workspace ?? existingUser.workspace) as AcademyWorkspace,
+                );
             }
             if (req.body.hasReportAccess !== undefined) {
                 updateData.hasReportAccess = Boolean(req.body.hasReportAccess);
@@ -464,17 +537,18 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
         }
 
+        const nextWorkspaces = requestedWorkspaces ?? getAssignedWorkspaces(existingUser);
         const isRemovingActiveLeadershipAccess =
-            isLeadershipWorkspace(existingUser.workspace) &&
+            hasLeadershipAccess(existingUser) &&
             existingUser.isActive &&
             (
-                (updateData.workspace !== undefined && !isLeadershipWorkspace(updateData.workspace)) ||
+                !nextWorkspaces.some(isLeadershipWorkspace) ||
                 updateData.isActive === false
             );
 
         if (isRemovingActiveLeadershipAccess) {
             const allUsers = await storage.getUsers();
-            const activeLeadershipUsers = allUsers.filter((u: any) => isLeadershipWorkspace(u.workspace) && u.isActive);
+            const activeLeadershipUsers = allUsers.filter((u: any) => hasLeadershipAccess(u) && u.isActive);
 
             if (activeLeadershipUsers.length <= 1) {
                 return res.status(403).json({
@@ -483,14 +557,21 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
         }
 
-        const updatedUser = await storage.updateUser(id, updateData);
+        let updatedUser = await storage.updateUser(id, updateData);
+        if (requestedWorkspaces) {
+            const savedWorkspaces = await storage.setUserWorkspaces(id, requestedWorkspaces);
+            updatedUser = {
+                ...updatedUser,
+                workspaces: savedWorkspaces,
+            };
+        }
         await syncAcademyTeacherForUser(updatedUser);
 
         res.json(authService.sanitizeUser(updatedUser));
     } catch (error) {
         logger.error('Error updating user', { error, userId: req.params.id });
-        if ((error as any).code === '23505' && (error as any).constraint === 'users_email_unique') {
-            return res.status(400).json({ error: 'loginAlreadyExists' });
+        if (isUsersEmailUniqueViolation(error)) {
+            return res.status(409).json({ error: 'loginAlreadyExists' });
         }
         res.status(500).json({ error: 'Failed to update user' });
     }
@@ -514,8 +595,8 @@ router.delete('/:id', requireAdministration, async (req, res) => {
         }
 
         const allUsers = await storage.getUsers();
-        const activeLeadershipUsers = allUsers.filter((u: any) => isLeadershipWorkspace(u.workspace) && u.isActive);
-        if (isLeadershipWorkspace(user.workspace) && user.isActive && activeLeadershipUsers.length <= 1) {
+        const activeLeadershipUsers = allUsers.filter((u: any) => hasLeadershipAccess(u) && u.isActive);
+        if (hasLeadershipAccess(user) && user.isActive && activeLeadershipUsers.length <= 1) {
             return res.status(403).json({ error: 'Cannot delete the last active leadership account.' });
         }
 

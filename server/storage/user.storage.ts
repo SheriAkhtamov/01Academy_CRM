@@ -11,6 +11,7 @@ import { ACADEMY_WORKSPACES, type AcademyWorkspace } from '@shared/academy';
 import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
 
 export type UserWithWorkspaces = User & { workspaces: AcademyWorkspace[] };
+type SavedAccountWithUser = SavedAccount & { accountUser: UserWithWorkspaces };
 
 const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
 
@@ -161,8 +162,20 @@ class UserStorage {
         return this.attachWorkspacesToUsers(result);
     }
 
+    private async attachWorkspacesToSavedAccounts(
+        accounts: (SavedAccount & { accountUser: User })[],
+    ): Promise<SavedAccountWithUser[]> {
+        const accountUsers = await this.attachWorkspacesToUsers(accounts.map((account) => account.accountUser));
+        const usersById = new Map(accountUsers.map((user) => [user.id, user]));
+
+        return accounts.map((account) => ({
+            ...account,
+            accountUser: usersById.get(account.accountUser.id) ?? this.attachWorkspaces(account.accountUser),
+        }));
+    }
+
     // Saved accounts (multi-account switching)
-    async getSavedAccounts(ownerUserId: number): Promise<(SavedAccount & { accountUser: User })[]> {
+    async getSavedAccounts(ownerUserId: number): Promise<SavedAccountWithUser[]> {
         const rows = await db
             .select({
                 id: savedAccounts.id,
@@ -177,15 +190,15 @@ class UserStorage {
             .innerJoin(users, eq(savedAccounts.accountUserId, users.id))
             .where(eq(savedAccounts.ownerUserId, ownerUserId))
             .orderBy(asc(savedAccounts.createdAt));
-        return rows;
+        return this.attachWorkspacesToSavedAccounts(rows);
     }
 
     /**
      * Saved-account links are shared by both participants. This keeps the
      * original account available after switching into a linked account.
      */
-    async getSavedAccountsForUser(userId: number): Promise<(SavedAccount & { accountUser: User })[]> {
-        const [ownedAccounts, linkedAccounts] = await Promise.all([
+    async getSavedAccountsForUser(userId: number): Promise<SavedAccountWithUser[]> {
+        const [ownedAccounts, linkedRows] = await Promise.all([
             this.getSavedAccounts(userId),
             db
                 .select({
@@ -202,6 +215,7 @@ class UserStorage {
                 .where(eq(savedAccounts.accountUserId, userId))
                 .orderBy(asc(savedAccounts.createdAt)),
         ]);
+        const linkedAccounts = await this.attachWorkspacesToSavedAccounts(linkedRows);
 
         return [...ownedAccounts, ...linkedAccounts]
             .sort((left, right) => (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0));
@@ -215,7 +229,7 @@ class UserStorage {
         return result[0];
     }
 
-    async findSavedAccountByTokenHash(tokenHash: string): Promise<(SavedAccount & { accountUser: User }) | undefined> {
+    async findSavedAccountByTokenHash(tokenHash: string): Promise<SavedAccountWithUser | undefined> {
         const rows = await db
             .select({
                 id: savedAccounts.id,
@@ -229,7 +243,7 @@ class UserStorage {
             .from(savedAccounts)
             .innerJoin(users, eq(savedAccounts.accountUserId, users.id))
             .where(eq(savedAccounts.tokenHash, tokenHash));
-        return rows[0];
+        return (await this.attachWorkspacesToSavedAccounts(rows))[0];
     }
 
     async deleteSavedAccount(ownerUserId: number, accountUserId: number): Promise<void> {

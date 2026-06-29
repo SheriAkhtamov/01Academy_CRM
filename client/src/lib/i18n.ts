@@ -828,8 +828,8 @@ export const translations = {
     ru: 'Текущая рабочая область',
   },
   directorWorkspace: {
-    en: 'Director workspace',
-    ru: 'Воркспейс руководителя',
+    en: 'Leadership',
+    ru: 'Руководство',
   },
   directorWorkspaceDescription: {
     en: 'All sales, education, marketing, and system sections in one workspace.',
@@ -854,6 +854,10 @@ export const translations = {
   salesDepartmentWorkspaceDescription: {
     en: 'Leads, deals, clients, and manager tasks.',
     ru: 'Лиды, сделки, клиенты и задачи менеджера.',
+  },
+  teacherDepartmentWorkspace: {
+    en: 'Teachers department',
+    ru: 'Отдел учителей',
   },
   teacherWorkplaceWorkspaceDescription: {
     en: 'Schedule, groups, attendance, and lesson ratings.',

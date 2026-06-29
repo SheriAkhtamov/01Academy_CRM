@@ -10,7 +10,7 @@ const workspaceTranslationKeys = {
   administration: 'administrationWorkspace',
   director: 'directorWorkspace',
   sales: 'salesDepartmentWorkspace',
-  teacher: 'teacher',
+  teacher: 'teacherDepartmentWorkspace',
   marketing: 'marketingDepartmentWorkspace',
 } as const satisfies Record<AcademyWorkspace, TranslationKey>;
 

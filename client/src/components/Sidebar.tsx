@@ -99,7 +99,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     };
 
     const teacherSection: NavSection = {
-      label: t('teacher'),
+      label: t('teacherDepartmentWorkspace'),
       items: [
         { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
         { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },

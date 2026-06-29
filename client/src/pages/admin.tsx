@@ -433,7 +433,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     { value: 'administration', label: t('administrationWorkspace') },
     { value: 'director', label: t('directorWorkspace') },
     { value: 'sales', label: t('salesDepartmentWorkspace') },
-    { value: 'teacher', label: t('teacher') },
+    { value: 'teacher', label: t('teacherDepartmentWorkspace') },
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
   ] as const;
   const primaryWorkspaceValue = userForm.watch('workspace');

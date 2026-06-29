@@ -2,7 +2,6 @@ export const ACADEMY_BRAND_NAME = "01 Academy CRM";
 
 export const ACADEMY_WORKSPACES = [
   "administration",
-  "director",
   "sales",
   "teacher",
   "marketing",
@@ -25,7 +24,6 @@ const isWorkspaceArray = (source: WorkspaceAccessSource): source is readonly str
 
 export const LEADERSHIP_WORKSPACES = [
   "administration",
-  "director",
 ] as const;
 
 export function isLeadershipWorkspace(

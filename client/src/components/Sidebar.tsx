@@ -124,6 +124,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     const systemSection: NavSection = {
       label: t('systemAdministration'),
       items: [
+        { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
         { name: t('employees'), href: '/employees', icon: Users },
         { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
@@ -132,21 +133,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('navIntegrations'), href: '/integrations', icon: Plug },
       ],
     };
-
-    if (hasWorkspace('director')) {
-      return [
-        {
-          label: t('directorWorkspace'),
-          items: [
-            { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
-          ],
-        },
-        salesSection,
-        teacherSection,
-        marketingSection,
-        systemSection,
-      ];
-    }
 
     return [
       hasWorkspace('sales') ? salesSection : null,

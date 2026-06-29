@@ -183,6 +183,13 @@
       "when": 1783180800000,
       "tag": "0025_user_workspace_modules",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783267200000,
+      "tag": "0026_remove_director_workspace",
+      "breakpoints": true
     }
   ]
 }

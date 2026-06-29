@@ -827,14 +827,6 @@ export const translations = {
     en: 'Current workspace',
     ru: 'Текущая рабочая область',
   },
-  directorWorkspace: {
-    en: 'Leadership',
-    ru: 'Руководство',
-  },
-  directorWorkspaceDescription: {
-    en: 'All sales, education, marketing, and system sections in one workspace.',
-    ru: 'Все разделы продаж, обучения, маркетинга и системы в одном рабочем пространстве.',
-  },
   marketingDepartmentWorkspace: {
     en: 'Marketing department',
     ru: 'Отдел маркетинга',

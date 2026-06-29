@@ -25,7 +25,7 @@ function WorkspaceBasedHome() {
   const { user } = useAuth();
   switch (user?.workspace) {
     case 'administration':
-    case 'director': return <AdminDashboardPage />;
+      return <AdminDashboardPage />;
     case 'sales': return <SalesDashboard />;
     case 'teacher': return <TeacherWorkspace />;
     case 'marketing': return <MarketingWorkspace />;

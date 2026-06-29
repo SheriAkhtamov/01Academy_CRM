@@ -22,7 +22,6 @@ describe("01 Academy business rules", () => {
   it("exposes the supported employee workspaces", () => {
     expect(ACADEMY_WORKSPACES).toEqual([
       "administration",
-      "director",
       "sales",
       "teacher",
       "marketing",
@@ -34,13 +33,6 @@ describe("01 Academy business rules", () => {
     expect(canAccessAcademyWorkspace("administration", "sales")).toBe(true);
     expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(true);
     expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(true);
-  });
-
-  it("gives director global workspace access", () => {
-    expect(canAccessAcademyWorkspace("director", "administration")).toBe(true);
-    expect(canAccessAcademyWorkspace("director", "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace("director", "marketing")).toBe(true);
-    expect(canAccessAcademyWorkspace("director", "teacher")).toBe(true);
   });
 
   it("keeps other employees inside the assigned workspace", () => {
@@ -72,6 +64,19 @@ describe("01 Academy business rules", () => {
     };
 
     expect(hasLeadershipAccess(employee)).toBe(true);
+    expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(true);
+  });
+
+  it("represents leadership as all access modules instead of a separate workspace", () => {
+    const employee = {
+      workspace: "administration",
+      workspaces: ["administration", "sales", "teacher", "marketing"],
+    };
+
+    expect(getAssignedWorkspaces(employee)).toEqual(["administration", "sales", "teacher", "marketing"]);
+    expect(hasLeadershipAccess(employee)).toBe(true);
+    expect(canAccessAcademyWorkspace(employee, "sales")).toBe(true);
+    expect(canAccessAcademyWorkspace(employee, "teacher")).toBe(true);
     expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(true);
   });
 

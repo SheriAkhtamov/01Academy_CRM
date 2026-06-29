@@ -8,7 +8,6 @@ import type { TranslationKey } from '@/lib/i18n';
 
 const workspaceTranslationKeys = {
   administration: 'administrationWorkspace',
-  director: 'directorWorkspace',
   sales: 'salesDepartmentWorkspace',
   teacher: 'teacherDepartmentWorkspace',
   marketing: 'marketingDepartmentWorkspace',

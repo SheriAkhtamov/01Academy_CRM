@@ -22,7 +22,6 @@ const router = Router();
 const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
 const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     administration: 'admin',
-    director: 'director',
     sales: 'sales',
     teacher: 'teacher',
     marketing: 'marketing',

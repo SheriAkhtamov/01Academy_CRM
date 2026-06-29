@@ -115,15 +115,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const assignedWorkspaces = getAssignedWorkspaces(user);
       const hasWorkspace = (workspace: AcademyWorkspace) => assignedWorkspaces.includes(workspace);
 
-      if (hasWorkspace('director')) {
-          return [
-            ...administrationItems,
-            ...salesItems,
-            ...teacherItems,
-            ...marketingItems,
-          ];
-      }
-
       return [
         ...(hasWorkspace('administration') ? administrationItems : []),
         ...(hasWorkspace('sales') ? salesItems : []),

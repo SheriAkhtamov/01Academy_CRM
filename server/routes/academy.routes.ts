@@ -65,8 +65,8 @@ type DbValue = string | number | boolean | Date | null | unknown[] | Record<stri
 type Row = Record<string, any>;
 const transactionContext = new AsyncLocalStorage<PoolClient>();
 
-const ADMINISTRATION_WORKSPACES = new Set(['administration', 'director']);
-const OPERATIONS_WORKSPACES = new Set(['administration', 'director']);
+const ADMINISTRATION_WORKSPACES = new Set(['administration']);
+const OPERATIONS_WORKSPACES = new Set(['administration']);
 const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
 const SALES_WORKSPACES = new Set(['sales', 'administration']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
@@ -83,11 +83,11 @@ const salesUserAccessSql = `
 `;
 const leadershipUserAccessSql = `
   (
-    u.workspace IN ('administration', 'director')
+    u.workspace = 'administration'
     OR EXISTS (
       SELECT 1
       FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
     )
   )
 `;

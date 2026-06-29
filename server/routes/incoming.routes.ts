@@ -54,11 +54,11 @@ type QueryExecutor = {
 
 const leadershipUserAccessSql = `
   (
-    u.workspace IN ('administration', 'director')
+    u.workspace = 'administration'
     OR EXISTS (
       SELECT 1
       FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace IN ('administration', 'director')
+      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
     )
   )
 `;

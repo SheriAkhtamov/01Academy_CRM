@@ -12,7 +12,6 @@ import { useTranslation } from '@/hooks/useTranslation';
 type WorkspaceType =
   | 'sales'
   | 'administration'
-  | 'director'
   | 'teacher'
   | 'marketing';
 
@@ -46,7 +45,6 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
 
   const knownWorkspaces: WorkspaceType[] = [
     'administration',
-    'director',
     'sales',
     'teacher',
     'marketing',
@@ -74,11 +72,6 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
     administration: {
       title: t('administrationWorkspace'),
       description: t('administrationWorkspaceDescription'),
-      icon: ShieldCheck,
-    },
-    director: {
-      title: t('directorWorkspace'),
-      description: t('directorWorkspaceDescription'),
       icon: ShieldCheck,
     },
     teacher: {

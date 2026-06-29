@@ -74,13 +74,14 @@ describe("auth middleware", () => {
     expect(response.body).toEqual({ error: "Admin access required" });
   });
 
-  it("allows director users through admin routes", async () => {
+  it("allows all-module leadership users through admin routes", async () => {
     mockStorage.getUser.mockResolvedValue({
       id: 9,
-      fullName: "Director User",
-      email: "director@example.com",
+      fullName: "Leadership User",
+      email: "leadership@example.com",
       password: "hashed",
-      workspace: "director",
+      workspace: "administration",
+      workspaces: ["administration", "sales", "teacher", "marketing"],
       isActive: true,
       hasReportAccess: true,
     });

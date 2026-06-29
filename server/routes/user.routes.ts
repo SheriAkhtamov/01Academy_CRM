@@ -105,6 +105,17 @@ const normalizeRequestedWorkspaces = (value: unknown, primaryWorkspace: AcademyW
     return [...new Set([primaryWorkspace, ...requested])];
 };
 
+const parseDateOfBirth = (value: unknown) => {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+
+    const date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) {
+        throw Object.assign(new Error('invalidDateOfBirth'), { statusCode: 400 });
+    }
+    return date;
+};
+
 const canViewCredentialPassword = (req: any) =>
     getAssignedWorkspaces(req.user).includes('administration');
 
@@ -204,6 +215,7 @@ router.post('/', requireAdministration, async (req, res) => {
         }
         const workspace = req.body.workspace as AcademyWorkspace;
         const workspaces = normalizeRequestedWorkspaces(req.body.workspaces, workspace);
+        const dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
 
         const existingUsers = await storage.getUsers();
         const unavailableLogins = new Set(existingUsers.map((user) => user.email.toLowerCase()));
@@ -229,6 +241,7 @@ router.post('/', requireAdministration, async (req, res) => {
                     credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
                     fullName,
                     phone: phone || null,
+                    dateOfBirth: dateOfBirth ?? null,
                     position: position || null,
                     workspace,
                     hasReportAccess: hasReportAccess || false,
@@ -283,7 +296,7 @@ router.post('/', requireAdministration, async (req, res) => {
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
-        res.status(500).json({ error: 'Failed to create user' });
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create user' });
     }
 });
 
@@ -511,7 +524,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         if (req.body.dateOfBirth !== undefined) {
-            updateData.dateOfBirth = req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : null;
+            updateData.dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
         }
 
         let requestedWorkspaces: AcademyWorkspace[] | null = null;
@@ -573,7 +586,8 @@ router.put('/:id', requireAuth, async (req, res) => {
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
-        res.status(500).json({ error: 'Failed to update user' });
+        const typedError = error as { statusCode?: number; message?: string };
+        res.status(typedError.statusCode || 500).json({ error: typedError.message || 'Failed to update user' });
     }
 });
 

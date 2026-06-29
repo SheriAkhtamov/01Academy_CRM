@@ -115,6 +115,13 @@ const createCredentialsSchema = (t: any) => z.object({
   }
 });
 
+const formatDateInputValue = (value: unknown) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  return '';
+};
+
 interface AdminProps {
   mode?: 'admin' | 'employees';
 }
@@ -144,6 +151,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       email: '',
       fullName: '',
       phone: '',
+      dateOfBirth: '',
       position: '',
       workspace: 'sales',
       workspaces: ['sales'],
@@ -387,6 +395,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       email: user.email,
       fullName: user.fullName,
       phone: user.phone || '',
+      dateOfBirth: formatDateInputValue(user.dateOfBirth),
       position: user.position || '',
       workspace: user.workspace,
       workspaces: getAssignedWorkspaces(user),

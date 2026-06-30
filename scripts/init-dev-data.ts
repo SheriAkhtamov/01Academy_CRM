@@ -1,4 +1,6 @@
-// Seeds the initial super-admin user and academy reference data (courses, lead sources, statuses).
+// Development-only seed for the initial super-admin user and academy reference
+// data (courses, lead sources, statuses). Production deploys must not run it:
+// the script updates existing rows and can overwrite live admin/reference data.
 // Run with: node --import tsx scripts/init-dev-data.mjs  OR  tsx scripts/init-dev-data.ts
 import bcrypt from 'bcrypt';
 import { pool } from '../server/db';
@@ -111,6 +113,10 @@ async function seedCourses() {
 
 async function main() {
   try {
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DB_SEED !== 'true') {
+      throw new Error('Refusing to seed production data without ALLOW_DB_SEED=true');
+    }
+
     await seedSuperAdmin();
     await seedStatuses();
     await seedLeadSources();

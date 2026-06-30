@@ -20,9 +20,6 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SUPER_ADMIN_LOGIN: ${{ secrets.SUPER_ADMIN_LOGIN }}
-          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
-          SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
         run: |
           set -euo pipefail
 
@@ -37,35 +34,19 @@ jobs:
           require_secret DEPLOY_HOST
           require_secret DEPLOY_USER
           require_secret DEPLOY_SSH_KEY
-          require_secret SUPER_ADMIN_LOGIN
-          require_secret SUPER_ADMIN_PASSWORD
-          require_secret SUPER_ADMIN_EMAIL
 
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-          SUPER_ADMIN_LOGIN_B64="$(printf '%s' "$SUPER_ADMIN_LOGIN" | base64 -w 0)"
-          SUPER_ADMIN_PASSWORD_B64="$(printf '%s' "$SUPER_ADMIN_PASSWORD" | base64 -w 0)"
-          SUPER_ADMIN_EMAIL_B64="$(printf '%s' "$SUPER_ADMIN_EMAIL" | base64 -w 0)"
-
           ssh -i ~/.ssh/deploy_key \
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=20 \
             -o TCPKeepAlive=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_HOST='$DEPLOY_HOST' SUPER_ADMIN_LOGIN_B64='$SUPER_ADMIN_LOGIN_B64' SUPER_ADMIN_PASSWORD_B64='$SUPER_ADMIN_PASSWORD_B64' SUPER_ADMIN_EMAIL_B64='$SUPER_ADMIN_EMAIL_B64' bash -s" <<'REMOTE'
+            "DEPLOY_HOST='$DEPLOY_HOST' bash -s" <<'REMOTE'
           set -euo pipefail
-
-          decode_secret() {
-            printf '%s' "$1" | base64 -d
-          }
-
-          export SUPER_USERNAME="$(decode_secret "$SUPER_ADMIN_LOGIN_B64")"
-          export SUPER_FULLNAME="$SUPER_USERNAME"
-          export SUPER_PASSWORD="$(decode_secret "$SUPER_ADMIN_PASSWORD_B64")"
-          export SUPER_EMAIL="$(decode_secret "$SUPER_ADMIN_EMAIL_B64")"
 
           APP_DIR="$HOME/01academy-crm"
           REPO_URL="https://github.com/SheriAkhtamov/01Academy_CRM.git"
@@ -143,13 +124,6 @@ jobs:
 
             sleep 2
           done
-
-          docker compose exec -T \
-            -e SUPER_USERNAME="$SUPER_USERNAME" \
-            -e SUPER_FULLNAME="$SUPER_FULLNAME" \
-            -e SUPER_EMAIL="$SUPER_EMAIL" \
-            -e SUPER_PASSWORD="$SUPER_PASSWORD" \
-            crm npm run seed
 
           docker compose ps
           REMOTE

@@ -209,8 +209,6 @@ const groupSchema = z.object({
   teacherId: z.string(),
   lessonCount: z.coerce.number().int().min(1),
   lessonDurationMinutes: z.coerce.number().int().min(15),
-  durationDays: z.coerce.number().int().min(1),
-  frequency: z.string(),
   status: z.enum(['open', 'in_progress', 'completed']),
   startDate: z.string(),
   endDate: z.string(),
@@ -426,8 +424,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       teacherId: AUTO_TEACHER_VALUE,
       lessonCount: 10,
       lessonDurationMinutes: 120,
-      durationDays: 30,
-      frequency: '',
       status: 'open',
       startDate: '',
       endDate: '',
@@ -535,8 +531,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         schedule: groupSchedule,
         lessonCount: Number(values.lessonCount),
         lessonDurationMinutes: Number(values.lessonDurationMinutes),
-        durationDays: Number(values.durationDays),
-        frequency: values.frequency,
         maxStudents: 12,
         status: values.status,
         startDate: values.startDate || null,
@@ -709,8 +703,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       teacherId: group.teacherId ? String(group.teacherId) : AUTO_TEACHER_VALUE,
       lessonCount: group.lessonCount || 10,
       lessonDurationMinutes: group.lessonDurationMinutes || 120,
-      durationDays: group.durationDays || 30,
-      frequency: group.frequency ?? '',
       status: ['open', 'in_progress', 'completed'].includes(group.status)
         ? group.status as GroupValues['status']
         : 'open',
@@ -724,8 +716,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       teacherId: AUTO_TEACHER_VALUE,
       lessonCount: 10,
       lessonDurationMinutes: 120,
-      durationDays: 30,
-      frequency: '',
       status: 'open',
       startDate: '',
       endDate: '',
@@ -980,9 +970,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         <div className="min-w-44">
           <p className="font-medium text-foreground">
             {row.lessonCount} {t('lessonsCount')} · {row.lessonDurationMinutes} {t('minuteShort')}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {row.durationDays} {t('dayShort')}{row.frequency ? ` · ${row.frequency}` : ''}
           </p>
         </div>
       ),
@@ -1679,20 +1666,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormItem>
                     <FormLabel>{t('lessonDurationMinutes')}</FormLabel>
                     <FormControl><Input type="number" min="15" step="15" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="durationDays" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('courseDurationDays')}</FormLabel>
-                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="frequency" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('frequency')}</FormLabel>
-                    <FormControl><Input {...field} placeholder={t('frequencyPlaceholder')} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />

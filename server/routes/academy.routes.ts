@@ -432,18 +432,22 @@ const createTask = async (title: string, options: {
   entityId: options.entityId ?? null,
   status: 'new' });
 
-const createOutbox = async (channel: string, recipient: string, message: string, options: {
+const createOutbox = async (channel: string, recipient: string | null | undefined, message: string, options: {
   scheduledAt?: Date | null;
   entityType?: string | null;
   entityId?: number | null;
-}) => insertRow('academy_notification_outbox', {
-  channel,
-  recipient,
-  message,
-  status: 'pending',
-  scheduledAt: options.scheduledAt ?? new Date(),
-  entityType: options.entityType ?? null,
-  entityId: options.entityId ?? null });
+}) => {
+  const normalizedRecipient = nullableText(recipient);
+  if (!normalizedRecipient) return null;
+  return insertRow('academy_notification_outbox', {
+    channel,
+    recipient: normalizedRecipient,
+    message,
+    status: 'pending',
+    scheduledAt: options.scheduledAt ?? new Date(),
+    entityType: options.entityType ?? null,
+    entityId: options.entityId ?? null });
+};
 
 const logIntegration = async (provider: string, direction: string, status: string, payload: unknown, errorMessage?: string | null) =>
   insertRow('academy_integration_logs', {
@@ -1242,6 +1246,9 @@ const createStageHistory = async (leadId: number, fromStatusCode: string | null,
     changedBy,
     comment: comment ?? null });
 
+const leadContactSummary = (lead: Row) =>
+  [lead.contactName, lead.phone || lead.messenger || 'без телефона'].filter(Boolean).join(': ');
+
 const getActiveSalesManager = async (managerId: number) => {
   const manager = await queryOne<{ id: number; fullName: string }>(
     `SELECT id, full_name
@@ -1304,7 +1311,7 @@ const reassignLead = async (
   await createNotification(
     manager.id,
     'Вам назначен лид',
-    `${lead.contactName}: ${lead.phone}`,
+    leadContactSummary(lead),
     'lead',
     lead.id,
   );
@@ -1561,8 +1568,8 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
       entityType: 'lead',
       entityId: lead.id,
       description: 'Связаться с лидом в течение 15 минут после заявки.' });
-    await createNotification(managerId, 'Новая заявка 01 Academy', `${lead.contactName}: ${lead.phone}`, 'lead', lead.id);
-    await createOutbox('telegram', String(managerId), `Новая заявка: ${lead.contactName}, ${lead.phone}`, {
+    await createNotification(managerId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
+    await createOutbox('telegram', String(managerId), `Новая заявка: ${leadContactSummary(lead)}`, {
       scheduledAt: now,
       entityType: 'lead',
       entityId: lead.id });
@@ -2925,7 +2932,6 @@ router.post('/leads', async (req, res) => {
     const sourceId = await resolveSourceId(req.body);
 
     if (!contactName) return res.status(400).json({ error: 'contactPersonRequired' });
-    if (!phone) return res.status(400).json({ error: 'phoneRequired' });
     if (!sourceId) return res.status(400).json({ error: 'sourceRequired' });
 
     const duplicate = await findDuplicate(phone, messenger);
@@ -2965,7 +2971,7 @@ router.post('/leads', async (req, res) => {
       const managerId = await resolveLeadManagerId(req, req.body.managerId);
       const createdLead = await insertRow('academy_leads', {
         contactName,
-        phone,
+        phone: phone ?? null,
         messenger: messenger ?? null,
         studentName: nullableText(req.body.studentName) ?? null,
         studentAge: studentAge ?? null,
@@ -3203,9 +3209,10 @@ router.patch('/leads/:id', async (req, res) => {
     const managerId = canManageLeadAssignment && req.body.managerId !== undefined
       ? await resolveLeadManagerId(req, req.body.managerId)
       : undefined;
+    const requestedPhone = nullableText(req.body.phone);
     const updates: Row = {
       contactName: nullableText(req.body.contactName) ?? oldLead.contactName,
-      phone: nullableText(req.body.phone) ?? oldLead.phone,
+      phone: requestedPhone === undefined ? undefined : requestedPhone,
       messenger: nullableText(req.body.messenger),
       studentName: nullableText(req.body.studentName),
       studentAge: toIntegerOrNull(req.body.studentAge),

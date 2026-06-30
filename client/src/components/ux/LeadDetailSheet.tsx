@@ -72,7 +72,7 @@ type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 interface LeadDetails {
   id: number;
   contactName: string;
-  phone: string;
+  phone?: string | null;
   messenger?: string | null;
   studentName?: string | null;
   studentAge?: number | null;
@@ -169,9 +169,14 @@ const optionalNumberString = z.string().refine(
   'invalidData',
 );
 
+const optionalPhoneString = z.string().trim().refine(
+  (value) => value === '' || value.length >= 7,
+  'invalidData',
+);
+
 const leadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
-  phone: z.string().trim().min(7, 'invalidData'),
+  phone: optionalPhoneString,
   messenger: z.string(),
   studentName: z.string(),
   studentAge: optionalNumberString,
@@ -567,7 +572,7 @@ export function LeadDetailSheet({
                     </Badge>
                   </div>
                   <SheetDescription className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                    <span>{lead.phone}</span>
+                    {lead.phone ? <span>{lead.phone}</span> : null}
                     {lead.studentName ? <span>• {lead.studentName}</span> : null}
                     {lead.courseName ? <span>• {lead.courseName}</span> : null}
                     {lead.schoolName ? <span>• {lead.schoolName}</span> : null}

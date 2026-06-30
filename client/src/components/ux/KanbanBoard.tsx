@@ -47,7 +47,8 @@ interface KanbanStatus {
 interface KanbanLead {
   id: number;
   contactName: string;
-  phone?: string;
+  phone?: string | null;
+  messenger?: string | null;
   courseName?: string;
   sourceName?: string;
   managerName?: string;
@@ -96,6 +97,8 @@ function LeadCardContent({
     ? []
     : statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
   const canQualify = currentStatus.code === 'new_request' || currentStatus.code === 'first_contact';
+  const canCall = Boolean(lead.phone);
+  const canMessage = Boolean(lead.messenger?.startsWith('@') || lead.phone);
 
   return (
     <>
@@ -149,10 +152,10 @@ function LeadCardContent({
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)}>
+                <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)} disabled={!canCall}>
                   <Phone /> {t('call')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)}>
+                <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)} disabled={!canMessage}>
                   <Send /> {t('write')}
                 </DropdownMenuItem>
               </DropdownMenuGroup>

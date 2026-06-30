@@ -37,7 +37,7 @@ import { getAssignedWorkspaces, LEAD_STATUSES } from '@shared/academy';
 interface AdminLead {
   id: number;
   contactName: string;
-  phone: string;
+  phone?: string | null;
   studentName?: string | null;
   courseName?: string | null;
   sourceName?: string | null;
@@ -190,11 +190,11 @@ export function LeadAssignmentContent() {
       key: 'lead',
       header: t('lead'),
       sortable: true,
-      accessor: (lead) => `${lead.contactName} ${lead.studentName ?? ''} ${lead.phone}`,
+      accessor: (lead) => `${lead.contactName} ${lead.studentName ?? ''} ${lead.phone ?? ''}`,
       render: (lead) => (
         <div className="min-w-52">
           <p className="font-medium text-foreground">{lead.contactName}</p>
-          <p className="text-sm text-muted-foreground">{lead.phone}</p>
+          <p className="text-sm text-muted-foreground">{lead.phone || t('notAvailable')}</p>
           {lead.studentName ? <p className="text-xs text-muted-foreground">{lead.studentName}</p> : null}
         </div>
       ),

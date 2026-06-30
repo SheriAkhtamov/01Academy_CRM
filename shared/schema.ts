@@ -222,7 +222,7 @@ export const academyGroups = pgTable("academy_groups", {
 export const academyLeads = pgTable("academy_leads", {
   id: serial("id").primaryKey(),
   contactName: varchar("contact_name", { length: 255 }).notNull(),
-  phone: varchar("phone", { length: 50 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
   messenger: varchar("messenger", { length: 120 }),
   studentName: varchar("student_name", { length: 255 }),
   studentAge: integer("student_age"),

@@ -69,8 +69,8 @@ type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
 interface Lead {
   id: number;
   contactName: string;
-  phone: string;
-  messenger?: string;
+  phone?: string | null;
+  messenger?: string | null;
   studentName?: string;
   studentAge?: number;
   courseId?: number;
@@ -155,9 +155,14 @@ const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   tasks: '/sales/tasks',
 };
 
+const optionalPhoneString = z.string().trim().refine(
+  (value) => value === '' || value.length >= 7,
+  'invalidData',
+);
+
 const createLeadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
-  phone: z.string().trim().min(7, 'invalidData'),
+  phone: optionalPhoneString,
   messenger: z.string(),
   studentName: z.string(),
   studentAge: z.string().refine(
@@ -493,13 +498,23 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       return;
     }
     if (action === 'call') {
+      if (!lead.phone) {
+        toast({ title: t('phoneNotProvided'), variant: 'destructive' });
+        return;
+      }
       window.location.href = `tel:${lead.phone.replace(/[^\d+]/g, '')}`;
       return;
     }
     if (action === 'message') {
       const href = lead.messenger?.startsWith('@')
         ? `https://t.me/${lead.messenger.slice(1)}`
-        : `https://wa.me/${lead.phone.replace(/\D/g, '')}`;
+        : lead.phone
+          ? `https://wa.me/${lead.phone.replace(/\D/g, '')}`
+          : null;
+      if (!href) {
+        toast({ title: t('contactMethodNotProvided'), variant: 'destructive' });
+        return;
+      }
       window.open(href, '_blank', 'noopener,noreferrer');
       return;
     }
@@ -512,7 +527,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
       return;
     }
-  }, [openLead, t, updateLead]);
+  }, [openLead, t, toast, updateLead]);
 
   const handleLeadDialogState = useCallback((open: boolean) => {
     setLeadDialogOpen(open);

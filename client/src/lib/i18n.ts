@@ -567,7 +567,8 @@ export const translations = {
   paymentAmountRequired: { en: 'Payment amount is required', ru: 'Нельзя отметить оплату без суммы' },
   paymentPartyRequired: { en: 'Select a student or lead for the payment', ru: 'Нельзя отметить оплату без ученика или лида' },
   paymentRequiredBeforePaid: { en: 'Record a confirmed payment before moving the lead to Paid', ru: 'Сначала зафиксируйте подтверждённую оплату' },
-  phoneRequired: { en: 'Phone is required', ru: 'Телефон обязателен' },
+  phoneNotProvided: { en: 'Phone is not provided', ru: 'Телефон не указан' },
+  contactMethodNotProvided: { en: 'No phone or Telegram username is provided', ru: 'Не указан телефон или Telegram' },
   referralDiscount15: { en: '15% discount for one month', ru: 'Скидка 15% на один месяц' },
   sourceRequired: { en: 'Source is required', ru: 'Источник обязателен' },
 

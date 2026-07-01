@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowRight,
   MoreHorizontal,
@@ -52,6 +53,7 @@ interface KanbanLead {
   courseName?: string;
   sourceName?: string;
   managerName?: string;
+  comment?: string | null;
   studentAge?: number;
   expectedPaymentUzs?: number;
   offerPriceUzs?: number;
@@ -223,6 +225,7 @@ interface DraggableLeadCardProps extends LeadCardContentProps {
 
 function DraggableLeadCard(props: DraggableLeadCardProps) {
   const { lead, currentStatus, isPending, t, onLeadClick } = props;
+  const comment = lead.comment?.trim();
   const {
     attributes,
     listeners,
@@ -235,7 +238,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     disabled: isPending,
   });
 
-  return (
+  const card = (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
@@ -254,6 +257,21 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     >
       <LeadCardContent {...props} />
     </div>
+  );
+
+  if (!comment) return card;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{card}</TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        className="max-w-80 whitespace-pre-wrap break-words leading-relaxed"
+      >
+        {comment}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

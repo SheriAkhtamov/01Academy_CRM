@@ -452,7 +452,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       description: t('adminEmployeesDescription'),
     },
     {
-      href: '/tasks',
+      href: '/admin/tasks',
       icon: KanbanSquare,
       title: t('taskBoard'),
       description: t('taskBoardSubtitle'),

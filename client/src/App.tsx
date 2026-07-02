@@ -33,6 +33,22 @@ function WorkspaceBasedHome() {
   }
 }
 
+function TaskBoardHomeRedirect() {
+  const { user } = useAuth();
+  switch (user?.workspace) {
+    case 'administration':
+      return <Redirect to="/admin/tasks" />;
+    case 'sales':
+      return <Redirect to="/sales/task-board" />;
+    case 'teacher':
+      return <Redirect to="/teacher-workspace/tasks" />;
+    case 'marketing':
+      return <Redirect to="/marketing-workspace/tasks" />;
+    default:
+      return <AccessDenied titleKey="noWorkspaceAssigned" />;
+  }
+}
+
 function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'accessDeniedWorkspace' | 'noWorkspaceAssigned' }) {
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -105,6 +121,11 @@ function Router() {
             <SalesDashboard section="pipeline" />
           </WorkspaceGuard>
         )} />
+        <Route path="/sales/task-board" component={() => (
+          <WorkspaceGuard workspace="sales">
+            <AdminTasksPage />
+          </WorkspaceGuard>
+        )} />
         <Route path="/sales/archive" component={() => (
           <WorkspaceGuard workspace="sales">
             <SalesDashboard section="archive" />
@@ -130,7 +151,7 @@ function Router() {
             <MessagesPage />
           </WorkspaceGuard>
         )} />
-        <Route path="/tasks" component={AdminTasksPage} />
+        <Route path="/tasks" component={TaskBoardHomeRedirect} />
         <Route path="/sales" component={() => (
           <WorkspaceGuard workspace="sales">
             <SalesDashboard section="overview" />
@@ -149,6 +170,11 @@ function Router() {
         <Route path="/teacher-workspace/attendance" component={() => (
           <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="attendance" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/teacher-workspace/tasks" component={() => (
+          <WorkspaceGuard workspace="teacher">
+            <AdminTasksPage />
           </WorkspaceGuard>
         )} />
         <Route path="/teacher-workspace/ratings" component={() => <Redirect to="/teacher-workspace/profile" />} />
@@ -182,6 +208,11 @@ function Router() {
             <MarketingWorkspace section="referrals" />
           </WorkspaceGuard>
         )} />
+        <Route path="/marketing-workspace/tasks" component={() => (
+          <WorkspaceGuard workspace="marketing">
+            <AdminTasksPage />
+          </WorkspaceGuard>
+        )} />
         <Route path="/marketing-workspace/expenses" component={() => (
           <WorkspaceGuard workspace="marketing">
             <MarketingWorkspace section="expenses" />
@@ -208,7 +239,11 @@ function Router() {
           </WorkspaceGuard>
         )} />
         <Route path="/admin/leads" component={() => <Redirect to="/admin/sales-settings" />} />
-        <Route path="/admin/tasks" component={() => <Redirect to="/tasks" />} />
+        <Route path="/admin/tasks" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <AdminTasksPage />
+          </WorkspaceGuard>
+        )} />
         <Route path="/admin/academy-settings" component={() => (
           <WorkspaceGuard workspace="administration">
             <AcademySettings />

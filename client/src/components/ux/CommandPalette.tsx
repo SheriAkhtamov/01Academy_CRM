@@ -84,6 +84,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const administrationItems: SearchItem[] = [
         { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
+        { id: 'nav-admin-task-board', type: t('systemAdministration'), title: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { id: 'nav-sales-settings', type: t('systemAdministration'), title: t('salesSettings'), href: '/admin/sales-settings', icon: UserRoundCheck },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
@@ -92,6 +93,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
         { id: 'nav-sales-pipeline', type: t('pipeline'), title: t('pipeline'), href: '/sales/pipeline', icon: Flame },
         { id: 'nav-sales-archive', type: t('salesPipeline'), title: t('leadArchive'), href: '/sales/archive', icon: Archive },
+        { id: 'nav-sales-task-board', type: t('salesPipeline'), title: t('taskBoard'), href: '/sales/task-board', icon: KanbanSquare },
         { id: 'nav-sales-schedule', type: t('salesPipeline'), title: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
         { id: 'nav-sales-tasks', type: t('myTasks'), title: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
@@ -102,6 +104,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
         { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
         { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
+        { id: 'nav-teacher-task-board', type: t('teacherWorkspace'), title: t('taskBoard'), href: '/teacher-workspace/tasks', icon: KanbanSquare },
         { id: 'nav-teacher-profile', type: t('myProfile'), title: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
       ];
       const marketingItems: SearchItem[] = [
@@ -110,6 +113,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-marketing-funnel', type: t('conversionFunnel'), title: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
         { id: 'nav-marketing-warm', type: t('warmBase'), title: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
         { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
+        { id: 'nav-marketing-task-board', type: t('marketingTab'), title: t('taskBoard'), href: '/marketing-workspace/tasks', icon: KanbanSquare },
         { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
       ];
 
@@ -117,7 +121,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const hasWorkspace = (workspace: AcademyWorkspace) => assignedWorkspaces.includes(workspace);
 
       return [
-        { id: 'nav-task-board', type: t('navigation'), title: t('taskBoard'), href: '/tasks', icon: KanbanSquare },
         ...(hasWorkspace('administration') ? administrationItems : []),
         ...(hasWorkspace('sales') ? salesItems : []),
         ...(hasWorkspace('teacher') ? teacherItems : []),

@@ -161,14 +161,18 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     const onError = (error: Error) => toast({ title: error.message, variant: 'destructive' });
 
     const saveMutation = useMutation({
-        mutationFn: () =>
-            apiRequest('PATCH', `/api/board/tasks/${taskId}`, {
+        mutationFn: () => {
+            const payload: Record<string, unknown> = {
                 title: draftTitle.trim(),
                 description: draftDescription.trim() || null,
                 priority: draftPriority,
-                assigneeId: draftAssignee === UNASSIGNED ? null : Number(draftAssignee),
                 dueAt: draftDue ? new Date(draftDue).toISOString() : null,
-            }),
+            };
+            if (isTaskSupervisor) {
+                payload.assigneeId = draftAssignee === UNASSIGNED ? null : Number(draftAssignee);
+            }
+            return apiRequest('PATCH', `/api/board/tasks/${taskId}`, payload);
+        },
         onSuccess: () => { invalidate(); setEditing(false); toast({ title: t('taskUpdated') }); },
         onError,
     });
@@ -346,13 +350,17 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             </div>
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs text-slate-500">{t('assigneeLabel')}</Label>
-                                                <Select value={draftAssignee} onValueChange={setDraftAssignee}>
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
-                                                        {users.map((u) => (<SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>))}
-                                                    </SelectContent>
-                                                </Select>
+                                                {isTaskSupervisor ? (
+                                                    <Select value={draftAssignee} onValueChange={setDraftAssignee}>
+                                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
+                                                            {users.map((u) => (<SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                ) : (
+                                                    <Input value={task.assignee?.fullName ?? t('unassigned')} disabled />
+                                                )}
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">

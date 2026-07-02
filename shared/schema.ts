@@ -995,7 +995,7 @@ export type SavedAccount = typeof savedAccounts.$inferSelect;
 export type InsertSavedAccount = z.infer<typeof insertSavedAccountSchema>;
 
 // ---------------------------------------------------------------------------
-// Administration task board (Kanban task management).
+// Shared task board (Kanban task management).
 // One shared board ships today; the `boards` table and `boardId` foreign keys
 // leave room to add more boards, per-board membership and access rules later
 // without breaking existing tasks or data.

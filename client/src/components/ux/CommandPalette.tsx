@@ -83,7 +83,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const administrationItems: SearchItem[] = [
         { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
         { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
-        { id: 'nav-admin-tasks', type: t('systemAdministration'), title: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { id: 'nav-sales-settings', type: t('systemAdministration'), title: t('salesSettings'), href: '/admin/sales-settings', icon: UserRoundCheck },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
@@ -116,6 +115,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const hasWorkspace = (workspace: AcademyWorkspace) => assignedWorkspaces.includes(workspace);
 
       return [
+        { id: 'nav-task-board', type: t('navigation'), title: t('taskBoard'), href: '/tasks', icon: KanbanSquare },
         ...(hasWorkspace('administration') ? administrationItems : []),
         ...(hasWorkspace('sales') ? salesItems : []),
         ...(hasWorkspace('teacher') ? teacherItems : []),

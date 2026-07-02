@@ -9,6 +9,10 @@ const localizeApiErrorMessage = (message: string, status: number) => {
 
   const normalized = message.replace(/^\d+:\s*/, "").trim();
 
+  if (normalized === "taskAssignOtherEmployeesAdminOnly") {
+    return i18n.t("taskAssignOtherEmployeesAdminOnly");
+  }
+
   if (normalized in translations) {
     return i18n.t(normalized as keyof typeof translations);
   }

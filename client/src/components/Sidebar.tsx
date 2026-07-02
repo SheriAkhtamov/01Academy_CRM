@@ -60,7 +60,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   if (!user) return null;
 
-  const { workspace } = user;
   const assignedWorkspaces = getAssignedWorkspaces(user);
   const hasWorkspace = (workspaceName: AcademyWorkspace) => assignedWorkspaces.includes(workspaceName);
 
@@ -78,6 +77,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     if (href === '/admin/sales-settings') {
       return currentPath === href || currentPath === '/admin/leads';
     }
+    if (href === '/tasks') {
+      return currentPath === href || currentPath === '/admin/tasks';
+    }
     if (href === '/admin/academy-settings') {
       const activeTab = currentParams.get('tab');
       return currentPath === href && (!activeTab || !['pipeline', 'kpi'].includes(activeTab));
@@ -86,6 +88,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const buildSections = (): NavSection[] => {
+    const commonSection: NavSection = {
+      label: t('navigation'),
+      items: [
+        { name: t('taskBoard'), href: '/tasks', icon: KanbanSquare },
+      ],
+    };
+
     const salesSection: NavSection = {
       label: t('salesPipeline'),
       items: [
@@ -126,7 +135,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       items: [
         { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
         { name: t('employees'), href: '/employees', icon: Users },
-        { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { name: t('salesSettings'), href: '/admin/sales-settings', icon: UserCheck },
         { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
@@ -135,6 +143,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     };
 
     return [
+      commonSection,
       hasWorkspace('sales') ? salesSection : null,
       hasWorkspace('teacher') ? teacherSection : null,
       hasWorkspace('marketing') ? marketingSection : null,

@@ -1,4 +1,4 @@
-import { Router, type NextFunction, type Request, type Response } from 'express';
+import { Router } from 'express';
 import fs from 'fs';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -26,18 +26,14 @@ export function setBroadcastFunction(fn: (data: any) => void) {
 
 const isTaskSupervisor = (user?: User) => hasLeadershipAccess(user);
 
-const requireBoardAccess = (req: Request, res: Response, next: NextFunction) => {
-    if (!isTaskSupervisor(req.user)) {
-        return res.status(403).json({ error: 'Administration workspace access required' });
-    }
-    next();
-};
+router.use(requireAuth);
 
-router.use(requireAuth, requireBoardAccess);
+const canReadTask = (user: User, task: BoardTask | { creatorId: number | null; assigneeId: number | null }) =>
+    user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor(user);
 
 // Can edit core fields (title, description, priority, assignee, due date).
 const canManageTask = (user: User, task: BoardTask) =>
-    user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor(user);
+    canReadTask(user, task);
 
 // Accepting (Done -> Accepted) and re-opening (out of Accepted) are reserved
 // for the task creator. The head retains an override so orphaned tasks (whose
@@ -52,6 +48,50 @@ const parseId = (raw: string) => {
 
 const isStatus = (value: unknown): value is BoardTaskStatus =>
     typeof value === 'string' && (BOARD_TASK_STATUSES as readonly string[]).includes(value);
+
+const hasAssigneeValue = (value: unknown) => value !== undefined && value !== null && value !== '';
+
+const parseAssigneeId = (value: unknown) => {
+    if (!hasAssigneeValue(value)) return null;
+    return parseId(String(value));
+};
+
+type AssigneeResolution =
+    | { assigneeId: number | null; error?: never }
+    | { assigneeId?: never; error: { code: number; message: string } };
+
+const resolveAssignee = async (
+    rawAssigneeId: unknown,
+    actor: User,
+    options: { forceSelfForStaff: boolean },
+): Promise<AssigneeResolution> => {
+    if (!isTaskSupervisor(actor)) {
+        if (!hasAssigneeValue(rawAssigneeId) && options.forceSelfForStaff) {
+            return { assigneeId: actor.id };
+        }
+        const requestedAssigneeId = parseAssigneeId(rawAssigneeId);
+        if (hasAssigneeValue(rawAssigneeId) && requestedAssigneeId === null) {
+            return { error: { code: 400, message: 'Invalid assignee' } };
+        }
+        if (requestedAssigneeId !== actor.id) {
+            return { error: { code: 403, message: 'taskAssignOtherEmployeesAdminOnly' } };
+        }
+        return { assigneeId: actor.id };
+    }
+
+    const requestedAssigneeId = parseAssigneeId(rawAssigneeId);
+    if (hasAssigneeValue(rawAssigneeId) && requestedAssigneeId === null) {
+        return { error: { code: 400, message: 'Invalid assignee' } };
+    }
+    if (requestedAssigneeId !== null) {
+        const assignee = await storage.getUser(requestedAssigneeId);
+        if (!assignee || assignee.isActive === false) {
+            return { error: { code: 400, message: 'Assignee not found' } };
+        }
+    }
+
+    return { assigneeId: requestedAssigneeId };
+};
 
 // Validates a status transition and returns an error tuple or null when allowed.
 function validateTransition(
@@ -108,9 +148,10 @@ router.get('/tasks', async (req, res) => {
             if (!board) return res.json({ board: null, tasks: [] });
             boardId = board.id;
         }
+        const visibleToUserId = isTaskSupervisor(req.user!) ? undefined : req.user!.id;
         const [board, tasks] = await Promise.all([
             storage.board.getBoard(boardId),
-            storage.board.getTasks(boardId),
+            storage.board.getTasks(boardId, visibleToUserId),
         ]);
         if (!board) return res.status(404).json({ error: 'Board not found' });
         res.json({ board, tasks });
@@ -126,6 +167,7 @@ router.get('/tasks/:id', async (req, res) => {
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
         const task = await storage.board.getTaskDetail(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         res.json(task);
     } catch (error) {
         logger.error('Failed to fetch task detail', { error, taskId: req.params.id });
@@ -157,13 +199,9 @@ router.post('/tasks', async (req, res) => {
         const targetStatus: BoardTaskStatus = isStatus(status) ? status : 'backlog';
         const position = (await storage.board.getMaxPosition(boardId, targetStatus)) + 1;
 
-        let assignee: number | null = null;
-        if (assigneeId) {
-            const parsed = parseId(String(assigneeId));
-            if (parsed) {
-                const exists = await storage.getUser(parsed);
-                if (exists) assignee = parsed;
-            }
+        const resolvedAssignee = await resolveAssignee(assigneeId, req.user!, { forceSelfForStaff: true });
+        if (resolvedAssignee.error) {
+            return res.status(resolvedAssignee.error.code).json({ error: resolvedAssignee.error.message });
         }
 
         const task = await storage.board.createTask({
@@ -174,7 +212,7 @@ router.post('/tasks', async (req, res) => {
             priority: priority ?? 'normal',
             position,
             creatorId: req.user!.id,
-            assigneeId: assignee,
+            assigneeId: resolvedAssignee.assigneeId,
             dueAt: dueAt ? new Date(dueAt) : null,
         });
 
@@ -222,15 +260,11 @@ router.patch('/tasks/:id', async (req, res) => {
             updates.priority = priority;
         }
         if (assigneeId !== undefined) {
-            if (assigneeId === null) {
-                updates.assigneeId = null;
-            } else {
-                const parsed = parseId(String(assigneeId));
-                if (!parsed) return res.status(400).json({ error: 'Invalid assignee' });
-                const exists = await storage.getUser(parsed);
-                if (!exists) return res.status(400).json({ error: 'Assignee not found' });
-                updates.assigneeId = parsed;
+            const resolvedAssignee = await resolveAssignee(assigneeId, req.user!, { forceSelfForStaff: false });
+            if (resolvedAssignee.error) {
+                return res.status(resolvedAssignee.error.code).json({ error: resolvedAssignee.error.message });
             }
+            updates.assigneeId = resolvedAssignee.assigneeId;
         }
         if (dueAt !== undefined) updates.dueAt = dueAt ? new Date(dueAt) : null;
 
@@ -276,6 +310,9 @@ router.patch('/tasks/:id/status', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canManageTask(req.user!, task)) {
+            return res.status(403).json({ error: 'accessDenied' });
+        }
 
         const transitionError = validateTransition(task, status, req.user!);
         if (transitionError) {
@@ -351,6 +388,7 @@ router.post('/tasks/:id/comments', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
         const comment = await storage.board.createComment({
             taskId: id,
@@ -383,6 +421,8 @@ router.patch('/comments/:id', async (req, res) => {
 
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
+        const task = await storage.board.getTask(comment.taskId);
+        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         if (req.user!.id !== comment.authorId && !isTaskSupervisor(req.user!)) {
             return res.status(403).json({ error: 'You can only edit your own comments' });
         }
@@ -403,6 +443,8 @@ router.delete('/comments/:id', async (req, res) => {
 
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
+        const task = await storage.board.getTask(comment.taskId);
+        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         if (req.user!.id !== comment.authorId && !isTaskSupervisor(req.user!)) {
             return res.status(403).json({ error: 'You can only delete your own comments' });
         }
@@ -427,6 +469,7 @@ router.post('/tasks/:id/checklist', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
         const item = await storage.board.createChecklistItem({
             taskId: id,
@@ -450,6 +493,8 @@ router.patch('/checklist/:id', async (req, res) => {
 
         const item = await storage.board.getChecklistItem(id);
         if (!item) return res.status(404).json({ error: 'Item not found' });
+        const task = await storage.board.getTask(item.taskId);
+        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
         const updates: Record<string, unknown> = {};
         if (req.body.content !== undefined) {
@@ -474,6 +519,8 @@ router.delete('/checklist/:id', async (req, res) => {
 
         const item = await storage.board.getChecklistItem(id);
         if (!item) return res.status(404).json({ error: 'Item not found' });
+        const task = await storage.board.getTask(item.taskId);
+        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
         await storage.board.deleteChecklistItem(id);
         broadcastTask('BOARD_TASK_UPDATED', { id: item.taskId, boardId: 0 });
@@ -497,6 +544,10 @@ router.post('/tasks/:id/attachments', boardAttachmentUpload.single('file'), asyn
             // Clean up the orphaned upload.
             fs.unlink(req.file.path, () => { });
             return res.status(404).json({ error: 'Task not found' });
+        }
+        if (!canReadTask(req.user!, task)) {
+            fs.unlink(req.file.path, () => { });
+            return res.status(403).json({ error: 'accessDenied' });
         }
 
         const attachment = await storage.board.createAttachment({
@@ -531,6 +582,8 @@ router.get('/attachments/:id/download', async (req, res) => {
 
         const attachment = await storage.board.getAttachment(id);
         if (!attachment) return res.status(404).json({ error: 'Attachment not found' });
+        const task = await storage.board.getTask(attachment.taskId);
+        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
         const filePath = path.join(BOARD_UPLOAD_DIR, attachment.fileName);
         if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
@@ -551,6 +604,7 @@ router.delete('/attachments/:id', async (req, res) => {
         if (!attachment) return res.status(404).json({ error: 'Attachment not found' });
 
         const task = await storage.board.getTask(attachment.taskId);
+        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         const canDelete =
             req.user!.id === attachment.uploadedBy ||
             (task && req.user!.id === task.creatorId) ||

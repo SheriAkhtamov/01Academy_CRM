@@ -15,7 +15,7 @@ import {
     type InsertBoardTaskAttachment,
     type InsertBoardTaskActivity,
 } from '@shared/schema';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 // Minimal user shape embedded in task payloads. Accepts the `users` table or
@@ -57,7 +57,17 @@ class BoardStorage {
     }
 
     // -- Tasks (list with embedded users + counts) -------------------------
-    async getTasks(boardId: number) {
+    async getTasks(boardId: number, visibleToUserId?: number) {
+        const visibilityWhere = visibleToUserId
+            ? and(
+                eq(boardTasks.boardId, boardId),
+                or(
+                    eq(boardTasks.creatorId, visibleToUserId),
+                    eq(boardTasks.assigneeId, visibleToUserId),
+                ),
+            )
+            : eq(boardTasks.boardId, boardId);
+
         const rows = await db
             .select({
                 id: boardTasks.id,
@@ -77,7 +87,7 @@ class BoardStorage {
             .from(boardTasks)
             .leftJoin(creator, eq(boardTasks.creatorId, creator.id))
             .leftJoin(assignee, eq(boardTasks.assigneeId, assignee.id))
-            .where(eq(boardTasks.boardId, boardId))
+            .where(visibilityWhere)
             .orderBy(asc(boardTasks.position), asc(boardTasks.id));
 
         const ids = rows.map((r) => r.id);

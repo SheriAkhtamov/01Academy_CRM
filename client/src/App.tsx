@@ -125,6 +125,7 @@ function Router() {
             <MessagesPage />
           </WorkspaceGuard>
         )} />
+        <Route path="/tasks" component={AdminTasksPage} />
         <Route path="/sales" component={() => (
           <WorkspaceGuard workspace="sales">
             <SalesDashboard section="overview" />
@@ -202,11 +203,7 @@ function Router() {
           </WorkspaceGuard>
         )} />
         <Route path="/admin/leads" component={() => <Redirect to="/admin/sales-settings" />} />
-        <Route path="/admin/tasks" component={() => (
-          <WorkspaceGuard workspace="administration">
-            <AdminTasksPage />
-          </WorkspaceGuard>
-        )} />
+        <Route path="/admin/tasks" component={() => <Redirect to="/tasks" />} />
         <Route path="/admin/academy-settings" component={() => (
           <WorkspaceGuard workspace="administration">
             <AcademySettings />

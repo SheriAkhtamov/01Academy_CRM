@@ -762,6 +762,7 @@ export const translations = {
   reopenTask: { en: 'Reopen task', ru: 'Вернуть в работу' },
   taskBoard: { en: 'Task board', ru: 'Доска задач' },
   taskBoardSubtitle: { en: 'Plan work, assign owners, and track progress across teams.', ru: 'Планируйте работу, назначайте исполнителей и отслеживайте прогресс команд.' },
+  taskAssignOtherEmployeesAdminOnly: { en: 'Only administrators can assign tasks to other employees.', ru: 'Назначать задачи другим сотрудникам могут только администраторы.' },
   taskDeletedToast: { en: 'Task deleted', ru: 'Задача удалена' },
   taskDescriptionPlaceholder: { en: 'Add details, context, or the expected result...', ru: 'Добавьте детали, контекст или ожидаемый результат...' },
   taskDetails: { en: 'Task details', ru: 'Детали задачи' },

@@ -9,6 +9,8 @@ import { CreateTaskDialog } from '@/components/ux/board/CreateTaskDialog';
 import { TaskDetailSheet } from '@/components/ux/board/TaskDetailSheet';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useAuth } from '@/hooks/useAuth';
+import { hasLeadershipAccess } from '@shared/academy';
 import type { BoardStatus, BoardTasksResponse, UserMini } from '@/lib/boardTypes';
 
 interface ApiUser {
@@ -21,7 +23,9 @@ interface ApiUser {
 
 export default function AdminTasksPage() {
     const { t } = useTranslation();
+    const { user } = useAuth();
     const queryClient = useQueryClient();
+    const isTaskSupervisor = hasLeadershipAccess(user);
 
     const [createOpen, setCreateOpen] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -33,14 +37,26 @@ export default function AdminTasksPage() {
 
     const { data: usersData } = useQuery<ApiUser[]>({
         queryKey: ['/api/users'],
+        enabled: isTaskSupervisor,
     });
 
+    const currentUser: UserMini | null = useMemo(() => (
+        user
+            ? { id: user.id, fullName: user.fullName, position: user.position, workspace: user.workspace }
+            : null
+    ), [user]);
+
     const users: UserMini[] = useMemo(
-        () =>
-            (usersData ?? [])
-                .filter((u) => u.isActive !== false)
-                .map((u) => ({ id: u.id, fullName: u.fullName, position: u.position, workspace: u.workspace })),
-        [usersData],
+        () => {
+            if (!isTaskSupervisor) {
+                return currentUser ? [currentUser] : [];
+            }
+
+            return (usersData ?? [])
+                    .filter((u) => u.isActive !== false)
+                    .map((u) => ({ id: u.id, fullName: u.fullName, position: u.position, workspace: u.workspace }));
+        },
+        [currentUser, isTaskSupervisor, usersData],
     );
 
     const handleStatusChange = async (taskId: number, status: BoardStatus): Promise<boolean> => {
@@ -95,7 +111,13 @@ export default function AdminTasksPage() {
                 )}
             </div>
 
-            <CreateTaskDialog open={createOpen} onOpenChange={setCreateOpen} users={users} />
+            <CreateTaskDialog
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+                users={users}
+                currentUser={currentUser}
+                canAssignUsers={isTaskSupervisor}
+            />
             <TaskDetailSheet taskId={selectedTaskId} open={detailOpen} onOpenChange={setDetailOpen} users={users} />
         </div>
     );

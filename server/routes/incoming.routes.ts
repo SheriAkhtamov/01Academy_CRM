@@ -36,7 +36,7 @@ router.post('/instagram', async (req, res) => {
 
 // Webhook secrets are optional in dev (so local testing works), but when a secret is
 // configured every inbound payload must carry it in the x-webhook-secret header.
-const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace'): boolean => {
+const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace' | 'website'): boolean => {
   const configured = appConfig.integrations?.[secretKey]?.webhookSecret;
   if (!configured) {
     // No secret configured → allow (development mode). Log so it's visible.
@@ -124,6 +124,20 @@ const normalizePhoneForStorage = (value: unknown) => {
   if (digits.length === 9) digits = `998${digits}`;
   const phone = `+${digits}`;
   return { phone, normalizedPhone: phone };
+};
+
+const nullableText = (value: unknown, maxLength?: number) => {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return maxLength ? trimmed.slice(0, maxLength) : trimmed;
+};
+
+const normalizeTelegramUsername = (value: unknown) => {
+  const text = nullableText(value, 120);
+  if (!text) return null;
+  const username = text.replace(/^https?:\/\/t\.me\//i, '').replace(/^@+/, '').trim();
+  return username ? `@${username}`.slice(0, 120) : null;
 };
 
 const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, phone: string) => {
@@ -287,6 +301,63 @@ router.post('/google-forms', async (req, res) => {
   } catch (error) {
     logger.error('Failed to receive Google Forms lead', { error });
     res.status(500).json({ error: 'Failed to receive Google Forms lead' });
+  }
+});
+
+router.post('/website-lead', async (req, res) => {
+  if (!verifyWebhookSecret(req, res, 'website')) return;
+  try {
+    const body = req.body ?? {};
+    const contactName = nullableText(body.contactName ?? body.name, 255);
+    const phone = nullableText(body.phone, 50);
+    const messenger = normalizeTelegramUsername(body.telegramUsername ?? body.messenger ?? body.telegram);
+    const message = nullableText(body.message, 2000);
+    const language = nullableText(body.locale ?? body.language, 20) ?? 'ru';
+    const campaign = nullableText(body.sourceLabel ?? body.source ?? body.pageUrl, 255);
+
+    if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });
+    if (!phone) return res.status(400).json({ error: 'phoneRequired' });
+
+    const storedPhone = normalizePhoneForStorage(phone)?.phone ?? phone;
+    const comment = message ? `Сообщение клиента "${message}"` : null;
+
+    const result = await withIncomingTransaction(async (client) => {
+      const systemUserId = await getSystemUserId(client);
+      const duplicate = await findIncomingDuplicate(client, phone, messenger);
+      if (duplicate) return { duplicate: camelize(duplicate), lead: null };
+
+      const sourceId = await ensureIncomingSourceId(client, {
+        code: 'website',
+        name: 'Сайт',
+        channel: 'website',
+      });
+
+      const { rows: inserted } = await client.query(
+        `INSERT INTO academy_leads
+          (contact_name, phone, messenger, source_id, advertising_campaign, status_code, manager_id, language, comment, created_by)
+         VALUES ($1,$2,$3,$4,$5,'new_request',NULL,$6,$7,$8) RETURNING *`,
+        [contactName, storedPhone, messenger, sourceId, campaign, language, comment, systemUserId],
+      );
+      const lead = camelize(inserted[0]);
+      await syncIncomingLeadPhone(client, lead.id, storedPhone);
+      await client.query(
+        `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
+         VALUES ($1,NULL,'new_request',$2,'Заявка с сайта')`,
+        [lead.id, systemUserId],
+      );
+      return { duplicate: null, lead };
+    });
+
+    if (result.duplicate) {
+      await logIntegration('website', 'inbound', 'duplicate', body);
+      return res.status(409).json({ error: 'Duplicate lead or student', duplicate: result.duplicate });
+    }
+
+    await logIntegration('website', 'inbound', 'received', body);
+    return res.status(201).json(result.lead);
+  } catch (error) {
+    logger.error('Failed to receive website lead', { error });
+    return res.status(500).json({ error: 'Failed to receive website lead' });
   }
 });
 

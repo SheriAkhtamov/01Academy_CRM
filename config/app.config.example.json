@@ -46,6 +46,9 @@
     "chatplace": {
       "webhookSecret": ""
     },
+    "website": {
+      "webhookSecret": ""
+    },
     "telegram": {
       "botToken": "",
       "leadershipChatId": ""

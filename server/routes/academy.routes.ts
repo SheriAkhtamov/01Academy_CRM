@@ -382,7 +382,8 @@ const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
   if (hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing')) return true;
-  return canAccessAcademyWorkspace(req.user, 'sales') && Number(lead.managerId) === Number(req.user?.id);
+  return canAccessAcademyWorkspace(req.user, 'sales')
+    && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id));
 };
 
 const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
@@ -1830,7 +1831,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
       LEFT JOIN users u ON u.id = l.manager_id
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
-      WHERE 1=1 ${isManagerScoped ? 'AND l.manager_id = $1' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
+      WHERE 1=1 ${isManagerScoped ? 'AND (l.manager_id = $1 OR l.manager_id IS NULL)' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
       ORDER BY l.created_at DESC`, managerParams),
     query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
         sc.name AS school_name,
@@ -2913,7 +2914,7 @@ router.get('/search', async (req, res) => {
       }
     } else {
       if (assignedWorkspaces.includes('sales')) {
-        await pushLeads(`l.manager_id = $1`, [req.user!.id], '/sales/pipeline');
+        await pushLeads(`(l.manager_id = $1 OR l.manager_id IS NULL)`, [req.user!.id], '/sales/pipeline');
         await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
       }
       if (assignedWorkspaces.includes('teacher')) {
@@ -2963,7 +2964,7 @@ router.get('/leads', async (req, res) => {
 
     if (assignedWorkspaces.includes('sales') && !canSeeAllLeads) {
       params.push(req.user!.id);
-      conditions.push(`l.manager_id = $${params.length}`);
+      conditions.push(`(l.manager_id = $${params.length} OR l.manager_id IS NULL)`);
     }
 
     if (req.query.status) {

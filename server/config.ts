@@ -40,6 +40,9 @@ interface AppConfig {
     chatplace?: {
       webhookSecret?: string;
     };
+    website?: {
+      webhookSecret?: string;
+    };
     telegram?: {
       botToken?: string;
       leadershipChatId?: string;

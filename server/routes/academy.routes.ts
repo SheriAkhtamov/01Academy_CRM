@@ -126,6 +126,53 @@ const nullableText = (value: unknown) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+type NormalizedLeadPhone = {
+  phone: string;
+  normalizedPhone: string;
+};
+
+const normalizePhoneForStorage = (value: unknown): NormalizedLeadPhone | null => {
+  const text = nullableText(value);
+  if (!text) return null;
+  let digits = text.replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.length === 9) digits = `998${digits}`;
+  const phone = `+${digits}`;
+  return { phone, normalizedPhone: phone };
+};
+
+const normalizeLeadPhones = (value: unknown): NormalizedLeadPhone[] => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : value === undefined || value === null
+      ? []
+      : [value];
+  const seen = new Set<string>();
+  return rawValues.flatMap((raw) => {
+    const normalized = normalizePhoneForStorage(raw);
+    if (!normalized || seen.has(normalized.normalizedPhone)) return [];
+    seen.add(normalized.normalizedPhone);
+    return [normalized];
+  });
+};
+
+const leadPhoneNumbersSelect = (leadAlias = 'l') => `
+  COALESCE(
+    (
+      SELECT json_agg(lp.phone ORDER BY lp.is_primary DESC, lp.id)
+      FROM academy_lead_phones lp
+      WHERE lp.lead_id = ${leadAlias}.id
+    ),
+    CASE
+      WHEN ${leadAlias}.phone IS NULL OR btrim(${leadAlias}.phone) = '' THEN '[]'::json
+      ELSE json_build_array(${leadAlias}.phone)
+    END
+  ) AS phone_numbers`;
+
+const phoneValues = (phones: NormalizedLeadPhone[]) =>
+  phones.map((phone) => phone.normalizedPhone);
+
 const nullableDate = (value: unknown) => {
   const text = nullableText(value);
   if (text === undefined || text === null) return text;
@@ -280,6 +327,18 @@ const deleteRow = async (table: string, id: number) => {
   await pool.query(`DELETE FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
 };
 
+const syncLeadPhones = async (leadId: number, phones: NormalizedLeadPhone[]) => {
+  await query(`DELETE FROM academy_lead_phones WHERE lead_id = $1`, [leadId]);
+  for (let index = 0; index < phones.length; index += 1) {
+    await insertRow('academy_lead_phones', {
+      leadId,
+      phone: phones[index].phone,
+      normalizedPhone: phones[index].normalizedPhone,
+      isPrimary: index === 0,
+    });
+  }
+};
+
 const ensureOperationsAccess = (req: any, res: any) => {
   if (
     hasLeadershipAccess(req.user) ||
@@ -344,7 +403,15 @@ const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: 
     const shouldMask = policy.salesPhoneVisibility === 'own_leads'
       ? !ownsLead
       : !lead.managerId || !ownsLead;
-    return shouldMask ? { ...lead, phone: maskPhone(lead.phone) } : lead;
+    return shouldMask
+      ? {
+        ...lead,
+        phone: maskPhone(lead.phone),
+        phoneNumbers: Array.isArray(lead.phoneNumbers)
+          ? lead.phoneNumbers.map((phone: string) => maskPhone(phone))
+          : lead.phoneNumbers,
+      }
+      : lead;
   });
 };
 
@@ -1204,31 +1271,56 @@ const resolveCourseByAge = async (age?: number | null) => {
   return course ?? null;
 };
 
-const findDuplicate = async (phone?: string | null, messenger?: string | null) => {
-  if (!phone && !messenger) return null;
+const findDuplicate = async (
+  phones: NormalizedLeadPhone[] = [],
+  messenger?: string | null,
+  options: { excludeLeadId?: number | null } = {},
+) => {
+  const normalizedPhones = phoneValues(phones);
+  if (normalizedPhones.length === 0 && !messenger) return null;
+  const excludeLeadId = options.excludeLeadId ?? null;
 
   const duplicateLead = await queryOne(
-    `SELECT 'lead' AS entity_type, id, contact_name AS name, phone, messenger
-     FROM academy_leads
-     WHERE (($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND messenger = $2))
+    `SELECT 'lead' AS entity_type, l.id, l.contact_name AS name, l.phone, l.messenger,
+        l.status_code, l.manager_id, u.full_name AS manager_name,
+        ${leadPhoneNumbersSelect('l')}
+     FROM academy_leads l
+     LEFT JOIN users u ON u.id = l.manager_id
+     WHERE ($3::int IS NULL OR l.id <> $3)
+       AND (
+         (
+           $1::text[] IS NOT NULL
+           AND (
+             l.phone = ANY($1::text[])
+             OR EXISTS (
+               SELECT 1
+               FROM academy_lead_phones lp
+               WHERE lp.lead_id = l.id
+                 AND lp.normalized_phone = ANY($1::text[])
+             )
+           )
+         )
+         OR ($2::text IS NOT NULL AND l.messenger = $2)
+       )
      LIMIT 1`,
-    [phone ?? null, messenger ?? null],
+    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
   );
   if (duplicateLead) return duplicateLead;
 
   return queryOne(
-    `SELECT 'student' AS entity_type, id, student_name AS name, phone, messenger
+    `SELECT 'student' AS entity_type, id, lead_id, student_name AS name, phone, messenger
      FROM academy_students
-     WHERE (($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND messenger = $2))
+     WHERE (($1::text[] IS NOT NULL AND phone = ANY($1::text[])) OR ($2::text IS NOT NULL AND messenger = $2))
      LIMIT 1`,
-    [phone ?? null, messenger ?? null],
+    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null],
   );
 };
 
 const getLead = (id: number) =>
   queryOne(
     `SELECT l.*, c.name AS course_name, s.name AS source_name, sc.name AS school_name,
-        u.full_name AS manager_name
+        u.full_name AS manager_name,
+        ${leadPhoneNumbersSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -1247,7 +1339,7 @@ const createStageHistory = async (leadId: number, fromStatusCode: string | null,
     comment: comment ?? null });
 
 const leadContactSummary = (lead: Row) =>
-  [lead.contactName, lead.phone || lead.messenger || 'без телефона'].filter(Boolean).join(': ');
+  [lead.contactName, lead.phone || lead.phoneNumbers?.[0] || lead.messenger || 'без телефона'].filter(Boolean).join(': ');
 
 const getActiveSalesManager = async (managerId: number) => {
   const manager = await queryOne<{ id: number; fullName: string }>(
@@ -1731,7 +1823,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           ORDER BY g.created_at DESC`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
-        sc.name AS school_name
+        sc.name AS school_name,
+        ${leadPhoneNumbersSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -2678,14 +2771,21 @@ router.get('/search', async (req, res) => {
     const pushLeads = async (whereSql: string, params: DbValue[], href: string) => {
       if (remaining() <= 0) return;
       const rows = await query(
-        `SELECT l.id, l.contact_name, l.phone, l.student_name, c.name AS course_name
+        `SELECT l.id, l.contact_name, l.phone, l.student_name, c.name AS course_name,
+            ${leadPhoneNumbersSelect('l')}
          FROM academy_leads l
          LEFT JOIN academy_courses c ON c.id = l.course_id
          WHERE ${whereSql}
            AND (
              LOWER(l.contact_name) LIKE $${params.length + 1}
              OR LOWER(COALESCE(l.student_name, '')) LIKE $${params.length + 1}
-             OR LOWER(l.phone) LIKE $${params.length + 1}
+             OR LOWER(COALESCE(l.phone, '')) LIKE $${params.length + 1}
+             OR EXISTS (
+               SELECT 1
+               FROM academy_lead_phones lp
+               WHERE lp.lead_id = l.id
+                 AND LOWER(lp.phone) LIKE $${params.length + 1}
+             )
              OR LOWER(COALESCE(l.messenger, '')) LIKE $${params.length + 1}
            )
          ORDER BY l.created_at DESC
@@ -2696,7 +2796,7 @@ router.get('/search', async (req, res) => {
         id: `lead-${lead.id}`,
         entityType: 'lead',
         title: lead.contactName,
-        subtitle: [lead.phone, lead.studentName, lead.courseName].filter(Boolean).join(' • '),
+        subtitle: [lead.phoneNumbers?.[0] ?? lead.phone, lead.studentName, lead.courseName].filter(Boolean).join(' • '),
         href: `${href}&lead=${lead.id}`,
       })));
     };
@@ -2890,7 +2990,13 @@ router.get('/leads', async (req, res) => {
       conditions.push(`(
         LOWER(l.contact_name) LIKE $${params.length}
         OR LOWER(COALESCE(l.student_name, '')) LIKE $${params.length}
-        OR LOWER(l.phone) LIKE $${params.length}
+        OR LOWER(COALESCE(l.phone, '')) LIKE $${params.length}
+        OR EXISTS (
+          SELECT 1
+          FROM academy_lead_phones lp
+          WHERE lp.lead_id = l.id
+            AND LOWER(lp.phone) LIKE $${params.length}
+        )
         OR LOWER(COALESCE(l.messenger, '')) LIKE $${params.length}
       )`);
     }
@@ -2898,7 +3004,8 @@ router.get('/leads', async (req, res) => {
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const leads = await query(
       `SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
-          sc.name AS school_name
+          sc.name AS school_name,
+          ${leadPhoneNumbersSelect('l')}
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -2927,22 +3034,23 @@ router.post('/leads', async (req, res) => {
   if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   try {
     const contactName = nullableText(req.body.contactName);
-    const phone = nullableText(req.body.phone);
+    const phones = normalizeLeadPhones(req.body.phoneNumbers ?? req.body.phone);
+    const primaryPhone = phones[0]?.phone ?? null;
     const messenger = nullableText(req.body.messenger);
     const sourceId = await resolveSourceId(req.body);
 
     if (!contactName) return res.status(400).json({ error: 'contactPersonRequired' });
     if (!sourceId) return res.status(400).json({ error: 'sourceRequired' });
 
-    const duplicate = await findDuplicate(phone, messenger);
+    const duplicate = await findDuplicate(phones, messenger);
     if (duplicate) {
-      return res.status(409).json({ error: 'Duplicate lead or student', duplicate });
+      return res.status(409).json({ error: 'clientAlreadyExists', duplicate });
     }
     if (req.body.demoAt) {
       return res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
     }
 
-    const lead = await withTransaction(async () => {
+    const lead = await withTransaction<Row>(async () => {
       const studentAge = toIntegerOrNull(req.body.studentAge) as number | null | undefined;
       let courseId = parseId(req.body.courseId);
       if (!courseId && studentAge) {
@@ -2971,7 +3079,7 @@ router.post('/leads', async (req, res) => {
       const managerId = await resolveLeadManagerId(req, req.body.managerId);
       const createdLead = await insertRow('academy_leads', {
         contactName,
-        phone: phone ?? null,
+        phone: primaryPhone,
         messenger: messenger ?? null,
         studentName: nullableText(req.body.studentName) ?? null,
         studentAge: studentAge ?? null,
@@ -2989,6 +3097,7 @@ router.post('/leads', async (req, res) => {
         referrerStudentId: parseId(req.body.referrerStudentId),
         createdBy: req.user!.id,
       });
+      await syncLeadPhones(createdLead.id, phones);
       await createStageHistory(
         createdLead.id,
         null,
@@ -2996,7 +3105,7 @@ router.post('/leads', async (req, res) => {
         req.user!.id,
         enrolledGroupId ? 'Создание лида и добавление в группу' : 'Создание лида',
       );
-      return createdLead;
+      return { ...createdLead, phoneNumbers: phones.map((phone) => phone.phone) };
     });
 
     await handleLeadAutomation(req, lead);
@@ -3209,11 +3318,22 @@ router.patch('/leads/:id', async (req, res) => {
     const managerId = canManageLeadAssignment && req.body.managerId !== undefined
       ? await resolveLeadManagerId(req, req.body.managerId)
       : undefined;
-    const requestedPhone = nullableText(req.body.phone);
+    const requestedPhones = req.body.phoneNumbers !== undefined || req.body.phone !== undefined
+      ? normalizeLeadPhones(req.body.phoneNumbers ?? req.body.phone)
+      : undefined;
+    const requestedMessenger = req.body.messenger !== undefined ? nullableText(req.body.messenger) : undefined;
+    const duplicate = await findDuplicate(
+      requestedPhones ?? [],
+      requestedMessenger === undefined ? null : requestedMessenger,
+      { excludeLeadId: id },
+    );
+    if (duplicate) {
+      return res.status(409).json({ error: 'clientAlreadyExists', duplicate });
+    }
     const updates: Row = {
       contactName: nullableText(req.body.contactName) ?? oldLead.contactName,
-      phone: requestedPhone === undefined ? undefined : requestedPhone,
-      messenger: nullableText(req.body.messenger),
+      phone: requestedPhones === undefined ? undefined : requestedPhones[0]?.phone ?? null,
+      messenger: requestedMessenger,
       studentName: nullableText(req.body.studentName),
       studentAge: toIntegerOrNull(req.body.studentAge),
       courseId: req.body.enrolledGroupId !== undefined
@@ -3263,7 +3383,12 @@ router.patch('/leads/:id', async (req, res) => {
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupToReserve]);
         await validateEnrollmentGroup(groupToReserve, id);
       }
-      return updateRow('academy_leads', id, updates);
+      const updated = await updateRow('academy_leads', id, updates);
+      if (updated && requestedPhones !== undefined) {
+        await syncLeadPhones(id, requestedPhones);
+        return { ...updated, phoneNumbers: requestedPhones.map((phone) => phone.phone) };
+      }
+      return updated;
     });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 

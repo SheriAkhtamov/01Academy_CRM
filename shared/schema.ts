@@ -267,6 +267,19 @@ export const academyLeads = pgTable("academy_leads", {
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
 }));
 
+export const academyLeadPhones = pgTable("academy_lead_phones", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  phone: varchar("phone", { length: 50 }).notNull(),
+  normalizedPhone: varchar("normalized_phone", { length: 50 }).notNull(),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  leadIdx: index("academy_lead_phones_lead_idx").on(table.leadId),
+  normalizedUnique: uniqueIndex("academy_lead_phones_normalized_unique").on(table.normalizedPhone),
+}));
+
 export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
@@ -763,6 +776,12 @@ export const insertAcademyLeadSchema = createInsertSchema(academyLeads).omit({
   updatedAt: true,
 });
 
+export const insertAcademyLeadPhoneSchema = createInsertSchema(academyLeadPhones).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyLeadStageHistorySchema = createInsertSchema(academyLeadStageHistory).omit({
   id: true,
 });
@@ -924,6 +943,8 @@ export type AcademyGroup = typeof academyGroups.$inferSelect;
 export type InsertAcademyGroup = z.infer<typeof insertAcademyGroupSchema>;
 export type AcademyLead = typeof academyLeads.$inferSelect;
 export type InsertAcademyLead = z.infer<typeof insertAcademyLeadSchema>;
+export type AcademyLeadPhone = typeof academyLeadPhones.$inferSelect;
+export type InsertAcademyLeadPhone = z.infer<typeof insertAcademyLeadPhoneSchema>;
 export type AcademyLeadStageHistory = typeof academyLeadStageHistory.$inferSelect;
 export type InsertAcademyLeadStageHistory = z.infer<typeof insertAcademyLeadStageHistorySchema>;
 export type AcademyLeadAssignmentHistory = typeof academyLeadAssignmentHistory.$inferSelect;

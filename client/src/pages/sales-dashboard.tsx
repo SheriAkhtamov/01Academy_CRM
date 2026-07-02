@@ -54,11 +54,13 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
+  ExternalLink,
   GraduationCap,
   Megaphone,
   Percent,
   Plus,
   TrendingUp,
+  Trash2,
   UserCheck,
 } from 'lucide-react';
 
@@ -70,6 +72,7 @@ interface Lead {
   id: number;
   contactName: string;
   phone?: string | null;
+  phoneNumbers?: string[];
   messenger?: string | null;
   studentName?: string;
   studentAge?: number;
@@ -87,6 +90,18 @@ interface Lead {
   expectedPaymentUzs?: number;
   offerPriceUzs?: number;
   firstContactAt?: string;
+}
+
+interface DuplicateClientHint {
+  entityType?: 'lead' | 'student';
+  id: number;
+  leadId?: number | null;
+  name?: string | null;
+  phone?: string | null;
+  phoneNumbers?: string[];
+  messenger?: string | null;
+  statusCode?: string | null;
+  managerName?: string | null;
 }
 
 interface Student {
@@ -147,6 +162,8 @@ const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
   overdue: 'paymentStatusOverdue',
 };
 
+const formValidationTranslationKeys = ['duplicatePhoneInForm'] as const satisfies readonly TranslationKey[];
+
 const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   overview: '/sales',
   pipeline: '/sales/pipeline',
@@ -160,9 +177,25 @@ const optionalPhoneString = z.string().trim().refine(
   'invalidData',
 );
 
+const phoneKey = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '');
+const compactPhoneNumbers = (values: string[]) => {
+  const seen = new Set<string>();
+  return values.flatMap((value) => {
+    const trimmed = value.trim();
+    const key = phoneKey(trimmed);
+    if (!trimmed || !key || seen.has(key)) return [];
+    seen.add(key);
+    return [trimmed];
+  });
+};
+const uniquePhoneNumbers = (values: string[]) => {
+  const keys = values.map(phoneKey).filter(Boolean);
+  return new Set(keys).size === keys.length;
+};
+
 const createLeadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
-  phone: optionalPhoneString,
+  phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   messenger: z.string(),
   studentName: z.string(),
   studentAge: z.string().refine(
@@ -180,7 +213,7 @@ type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
 
 const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   contactName: '',
-  phone: '',
+  phoneNumbers: [''],
   messenger: '',
   studentName: '',
   studentAge: '',
@@ -279,6 +312,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   };
 
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
+  const [duplicateHint, setDuplicateHint] = useState<DuplicateClientHint | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [leadSheetTab, setLeadSheetTab] = useState<LeadSheetTab>('deal');
@@ -387,6 +421,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => apiRequest('POST', '/api/academy/leads', {
       ...values,
+      phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
       studentAge: values.studentAge ? Number(values.studentAge) : undefined,
       courseId: values.courseId ? Number(values.courseId) : undefined,
       enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
@@ -396,10 +431,19 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
       leadForm.reset(EMPTY_LEAD_FORM);
+      setDuplicateHint(null);
       setLeadDialogOpen(false);
       invalidate();
     },
-    onError: (error: any) => toast({ title: t('leadCreateFailed'), description: error.message, variant: 'destructive' }),
+    onError: (error: any) => {
+      const duplicate = error?.data?.duplicate as DuplicateClientHint | undefined;
+      if (error?.status === 409 && duplicate) {
+        setDuplicateHint(duplicate);
+        toast({ title: t('clientAlreadyExists') });
+        return;
+      }
+      toast({ title: t('leadCreateFailed'), description: error.message, variant: 'destructive' });
+    },
   });
 
   const updateLead = useMutation({
@@ -531,7 +575,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const handleLeadDialogState = useCallback((open: boolean) => {
     setLeadDialogOpen(open);
-    if (!open) leadForm.reset(EMPTY_LEAD_FORM);
+    if (!open) {
+      leadForm.reset(EMPTY_LEAD_FORM);
+      setDuplicateHint(null);
+    }
   }, [leadForm]);
   const leadDialogGuard = useUnsavedChangesGuard({
     open: leadDialogOpen,
@@ -717,6 +764,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             form={leadForm}
             createLead={createLead}
             data={data}
+            duplicateHint={duplicateHint}
+            onOpenDuplicate={(duplicate) => {
+              const targetLeadId = duplicate.entityType === 'lead' ? duplicate.id : duplicate.leadId;
+              if (!targetLeadId) return;
+              setLeadDialogOpen(false);
+              setDuplicateHint(null);
+              leadForm.reset(EMPTY_LEAD_FORM);
+              openLead(targetLeadId);
+            }}
           />
         </DialogContent>
       </Dialog>
@@ -1130,14 +1186,20 @@ function LeadForm({
   form,
   createLead,
   data,
+  duplicateHint,
+  onOpenDuplicate,
 }: {
   t: (key: TranslationKey) => string;
   form: UseFormReturn<CreateLeadFormValues>;
   createLead: any;
   data: any;
+  duplicateHint: DuplicateClientHint | null;
+  onOpenDuplicate: (duplicate: DuplicateClientHint) => void;
 }) {
   const selectedCourseId = Number(form.watch('courseId')) || null;
   const selectedGroupId = form.watch('enrolledGroupId');
+  const phoneNumbers = form.watch('phoneNumbers') ?? [''];
+  const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
   const activeSources = (data.sources ?? []).filter((source: any) => source.isActive !== false);
   const availableGroups = (data.groups ?? []).filter((group: any) => {
     const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
@@ -1147,6 +1209,9 @@ function LeadForm({
       && hasSeat
       && ['open', 'in_progress'].includes(String(group.status));
   });
+  const phoneNumbersMessage = typeof form.formState.errors.phoneNumbers?.message === 'string'
+    ? form.formState.errors.phoneNumbers.message as TranslationKey
+    : null;
 
   return (
     <Form {...form}>
@@ -1165,25 +1230,67 @@ function LeadForm({
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="phone"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('phone')}</FormLabel>
-              <FormControl>
-                <PhoneInput
-                  ref={field.ref}
-                  name={field.name}
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onValueChange={field.onChange}
-                />
-              </FormControl>
-              <LocalizedFormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="flex flex-col gap-3">
+          {phoneValues.map((_, index) => (
+            <FormField
+              key={index}
+              control={form.control}
+              name={`phoneNumbers.${index}`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
+                  <div className="flex gap-2">
+                    <FormControl>
+                      <PhoneInput
+                        ref={field.ref}
+                        name={field.name}
+                        value={field.value}
+                        onBlur={field.onBlur}
+                        onValueChange={field.onChange}
+                      />
+                    </FormControl>
+                    {phoneValues.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        aria-label={t('removePhone')}
+                        onClick={() => {
+                          const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+                          form.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                        }}
+                      >
+                        <Trash2 />
+                      </Button>
+                    ) : null}
+                  </div>
+                  <LocalizedFormMessage />
+                </FormItem>
+              )}
+            />
+          ))}
+          {phoneNumbersMessage ? (
+            <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            onClick={() => {
+              form.setValue('phoneNumbers', [...phoneValues, ''], {
+                shouldDirty: true,
+                shouldValidate: true,
+              });
+            }}
+          >
+            <Plus data-icon="inline-start" />
+            {t('addPhone')}
+          </Button>
+        </div>
         <FormField
           control={form.control}
           name="messenger"
@@ -1195,6 +1302,27 @@ function LeadForm({
             </FormItem>
           )}
         />
+        {duplicateHint ? (
+          <Alert variant="destructive" className="md:col-span-2">
+            <AlertCircle />
+            <AlertTitle>{t('clientAlreadyExists')}</AlertTitle>
+            <AlertDescription className="flex flex-col items-start gap-3">
+              <span>
+                {[
+                  duplicateHint.name,
+                  duplicateHint.phoneNumbers?.[0] ?? duplicateHint.phone,
+                  duplicateHint.managerName,
+                ].filter(Boolean).join(' • ')}
+              </span>
+              {duplicateHint.entityType === 'lead' || duplicateHint.leadId ? (
+                <Button type="button" size="sm" variant="outline" onClick={() => onOpenDuplicate(duplicateHint)}>
+                  {t('openLead')}
+                  <ExternalLink data-icon="inline-end" />
+                </Button>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <FormField
           control={form.control}
           name="studentName"

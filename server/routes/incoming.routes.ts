@@ -115,21 +115,55 @@ const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.to
 const camelize = (row: Record<string, any>) =>
   Object.fromEntries(Object.entries(row).map(([key, value]) => [toSnake(key).replace(/_([a-z])/g, (_, l) => l.toUpperCase()), value]));
 
+const normalizePhoneForStorage = (value: unknown) => {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  let digits = text.replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.length === 9) digits = `998${digits}`;
+  const phone = `+${digits}`;
+  return { phone, normalizedPhone: phone };
+};
+
+const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, phone: string) => {
+  const normalized = normalizePhoneForStorage(phone);
+  if (!normalized) return;
+  await executor.query(
+    `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary)
+     VALUES ($1, $2, $3, true)
+     ON CONFLICT (normalized_phone) DO NOTHING`,
+    [leadId, normalized.phone, normalized.normalizedPhone],
+  );
+};
+
 const findIncomingDuplicate = async (
   executor: QueryExecutor,
   phone: string,
   messenger?: string | null,
 ) => {
+  const normalizedPhone = normalizePhoneForStorage(phone)?.normalizedPhone ?? null;
   const { rows } = await executor.query(
-    `SELECT 'lead' AS entity_type, id, contact_name AS name, phone, messenger
-     FROM academy_leads
-     WHERE phone = $1 OR ($2::text IS NOT NULL AND messenger = $2)
+    `SELECT 'lead' AS entity_type, l.id, NULL::integer AS lead_id, l.contact_name AS name, l.phone, l.messenger
+     FROM academy_leads l
+     WHERE (
+       $1::text IS NOT NULL
+       AND (
+         l.phone = $1
+         OR EXISTS (
+           SELECT 1
+           FROM academy_lead_phones lp
+           WHERE lp.lead_id = l.id
+             AND lp.normalized_phone = $1
+         )
+       )
+     ) OR ($2::text IS NOT NULL AND l.messenger = $2)
      UNION ALL
-     SELECT 'student' AS entity_type, id, student_name AS name, phone, messenger
+     SELECT 'student' AS entity_type, id, lead_id, student_name AS name, phone, messenger
      FROM academy_students
      WHERE phone = $1 OR ($2::text IS NOT NULL AND messenger = $2)
      LIMIT 1`,
-    [phone, messenger ?? null],
+    [normalizedPhone, messenger ?? null],
   );
   return rows[0] ?? null;
 };
@@ -142,6 +176,7 @@ router.post('/chatplace', async (req, res) => {
     const contactName = String(body.contactName ?? body.name ?? 'Instagram lead').slice(0, 255);
     const messenger = body.messenger ?? body.instagramUsername ?? null;
     const phone = String(body.phone ?? messenger ?? '').trim();
+    const storedPhone = normalizePhoneForStorage(phone)?.phone ?? phone;
     if (!phone) {
       return res.status(400).json({ error: 'phone or messenger is required' });
     }
@@ -162,9 +197,10 @@ router.post('/chatplace', async (req, res) => {
         `INSERT INTO academy_leads
           (contact_name, phone, messenger, source_id, advertising_campaign, status_code, manager_id, language, created_by)
          VALUES ($1,$2,$3,$4,$5,'new_request',$6,'ru',$7) RETURNING *`,
-        [contactName, phone, messenger, sourceId, body.campaign ?? null, managerId, systemUserId],
+        [contactName, storedPhone, messenger, sourceId, body.campaign ?? null, managerId, systemUserId],
       );
       const lead = camelize(inserted[0]);
+      await syncIncomingLeadPhone(client, lead.id, storedPhone);
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
          VALUES ($1,NULL,'new_request',$2,'ChatPlace')`,
@@ -199,6 +235,7 @@ router.post('/google-forms', async (req, res) => {
     const body = req.body ?? {};
     const contactName = String(body.contactName ?? body.name ?? 'Google Forms lead').slice(0, 255);
     const phone = String(body.phone ?? '').trim();
+    const storedPhone = normalizePhoneForStorage(phone)?.phone ?? phone;
     if (!phone) return res.status(400).json({ error: 'phone is required' });
     const statusCode = body.demoAt ? 'demo_invited' : 'new_request';
 
@@ -218,9 +255,10 @@ router.post('/google-forms', async (req, res) => {
         `INSERT INTO academy_leads
           (contact_name, phone, student_name, course_id, source_id, status_code, manager_id, demo_at, language, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ru',$9) RETURNING *`,
-        [contactName, phone, body.studentName ?? null, body.courseId ?? null, sourceId, statusCode, managerId, body.demoAt ?? null, systemUserId],
+        [contactName, storedPhone, body.studentName ?? null, body.courseId ?? null, sourceId, statusCode, managerId, body.demoAt ?? null, systemUserId],
       );
       const lead = camelize(inserted[0]);
+      await syncIncomingLeadPhone(client, lead.id, storedPhone);
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
          VALUES ($1,NULL,$2,$3,'Google Forms')`,

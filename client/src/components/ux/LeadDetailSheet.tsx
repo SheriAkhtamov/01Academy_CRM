@@ -61,7 +61,9 @@ import {
   History,
   MessageSquare,
   Phone,
+  Plus,
   Save,
+  Trash2,
   UserRoundCog,
   UserRound,
 } from 'lucide-react';
@@ -73,6 +75,7 @@ interface LeadDetails {
   id: number;
   contactName: string;
   phone?: string | null;
+  phoneNumbers?: string[];
   messenger?: string | null;
   studentName?: string | null;
   studentAge?: number | null;
@@ -174,9 +177,25 @@ const optionalPhoneString = z.string().trim().refine(
   'invalidData',
 );
 
+const phoneKey = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '');
+const compactPhoneNumbers = (values: string[]) => {
+  const seen = new Set<string>();
+  return values.flatMap((value) => {
+    const trimmed = value.trim();
+    const key = phoneKey(trimmed);
+    if (!trimmed || !key || seen.has(key)) return [];
+    seen.add(key);
+    return [trimmed];
+  });
+};
+const uniquePhoneNumbers = (values: string[]) => {
+  const keys = values.map(phoneKey).filter(Boolean);
+  return new Set(keys).size === keys.length;
+};
+
 const leadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
-  phone: optionalPhoneString,
+  phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   messenger: z.string(),
   studentName: z.string(),
   studentAge: optionalNumberString,
@@ -293,7 +312,7 @@ export function LeadDetailSheet({
     resolver: zodResolver(leadSchema),
     defaultValues: {
       contactName: '',
-      phone: '',
+      phoneNumbers: [''],
       messenger: '',
       studentName: '',
       studentAge: '',
@@ -343,7 +362,7 @@ export function LeadDetailSheet({
     return [
       lead.id,
       lead.contactName,
-      lead.phone ?? '',
+      (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
       lead.messenger ?? '',
       lead.studentName ?? '',
       lead.studentAge ?? '',
@@ -379,7 +398,7 @@ export function LeadDetailSheet({
       if (shouldReseed) {
         leadForm.reset({
           contactName: lead.contactName ?? '',
-          phone: lead.phone ?? '',
+          phoneNumbers: lead.phoneNumbers?.length ? lead.phoneNumbers : [lead.phone ?? ''],
           messenger: lead.messenger ?? '',
           studentName: lead.studentName ?? '',
           studentAge: lead.studentAge ? String(lead.studentAge) : '',
@@ -431,6 +450,7 @@ export function LeadDetailSheet({
   const updateLead = useMutation({
     mutationFn: (values: LeadFormValues) => apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
       ...values,
+      phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
       studentAge: values.studentAge ? Number(values.studentAge) : null,
       courseId: values.courseId ? Number(values.courseId) : null,
       sourceId: Number(values.sourceId),
@@ -514,6 +534,11 @@ export function LeadDetailSheet({
 
   const selectedCourseId = leadForm.watch('courseId');
   const selectedGroupId = leadForm.watch('enrolledGroupId');
+  const phoneNumbers = leadForm.watch('phoneNumbers') ?? [''];
+  const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
+  const phoneNumbersMessage = typeof leadForm.formState.errors.phoneNumbers?.message === 'string'
+    ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
+    : null;
   const availableGroups = useMemo(() => {
     return groups.filter((group) => {
       const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
@@ -524,11 +549,13 @@ export function LeadDetailSheet({
   }, [groups, selectedCourseId, selectedGroupId]);
 
   const lead = leadQuery.data;
-  const phoneHref = lead?.phone ? `tel:${lead.phone.replace(/[^\d+]/g, '')}` : undefined;
+  const visiblePhoneNumbers = lead?.phoneNumbers?.length ? lead.phoneNumbers : lead?.phone ? [lead.phone] : [];
+  const primaryPhone = visiblePhoneNumbers[0] ?? null;
+  const phoneHref = primaryPhone ? `tel:${primaryPhone.replace(/[^\d+]/g, '')}` : undefined;
   const messageHref = lead?.messenger?.startsWith('@')
     ? `https://t.me/${lead.messenger.slice(1)}`
-    : lead?.phone
-      ? `https://wa.me/${lead.phone.replace(/\D/g, '')}`
+    : primaryPhone
+      ? `https://wa.me/${primaryPhone.replace(/\D/g, '')}`
       : undefined;
 
   return (
@@ -572,7 +599,7 @@ export function LeadDetailSheet({
                     </Badge>
                   </div>
                   <SheetDescription className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                    {lead.phone ? <span>{lead.phone}</span> : null}
+                    {visiblePhoneNumbers.length > 0 ? <span>{visiblePhoneNumbers.join(', ')}</span> : null}
                     {lead.studentName ? <span>• {lead.studentName}</span> : null}
                     {lead.courseName ? <span>• {lead.courseName}</span> : null}
                     {lead.schoolName ? <span>• {lead.schoolName}</span> : null}
@@ -636,19 +663,61 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
-                          <FormField
-                            control={leadForm.control}
-                            name="phone"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('phone')}</FormLabel>
-                                <FormControl>
-                                  <PhoneInput value={field.value} onValueChange={field.onChange} />
-                                </FormControl>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
+                          <div className="flex flex-col gap-3">
+                            {phoneValues.map((_, index) => (
+                              <FormField
+                                key={index}
+                                control={leadForm.control}
+                                name={`phoneNumbers.${index}`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
+                                    <div className="flex gap-2">
+                                      <FormControl>
+                                        <PhoneInput value={field.value} onValueChange={field.onChange} />
+                                      </FormControl>
+                                      {phoneValues.length > 1 ? (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          aria-label={t('removePhone')}
+                                          onClick={() => {
+                                            const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+                                            leadForm.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
+                                              shouldDirty: true,
+                                              shouldValidate: true,
+                                            });
+                                          }}
+                                        >
+                                          <Trash2 />
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                    <LocalizedFormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            ))}
+                            {phoneNumbersMessage ? (
+                              <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="w-fit"
+                              onClick={() => {
+                                leadForm.setValue('phoneNumbers', [...phoneValues, ''], {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                });
+                              }}
+                            >
+                              <Plus data-icon="inline-start" />
+                              {t('addPhone')}
+                            </Button>
+                          </div>
                           <FormField
                             control={leadForm.control}
                             name="messenger"

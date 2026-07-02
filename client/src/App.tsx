@@ -105,6 +105,11 @@ function Router() {
             <SalesDashboard section="pipeline" />
           </WorkspaceGuard>
         )} />
+        <Route path="/sales/archive" component={() => (
+          <WorkspaceGuard workspace="sales">
+            <SalesDashboard section="archive" />
+          </WorkspaceGuard>
+        )} />
         <Route path="/sales/schedule" component={() => (
           <WorkspaceGuard workspace="sales">
             <SalesDashboard section="schedule" />

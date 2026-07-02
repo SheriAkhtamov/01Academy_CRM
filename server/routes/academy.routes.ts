@@ -12,6 +12,7 @@ import {
   CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
+  LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
   PAYMENT_DISCOUNTS,
@@ -246,7 +247,10 @@ const normalizeDbValue = (value: DbValue) => {
 };
 
 const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
-  if (canAccessAcademyWorkspace(req.user, 'sales') && !hasLeadershipAccess(req.user)) {
+  const assignedWorkspaces = getAssignedWorkspaces(req.user);
+  const hasDirectSalesWorkspace = assignedWorkspaces.includes('sales');
+
+  if (hasDirectSalesWorkspace && !hasLeadershipAccess(req.user)) {
     return Number(req.user.id);
   }
 
@@ -271,12 +275,25 @@ const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<
     return Number(manager.id);
   }
 
+  if (hasDirectSalesWorkspace) {
+    const currentManager = await queryOne<{ id: string }>(
+      `SELECT id
+       FROM users u
+       WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
+      [req.user.id],
+    );
+    if (currentManager) {
+      return Number(currentManager.id);
+    }
+  }
+
   const manager = await queryOne<{ id: string }>(
     `SELECT u.id
      FROM users u
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
       AND l.status_code NOT IN ('paid', 'not_now')
+      AND COALESCE(l.is_archived, false) = false
      WHERE ${salesUserAccessSql} AND u.is_active = true
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
@@ -382,6 +399,7 @@ const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
   if (hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing')) return true;
+  if (lead.isArchived && canAccessAcademyWorkspace(req.user, 'sales')) return true;
   return canAccessAcademyWorkspace(req.user, 'sales')
     && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id));
 };
@@ -446,6 +464,9 @@ const defaultCompanyTargets = {
   targetNps: TARGET_NPS,
   salesPhoneVisibility: 'own_leads',
 };
+
+const isValidLeadArchiveReason = (value: string | null | undefined) =>
+  Boolean(value && (LEAD_ARCHIVE_REASON_CODES as readonly string[]).includes(value));
 
 const getCompanySettings = async () => {
   const existing = await queryOne(`SELECT * FROM academy_company_settings ORDER BY id LIMIT 1`);
@@ -1070,6 +1091,7 @@ const listAvailableSchoolSlots = async (options: {
          AND COALESCE(l.demo_format, 'offline') <> 'online'
          AND COALESCE(l.demo_attended, false) = false
          AND l.status_code <> 'not_now'
+         AND COALESCE(l.is_archived, false) = false
          AND ($5::int IS NULL OR l.id <> $5)`,
       [options.schoolId, rangeStart, rangeEnd, durationMinutes, options.excludeLeadId ?? null],
     ),
@@ -1321,12 +1343,14 @@ const getLead = (id: number) =>
   queryOne(
     `SELECT l.*, c.name AS course_name, s.name AS source_name, sc.name AS school_name,
         u.full_name AS manager_name,
+        archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
      LEFT JOIN academy_schools sc ON sc.id = l.school_id
      LEFT JOIN users u ON u.id = l.manager_id
+     LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
      WHERE l.id = $1`,
     [id],
   );
@@ -1444,8 +1468,9 @@ const ensureGroupCapacity = async (groupId?: number | null, excludeLeadId?: numb
      FROM academy_groups g
      LEFT JOIN academy_students s ON s.group_id = g.id AND s.status = 'studying'
      LEFT JOIN academy_leads reserved
-       ON reserved.enrolled_group_id = g.id
+      ON reserved.enrolled_group_id = g.id
       AND reserved.status_code <> 'not_now'
+      AND COALESCE(reserved.is_archived, false) = false
       AND ($2::int IS NULL OR reserved.id <> $2)
       AND NOT EXISTS (
         SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
@@ -1776,6 +1801,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     teachers,
     groups,
     leads,
+    archivedLeads,
     students,
     lessons,
     attendance,
@@ -1802,6 +1828,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           (SELECT COUNT(*)::int FROM academy_leads l
            WHERE l.enrolled_group_id = g.id
              AND l.status_code <> 'not_now'
+             AND COALESCE(l.is_archived, false) = false
              AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
           FROM academy_groups g
           LEFT JOIN academy_courses c ON c.id = g.course_id
@@ -1816,6 +1843,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           (SELECT COUNT(*)::int FROM academy_leads l
            WHERE l.enrolled_group_id = g.id
              AND l.status_code <> 'not_now'
+             AND COALESCE(l.is_archived, false) = false
              AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
           FROM academy_groups g
           LEFT JOIN academy_courses c ON c.id = g.course_id
@@ -1824,15 +1852,29 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           ORDER BY g.created_at DESC`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
-        sc.name AS school_name,
+        sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
       LEFT JOIN users u ON u.id = l.manager_id
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
-      WHERE 1=1 ${isManagerScoped ? 'AND (l.manager_id = $1 OR l.manager_id IS NULL)' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
+      LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
+      WHERE COALESCE(l.is_archived, false) = false ${isManagerScoped ? 'AND (l.manager_id = $1 OR l.manager_id IS NULL)' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
       ORDER BY l.created_at DESC`, managerParams),
+    isTeacherScoped
+      ? Promise.resolve([])
+      : query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
+          sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
+          ${leadPhoneNumbersSelect('l')}
+        FROM academy_leads l
+        LEFT JOIN academy_courses c ON c.id = l.course_id
+        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+        LEFT JOIN users u ON u.id = l.manager_id
+        LEFT JOIN academy_schools sc ON sc.id = l.school_id
+        LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
+        WHERE COALESCE(l.is_archived, false) = true
+        ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`),
     query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
         sc.name AS school_name,
         (
@@ -1933,7 +1975,27 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   ]);
 
   const visibleLeads = await redactLeadPhonesForActor(actor, leads);
-  return { schools, rooms, courses, sources, statuses, teachers, groups, leads: visibleLeads, students, lessons, attendance, payments, tasks, lessonSurveys, parentSurveys, expenses, projects, referrals };
+  return {
+    schools,
+    rooms,
+    courses,
+    sources,
+    statuses,
+    teachers,
+    groups,
+    leads: visibleLeads,
+    archivedLeads,
+    students,
+    lessons,
+    attendance,
+    payments,
+    tasks,
+    lessonSurveys,
+    parentSurveys,
+    expenses,
+    projects,
+    referrals,
+  };
 };
 
 const buildAnalytics = async () => {
@@ -2385,6 +2447,7 @@ const getMarketingWorkspaceDataset = async () => {
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
       LEFT JOIN users u ON u.id = l.manager_id
+      WHERE COALESCE(l.is_archived, false) = false
       ORDER BY l.created_at DESC`),
     query(`SELECT id, student_name, contact_name, referral_code, referral_level
       FROM academy_students
@@ -2449,6 +2512,7 @@ router.get('/workspaces/sales', async (req, res) => {
       sources: dataset.sources,
       statuses: dataset.statuses,
       leads: dataset.leads,
+      archivedLeads: dataset.archivedLeads,
       students: dataset.students,
       lessons: dataset.lessons,
       payments: dataset.payments,
@@ -2777,6 +2841,7 @@ router.get('/search', async (req, res) => {
          FROM academy_leads l
          LEFT JOIN academy_courses c ON c.id = l.course_id
          WHERE ${whereSql}
+           AND COALESCE(l.is_archived, false) = false
            AND (
              LOWER(l.contact_name) LIKE $${params.length + 1}
              OR LOWER(COALESCE(l.student_name, '')) LIKE $${params.length + 1}
@@ -2961,8 +3026,11 @@ router.get('/leads', async (req, res) => {
     const params: DbValue[] = [];
     const assignedWorkspaces = getAssignedWorkspaces(req.user);
     const canSeeAllLeads = hasLeadershipAccess(req.user) || assignedWorkspaces.includes('marketing');
+    const wantsArchived = req.query.archived === 'true';
 
-    if (assignedWorkspaces.includes('sales') && !canSeeAllLeads) {
+    conditions.push(`COALESCE(l.is_archived, false) = ${wantsArchived ? 'true' : 'false'}`);
+
+    if (assignedWorkspaces.includes('sales') && !canSeeAllLeads && !wantsArchived) {
       params.push(req.user!.id);
       conditions.push(`(l.manager_id = $${params.length} OR l.manager_id IS NULL)`);
     }
@@ -3005,13 +3073,14 @@ router.get('/leads', async (req, res) => {
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const leads = await query(
       `SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
-          sc.name AS school_name,
+          sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
           ${leadPhoneNumbersSelect('l')}
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
        LEFT JOIN users u ON u.id = l.manager_id
        LEFT JOIN academy_schools sc ON sc.id = l.school_id
+       LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
        ${whereSql}
        ORDER BY l.created_at DESC`,
       params,
@@ -3021,7 +3090,7 @@ router.get('/leads', async (req, res) => {
         userId: req.user!.id,
         workspace: String(req.user!.workspace),
         workspaces: assignedWorkspaces,
-        scopeWorkspace: canSeeAllLeads ? 'marketing' : 'sales',
+        scopeWorkspace: canSeeAllLeads || wantsArchived ? 'marketing' : 'sales',
       },
       leads,
     ));
@@ -3273,6 +3342,106 @@ router.post('/leads/:id/assign', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to assign lead', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign lead' });
+  }
+});
+
+router.post('/leads/:id/archive', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+
+    const oldLead = await getLead(id);
+    if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+
+    if (oldLead.isArchived) return res.json(oldLead);
+    if (oldLead.statusCode === 'paid') return res.status(400).json({ error: 'paidLeadCannotArchive' });
+
+    const archiveReason = nullableText(req.body.reason);
+    if (!isValidLeadArchiveReason(archiveReason)) {
+      return res.status(400).json({ error: 'archiveReasonRequired' });
+    }
+
+    const archived = await updateRow('academy_leads', id, {
+      isArchived: true,
+      archiveReason,
+      archivedAt: new Date(),
+      archivedBy: req.user!.id,
+    });
+    if (!archived) return res.status(404).json({ error: 'Lead not found' });
+
+    await createAudit(req, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, oldLead);
+    res.json(await getLead(id) ?? archived);
+  } catch (error: any) {
+    logger.error('Failed to archive lead', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to archive lead' });
+  }
+});
+
+router.post('/leads/:id/restore', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Lead restore access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+
+    const oldLead = await getLead(id);
+    if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    if (!oldLead.isArchived) return res.json(oldLead);
+
+    const targetStatusCode = nullableText(req.body.statusCode) ?? oldLead.statusCode;
+    const targetStatus = await queryOne(
+      `SELECT code
+       FROM academy_lead_statuses
+       WHERE code = $1 AND is_active = true AND is_pipeline = true`,
+      [targetStatusCode],
+    );
+    if (!targetStatus) return res.status(400).json({ error: 'invalidData' });
+
+    const transitionError = validateLeadStatusTransition(oldLead.statusCode, targetStatusCode);
+    if (transitionError) return res.status(400).json({ error: transitionError });
+
+    const validationError = validateLeadForStatusChange({
+      nextStatus: targetStatusCode,
+      studentName: oldLead.studentName,
+      studentAge: oldLead.studentAge,
+      courseId: oldLead.courseId,
+      enrolledGroupId: oldLead.enrolledGroupId,
+    });
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    const restored = await withTransaction(async () => {
+      if (['enrolled', 'paid'].includes(targetStatusCode) && oldLead.enrolledGroupId) {
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [oldLead.enrolledGroupId]);
+        await validateEnrollmentGroup(Number(oldLead.enrolledGroupId), id);
+      }
+      return updateRow('academy_leads', id, {
+        statusCode: targetStatusCode,
+        isArchived: false,
+        archiveReason: null,
+        archivedAt: null,
+        archivedBy: null,
+      });
+    });
+    if (!restored) return res.status(404).json({ error: 'Lead not found' });
+
+    if (oldLead.statusCode !== targetStatusCode) {
+      await createStageHistory(
+        restored.id,
+        oldLead.statusCode,
+        targetStatusCode,
+        req.user!.id,
+        `Восстановлен из архива${oldLead.archiveReason ? `: ${oldLead.archiveReason}` : ''}`,
+      );
+      await handleLeadAutomation(req, restored, oldLead.statusCode);
+    }
+
+    await createAudit(req, 'RESTORE_ACADEMY_LEAD', 'academy_lead', restored.id, restored, oldLead);
+    res.json(await getLead(id) ?? restored);
+  } catch (error: any) {
+    logger.error('Failed to restore lead', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to restore lead' });
   }
 });
 
@@ -4412,6 +4581,7 @@ router.post('/automations/run', async (req, res) => {
       `SELECT * FROM academy_leads
        WHERE status_code <> 'not_now'
          AND status_code <> 'paid'
+         AND COALESCE(is_archived, false) = false
          AND updated_at < NOW() - INTERVAL '14 days'`,
       [],
     );
@@ -4476,7 +4646,9 @@ router.post('/automations/run', async (req, res) => {
 
     const warmLeads = await query(
       `SELECT * FROM academy_leads
-       WHERE status_code = 'not_now' AND no_mailing = false`,
+       WHERE status_code = 'not_now'
+         AND no_mailing = false
+         AND COALESCE(is_archived, false) = false`,
       [],
     );
 
@@ -4520,7 +4692,7 @@ router.post('/mailings/:id/event', async (req, res) => {
 
     if (eventType === 'reply' && outbox.entityType === 'lead' && outbox.entityId) {
       const lead = await getLead(Number(outbox.entityId));
-      if (lead?.statusCode === 'not_now') {
+      if (lead?.statusCode === 'not_now' && !lead.isArchived) {
         const updated = await updateRow('academy_leads', lead.id, {
           statusCode: 'first_contact',
           warmReason: null });

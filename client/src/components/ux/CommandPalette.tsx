@@ -35,6 +35,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   MessagesSquare,
+  Archive,
 } from 'lucide-react';
 import { getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
 
@@ -90,6 +91,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const salesItems: SearchItem[] = [
         { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
         { id: 'nav-sales-pipeline', type: t('pipeline'), title: t('pipeline'), href: '/sales/pipeline', icon: Flame },
+        { id: 'nav-sales-archive', type: t('salesPipeline'), title: t('leadArchive'), href: '/sales/archive', icon: Archive },
         { id: 'nav-sales-schedule', type: t('salesPipeline'), title: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
         { id: 'nav-sales-tasks', type: t('myTasks'), title: t('myTasks'), href: '/sales/tasks', icon: ListChecks },

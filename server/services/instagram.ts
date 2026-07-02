@@ -386,6 +386,7 @@ const getLeadAssigneeId = async (client: PoolClient, fallbackUserId: number) => 
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
       AND l.status_code NOT IN ('paid', 'not_now')
+      AND COALESCE(l.is_archived, false) = false
      WHERE ${salesUserAccessSql} AND u.is_active = true
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id

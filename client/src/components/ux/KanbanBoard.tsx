@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
   Phone,
   Send,
+  Archive,
   UserPlus,
   Wallet,
 } from 'lucide-react';
@@ -65,6 +66,7 @@ interface KanbanBoardProps {
   leads: KanbanLead[];
   onStatusChange: (leadId: number, statusCode: string) => boolean | void | Promise<boolean | void>;
   onQuickAction?: (action: 'qualify' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
+  onArchiveLead?: (lead: KanbanLead) => void;
   onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction?: boolean;
@@ -74,9 +76,8 @@ interface KanbanBoardProps {
 interface LeadCardContentProps {
   lead: KanbanLead;
   currentStatus: KanbanStatus;
-  statuses: readonly KanbanStatus[];
-  onMove: (leadId: number, statusCode: string) => void;
   onQuickAction?: KanbanBoardProps['onQuickAction'];
+  onArchiveLead?: KanbanBoardProps['onArchiveLead'];
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
@@ -86,21 +87,17 @@ interface LeadCardContentProps {
 function LeadCardContent({
   lead,
   currentStatus,
-  statuses,
-  onMove,
   onQuickAction,
+  onArchiveLead,
   isPending,
   showPaymentAction,
   showManager,
   t,
 }: LeadCardContentProps) {
-  const nextStatuses = statuses.filter((status) => status.sortOrder > currentStatus.sortOrder);
-  const prevStatuses = currentStatus.code === 'paid'
-    ? []
-    : statuses.filter((status) => status.sortOrder < currentStatus.sortOrder);
   const canQualify = currentStatus.code === 'new_request' || currentStatus.code === 'first_contact';
   const canCall = Boolean(lead.phone);
   const canMessage = Boolean(lead.messenger?.startsWith('@') || lead.phone);
+  const canArchive = currentStatus.code !== 'paid';
 
   return (
     <>
@@ -129,31 +126,6 @@ function LeadCardContent({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuGroup>
-                {nextStatuses.slice(0, 3).map((nextStatus) => (
-                  <DropdownMenuItem
-                    key={nextStatus.code}
-                    onClick={() => onMove(lead.id, nextStatus.code)}
-                    disabled={isPending}
-                  >
-                    <ArrowRight />
-                    {t('moveTo')} {nextStatus.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-              {prevStatuses.length > 0 && nextStatuses.length > 0 ? <DropdownMenuSeparator /> : null}
-              <DropdownMenuGroup>
-                {prevStatuses.slice(-2).map((prevStatus) => (
-                  <DropdownMenuItem
-                    key={prevStatus.code}
-                    onClick={() => onMove(lead.id, prevStatus.code)}
-                    disabled={isPending}
-                  >
-                    {t('returnTo')} {prevStatus.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
                 <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)} disabled={!canCall}>
                   <Phone /> {t('call')}
                 </DropdownMenuItem>
@@ -161,6 +133,16 @@ function LeadCardContent({
                   <Send /> {t('write')}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
+              {onArchiveLead && canArchive ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onClick={() => onArchiveLead(lead)} disabled={isPending}>
+                      <Archive /> {t('sendToArchive')}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -180,18 +162,6 @@ function LeadCardContent({
         onTouchStart={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
-        {nextStatuses.slice(0, 1).map((nextStatus) => (
-          <Button
-            key={nextStatus.code}
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => onMove(lead.id, nextStatus.code)}
-            disabled={isPending}
-          >
-            <ArrowRight data-icon="inline-start" /> {nextStatus.name}
-          </Button>
-        ))}
         {showPaymentAction ? (
           <Button
             variant="ghost"
@@ -278,9 +248,8 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
 interface KanbanColumnProps {
   status: KanbanStatus;
   leads: KanbanLead[];
-  statuses: readonly KanbanStatus[];
-  onMove: (leadId: number, statusCode: string) => void;
   onQuickAction?: KanbanBoardProps['onQuickAction'];
+  onArchiveLead?: KanbanBoardProps['onArchiveLead'];
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
@@ -291,9 +260,8 @@ interface KanbanColumnProps {
 function KanbanColumn({
   status,
   leads,
-  statuses,
-  onMove,
   onQuickAction,
+  onArchiveLead,
   isPending,
   showPaymentAction,
   showManager,
@@ -333,9 +301,8 @@ function KanbanColumn({
             key={lead.id}
             lead={lead}
             currentStatus={status}
-            statuses={statuses}
-            onMove={onMove}
             onQuickAction={onQuickAction}
+            onArchiveLead={onArchiveLead}
             isPending={isPending}
             showPaymentAction={showPaymentAction}
             showManager={showManager}
@@ -361,6 +328,7 @@ export function KanbanBoard({
   leads,
   onStatusChange,
   onQuickAction,
+  onArchiveLead,
   onLeadClick,
   isPending,
   showPaymentAction = true,
@@ -472,9 +440,8 @@ export function KanbanBoard({
                 key={status.code}
                 status={status}
                 leads={boardLeads.filter((lead) => lead.statusCode === status.code)}
-                statuses={statuses}
-                onMove={moveLead}
                 onQuickAction={onQuickAction}
+                onArchiveLead={onArchiveLead}
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
@@ -490,9 +457,8 @@ export function KanbanBoard({
               <LeadCardContent
                 lead={activeLead}
                 currentStatus={statusesByCode.get(activeLead.statusCode) ?? statuses[0]}
-                statuses={statuses}
-                onMove={() => undefined}
                 onQuickAction={undefined}
+                onArchiveLead={undefined}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
                 t={t}

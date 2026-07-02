@@ -23,6 +23,13 @@ import {
   useFormField,
 } from '@/components/ui/form';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -48,10 +55,12 @@ import {
 import {
   getAssignedWorkspaces,
   hasLeadershipAccess,
+  LEAD_ARCHIVE_REASONS,
   LEAD_STATUSES,
 } from '@shared/academy';
 import {
   AlertCircle,
+  Archive,
   CheckCircle2,
   ClipboardList,
   ExternalLink,
@@ -59,12 +68,13 @@ import {
   Megaphone,
   Percent,
   Plus,
+  RotateCcw,
   TrendingUp,
   Trash2,
   UserCheck,
 } from 'lucide-react';
 
-type SalesSection = 'overview' | 'pipeline' | 'schedule' | 'students' | 'tasks';
+type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students' | 'tasks';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
 
@@ -90,6 +100,11 @@ interface Lead {
   expectedPaymentUzs?: number;
   offerPriceUzs?: number;
   firstContactAt?: string;
+  isArchived?: boolean;
+  archiveReason?: string | null;
+  archivedAt?: string | null;
+  archivedBy?: number | null;
+  archivedByName?: string | null;
 }
 
 interface DuplicateClientHint {
@@ -156,6 +171,10 @@ const leadStatusTranslationKeys: Record<string, TranslationKey> = {
   not_now: 'leadStatusNotNow',
 };
 
+const archiveReasonTranslationKeys = Object.fromEntries(
+  LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
+) as Record<string, TranslationKey>;
+
 const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
   paid: 'paymentStatusPaid',
   pending: 'paymentStatusPending',
@@ -167,6 +186,7 @@ const formValidationTranslationKeys = ['duplicatePhoneInForm'] as const satisfie
 const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   overview: '/sales',
   pipeline: '/sales/pipeline',
+  archive: '/sales/archive',
   schedule: '/sales/schedule',
   students: '/sales/clients',
   tasks: '/sales/tasks',
@@ -205,6 +225,7 @@ const createLeadSchema = z.object({
   courseId: z.string(),
   enrolledGroupId: z.string(),
   sourceId: z.string().min(1, 'fillRequiredFields'),
+  managerId: z.string().min(1, 'fillRequiredFields'),
   comment: z.string(),
   language: z.string().min(1, 'fillRequiredFields'),
 });
@@ -220,6 +241,7 @@ const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   courseId: '',
   enrolledGroupId: '',
   sourceId: '',
+  managerId: '',
   comment: '',
   language: 'ru',
 };
@@ -318,6 +340,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [leadSheetTab, setLeadSheetTab] = useState<LeadSheetTab>('deal');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
+  const [archiveDialogLead, setArchiveDialogLead] = useState<Lead | null>(null);
+  const [archiveReason, setArchiveReason] = useState('');
 
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/sales'],
@@ -332,17 +356,40 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return data?.statuses?.find((status: any) => status.code === code)?.name ?? code;
   };
 
+  const archiveReasonName = (code: string | null | undefined) => {
+    if (!code) return t('noData');
+    const key = archiveReasonTranslationKeys[code];
+    if (key) return t(key);
+    return code;
+  };
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+  const currentSalesManagerId = hasSalesModule && user?.id ? String(user.id) : '';
+  const leadFormDefaults = useMemo<CreateLeadFormValues>(() => ({
+    ...EMPTY_LEAD_FORM,
+    managerId: currentSalesManagerId,
+  }), [currentSalesManagerId]);
 
   const leadForm = useForm<CreateLeadFormValues>({
     resolver: zodResolver(createLeadSchema),
-    defaultValues: EMPTY_LEAD_FORM,
+    defaultValues: leadFormDefaults,
   });
+
+  useEffect(() => {
+    if (!leadForm.formState.isDirty) {
+      leadForm.reset(leadFormDefaults);
+    }
+  }, [leadForm, leadFormDefaults, leadForm.formState.isDirty]);
 
   const myLeads = useMemo<Lead[]>(() => {
     if (!data?.leads) return [];
     return data.leads;
   }, [data?.leads]);
+
+  const archivedLeads = useMemo<Lead[]>(() => {
+    if (!data?.archivedLeads) return [];
+    return data.archivedLeads;
+  }, [data?.archivedLeads]);
 
   const myStudents = useMemo<Student[]>(() => {
     if (!data?.students) return [];
@@ -379,6 +426,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
     [users],
   );
+  const leadManagerOptions = useMemo(() => {
+    if (!currentSalesManagerId || !user?.fullName) return salesManagers;
+    const currentUserListed = salesManagers.some((manager) => Number(manager.id) === Number(currentSalesManagerId));
+    if (currentUserListed) return salesManagers;
+    return [{ id: Number(currentSalesManagerId), fullName: user.fullName }, ...salesManagers];
+  }, [currentSalesManagerId, salesManagers, user?.fullName]);
 
   const activePipelineStatuses = useMemo(
     () => [...(data?.statuses ?? [])]
@@ -393,7 +446,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   );
 
   const pipelineLeads = useMemo(
-    () => myLeads.filter((lead) => activePipelineCodes.has(lead.statusCode)),
+    () => myLeads.filter((lead) => !lead.isArchived && activePipelineCodes.has(lead.statusCode)),
     [activePipelineCodes, myLeads],
   );
 
@@ -426,11 +479,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       courseId: values.courseId ? Number(values.courseId) : undefined,
       enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
       sourceId: Number(values.sourceId),
-      managerId: hasSalesModule && !isAdministrationWorkspace ? user?.id : undefined,
+      managerId: values.managerId ? Number(values.managerId) : undefined,
     }),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
-      leadForm.reset(EMPTY_LEAD_FORM);
+      leadForm.reset(leadFormDefaults);
       setDuplicateHint(null);
       setLeadDialogOpen(false);
       invalidate();
@@ -454,6 +507,28 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       invalidate();
     },
     onError: (error: any) => toast({ title: t('statusNotUpdated'), description: error.message, variant: 'destructive' }),
+  });
+
+  const archiveLead = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason }),
+    onSuccess: () => {
+      toast({ title: t('leadArchived') });
+      setArchiveDialogLead(null);
+      setArchiveReason('');
+      invalidate();
+    },
+    onError: (error: any) => toast({ title: t('leadArchiveFailed'), description: error.message, variant: 'destructive' }),
+  });
+
+  const restoreLead = useMutation({
+    mutationFn: ({ id, statusCode }: { id: number; statusCode: string }) =>
+      apiRequest('POST', `/api/academy/leads/${id}/restore`, { statusCode }),
+    onSuccess: () => {
+      toast({ title: t('leadRestored') });
+      invalidate();
+    },
+    onError: (error: any) => toast({ title: t('leadRestoreFailed'), description: error.message, variant: 'destructive' }),
   });
 
   const updateTask = useMutation({
@@ -573,13 +648,25 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     }
   }, [openLead, t, toast, updateLead]);
 
+  const openArchiveDialog = useCallback((lead: Lead) => {
+    setArchiveDialogLead(lead);
+    setArchiveReason('');
+  }, []);
+
+  const handleArchiveDialogState = useCallback((open: boolean) => {
+    if (!open) {
+      setArchiveDialogLead(null);
+      setArchiveReason('');
+    }
+  }, []);
+
   const handleLeadDialogState = useCallback((open: boolean) => {
     setLeadDialogOpen(open);
     if (!open) {
-      leadForm.reset(EMPTY_LEAD_FORM);
+      leadForm.reset(leadFormDefaults);
       setDuplicateHint(null);
     }
-  }, [leadForm]);
+  }, [leadForm, leadFormDefaults]);
   const leadDialogGuard = useUnsavedChangesGuard({
     open: leadDialogOpen,
     isDirty: leadForm.formState.isDirty,
@@ -634,6 +721,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       ? t('salesWorkspace')
       : `${t('welcome')}, ${user?.fullName || t('manager')}!`,
     pipeline: t('pipeline'),
+    archive: t('leadArchive'),
     schedule: t('salesSchedule'),
     students: isAdministrationWorkspace ? t('allClients') : t('myStudents'),
     tasks: isAdministrationWorkspace ? t('allTasks') : t('myTasks'),
@@ -641,12 +729,17 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const salesWorkspaceDescription = isAdministrationWorkspace
     ? t('globalSalesWorkspaceDescription')
     : t('salesManagerWorkspace');
+  const sectionSubtitle = section === 'schedule'
+    ? t('salesScheduleSubtitle')
+    : section === 'archive'
+      ? t('leadArchiveDescription')
+      : salesWorkspaceDescription;
 
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={section === 'schedule' ? t('salesScheduleSubtitle') : salesWorkspaceDescription}
+        subtitle={sectionSubtitle}
         breadcrumbs={[
           { label: t('salesWorkspace'), href: '/sales' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
@@ -694,6 +787,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           activePipelineStatuses={activePipelineStatuses}
           onLeadClick={(lead) => openLead(lead.id)}
           onQuickAction={handleQuickAction}
+          onArchiveLead={openArchiveDialog}
           onStatusChange={async (leadId, statusCode) => {
             if (statusCode === 'paid') {
               openLead(leadId, 'payment');
@@ -704,6 +798,20 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           }}
           isPending={updateLead.isPending}
           showManager={isAdministrationWorkspace}
+        />
+      ) : null}
+
+      {section === 'archive' ? (
+        <ArchiveTab
+          t={t}
+          leads={archivedLeads}
+          activePipelineStatuses={activePipelineStatuses}
+          leadStatusName={leadStatusName}
+          archiveReasonName={archiveReasonName}
+          dateTime={dateTime}
+          onLeadClick={(lead) => openLead(lead.id)}
+          onRestore={(leadId, statusCode) => restoreLead.mutate({ id: leadId, statusCode })}
+          isPending={restoreLead.isPending}
         />
       ) : null}
 
@@ -753,6 +861,54 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         />
       ) : null}
 
+      <Dialog open={Boolean(archiveDialogLead)} onOpenChange={handleArchiveDialogState}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('archiveLead')}</DialogTitle>
+            <DialogDescription>
+              {archiveDialogLead?.contactName ? `${archiveDialogLead.contactName}. ` : null}
+              {t('archiveLeadDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FormLabel>{t('archiveReason')}</FormLabel>
+              <Select value={archiveReason} onValueChange={setArchiveReason} disabled={archiveLead.isPending}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('chooseArchiveReason')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {LEAD_ARCHIVE_REASONS.map((reason) => (
+                      <SelectItem key={reason.code} value={reason.code}>
+                        {t(reason.translationKey as TranslationKey)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => handleArchiveDialogState(false)} disabled={archiveLead.isPending}>
+                {t('cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  if (!archiveDialogLead || !archiveReason) return;
+                  archiveLead.mutate({ id: archiveDialogLead.id, reason: archiveReason });
+                }}
+                disabled={!archiveReason || archiveLead.isPending}
+              >
+                <Archive data-icon="inline-start" />
+                {archiveLead.isPending ? t('saving') : t('sendToArchive')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
@@ -764,13 +920,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             form={leadForm}
             createLead={createLead}
             data={data}
+            managers={leadManagerOptions}
+            managerSelectDisabled={hasSalesModule && !isAdministrationWorkspace}
             duplicateHint={duplicateHint}
             onOpenDuplicate={(duplicate) => {
               const targetLeadId = duplicate.entityType === 'lead' ? duplicate.id : duplicate.leadId;
               if (!targetLeadId) return;
               setLeadDialogOpen(false);
               setDuplicateHint(null);
-              leadForm.reset(EMPTY_LEAD_FORM);
+              leadForm.reset(leadFormDefaults);
               openLead(targetLeadId);
             }}
           />
@@ -885,6 +1043,7 @@ function PipelineTab({
   activePipelineStatuses,
   onLeadClick,
   onQuickAction,
+  onArchiveLead,
   onStatusChange,
   isPending,
   showManager,
@@ -895,6 +1054,7 @@ function PipelineTab({
   activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
   onLeadClick: (lead: Lead) => void;
   onQuickAction: (action: QuickAction, lead: Lead) => void;
+  onArchiveLead: (lead: Lead) => void;
   onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
   isPending: boolean;
   showManager: boolean;
@@ -914,12 +1074,144 @@ function PipelineTab({
         }))}
         onStatusChange={onStatusChange}
         onQuickAction={(action, lead) => onQuickAction(action, lead as Lead)}
+        onArchiveLead={(lead) => onArchiveLead(lead as Lead)}
         onLeadClick={(lead) => onLeadClick(lead as Lead)}
         isPending={isPending}
         showPaymentAction
         showManager={showManager}
       />
     </div>
+  );
+}
+
+function ArchiveTab({
+  t,
+  leads,
+  activePipelineStatuses,
+  leadStatusName,
+  archiveReasonName,
+  dateTime,
+  onLeadClick,
+  onRestore,
+  isPending,
+}: {
+  t: (key: TranslationKey) => string;
+  leads: Lead[];
+  activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
+  leadStatusName: (code: string) => string;
+  archiveReasonName: (code: string | null | undefined) => string;
+  dateTime: (v: string | null | undefined) => string;
+  onLeadClick: (lead: Lead) => void;
+  onRestore: (leadId: number, statusCode: string) => void;
+  isPending: boolean;
+}) {
+  const columns = [
+    {
+      key: 'contactName',
+      header: t('lead'),
+      sortable: true,
+      accessor: (lead: Lead) => lead.contactName,
+      render: (lead: Lead) => (
+        <div>
+          <div className="font-medium text-slate-900">{lead.contactName}</div>
+          <div className="text-xs text-slate-500">{lead.phoneNumbers?.[0] ?? lead.phone ?? lead.messenger ?? t('noData')}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'statusCode',
+      header: t('status'),
+      sortable: true,
+      accessor: (lead: Lead) => leadStatusName(lead.statusCode),
+      render: (lead: Lead) => (
+        <Badge variant="outline">{leadStatusName(lead.statusCode)}</Badge>
+      ),
+    },
+    {
+      key: 'managerName',
+      header: t('manager'),
+      sortable: true,
+      accessor: (lead: Lead) => lead.managerName || t('noData'),
+      render: (lead: Lead) => <span className="text-slate-600">{lead.managerName || t('noData')}</span>,
+    },
+    {
+      key: 'archiveReason',
+      header: t('archiveReason'),
+      sortable: true,
+      accessor: (lead: Lead) => archiveReasonName(lead.archiveReason),
+      render: (lead: Lead) => <span className="text-slate-600">{archiveReasonName(lead.archiveReason)}</span>,
+    },
+    {
+      key: 'archivedAt',
+      header: t('archivedAt'),
+      sortable: true,
+      accessor: (lead: Lead) => lead.archivedAt,
+      render: (lead: Lead) => (
+        <div>
+          <div className="text-slate-600">{dateTime(lead.archivedAt)}</div>
+          {lead.archivedByName ? (
+            <div className="text-xs text-slate-500">{t('archivedBy')} {lead.archivedByName}</div>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'restore',
+      header: t('actions'),
+      render: (lead: Lead) => (
+        <div
+          className="flex justify-end"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" disabled={isPending || activePipelineStatuses.length === 0}>
+                <RotateCcw data-icon="inline-start" />
+                {t('restoreLead')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuGroup>
+                {activePipelineStatuses.map((status) => (
+                  <DropdownMenuItem
+                    key={status.code}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRestore(lead.id, status.code);
+                    }}
+                    disabled={isPending}
+                  >
+                    {t('restoreToStage')} {leadStatusName(status.code)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Card className="hover-lift">
+      <CardHeader className="pb-4">
+        <CardTitle>{t('leadArchive')}</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <DataTable
+          columns={columns}
+          data={leads}
+          keyExtractor={(lead: Lead) => `archived-lead-${lead.id}`}
+          emptyState={
+            <div className="p-8">
+              <EmptyState title={t('noArchivedLeads')} text={t('noArchivedLeadsDesc')} icon={Archive} />
+            </div>
+          }
+          onRowClick={onLeadClick}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1186,6 +1478,8 @@ function LeadForm({
   form,
   createLead,
   data,
+  managers,
+  managerSelectDisabled,
   duplicateHint,
   onOpenDuplicate,
 }: {
@@ -1193,6 +1487,8 @@ function LeadForm({
   form: UseFormReturn<CreateLeadFormValues>;
   createLead: any;
   data: any;
+  managers: Array<{ id: number; fullName: string }>;
+  managerSelectDisabled: boolean;
   duplicateHint: DuplicateClientHint | null;
   onOpenDuplicate: (duplicate: DuplicateClientHint) => void;
 }) {
@@ -1422,6 +1718,36 @@ function LeadForm({
                   <SelectGroup>
                     {activeSources.map((source: any) => (
                       <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="managerId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('responsibleManager')}</FormLabel>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                disabled={managerSelectDisabled || createLead.isPending}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('selectManager')} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    {managers.map((manager) => (
+                      <SelectItem key={manager.id} value={String(manager.id)}>
+                        {manager.fullName}
+                      </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>

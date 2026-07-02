@@ -254,6 +254,10 @@ export const academyLeads = pgTable("academy_leads", {
   warmReason: text("warm_reason"),
   warmMovedAt: timestamp("warm_moved_at"),
   noMailing: boolean("no_mailing").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archiveReason: varchar("archive_reason", { length: 80 }),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: integer("archived_by").references(() => users.id, { onDelete: "set null" }),
   referralCode: varchar("referral_code", { length: 80 }),
   referrerStudentId: integer("referrer_student_id"),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -265,6 +269,7 @@ export const academyLeads = pgTable("academy_leads", {
   managerIdx: index("academy_leads_manager_idx").on(table.managerId),
   schoolIdx: index("academy_leads_school_idx").on(table.schoolId),
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
+  archiveIdx: index("academy_leads_archive_idx").on(table.isArchived, table.archivedAt),
 }));
 
 export const academyLeadPhones = pgTable("academy_lead_phones", {

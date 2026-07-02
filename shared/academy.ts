@@ -95,6 +95,20 @@ export const ACTIVE_PIPELINE_STATUSES = LEAD_STATUSES
   .filter((status) => status.activePipeline)
   .map((status) => status.code);
 
+export const LEAD_ARCHIVE_REASONS = [
+  { code: "no_answer", translationKey: "archiveReasonNoAnswer", label: "Не отвечает" },
+  { code: "not_interested", translationKey: "archiveReasonNotInterested", label: "Не заинтересован" },
+  { code: "no_budget", translationKey: "archiveReasonNoBudget", label: "Нет бюджета" },
+  { code: "schedule_conflict", translationKey: "archiveReasonScheduleConflict", label: "Не подходит расписание" },
+  { code: "chose_competitor", translationKey: "archiveReasonChoseCompetitor", label: "Выбрал конкурента" },
+  { code: "wrong_contact", translationKey: "archiveReasonWrongContact", label: "Неверный контакт" },
+  { code: "duplicate_or_invalid", translationKey: "archiveReasonDuplicateOrInvalid", label: "Дубль или невалидная заявка" },
+  { code: "other", translationKey: "archiveReasonOther", label: "Другая причина" },
+] as const;
+
+export const LEAD_ARCHIVE_REASON_CODES = LEAD_ARCHIVE_REASONS.map((reason) => reason.code);
+export type LeadArchiveReasonCode = (typeof LEAD_ARCHIVE_REASONS)[number]["code"];
+
 export const STUDENT_STATUSES = [
   { code: "studying", translationKey: "studentStatusStudying", color: "#16a34a" },
   { code: "paused", translationKey: "studentStatusPaused", color: "#f59e0b" },

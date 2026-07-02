@@ -16,6 +16,7 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
   const { rows: staleLeads } = await pool.query(
     `SELECT id, status_code, manager_id FROM academy_leads
      WHERE status_code <> 'not_now' AND status_code <> 'paid'
+       AND COALESCE(is_archived, false) = false
        AND updated_at < NOW() - INTERVAL '14 days'`,
   );
   for (const lead of staleLeads) {
@@ -69,7 +70,10 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
 
   // 4. Warm-base mailings (only leads that didn't decline mailings).
   const { rows: warmLeads } = await pool.query(
-    `SELECT id, messenger, phone FROM academy_leads WHERE status_code='not_now' AND no_mailing=false`,
+    `SELECT id, messenger, phone FROM academy_leads
+     WHERE status_code='not_now'
+       AND no_mailing=false
+       AND COALESCE(is_archived, false) = false`,
   );
   for (const lead of warmLeads) {
     const recipient = lead.messenger || lead.phone;

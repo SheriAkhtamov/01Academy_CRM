@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   KanbanSquare,
   MessagesSquare,
+  Archive,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -100,6 +101,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       items: [
         { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
         { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
+        { name: t('leadArchive'), href: '/sales/archive', icon: Archive },
         { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
         { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },

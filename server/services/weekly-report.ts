@@ -24,9 +24,15 @@ export const buildWeeklyReport = async (
   monthStart.setHours(0, 0, 0, 0);
 
   const { rows: leadRow } = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM academy_leads WHERE created_at >= $1`, [weekStart]);
+    `SELECT COUNT(*)::int AS c
+     FROM academy_leads
+     WHERE created_at >= $1 AND COALESCE(is_archived, false) = false`, [weekStart]);
   const { rows: demoRow } = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM academy_leads WHERE status_code IN ('demo_invited','demo_attended','offer','thinking','enrolled','paid') AND demo_attended=true`);
+    `SELECT COUNT(*)::int AS c
+     FROM academy_leads
+     WHERE status_code IN ('demo_invited','demo_attended','offer','thinking','enrolled','paid')
+       AND demo_attended=true
+       AND COALESCE(is_archived, false) = false`);
   const { rows: paidRow } = await pool.query(
     `SELECT COUNT(DISTINCT student_id)::int AS c FROM academy_payments WHERE status='paid' AND paid_at >= $1`, [weekStart]);
   const { rows: revenueRow } = await pool.query(
@@ -39,7 +45,7 @@ export const buildWeeklyReport = async (
     `SELECT
        (SELECT COUNT(*)::int FROM academy_students WHERE status='studying' AND attendance_percent > 0 AND attendance_percent < 70)
        + (SELECT COUNT(*)::int FROM academy_payments WHERE status='overdue')
-       + (SELECT COUNT(*)::int FROM academy_leads WHERE status_code='thinking' AND updated_at < NOW() - INTERVAL '7 days')
+       + (SELECT COUNT(*)::int FROM academy_leads WHERE status_code='thinking' AND updated_at < NOW() - INTERVAL '7 days' AND COALESCE(is_archived, false) = false)
      AS total`);
 
   const message = [

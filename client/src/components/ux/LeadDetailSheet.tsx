@@ -942,7 +942,11 @@ export function LeadDetailSheet({
                                   const group = groups.find((item) => String(item.id) === nextValue);
                                   if (group?.courseId) leadForm.setValue('courseId', String(group.courseId), { shouldDirty: true });
                                 }}>
-                                  <FormControl>                                <SelectTrigger title={t('leadGroupAssignmentHint')}><SelectValue placeholder={t('noGroup')} /></SelectTrigger></FormControl>
+                                  <FormControl>
+                                    <SelectTrigger title={t('leadGroupAssignmentHint')}>
+                                      <SelectValue placeholder={t('noGroup')} />
+                                    </SelectTrigger>
+                                  </FormControl>
                                   <SelectContent>
                                     <SelectGroup>
                                       <SelectItem value="none">{t('noGroup')}</SelectItem>

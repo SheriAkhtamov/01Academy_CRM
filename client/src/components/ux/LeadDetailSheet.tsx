@@ -57,6 +57,7 @@ import {
   ClipboardList,
   Clock3,
   CreditCard,
+  CalendarClock,
   ExternalLink,
   History,
   MessageSquare,
@@ -66,6 +67,9 @@ import {
   Trash2,
   UserRoundCog,
   UserRound,
+  GraduationCap,
+  Tag,
+  Users,
 } from 'lucide-react';
 import { LEAD_STATUSES, PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 
@@ -588,7 +592,7 @@ export function LeadDetailSheet({
           <>
             <SheetHeader className="border-b border-border bg-muted/30 p-6 pr-14">
               <div className="flex items-start gap-4">
-                <Avatar className="size-14 border border-border bg-background">
+                <Avatar className="size-12 border border-border bg-background">
                   <AvatarFallback>{getInitials(lead.contactName)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
@@ -598,22 +602,73 @@ export function LeadDetailSheet({
                       {leadStatusName(lead.statusCode)}
                     </Badge>
                   </div>
-                  <SheetDescription className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
-                    {visiblePhoneNumbers.length > 0 ? <span>{visiblePhoneNumbers.join(', ')}</span> : null}
-                    {lead.studentName ? <span>• {lead.studentName}</span> : null}
-                    {lead.courseName ? <span>• {lead.courseName}</span> : null}
-                    {lead.schoolName ? <span>• {lead.schoolName}</span> : null}
-                  </SheetDescription>
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <UserRoundCog />
-                    <span>{t('responsibleManager')}: {lead.managerName || t('notAssigned')}</span>
-                  </p>
+                  <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
+
+                  {/* Meta chips: only meaningful info shown, faded dots removed */}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {visiblePhoneNumbers.length > 0 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Phone className="size-3.5" />
+                        {visiblePhoneNumbers.join(', ')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 italic">{t('leadSheetNoContactInfo')}</span>
+                    )}
+                    {lead.studentName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <UserRound className="size-3.5" />
+                        {lead.studentName}
+                        {lead.studentAge ? `, ${lead.studentAge}` : ''}
+                      </span>
+                    ) : null}
+                    {lead.courseName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <GraduationCap className="size-3.5" />
+                        {lead.courseName}
+                      </span>
+                    ) : null}
+                    {lead.schoolName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="size-3.5" />
+                        {lead.schoolName}
+                      </span>
+                    ) : null}
+                    {lead.sourceName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Tag className="size-3.5" />
+                        {lead.sourceName}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Manager line — single clean row */}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <UserRoundCog className="size-3.5" />
+                      <span className="text-foreground/80">{t('manager')}:</span>
+                      <span>{lead.managerName || t('notAssigned')}</span>
+                    </span>
+                    {lead.firstContactAt ? (
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarClock className="size-3.5" />
+                        <span className="text-foreground/80">{t('leadStatusFirstContact')}:</span>
+                        {dateTime(lead.firstContactAt)}
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1">
+                      <Clock3 className="size-3.5" />
+                      <span className="text-foreground/80">{t('leadSheetCreated')}:</span>
+                      {dateTime(lead.createdAt)}
+                    </span>
+                  </div>
+
+                  {/* Quick actions — single prominent CTA + secondary outline buttons */}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {phoneHref ? (
                       <Button asChild size="sm" variant="outline">
                         <a href={phoneHref}>
                           <Phone data-icon="inline-start" />
-                          {t('call')}
+                          {t('callShort')}
                         </a>
                       </Button>
                     ) : null}
@@ -621,14 +676,14 @@ export function LeadDetailSheet({
                       <Button asChild size="sm" variant="outline">
                         <a href={messageHref} target="_blank" rel="noreferrer">
                           <MessageSquare data-icon="inline-start" />
-                          {t('write')}
+                          {t('writeShort')}
                           <ExternalLink data-icon="inline-end" />
                         </a>
                       </Button>
                     ) : null}
                     <Button size="sm" onClick={() => setActiveTab('payment')}>
                       <CreditCard data-icon="inline-start" />
-                      {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment')}
+                      {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
                     </Button>
                   </div>
                 </div>
@@ -801,7 +856,6 @@ export function LeadDetailSheet({
                                 </SelectGroup>
                               </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">{t('leadTransferHint')}</p>
                           </FormItem>
                           <FormField
                             control={leadForm.control}
@@ -888,7 +942,7 @@ export function LeadDetailSheet({
                                   const group = groups.find((item) => String(item.id) === nextValue);
                                   if (group?.courseId) leadForm.setValue('courseId', String(group.courseId), { shouldDirty: true });
                                 }}>
-                                  <FormControl><SelectTrigger><SelectValue placeholder={t('noGroup')} /></SelectTrigger></FormControl>
+                                  <FormControl>                                <SelectTrigger title={t('leadGroupAssignmentHint')}><SelectValue placeholder={t('noGroup')} /></SelectTrigger></FormControl>
                                   <SelectContent>
                                     <SelectGroup>
                                       <SelectItem value="none">{t('noGroup')}</SelectItem>
@@ -903,7 +957,6 @@ export function LeadDetailSheet({
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
-                                <p className="text-xs text-muted-foreground">{t('leadGroupAssignmentHint')}</p>
                                 <LocalizedFormMessage />
                               </FormItem>
                             )}
@@ -1015,12 +1068,13 @@ export function LeadDetailSheet({
                 <TabsContent value="payment" className="mt-0">
                   <div className="flex flex-col gap-5">
                     {lead.statusCode === 'paid' ? (
-                      <Alert>
-                        <CheckCircle2 />
-                        <AlertTitle>{t('clientAlreadyCreated')}</AlertTitle>
-                        <AlertDescription>{t('recurringPaymentHint')}</AlertDescription>
-                      </Alert>
-                    ) : null}
+                      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                        <span className="text-foreground/80">{t('recurringPaymentHint')}</span>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{t('leadSheetPaymentFormHint')}</p>
+                    )}
                     <Card>
                       <CardHeader>
                         <CardTitle>
@@ -1145,20 +1199,20 @@ export function LeadDetailSheet({
 
                     <Card>
                       <CardHeader><CardTitle>{t('paymentHistory')}</CardTitle></CardHeader>
-                      <CardContent className="flex flex-col gap-2">
+                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
                         {(lead.payments ?? []).length === 0 ? (
-                          <p className="text-sm text-muted-foreground">{t('noPayments')}</p>
+                          <p className="py-3 text-sm text-muted-foreground">{t('noPayments')}</p>
                         ) : (
                           lead.payments?.map((payment) => (
-                            <div key={payment.id} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+                            <div key={payment.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
                               <div className="min-w-0">
                                 <p className="font-medium">{money(payment.amountUzs)}</p>
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                  {[payment.method, payment.type, payment.discount].filter(Boolean).join(' • ')}
+                                  {[payment.method, payment.type, payment.discount].filter(Boolean).join(' · ')}
                                 </p>
                                 {payment.comment ? <p className="mt-1 text-xs text-muted-foreground">{payment.comment}</p> : null}
                               </div>
-                              <div className="shrink-0 text-right">
+                              <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                                 <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : 'warning'}>
                                   {payment.status === 'paid'
                                     ? t('paymentStatusPaid')
@@ -1166,7 +1220,7 @@ export function LeadDetailSheet({
                                       ? t('paymentStatusOverdue')
                                       : t('paymentStatusPending')}
                                 </Badge>
-                                <p className="mt-1 text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.createdAt)}</p>
+                                <p className="text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.createdAt)}</p>
                               </div>
                             </div>
                           ))
@@ -1229,27 +1283,27 @@ export function LeadDetailSheet({
 
                     <Card>
                       <CardHeader><CardTitle>{t('leadTasks')}</CardTitle></CardHeader>
-                      <CardContent className="flex flex-col gap-2">
+                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
                         {(lead.tasks ?? []).length === 0 ? (
-                          <p className="text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
+                          <p className="py-3 text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
                         ) : (
                           lead.tasks?.map((task) => (
-                            <div key={task.id} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+                            <div key={task.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-medium">{task.title}</p>
                                 {task.description ? <p className="mt-1 text-xs text-muted-foreground">{task.description}</p> : null}
                               </div>
-                              <div className="shrink-0 text-right">
+                              <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                                 <Badge variant={task.status === 'done' ? 'success' : 'outline'}>
                                   {task.status === 'done' ? t('taskDone') : t('taskInProgress')}
                                 </Badge>
-                                {task.deadlineAt ? <p className="mt-1 text-xs text-muted-foreground">{dateTime(task.deadlineAt)}</p> : null}
+                                {task.deadlineAt ? <p className="text-xs text-muted-foreground">{dateTime(task.deadlineAt)}</p> : null}
                                 {task.status !== 'done' ? (
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="mt-2"
+                                    className="h-7 px-2"
                                     disabled={updateTask.isPending}
                                     onClick={() => updateTask.mutate(task.id)}
                                   >
@@ -1349,30 +1403,40 @@ function ActivityTimeline({
   return (
     <Card>
       <CardHeader><CardTitle>{t('activityHistory')}</CardTitle></CardHeader>
-      <CardContent className="flex flex-col gap-1">
+      <CardContent className="flex flex-col gap-0">
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('noActivityYet')}</p>
         ) : (
-          items.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.id} className="flex gap-3 border-b border-border py-3 last:border-0">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Icon className="text-muted-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-medium">{item.title}</p>
-                    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                      <Clock3 />
-                      {dateTime(item.at)}
-                    </span>
+          <ol className="flex flex-col">
+            {items.map((item, index) => {
+              const Icon = item.icon;
+              const isLast = index === items.length - 1;
+              return (
+                <li key={item.id} className="relative flex gap-3 pb-3 last:pb-0">
+                  {/* vertical connector line */}
+                  {!isLast ? (
+                    <span
+                      aria-hidden
+                      className="absolute left-[18px] top-9 bottom-0 w-px bg-border"
+                    />
+                  ) : null}
+                  <div className="relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                    <Icon className="size-4 text-muted-foreground" />
                   </div>
-                  {item.text ? <p className="mt-1 text-sm text-muted-foreground">{item.text}</p> : null}
-                </div>
-              </div>
-            );
-          })
+                  <div className="min-w-0 flex-1 pt-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium leading-tight">{item.title}</p>
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                        <Clock3 className="size-3" />
+                        {dateTime(item.at)}
+                      </span>
+                    </div>
+                    {item.text ? <p className="mt-1 text-sm text-muted-foreground">{item.text}</p> : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         )}
       </CardContent>
     </Card>

@@ -535,7 +535,6 @@ export const translations = {
   },
   activityHistory: { en: 'Activity history', ru: 'История действий' },
   activityTab: { en: 'Activity', ru: 'Активность' },
-  clientAlreadyCreated: { en: 'This lead is already in the client database.', ru: 'Этот лид уже находится в базе клиентов.' },
   clientAlreadyExists: { en: 'Client already exists', ru: 'Клиент уже существует' },
   clientAndStudent: { en: 'Client and student', ru: 'Клиент и ученик' },
   clientCreated: { en: 'Client added', ru: 'Клиент добавлен' },
@@ -605,6 +604,13 @@ export const translations = {
   contactMethodNotProvided: { en: 'No phone or Telegram username is provided', ru: 'Не указан телефон или Telegram' },
   referralDiscount15: { en: '15% discount for one month', ru: 'Скидка 15% на один месяц' },
   sourceRequired: { en: 'Source is required', ru: 'Источник обязателен' },
+
+  // Lead sheet — UX polish
+  leadSheetCreated: { en: 'Created', ru: 'Создан' },
+  leadSheetNoContactInfo: { en: 'No contact info', ru: 'Нет контактных данных' },
+  callShort: { en: 'Call', ru: 'Звонок' },
+  writeShort: { en: 'Message', ru: 'Писать' },
+  leadSheetPaymentFormHint: { en: 'Confirming the first payment turns this lead into a client.', ru: 'Подтверждение первой оплаты превращает лида в клиента.' },
 
   // UX improvements — academy configuration, schools, courses and scheduling
   academyConfiguration: { en: 'Academy configuration', ru: 'Настройки академии' },
@@ -936,10 +942,6 @@ export const translations = {
   leadDeleteFailed: { en: 'Lead was not deleted', ru: 'Не удалось удалить лида' },
   noLeadsFound: { en: 'No leads found', ru: 'Лиды не найдены' },
   leadTransferFailed: { en: 'Lead transfer failed', ru: 'Не удалось передать лида' },
-  leadTransferHint: {
-    en: 'After transfer, this lead will disappear from your pipeline.',
-    ru: 'После передачи этот лид исчезнет из вашей воронки.',
-  },
   leadTransferred: { en: 'Lead transferred', ru: 'Лид передан' },
   leadsTransferred: { en: 'Leads transferred', ru: 'Лиды переданы' },
   leadsTransferredCount: { en: 'Updated leads: {count}', ru: 'Переназначено лидов: {count}' },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import {
   closestCorners,
   DndContext,
@@ -53,7 +53,8 @@ interface KanbanLead {
   messenger?: string | null;
   courseName?: string;
   sourceName?: string;
-  managerName?: string;
+  managerId?: number | null;
+  managerName?: string | null;
   comment?: string | null;
   studentAge?: number;
   expectedPaymentUzs?: number;
@@ -98,6 +99,9 @@ function LeadCardContent({
   const canCall = Boolean(lead.phone);
   const canMessage = Boolean(lead.messenger?.startsWith('@') || lead.phone);
   const canArchive = currentStatus.code !== 'paid';
+  const stopCardInteraction = (event: SyntheticEvent) => {
+    event.stopPropagation();
+  };
 
   return (
     <>
@@ -124,7 +128,14 @@ function LeadCardContent({
                 <span className="sr-only">{t('actions')}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent
+              align="end"
+              className="w-48"
+              onPointerDown={stopCardInteraction}
+              onMouseDown={stopCardInteraction}
+              onTouchStart={stopCardInteraction}
+              onClick={stopCardInteraction}
+            >
               <DropdownMenuGroup>
                 <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)} disabled={!canCall}>
                   <Phone /> {t('call')}

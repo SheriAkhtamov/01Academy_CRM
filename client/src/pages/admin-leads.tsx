@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, ArrowRightLeft, UsersRound } from 'lucide-react';
+import { AlertCircle, ArrowRightLeft, Trash2, UsersRound } from 'lucide-react';
 import { getAssignedWorkspaces, LEAD_STATUSES } from '@shared/academy';
 
 interface AdminLead {
@@ -74,6 +74,7 @@ export function LeadAssignmentContent() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(() => new Set());
   const [bulkManagerId, setBulkManagerId] = useState('');
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false);
+  const [deleteLeadTarget, setDeleteLeadTarget] = useState<AdminLead | null>(null);
 
   const leadsQuery = useQuery<AdminLead[]>({ queryKey: ['/api/academy/leads'] });
   const usersQuery = useQuery<any[]>({ queryKey: ['/api/users'] });
@@ -141,6 +142,23 @@ export function LeadAssignmentContent() {
     onError: (error: Error) => {
       toast({ title: t('leadTransferFailed'), description: error.message, variant: 'destructive' });
       setBulkConfirmationOpen(false);
+    },
+  });
+
+  const deleteLead = useMutation({
+    mutationFn: (leadId: number) => apiRequest('DELETE', `/api/academy/leads/${leadId}`),
+    onSuccess: (_result, leadId) => {
+      toast({ title: t('leadDeleted') });
+      setSelectedLeadIds((current) => {
+        const next = new Set(current);
+        next.delete(leadId);
+        return next;
+      });
+      setDeleteLeadTarget(null);
+      invalidateLeads();
+    },
+    onError: (error: Error) => {
+      toast({ title: t('leadDeleteFailed'), description: error.message, variant: 'destructive' });
     },
   });
 
@@ -259,9 +277,31 @@ export function LeadAssignmentContent() {
         </span>
       ),
     },
+    {
+      key: 'actions',
+      header: t('actions'),
+      render: (lead) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="text-destructive hover:text-destructive"
+          onClick={(event) => {
+            event.stopPropagation();
+            setDeleteLeadTarget(lead);
+          }}
+          disabled={deleteLead.isPending}
+        >
+          <Trash2 />
+          <span className="sr-only">{t('deleteLead')}</span>
+        </Button>
+      ),
+      cellClassName: 'w-16',
+    },
   ], [
     allVisibleSelected,
     assignLead,
+    deleteLead.isPending,
     managerLeadCounts,
     managers,
     selectedLeadIds,
@@ -402,6 +442,32 @@ export function LeadAssignmentContent() {
               }}
             >
               {bulkAssign.isPending ? t('saving') : t('assignSelected')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(deleteLeadTarget)} onOpenChange={(open) => {
+        if (!open) setDeleteLeadTarget(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('confirmDeleteLead')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('confirmDeleteLeadDescription').replace('{lead}', deleteLeadTarget?.contactName ?? '')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLead.isPending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteLead.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteLeadTarget) deleteLead.mutate(deleteLeadTarget.id);
+              }}
+            >
+              {deleteLead.isPending ? t('saving') : t('deleteLead')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

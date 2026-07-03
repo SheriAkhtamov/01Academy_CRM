@@ -3345,6 +3345,47 @@ router.post('/leads/:id/assign', async (req, res) => {
   }
 });
 
+router.delete('/leads/:id', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+
+    const lead = await getLead(id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const deletedTaskRows = await withTransaction(async () => {
+      const taskRows = await query<{ id: number }>(
+        `DELETE FROM academy_tasks
+         WHERE entity_type = 'lead' AND entity_id = $1
+         RETURNING id`,
+        [id],
+      );
+      const deletedLead = await queryOne(
+        `DELETE FROM academy_leads
+         WHERE id = $1
+         RETURNING id`,
+        [id],
+      );
+      if (!deletedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      return taskRows;
+    });
+
+    await createAudit(req, 'DELETE_ACADEMY_LEAD', 'academy_lead', id, {
+      deletedTaskCount: deletedTaskRows.length,
+    }, lead);
+    res.json({ ok: true, deletedTaskCount: deletedTaskRows.length });
+  } catch (error: any) {
+    logger.error('Failed to delete lead', { error });
+    const isForeignKeyConflict = error?.code === '23503';
+    res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
+      error: isForeignKeyConflict ? 'resourceInUse' : error.message || 'Failed to delete lead',
+    });
+  }
+});
+
 router.post('/leads/:id/archive', async (req, res) => {
   if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
   try {
@@ -3363,15 +3404,41 @@ router.post('/leads/:id/archive', async (req, res) => {
       return res.status(400).json({ error: 'archiveReasonRequired' });
     }
 
-    const archived = await updateRow('academy_leads', id, {
-      isArchived: true,
-      archiveReason,
-      archivedAt: new Date(),
-      archivedBy: req.user!.id,
-    });
-    if (!archived) return res.status(404).json({ error: 'Lead not found' });
+    const assignToSelf = toBoolean(req.body.assignToSelf, false) === true;
+    let archived: Row | undefined;
 
-    await createAudit(req, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, oldLead);
+    await withTransaction(async () => {
+      let leadBeforeArchive = oldLead;
+
+      if (!leadBeforeArchive.managerId) {
+        if (!assignToSelf) {
+          throw Object.assign(new Error('leadRequiresResponsibleManager'), { statusCode: 409 });
+        }
+
+        const manager = await getActiveSalesManager(req.user!.id);
+        const assignedLead = await reassignLead(
+          req,
+          leadBeforeArchive,
+          manager,
+          nullableText(req.body.assignmentComment) ?? 'Присвоено себе перед архивированием',
+        );
+        await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', assignedLead.id, assignedLead, leadBeforeArchive);
+        leadBeforeArchive = assignedLead;
+      }
+
+      archived = await updateRow('academy_leads', id, {
+        isArchived: true,
+        archiveReason,
+        archivedAt: new Date(),
+        archivedBy: req.user!.id,
+      });
+      if (!archived) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+
+      await createAudit(req, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, leadBeforeArchive);
+    });
+
     res.json(await getLead(id) ?? archived);
   } catch (error: any) {
     logger.error('Failed to archive lead', { error });

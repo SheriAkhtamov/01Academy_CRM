@@ -62,6 +62,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   if (!user) return null;
 
   const assignedWorkspaces = getAssignedWorkspaces(user);
+  const additionalWorkspaces = assignedWorkspaces.filter((workspace) => workspace !== user.workspace);
   const hasWorkspace = (workspaceName: AcademyWorkspace) => assignedWorkspaces.includes(workspaceName);
 
   const isItemActive = (href: string) => {
@@ -255,9 +256,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               {user.position && (
                 <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>
               )}
-              {assignedWorkspaces.length > 1 && (
+              {additionalWorkspaces.length > 0 && (
                 <p className="text-[10px] text-slate-400 truncate">
-                  {assignedWorkspaces.map((item) => formatUserWorkspace(item, t)).join(' · ')}
+                  {additionalWorkspaces.map((item) => formatUserWorkspace(item, t)).join(' · ')}
                 </p>
               )}
               {canAccessReports(user) && (

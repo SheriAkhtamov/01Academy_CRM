@@ -93,8 +93,8 @@ interface Lead {
   sourceId?: number;
   sourceName?: string;
   statusCode: string;
-  managerId?: number;
-  managerName?: string;
+  managerId?: number | null;
+  managerName?: string | null;
   comment?: string;
   createdAt: string;
   expectedPaymentUzs?: number;
@@ -510,10 +510,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const archiveLead = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason }),
-    onSuccess: () => {
-      toast({ title: t('leadArchived') });
+    mutationFn: ({ id, reason, assignToSelf }: { id: number; reason: string; assignToSelf?: boolean }) =>
+      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, assignToSelf }),
+    onSuccess: (_lead, variables) => {
+      toast({ title: variables.assignToSelf ? t('leadAssignedAndArchived') : t('leadArchived') });
       setArchiveDialogLead(null);
       setArchiveReason('');
       invalidate();
@@ -734,6 +734,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     : section === 'archive'
       ? t('leadArchiveDescription')
       : salesWorkspaceDescription;
+  const archiveLeadNeedsManager = Boolean(archiveDialogLead && !archiveDialogLead.managerId);
 
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
@@ -871,6 +872,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {archiveLeadNeedsManager ? (
+              <Alert>
+                <AlertCircle />
+                <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
+                <AlertDescription>{t('leadRequiresResponsibleManagerDescription')}</AlertDescription>
+              </Alert>
+            ) : null}
             <div className="space-y-2">
               <FormLabel>{t('archiveReason')}</FormLabel>
               <Select value={archiveReason} onValueChange={setArchiveReason} disabled={archiveLead.isPending}>
@@ -897,12 +905,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
                 variant="destructive"
                 onClick={() => {
                   if (!archiveDialogLead || !archiveReason) return;
-                  archiveLead.mutate({ id: archiveDialogLead.id, reason: archiveReason });
+                  archiveLead.mutate({ id: archiveDialogLead.id, reason: archiveReason, assignToSelf: archiveLeadNeedsManager });
                 }}
                 disabled={!archiveReason || archiveLead.isPending}
               >
-                <Archive data-icon="inline-start" />
-                {archiveLead.isPending ? t('saving') : t('sendToArchive')}
+                {archiveLeadNeedsManager ? <UserCheck data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
+                {archiveLead.isPending ? t('saving') : archiveLeadNeedsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
               </Button>
             </div>
           </div>

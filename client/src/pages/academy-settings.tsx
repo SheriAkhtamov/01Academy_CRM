@@ -8,6 +8,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { LeadAssignmentContent } from '@/pages/admin-leads';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,10 +51,13 @@ import {
   WeekScheduleEditor,
   type WeekScheduleItem,
 } from '@/components/ux/WeekScheduleEditor';
+import { validateLeadStatusTransition } from '@shared/academy';
 import { getGroupScheduleValidationError } from '@shared/scheduling';
 import {
+  AlertCircle,
   ArrowDown,
   ArrowUp,
+  ArrowRightLeft,
   BookOpen,
   Building2,
   DoorOpen,
@@ -284,6 +288,19 @@ const buildUniqueCourseSlug = (name: string, courses: Course[], ignoredCourseId?
   return `${baseSlug}-${suffix}`;
 };
 
+const formatLeadCount = (
+  count: number,
+  language: string,
+  labels: { one: string; few: string; many: string },
+) => {
+  const formattedCount = new Intl.NumberFormat(language === 'ru' ? 'ru-RU' : 'en-US').format(count);
+  if (language !== 'ru') return `${formattedCount} ${count === 1 ? labels.one : labels.many}`;
+
+  const plural = new Intl.PluralRules('ru-RU').select(count);
+  const noun = plural === 'one' ? labels.one : plural === 'few' ? labels.few : labels.many;
+  return `${formattedCount} ${noun}`;
+};
+
 function EmptyTableState({ title, description }: { title: string; description: string }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -304,7 +321,7 @@ interface AcademySettingsProps {
 }
 
 export default function AcademySettings({ mode = 'academy' }: AcademySettingsProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const [, navigate] = useLocation();
@@ -315,6 +332,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const defaultTab = isSalesSettingsMode ? 'lead-assignment' : 'schools';
   const basePath = isSalesSettingsMode ? '/admin/sales-settings' : '/admin/academy-settings';
   const requestedTabValue = availableTabs.includes(String(requestedTab)) ? String(requestedTab) : defaultTab;
+  const leadCountLabels = useMemo(
+    () => ({
+      one: t('leadCountOne'),
+      few: t('leadCountFew'),
+      many: t('leadCountMany'),
+    }),
+    [t],
+  );
   const [activeTab, setActiveTab] = useState(requestedTabValue);
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
@@ -333,6 +358,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     id: number;
     name: string;
   } | null>(null);
+  const [pipelineDeleteTarget, setPipelineDeleteTarget] = useState<{
+    status: PipelineStatus;
+    leadCount: number;
+  } | null>(null);
+  const [pipelineTransferTargetId, setPipelineTransferTargetId] = useState('');
 
   const configuration = useQuery<ConfigurationData>({
     queryKey: ['/api/academy/configuration'],
@@ -608,9 +638,72 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
+    onError: (error: Error & { rawMessage?: string }, target) => {
+      if (target.resource === 'pipeline-statuses' && error.rawMessage === 'pipelineStageHasLeads') {
+        const status = configuration.data?.statuses.find((item) => item.id === target.id);
+        setDeleteTarget(null);
+        if (status) {
+          preparePipelineStatusDelete.mutate(status);
+          return;
+        }
+      }
+
+      toast({
+        title: t('resourceNotDeleted'),
+        description: error.message === 'resourceInUse' ? t('resourceInUse') : error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const preparePipelineStatusDelete = useMutation({
+    mutationFn: async (status: PipelineStatus) => {
+      const usage = await apiRequest('GET', `/api/academy/pipeline-statuses/${status.id}/usage`);
+      return {
+        status,
+        leadCount: Number(usage?.leadCount ?? 0),
+      };
+    },
+    onSuccess: ({ status, leadCount }) => {
+      if (leadCount <= 0) {
+        setDeleteTarget({ resource: 'pipeline-statuses', id: status.id, name: status.name });
+        return;
+      }
+
+      const defaultTarget = [...(configuration.data?.statuses ?? [])]
+        .filter((item) => item.id !== status.id && item.isActive !== false)
+        .filter((item) => !validateLeadStatusTransition(status.code, item.code))
+        .sort((left, right) => left.sortOrder - right.sortOrder)[0];
+      setPipelineDeleteTarget({ status, leadCount });
+      setPipelineTransferTargetId(defaultTarget ? String(defaultTarget.id) : '');
+    },
     onError: (error: Error) => toast({
       title: t('resourceNotDeleted'),
-      description: error.message === 'resourceInUse' ? t('resourceInUse') : error.message,
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const transferAndDeletePipelineStatus = useMutation({
+    mutationFn: ({ status, targetStatusId }: { status: PipelineStatus; targetStatusId: string }) =>
+      apiRequest('POST', `/api/academy/pipeline-statuses/${status.id}/transfer-leads-and-delete`, {
+        targetStatusId: Number(targetStatusId),
+      }),
+    onSuccess: (result: { movedCount?: number }) => {
+      toast({
+        title: t('pipelineStageDeleted'),
+        description: t('pipelineStageTransferCompleted')
+          .replace('{count}', formatLeadCount(Number(result?.movedCount ?? 0), language, leadCountLabels)),
+      });
+      setPipelineDeleteTarget(null);
+      setPipelineTransferTargetId('');
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] });
+    },
+    onError: (error: Error) => toast({
+      title: t('resourceNotDeleted'),
+      description: error.message,
       variant: 'destructive',
     }),
   });
@@ -751,6 +844,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     () => [...(configuration.data?.statuses ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),
     [configuration.data?.statuses],
   );
+  const availableTransferStatuses = useMemo(
+    () => pipelineDeleteTarget
+      ? statuses.filter((status) => status.id !== pipelineDeleteTarget.status.id && status.isActive !== false)
+        .filter((status) => !validateLeadStatusTransition(pipelineDeleteTarget.status.code, status.code))
+      : [],
+    [pipelineDeleteTarget, statuses],
+  );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
   const displayedGroups = useMemo(
@@ -761,6 +861,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   );
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const selectedGroupTeacherId = groupForm.watch('teacherId');
+
+  useEffect(() => {
+    if (!pipelineDeleteTarget) return;
+    if (availableTransferStatuses.some((status) => String(status.id) === pipelineTransferTargetId)) return;
+    setPipelineTransferTargetId(availableTransferStatuses[0] ? String(availableTransferStatuses[0].id) : '');
+  }, [availableTransferStatuses, pipelineDeleteTarget, pipelineTransferTargetId]);
+
   const groupRooms = useMemo(
     () => rooms.filter((room) => (
       room.isActive !== false && String(room.schoolId) === selectedGroupSchoolId
@@ -1261,7 +1368,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setDeleteTarget({ resource: 'pipeline-statuses', id: status.id, name: status.name })}
+                      disabled={preparePipelineStatusDelete.isPending}
+                      onClick={() => preparePipelineStatusDelete.mutate(status)}
                     >
                       <Trash2 />
                       <span className="sr-only">{t('delete')}</span>
@@ -1779,6 +1887,120 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pipelineDeleteTarget)}
+        onOpenChange={(open) => {
+          if (open || transferAndDeletePipelineStatus.isPending) return;
+          setPipelineDeleteTarget(null);
+          setPipelineTransferTargetId('');
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('pipelineStageDeleteTransferTitle')}</DialogTitle>
+            <DialogDescription>
+              {pipelineDeleteTarget
+                ? t('pipelineStageDeleteTransferDescription').replace('{stage}', pipelineDeleteTarget.status.name)
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          {pipelineDeleteTarget ? (
+            <div className="flex flex-col gap-4">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {t('pipelineStageContainsLeads').replace(
+                    '{count}',
+                    formatLeadCount(pipelineDeleteTarget.leadCount, language, leadCountLabels),
+                  )}
+                </AlertTitle>
+                <AlertDescription>{t('pipelineStageTransferBeforeDelete')}</AlertDescription>
+              </Alert>
+
+              <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
+                <div className="space-y-2">
+                  <Label>{t('currentStage')}</Label>
+                  <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: pipelineDeleteTarget.status.color }}
+                    />
+                    <span className="truncate font-medium">{pipelineDeleteTarget.status.name}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatLeadCount(pipelineDeleteTarget.leadCount, language, leadCountLabels)}
+                  </p>
+                </div>
+
+                <div className="hidden pb-8 text-muted-foreground md:block">
+                  <ArrowRightLeft className="h-5 w-5" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t('transferLeadsToStage')}</Label>
+                  <Select
+                    value={pipelineTransferTargetId}
+                    onValueChange={setPipelineTransferTargetId}
+                    disabled={availableTransferStatuses.length === 0 || transferAndDeletePipelineStatus.isPending}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('selectPipelineStage')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {availableTransferStatuses.map((status) => (
+                          <SelectItem key={status.id} value={String(status.id)}>
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <span className="size-2 rounded-full" style={{ backgroundColor: status.color }} />
+                              <span className="truncate">{status.name}</span>
+                              {!status.isPipeline ? (
+                                <span className="text-xs text-muted-foreground">({t('hiddenFromPipeline')})</span>
+                              ) : null}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {availableTransferStatuses.length === 0 ? (
+                    <p className="text-xs text-destructive">{t('pipelineStageNoTransferTarget')}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{t('pipelineStageTransferHint')}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={transferAndDeletePipelineStatus.isPending}
+                  onClick={() => {
+                    setPipelineDeleteTarget(null);
+                    setPipelineTransferTargetId('');
+                  }}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={!pipelineTransferTargetId || transferAndDeletePipelineStatus.isPending}
+                  onClick={() => transferAndDeletePipelineStatus.mutate({
+                    status: pipelineDeleteTarget.status,
+                    targetStatusId: pipelineTransferTargetId,
+                  })}
+                >
+                  <ArrowRightLeft data-icon="inline-start" />
+                  {transferAndDeletePipelineStatus.isPending ? t('saving') : t('transferLeadsAndDeleteStage')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 

@@ -4585,7 +4585,7 @@ router.get('/integrations/status', async (req, res) => {
   if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
     const logs = await query(
-      `SELECT DISTINCT ON (provider) provider, status, error_message, updated_at, created_at
+      `SELECT DISTINCT ON (provider) provider, direction, status, error_message, updated_at, created_at
        FROM academy_integration_logs
        ORDER BY provider, created_at DESC`,
       [],
@@ -4596,6 +4596,12 @@ router.get('/integrations/status', async (req, res) => {
        WHERE status = 'connected'`,
     );
     const integ = appConfig.integrations ?? {};
+    const hasSuccessfulInboundLog = (provider: string) =>
+      logs.some((log) =>
+        log.provider === provider
+        && log.direction === 'inbound'
+        && ['received', 'duplicate'].includes(String(log.status))
+      );
     const providers = [
       {
         provider: 'instagram',
@@ -4606,6 +4612,7 @@ router.get('/integrations/status', async (req, res) => {
       { provider: 'telegram', connected: Boolean(integ.telegram?.botToken), note: 'Outbound bot messages + leadership reports' },
       { provider: 'whatsapp', connected: Boolean(integ.whatsapp?.apiToken && integ.whatsapp?.phoneNumberId), note: 'WhatsApp Business Cloud API' },
       { provider: 'google_forms', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Demo registration inbound webhook' },
+      { provider: 'website', connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'), note: 'Website lead inbound webhook' },
       { provider: 'meta_ads', connected: Boolean(integ.metaAds?.accessToken && integ.metaAds?.adAccountId), note: 'Ad spend import (manual expenses until connected)' },
       { provider: 'google_sheets', connected: Boolean(integ.googleSheets?.spreadsheetId), note: 'CSV export available; Sheets sync requires credentials' },
       { provider: 'notion', connected: Boolean(integ.notion?.token && integ.notion?.databaseId), note: 'CSV export available; Notion pages require token' },

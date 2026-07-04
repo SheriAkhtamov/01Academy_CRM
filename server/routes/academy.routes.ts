@@ -4029,6 +4029,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   requireAdministration?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
+  beforeDelete?: (context: { id: number; row: Row; req: any }) => Promise<void>;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
     if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
@@ -4236,16 +4237,29 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       const scopedWhere = scope.whereSql ? `AND ${scope.whereSql}` : '';
       const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere}`, [id, ...scope.params]);
       if (!row) return res.status(404).json({ error: `${path} not found` });
+      if (options.beforeDelete) {
+        await options.beforeDelete({ id, row, req });
+      }
       await deleteRow(table, id);
       res.json({ ok: true });
     } catch (error: any) {
       logger.error(`Failed to delete ${path}`, { error });
       const isForeignKeyConflict = error?.code === '23503';
-      res.status(isForeignKeyConflict ? 409 : 500).json({
-        error: isForeignKeyConflict ? 'resourceInUse' : `Failed to delete ${path}`,
+      res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
+        error: isForeignKeyConflict ? 'resourceInUse' : error.message || `Failed to delete ${path}`,
       });
     }
   });
+};
+
+const getLeadCountForStatusCode = async (statusCode: string) => {
+  const usage = await queryOne<{ leadCount: number | string }>(
+    `SELECT COUNT(*)::int AS lead_count
+     FROM academy_leads
+     WHERE status_code = $1`,
+    [statusCode],
+  );
+  return Number(usage?.leadCount ?? 0);
 };
 
 router.post('/lessons/:id/attendance', async (req, res) => {
@@ -4792,6 +4806,142 @@ router.all(
   },
 );
 
+router.get('/pipeline-statuses/:id/usage', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid pipeline stage id' });
+
+    const status = await queryOne(
+      `SELECT id, code, name
+       FROM academy_lead_statuses
+       WHERE id = $1`,
+      [id],
+    );
+    if (!status) return res.status(404).json({ error: 'pipeline-statuses not found' });
+
+    res.json({
+      id: Number(status.id),
+      code: status.code,
+      name: status.name,
+      leadCount: await getLeadCountForStatusCode(String(status.code)),
+    });
+  } catch (error) {
+    logger.error('Failed to fetch pipeline stage usage', { error, statusId: req.params.id });
+    res.status(500).json({ error: 'Failed to fetch pipeline stage usage' });
+  }
+});
+
+router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    const targetStatusId = parseId(req.body.targetStatusId);
+    if (!id) return res.status(400).json({ error: 'Invalid pipeline stage id' });
+    if (!targetStatusId) return res.status(400).json({ error: 'targetPipelineStageRequired' });
+
+    const result = await withTransaction(async () => {
+      const source = await queryOne(
+        `SELECT *
+         FROM academy_lead_statuses
+         WHERE id = $1
+         FOR UPDATE`,
+        [id],
+      );
+      if (!source) {
+        throw Object.assign(new Error('pipeline-statuses not found'), { statusCode: 404 });
+      }
+
+      const target = await queryOne(
+        `SELECT *
+         FROM academy_lead_statuses
+         WHERE id = $1
+         FOR UPDATE`,
+        [targetStatusId],
+      );
+      if (!target) {
+        throw Object.assign(new Error('targetPipelineStageRequired'), { statusCode: 400 });
+      }
+      if (Number(target.id) === Number(source.id)) {
+        throw Object.assign(new Error('targetPipelineStageMustDiffer'), { statusCode: 400 });
+      }
+      if (target.isActive === false) {
+        throw Object.assign(new Error('targetPipelineStageMustBeActive'), { statusCode: 400 });
+      }
+      const transitionError = validateLeadStatusTransition(String(source.code), String(target.code));
+      if (transitionError) {
+        throw Object.assign(new Error(transitionError), { statusCode: 409 });
+      }
+
+      const leads = await query<{ id: number }>(
+        `SELECT id
+         FROM academy_leads
+         WHERE status_code = $1
+         FOR UPDATE`,
+        [source.code],
+      );
+      const leadIds = leads.map((lead) => Number(lead.id));
+
+      if (leadIds.length > 0) {
+        await query(
+          `INSERT INTO academy_lead_stage_history
+            (lead_id, from_status_code, to_status_code, changed_by, comment)
+           SELECT id, $1, $2, $3, $4
+           FROM academy_leads
+           WHERE id = ANY($5::int[])`,
+          [
+            source.code,
+            target.code,
+            req.user!.id,
+            'Массовый перенос перед удалением этапа воронки',
+            leadIds,
+          ],
+        );
+
+        await query(
+          `UPDATE academy_leads
+           SET status_code = $1,
+               updated_at = NOW()
+           WHERE id = ANY($2::int[])`,
+          [target.code, leadIds],
+        );
+      }
+
+      await query(`DELETE FROM academy_lead_statuses WHERE id = $1`, [id]);
+
+      return {
+        deletedStatus: source,
+        targetStatus: target,
+        movedCount: leadIds.length,
+      };
+    });
+
+    await createAudit(
+      req,
+      'DELETE_ACADEMY_LEAD_STATUS_WITH_TRANSFER',
+      'academy_lead_statuses',
+      id,
+      {
+        targetStatusId: result.targetStatus.id,
+        targetStatusCode: result.targetStatus.code,
+        movedCount: result.movedCount,
+      },
+      result.deletedStatus,
+    );
+
+    res.json({
+      ok: true,
+      movedCount: result.movedCount,
+      targetStatus: result.targetStatus,
+    });
+  } catch (error: any) {
+    logger.error('Failed to transfer leads and delete pipeline stage', { error, statusId: req.params.id });
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to transfer leads and delete pipeline stage',
+    });
+  }
+});
+
 registerSimpleCrud('schools', 'academy_schools', [
   'name', 'code', 'address', 'timezone', 'isActive',
 ], { orderBy: 'is_active DESC, name', requireAdministration: true });
@@ -4808,7 +4958,19 @@ registerSimpleCrud('courses', 'academy_courses', [
 
 registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
   'code', 'name', 'color', 'sortOrder', 'isPipeline', 'isSystem', 'isActive',
-], { orderBy: 'sort_order, id', requireAdministration: true });
+], {
+  orderBy: 'sort_order, id',
+  requireAdministration: true,
+  beforeDelete: async ({ row }) => {
+    const leadCount = await getLeadCountForStatusCode(String(row.code));
+    if (leadCount > 0) {
+      throw Object.assign(new Error('pipelineStageHasLeads'), {
+        statusCode: 409,
+        leadCount,
+      });
+    }
+  },
+});
 
 registerSimpleCrud('teachers', 'academy_teachers', [
   'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'status',

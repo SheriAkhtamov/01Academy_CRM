@@ -33,6 +33,7 @@ type InstagramProfile = {
 
 const INSTAGRAM_SCOPES = [
   'instagram_business_basic',
+  'instagram_business_manage_comments',
   'instagram_business_manage_messages',
 ];
 const INSTAGRAM_WEBHOOK_FIELDS = [
@@ -127,7 +128,7 @@ export const decryptInstagramToken = (value: string) => {
   ]).toString('utf8');
 };
 
-export const buildInstagramAuthorizationUrl = (state: string) => {
+export const buildInstagramAuthorizationUrl = (state: string, redirectUri = getInstagramIntegrationConfig().redirectUri) => {
   const config = instagramConfig();
   if (!config.appId || !config.appSecret || !config.verifyToken) {
     throw Object.assign(new Error('instagramIntegrationNotConfigured'), { statusCode: 409 });
@@ -135,12 +136,10 @@ export const buildInstagramAuthorizationUrl = (state: string) => {
 
   const url = new URL(config.oauthUrl);
   url.searchParams.set('client_id', config.appId);
-  url.searchParams.set('redirect_uri', getInstagramIntegrationConfig().redirectUri);
+  url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', INSTAGRAM_SCOPES.join(','));
   url.searchParams.set('state', state);
-  url.searchParams.set('enable_fb_login', '0');
-  url.searchParams.set('force_authentication', '1');
   return url.toString();
 };
 
@@ -172,17 +171,21 @@ const subscribeInstagramAccount = async (accessToken: string) => {
   return fetchInstagramJson<{ success?: boolean }>(url.toString(), { method: 'POST' });
 };
 
-export const exchangeInstagramAuthorizationCode = async (code: string, connectedBy: number) => {
+export const exchangeInstagramAuthorizationCode = async (
+  code: string,
+  connectedBy: number,
+  redirectUri = getInstagramIntegrationConfig().redirectUri,
+) => {
   const config = instagramConfig();
   if (!config.appId || !config.appSecret) {
     throw Object.assign(new Error('instagramIntegrationNotConfigured'), { statusCode: 409 });
   }
 
-  const tokenForm = new FormData();
+  const tokenForm = new URLSearchParams();
   tokenForm.set('client_id', config.appId);
   tokenForm.set('client_secret', config.appSecret);
   tokenForm.set('grant_type', 'authorization_code');
-  tokenForm.set('redirect_uri', getInstagramIntegrationConfig().redirectUri);
+  tokenForm.set('redirect_uri', redirectUri);
   tokenForm.set('code', code);
 
   const shortToken = await fetchInstagramJson<{
@@ -191,6 +194,9 @@ export const exchangeInstagramAuthorizationCode = async (code: string, connected
   }>('https://api.instagram.com/oauth/access_token', {
     method: 'POST',
     body: tokenForm,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
   });
 
   const longTokenUrl = new URL(`${config.graphApiUrl}/access_token`);

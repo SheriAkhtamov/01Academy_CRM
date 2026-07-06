@@ -12,6 +12,7 @@ declare module 'express-session' {
     instagramOAuth?: {
       state: string;
       createdAt: number;
+      redirectUri?: string;
     };
   }
 }

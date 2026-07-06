@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
@@ -32,6 +33,83 @@ router.post('/instagram', async (req, res) => {
     logger.error('Failed to process Instagram webhook', { error });
     return res.status(500).json({ error: 'Failed to process Instagram webhook' });
   }
+});
+
+router.post('/instagram/deauthorize', async (req, res) => {
+  const signedRequest = parseInstagramSignedRequest(req.body?.signed_request ?? req.query?.signed_request);
+  if (!signedRequest.ok) {
+    return res.status(signedRequest.status).json({ error: signedRequest.error });
+  }
+
+  const igUserId = extractInstagramSignedUserId(signedRequest.payload);
+  let accountIds: number[] = [];
+  if (igUserId) {
+    const { rows } = await pool.query<{ id: number }>(
+      `UPDATE instagram_accounts
+       SET status = 'disconnected',
+           access_token_encrypted = NULL,
+           token_expires_at = NULL,
+           last_error = 'Instagram deauthorized by user',
+           updated_at = NOW()
+       WHERE ig_user_id = $1
+       RETURNING id`,
+      [igUserId],
+    );
+    accountIds = rows.map((row) => Number(row.id));
+  }
+
+  await logIntegration('instagram', 'deauthorize', 'received', {
+    igUserId,
+    accountIds,
+  });
+  return res.status(200).json({ success: true });
+});
+
+router.get('/instagram/deauthorize', (_req, res) => {
+  return res.status(200).json({ ok: true, endpoint: 'instagram_deauthorize' });
+});
+
+router.post('/instagram/data-deletion', async (req, res) => {
+  const signedRequest = parseInstagramSignedRequest(req.body?.signed_request ?? req.query?.signed_request);
+  if (!signedRequest.ok) {
+    return res.status(signedRequest.status).json({ error: signedRequest.error });
+  }
+
+  const igUserId = extractInstagramSignedUserId(signedRequest.payload);
+  let accountIds: number[] = [];
+  if (igUserId) {
+    const { rows } = await pool.query<{ id: number }>(
+      `DELETE FROM instagram_accounts
+       WHERE ig_user_id = $1
+       RETURNING id`,
+      [igUserId],
+    );
+    accountIds = rows.map((row) => Number(row.id));
+  }
+
+  const confirmationCode = createInstagramDataDeletionConfirmationCode(igUserId);
+  await logIntegration('instagram', 'data_deletion', 'received', {
+    igUserId,
+    accountIds,
+    confirmationCode,
+  });
+
+  const appUrl = appConfig.server.appUrl.replace(/\/$/, '');
+  return res.status(200).json({
+    url: `${appUrl}/api/incoming/instagram/data-deletion/status/${confirmationCode}`,
+    confirmation_code: confirmationCode,
+  });
+});
+
+router.get('/instagram/data-deletion', (_req, res) => {
+  return res.status(200).json({ ok: true, endpoint: 'instagram_data_deletion' });
+});
+
+router.get('/instagram/data-deletion/status/:confirmationCode', (req, res) => {
+  return res.status(200).json({
+    confirmation_code: req.params.confirmationCode,
+    status: 'received',
+  });
 });
 
 // Webhook secrets are optional in dev (so local testing works), but when a secret is
@@ -397,6 +475,61 @@ const logIntegration = async (provider: string, direction: string, status: strin
     logger.error('Failed to write integration log', { provider, direction, status, error });
   }
 };
+
+type InstagramSignedRequestResult =
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; status: number; error: string };
+
+const parseInstagramSignedRequest = (value: unknown): InstagramSignedRequestResult => {
+  const signedRequest = Array.isArray(value) ? value[0] : value;
+  if (typeof signedRequest !== 'string' || !signedRequest.includes('.')) {
+    return { ok: false, status: 400, error: 'Missing signed_request' };
+  }
+
+  const appSecret = appConfig.integrations?.instagram?.appSecret?.trim();
+  if (!appSecret) {
+    return { ok: false, status: 503, error: 'Instagram app secret is not configured' };
+  }
+
+  const [encodedSignature, encodedPayload] = signedRequest.split('.', 2);
+  try {
+    const suppliedSignature = Buffer.from(encodedSignature, 'base64url');
+    const expectedSignature = crypto
+      .createHmac('sha256', appSecret)
+      .update(encodedPayload)
+      .digest();
+
+    if (
+      suppliedSignature.length !== expectedSignature.length
+      || !crypto.timingSafeEqual(suppliedSignature, expectedSignature)
+    ) {
+      return { ok: false, status: 401, error: 'Invalid signed_request signature' };
+    }
+
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as Record<string, unknown>;
+    const algorithm = typeof payload.algorithm === 'string' ? payload.algorithm.toUpperCase() : 'HMAC-SHA256';
+    if (algorithm !== 'HMAC-SHA256') {
+      return { ok: false, status: 400, error: 'Unsupported signed_request algorithm' };
+    }
+    return { ok: true, payload };
+  } catch {
+    return { ok: false, status: 400, error: 'Invalid signed_request payload' };
+  }
+};
+
+const extractInstagramSignedUserId = (payload: Record<string, unknown>): string | null => {
+  const value = payload.user_id ?? payload.profile_id ?? payload.instagram_user_id ?? payload.ig_user_id;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+};
+
+const createInstagramDataDeletionConfirmationCode = (igUserId: string | null) =>
+  crypto
+    .createHash('sha256')
+    .update(`${igUserId ?? 'unknown'}:${Date.now()}:${crypto.randomUUID()}`)
+    .digest('hex')
+    .slice(0, 32);
 
 // Parse JSON bodies for these public webhook routes (mounted before the authed academy router).
 function expressRawJson(_req: any, _res: any, next: any) {

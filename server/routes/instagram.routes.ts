@@ -40,6 +40,28 @@ const parseId = (value: string) => {
   return Number.isFinite(id) && id > 0 ? id : null;
 };
 
+const getCurrentRequestUrlWithoutQuery = (req: any) => {
+  const path = String(req.originalUrl || '').split('?')[0] || req.path;
+  return `${req.protocol}://${req.get('host')}${path}`;
+};
+
+const getRawQueryParam = (req: any, name: string): string | null => {
+  const rawQuery = String(req.originalUrl || '').split('?')[1]?.split('#')[0];
+  if (!rawQuery) return null;
+
+  for (const part of rawQuery.split('&')) {
+    const [rawKey, ...rawValueParts] = part.split('=');
+    try {
+      if (decodeURIComponent(rawKey) === name) {
+        return decodeURIComponent(rawValueParts.join('='));
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
 router.get('/config', async (req, res) => {
   if (!ensureAdministration(req, res)) return;
   res.json(getInstagramIntegrationConfig());
@@ -59,10 +81,16 @@ router.post('/oauth/start', async (req, res) => {
   if (!ensureAdministration(req, res)) return;
   try {
     const state = crypto.randomBytes(24).toString('base64url');
-    const url = buildInstagramAuthorizationUrl(state);
+    const redirectUri = getInstagramIntegrationConfig().redirectUri;
+    const url = buildInstagramAuthorizationUrl(state, redirectUri);
+    logger.info('Instagram OAuth start', {
+      redirectUri,
+      authorizationUrl: url,
+    });
     req.session.instagramOAuth = {
       state,
       createdAt: Date.now(),
+      redirectUri,
     };
     req.session.save((sessionError) => {
       if (sessionError) {
@@ -81,9 +109,19 @@ router.post('/oauth/start', async (req, res) => {
 router.get('/oauth/callback', async (req, res) => {
   if (!ensureAdministration(req, res)) return;
   const state = String(req.query.state ?? '');
-  const code = String(req.query.code ?? '').replace(/#_$/, '');
+  const code = String(getRawQueryParam(req, 'code') ?? req.query.code ?? '').replace(/#_$/, '');
   const oauthState = req.session.instagramOAuth;
   delete req.session.instagramOAuth;
+  const callbackRedirectUri = getCurrentRequestUrlWithoutQuery(req);
+
+  logger.info('Instagram OAuth callback received', {
+    callbackRedirectUri,
+    savedRedirectUri: oauthState?.redirectUri,
+    hasCode: Boolean(code),
+    codeLength: code.length,
+    codeHasWhitespace: /\s/.test(code),
+    stateMatches: Boolean(oauthState && state && state === oauthState.state),
+  });
 
   if (
     !oauthState
@@ -98,12 +136,15 @@ router.get('/oauth/callback', async (req, res) => {
   }
 
   try {
-    const account = await exchangeInstagramAuthorizationCode(code, req.user!.id);
+    const redirectUri = callbackRedirectUri || oauthState.redirectUri || getInstagramIntegrationConfig().redirectUri;
+    const account = await exchangeInstagramAuthorizationCode(code, req.user!.id, redirectUri);
     return res.redirect(`/integrations?instagram=connected&account=${account.id}`);
   } catch (error: any) {
     logger.error('Instagram OAuth callback failed', {
       error,
       response: error?.instagramResponse,
+      savedRedirectUri: oauthState.redirectUri,
+      callbackRedirectUri: getCurrentRequestUrlWithoutQuery(req),
     });
     return res.redirect('/integrations?instagram=error');
   }

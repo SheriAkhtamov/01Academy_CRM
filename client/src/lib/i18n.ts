@@ -861,45 +861,10 @@ export const translations = {
   },
   integrationLastEvent: { en: 'Last event', ru: 'Последнее событие' },
   integrationNoEvents: { en: 'No events yet', ru: 'Событий пока нет' },
-  integrationProviderChatplace: { en: 'ChatPlace', ru: 'Вебхук ChatPlace' },
-  integrationProviderChatplaceDesc: {
-    en: 'Inbound Instagram DM webhook for automatic lead capture.',
-    ru: 'Входящий webhook Instagram Direct для автоматического создания лидов.',
-  },
-  integrationProviderGoogleForms: { en: 'Google Forms', ru: 'Google Формы' },
-  integrationProviderGoogleFormsDesc: {
-    en: 'Inbound demo registration webhook from forms.',
-    ru: 'Входящий webhook регистраций на демо из форм.',
-  },
-  integrationProviderGoogleSheets: { en: 'Google Sheets', ru: 'Google Таблицы' },
-  integrationProviderGoogleSheetsDesc: {
-    en: 'Export and sync channel for operational spreadsheets.',
-    ru: 'Канал экспорта и синхронизации операционных таблиц.',
-  },
-  integrationProviderMetaAds: { en: 'Meta Ads', ru: 'Реклама Meta' },
-  integrationProviderMetaAdsDesc: {
-    en: 'Ad spend import for marketing efficiency reports.',
-    ru: 'Импорт рекламных расходов для отчётов эффективности маркетинга.',
-  },
-  integrationProviderNotion: { en: 'Notion', ru: 'База Notion' },
-  integrationProviderNotionDesc: {
-    en: 'Knowledge base and external database integration.',
-    ru: 'Интеграция базы знаний и внешней базы данных.',
-  },
-  integrationProviderTelegram: { en: 'Telegram', ru: 'Telegram-бот' },
-  integrationProviderTelegramDesc: {
-    en: 'Bot messages, reminders, and leadership reports.',
-    ru: 'Сообщения бота, напоминания и отчёты руководству.',
-  },
   integrationProviderWebsite: { en: 'Website', ru: 'Сайт' },
   integrationProviderWebsiteDesc: {
     en: 'Lead capture webhook from the Zero One Academy website.',
     ru: 'Webhook заявок с сайта Zero One Academy.',
-  },
-  integrationProviderWhatsApp: { en: 'WhatsApp', ru: 'Бизнес WhatsApp' },
-  integrationProviderWhatsAppDesc: {
-    en: 'WhatsApp Business API for outbound client communication.',
-    ru: 'WhatsApp Business API для исходящей коммуникации с клиентами.',
   },
   adminWorkspaceBoundaryDescription: {
     en: 'This operational workspace is assigned to another employee account. Use Administration to configure the system.',

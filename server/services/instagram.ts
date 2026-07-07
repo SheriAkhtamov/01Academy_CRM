@@ -163,12 +163,29 @@ const fetchInstagramJson = async <T>(url: string, init?: RequestInit): Promise<T
   return body as T;
 };
 
-const subscribeInstagramAccount = async (accessToken: string) => {
+const subscribeInstagramAccount = async (igUserId: string, accessToken: string) => {
   const config = instagramConfig();
-  const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/me/subscribed_apps`);
+  const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${igUserId}/subscribed_apps`);
   url.searchParams.set('subscribed_fields', INSTAGRAM_WEBHOOK_FIELDS.join(','));
   url.searchParams.set('access_token', accessToken);
   return fetchInstagramJson<{ success?: boolean }>(url.toString(), { method: 'POST' });
+};
+
+const ensureInstagramLeadSource = async (client: PoolClient) => {
+  const source = await client.query(
+    `INSERT INTO academy_lead_sources
+      (code, name, channel, is_system, is_active)
+     VALUES ($1,$2,'instagram',true,true)
+     ON CONFLICT (code) DO UPDATE
+     SET name = EXCLUDED.name,
+         channel = 'instagram',
+         is_system = true,
+         is_active = true,
+         updated_at = NOW()
+     RETURNING id`,
+    ['instagram', 'Instagram'],
+  );
+  return Number(source.rows[0].id);
 };
 
 export const exchangeInstagramAuthorizationCode = async (
@@ -210,21 +227,15 @@ export const exchangeInstagramAuthorizationCode = async (
     userId: shortToken.user_id ? String(shortToken.user_id) : null,
   });
 
-  const longTokenForm = new URLSearchParams();
-  longTokenForm.set('grant_type', 'ig_exchange_token');
-  longTokenForm.set('client_secret', config.appSecret);
-  longTokenForm.set('access_token', shortToken.access_token);
+  const longTokenUrl = new URL(`${config.graphApiUrl}/access_token`);
+  longTokenUrl.searchParams.set('grant_type', 'ig_exchange_token');
+  longTokenUrl.searchParams.set('client_secret', config.appSecret);
+  longTokenUrl.searchParams.set('access_token', shortToken.access_token);
   const longToken = await fetchInstagramJson<{
     access_token: string;
     token_type?: string;
     expires_in?: number;
-  }>(`${config.graphApiUrl}/access_token`, {
-    method: 'POST',
-    body: longTokenForm,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  });
+  }>(longTokenUrl.toString());
   logger.info('Instagram OAuth long token exchanged', {
     tokenType: longToken.token_type ?? null,
     expiresIn: longToken.expires_in ?? null,
@@ -242,7 +253,7 @@ export const exchangeInstagramAuthorizationCode = async (
   const username = String(profile.username || `instagram_${igUserId}`);
   logger.info('Instagram OAuth profile loaded', { igUserId, username });
 
-  await subscribeInstagramAccount(longToken.access_token);
+  await subscribeInstagramAccount(igUserId, longToken.access_token);
   logger.info('Instagram OAuth subscribed account to webhooks', { igUserId });
 
   const client = await pool.connect();
@@ -252,20 +263,7 @@ export const exchangeInstagramAuthorizationCode = async (
       `SELECT id FROM instagram_accounts WHERE ig_user_id = $1 FOR UPDATE`,
       [igUserId],
     );
-    const source = await client.query(
-      `INSERT INTO academy_lead_sources
-        (code, name, channel, is_system, is_active)
-       VALUES ($1,$2,'instagram',true,true)
-       ON CONFLICT (code) DO UPDATE
-       SET name = EXCLUDED.name,
-           channel = 'instagram',
-           is_system = true,
-           is_active = true,
-           updated_at = NOW()
-       RETURNING id`,
-      ['instagram', 'Instagram'],
-    );
-    const sourceId = Number(source.rows[0].id);
+    const sourceId = await ensureInstagramLeadSource(client);
 
     const expiresAt = longToken.expires_in
       ? new Date(Date.now() + Number(longToken.expires_in) * 1000)

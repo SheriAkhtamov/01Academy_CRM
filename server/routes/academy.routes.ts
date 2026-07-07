@@ -4608,14 +4608,7 @@ router.get('/integrations/status', async (req, res) => {
         connected: Number(instagramAccounts[0]?.connectedCount ?? 0) > 0,
         note: 'Instagram Login, Direct messages and automatic lead creation',
       },
-      { provider: 'chatplace', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Instagram DM inbound webhook' },
-      { provider: 'telegram', connected: Boolean(integ.telegram?.botToken), note: 'Outbound bot messages + leadership reports' },
-      { provider: 'whatsapp', connected: Boolean(integ.whatsapp?.apiToken && integ.whatsapp?.phoneNumberId), note: 'WhatsApp Business Cloud API' },
-      { provider: 'google_forms', connected: Boolean(integ.chatplace?.webhookSecret), note: 'Demo registration inbound webhook' },
       { provider: 'website', connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'), note: 'Website lead inbound webhook' },
-      { provider: 'meta_ads', connected: Boolean(integ.metaAds?.accessToken && integ.metaAds?.adAccountId), note: 'Ad spend import (manual expenses until connected)' },
-      { provider: 'google_sheets', connected: Boolean(integ.googleSheets?.spreadsheetId), note: 'CSV export available; Sheets sync requires credentials' },
-      { provider: 'notion', connected: Boolean(integ.notion?.token && integ.notion?.databaseId), note: 'CSV export available; Notion pages require token' },
     ];
     res.json(providers.map((entry) => ({
       provider: entry.provider,

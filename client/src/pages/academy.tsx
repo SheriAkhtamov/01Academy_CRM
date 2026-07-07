@@ -6,7 +6,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
 import {
@@ -43,22 +43,8 @@ const integrationCopy = (provider: string, t: (key: TranslationKey) => string) =
   switch (provider) {
     case 'instagram':
       return { title: t('instagramIntegration'), description: t('instagramIntegrationDesc') };
-    case 'chatplace':
-      return { title: t('integrationProviderChatplace'), description: t('integrationProviderChatplaceDesc') };
-    case 'telegram':
-      return { title: t('integrationProviderTelegram'), description: t('integrationProviderTelegramDesc') };
-    case 'whatsapp':
-      return { title: t('integrationProviderWhatsApp'), description: t('integrationProviderWhatsAppDesc') };
-    case 'google_forms':
-      return { title: t('integrationProviderGoogleForms'), description: t('integrationProviderGoogleFormsDesc') };
     case 'website':
       return { title: t('integrationProviderWebsite'), description: t('integrationProviderWebsiteDesc') };
-    case 'meta_ads':
-      return { title: t('integrationProviderMetaAds'), description: t('integrationProviderMetaAdsDesc') };
-    case 'google_sheets':
-      return { title: t('integrationProviderGoogleSheets'), description: t('integrationProviderGoogleSheetsDesc') };
-    case 'notion':
-      return { title: t('integrationProviderNotion'), description: t('integrationProviderNotionDesc') };
     default:
       return { title: t('navIntegrations'), description: t('adminIntegrationsDescription') };
   }
@@ -120,14 +106,21 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         breadcrumbs={[{ label: t('navIntegrations') }]}
       />
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 space-y-3">
         {integrations.isLoading ? (
-          Array.from({ length: 6 }).map((_, index) => (
+          Array.from({ length: 2 }).map((_, index) => (
             <Card key={index}>
-              <CardHeader className="space-y-3">
-                <Skeleton className="h-10 w-10 rounded-xl" />
-                <Skeleton className="h-5 w-36" />
-                <Skeleton className="h-4 w-full" />
+              <CardHeader>
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Skeleton className="h-11 w-11 shrink-0 rounded-xl" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <Skeleton className="h-5 w-40" />
+                      <Skeleton className="h-4 w-full max-w-xl" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-9 w-28 rounded-md" />
+                </div>
               </CardHeader>
             </Card>
           ))
@@ -141,63 +134,49 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               key={integration.provider}
               className={integration.connected ? 'border-emerald-200 bg-emerald-50/40' : ''}
             >
-              <CardHeader className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Icon className="h-5 w-5" />
+              <CardHeader>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <CardTitle>{copy.title}</CardTitle>
+                      <CardDescription className="mt-1">{copy.description}</CardDescription>
+                      <p className="mt-3 text-sm text-muted-foreground">{integration.message}</p>
+                      <div className="mt-3 inline-flex rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
+                        {lastLogTime ? (
+                          <span>{t('integrationLastEvent')}: {lastLogTime}</span>
+                        ) : (
+                          <span>{t('integrationNoEvents')}</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <Badge variant={integration.connected ? 'success' : 'warning'}>
-                    {integration.connected ? (
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    ) : (
-                      <AlertCircle className="h-3.5 w-3.5" />
-                    )}
-                    {integration.connected ? t('active') : t('inactive')}
-                  </Badge>
-                </div>
-                <div>
-                  <CardTitle>{copy.title}</CardTitle>
-                  <CardDescription className="mt-1">{copy.description}</CardDescription>
+                  <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
+                    {integration.provider === 'instagram' ? (
+                      <Button
+                        onClick={() => startInstagramConnection.mutate()}
+                        disabled={startInstagramConnection.isPending}
+                      >
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        {t('loginWithInstagram')}
+                      </Button>
+                    ) : null}
+                    <Badge variant={integration.connected ? 'success' : 'warning'}>
+                      {integration.connected ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      ) : (
+                        <AlertCircle className="h-3.5 w-3.5" />
+                      )}
+                      {integration.connected ? t('active') : t('inactive')}
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">{integration.message}</p>
-                <div className="rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
-                  {lastLogTime ? (
-                    <span>{t('integrationLastEvent')}: {lastLogTime}</span>
-                  ) : (
-                    <span>{t('integrationNoEvents')}</span>
-                  )}
-                </div>
-              </CardContent>
             </Card>
           );
         })}
-      </div>
-
-      <div className="mt-6">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Camera className="h-6 w-6" />
-                </div>
-                <div className="min-w-0">
-                  <CardTitle>{t('instagramIntegration')}</CardTitle>
-                  <p className="mt-1 text-sm text-slate-500">{t('instagramIntegrationDesc')}</p>
-                </div>
-              </div>
-              <Button
-                onClick={() => startInstagramConnection.mutate()}
-                disabled={startInstagramConnection.isPending}
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                {t('loginWithInstagram')}
-              </Button>
-            </div>
-          </CardHeader>
-        </Card>
       </div>
     </div>
   );

@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearch } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
+import {
+  isInstagramLead,
+  isSyntheticInstagramPhone,
+  visibleLeadPhones,
+} from '@/lib/leadContact';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +31,8 @@ import {
   Instagram,
   Loader2,
   MessageCircle,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
   Save,
   Search,
@@ -75,6 +83,7 @@ interface LookupOption {
   id: number;
   name: string;
   code?: string;
+  channel?: string | null;
   isActive?: boolean;
   isPipeline?: boolean;
   sortOrder?: number;
@@ -90,6 +99,8 @@ interface LeadDetails {
   studentAge?: number | null;
   courseId?: number | null;
   sourceId: number;
+  sourceName?: string | null;
+  sourceChannel?: string | null;
   statusCode: string;
   managerId?: number | null;
   managerName?: string | null;
@@ -132,9 +143,6 @@ const emptyLeadDraft: LeadDraft = {
   comment: '',
 };
 
-const syntheticInstagramPhone = (value?: string | null) =>
-  Boolean(value && value.startsWith('instagram:'));
-
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'IG';
 
@@ -153,10 +161,7 @@ const formatDateTime = (value?: string | null) => {
 const compact = (value: string) => value.trim();
 
 const buildLeadDraft = (lead: LeadDetails): LeadDraft => {
-  const phone = (lead.phoneNumbers ?? [])
-    .find((item) => item && !syntheticInstagramPhone(item))
-    ?? (!syntheticInstagramPhone(lead.phone) ? lead.phone : '')
-    ?? '';
+  const phone = visibleLeadPhones(lead)[0] ?? '';
 
   return {
     contactName: lead.contactName ?? '',
@@ -189,11 +194,15 @@ function LeadPanel({
   leadId,
   workspaceData,
   statusName,
+  collapsed,
+  onCollapsedChange,
   onChanged,
 }: {
   leadId?: number | null;
   workspaceData?: SalesWorkspaceData;
   statusName: (code: string) => string;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
@@ -258,18 +267,31 @@ function LeadPanel({
   );
 
   const updateLead = useMutation({
-    mutationFn: () => apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
-      contactName: compact(draft.contactName),
-      phoneNumbers: compact(draft.phone) ? [compact(draft.phone)] : [],
-      messenger: compact(draft.messenger) || null,
-      studentName: compact(draft.studentName) || null,
-      studentAge: compact(draft.studentAge) ? Number(draft.studentAge) : null,
-      courseId: draft.courseId ? Number(draft.courseId) : null,
-      sourceId: Number(draft.sourceId || lead?.sourceId),
-      statusCode: draft.statusCode,
-      language: draft.language,
-      comment: compact(draft.comment) || null,
-    }),
+    mutationFn: () => {
+      const nextPhone = compact(draft.phone);
+      const hasOnlyHiddenInstagramPhone = Boolean(
+        lead
+        && !nextPhone
+        && visibleLeadPhones(lead).length === 0
+        && (
+          isSyntheticInstagramPhone(lead.phone)
+          || (lead.phoneNumbers ?? []).some(isSyntheticInstagramPhone)
+        ),
+      );
+
+      return apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
+        contactName: compact(draft.contactName),
+        ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhone ? [nextPhone] : [] }),
+        messenger: compact(draft.messenger) || null,
+        studentName: compact(draft.studentName) || null,
+        studentAge: compact(draft.studentAge) ? Number(draft.studentAge) : null,
+        courseId: draft.courseId ? Number(draft.courseId) : null,
+        sourceId: Number(draft.sourceId || lead?.sourceId),
+        statusCode: draft.statusCode,
+        language: draft.language,
+        comment: compact(draft.comment) || null,
+      });
+    },
     onSuccess: async () => {
       toast({ title: t('leadSaved') });
       await Promise.all([
@@ -286,12 +308,42 @@ function LeadPanel({
 
   const patchDraft = (changes: Partial<LeadDraft>) => setDraft((current) => ({ ...current, ...changes }));
 
+  if (collapsed) {
+    return (
+      <aside className="flex border-t border-border bg-background p-2 xl:border-l xl:border-t-0">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="mx-auto"
+          aria-label={t('expandLeadCard')}
+          onClick={() => onCollapsedChange(false)}
+        >
+          <PanelRightOpen className="h-4 w-4" />
+        </Button>
+      </aside>
+    );
+  }
+
   if (!leadId) {
     return (
-      <aside className="flex min-h-[260px] items-center justify-center border-t border-border bg-muted/20 p-6 text-center xl:border-l xl:border-t-0">
-        <div>
-          <UserRound className="mx-auto mb-3 h-9 w-9 text-slate-400" />
-          <p className="text-sm font-medium text-slate-700">{t('selectConversation')}</p>
+      <aside className="flex min-h-[260px] flex-col border-t border-border bg-muted/20 xl:border-l xl:border-t-0">
+        <div className="flex justify-end p-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('collapseLeadCard')}
+            onClick={() => onCollapsedChange(true)}
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex flex-1 items-center justify-center p-6 text-center">
+          <div>
+            <UserRound className="mx-auto mb-3 h-9 w-9 text-slate-400" />
+            <p className="text-sm font-medium text-slate-700">{t('selectConversation')}</p>
+          </div>
         </div>
       </aside>
     );
@@ -300,6 +352,17 @@ function LeadPanel({
   if (leadQuery.isLoading || !lead) {
     return (
       <aside className="space-y-4 border-t border-border p-4 xl:border-l xl:border-t-0">
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('collapseLeadCard')}
+            onClick={() => onCollapsedChange(true)}
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        </div>
         <Skeleton className="h-8 w-44" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-10 w-full" />
@@ -311,6 +374,17 @@ function LeadPanel({
   if (leadQuery.isError) {
     return (
       <aside className="border-t border-border p-4 xl:border-l xl:border-t-0">
+        <div className="mb-3 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('collapseLeadCard')}
+            onClick={() => onCollapsedChange(true)}
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        </div>
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>{t('failedToLoadData')}</AlertTitle>
@@ -346,6 +420,15 @@ function LeadPanel({
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('collapseLeadCard')}
+            onClick={() => onCollapsedChange(true)}
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -371,7 +454,7 @@ function LeadPanel({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="instagram-lead-messenger">{t('telegramWhatsapp')}</Label>
+              <Label htmlFor="instagram-lead-messenger">{isInstagramLead(lead) ? t('instagramContactChannel') : t('telegramWhatsapp')}</Label>
               <Input
                 id="instagram-lead-messenger"
                 value={draft.messenger}
@@ -503,10 +586,12 @@ function LeadPanel({
 export default function MessagesPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const routeSearch = useSearch();
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ConversationFilter>('all');
+  const [leadPanelCollapsed, setLeadPanelCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const workspaceQuery = useQuery<SalesWorkspaceData>({
@@ -518,6 +603,12 @@ export default function MessagesPage() {
   });
 
   const conversations = conversationsQuery.data ?? [];
+  const requestedLeadId = useMemo(() => {
+    const value = new URLSearchParams(routeSearch).get('lead');
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [routeSearch]);
+
   const filteredConversations = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return conversations.filter((conversation) => {
@@ -546,14 +637,33 @@ export default function MessagesPage() {
   );
 
   useEffect(() => {
+    if (!requestedLeadId || conversations.length === 0) return;
+    const target = conversations.find((conversation) => Number(conversation.leadId) === requestedLeadId);
+    if (!target) return;
+    setFilter('all');
+    setSearch('');
+    setLeadPanelCollapsed(false);
+    if (target.id !== selectedConversationId) {
+      setSelectedConversationId(target.id);
+    }
+  }, [conversations, requestedLeadId, selectedConversationId]);
+
+  useEffect(() => {
     if (filteredConversations.length === 0) {
       setSelectedConversationId(null);
+      return;
+    }
+    if (
+      requestedLeadId
+      && conversations.some((conversation) => Number(conversation.leadId) === requestedLeadId)
+      && !filteredConversations.some((conversation) => Number(conversation.leadId) === requestedLeadId)
+    ) {
       return;
     }
     if (!selectedConversationId || !filteredConversations.some((conversation) => conversation.id === selectedConversationId)) {
       setSelectedConversationId(filteredConversations[0].id);
     }
-  }, [filteredConversations, selectedConversationId]);
+  }, [conversations, filteredConversations, requestedLeadId, selectedConversationId]);
 
   const messagesQuery = useQuery<InstagramMessage[]>({
     queryKey: ['/api/instagram/conversations', selectedConversationId, 'messages'],
@@ -705,7 +815,11 @@ export default function MessagesPage() {
             </div>
           </div>
         ) : (
-          <div className="grid min-h-[720px] grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
+          <div className={`grid min-h-[720px] grid-cols-1 ${
+            leadPanelCollapsed
+              ? 'xl:grid-cols-[340px_minmax(0,1fr)_56px]'
+              : 'xl:grid-cols-[340px_minmax(0,1fr)_360px]'
+          }`}>
             <div className="min-h-0 border-b border-border xl:border-b-0 xl:border-r">
               <div className="space-y-3 border-b border-border p-4">
                 <div className="flex items-center gap-2">
@@ -832,7 +946,10 @@ export default function MessagesPage() {
                           : selectedConversation.participantName || selectedConversation.contactName}
                       </p>
                       <p className="truncate text-xs text-slate-500">
-                        {t('lead')} #{selectedConversation.leadId} - @{selectedConversation.accountUsername}
+                        {[
+                          selectedConversation.leadId ? `${t('lead')} #${selectedConversation.leadId}` : null,
+                          `@${selectedConversation.accountUsername}`,
+                        ].filter(Boolean).join(' - ')}
                       </p>
                     </div>
                     <Badge className="ml-auto" variant={selectedConversation.canReply ? 'success' : 'secondary'}>
@@ -939,6 +1056,8 @@ export default function MessagesPage() {
               leadId={selectedConversation?.leadId}
               workspaceData={workspaceQuery.data}
               statusName={statusName}
+              collapsed={leadPanelCollapsed}
+              onCollapsedChange={setLeadPanelCollapsed}
               onChanged={() => {
                 queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
                 queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });

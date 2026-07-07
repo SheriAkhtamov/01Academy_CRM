@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { cn } from '@/lib/utils';
 
 interface KanbanStatus {
@@ -53,6 +54,7 @@ interface KanbanLead {
   messenger?: string | null;
   courseName?: string;
   sourceName?: string;
+  sourceChannel?: string | null;
   managerId?: number | null;
   managerName?: string | null;
   comment?: string | null;
@@ -96,8 +98,9 @@ function LeadCardContent({
   t,
 }: LeadCardContentProps) {
   const canQualify = currentStatus.code === 'new_request' || currentStatus.code === 'first_contact';
-  const canCall = Boolean(lead.phone);
-  const canMessage = Boolean(lead.messenger?.startsWith('@') || lead.phone);
+  const visiblePhone = primaryVisibleLeadPhone(lead);
+  const canCall = Boolean(visiblePhone);
+  const canMessage = Boolean(leadMessageTarget(lead));
   const canArchive = currentStatus.code !== 'paid';
   const stopCardInteraction = (event: SyntheticEvent) => {
     event.stopPropagation();
@@ -110,7 +113,7 @@ function LeadCardContent({
           <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
             {lead.contactName}
           </p>
-          {lead.phone ? <div className="truncate text-xs text-muted-foreground">{lead.phone}</div> : null}
+          {visiblePhone ? <div className="truncate text-xs text-muted-foreground">{visiblePhone}</div> : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <DropdownMenu>

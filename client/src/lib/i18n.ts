@@ -308,7 +308,7 @@ export const translations = {
   systemStatistics: { en: 'System Statistics', ru: 'Системная статистика' },
   teacher: { en: 'Teacher', ru: 'Преподаватель' },
   telegramWhatsapp: { en: 'Telegram/WhatsApp', ru: 'Telegram/WhatsApp' },
-  instagramContactChannel: { en: 'Instagram', ru: 'Instagram' },
+  instagramContactChannel: { en: 'Instagram', ru: 'Инстаграм' },
   thisActionCannotBeUndone: { en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' },
   totalUsers: { en: 'Total Users', ru: 'Всего пользователей' },
   typeMessage: { en: 'Type a message...', ru: 'Напишите сообщение...' },

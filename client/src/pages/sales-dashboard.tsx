@@ -48,7 +48,7 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { ceoCopy } from '@/components/ui/ceo-copy';
-import { contactChannelLabelKey, leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { isInstagramLead, leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -1505,9 +1505,11 @@ function LeadForm({
 }) {
   const selectedCourseId = Number(form.watch('courseId')) || null;
   const selectedGroupId = form.watch('enrolledGroupId');
+  const selectedSourceId = form.watch('sourceId');
   const phoneNumbers = form.watch('phoneNumbers') ?? [''];
   const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
   const activeSources = (data.sources ?? []).filter((source: any) => source.isActive !== false);
+  const selectedSource = activeSources.find((source: any) => String(source.id) === String(selectedSourceId));
   const availableGroups = (data.groups ?? []).filter((group: any) => {
     const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
     const matchesCourse = !selectedCourseId || Number(group.courseId) === selectedCourseId;
@@ -1603,7 +1605,10 @@ function LeadForm({
           name="messenger"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('telegramWhatsapp')}</FormLabel>
+              <FormLabel>{isInstagramLead({
+                sourceName: selectedSource?.name,
+                sourceChannel: selectedSource?.channel,
+              }) ? t('instagramContactChannel') : t('telegramWhatsapp')}</FormLabel>
               <FormControl><Input {...field} placeholder="@username" /></FormControl>
               <LocalizedFormMessage />
             </FormItem>

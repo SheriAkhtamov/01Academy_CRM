@@ -1,5 +1,3 @@
-import type { TranslationKey } from '@/lib/i18n';
-
 export interface LeadContactFields {
   id?: number | null;
   phone?: string | null;
@@ -35,9 +33,6 @@ export const visibleLeadPhones = (lead?: LeadContactFields | null) => {
 
 export const primaryVisibleLeadPhone = (lead?: LeadContactFields | null) =>
   visibleLeadPhones(lead)[0] ?? null;
-
-export const contactChannelLabelKey = (lead?: LeadContactFields | null): TranslationKey =>
-  isInstagramLead(lead) ? 'instagramContactChannel' : 'telegramWhatsapp';
 
 export const leadContactSummary = (lead?: LeadContactFields | null, fallback = '') => {
   if (!lead) return fallback;

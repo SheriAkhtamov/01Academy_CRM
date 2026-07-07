@@ -52,6 +52,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { getInitials } from '@/lib/auth';
 import {
+  isInstagramLead,
+  isSyntheticInstagramPhone,
+  leadMessageTarget,
+  primaryVisibleLeadPhone,
+  visibleLeadPhones,
+} from '@/lib/leadContact';
+import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
@@ -89,6 +96,7 @@ interface LeadDetails {
   schoolName?: string | null;
   sourceId?: number | null;
   sourceName?: string | null;
+  sourceChannel?: string | null;
   statusCode: string;
   managerId?: number | null;
   managerName?: string | null;
@@ -402,7 +410,7 @@ export function LeadDetailSheet({
       if (shouldReseed) {
         leadForm.reset({
           contactName: lead.contactName ?? '',
-          phoneNumbers: lead.phoneNumbers?.length ? lead.phoneNumbers : [lead.phone ?? ''],
+          phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
           messenger: lead.messenger ?? '',
           studentName: lead.studentName ?? '',
           studentAge: lead.studentAge ? String(lead.studentAge) : '',
@@ -452,15 +460,30 @@ export function LeadDetailSheet({
   };
 
   const updateLead = useMutation({
-    mutationFn: (values: LeadFormValues) => apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
-      ...values,
-      phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
-      studentAge: values.studentAge ? Number(values.studentAge) : null,
-      courseId: values.courseId ? Number(values.courseId) : null,
-      sourceId: Number(values.sourceId),
-      enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : null,
-      expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
-    }),
+    mutationFn: (values: LeadFormValues) => {
+      const { phoneNumbers, ...rest } = values;
+      const nextPhoneNumbers = compactPhoneNumbers(phoneNumbers);
+      const currentLead = leadQuery.data;
+      const hasOnlyHiddenInstagramPhone = Boolean(
+        currentLead
+        && nextPhoneNumbers.length === 0
+        && visibleLeadPhones(currentLead).length === 0
+        && (
+          isSyntheticInstagramPhone(currentLead.phone)
+          || (currentLead.phoneNumbers ?? []).some(isSyntheticInstagramPhone)
+        ),
+      );
+
+      return apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
+        ...rest,
+        ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
+        studentAge: values.studentAge ? Number(values.studentAge) : null,
+        courseId: values.courseId ? Number(values.courseId) : null,
+        sourceId: Number(values.sourceId),
+        enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : null,
+        expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
+      });
+    },
     onSuccess: () => finishMutation(t('leadSaved')),
     onError: (error: Error) => toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' }),
   });
@@ -553,14 +576,10 @@ export function LeadDetailSheet({
   }, [groups, selectedCourseId, selectedGroupId]);
 
   const lead = leadQuery.data;
-  const visiblePhoneNumbers = lead?.phoneNumbers?.length ? lead.phoneNumbers : lead?.phone ? [lead.phone] : [];
-  const primaryPhone = visiblePhoneNumbers[0] ?? null;
+  const visiblePhoneNumbers = visibleLeadPhones(lead);
+  const primaryPhone = primaryVisibleLeadPhone(lead);
   const phoneHref = primaryPhone ? `tel:${primaryPhone.replace(/[^\d+]/g, '')}` : undefined;
-  const messageHref = lead?.messenger?.startsWith('@')
-    ? `https://t.me/${lead.messenger.slice(1)}`
-    : primaryPhone
-      ? `https://wa.me/${primaryPhone.replace(/\D/g, '')}`
-      : undefined;
+  const messageTarget = leadMessageTarget(lead);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -672,12 +691,16 @@ export function LeadDetailSheet({
                         </a>
                       </Button>
                     ) : null}
-                    {messageHref ? (
+                    {messageTarget ? (
                       <Button asChild size="sm" variant="outline">
-                        <a href={messageHref} target="_blank" rel="noreferrer">
+                        <a
+                          href={messageTarget.href}
+                          target={messageTarget.external ? '_blank' : undefined}
+                          rel={messageTarget.external ? 'noreferrer' : undefined}
+                        >
                           <MessageSquare data-icon="inline-start" />
                           {t('writeShort')}
-                          <ExternalLink data-icon="inline-end" />
+                          {messageTarget.external ? <ExternalLink data-icon="inline-end" /> : null}
                         </a>
                       </Button>
                     ) : null}
@@ -778,7 +801,7 @@ export function LeadDetailSheet({
                             name="messenger"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('telegramWhatsapp')}</FormLabel>
+                                <FormLabel>{isInstagramLead(lead) ? t('instagramContactChannel') : t('telegramWhatsapp')}</FormLabel>
                                 <FormControl><Input {...field} placeholder="@username" /></FormControl>
                                 <LocalizedFormMessage />
                               </FormItem>

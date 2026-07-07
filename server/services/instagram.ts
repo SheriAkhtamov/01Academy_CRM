@@ -319,44 +319,13 @@ const findConversationParticipant = (
 };
 
 const extractImportedMessageContent = (message: InstagramGraphMessage) => {
-  if (typeof message.message === 'string' && message.message.trim()) {
-    return { content: message.message.trim(), messageType: 'text' };
-  }
-
-  const attachmentList = Array.isArray(message.attachments)
-    ? message.attachments
-    : Array.isArray(message.attachments?.data)
-      ? message.attachments.data
-      : [];
-  const attachment = attachmentList[0];
-  if (attachment) {
-    const type = String(attachment.type || 'attachment');
-    const url = attachment.payload?.url || attachment.url;
-    return {
-      content: url ? `[${type}] ${url}` : `[${type}]`,
-      messageType: type,
-    };
-  }
-
-  const shareList = Array.isArray(message.shares)
-    ? message.shares
-    : Array.isArray(message.shares?.data)
-      ? message.shares.data
-      : [];
-  const share = shareList[0];
-  if (share) {
-    const link = share.link || share.url;
-    return {
-      content: link ? `[share] ${link}` : '[share]',
-      messageType: 'share',
-    };
-  }
-
-  if (message.sticker) {
-    return { content: `[sticker] ${message.sticker}`, messageType: 'sticker' };
-  }
-
-  return { content: '[Instagram message]', messageType: 'unknown' };
+  const text = typeof message?.message === 'string' ? message.message.trim() : '';
+  const attachments = extractAttachments(message);
+  let messageType = 'text';
+  if (attachments.length) messageType = primaryTypeFromAttachments(attachments);
+  else if (message?.sticker) messageType = 'sticker';
+  const content = text || (attachments.length ? `[${messageType}]` : '[Instagram message]');
+  return { content, messageType, attachments };
 };
 
 const resolveImportedMessageParties = (
@@ -584,21 +553,108 @@ export const verifyInstagramWebhookChallenge = (mode: unknown, token: unknown) =
   return mode === 'subscribe' && Boolean(expected) && token === expected;
 };
 
-const extractMessageContent = (message: any) => {
-  if (typeof message?.text === 'string' && message.text.trim()) {
-    return { content: message.text.trim(), messageType: 'text' };
-  }
+export interface InstagramMessageAttachment {
+  type: 'image' | 'video' | 'animated_gif' | 'audio' | 'share' | 'sticker' | 'like' | 'file' | 'generic';
+  url?: string;
+  previewUrl?: string;
+  link?: string;
+  title?: string;
+  subtitle?: string;
+}
 
-  const attachment = Array.isArray(message?.attachments) ? message.attachments[0] : null;
-  if (attachment) {
-    const type = String(attachment.type || 'attachment');
-    const url = attachment.payload?.url;
-    return {
-      content: url ? `[${type}] ${url}` : `[${type}]`,
-      messageType: type,
-    };
+const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment | null => {
+  if (!attachment || typeof attachment !== 'object') return null;
+  const type = String(attachment.type || 'attachment');
+  const payload = attachment.payload && typeof attachment.payload === 'object' ? attachment.payload : {};
+  const url = payload.url || payload.media_url || attachment.url || undefined;
+  switch (type) {
+    case 'image':
+    case 'video':
+    case 'animated_gif':
+    case 'audio':
+      return { type, url };
+    case 'sticker':
+      return { type: 'sticker', url };
+    case 'like':
+      return { type: 'like', url };
+    case 'share':
+    case 'xma': {
+      const share = payload.share && typeof payload.share === 'object' ? payload.share : {};
+      const mediaItem = Array.isArray(share.media)
+        ? share.media[0]
+        : Array.isArray(payload.media)
+          ? payload.media[0]
+          : null;
+      const previewUrl =
+        (mediaItem && (mediaItem.image_src || mediaItem.url)) || payload.picture || share.picture || undefined;
+      const link = share.link || payload.link || undefined;
+      return { type: 'share', url: url || undefined, link, title: share.name || payload.title, previewUrl };
+    }
+    default:
+      return url ? { type: 'generic', url } : null;
   }
-  return { content: '[Instagram message]', messageType: 'unknown' };
+};
+
+const normalizeShare = (share: any): InstagramMessageAttachment | null => {
+  if (!share || typeof share !== 'object') return null;
+  const mediaItem = Array.isArray(share.media) ? share.media[0] : null;
+  const previewUrl =
+    (mediaItem && (mediaItem.image_src || mediaItem.url)) || share.picture || undefined;
+  return {
+    type: 'share',
+    link: share.link || undefined,
+    title: share.title || share.name,
+    previewUrl,
+  };
+};
+
+const extractAttachments = (message: any): InstagramMessageAttachment[] => {
+  const result: InstagramMessageAttachment[] = [];
+  const attachments = Array.isArray(message?.attachments)
+    ? message.attachments
+    : Array.isArray(message?.attachments?.data)
+      ? message.attachments.data
+      : [];
+  for (const attachment of attachments) {
+    const normalized = normalizeAttachmentPayload(attachment);
+    if (normalized) result.push(normalized);
+  }
+  const shares = Array.isArray(message?.shares)
+    ? message.shares
+    : Array.isArray(message?.shares?.data)
+      ? message.shares.data
+      : [];
+  for (const share of shares) {
+    const normalized = normalizeShare(share);
+    if (normalized) result.push(normalized);
+  }
+  return result;
+};
+
+const primaryTypeFromAttachments = (attachments: InstagramMessageAttachment[]): string => {
+  if (attachments.length === 0) return 'text';
+  const first = attachments[0];
+  if (first.type === 'share') return 'share';
+  if (first.type === 'sticker') return 'sticker';
+  if (
+    first.type === 'image'
+    || first.type === 'video'
+    || first.type === 'animated_gif'
+    || first.type === 'audio'
+  ) {
+    return first.type;
+  }
+  return 'attachment';
+};
+
+const extractMessageContent = (message: any) => {
+  const text = typeof message?.text === 'string' ? message.text.trim() : '';
+  const attachments = extractAttachments(message);
+  let messageType = 'text';
+  if (attachments.length) messageType = primaryTypeFromAttachments(attachments);
+  else if (message?.sticker) messageType = 'sticker';
+  const content = text || (attachments.length ? `[${messageType}]` : '[Instagram message]');
+  return { content, messageType, attachments };
 };
 
 const getParticipantProfile = async (
@@ -754,7 +810,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
   const profile = !outbound && accessToken
     ? await getParticipantProfile(participantIgsid, accessToken)
     : {};
-  const { content, messageType } = extractMessageContent(message);
+  const { content, messageType, attachments } = extractMessageContent(message);
   const eventDate = Number.isFinite(Number(event.timestamp))
     ? new Date(Number(event.timestamp))
     : new Date();
@@ -802,8 +858,8 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     const messageResult = await client.query(
       `INSERT INTO instagram_messages
         (conversation_id, external_message_id, direction, sender_igsid, recipient_igsid,
-         content, message_type, status, raw_payload, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         content, message_type, status, raw_payload, attachments, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (external_message_id) DO NOTHING
        RETURNING *`,
       [
@@ -816,6 +872,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
         messageType,
         outbound ? 'sent' : 'received',
         JSON.stringify(event),
+        JSON.stringify(attachments),
         eventDate,
       ],
     );
@@ -1029,7 +1086,7 @@ const upsertImportedInstagramConversation = async (
       account,
       participantIgsid,
     );
-    const { content, messageType } = extractImportedMessageContent(message);
+    const { content, messageType, attachments } = extractImportedMessageContent(message);
     const createdAt = parseInstagramDate(message.created_time)
       ?? parseInstagramDate(conversation.updated_time)
       ?? new Date();
@@ -1041,6 +1098,7 @@ const upsertImportedInstagramConversation = async (
       recipientIgsid,
       content,
       messageType,
+      attachments,
       createdAt,
       rawPayload: message,
     };
@@ -1124,9 +1182,13 @@ const upsertImportedInstagramConversation = async (
       const inserted = await client.query(
         `INSERT INTO instagram_messages
           (conversation_id, external_message_id, direction, sender_igsid, recipient_igsid,
-           content, message_type, status, raw_payload, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         ON CONFLICT (external_message_id) DO NOTHING
+           content, message_type, status, raw_payload, attachments, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (external_message_id) DO UPDATE SET
+           content = EXCLUDED.content,
+           message_type = EXCLUDED.message_type,
+           attachments = EXCLUDED.attachments,
+           updated_at = NOW()
          RETURNING id`,
         [
           conversationRow.id,
@@ -1138,6 +1200,7 @@ const upsertImportedInstagramConversation = async (
           message.messageType,
           message.direction === 'outbound' ? 'sent' : 'received',
           JSON.stringify(message.rawPayload),
+          JSON.stringify(message.attachments ?? []),
           message.createdAt,
         ],
       );
@@ -1367,7 +1430,7 @@ export const listInstagramMessages = async (conversationId: number, user: Instag
   await assertConversationAccess(conversationId, user);
   const { rows } = await pool.query(
     `SELECT id, conversation_id, external_message_id, direction, sender_igsid,
-            recipient_igsid, content, message_type, status, sent_by, created_at, updated_at
+            recipient_igsid, content, message_type, status, sent_by, attachments, created_at, updated_at
      FROM instagram_messages
      WHERE conversation_id = $1
      ORDER BY created_at ASC, id ASC`,
@@ -1425,8 +1488,8 @@ export const sendInstagramTextMessage = async (
     const inserted = await client.query(
       `INSERT INTO instagram_messages
         (conversation_id, external_message_id, direction, sender_igsid, recipient_igsid,
-         content, message_type, status, sent_by)
-       VALUES ($1,$2,'outbound',$3,$4,$5,'text','sent',$6)
+         content, message_type, status, sent_by, attachments)
+       VALUES ($1,$2,'outbound',$3,$4,$5,'text','sent',$6,$7)
        ON CONFLICT (external_message_id) DO UPDATE SET
          status = 'sent',
          updated_at = NOW()
@@ -1438,6 +1501,7 @@ export const sendInstagramTextMessage = async (
         conversation.participant_igsid,
         text,
         user.id,
+        JSON.stringify([]),
       ],
     );
     await client.query(

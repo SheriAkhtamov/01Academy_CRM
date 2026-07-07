@@ -1171,6 +1171,14 @@ export const translations = {
   closeLeadPanel: { en: 'Close panel', ru: 'Закрыть панель' },
   conversationAccount: { en: 'Account', ru: 'Аккаунт' },
   linkOutbound: { en: 'You', ru: 'Вы' },
+  mediaPhoto: { en: 'Photo', ru: 'Фото' },
+  mediaVideo: { en: 'Video', ru: 'Видео' },
+  mediaGif: { en: 'GIF', ru: 'Гифка' },
+  mediaAudio: { en: 'Audio', ru: 'Аудио' },
+  mediaPost: { en: 'Post', ru: 'Пост' },
+  mediaAttachment: { en: 'Attachment', ru: 'Вложение' },
+  openInInstagram: { en: 'Open in Instagram', ru: 'Открыть в Instagram' },
+  viewMedia: { en: 'View media', ru: 'Посмотреть медиа' },
 
   // UX improvements — administration dashboard
   adminDashboardTitle: { en: 'Dashboard', ru: 'Дашборд' },

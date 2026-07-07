@@ -31,6 +31,7 @@ import {
   ChevronLeft,
   Clock3,
   ExternalLink,
+  Image as ImageIcon,
   Info,
   Instagram,
   Loader2,
@@ -81,10 +82,43 @@ interface InstagramMessage {
   messageType: string;
   status: string;
   sentBy?: number | null;
+  attachments?: InstagramMessageAttachment[];
   createdAt: string;
 }
 
+type MediaType =
+  | 'image'
+  | 'video'
+  | 'animated_gif'
+  | 'audio'
+  | 'share'
+  | 'sticker'
+  | 'like'
+  | 'file'
+  | 'generic';
+
+interface InstagramMessageAttachment {
+  type: MediaType;
+  url?: string;
+  previewUrl?: string;
+  link?: string;
+  title?: string;
+  subtitle?: string;
+}
+
 type ThreadMessage = InstagramMessage & { pending?: boolean; failed?: boolean };
+
+const LEGACY_ATTACHMENT = /^\[(image|video|animated_gif|audio|share|sticker|like|attachment|generic)\]\s*(\S+)\s*$/;
+
+const parseLegacyAttachment = (content?: string): InstagramMessageAttachment[] => {
+  if (!content) return [];
+  const match = content.match(LEGACY_ATTACHMENT);
+  if (!match) return [];
+  const type = match[1] as MediaType;
+  const url = match[2];
+  if (type === 'share') return [{ type: 'share', link: url }];
+  return [{ type, url }];
+};
 
 interface LookupOption {
   id: number;
@@ -220,6 +254,118 @@ function Highlight({ text, query }: { text: string; query: string }) {
       {text.slice(idx + normalized.length)}
     </>
   );
+}
+
+const mediaTypeLabel = (type: MediaType, t: (key: TranslationKey) => string) => {
+  switch (type) {
+    case 'image':
+    case 'sticker':
+    case 'like':
+      return t('mediaPhoto');
+    case 'video':
+      return t('mediaVideo');
+    case 'animated_gif':
+      return t('mediaGif');
+    case 'audio':
+      return t('mediaAudio');
+    case 'share':
+      return t('mediaPost');
+    default:
+      return t('mediaAttachment');
+  }
+};
+
+function AttachmentMedia({
+  attachment,
+  onOpen,
+}: {
+  attachment: InstagramMessageAttachment;
+  onOpen: (media: { url: string; type: MediaType; title?: string }) => void;
+}) {
+  const { t } = useTranslation();
+
+  if (attachment.type === 'share') {
+    const preview = attachment.previewUrl || attachment.url;
+    return (
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        {preview ? (
+          <button
+            type="button"
+            className="block w-full"
+            onClick={() => attachment.link && window.open(attachment.link, '_blank', 'noopener')}
+          >
+            <img src={preview} alt={attachment.title || t('mediaPost')} className="max-h-72 w-full object-cover" loading="lazy" />
+          </button>
+        ) : null}
+        <div className="flex items-center gap-2 p-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-slate-900">{attachment.title || t('mediaPost')}</p>
+            <p className="truncate text-xs text-slate-500">{t('mediaPost')}</p>
+          </div>
+          {attachment.link ? (
+            <Button asChild size="sm" variant="outline" className="shrink-0">
+              <a href={attachment.link} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                {t('openInInstagram')}
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (attachment.type === 'audio') {
+    return attachment.url ? (
+      <audio controls src={attachment.url} className="max-w-full" />
+    ) : null;
+  }
+
+  if (attachment.url) {
+    if (attachment.type === 'video') {
+      return (
+        <video
+          controls
+          src={attachment.url}
+          className="max-h-80 w-full rounded-xl bg-black"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen({ url: attachment.url as string, type: 'video', title: attachment.title });
+          }}
+        />
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="block overflow-hidden rounded-xl"
+        onClick={() => onOpen({ url: attachment.url as string, type: 'image', title: attachment.title })}
+      >
+        <img
+          src={attachment.url}
+          alt={attachment.title || t('viewMedia')}
+          className="max-h-80 w-full max-w-sm object-cover transition-transform hover:scale-[1.01]"
+          loading="lazy"
+        />
+      </button>
+    );
+  }
+
+  if (attachment.link) {
+    return (
+      <a
+        href={attachment.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-sm text-primary underline"
+      >
+        <ExternalLink className="h-4 w-4" />
+        {t('openInInstagram')}
+      </a>
+    );
+  }
+
+  return null;
 }
 
 function MessagesSkeleton() {
@@ -662,6 +808,7 @@ export default function MessagesPage() {
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
   const [mobileLeadOpen, setMobileLeadOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
+  const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
 
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -907,6 +1054,15 @@ export default function MessagesPage() {
     }
   };
 
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLightbox(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox]);
+
   const handleListKeyDown = (event: React.KeyboardEvent) => {
     if (filteredConversations.length === 0) return;
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -1125,8 +1281,24 @@ export default function MessagesPage() {
                                 {listTimestamp(conversation.lastMessageAt, t)}
                               </span>
                             </div>
-                            <p className={cn('mt-1 truncate text-xs', unread ? 'text-slate-700' : 'text-slate-500')}>
-                              <Highlight text={`${previewPrefix}${conversation.lastMessage || t('noMessagesYet')}`} query={search} />
+                            <p className={cn('mt-1 flex items-center gap-1 truncate text-xs', unread ? 'text-slate-700' : 'text-slate-500')}>
+                              {(() => {
+                                const previewLegacy = conversation.lastMessage?.match(LEGACY_ATTACHMENT);
+                                if (previewLegacy) {
+                                  return (
+                                    <>
+                                      <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+                                      <span className="truncate">{mediaTypeLabel(previewLegacy[1] as MediaType, t)}</span>
+                                    </>
+                                  );
+                                }
+                                return (
+                                  <Highlight
+                                    text={`${previewPrefix}${conversation.lastMessage || t('noMessagesYet')}`}
+                                    query={search}
+                                  />
+                                );
+                              })()}
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                               {conversation.leadId ? (
@@ -1261,40 +1433,67 @@ export default function MessagesPage() {
                             }
                             const message = item.message;
                             const outbound = message.direction === 'outbound';
+                            const legacy = message.content?.match(LEGACY_ATTACHMENT);
+                            const attachments = message.attachments?.length
+                              ? message.attachments
+                              : legacy
+                                ? parseLegacyAttachment(message.content)
+                                : [];
+                            const hasRealText = Boolean(message.content) && !legacy && !/^\[.+\]$/.test(message.content);
+                            const meta = (
+                              <div
+                                className={cn(
+                                  'mt-0.5 flex items-center gap-1.5 px-1 text-[10px]',
+                                  outbound ? 'justify-end text-primary-foreground/70' : 'text-slate-400',
+                                )}
+                              >
+                                {item.showTime ? <span>{clockTime(message.createdAt)}</span> : null}
+                                {message.pending ? (
+                                  <span title={t('sendingMessage')}>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  </span>
+                                ) : message.failed ? (
+                                  <button
+                                    type="button"
+                                    className="font-medium underline underline-offset-2"
+                                    title={t('messageFailed')}
+                                    onClick={() => retryMessage(message.content)}
+                                  >
+                                    {t('retrySend')}
+                                  </button>
+                                ) : outbound ? (
+                                  <CheckCheck className="h-3 w-3" />
+                                ) : null}
+                              </div>
+                            );
                             return (
                               <div
                                 key={item.id}
                                 className={cn('flex', outbound ? 'justify-end' : 'justify-start')}
                               >
-                                <div
-                                  className={cn(
-                                    'max-w-[82%] rounded-2xl px-4 py-2.5 shadow-sm',
-                                    outbound
-                                      ? 'rounded-br-md bg-primary text-primary-foreground'
-                                      : 'rounded-bl-md border border-border bg-card text-card-foreground',
-                                    message.failed ? 'opacity-60 ring-1 ring-destructive' : '',
-                                  )}
-                                >
-                                  <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
-                                  <div className={cn('mt-1 flex items-center gap-1.5 text-[10px]', outbound ? 'justify-end text-primary-foreground/70' : 'text-slate-400')}>
-                                    {item.showTime ? <span>{clockTime(message.createdAt)}</span> : null}
-                                    {message.pending ? (
-                                      <span title={t('sendingMessage')}>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                      </span>
-                                    ) : message.failed ? (
-                                      <button
-                                        type="button"
-                                        className="font-medium underline underline-offset-2"
-                                        title={t('messageFailed')}
-                                        onClick={() => retryMessage(message.content)}
-                                      >
-                                        {t('retrySend')}
-                                      </button>
-                                    ) : outbound ? (
-                                      <CheckCheck className="h-3 w-3" />
-                                    ) : null}
-                                  </div>
+                                <div className="flex max-w-[82%] flex-col gap-1.5">
+                                  {attachments.map((attachment, index) => (
+                                    <div
+                                      key={index}
+                                      className={cn('w-full max-w-sm', outbound ? 'self-end' : 'self-start')}
+                                    >
+                                      <AttachmentMedia attachment={attachment} onOpen={(media) => setLightbox(media)} />
+                                    </div>
+                                  ))}
+                                  {hasRealText ? (
+                                    <div
+                                      className={cn(
+                                        'rounded-2xl px-4 py-2.5 shadow-sm',
+                                        outbound
+                                          ? 'rounded-br-md bg-primary text-primary-foreground'
+                                          : 'rounded-bl-md border border-border bg-card text-card-foreground',
+                                        message.failed ? 'opacity-60 ring-1 ring-destructive' : '',
+                                      )}
+                                    >
+                                      <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
+                                    </div>
+                                  ) : null}
+                                  {meta}
                                 </div>
                               </div>
                             );
@@ -1415,6 +1614,43 @@ export default function MessagesPage() {
           </div>
         )}
       </Card>
+
+      {lightbox ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('viewMedia')}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-4 top-4 text-white hover:bg-white/10 hover:text-white"
+            aria-label={t('closeLeadPanel')}
+            onClick={() => setLightbox(null)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+          <div className="max-h-full max-w-full" onClick={(event) => event.stopPropagation()}>
+            {lightbox.type === 'video' ? (
+              <video
+                src={lightbox.url}
+                controls
+                autoPlay
+                className="max-h-[90vh] max-w-[90vw] rounded-lg bg-black"
+              />
+            ) : (
+              <img
+                src={lightbox.url}
+                alt={lightbox.title || ''}
+                className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+              />
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

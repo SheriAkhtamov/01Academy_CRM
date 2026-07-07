@@ -80,6 +80,15 @@ type InstagramImportStats = {
   errors: number;
 };
 
+type InstagramImportJobStatus = {
+  status: 'idle' | 'running' | 'completed' | 'partial' | 'failed';
+  requestedBy: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  stats: InstagramImportStats;
+  error: string | null;
+};
+
 type EnsureLeadOptions = {
   createTask?: boolean;
   notify?: boolean;
@@ -982,6 +991,30 @@ const mergeImportStats = (target: InstagramImportStats, source: InstagramImportS
   target.errors += source.errors;
 };
 
+const createInstagramImportJobStatus = (): InstagramImportJobStatus => ({
+  status: 'idle',
+  requestedBy: null,
+  startedAt: null,
+  finishedAt: null,
+  stats: emptyImportStats(),
+  error: null,
+});
+
+let instagramImportJobStatus = createInstagramImportJobStatus();
+let instagramImportPromise: Promise<InstagramImportStats> | null = null;
+
+const cloneInstagramImportJobStatus = (): InstagramImportJobStatus => ({
+  ...instagramImportJobStatus,
+  stats: { ...instagramImportJobStatus.stats },
+});
+
+const broadcastInstagramImportJobStatus = () => {
+  broadcastToClients({
+    type: 'INSTAGRAM_HISTORY_IMPORT_STATUS',
+    data: cloneInstagramImportJobStatus(),
+  });
+};
+
 const buildConversationListUrl = (account: InstagramAccountRow, accessToken: string, useMeEndpoint = false) => {
   const config = instagramConfig();
   const nodeId = useMeEndpoint ? 'me' : account.ig_user_id;
@@ -1351,6 +1384,68 @@ export const importInstagramConversationHistory = async (requestedBy: number) =>
     data: { imported: true, stats },
   });
   return stats;
+};
+
+export const getInstagramConversationSyncStatus = () => cloneInstagramImportJobStatus();
+
+export const startInstagramConversationHistorySync = (requestedBy: number) => {
+  if (instagramImportPromise) {
+    return {
+      ...cloneInstagramImportJobStatus(),
+      started: false,
+      alreadyRunning: true,
+    };
+  }
+
+  instagramImportJobStatus = {
+    status: 'running',
+    requestedBy,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    stats: emptyImportStats(),
+    error: null,
+  };
+  broadcastInstagramImportJobStatus();
+
+  instagramImportPromise = importInstagramConversationHistory(requestedBy)
+    .then((stats) => {
+      instagramImportJobStatus = {
+        ...instagramImportJobStatus,
+        status: stats.errors > 0 ? 'partial' : 'completed',
+        finishedAt: new Date().toISOString(),
+        stats: { ...stats },
+        error: stats.errors > 0 ? 'instagramSyncPartial' : null,
+      };
+      broadcastInstagramImportJobStatus();
+      return stats;
+    })
+    .catch((error: any) => {
+      instagramImportJobStatus = {
+        ...instagramImportJobStatus,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        stats: error?.partialStats ?? instagramImportJobStatus.stats,
+        error: error?.message ?? String(error),
+      };
+      logger.error('Failed to run Instagram history import job', {
+        requestedBy,
+        error,
+        response: error?.instagramResponse,
+      });
+      broadcastInstagramImportJobStatus();
+      throw error;
+    })
+    .finally(() => {
+      instagramImportPromise = null;
+    });
+
+  instagramImportPromise.catch(() => undefined);
+
+  return {
+    ...cloneInstagramImportJobStatus(),
+    started: true,
+    alreadyRunning: false,
+  };
 };
 
 const assertConversationAccess = async (conversationId: number, user: InstagramUser) => {

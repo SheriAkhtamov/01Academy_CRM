@@ -1116,6 +1116,26 @@ export const translations = {
     en: 'Instagram history sync failed',
     ru: 'Не удалось синхронизировать Instagram',
   },
+  instagramSyncPartial: {
+    en: 'Instagram history partially synced',
+    ru: 'История Instagram синхронизирована частично',
+  },
+  instagramSyncRunning: {
+    en: 'Instagram sync is already running',
+    ru: 'Синхронизация Instagram уже идёт',
+  },
+  instagramSyncRunningDesc: {
+    en: 'You can keep working here. New dialogs will appear as the import finishes.',
+    ru: 'Можно продолжать работать. Новые диалоги появятся после завершения импорта.',
+  },
+  instagramSyncStarted: {
+    en: 'Instagram sync started',
+    ru: 'Синхронизация Instagram запущена',
+  },
+  instagramSyncStartedDesc: {
+    en: 'The import is running in the background. This can take a few minutes.',
+    ru: 'Импорт идёт в фоне. Это может занять несколько минут.',
+  },
   instagramSyncing: {
     en: 'Syncing...',
     ru: 'Синхронизация...',

@@ -44,6 +44,7 @@ import {
   Instagram,
   Loader2,
   MailOpen,
+  Maximize2,
   MessageCircle,
   PanelRightClose,
   PanelRightOpen,
@@ -121,6 +122,31 @@ interface InstagramMessageAttachment {
 }
 
 type ThreadMessage = InstagramMessage & { pending?: boolean; failed?: boolean };
+
+type ThreadItem =
+  | { kind: 'date'; id: string; label: string }
+  | { kind: 'message'; id: number; message: ThreadMessage; showTime: boolean };
+
+interface InstagramSyncStats {
+  accounts: number;
+  conversations: number;
+  conversationsCreated: number;
+  messages: number;
+  leadsCreated: number;
+  skipped: number;
+  errors: number;
+}
+
+interface InstagramSyncStatus {
+  status: 'idle' | 'running' | 'completed' | 'partial' | 'failed';
+  requestedBy?: number | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  stats: InstagramSyncStats;
+  error?: string | null;
+  started?: boolean;
+  alreadyRunning?: boolean;
+}
 
 const LEGACY_ATTACHMENT = /^\[(image|video|animated_gif|audio|share|sticker|like|attachment|generic)\]\s*(\S+)\s*$/;
 
@@ -256,6 +282,45 @@ const clockTime = (value?: string | null) => {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 };
 
+const syncSummaryText = (stats: Partial<InstagramSyncStats> | undefined, t: (key: TranslationKey) => string) =>
+  t('instagramSyncSummary')
+    .replace('{conversations}', String(stats?.conversations ?? 0))
+    .replace('{messages}', String(stats?.messages ?? 0))
+    .replace('{leads}', String(stats?.leadsCreated ?? 0));
+
+const buildThreadItems = (
+  messages: ThreadMessage[],
+  t: (key: TranslationKey) => string,
+  searchQuery = '',
+): ThreadItem[] => {
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleMessages = normalizedSearch
+    ? messages.filter((message) => message.content?.toLowerCase().includes(normalizedSearch))
+    : messages;
+
+  const items: ThreadItem[] = [];
+  let lastDay = '';
+  let lastDirection: string | null = null;
+  let lastTime = 0;
+
+  for (const message of visibleMessages) {
+    const day = (message.createdAt || '').slice(0, 10);
+    if (day && day !== lastDay) {
+      items.push({ kind: 'date', id: `date-${day}`, label: daySeparatorLabel(message.createdAt, t) });
+      lastDay = day;
+      lastDirection = null;
+    }
+
+    const time = new Date(message.createdAt).getTime();
+    const withinGroup = lastDirection === message.direction && time - lastTime < 5 * 60 * 1000;
+    items.push({ kind: 'message', id: message.id, message, showTime: !withinGroup });
+    lastDirection = message.direction;
+    lastTime = time;
+  }
+
+  return items;
+};
+
 function Highlight({ text, query }: { text: string; query: string }) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return <>{text}</>;
@@ -345,15 +410,23 @@ function AttachmentMedia({
   if (attachment.url) {
     if (attachment.type === 'video') {
       return (
-        <video
-          controls
-          src={attachment.url}
-          className="max-h-80 w-full rounded-xl bg-black"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpen({ url: attachment.url as string, type: 'video', title: attachment.title });
-          }}
-        />
+        <div className="relative overflow-hidden rounded-xl bg-black">
+          <video
+            controls
+            src={attachment.url}
+            className="max-h-80 w-full"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className="absolute right-2 top-2 h-8 w-8 bg-background/90 shadow-sm hover:bg-background"
+            aria-label={t('viewMedia')}
+            onClick={() => onOpen({ url: attachment.url as string, type: 'video', title: attachment.title })}
+          >
+            <Maximize2 className="h-4 w-4" />
+          </Button>
+        </div>
       );
     }
     return (
@@ -796,11 +869,33 @@ function LeadPanel({
               ) : null}
             </div>
           </div>
-          <Button asChild variant="outline" size="icon" aria-label={t('openPipeline')}>
-            <a href={`/sales/pipeline?lead=${lead.id}`}>
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button asChild variant="outline" size="icon" aria-label={t('openPipeline')}>
+              <a href={`/sales/pipeline?lead=${lead.id}`}>
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="xl:hidden"
+              aria-label={t('closeLeadPanel')}
+              onClick={onCloseMobile}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="hidden xl:inline-flex"
+              aria-label={t('collapseLeadCard')}
+              onClick={onCollapsedChange}
+            >
+              <PanelRightClose className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -960,7 +1055,7 @@ export default function MessagesPage() {
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
-  const [draft, setDraft] = useState('');
+  const [draftsByConversation, setDraftsByConversation] = useState<Record<number, string>>({});
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ConversationFilter>('all');
   const [leadCollapsed, setLeadCollapsed] = useState(false);
@@ -978,9 +1073,23 @@ export default function MessagesPage() {
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const inboxCardRef = useRef<HTMLDivElement | null>(null);
   const initialScrollConversation = useRef<number | null>(null);
 
   const { replies: quickReplies, addReply, removeReply } = useQuickReplies();
+  const draft = selectedConversationId ? draftsByConversation[selectedConversationId] ?? '' : '';
+  const setDraft = (value: string | ((current: string) => string)) => {
+    if (!selectedConversationId) return;
+    setDraftsByConversation((currentDrafts) => {
+      const current = currentDrafts[selectedConversationId] ?? '';
+      const next = typeof value === 'function' ? value(current) : value;
+      if (!next) {
+        const { [selectedConversationId]: _removed, ...rest } = currentDrafts;
+        return rest;
+      }
+      return { ...currentDrafts, [selectedConversationId]: next };
+    });
+  };
 
   const workspaceQuery = useQuery<SalesWorkspaceData>({
     queryKey: ['/api/academy/workspaces/sales'],
@@ -990,7 +1099,17 @@ export default function MessagesPage() {
     queryKey: ['/api/instagram/conversations'],
   });
 
+  const syncStatusQuery = useQuery<InstagramSyncStatus>({
+    queryKey: ['/api/instagram/conversations/sync/status'],
+    queryFn: () => apiRequest('GET', '/api/instagram/conversations/sync/status'),
+    refetchInterval: (query) => (
+      query.state.data?.status === 'running' ? 5000 : false
+    ),
+  });
+
   const conversations = conversationsQuery.data ?? [];
+  const syncStatus = syncStatusQuery.data;
+  const syncStatusRunning = syncStatus?.status === 'running';
   const requestedLeadId = useMemo(() => {
     const value = new URLSearchParams(routeSearch).get('lead');
     const parsed = Number(value);
@@ -1096,15 +1215,22 @@ export default function MessagesPage() {
     setAtBottom(true);
   };
 
-  const handleThreadScroll = () => {
-    const viewport = getViewport();
-    if (!viewport) return;
-    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    setAtBottom(distance < 80);
-  };
-
   const messageCount = messages.length;
   const prevMessageCount = useRef(messageCount);
+
+  useEffect(() => {
+    const viewport = getViewport();
+    if (!viewport) return;
+
+    const updateAtBottom = () => {
+      const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      setAtBottom(distance < 80);
+    };
+
+    updateAtBottom();
+    viewport.addEventListener('scroll', updateAtBottom, { passive: true });
+    return () => viewport.removeEventListener('scroll', updateAtBottom);
+  }, [selectedConversationId, messageCount, threadSearchOpen]);
 
   // Reliable initial scroll: when the open conversation's messages finish loading
   // (or change because the user switched conversations), jump to the latest message.
@@ -1179,23 +1305,34 @@ export default function MessagesPage() {
 
   const syncConversations = useMutation({
     mutationFn: () => apiRequest('POST', '/api/instagram/conversations/sync'),
-    onSuccess: async (stats: any) => {
-      await Promise.all([
+    onSuccess: (status: InstagramSyncStatus) => {
+      queryClient.setQueryData(['/api/instagram/conversations/sync/status'], status);
+      if (status.status === 'running') {
+        toast({
+          title: status.alreadyRunning ? t('instagramSyncRunning') : t('instagramSyncStarted'),
+          description: t('instagramSyncStartedDesc'),
+        });
+        return;
+      }
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
       ]);
       toast({
-        title: t('instagramSyncComplete'),
-        description: t('instagramSyncSummary')
-          .replace('{conversations}', String(stats?.conversations ?? 0))
-          .replace('{messages}', String(stats?.messages ?? 0))
-          .replace('{leads}', String(stats?.leadsCreated ?? 0)),
+        title: status.status === 'failed'
+          ? t('instagramSyncFailed')
+          : status.status === 'partial'
+            ? t('instagramSyncPartial')
+            : t('instagramSyncComplete'),
+        description: syncSummaryText(status.stats, t),
+        variant: status.status === 'failed' ? 'destructive' : undefined,
       });
     },
     onError: (error: Error) => {
       toast({ title: t('instagramSyncFailed'), description: error.message, variant: 'destructive' });
     },
   });
+  const syncRunning = syncConversations.isPending || syncStatusRunning;
 
   const statusName = (code: string) => {
     const status = workspaceQuery.data?.statuses?.find((item) => item.code === code);
@@ -1249,8 +1386,14 @@ export default function MessagesPage() {
     setSelectedConversationId(id);
     setThreadSearch('');
     setThreadSearchOpen(false);
+    setQuickOpen(false);
+    setEmojiOpen(false);
+    setMobileLeadOpen(false);
     if (window.matchMedia('(max-width: 1279px)').matches) {
       setMobileView('thread');
+      requestAnimationFrame(() => {
+        inboxCardRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
     }
   };
 
@@ -1281,38 +1424,26 @@ export default function MessagesPage() {
   const unreadCount = conversations.reduce((count, conversation) => count + (conversation.unreadCount > 0 ? 1 : 0), 0);
   const replyableCount = conversations.filter((conversation) => conversation.canReply).length;
 
-  const groupItems = useMemo(() => {
-    const items: ({ kind: 'date'; id: string; label: string } | { kind: 'message'; id: number; message: ThreadMessage; showTime: boolean })[] = [];
-    let lastDay = '';
-    let lastDirection: string | null = null;
-    let lastTime = 0;
-    for (const message of messages) {
-      const day = (message.createdAt || '').slice(0, 10);
-      if (day && day !== lastDay) {
-        items.push({ kind: 'date', id: `date-${day}`, label: daySeparatorLabel(message.createdAt, t) });
-        lastDay = day;
-        lastDirection = null;
-      }
-      const time = new Date(message.createdAt).getTime();
-      const withinGroup = lastDirection === message.direction && time - lastTime < 5 * 60 * 1000;
-      items.push({ kind: 'message', id: message.id, message, showTime: !withinGroup });
-      lastDirection = message.direction;
-      lastTime = time;
-    }
-    return items;
-  }, [messages, t]);
-
   const threadQuery = threadSearch.trim().toLowerCase();
-  const threadItems = useMemo(() => {
-    if (!threadQuery) return groupItems;
-    return groupItems.filter(
-      (item) => item.kind === 'date' || (item.message.content && item.message.content.toLowerCase().includes(threadQuery)),
-    );
-  }, [groupItems, threadQuery]);
+  const threadItems = useMemo(
+    () => buildThreadItems(messages, t, threadQuery),
+    [messages, t, threadQuery],
+  );
   const threadMatchCount = useMemo(
     () => threadItems.filter((item) => item.kind === 'message').length,
     [threadItems],
   );
+  const showSyncStatus = Boolean(syncStatus && syncStatus.status !== 'idle');
+  const syncStatusTitle = syncStatus?.status === 'running'
+    ? t('instagramSyncing')
+    : syncStatus?.status === 'partial'
+      ? t('instagramSyncPartial')
+      : syncStatus?.status === 'failed'
+        ? t('instagramSyncFailed')
+        : t('instagramSyncComplete');
+  const syncStatusDescription = syncStatus?.status === 'running'
+    ? t('instagramSyncRunningDesc')
+    : syncSummaryText(syncStatus?.stats, t);
 
   if (conversationsQuery.isLoading) return <MessagesSkeleton />;
 
@@ -1348,23 +1479,52 @@ export default function MessagesPage() {
             size="sm"
             variant="outline"
             onClick={() => syncConversations.mutate()}
-            disabled={syncConversations.isPending}
+            disabled={syncRunning}
           >
-            {syncConversations.isPending ? (
+            {syncRunning ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            {syncConversations.isPending ? t('instagramSyncing') : t('instagramSync')}
+            {syncRunning ? t('instagramSyncing') : t('instagramSync')}
           </Button>
         )}
       />
 
-      <Card className="mt-6 flex h-[calc(100dvh-9rem)] min-h-[600px] flex-col overflow-hidden rounded-2xl border-border shadow-sm">
+      {showSyncStatus ? (
+        <div
+          className={cn(
+            'mt-4 flex flex-col gap-2 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between',
+            syncStatus?.status === 'failed'
+              ? 'border-red-200 bg-red-50 text-red-900'
+              : syncStatus?.status === 'partial'
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-primary/20 bg-primary/10 text-primary',
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            {syncStatus?.status === 'running' ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            ) : (
+              <Clock3 className="h-4 w-4 shrink-0" />
+            )}
+            <span className="font-medium">{syncStatusTitle}</span>
+          </div>
+          <span className="text-xs sm:text-right">{syncStatusDescription}</span>
+        </div>
+      ) : null}
+
+      <Card
+        ref={inboxCardRef}
+        className="mt-6 flex h-[calc(100dvh-9rem)] min-h-[600px] flex-col overflow-hidden rounded-2xl border-border shadow-sm"
+      >
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">
             <div>
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-primary">
+              <div
+                className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-white shadow-primary"
+                style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
+              >
                 <MessageCircle className="h-8 w-8" />
               </div>
               <h2 className="mt-5 text-lg font-semibold text-slate-900">{t('noConversations')}</h2>
@@ -1374,10 +1534,10 @@ export default function MessagesPage() {
               <Button
                 className="mt-5"
                 onClick={() => syncConversations.mutate()}
-                disabled={syncConversations.isPending}
+                disabled={syncRunning}
               >
-                {syncConversations.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {syncConversations.isPending ? t('instagramSyncing') : t('instagramSync')}
+                {syncRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {syncRunning ? t('instagramSyncing') : t('instagramSync')}
               </Button>
             </div>
           </div>
@@ -1391,9 +1551,12 @@ export default function MessagesPage() {
                 'xl:flex xl:border-r',
               )}
             >
-              <div className="space-y-3 border-b border-border bg-gradient-to-b from-primary-50/60 to-transparent p-4">
+              <div className="space-y-3 border-b border-border bg-gradient-to-b from-primary/5 to-transparent p-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-primary">
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-primary"
+                    style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
+                  >
                     <Instagram className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
@@ -1411,9 +1574,9 @@ export default function MessagesPage() {
                       className="ml-auto"
                       aria-label={t('instagramSync')}
                       onClick={() => syncConversations.mutate()}
-                      disabled={syncConversations.isPending}
+                      disabled={syncRunning}
                     >
-                      {syncConversations.isPending ? (
+                      {syncRunning ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <RefreshCw className="h-4 w-4 text-muted-foreground" />
@@ -1486,7 +1649,7 @@ export default function MessagesPage() {
                           aria-current={selected}
                           className={cn(
                             'relative flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors',
-                            selected ? 'bg-primary-50 ring-1 ring-inset ring-primary-100' : 'hover:bg-muted',
+                            selected ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-muted',
                           )}
                           onClick={() => selectConversation(conversation.id)}
                         >
@@ -1691,7 +1854,6 @@ export default function MessagesPage() {
                     <ScrollArea
                       ref={threadScrollRef}
                       className="h-full"
-                      onScroll={handleThreadScroll}
                     >
                       <div className="space-y-1 px-4 py-4">
                         {messagesQuery.isLoading ? (
@@ -1797,7 +1959,7 @@ export default function MessagesPage() {
                                       className={cn(
                                         'rounded-2xl px-4 py-2.5 shadow-sm',
                                         outbound
-                                          ? 'rounded-br-md bg-gradient-to-br from-primary-500 to-primary-700 text-primary-foreground shadow-primary'
+                                          ? 'rounded-br-md bg-primary text-primary-foreground shadow-primary'
                                           : 'rounded-bl-md border border-border bg-card text-card-foreground',
                                         message.failed ? 'opacity-60 ring-1 ring-destructive' : '',
                                       )}
@@ -2017,7 +2179,7 @@ export default function MessagesPage() {
                 <LeadPanel
                   leadId={selectedConversation?.leadId}
                   conversation={selectedConversation}
-                  workspaceData={queryClient.getQueryData(['/api/academy/workspaces/sales']) as SalesWorkspaceData | undefined}
+                  workspaceData={workspaceQuery.data}
                   statusName={statusName}
                   onCollapsedChange={() => setLeadCollapsed(true)}
                   onChanged={() => {

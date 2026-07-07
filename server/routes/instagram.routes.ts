@@ -9,12 +9,13 @@ import {
   disconnectInstagramAccount,
   exchangeInstagramAuthorizationCode,
   getInstagramIntegrationConfig,
-  importInstagramConversationHistory,
+  getInstagramConversationSyncStatus,
   listInstagramAccounts,
   listInstagramConversations,
   listInstagramMessages,
   markInstagramConversationRead,
   sendInstagramTextMessage,
+  startInstagramConversationHistorySync,
 } from '../services/instagram';
 
 const router = Router();
@@ -184,7 +185,8 @@ router.get('/conversations', async (req, res) => {
 router.post('/conversations/sync', async (req, res) => {
   if (!ensureMessagingAccess(req, res)) return;
   try {
-    res.json(await importInstagramConversationHistory(req.user!.id));
+    const status = startInstagramConversationHistorySync(req.user!.id);
+    res.status(status.started ? 202 : 200).json(status);
   } catch (error: any) {
     logger.error('Failed to sync Instagram conversations', {
       userId: req.user?.id,
@@ -193,6 +195,11 @@ router.post('/conversations/sync', async (req, res) => {
     });
     res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'instagramSyncFailed' });
   }
+});
+
+router.get('/conversations/sync/status', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  res.json(getInstagramConversationSyncStatus());
 });
 
 router.get('/conversations/:id/messages', async (req, res) => {

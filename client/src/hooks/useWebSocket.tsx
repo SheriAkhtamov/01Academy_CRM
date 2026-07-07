@@ -91,6 +91,13 @@ export function useWebSocket() {
             });
           }
           break;
+        case 'INSTAGRAM_HISTORY_IMPORT_STATUS':
+          queryClient.setQueryData(['/api/instagram/conversations/sync/status'], message.data);
+          if (message.data?.status === 'completed' || message.data?.status === 'partial') {
+            queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+          }
+          break;
         case 'USER_STATUS_CHANGED':
           queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
           break;

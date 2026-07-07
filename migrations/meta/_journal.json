@@ -218,6 +218,13 @@
       "when": 1783612800000,
       "tag": "0030_add_lead_archive_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783699200000,
+      "tag": "0031_add_instagram_message_attachments",
+      "breakpoints": true
     }
   ]
 }

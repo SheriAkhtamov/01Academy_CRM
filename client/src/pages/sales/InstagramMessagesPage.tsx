@@ -1860,6 +1860,30 @@ export default function MessagesPage() {
                           Array.from({ length: 5 }).map((_, index) => (
                             <Skeleton key={index} className={`h-16 w-2/3 ${index % 2 ? 'ml-auto' : ''}`} />
                           ))
+                        ) : messagesQuery.isError ? (
+                          <div className="mx-auto max-w-md py-12">
+                            <Alert variant="destructive">
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+                              <AlertDescription>
+                                <div className="space-y-3">
+                                  <p>
+                                    {messagesQuery.error instanceof Error
+                                      ? messagesQuery.error.message
+                                      : t('instagramSendFailed')}
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => messagesQuery.refetch()}
+                                  >
+                                    {t('retry')}
+                                  </Button>
+                                </div>
+                              </AlertDescription>
+                            </Alert>
+                          </div>
                         ) : messages.length === 0 ? (
                           <div className="py-16 text-center text-sm text-slate-500">
                             <MessageCircle className="mx-auto mb-3 h-8 w-8 text-slate-400" />

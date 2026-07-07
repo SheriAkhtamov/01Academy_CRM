@@ -646,6 +646,14 @@ export const instagramMessages = pgTable("instagram_messages", {
   status: varchar("status", { length: 40 }).notNull().default("received"),
   sentBy: integer("sent_by").references(() => users.id, { onDelete: "set null" }),
   rawPayload: jsonb("raw_payload"),
+  attachments: jsonb("attachments").$type<Array<{
+    type: string;
+    url?: string;
+    previewUrl?: string;
+    link?: string;
+    title?: string;
+    subtitle?: string;
+  }>>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({

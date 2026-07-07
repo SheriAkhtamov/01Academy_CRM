@@ -24,24 +24,38 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/ux/PageHeader';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   AlertCircle,
   ArrowDown,
   AtSign,
+  Check,
   CheckCheck,
   ChevronLeft,
   Clock3,
+  Copy,
+  CornerDownLeft,
   ExternalLink,
   Image as ImageIcon,
   Info,
   Instagram,
   Loader2,
+  MailOpen,
   MessageCircle,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   RefreshCw,
   Save,
   Search,
+  SearchX,
   Send,
+  Smile,
+  Sparkles,
+  Trash2,
   UserRound,
   UserRoundCog,
   X,
@@ -245,15 +259,22 @@ const clockTime = (value?: string | null) => {
 function Highlight({ text, query }: { text: string; query: string }) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return <>{text}</>;
-  const idx = text.toLowerCase().indexOf(normalized);
-  if (idx === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="rounded-sm bg-primary/25 px-0.5 text-inherit">{text.slice(idx, idx + normalized.length)}</mark>
-      {text.slice(idx + normalized.length)}
-    </>
-  );
+  const parts: React.ReactNode[] = [];
+  let rest = text;
+  let key = 0;
+  let idx = rest.toLowerCase().indexOf(normalized);
+  while (idx !== -1) {
+    if (idx > 0) parts.push(<span key={key++}>{rest.slice(0, idx)}</span>);
+    parts.push(
+      <mark key={key++} className="rounded-sm bg-primary/30 px-0.5 text-inherit">
+        {rest.slice(idx, idx + normalized.length)}
+      </mark>,
+    );
+    rest = rest.slice(idx + normalized.length);
+    idx = rest.toLowerCase().indexOf(normalized);
+  }
+  if (rest) parts.push(<span key={key++}>{rest}</span>);
+  return <>{parts}</>;
 }
 
 const mediaTypeLabel = (type: MediaType, t: (key: TranslationKey) => string) => {
@@ -372,10 +393,46 @@ function MessagesSkeleton() {
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-6 lg:p-8">
       <Skeleton className="h-10 w-72" />
-      <div className="grid h-[calc(100dvh-9rem)] min-h-[620px] grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-        <Skeleton className="hidden xl:block" />
-        <Skeleton className="hidden xl:block" />
-        <Skeleton className="hidden xl:block" />
+      <div className="grid h-[calc(100dvh-9rem)] min-h-[620px] grid-cols-1 rounded-2xl border border-border bg-card xl:grid-cols-[340px_minmax(0,1fr)_372px]">
+        <div className="hidden flex-col gap-3 border-r border-border p-4 xl:flex">
+          <Skeleton className="h-9 w-full" />
+          <div className="flex gap-2">
+            <Skeleton className="h-7 w-16 rounded-full" />
+            <Skeleton className="h-7 w-16 rounded-full" />
+            <Skeleton className="h-7 w-16 rounded-full" />
+          </div>
+          <div className="mt-2 space-y-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl p-3">
+                <Skeleton className="h-11 w-11 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3.5 w-2/3" />
+                  <Skeleton className="h-3 w-5/6" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="hidden flex-col xl:flex">
+          <div className="flex items-center gap-3 border-b border-border p-4">
+            <Skeleton className="h-10 w-10 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-3.5 w-40" />
+              <Skeleton className="h-3 w-28" />
+            </div>
+          </div>
+          <div className="flex-1 space-y-4 p-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className={`h-14 w-2/3 ${i % 2 ? 'ml-auto' : ''}`} />
+            ))}
+          </div>
+          <div className="border-t border-border p-4">
+            <Skeleton className="h-12 w-full rounded-xl" />
+          </div>
+        </div>
+        <div className="hidden border-l border-border p-4 xl:block">
+          <Skeleton className="h-8 w-44" />
+        </div>
       </div>
     </div>
   );
@@ -387,6 +444,108 @@ const FILTERS = [
   { value: 'reply', labelKey: 'canReplyConversations' },
   { value: 'closed', labelKey: 'closedConversations' },
 ] satisfies { value: ConversationFilter; labelKey: TranslationKey }[];
+
+const QUICK_REPLIES_STORAGE_KEY = 'ig_quick_replies_v1';
+
+const DEFAULT_QUICK_REPLIES = [
+  'Здравствуйте! Чем можем помочь? 😊',
+  'Спасибо за интерес к нашей академии!',
+  'Подскажите, какого возраста ребёнок?',
+  'Запишитесь на бесплатное пробное занятие 🎓',
+  'Отправьте, пожалуйста, удобное время для звонка',
+  'Курсы стартуют уже на этой неделе 🚀',
+];
+
+const EMOJI_SET = [
+  '😊', '😍', '🙂', '😉', '🤩', '👍', '🙏', '🔥', '🎉', '🎓',
+  '🚀', '💡', '✅', '❤️', '👋', '🤝', '📚', '⭐', '✨', '💪',
+  '📞', '⏰', '💬', '📩', '👌', '🤗', '😎', '🥳', '💯', '🌟',
+];
+
+function useQuickReplies() {
+  const [replies, setReplies] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(QUICK_REPLIES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      /* ignore */
+    }
+    return DEFAULT_QUICK_REPLIES;
+  });
+
+  const persist = (next: string[]) => {
+    setReplies(next);
+    try {
+      localStorage.setItem(QUICK_REPLIES_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const addReply = (text: string) => {
+    const value = text.trim();
+    if (!value || replies.includes(value)) return;
+    persist([...replies, value]);
+  };
+
+  const removeReply = (text: string) => persist(replies.filter((item) => item !== text));
+
+  return { replies, addReply, removeReply };
+}
+
+function Popover({
+  open,
+  onClose,
+  align = 'left',
+  trigger,
+  children,
+  className,
+}: {
+  open: boolean;
+  onClose: () => void;
+  align?: 'left' | 'right';
+  trigger: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  return (
+    <div className="relative" ref={ref}>
+      {trigger}
+      {open ? (
+        <div
+          className={cn(
+            'absolute bottom-full z-50 mb-2 w-72 origin-bottom rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95',
+            align === 'right' ? 'right-0' : 'left-0',
+            className,
+          )}
+        >
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function LeadPanel({
   leadId,
@@ -809,10 +968,19 @@ export default function MessagesPage() {
   const [mobileLeadOpen, setMobileLeadOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
+  const [threadSearch, setThreadSearch] = useState('');
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [newTemplate, setNewTemplate] = useState('');
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const initialScrollConversation = useRef<number | null>(null);
+
+  const { replies: quickReplies, addReply, removeReply } = useQuickReplies();
 
   const workspaceQuery = useQuery<SalesWorkspaceData>({
     queryKey: ['/api/academy/workspaces/sales'],
@@ -938,6 +1106,18 @@ export default function MessagesPage() {
   const messageCount = messages.length;
   const prevMessageCount = useRef(messageCount);
 
+  // Reliable initial scroll: when the open conversation's messages finish loading
+  // (or change because the user switched conversations), jump to the latest message.
+  useEffect(() => {
+    if (!selectedConversationId) return;
+    if (initialScrollConversation.current !== selectedConversationId) {
+      if (messages.length > 0 || !messagesQuery.isLoading) {
+        requestAnimationFrame(() => scrollToBottom('auto'));
+        initialScrollConversation.current = selectedConversationId;
+      }
+    }
+  }, [selectedConversationId, messages, messagesQuery.isLoading]);
+
   useEffect(() => {
     if (!selectedConversationId) return;
     const grew = messageCount > prevMessageCount.current;
@@ -948,13 +1128,6 @@ export default function MessagesPage() {
     }
     prevMessageCount.current = messageCount;
   }, [messageCount, selectedConversationId, atBottom]);
-
-  useEffect(() => {
-    setAtBottom(true);
-    requestAnimationFrame(() => scrollToBottom('auto'));
-    prevMessageCount.current = messageCount;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversationId]);
 
   const sendMessage = useMutation({
     mutationFn: (content: string) =>
@@ -1047,8 +1220,35 @@ export default function MessagesPage() {
     sendMessage.mutate(content);
   };
 
+  const insertAtCursor = (text: string) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setDraft((current) => current + text);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + text + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + text.length;
+      el.setSelectionRange(pos, pos);
+      autoResize();
+    });
+  };
+
+  const copyMessage = (text: string, id: number) => {
+    if (!text) return;
+    navigator.clipboard?.writeText(text).catch(() => undefined);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1400);
+  };
+
   const selectConversation = (id: number) => {
     setSelectedConversationId(id);
+    setThreadSearch('');
+    setThreadSearchOpen(false);
     if (window.matchMedia('(max-width: 1279px)').matches) {
       setMobileView('thread');
     }
@@ -1102,6 +1302,18 @@ export default function MessagesPage() {
     return items;
   }, [messages, t]);
 
+  const threadQuery = threadSearch.trim().toLowerCase();
+  const threadItems = useMemo(() => {
+    if (!threadQuery) return groupItems;
+    return groupItems.filter(
+      (item) => item.kind === 'date' || (item.message.content && item.message.content.toLowerCase().includes(threadQuery)),
+    );
+  }, [groupItems, threadQuery]);
+  const threadMatchCount = useMemo(
+    () => threadItems.filter((item) => item.kind === 'message').length,
+    [threadItems],
+  );
+
   if (conversationsQuery.isLoading) return <MessagesSkeleton />;
 
   if (conversationsQuery.isError) {
@@ -1120,7 +1332,7 @@ export default function MessagesPage() {
     );
   }
 
-  const gridCols = 'xl:grid-cols-[320px_minmax(0,1fr)_360px]';
+  const gridCols = 'xl:grid-cols-[340px_minmax(0,1fr)_372px]';
 
   return (
     <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
@@ -1148,19 +1360,19 @@ export default function MessagesPage() {
         )}
       />
 
-      <Card className="mt-6 flex h-[calc(100dvh-9rem)] min-h-[600px] flex-col overflow-hidden">
+      <Card className="mt-6 flex h-[calc(100dvh-9rem)] min-h-[600px] flex-col overflow-hidden rounded-2xl border-border shadow-sm">
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">
             <div>
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <MessageCircle className="h-7 w-7" />
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-primary">
+                <MessageCircle className="h-8 w-8" />
               </div>
-              <h2 className="mt-4 font-semibold text-slate-900">{t('noConversations')}</h2>
+              <h2 className="mt-5 text-lg font-semibold text-slate-900">{t('noConversations')}</h2>
               <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
                 {t('noConversationsDesc')}
               </p>
               <Button
-                className="mt-4"
+                className="mt-5"
                 onClick={() => syncConversations.mutate()}
                 disabled={syncConversations.isPending}
               >
@@ -1179,17 +1391,34 @@ export default function MessagesPage() {
                 'xl:flex xl:border-r',
               )}
             >
-              <div className="space-y-3 border-b border-border p-4">
+              <div className="space-y-3 border-b border-border bg-gradient-to-b from-primary-50/60 to-transparent p-4">
                 <div className="flex items-center gap-2">
-                  <Instagram className="h-5 w-5 text-primary" />
-                  <h2 className="font-semibold text-slate-900">{t('conversations')}</h2>
-                  <span className="ml-auto text-xs font-medium text-muted-foreground">
-                    {t('messagesCount').replace('{count}', String(conversations.length))}
-                  </span>
-                  {unreadCount > 0 ? (
-                    <Badge variant="default" className="bg-primary text-primary-foreground">
-                      {unreadCount} {t('unreadConversations').toLowerCase()}
-                    </Badge>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-primary">
+                    <Instagram className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-semibold leading-tight text-slate-900">{t('conversations')}</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {t('messagesCount').replace('{count}', String(conversations.length))}
+                      {unreadCount > 0 ? ` · ${unreadCount} ${t('unreadConversations').toLowerCase()}` : ''}
+                    </p>
+                  </div>
+                  {conversations.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="ml-auto"
+                      aria-label={t('instagramSync')}
+                      onClick={() => syncConversations.mutate()}
+                      disabled={syncConversations.isPending}
+                    >
+                      {syncConversations.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
                   ) : null}
                 </div>
                 <div className="relative">
@@ -1219,7 +1448,7 @@ export default function MessagesPage() {
                         className={cn(
                           'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                           active
-                            ? 'border-primary bg-primary text-primary-foreground'
+                            ? 'border-primary bg-primary text-primary-foreground shadow-sm'
                             : 'border-border bg-background text-slate-600 hover:bg-muted',
                         )}
                       >
@@ -1239,7 +1468,7 @@ export default function MessagesPage() {
                 onKeyDown={handleListKeyDown}
               >
                 <ScrollArea className="h-full">
-                  <div className="p-2">
+                  <div className="space-y-1 p-2">
                     {filteredConversations.length === 0 ? (
                       <div className="p-6 text-center text-sm text-muted-foreground">{t('noSearchResults')}</div>
                     ) : filteredConversations.map((conversation) => {
@@ -1249,18 +1478,21 @@ export default function MessagesPage() {
                         || t('instagramUser');
                       const selected = conversation.id === selectedConversationId;
                       const unread = conversation.unreadCount > 0;
-                      const previewPrefix = conversation.lastMessageDirection === 'outbound' ? t('linkOutbound') + ': ' : '';
+                      const previewPrefix = conversation.lastMessageDirection === 'outbound' ? `${t('linkOutbound')}: ` : '';
                       return (
                         <button
                           key={conversation.id}
                           type="button"
                           aria-current={selected}
                           className={cn(
-                            'flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors',
-                            selected ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted',
+                            'relative flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors',
+                            selected ? 'bg-primary-50 ring-1 ring-inset ring-primary-100' : 'hover:bg-muted',
                           )}
                           onClick={() => selectConversation(conversation.id)}
                         >
+                          {selected ? (
+                            <span className="absolute inset-y-2 left-0 w-1 rounded-full bg-primary" />
+                          ) : null}
                           <div className="relative shrink-0">
                             <Avatar className="h-11 w-11">
                               {conversation.participantProfilePictureUrl ? (
@@ -1335,7 +1567,7 @@ export default function MessagesPage() {
             >
               {selectedConversation ? (
                 <>
-                  <div className="flex items-center gap-3 border-b border-border p-3 sm:p-4">
+                  <div className="flex items-center gap-3 border-b border-border bg-background/80 p-3 backdrop-blur sm:p-4">
                     <Button
                       type="button"
                       variant="ghost"
@@ -1372,7 +1604,22 @@ export default function MessagesPage() {
                         ].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    <div className="ml-auto flex items-center gap-1.5">
+                    <div className="ml-auto flex items-center gap-1">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t('search')}
+                            onClick={() => setThreadSearchOpen((value) => !value)}
+                            className={threadSearchOpen ? 'bg-muted text-primary' : ''}
+                          >
+                            <Search className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('search')}</TooltipContent>
+                      </Tooltip>
                       <Badge variant={selectedConversation.canReply ? 'success' : 'secondary'}>
                         {selectedConversation.canReply ? (
                           <CheckCheck className="mr-1 h-3.5 w-3.5" />
@@ -1394,6 +1641,44 @@ export default function MessagesPage() {
                     </div>
                   </div>
 
+                  {threadSearchOpen ? (
+                    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 sm:px-4">
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          autoFocus
+                          value={threadSearch}
+                          onChange={(event) => setThreadSearch(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              setThreadSearch('');
+                              setThreadSearchOpen(false);
+                            }
+                          }}
+                          placeholder={t('searchInConversation')}
+                          className="pl-9"
+                        />
+                      </div>
+                      {threadQuery ? (
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                          {threadMatchCount}
+                        </span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t('closeLeadPanel')}
+                        onClick={() => {
+                          setThreadSearch('');
+                          setThreadSearchOpen(false);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null}
+
                   {!selectedConversation.canReply ? (
                     <Alert className="m-4 mb-0">
                       <Clock3 className="h-4 w-4" />
@@ -1402,7 +1687,7 @@ export default function MessagesPage() {
                     </Alert>
                   ) : null}
 
-                  <div className="relative min-h-0 flex-1 bg-muted/30">
+                  <div className="relative min-h-0 flex-1 bg-[radial-gradient(theme(colors.slate.200)_1px,transparent_1px)] [background-size:24px_24px] bg-muted/20">
                     <ScrollArea
                       ref={threadScrollRef}
                       className="h-full"
@@ -1418,11 +1703,16 @@ export default function MessagesPage() {
                             <MessageCircle className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                             {t('noMessagesYet')}
                           </div>
+                        ) : threadQuery && threadMatchCount === 0 ? (
+                          <div className="py-16 text-center text-sm text-slate-500">
+                            <SearchX className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+                            {t('noSearchResults')}
+                          </div>
                         ) : (
-                          groupItems.map((item) => {
+                          threadItems.map((item) => {
                             if (item.kind === 'date') {
                               return (
-                                <div key={item.id} className="my-3 flex items-center gap-3">
+                                <div key={item.id} className="my-4 flex items-center gap-3">
                                   <div className="h-px flex-1 bg-border" />
                                   <span className="rounded-full bg-background px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm">
                                     {item.label}
@@ -1469,9 +1759,31 @@ export default function MessagesPage() {
                             return (
                               <div
                                 key={item.id}
-                                className={cn('flex', outbound ? 'justify-end' : 'justify-start')}
+                                className={cn('flex', outbound ? 'justify-end' : 'justify-start', item.showTime ? 'mt-3' : 'mt-0.5')}
                               >
-                                <div className="flex max-w-[82%] flex-col gap-1.5">
+                                <div
+                                  className={cn(
+                                    'group/bubble relative flex max-w-[82%] flex-col',
+                                    outbound ? 'items-end' : 'items-start',
+                                  )}
+                                >
+                                  {hasRealText ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => copyMessage(message.content, message.id)}
+                                      className={cn(
+                                        'absolute -top-3 z-10 hidden h-7 w-7 items-center justify-center rounded-full border border-border bg-background text-slate-500 shadow-sm transition hover:text-primary group-hover/bubble:flex',
+                                        outbound ? 'left-0 -translate-x-1/2' : 'right-0 translate-x-1/2',
+                                      )}
+                                      aria-label={t('copy')}
+                                    >
+                                      {copiedId === message.id ? (
+                                        <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                      ) : (
+                                        <Copy className="h-3.5 w-3.5" />
+                                      )}
+                                    </button>
+                                  ) : null}
                                   {attachments.map((attachment, index) => (
                                     <div
                                       key={index}
@@ -1485,12 +1797,14 @@ export default function MessagesPage() {
                                       className={cn(
                                         'rounded-2xl px-4 py-2.5 shadow-sm',
                                         outbound
-                                          ? 'rounded-br-md bg-primary text-primary-foreground'
+                                          ? 'rounded-br-md bg-gradient-to-br from-primary-500 to-primary-700 text-primary-foreground shadow-primary'
                                           : 'rounded-bl-md border border-border bg-card text-card-foreground',
                                         message.failed ? 'opacity-60 ring-1 ring-destructive' : '',
                                       )}
                                     >
-                                      <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
+                                      <p className="whitespace-pre-wrap break-words text-sm">
+                                        <Highlight text={message.content} query={threadSearch} />
+                                      </p>
                                     </div>
                                   ) : null}
                                   {meta}
@@ -1514,7 +1828,131 @@ export default function MessagesPage() {
                     ) : null}
                   </div>
 
-                  <div className="border-t border-border p-3 sm:p-4">
+                  <div className="border-t border-border bg-background/80 p-3 backdrop-blur sm:p-4">
+                    <div className="mb-2 flex items-center gap-1">
+                      <Popover
+                        open={quickOpen}
+                        onClose={() => setQuickOpen(false)}
+                        trigger={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className={cn('gap-1.5 text-xs', quickOpen && 'bg-muted text-primary')}
+                            onClick={() => setQuickOpen((value) => !value)}
+                            disabled={!selectedConversation.canReply}
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            {t('quickReplies')}
+                          </Button>
+                        }
+                      >
+                        <div className="flex items-center justify-between px-2 pb-1">
+                          <span className="text-xs font-semibold text-slate-700">{t('quickReplies')}</span>
+                        </div>
+                        <ScrollArea className="max-h-56">
+                          <div className="space-y-1 pr-1">
+                            {quickReplies.length === 0 ? (
+                              <p className="px-2 py-3 text-center text-xs text-muted-foreground">{t('noQuickReplies')}</p>
+                            ) : (
+                              quickReplies.map((reply) => (
+                                <div
+                                  key={reply}
+                                  className="group/qr flex items-start gap-1 rounded-lg px-2 py-1.5 hover:bg-muted"
+                                >
+                                  <button
+                                    type="button"
+                                    className="flex-1 text-left text-xs leading-snug text-slate-700"
+                                    onClick={() => {
+                                      insertAtCursor(reply);
+                                      setQuickOpen(false);
+                                    }}
+                                  >
+                                    {reply}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="hidden h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-destructive/10 hover:text-destructive group-hover/qr:flex"
+                                    aria-label={t('delete')}
+                                    onClick={() => removeReply(reply)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </ScrollArea>
+                        <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+                          <Input
+                            value={newTemplate}
+                            onChange={(event) => setNewTemplate(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                addReply(newTemplate);
+                                setNewTemplate('');
+                              }
+                            }}
+                            placeholder={t('newTemplatePlaceholder')}
+                            className="h-8 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label={t('add')}
+                            disabled={!newTemplate.trim()}
+                            onClick={() => {
+                              addReply(newTemplate);
+                              setNewTemplate('');
+                            }}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </Popover>
+
+                      <Popover
+                        open={emojiOpen}
+                        onClose={() => setEmojiOpen(false)}
+                        align="left"
+                        trigger={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={cn('h-8 w-8', emojiOpen && 'bg-muted text-primary')}
+                            aria-label={t('emoji')}
+                            onClick={() => setEmojiOpen((value) => !value)}
+                            disabled={!selectedConversation.canReply}
+                          >
+                            <Smile className="h-4 w-4" />
+                          </Button>
+                        }
+                      >
+                        <div className="grid grid-cols-6 gap-1 p-1">
+                          {EMOJI_SET.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              className="flex h-9 w-9 items-center justify-center rounded-lg text-lg transition hover:bg-muted"
+                              onClick={() => {
+                                insertAtCursor(emoji);
+                                setEmojiOpen(false);
+                              }}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </Popover>
+
+                      <span className="ml-auto text-[11px] tabular-nums text-slate-400">
+                        {draft.length}/1000
+                      </span>
+                    </div>
+
                     <div className="flex items-end gap-2">
                       <Textarea
                         ref={textareaRef}
@@ -1530,12 +1968,12 @@ export default function MessagesPage() {
                           ? t('instagramMessagePlaceholder')
                           : t('replyWindowClosed')}
                         disabled={!selectedConversation.canReply || sendMessage.isPending}
-                        className="max-h-40 min-h-[44px] flex-1 resize-none"
+                        className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl"
                         maxLength={1000}
                         aria-label={t('instagramMessagePlaceholder')}
                       />
                       <Button
-                        className="h-11 w-11 shrink-0 p-0"
+                        className="h-11 w-11 shrink-0 rounded-xl p-0 shadow-primary"
                         onClick={submitMessage}
                         disabled={!draft.trim() || !selectedConversation.canReply || sendMessage.isPending}
                         aria-label={t('sendMessage')}
@@ -1543,7 +1981,8 @@ export default function MessagesPage() {
                         {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       </Button>
                     </div>
-                    <p className="mt-2 text-xs text-slate-400">
+                    <p className="mt-2 flex items-center gap-1 text-xs text-slate-400">
+                      <CornerDownLeft className="h-3 w-3" />
                       {t('instagramReplyPolicyHint')}
                     </p>
                   </div>
@@ -1551,8 +1990,10 @@ export default function MessagesPage() {
               ) : (
                 <div className="flex flex-1 items-center justify-center p-8 text-center text-slate-500">
                   <div>
-                    <MessageCircle className="mx-auto mb-3 h-9 w-9 text-slate-400" />
-                    {t('selectConversation')}
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted text-slate-400">
+                      <MessageCircle className="h-8 w-8" />
+                    </div>
+                    <p className="mt-4 font-medium">{t('selectConversation')}</p>
                   </div>
                 </div>
               )}
@@ -1576,7 +2017,7 @@ export default function MessagesPage() {
                 <LeadPanel
                   leadId={selectedConversation?.leadId}
                   conversation={selectedConversation}
-                  workspaceData={workspaceQuery.data}
+                  workspaceData={queryClient.getQueryData(['/api/academy/workspaces/sales']) as SalesWorkspaceData | undefined}
                   statusName={statusName}
                   onCollapsedChange={() => setLeadCollapsed(true)}
                   onChanged={() => {

@@ -1073,6 +1073,25 @@ export const translations = {
     en: 'Search dialog, lead, or message',
     ru: 'Поиск диалога, лида или сообщения',
   },
+  searchInConversation: {
+    en: 'Search in this conversation',
+    ru: 'Поиск в этом диалоге',
+  },
+  quickReplies: {
+    en: 'Quick replies',
+    ru: 'Быстрые ответы',
+  },
+  noQuickReplies: {
+    en: 'No saved replies yet',
+    ru: 'Пока нет сохранённых ответов',
+  },
+  newTemplatePlaceholder: {
+    en: 'Add a reply and press Enter',
+    ru: 'Добавьте ответ и нажмите Enter',
+  },
+  emoji: { en: 'Emoji', ru: 'Эмодзи' },
+  copy: { en: 'Copy', ru: 'Копировать' },
+  add: { en: 'Add', ru: 'Добавить' },
   instagramSendFailed: {
     en: 'Instagram could not send the message.',
     ru: 'Instagram не смог отправить сообщение.',

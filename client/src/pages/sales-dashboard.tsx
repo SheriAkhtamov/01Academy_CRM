@@ -48,6 +48,7 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { ceoCopy } from '@/components/ui/ceo-copy';
+import { contactChannelLabelKey, leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -92,6 +93,7 @@ interface Lead {
   schoolName?: string;
   sourceId?: number;
   sourceName?: string;
+  sourceChannel?: string | null;
   statusCode: string;
   managerId?: number | null;
   managerName?: string | null;
@@ -617,24 +619,25 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       return;
     }
     if (action === 'call') {
-      if (!lead.phone) {
+      const phone = primaryVisibleLeadPhone(lead);
+      if (!phone) {
         toast({ title: t('phoneNotProvided'), variant: 'destructive' });
         return;
       }
-      window.location.href = `tel:${lead.phone.replace(/[^\d+]/g, '')}`;
+      window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
       return;
     }
     if (action === 'message') {
-      const href = lead.messenger?.startsWith('@')
-        ? `https://t.me/${lead.messenger.slice(1)}`
-        : lead.phone
-          ? `https://wa.me/${lead.phone.replace(/\D/g, '')}`
-          : null;
-      if (!href) {
+      const target = leadMessageTarget(lead);
+      if (!target) {
         toast({ title: t('contactMethodNotProvided'), variant: 'destructive' });
         return;
       }
-      window.open(href, '_blank', 'noopener,noreferrer');
+      if (target.external) {
+        window.open(target.href, '_blank', 'noopener,noreferrer');
+      } else {
+        setLocation(target.href);
+      }
       return;
     }
     if (action === 'qualify') {
@@ -646,7 +649,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
       return;
     }
-  }, [openLead, t, toast, updateLead]);
+  }, [openLead, setLocation, t, toast, updateLead]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
@@ -1122,7 +1125,7 @@ function ArchiveTab({
       render: (lead: Lead) => (
         <div>
           <div className="font-medium text-slate-900">{lead.contactName}</div>
-          <div className="text-xs text-slate-500">{lead.phoneNumbers?.[0] ?? lead.phone ?? lead.messenger ?? t('noData')}</div>
+          <div className="text-xs text-slate-500">{leadContactSummary(lead, t('noData'))}</div>
         </div>
       ),
     },

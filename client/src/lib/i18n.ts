@@ -308,6 +308,7 @@ export const translations = {
   systemStatistics: { en: 'System Statistics', ru: 'Системная статистика' },
   teacher: { en: 'Teacher', ru: 'Преподаватель' },
   telegramWhatsapp: { en: 'Telegram/WhatsApp', ru: 'Telegram/WhatsApp' },
+  instagramContactChannel: { en: 'Instagram', ru: 'Instagram' },
   thisActionCannotBeUndone: { en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' },
   totalUsers: { en: 'Total Users', ru: 'Всего пользователей' },
   typeMessage: { en: 'Type a message...', ru: 'Напишите сообщение...' },
@@ -999,6 +1000,18 @@ export const translations = {
   transferLead: { en: 'Transfer lead', ru: 'Передать лида' },
 
   // UX improvements — Instagram lead source and sales inbox
+  allConversations: {
+    en: 'All',
+    ru: 'Все',
+  },
+  canReplyConversations: {
+    en: 'Open',
+    ru: 'Открытые',
+  },
+  closedConversations: {
+    en: 'Closed',
+    ru: 'Закрытые',
+  },
   instagramAccountDisconnected: {
     en: 'The Instagram account is disconnected.',
     ru: 'Instagram-аккаунт отключён.',
@@ -1056,6 +1069,10 @@ export const translations = {
     en: 'Messages are sent from the connected Instagram account. Enter sends; Shift+Enter adds a new line.',
     ru: 'Сообщения отправляются от подключённого Instagram-аккаунта. Enter — отправить, Shift+Enter — новая строка.',
   },
+  instagramSearchPlaceholder: {
+    en: 'Search dialog, lead, or message',
+    ru: 'Поиск диалога, лида или сообщения',
+  },
   instagramSendFailed: {
     en: 'Instagram could not send the message.',
     ru: 'Instagram не смог отправить сообщение.',
@@ -1068,7 +1085,39 @@ export const translations = {
     en: 'Fill integrations.instagram in config/app.config.json.',
     ru: 'Заполните integrations.instagram в config/app.config.json.',
   },
+  instagramSync: {
+    en: 'Sync history',
+    ru: 'Синхронизировать историю',
+  },
+  instagramSyncComplete: {
+    en: 'Instagram history synced',
+    ru: 'История Instagram синхронизирована',
+  },
+  instagramSyncFailed: {
+    en: 'Instagram history sync failed',
+    ru: 'Не удалось синхронизировать Instagram',
+  },
+  instagramSyncing: {
+    en: 'Syncing...',
+    ru: 'Синхронизация...',
+  },
+  instagramSyncSummary: {
+    en: 'Conversations: {conversations}, new messages: {messages}, new leads: {leads}.',
+    ru: 'Диалогов: {conversations}, новых сообщений: {messages}, новых лидов: {leads}.',
+  },
   instagramUser: { en: 'Instagram user', ru: 'Пользователь Instagram' },
+  leadCard: {
+    en: 'Lead card',
+    ru: 'Карточка лида',
+  },
+  collapseLeadCard: {
+    en: 'Collapse lead card',
+    ru: 'Свернуть карточку лида',
+  },
+  expandLeadCard: {
+    en: 'Expand lead card',
+    ru: 'Развернуть карточку лида',
+  },
   loginWithInstagram: {
     en: 'Log in with Instagram',
     ru: 'Войти через Instagram',
@@ -1094,6 +1143,14 @@ export const translations = {
     ru: 'Выберите диалог',
   },
   sendMessage: { en: 'Send message', ru: 'Отправить сообщение' },
+  openPipeline: {
+    en: 'Open in pipeline',
+    ru: 'Открыть в воронке',
+  },
+  unreadConversations: {
+    en: 'Unread',
+    ru: 'Новые',
+  },
 
   // UX improvements — administration dashboard
   adminDashboardTitle: { en: 'Dashboard', ru: 'Дашборд' },

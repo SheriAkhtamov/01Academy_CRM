@@ -9,6 +9,7 @@ import {
   disconnectInstagramAccount,
   exchangeInstagramAuthorizationCode,
   getInstagramIntegrationConfig,
+  importInstagramConversationHistory,
   listInstagramAccounts,
   listInstagramConversations,
   listInstagramMessages,
@@ -177,6 +178,20 @@ router.get('/conversations', async (req, res) => {
   } catch (error) {
     logger.error('Failed to list Instagram conversations', { userId: req.user?.id, error });
     res.status(500).json({ error: 'failedToLoadData' });
+  }
+});
+
+router.post('/conversations/sync', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  try {
+    res.json(await importInstagramConversationHistory(req.user!.id));
+  } catch (error: any) {
+    logger.error('Failed to sync Instagram conversations', {
+      userId: req.user?.id,
+      error,
+      response: error?.instagramResponse,
+    });
+    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'instagramSyncFailed' });
   }
 });
 

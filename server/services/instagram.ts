@@ -31,6 +31,63 @@ type InstagramProfile = {
   profile_picture_url?: string;
 };
 
+type InstagramGraphListResponse<T> = {
+  data?: T[];
+  paging?: {
+    next?: string;
+  };
+};
+
+type InstagramGraphParticipant = {
+  id?: string;
+  username?: string;
+  name?: string;
+  profile_pic?: string;
+  profile_picture_url?: string;
+};
+
+type InstagramGraphMessage = {
+  id?: string;
+  created_time?: string;
+  from?: InstagramGraphParticipant;
+  to?: {
+    data?: InstagramGraphParticipant[];
+  } | InstagramGraphParticipant;
+  message?: string;
+  attachments?: {
+    data?: any[];
+  } | any[];
+  shares?: {
+    data?: any[];
+  } | any[];
+  sticker?: string;
+};
+
+type InstagramGraphConversation = {
+  id: string;
+  updated_time?: string;
+  participants?: InstagramGraphListResponse<InstagramGraphParticipant>;
+  messages?: InstagramGraphListResponse<InstagramGraphMessage>;
+};
+
+type InstagramImportStats = {
+  accounts: number;
+  conversations: number;
+  conversationsCreated: number;
+  messages: number;
+  leadsCreated: number;
+  skipped: number;
+  errors: number;
+};
+
+type EnsureLeadOptions = {
+  createTask?: boolean;
+  notify?: boolean;
+  leadComment?: string;
+  stageComment?: string;
+  assignmentComment?: string;
+};
+
 const INSTAGRAM_SCOPES = [
   'instagram_business_basic',
   'instagram_business_manage_comments',
@@ -43,6 +100,7 @@ const INSTAGRAM_WEBHOOK_FIELDS = [
   'message_reactions',
 ];
 const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
+const INSTAGRAM_FETCH_TIMEOUT_MS = 30_000;
 
 let broadcastToClients: InstagramBroadcast = () => undefined;
 
@@ -144,7 +202,25 @@ export const buildInstagramAuthorizationUrl = (state: string, redirectUri = getI
 };
 
 const fetchInstagramJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(url, init);
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), INSTAGRAM_FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      signal: init?.signal ?? timeoutController.signal,
+    });
+  } catch (error: any) {
+    const message = error?.name === 'AbortError'
+      ? 'Instagram API request timed out'
+      : error?.message || 'Instagram API request failed';
+    throw Object.assign(new Error(message), {
+      statusCode: 502,
+      cause: error,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   const raw = await response.text();
   let body: any = null;
   try {
@@ -156,11 +232,152 @@ const fetchInstagramJson = async <T>(url: string, init?: RequestInit): Promise<T
   if (!response.ok || body?.error) {
     const message = body?.error?.message || body?.error_message || raw || `Instagram API ${response.status}`;
     throw Object.assign(new Error(message), {
-      statusCode: response.status >= 400 && response.status < 500 ? 409 : 502,
+      statusCode: body?.error?.code === 4
+        ? 429
+        : response.status >= 400 && response.status < 500
+          ? 409
+          : 502,
       instagramResponse: body,
     });
   }
   return body as T;
+};
+
+const isInstagramRateLimitError = (error: any) =>
+  error?.statusCode === 429
+  || error?.instagramResponse?.error?.code === 4
+  || String(error?.message ?? '').toLowerCase().includes('request limit');
+
+const fetchInstagramPages = async <T>(initialUrl: string, maxPages = 100) => {
+  const items: T[] = [];
+  let nextUrl: string | undefined = initialUrl;
+  let page = 0;
+
+  while (nextUrl && page < maxPages) {
+    const body: InstagramGraphListResponse<T> = await fetchInstagramJson<InstagramGraphListResponse<T>>(nextUrl);
+    items.push(...(body.data ?? []));
+    nextUrl = body.paging?.next;
+    page += 1;
+  }
+
+  return items;
+};
+
+const normalizeInstagramUsername = (value: unknown) =>
+  String(value ?? '').trim().replace(/^@+/, '').toLowerCase();
+
+const parseInstagramDate = (value: unknown) => {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isFinite(date.getTime()) ? date : null;
+};
+
+const maxInstagramDate = (dates: Array<Date | null>) => {
+  const timestamp = dates.reduce((latest, date) => {
+    if (!date) return latest;
+    return Math.max(latest, date.getTime());
+  }, 0);
+  return timestamp > 0 ? new Date(timestamp) : null;
+};
+
+const getGraphParticipantList = (participants: InstagramGraphConversation['participants']) =>
+  Array.isArray(participants?.data) ? participants.data : [];
+
+const getGraphRecipientList = (message: InstagramGraphMessage) => {
+  const to = message.to as any;
+  if (Array.isArray(to?.data)) return to.data as InstagramGraphParticipant[];
+  if (to?.id || to?.username) return [to as InstagramGraphParticipant];
+  return [];
+};
+
+const isAccountParticipant = (participant: InstagramGraphParticipant | undefined, account: InstagramAccountRow) => {
+  if (!participant) return false;
+  const participantId = String(participant.id ?? '');
+  return participantId === String(account.ig_user_id)
+    || normalizeInstagramUsername(participant.username) === normalizeInstagramUsername(account.username);
+};
+
+const findConversationParticipant = (
+  conversation: InstagramGraphConversation,
+  messages: InstagramGraphMessage[],
+  account: InstagramAccountRow,
+) => {
+  const explicitParticipant = getGraphParticipantList(conversation.participants)
+    .find((participant) => !isAccountParticipant(participant, account));
+  if (explicitParticipant?.id) return explicitParticipant;
+
+  for (const message of messages) {
+    if (message.from?.id && !isAccountParticipant(message.from, account)) {
+      return message.from;
+    }
+    const recipient = getGraphRecipientList(message)
+      .find((participant) => participant.id && !isAccountParticipant(participant, account));
+    if (recipient?.id) return recipient;
+  }
+
+  return explicitParticipant ?? null;
+};
+
+const extractImportedMessageContent = (message: InstagramGraphMessage) => {
+  if (typeof message.message === 'string' && message.message.trim()) {
+    return { content: message.message.trim(), messageType: 'text' };
+  }
+
+  const attachmentList = Array.isArray(message.attachments)
+    ? message.attachments
+    : Array.isArray(message.attachments?.data)
+      ? message.attachments.data
+      : [];
+  const attachment = attachmentList[0];
+  if (attachment) {
+    const type = String(attachment.type || 'attachment');
+    const url = attachment.payload?.url || attachment.url;
+    return {
+      content: url ? `[${type}] ${url}` : `[${type}]`,
+      messageType: type,
+    };
+  }
+
+  const shareList = Array.isArray(message.shares)
+    ? message.shares
+    : Array.isArray(message.shares?.data)
+      ? message.shares.data
+      : [];
+  const share = shareList[0];
+  if (share) {
+    const link = share.link || share.url;
+    return {
+      content: link ? `[share] ${link}` : '[share]',
+      messageType: 'share',
+    };
+  }
+
+  if (message.sticker) {
+    return { content: `[sticker] ${message.sticker}`, messageType: 'sticker' };
+  }
+
+  return { content: '[Instagram message]', messageType: 'unknown' };
+};
+
+const resolveImportedMessageParties = (
+  message: InstagramGraphMessage,
+  account: InstagramAccountRow,
+  participantIgsid: string,
+) => {
+  const sender = message.from;
+  const recipients = getGraphRecipientList(message);
+  const outbound = isAccountParticipant(sender, account);
+  const senderIgsid = String(sender?.id ?? (outbound ? account.ig_user_id : participantIgsid));
+  const recipient = outbound
+    ? recipients.find((item) => !isAccountParticipant(item, account))
+    : recipients.find((item) => isAccountParticipant(item, account)) ?? recipients[0];
+  const recipientIgsid = String(recipient?.id ?? (outbound ? participantIgsid : account.ig_user_id));
+
+  return {
+    direction: outbound ? 'outbound' : 'inbound',
+    senderIgsid,
+    recipientIgsid,
+  };
 };
 
 const subscribeInstagramAccount = async (igUserId: string, accessToken: string) => {
@@ -434,10 +651,11 @@ const ensureLeadForConversation = async (
   conversation: any,
   participantIgsid: string,
   profile: InstagramProfile,
+  options: EnsureLeadOptions = {},
 ) => {
   if (conversation.lead_id) {
     const existing = await client.query(
-      `SELECT id, manager_id FROM academy_leads WHERE id = $1`,
+      `SELECT id, manager_id, false AS created_lead FROM academy_leads WHERE id = $1`,
       [conversation.lead_id],
     );
     if (existing.rows[0]) return existing.rows[0];
@@ -445,7 +663,7 @@ const ensureLeadForConversation = async (
 
   const syntheticPhone = `instagram:${participantIgsid}`.slice(0, 50);
   const existing = await client.query(
-    `SELECT id, manager_id FROM academy_leads WHERE phone = $1 LIMIT 1`,
+    `SELECT id, manager_id, false AS created_lead FROM academy_leads WHERE phone = $1 LIMIT 1`,
     [syntheticPhone],
   );
   if (existing.rows[0]) {
@@ -467,14 +685,14 @@ const ensureLeadForConversation = async (
     `INSERT INTO academy_leads
       (contact_name, phone, messenger, source_id, status_code, manager_id, language, comment, created_by)
      VALUES ($1,$2,$3,$4,'new_request',$5,'ru',$6,$7)
-     RETURNING id, manager_id`,
+     RETURNING id, manager_id, true AS created_lead`,
     [
       contactName,
       syntheticPhone,
       messenger,
       account.source_id,
       managerId,
-      'Создан автоматически из нового диалога Instagram.',
+      options.leadComment ?? 'Создан автоматически из нового диалога Instagram.',
       systemUserId,
     ],
   );
@@ -487,27 +705,33 @@ const ensureLeadForConversation = async (
   await client.query(
     `INSERT INTO academy_lead_stage_history
       (lead_id, from_status_code, to_status_code, changed_by, comment)
-     VALUES ($1,NULL,'new_request',$2,'Instagram Direct')`,
-    [lead.id, systemUserId],
+     VALUES ($1,NULL,'new_request',$2,$3)`,
+    [lead.id, systemUserId, options.stageComment ?? 'Instagram Direct'],
   );
   await client.query(
     `INSERT INTO academy_lead_assignment_history
       (lead_id, from_manager_id, to_manager_id, changed_by, comment)
-     VALUES ($1,NULL,$2,$3,'Автоматическое распределение лида из Instagram')`,
-    [lead.id, managerId, systemUserId],
+     VALUES ($1,NULL,$2,$3,$4)`,
+    [lead.id, managerId, systemUserId, options.assignmentComment ?? 'Автоматическое распределение лида из Instagram'],
   );
-  await client.query(
-    `INSERT INTO academy_tasks
-      (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-     VALUES ('Ответить на сообщение в Instagram','Новый лид написал в Direct. Ответить в течение 15 минут.',$1,NOW() + INTERVAL '15 minutes','lead',$2,'new')`,
-    [managerId, lead.id],
-  );
-  await client.query(
-    `INSERT INTO notifications
-      (user_id, type, title, message, related_entity_type, related_entity_id)
-     VALUES ($1,'instagram_lead','Новый лид из Instagram',$2,'lead',$3)`,
-    [managerId, `${contactName} написал(а) в Instagram Direct.`, lead.id],
-  );
+
+  if (options.createTask !== false) {
+    await client.query(
+      `INSERT INTO academy_tasks
+        (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
+       VALUES ('Ответить на сообщение в Instagram','Новый лид написал в Direct. Ответить в течение 15 минут.',$1,NOW() + INTERVAL '15 minutes','lead',$2,'new')`,
+      [managerId, lead.id],
+    );
+  }
+
+  if (options.notify !== false) {
+    await client.query(
+      `INSERT INTO notifications
+        (user_id, type, title, message, related_entity_type, related_entity_id)
+       VALUES ($1,'instagram_lead','Новый лид из Instagram',$2,'lead',$3)`,
+      [managerId, `${contactName} написал(а) в Instagram Direct.`, lead.id],
+    );
+  }
 
   return lead;
 };
@@ -638,7 +862,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
       },
       audienceUserIds: result.managerId ? [result.managerId] : undefined,
     });
-    if (!outbound && result.lead?.id) {
+    if (!outbound && result.lead?.createdLead) {
       broadcastToClients({
         type: 'ACADEMY_LEAD_CREATED',
         data: { id: result.lead.id },
@@ -679,6 +903,391 @@ export const processInstagramWebhook = async (payload: any) => {
     processed,
   });
   return { processed };
+};
+
+const emptyImportStats = (): InstagramImportStats => ({
+  accounts: 0,
+  conversations: 0,
+  conversationsCreated: 0,
+  messages: 0,
+  leadsCreated: 0,
+  skipped: 0,
+  errors: 0,
+});
+
+const mergeImportStats = (target: InstagramImportStats, source: InstagramImportStats) => {
+  target.accounts += source.accounts;
+  target.conversations += source.conversations;
+  target.conversationsCreated += source.conversationsCreated;
+  target.messages += source.messages;
+  target.leadsCreated += source.leadsCreated;
+  target.skipped += source.skipped;
+  target.errors += source.errors;
+};
+
+const buildConversationListUrl = (account: InstagramAccountRow, accessToken: string, useMeEndpoint = false) => {
+  const config = instagramConfig();
+  const nodeId = useMeEndpoint ? 'me' : account.ig_user_id;
+  const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${nodeId}/conversations`);
+  url.searchParams.set('platform', 'instagram');
+  url.searchParams.set('fields', 'id,updated_time,participants');
+  url.searchParams.set('limit', '100');
+  url.searchParams.set('access_token', accessToken);
+  return url.toString();
+};
+
+const fetchInstagramConversationSummaries = async (
+  account: InstagramAccountRow,
+  accessToken: string,
+) => {
+  try {
+    return await fetchInstagramPages<InstagramGraphConversation>(
+      buildConversationListUrl(account, accessToken),
+    );
+  } catch (error) {
+    if (isInstagramRateLimitError(error)) {
+      throw error;
+    }
+    logger.warn('Failed to import Instagram conversations by IG user id, retrying with /me', {
+      accountId: account.id,
+      igUserId: account.ig_user_id,
+      error,
+    });
+    return fetchInstagramPages<InstagramGraphConversation>(
+      buildConversationListUrl(account, accessToken, true),
+    );
+  }
+};
+
+const fetchInstagramConversationDetail = async (
+  conversationId: string,
+  accessToken: string,
+) => {
+  const config = instagramConfig();
+  const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${conversationId}`);
+  url.searchParams.set(
+    'fields',
+    'id,updated_time,participants,messages.limit(100){id,created_time,from,to,message,attachments,shares,sticker}',
+  );
+  url.searchParams.set('access_token', accessToken);
+  return fetchInstagramJson<InstagramGraphConversation>(url.toString());
+};
+
+const getImportedMessageKey = (
+  conversationId: string,
+  message: InstagramGraphMessage,
+  index: number,
+) => String(
+  message.id
+  ?? `ig-import:${conversationId}:${message.created_time ?? 'unknown'}:${message.from?.id ?? 'unknown'}:${index}`,
+).slice(0, 255);
+
+const fetchInstagramConversationMessages = async (
+  conversationId: string,
+  accessToken: string,
+  embeddedMessages?: InstagramGraphListResponse<InstagramGraphMessage>,
+) => {
+  const byKey = new Map<string, InstagramGraphMessage>();
+  const appendMessages = (messages: InstagramGraphMessage[]) => {
+    messages.forEach((message, index) => {
+      byKey.set(getImportedMessageKey(conversationId, message, byKey.size + index), message);
+    });
+  };
+
+  appendMessages(embeddedMessages?.data ?? []);
+  if (embeddedMessages?.paging?.next) {
+    appendMessages(await fetchInstagramPages<InstagramGraphMessage>(embeddedMessages.paging.next));
+  }
+
+  if (byKey.size === 0) {
+    const config = instagramConfig();
+    const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${conversationId}/messages`);
+    url.searchParams.set('fields', 'id,created_time,from,to,message,attachments,shares,sticker');
+    url.searchParams.set('limit', '100');
+    url.searchParams.set('access_token', accessToken);
+    appendMessages(await fetchInstagramPages<InstagramGraphMessage>(url.toString()));
+  }
+
+  return [...byKey.values()].sort((a, b) => {
+    const aTime = parseInstagramDate(a.created_time)?.getTime() ?? 0;
+    const bTime = parseInstagramDate(b.created_time)?.getTime() ?? 0;
+    return aTime - bTime;
+  });
+};
+
+const upsertImportedInstagramConversation = async (
+  account: InstagramAccountRow,
+  conversation: InstagramGraphConversation,
+  messages: InstagramGraphMessage[],
+  profile: InstagramProfile,
+  participantIgsid: string,
+) => {
+  const stats = emptyImportStats();
+  const importedMessages = messages.map((message, index) => {
+    const { direction, senderIgsid, recipientIgsid } = resolveImportedMessageParties(
+      message,
+      account,
+      participantIgsid,
+    );
+    const { content, messageType } = extractImportedMessageContent(message);
+    const createdAt = parseInstagramDate(message.created_time)
+      ?? parseInstagramDate(conversation.updated_time)
+      ?? new Date();
+
+    return {
+      externalMessageId: getImportedMessageKey(conversation.id, message, index),
+      direction,
+      senderIgsid,
+      recipientIgsid,
+      content,
+      messageType,
+      createdAt,
+      rawPayload: message,
+    };
+  });
+  const lastMessageAt = maxInstagramDate([
+    ...importedMessages.map((message) => message.createdAt),
+    parseInstagramDate(conversation.updated_time),
+  ]);
+  const lastInboundAt = maxInstagramDate(
+    importedMessages
+      .filter((message) => message.direction === 'inbound')
+      .map((message) => message.createdAt),
+  );
+  const lastOutboundAt = maxInstagramDate(
+    importedMessages
+      .filter((message) => message.direction === 'outbound')
+      .map((message) => message.createdAt),
+  );
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const conversationResult = await client.query(
+      `INSERT INTO instagram_conversations
+        (account_id, participant_igsid, participant_username, participant_name,
+         participant_profile_picture_url, last_message_at, last_inbound_at, last_outbound_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (account_id, participant_igsid) DO UPDATE SET
+         participant_username = COALESCE(EXCLUDED.participant_username, instagram_conversations.participant_username),
+         participant_name = COALESCE(EXCLUDED.participant_name, instagram_conversations.participant_name),
+         participant_profile_picture_url = COALESCE(EXCLUDED.participant_profile_picture_url, instagram_conversations.participant_profile_picture_url),
+         last_message_at = CASE
+           WHEN instagram_conversations.last_message_at IS NULL THEN EXCLUDED.last_message_at
+           WHEN EXCLUDED.last_message_at IS NULL THEN instagram_conversations.last_message_at
+           ELSE GREATEST(instagram_conversations.last_message_at, EXCLUDED.last_message_at)
+         END,
+         last_inbound_at = CASE
+           WHEN instagram_conversations.last_inbound_at IS NULL THEN EXCLUDED.last_inbound_at
+           WHEN EXCLUDED.last_inbound_at IS NULL THEN instagram_conversations.last_inbound_at
+           ELSE GREATEST(instagram_conversations.last_inbound_at, EXCLUDED.last_inbound_at)
+         END,
+         last_outbound_at = CASE
+           WHEN instagram_conversations.last_outbound_at IS NULL THEN EXCLUDED.last_outbound_at
+           WHEN EXCLUDED.last_outbound_at IS NULL THEN instagram_conversations.last_outbound_at
+           ELSE GREATEST(instagram_conversations.last_outbound_at, EXCLUDED.last_outbound_at)
+         END,
+         updated_at = NOW()
+       RETURNING *, (xmax = 0) AS inserted`,
+      [
+        account.id,
+        participantIgsid,
+        profile.username ?? null,
+        profile.name ?? null,
+        profile.profile_pic ?? profile.profile_picture_url ?? null,
+        lastMessageAt,
+        lastInboundAt,
+        lastOutboundAt,
+      ],
+    );
+    const conversationRow = conversationResult.rows[0];
+    stats.conversations += 1;
+    if (conversationRow?.inserted) stats.conversationsCreated += 1;
+
+    const lead = await ensureLeadForConversation(
+      client,
+      account,
+      conversationRow,
+      participantIgsid,
+      profile,
+      {
+        createTask: false,
+        notify: false,
+        leadComment: 'Импортирован из истории Instagram Direct.',
+        stageComment: 'Импорт истории Instagram Direct',
+        assignmentComment: 'Автоматическое распределение лида из импортированной истории Instagram',
+      },
+    );
+    if (lead?.created_lead) stats.leadsCreated += 1;
+
+    for (const message of importedMessages) {
+      const inserted = await client.query(
+        `INSERT INTO instagram_messages
+          (conversation_id, external_message_id, direction, sender_igsid, recipient_igsid,
+           content, message_type, status, raw_payload, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (external_message_id) DO NOTHING
+         RETURNING id`,
+        [
+          conversationRow.id,
+          message.externalMessageId,
+          message.direction,
+          message.senderIgsid,
+          message.recipientIgsid,
+          message.content,
+          message.messageType,
+          message.direction === 'outbound' ? 'sent' : 'received',
+          JSON.stringify(message.rawPayload),
+          message.createdAt,
+        ],
+      );
+      if (inserted.rows[0]) stats.messages += 1;
+    }
+
+    await client.query(
+      `UPDATE instagram_accounts
+       SET last_webhook_at = COALESCE(last_webhook_at, NOW()),
+           last_error = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [account.id],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return stats;
+};
+
+const importInstagramAccountHistory = async (
+  account: InstagramAccountRow,
+  requestedBy: number,
+) => {
+  const stats = emptyImportStats();
+  stats.accounts = 1;
+
+  if (!account.access_token_encrypted) {
+    stats.skipped += 1;
+    return stats;
+  }
+
+  const accessToken = decryptInstagramToken(account.access_token_encrypted);
+  let conversations: InstagramGraphConversation[];
+  try {
+    conversations = await fetchInstagramConversationSummaries(account, accessToken);
+  } catch (error) {
+    if (isInstagramRateLimitError(error)) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+        partialStats: stats,
+      });
+    }
+    throw error;
+  }
+
+  for (const conversationSummary of conversations) {
+    try {
+      const conversation = await fetchInstagramConversationDetail(conversationSummary.id, accessToken);
+      const messages = await fetchInstagramConversationMessages(
+        conversation.id,
+        accessToken,
+        conversation.messages,
+      );
+      const participant = findConversationParticipant(conversation, messages, account);
+      const participantIgsid = String(participant?.id ?? '');
+      if (!participantIgsid || participantIgsid === String(account.ig_user_id)) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      const profileNeedsFetch = !participant?.username || !participant?.name;
+      const fetchedProfile = profileNeedsFetch
+        ? await getParticipantProfile(participantIgsid, accessToken)
+        : {};
+      const profile: InstagramProfile = {
+        ...fetchedProfile,
+        id: participantIgsid,
+        username: participant?.username ?? fetchedProfile.username,
+        name: participant?.name ?? fetchedProfile.name,
+        profile_pic: participant?.profile_pic ?? fetchedProfile.profile_pic,
+        profile_picture_url: participant?.profile_picture_url ?? fetchedProfile.profile_picture_url,
+      };
+      mergeImportStats(
+        stats,
+        await upsertImportedInstagramConversation(
+          account,
+          conversation,
+          messages,
+          profile,
+          participantIgsid,
+        ),
+      );
+    } catch (error) {
+      if (isInstagramRateLimitError(error)) {
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+          partialStats: stats,
+        });
+      }
+      stats.errors += 1;
+      logger.warn('Failed to import Instagram conversation', {
+        accountId: account.id,
+        igUserId: account.ig_user_id,
+        conversationId: conversationSummary.id,
+        error,
+      });
+    }
+  }
+
+  await logInstagramIntegration('history_import', 'completed', {
+    requestedBy,
+    accountId: account.id,
+    igUserId: account.ig_user_id,
+    stats,
+  });
+
+  return stats;
+};
+
+export const importInstagramConversationHistory = async (requestedBy: number) => {
+  const { rows } = await pool.query<InstagramAccountRow>(
+    `SELECT * FROM instagram_accounts
+     WHERE status = 'connected' AND access_token_encrypted IS NOT NULL
+     ORDER BY id`,
+  );
+  const stats = emptyImportStats();
+
+  for (const account of rows) {
+    try {
+      mergeImportStats(stats, await importInstagramAccountHistory(account, requestedBy));
+    } catch (error: any) {
+      if (error?.partialStats) {
+        mergeImportStats(stats, error.partialStats);
+      } else {
+        stats.accounts += 1;
+      }
+      stats.errors += 1;
+      await pool.query(
+        `UPDATE instagram_accounts SET last_error = $1, updated_at = NOW() WHERE id = $2`,
+        [error?.message ?? String(error), account.id],
+      );
+      logger.error('Failed to import Instagram account history', {
+        accountId: account.id,
+        igUserId: account.ig_user_id,
+        error,
+        response: error?.instagramResponse,
+      });
+    }
+  }
+
+  await logInstagramIntegration('history_import', stats.errors > 0 ? 'partial' : 'completed', stats);
+  broadcastToClients({
+    type: 'INSTAGRAM_CONVERSATION_UPDATED',
+    data: { imported: true, stats },
+  });
+  return stats;
 };
 
 const assertConversationAccess = async (conversationId: number, user: InstagramUser) => {

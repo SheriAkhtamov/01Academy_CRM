@@ -1341,7 +1341,7 @@ const findDuplicate = async (
 
 const getLead = (id: number) =>
   queryOne(
-    `SELECT l.*, c.name AS course_name, s.name AS source_name, sc.name AS school_name,
+    `SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, sc.name AS school_name,
         u.full_name AS manager_name,
         archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')}
@@ -1851,7 +1851,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           ORDER BY g.created_at DESC`),
-    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
+    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
         sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')}
       FROM academy_leads l
@@ -1864,7 +1864,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       ORDER BY l.created_at DESC`, managerParams),
     isTeacherScoped
       ? Promise.resolve([])
-      : query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
+      : query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
           ${leadPhoneNumbersSelect('l')}
         FROM academy_leads l
@@ -2442,7 +2442,7 @@ const buildAdministrationDashboard = async () => {
 const getMarketingWorkspaceDataset = async () => {
   const [sources, leads, students, expenses, referrals] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
-    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name
+    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -3072,7 +3072,7 @@ router.get('/leads', async (req, res) => {
 
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const leads = await query(
-      `SELECT l.*, c.name AS course_name, s.name AS source_name, u.full_name AS manager_name,
+      `SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
           ${leadPhoneNumbersSelect('l')}
        FROM academy_leads l

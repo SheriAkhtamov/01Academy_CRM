@@ -181,6 +181,13 @@ export const exchangeInstagramAuthorizationCode = async (
     throw Object.assign(new Error('instagramIntegrationNotConfigured'), { statusCode: 409 });
   }
 
+  logger.info('Instagram OAuth exchange started', {
+    redirectUri,
+    codeLength: code.length,
+    apiVersion: config.apiVersion,
+    graphApiUrl: config.graphApiUrl,
+  });
+
   const tokenForm = new URLSearchParams();
   tokenForm.set('client_id', config.appId);
   tokenForm.set('client_secret', config.appSecret);
@@ -198,16 +205,31 @@ export const exchangeInstagramAuthorizationCode = async (
       'Content-Type': 'application/x-www-form-urlencoded',
     },
   });
+  logger.info('Instagram OAuth short token exchanged', {
+    hasAccessToken: Boolean(shortToken.access_token),
+    userId: shortToken.user_id ? String(shortToken.user_id) : null,
+  });
 
-  const longTokenUrl = new URL(`${config.graphApiUrl}/access_token`);
-  longTokenUrl.searchParams.set('grant_type', 'ig_exchange_token');
-  longTokenUrl.searchParams.set('client_secret', config.appSecret);
-  longTokenUrl.searchParams.set('access_token', shortToken.access_token);
+  const longTokenForm = new URLSearchParams();
+  longTokenForm.set('grant_type', 'ig_exchange_token');
+  longTokenForm.set('client_secret', config.appSecret);
+  longTokenForm.set('access_token', shortToken.access_token);
   const longToken = await fetchInstagramJson<{
     access_token: string;
     token_type?: string;
     expires_in?: number;
-  }>(longTokenUrl.toString());
+  }>(`${config.graphApiUrl}/access_token`, {
+    method: 'POST',
+    body: longTokenForm,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  });
+  logger.info('Instagram OAuth long token exchanged', {
+    tokenType: longToken.token_type ?? null,
+    expiresIn: longToken.expires_in ?? null,
+    hasAccessToken: Boolean(longToken.access_token),
+  });
 
   const profileUrl = new URL(`${config.graphApiUrl}/${config.apiVersion}/me`);
   profileUrl.searchParams.set('fields', 'user_id,username');
@@ -218,8 +240,10 @@ export const exchangeInstagramAuthorizationCode = async (
     throw Object.assign(new Error('instagramAccountIdMissing'), { statusCode: 502 });
   }
   const username = String(profile.username || `instagram_${igUserId}`);
+  logger.info('Instagram OAuth profile loaded', { igUserId, username });
 
   await subscribeInstagramAccount(longToken.access_token);
+  logger.info('Instagram OAuth subscribed account to webhooks', { igUserId });
 
   const client = await pool.connect();
   try {
@@ -276,6 +300,11 @@ export const exchangeInstagramAuthorizationCode = async (
       [JSON.stringify({ igUserId, username, sourceId })],
     );
     await client.query('COMMIT');
+    logger.info('Instagram OAuth account stored', {
+      accountId: account.rows[0]?.id,
+      igUserId,
+      username,
+    });
     return camelize(account.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');

@@ -142,6 +142,10 @@ router.get('/oauth/callback', async (req, res) => {
   } catch (error: any) {
     logger.error('Instagram OAuth callback failed', {
       error,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+      statusCode: error?.statusCode,
       response: error?.instagramResponse,
       savedRedirectUri: oauthState.redirectUri,
       callbackRedirectUri: getCurrentRequestUrlWithoutQuery(req),

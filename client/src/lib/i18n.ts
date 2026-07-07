@@ -1151,6 +1151,26 @@ export const translations = {
     en: 'Unread',
     ru: 'Новые',
   },
+  yesterday: { en: 'Yesterday', ru: 'Вчера' },
+  backToConversations: { en: 'Back to dialogs', ru: 'К диалогам' },
+  jumpToLatest: { en: 'New messages', ru: 'Новые сообщения' },
+  conversationDetails: { en: 'Conversation details', ru: 'Данные диалога' },
+  notLinkedToLead: { en: 'Not linked to a lead', ru: 'Не привязан к лиду' },
+  notLinkedToLeadHint: {
+    en: 'This dialog is not yet linked to a lead in the pipeline. It will be linked automatically after the next sync.',
+    ru: 'Этот диалог ещё не привязан к лиду в воронке. Он привяжется автоматически после следующей синхронизации.',
+  },
+  sendingMessage: { en: 'Sending…', ru: 'Отправка…' },
+  messageFailed: { en: 'Not delivered', ru: 'Не доставлено' },
+  retrySend: { en: 'Retry', ru: 'Повторить' },
+  messagesCount: {
+    en: '{count} dialogs',
+    ru: '{count} диалогов',
+  },
+  openLeadPanel: { en: 'Lead details', ru: 'Карточка лида' },
+  closeLeadPanel: { en: 'Close panel', ru: 'Закрыть панель' },
+  conversationAccount: { en: 'Account', ru: 'Аккаунт' },
+  linkOutbound: { en: 'You', ru: 'Вы' },
 
   // UX improvements — administration dashboard
   adminDashboardTitle: { en: 'Dashboard', ru: 'Дашборд' },

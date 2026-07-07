@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import {
   isInstagramLead,
   isSyntheticInstagramPhone,
@@ -23,11 +25,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/ux/PageHeader';
 import {
   AlertCircle,
+  ArrowDown,
   AtSign,
-  Camera,
-  CheckCircle2,
+  CheckCheck,
+  ChevronLeft,
   Clock3,
   ExternalLink,
+  Info,
   Instagram,
   Loader2,
   MessageCircle,
@@ -39,6 +43,7 @@ import {
   Send,
   UserRound,
   UserRoundCog,
+  X,
 } from 'lucide-react';
 
 interface InstagramConversation {
@@ -78,6 +83,8 @@ interface InstagramMessage {
   sentBy?: number | null;
   createdAt: string;
 }
+
+type ThreadMessage = InstagramMessage & { pending?: boolean; failed?: boolean };
 
 interface LookupOption {
   id: number;
@@ -146,18 +153,6 @@ const emptyLeadDraft: LeadDraft = {
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'IG';
 
-const formatDateTime = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString(undefined, {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
 const compact = (value: string) => value.trim();
 
 const buildLeadDraft = (lead: LeadDetails): LeadDraft => {
@@ -177,33 +172,92 @@ const buildLeadDraft = (lead: LeadDetails): LeadDraft => {
   };
 };
 
+const startOfDay = (value: Date) =>
+  new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+
+const listTimestamp = (value?: string | null, t?: (key: TranslationKey) => string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+  if (diffDays <= 0) return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1 && t) return t('yesterday');
+  if (diffDays < 7) return date.toLocaleDateString(undefined, { weekday: 'short' });
+  return date.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
+};
+
+const daySeparatorLabel = (value: string | undefined, t: (key: TranslationKey) => string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+  if (diffDays === 0) return t('today');
+  if (diffDays === 1) return t('yesterday');
+  const sameYear = new Date().getFullYear() === date.getFullYear();
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+};
+
+const clockTime = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+};
+
+function Highlight({ text, query }: { text: string; query: string }) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(normalized);
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-sm bg-primary/25 px-0.5 text-inherit">{text.slice(idx, idx + normalized.length)}</mark>
+      {text.slice(idx + normalized.length)}
+    </>
+  );
+}
+
 function MessagesSkeleton() {
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-6 lg:p-8">
       <Skeleton className="h-10 w-72" />
-      <div className="grid min-h-[680px] grid-cols-1 gap-4 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
-        <Skeleton className="h-[680px]" />
-        <Skeleton className="h-[680px]" />
-        <Skeleton className="h-[680px]" />
+      <div className="grid h-[calc(100dvh-9rem)] min-h-[620px] grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <Skeleton className="hidden xl:block" />
+        <Skeleton className="hidden xl:block" />
+        <Skeleton className="hidden xl:block" />
       </div>
     </div>
   );
 }
 
+const FILTERS = [
+  { value: 'all', labelKey: 'allConversations' },
+  { value: 'unread', labelKey: 'unreadConversations' },
+  { value: 'reply', labelKey: 'canReplyConversations' },
+  { value: 'closed', labelKey: 'closedConversations' },
+] satisfies { value: ConversationFilter; labelKey: TranslationKey }[];
+
 function LeadPanel({
   leadId,
+  conversation,
   workspaceData,
   statusName,
-  collapsed,
   onCollapsedChange,
   onChanged,
+  onCloseMobile,
 }: {
   leadId?: number | null;
+  conversation?: InstagramConversation | null;
   workspaceData?: SalesWorkspaceData;
   statusName: (code: string) => string;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
+  onCollapsedChange: () => void;
   onChanged: () => void;
+  onCloseMobile: () => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -243,13 +297,6 @@ function LeadPanel({
       hydratedKey.current = leadSnapshotKey;
     }
   }, [lead, leadSnapshotKey]);
-
-  useEffect(() => {
-    if (!leadId) {
-      setDraft(emptyLeadDraft);
-      hydratedKey.current = null;
-    }
-  }, [leadId]);
 
   const baselineDraft = useMemo(() => (lead ? buildLeadDraft(lead) : emptyLeadDraft), [lead]);
   const isDirty = useMemo(
@@ -308,41 +355,86 @@ function LeadPanel({
 
   const patchDraft = (changes: Partial<LeadDraft>) => setDraft((current) => ({ ...current, ...changes }));
 
-  if (collapsed) {
-    return (
-      <aside className="flex border-t border-border bg-background p-2 xl:border-l xl:border-t-0">
+  const Header = (
+    <div className="flex items-center justify-between gap-2 border-b border-border p-4">
+      <div className="flex min-w-0 items-center gap-2">
+        <UserRoundCog className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <p className="truncate text-sm font-semibold text-slate-900">{t('leadCard')}</p>
+      </div>
+      <div className="flex items-center gap-1">
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="mx-auto"
-          aria-label={t('expandLeadCard')}
-          onClick={() => onCollapsedChange(false)}
+          className="xl:hidden"
+          aria-label={t('closeLeadPanel')}
+          onClick={onCloseMobile}
         >
-          <PanelRightOpen className="h-4 w-4" />
+          <X className="h-4 w-4" />
         </Button>
-      </aside>
-    );
-  }
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="hidden xl:inline-flex"
+          aria-label={t('collapseLeadCard')}
+          onClick={onCollapsedChange}
+        >
+          <PanelRightClose className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
 
   if (!leadId) {
+    const participantLabel = conversation?.participantName
+      || conversation?.participantUsername
+      || conversation?.contactName
+      || t('instagramUser');
     return (
-      <aside className="flex min-h-[260px] flex-col border-t border-border bg-muted/20 xl:border-l xl:border-t-0">
-        <div className="flex justify-end p-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={t('collapseLeadCard')}
-            onClick={() => onCollapsedChange(true)}
-          >
-            <PanelRightClose className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="flex flex-1 items-center justify-center p-6 text-center">
-          <div>
-            <UserRound className="mx-auto mb-3 h-9 w-9 text-slate-400" />
-            <p className="text-sm font-medium text-slate-700">{t('selectConversation')}</p>
+      <aside className="flex min-h-0 flex-col border-t border-border bg-muted/20 xl:border-l xl:border-t-0">
+        {Header}
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('conversationDetails')}</p>
+          <div className="rounded-xl border border-border bg-background p-4">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-11 w-11">
+                {conversation?.participantProfilePictureUrl ? (
+                  <AvatarImage src={conversation.participantProfilePictureUrl} alt="" />
+                ) : null}
+                <AvatarFallback>{initials(participantLabel)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">{participantLabel}</p>
+                {conversation?.participantUsername ? (
+                  <p className="truncate text-xs text-slate-500">@{conversation.participantUsername}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <AtSign className="h-3.5 w-3.5 shrink-0" />
+                <span className="shrink-0 font-medium text-slate-400">{t('conversationAccount')}:</span>
+                <span className="truncate">@{conversation?.accountUsername}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={conversation?.canReply ? 'success' : 'secondary'}>
+                  {conversation?.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
+                </Badge>
+                {conversation?.leadId ? <Badge variant="outline">#{conversation.leadId}</Badge> : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4">
+            <div className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-medium text-amber-800">{t('notLinkedToLead')}</p>
+                <p className="mt-1 text-xs text-amber-700">{t('notLinkedToLeadHint')}</p>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -351,49 +443,33 @@ function LeadPanel({
 
   if (leadQuery.isLoading || !lead) {
     return (
-      <aside className="space-y-4 border-t border-border p-4 xl:border-l xl:border-t-0">
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={t('collapseLeadCard')}
-            onClick={() => onCollapsedChange(true)}
-          >
-            <PanelRightClose className="h-4 w-4" />
-          </Button>
+      <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
+        {Header}
+        <div className="space-y-4 p-4">
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-28 w-full" />
         </div>
-        <Skeleton className="h-8 w-44" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-28 w-full" />
       </aside>
     );
   }
 
   if (leadQuery.isError) {
     return (
-      <aside className="border-t border-border p-4 xl:border-l xl:border-t-0">
-        <div className="mb-3 flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={t('collapseLeadCard')}
-            onClick={() => onCollapsedChange(true)}
-          >
-            <PanelRightClose className="h-4 w-4" />
-          </Button>
+      <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
+        {Header}
+        <div className="p-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+            <AlertDescription>
+              <Button className="mt-3" variant="outline" size="sm" onClick={() => leadQuery.refetch()}>
+                {t('retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-          <AlertDescription>
-            <Button className="mt-3" variant="outline" size="sm" onClick={() => leadQuery.refetch()}>
-              {t('retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
       </aside>
     );
   }
@@ -419,15 +495,6 @@ function LeadPanel({
             <a href={`/sales/pipeline?lead=${lead.id}`}>
               <ExternalLink className="h-4 w-4" />
             </a>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={t('collapseLeadCard')}
-            onClick={() => onCollapsedChange(true)}
-          >
-            <PanelRightClose className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -591,8 +658,14 @@ export default function MessagesPage() {
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ConversationFilter>('all');
-  const [leadPanelCollapsed, setLeadPanelCollapsed] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [leadCollapsed, setLeadCollapsed] = useState(false);
+  const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
+  const [mobileLeadOpen, setMobileLeadOpen] = useState(false);
+  const [atBottom, setAtBottom] = useState(true);
+
+  const threadScrollRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const workspaceQuery = useQuery<SalesWorkspaceData>({
     queryKey: ['/api/academy/workspaces/sales'],
@@ -636,43 +709,50 @@ export default function MessagesPage() {
     [conversations, selectedConversationId],
   );
 
+  const messagesKey = useMemo(
+    () => ['/api/instagram/conversations', selectedConversationId, 'messages'] as const,
+    [selectedConversationId],
+  );
+
+  const messagesQuery = useQuery<InstagramMessage[]>({
+    queryKey: messagesKey,
+    queryFn: () => apiRequest('GET', `/api/instagram/conversations/${selectedConversationId}/messages`),
+    enabled: Boolean(selectedConversationId),
+  });
+
+  const messages = useMemo<ThreadMessage[]>(
+    () => (messagesQuery.data ?? []).map((message) => message as ThreadMessage),
+    [messagesQuery.data],
+  );
+
+  // Stable selection: keep the open conversation even if a filter/search hides it,
+  // instead of jumping to the first visible item.
+  useEffect(() => {
+    if (conversations.length === 0) {
+      setSelectedConversationId(null);
+      return;
+    }
+    const exists = conversations.some((conversation) => conversation.id === selectedConversationId);
+    if (!exists) {
+      const target = filteredConversations[0]?.id ?? conversations[0].id;
+      setSelectedConversationId(target);
+    }
+  }, [conversations, filteredConversations, selectedConversationId]);
+
   useEffect(() => {
     if (!requestedLeadId || conversations.length === 0) return;
     const target = conversations.find((conversation) => Number(conversation.leadId) === requestedLeadId);
     if (!target) return;
     setFilter('all');
     setSearch('');
-    setLeadPanelCollapsed(false);
+    setLeadCollapsed(false);
+    setMobileLeadOpen(false);
     if (target.id !== selectedConversationId) {
       setSelectedConversationId(target.id);
     }
-  }, [conversations, requestedLeadId, selectedConversationId]);
-
-  useEffect(() => {
-    if (filteredConversations.length === 0) {
-      setSelectedConversationId(null);
-      return;
-    }
-    if (
-      requestedLeadId
-      && conversations.some((conversation) => Number(conversation.leadId) === requestedLeadId)
-      && !filteredConversations.some((conversation) => Number(conversation.leadId) === requestedLeadId)
-    ) {
-      return;
-    }
-    if (!selectedConversationId || !filteredConversations.some((conversation) => conversation.id === selectedConversationId)) {
-      setSelectedConversationId(filteredConversations[0].id);
-    }
-  }, [conversations, filteredConversations, requestedLeadId, selectedConversationId]);
-
-  const messagesQuery = useQuery<InstagramMessage[]>({
-    queryKey: ['/api/instagram/conversations', selectedConversationId, 'messages'],
-    queryFn: () => apiRequest(
-      'GET',
-      `/api/instagram/conversations/${selectedConversationId}/messages`,
-    ),
-    enabled: Boolean(selectedConversationId),
-  });
+    setMobileView('thread');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations, requestedLeadId]);
 
   const markRead = useMutation({
     mutationFn: (conversationId: number) =>
@@ -688,25 +768,80 @@ export default function MessagesPage() {
     }
   }, [selectedConversation?.unreadCount, selectedConversationId]);
 
+  const getViewport = () => {
+    const root = threadScrollRef.current;
+    if (!root) return null;
+    return root.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement | null;
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    const viewport = getViewport();
+    if (!viewport) return;
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+    setAtBottom(true);
+  };
+
+  const handleThreadScroll = () => {
+    const viewport = getViewport();
+    if (!viewport) return;
+    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    setAtBottom(distance < 80);
+  };
+
+  const messageCount = messages.length;
+  const prevMessageCount = useRef(messageCount);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesQuery.data?.length, selectedConversationId]);
+    if (!selectedConversationId) return;
+    const grew = messageCount > prevMessageCount.current;
+    if (grew && atBottom) {
+      requestAnimationFrame(() => scrollToBottom('auto'));
+    } else if (messageCount === 0) {
+      requestAnimationFrame(() => scrollToBottom('auto'));
+    }
+    prevMessageCount.current = messageCount;
+  }, [messageCount, selectedConversationId, atBottom]);
+
+  useEffect(() => {
+    setAtBottom(true);
+    requestAnimationFrame(() => scrollToBottom('auto'));
+    prevMessageCount.current = messageCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversationId]);
 
   const sendMessage = useMutation({
     mutationFn: (content: string) =>
       apiRequest('POST', `/api/instagram/conversations/${selectedConversationId}/messages`, { content }),
-    onSuccess: (message: InstagramMessage) => {
+    onMutate: (content) => {
+      if (!selectedConversationId) return;
+      const optimistic: ThreadMessage = {
+        id: -Date.now(),
+        conversationId: selectedConversationId,
+        externalMessageId: null,
+        direction: 'outbound',
+        senderIgsid: '',
+        recipientIgsid: '',
+        content,
+        messageType: 'text',
+        status: 'pending',
+        sentBy: null,
+        createdAt: new Date().toISOString(),
+        pending: true,
+      };
       setDraft('');
-      queryClient.setQueryData<InstagramMessage[]>(
-        ['/api/instagram/conversations', selectedConversationId, 'messages'],
-        (previous = []) => previous.some((item) => item.id === message.id)
-          ? previous
-          : [...previous, message],
+      queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) => [...previous, optimistic]);
+    },
+    onSuccess: (message: InstagramMessage) => {
+      queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
+        previous.map((item) => (item.pending ? (message as ThreadMessage) : item)),
       );
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
     onError: (error: Error) => {
+      queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
+        previous.map((item) => (item.pending ? { ...item, pending: false, failed: true } : item)),
+      );
       toast({
         title: t('instagramMessageNotSent'),
         description: error.message || t('instagramSendFailed'),
@@ -714,6 +849,13 @@ export default function MessagesPage() {
       });
     },
   });
+
+  const retryMessage = (content: string) => {
+    queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
+      previous.filter((item) => !(item.failed && item.content === content)),
+    );
+    if (selectedConversationId) sendMessage.mutate(content);
+  };
 
   const syncConversations = useMutation({
     mutationFn: () => apiRequest('POST', '/api/instagram/conversations/sync'),
@@ -740,14 +882,69 @@ export default function MessagesPage() {
     return status?.name ?? code;
   };
 
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
+
+  useEffect(() => {
+    autoResize();
+  }, [draft]);
+
   const submitMessage = () => {
     const content = draft.trim();
     if (!content || !selectedConversationId || !selectedConversation?.canReply) return;
+    if (sendMessage.isPending) return;
     sendMessage.mutate(content);
+  };
+
+  const selectConversation = (id: number) => {
+    setSelectedConversationId(id);
+    if (window.matchMedia('(max-width: 1279px)').matches) {
+      setMobileView('thread');
+    }
+  };
+
+  const handleListKeyDown = (event: React.KeyboardEvent) => {
+    if (filteredConversations.length === 0) return;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const index = filteredConversations.findIndex((c) => c.id === selectedConversationId);
+    let nextIndex = index;
+    if (event.key === 'ArrowDown') {
+      nextIndex = index < 0 ? 0 : Math.min(index + 1, filteredConversations.length - 1);
+    } else {
+      nextIndex = index < 0 ? filteredConversations.length - 1 : Math.max(index - 1, 0);
+    }
+    const next = filteredConversations[nextIndex];
+    if (next) selectConversation(next.id);
   };
 
   const unreadCount = conversations.reduce((count, conversation) => count + (conversation.unreadCount > 0 ? 1 : 0), 0);
   const replyableCount = conversations.filter((conversation) => conversation.canReply).length;
+
+  const groupItems = useMemo(() => {
+    const items: ({ kind: 'date'; id: string; label: string } | { kind: 'message'; id: number; message: ThreadMessage; showTime: boolean })[] = [];
+    let lastDay = '';
+    let lastDirection: string | null = null;
+    let lastTime = 0;
+    for (const message of messages) {
+      const day = (message.createdAt || '').slice(0, 10);
+      if (day && day !== lastDay) {
+        items.push({ kind: 'date', id: `date-${day}`, label: daySeparatorLabel(message.createdAt, t) });
+        lastDay = day;
+        lastDirection = null;
+      }
+      const time = new Date(message.createdAt).getTime();
+      const withinGroup = lastDirection === message.direction && time - lastTime < 5 * 60 * 1000;
+      items.push({ kind: 'message', id: message.id, message, showTime: !withinGroup });
+      lastDirection = message.direction;
+      lastTime = time;
+    }
+    return items;
+  }, [messages, t]);
 
   if (conversationsQuery.isLoading) return <MessagesSkeleton />;
 
@@ -766,6 +963,8 @@ export default function MessagesPage() {
       </div>
     );
   }
+
+  const gridCols = 'xl:grid-cols-[320px_minmax(0,1fr)_360px]';
 
   return (
     <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
@@ -793,9 +992,9 @@ export default function MessagesPage() {
         )}
       />
 
-      <Card className="mt-6 overflow-hidden">
+      <Card className="mt-6 flex h-[calc(100dvh-9rem)] min-h-[600px] flex-col overflow-hidden">
         {conversations.length === 0 ? (
-          <div className="flex min-h-[620px] items-center justify-center p-8 text-center">
+          <div className="flex flex-1 items-center justify-center p-8 text-center">
             <div>
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <MessageCircle className="h-7 w-7" />
@@ -815,17 +1014,27 @@ export default function MessagesPage() {
             </div>
           </div>
         ) : (
-          <div className={`grid min-h-[720px] grid-cols-1 ${
-            leadPanelCollapsed
-              ? 'xl:grid-cols-[340px_minmax(0,1fr)_56px]'
-              : 'xl:grid-cols-[340px_minmax(0,1fr)_360px]'
-          }`}>
-            <div className="min-h-0 border-b border-border xl:border-b-0 xl:border-r">
+          <div className={cn('grid min-h-0 flex-1 grid-cols-1', gridCols)}>
+            {/* Conversation list */}
+            <div
+              className={cn(
+                'flex min-h-0 flex-col border-border',
+                mobileView === 'list' ? 'flex' : 'hidden',
+                'xl:flex xl:border-r',
+              )}
+            >
               <div className="space-y-3 border-b border-border p-4">
                 <div className="flex items-center gap-2">
                   <Instagram className="h-5 w-5 text-primary" />
                   <h2 className="font-semibold text-slate-900">{t('conversations')}</h2>
-                  <Badge className="ml-auto" variant="secondary">{conversations.length}</Badge>
+                  <span className="ml-auto text-xs font-medium text-muted-foreground">
+                    {t('messagesCount').replace('{count}', String(conversations.length))}
+                  </span>
+                  {unreadCount > 0 ? (
+                    <Badge variant="default" className="bg-primary text-primary-foreground">
+                      {unreadCount} {t('unreadConversations').toLowerCase()}
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -836,96 +1045,135 @@ export default function MessagesPage() {
                     className="pl-9"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    ['all', t('allConversations'), conversations.length],
-                    ['unread', t('unreadConversations'), unreadCount],
-                    ['reply', t('canReplyConversations'), replyableCount],
-                    ['closed', t('closedConversations'), conversations.length - replyableCount],
-                  ].map(([value, label, count]) => (
-                    <Button
-                      key={String(value)}
-                      type="button"
-                      variant={filter === value ? 'default' : 'outline'}
-                      size="sm"
-                      className="justify-between"
-                      onClick={() => setFilter(value as ConversationFilter)}
-                    >
-                      <span className="truncate">{label}</span>
-                      <span className="tabular-nums">{count}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <ScrollArea className="h-[320px] xl:h-[632px]">
-                <div className="p-2">
-                  {filteredConversations.length === 0 ? (
-                    <div className="p-6 text-center text-sm text-muted-foreground">{t('noSearchResults')}</div>
-                  ) : filteredConversations.map((conversation) => {
-                    const participantLabel = conversation.participantName
-                      || conversation.participantUsername
-                      || conversation.contactName
-                      || t('instagramUser');
-                    const selected = conversation.id === selectedConversationId;
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {FILTERS.map(({ value, labelKey }) => {
+                    const count = value === 'all'
+                      ? conversations.length
+                      : value === 'unread'
+                        ? unreadCount
+                        : value === 'reply'
+                          ? replyableCount
+                          : conversations.length - replyableCount;
+                    const active = filter === value;
                     return (
                       <button
-                        key={conversation.id}
+                        key={value}
                         type="button"
-                        className={`flex w-full items-start gap-3 rounded-md p-3 text-left transition-colors ${
-                          selected ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted'
-                        }`}
-                        onClick={() => setSelectedConversationId(conversation.id)}
+                        onClick={() => setFilter(value)}
+                        className={cn(
+                          'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                          active
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-background text-slate-600 hover:bg-muted',
+                        )}
                       >
-                        <Avatar className="h-10 w-10 shrink-0">
-                          {conversation.participantProfilePictureUrl ? (
-                            <AvatarImage src={conversation.participantProfilePictureUrl} alt="" />
-                          ) : null}
-                          <AvatarFallback>{initials(participantLabel)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-medium text-slate-900">
-                              {conversation.participantUsername
-                                ? `@${conversation.participantUsername}`
-                                : participantLabel}
-                            </p>
-                            {conversation.unreadCount > 0 ? (
-                              <Badge className="ml-auto h-5 min-w-5 justify-center px-1.5">
-                                {conversation.unreadCount}
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            {conversation.lastMessage || t('noMessagesYet')}
-                          </p>
-                          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
-                            <span className="inline-flex min-w-0 items-center gap-1 truncate">
-                              <AtSign className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{conversation.accountUsername}</span>
-                            </span>
-                            <span className="ml-auto shrink-0">{formatDateTime(conversation.lastMessageAt)}</span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {conversation.leadId ? (
-                              <Badge variant="outline">#{conversation.leadId}</Badge>
-                            ) : null}
-                            <Badge variant={conversation.canReply ? 'success' : 'secondary'}>
-                              {conversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
-                            </Badge>
-                          </div>
-                        </div>
+                        <span>{t(labelKey)}</span>
+                        <span className={cn('tabular-nums', active ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
+                          {count}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-              </ScrollArea>
+              </div>
+
+              <div
+                ref={listRef}
+                className="min-h-0 flex-1"
+                onKeyDown={handleListKeyDown}
+              >
+                <ScrollArea className="h-full">
+                  <div className="p-2">
+                    {filteredConversations.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-muted-foreground">{t('noSearchResults')}</div>
+                    ) : filteredConversations.map((conversation) => {
+                      const participantLabel = conversation.participantName
+                        || conversation.participantUsername
+                        || conversation.contactName
+                        || t('instagramUser');
+                      const selected = conversation.id === selectedConversationId;
+                      const unread = conversation.unreadCount > 0;
+                      const previewPrefix = conversation.lastMessageDirection === 'outbound' ? t('linkOutbound') + ': ' : '';
+                      return (
+                        <button
+                          key={conversation.id}
+                          type="button"
+                          aria-current={selected}
+                          className={cn(
+                            'flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors',
+                            selected ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted',
+                          )}
+                          onClick={() => selectConversation(conversation.id)}
+                        >
+                          <div className="relative shrink-0">
+                            <Avatar className="h-11 w-11">
+                              {conversation.participantProfilePictureUrl ? (
+                                <AvatarImage src={conversation.participantProfilePictureUrl} alt="" />
+                              ) : null}
+                              <AvatarFallback>{initials(participantLabel)}</AvatarFallback>
+                            </Avatar>
+                            {unread ? (
+                              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 rounded-full border-2 border-background bg-primary" />
+                            ) : null}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className={cn('truncate text-sm', unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-800')}>
+                                <Highlight text={conversation.participantUsername ? `@${conversation.participantUsername}` : participantLabel} query={search} />
+                              </p>
+                              <span className="ml-auto shrink-0 text-[11px] text-slate-400">
+                                {listTimestamp(conversation.lastMessageAt, t)}
+                              </span>
+                            </div>
+                            <p className={cn('mt-1 truncate text-xs', unread ? 'text-slate-700' : 'text-slate-500')}>
+                              <Highlight text={`${previewPrefix}${conversation.lastMessage || t('noMessagesYet')}`} query={search} />
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              {conversation.leadId ? (
+                                <Badge variant="outline" className="px-1.5 py-0 text-[10px]">#{conversation.leadId}</Badge>
+                              ) : null}
+                              <Badge
+                                variant={conversation.canReply ? 'success' : 'secondary'}
+                                className="px-1.5 py-0 text-[10px]"
+                              >
+                                {conversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
+                              </Badge>
+                              {unread ? (
+                                <Badge className="ml-auto h-5 min-w-5 justify-center px-1.5">
+                                  {conversation.unreadCount}
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
 
-            <div className="flex min-h-[720px] min-w-0 flex-col">
+            {/* Thread */}
+            <div
+              className={cn(
+                'flex min-h-0 min-w-0 flex-col',
+                mobileView === 'thread' ? 'flex' : 'hidden',
+                'xl:flex',
+              )}
+            >
               {selectedConversation ? (
                 <>
-                  <div className="flex items-center gap-3 border-b border-border p-4">
+                  <div className="flex items-center gap-3 border-b border-border p-3 sm:p-4">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="xl:hidden"
+                      aria-label={t('backToConversations')}
+                      onClick={() => setMobileView('list')}
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </Button>
                     <Avatar className="h-10 w-10">
                       {selectedConversation.participantProfilePictureUrl ? (
                         <AvatarImage src={selectedConversation.participantProfilePictureUrl} alt="" />
@@ -949,17 +1197,29 @@ export default function MessagesPage() {
                         {[
                           selectedConversation.leadId ? `${t('lead')} #${selectedConversation.leadId}` : null,
                           `@${selectedConversation.accountUsername}`,
-                        ].filter(Boolean).join(' - ')}
+                        ].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    <Badge className="ml-auto" variant={selectedConversation.canReply ? 'success' : 'secondary'}>
-                      {selectedConversation.canReply ? (
-                        <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                      ) : (
-                        <Clock3 className="mr-1 h-3.5 w-3.5" />
-                      )}
-                      {selectedConversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
-                    </Badge>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <Badge variant={selectedConversation.canReply ? 'success' : 'secondary'}>
+                        {selectedConversation.canReply ? (
+                          <CheckCheck className="mr-1 h-3.5 w-3.5" />
+                        ) : (
+                          <Clock3 className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        {selectedConversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="xl:hidden"
+                        aria-label={t('openLeadPanel')}
+                        onClick={() => setMobileLeadOpen(true)}
+                      >
+                        <UserRoundCog className="h-5 w-5" />
+                      </Button>
+                    </div>
                   </div>
 
                   {!selectedConversation.canReply ? (
@@ -970,48 +1230,95 @@ export default function MessagesPage() {
                     </Alert>
                   ) : null}
 
-                  <ScrollArea className="min-h-0 flex-1 bg-muted/20">
-                    <div className="space-y-3 p-4">
-                      {messagesQuery.isLoading ? (
-                        Array.from({ length: 5 }).map((_, index) => (
-                          <Skeleton key={index} className={`h-16 w-2/3 ${index % 2 ? 'ml-auto' : ''}`} />
-                        ))
-                      ) : (messagesQuery.data ?? []).length === 0 ? (
-                        <div className="py-16 text-center text-sm text-slate-500">
-                          <Camera className="mx-auto mb-3 h-8 w-8 text-slate-400" />
-                          {t('noMessagesYet')}
-                        </div>
-                      ) : (
-                        (messagesQuery.data ?? []).map((message) => {
-                          const outbound = message.direction === 'outbound';
-                          return (
-                            <div
-                              key={message.id}
-                              className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
-                            >
+                  <div className="relative min-h-0 flex-1 bg-muted/30">
+                    <ScrollArea
+                      ref={threadScrollRef}
+                      className="h-full"
+                      onScroll={handleThreadScroll}
+                    >
+                      <div className="space-y-1 px-4 py-4">
+                        {messagesQuery.isLoading ? (
+                          Array.from({ length: 5 }).map((_, index) => (
+                            <Skeleton key={index} className={`h-16 w-2/3 ${index % 2 ? 'ml-auto' : ''}`} />
+                          ))
+                        ) : messages.length === 0 ? (
+                          <div className="py-16 text-center text-sm text-slate-500">
+                            <MessageCircle className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+                            {t('noMessagesYet')}
+                          </div>
+                        ) : (
+                          groupItems.map((item) => {
+                            if (item.kind === 'date') {
+                              return (
+                                <div key={item.id} className="my-3 flex items-center gap-3">
+                                  <div className="h-px flex-1 bg-border" />
+                                  <span className="rounded-full bg-background px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm">
+                                    {item.label}
+                                  </span>
+                                  <div className="h-px flex-1 bg-border" />
+                                </div>
+                              );
+                            }
+                            const message = item.message;
+                            const outbound = message.direction === 'outbound';
+                            return (
                               <div
-                                className={`max-w-[82%] rounded-2xl px-4 py-2.5 ${
-                                  outbound
-                                    ? 'rounded-br-md bg-primary text-primary-foreground'
-                                    : 'rounded-bl-md border border-border bg-card text-card-foreground'
-                                }`}
+                                key={item.id}
+                                className={cn('flex', outbound ? 'justify-end' : 'justify-start')}
                               >
-                                <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
-                                <p className={`mt-1 text-[10px] ${outbound ? 'text-primary-foreground/70' : 'text-slate-400'}`}>
-                                  {formatDateTime(message.createdAt)}
-                                </p>
+                                <div
+                                  className={cn(
+                                    'max-w-[82%] rounded-2xl px-4 py-2.5 shadow-sm',
+                                    outbound
+                                      ? 'rounded-br-md bg-primary text-primary-foreground'
+                                      : 'rounded-bl-md border border-border bg-card text-card-foreground',
+                                    message.failed ? 'opacity-60 ring-1 ring-destructive' : '',
+                                  )}
+                                >
+                                  <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
+                                  <div className={cn('mt-1 flex items-center gap-1.5 text-[10px]', outbound ? 'justify-end text-primary-foreground/70' : 'text-slate-400')}>
+                                    {item.showTime ? <span>{clockTime(message.createdAt)}</span> : null}
+                                    {message.pending ? (
+                                      <span title={t('sendingMessage')}>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      </span>
+                                    ) : message.failed ? (
+                                      <button
+                                        type="button"
+                                        className="font-medium underline underline-offset-2"
+                                        title={t('messageFailed')}
+                                        onClick={() => retryMessage(message.content)}
+                                      >
+                                        {t('retrySend')}
+                                      </button>
+                                    ) : outbound ? (
+                                      <CheckCheck className="h-3 w-3" />
+                                    ) : null}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </ScrollArea>
+                            );
+                          })
+                        )}
+                      </div>
+                    </ScrollArea>
 
-                  <div className="border-t border-border p-4">
+                    {!atBottom && messages.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollToBottom('smooth')}
+                        className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-lg transition-transform hover:scale-105"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                        {t('jumpToLatest')}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="border-t border-border p-3 sm:p-4">
                     <div className="flex items-end gap-2">
                       <Textarea
+                        ref={textareaRef}
                         value={draft}
                         onChange={(event) => setDraft(event.target.value)}
                         onKeyDown={(event) => {
@@ -1024,7 +1331,7 @@ export default function MessagesPage() {
                           ? t('instagramMessagePlaceholder')
                           : t('replyWindowClosed')}
                         disabled={!selectedConversation.canReply || sendMessage.isPending}
-                        className="min-h-[44px] resize-none"
+                        className="max-h-40 min-h-[44px] flex-1 resize-none"
                         maxLength={1000}
                         aria-label={t('instagramMessagePlaceholder')}
                       />
@@ -1045,24 +1352,66 @@ export default function MessagesPage() {
               ) : (
                 <div className="flex flex-1 items-center justify-center p-8 text-center text-slate-500">
                   <div>
-                    <UserRound className="mx-auto mb-3 h-9 w-9 text-slate-400" />
+                    <MessageCircle className="mx-auto mb-3 h-9 w-9 text-slate-400" />
                     {t('selectConversation')}
                   </div>
                 </div>
               )}
             </div>
 
-            <LeadPanel
-              leadId={selectedConversation?.leadId}
-              workspaceData={workspaceQuery.data}
-              statusName={statusName}
-              collapsed={leadPanelCollapsed}
-              onCollapsedChange={setLeadPanelCollapsed}
-              onChanged={() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-                queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
-              }}
-            />
+            {/* Lead panel (desktop) */}
+            {leadCollapsed ? (
+              <div className="hidden xl:flex flex-col items-center border-l border-border bg-background py-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('expandLeadCard')}
+                  onClick={() => setLeadCollapsed(false)}
+                >
+                  <PanelRightOpen className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="hidden min-h-0 flex-col border-l border-border bg-background xl:flex">
+                <LeadPanel
+                  leadId={selectedConversation?.leadId}
+                  conversation={selectedConversation}
+                  workspaceData={workspaceQuery.data}
+                  statusName={statusName}
+                  onCollapsedChange={() => setLeadCollapsed(true)}
+                  onChanged={() => {
+                    queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+                  }}
+                  onCloseMobile={() => setMobileLeadOpen(false)}
+                />
+              </div>
+            )}
+
+            {/* Lead panel (mobile overlay) */}
+            {mobileLeadOpen ? (
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/40 xl:hidden"
+                  onClick={() => setMobileLeadOpen(false)}
+                />
+                <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-border bg-background shadow-xl xl:hidden">
+                  <LeadPanel
+                    leadId={selectedConversation?.leadId}
+                    conversation={selectedConversation}
+                    workspaceData={workspaceQuery.data}
+                    statusName={statusName}
+                    onCollapsedChange={() => setMobileLeadOpen(false)}
+                    onChanged={() => {
+                      queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+                      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+                    }}
+                    onCloseMobile={() => setMobileLeadOpen(false)}
+                  />
+                </div>
+              </>
+            ) : null}
           </div>
         )}
       </Card>

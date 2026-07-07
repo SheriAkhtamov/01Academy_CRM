@@ -1214,9 +1214,7 @@ export const translations = {
   mediaVideo: { en: 'Video', ru: 'Видео' },
   mediaGif: { en: 'GIF', ru: 'Гифка' },
   mediaAudio: { en: 'Audio', ru: 'Аудио' },
-  mediaPost: { en: 'Post', ru: 'Пост' },
   mediaAttachment: { en: 'Attachment', ru: 'Вложение' },
-  openInInstagram: { en: 'Open in Instagram', ru: 'Открыть в Instagram' },
   viewMedia: { en: 'View media', ru: 'Посмотреть медиа' },
 
   // UX improvements — administration dashboard

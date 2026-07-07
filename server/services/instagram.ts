@@ -571,11 +571,82 @@ export interface InstagramMessageAttachment {
   subtitle?: string;
 }
 
+const firstText = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+};
+
+const firstMediaItem = (...values: unknown[]): Record<string, any> | null => {
+  for (const value of values) {
+    if (Array.isArray(value) && value[0] && typeof value[0] === 'object') return value[0];
+  }
+  return null;
+};
+
+const isLikelyMediaUrl = (value: unknown) => {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    if (host === 'instagram.com' || host.endsWith('.instagram.com')) return false;
+    return (
+      /\.(jpg|jpeg|png|webp|heic|avif|gif|mp4|mov|webm|m4v|mp3|m4a|ogg|wav|aac)$/i.test(path)
+      || host.includes('cdninstagram')
+      || host.includes('fbcdn')
+      || host.includes('fbsbx')
+      || host.includes('scontent')
+    );
+  } catch {
+    return /\.(jpg|jpeg|png|webp|heic|avif|gif|mp4|mov|webm|m4v|mp3|m4a|ogg|wav|aac)$/i.test(value);
+  }
+};
+
+const firstMediaUrl = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = firstText(value);
+    if (text && isLikelyMediaUrl(text)) return text;
+  }
+  return undefined;
+};
+
+const inferAttachmentType = (declaredType: string, url?: string, metadata?: unknown): InstagramMessageAttachment['type'] => {
+  const normalizedType = String(declaredType || '').toLowerCase();
+  const metadataType = typeof metadata === 'string' ? metadata.toLowerCase() : '';
+  const urlPath = String(url || '').split('?')[0].toLowerCase();
+
+  if (['image', 'video', 'animated_gif', 'audio', 'sticker', 'like', 'file'].includes(normalizedType)) {
+    return normalizedType as InstagramMessageAttachment['type'];
+  }
+  if (metadataType.includes('video') || /\.(mp4|mov|webm|m4v)$/i.test(urlPath)) return 'video';
+  if (metadataType.includes('audio') || /\.(mp3|m4a|ogg|wav|aac)$/i.test(urlPath)) return 'audio';
+  if (metadataType.includes('gif') || /\.gif$/i.test(urlPath)) return 'animated_gif';
+  if (metadataType.includes('image') || /\.(jpg|jpeg|png|webp|heic|avif)$/i.test(urlPath)) return 'image';
+  return 'image';
+};
+
 const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment | null => {
   if (!attachment || typeof attachment !== 'object') return null;
   const type = String(attachment.type || 'attachment');
   const payload = attachment.payload && typeof attachment.payload === 'object' ? attachment.payload : {};
-  const url = payload.url || payload.media_url || attachment.url || undefined;
+  const url = firstMediaUrl(
+    payload.media_url,
+    payload.image_url,
+    payload.video_url,
+    payload.audio_url,
+    payload.animated_gif_url,
+    payload.gif_url,
+    attachment.media_url,
+    attachment.image_url,
+    attachment.video_url,
+    attachment.audio_url,
+    attachment.animated_gif_url,
+    attachment.gif_url,
+    attachment.url,
+    payload.url,
+  );
   switch (type) {
     case 'image':
     case 'video':
@@ -589,15 +660,63 @@ const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment
     case 'share':
     case 'xma': {
       const share = payload.share && typeof payload.share === 'object' ? payload.share : {};
-      const mediaItem = Array.isArray(share.media)
-        ? share.media[0]
-        : Array.isArray(payload.media)
-          ? payload.media[0]
-          : null;
-      const previewUrl =
-        (mediaItem && (mediaItem.image_src || mediaItem.url)) || payload.picture || share.picture || undefined;
-      const link = share.link || payload.link || undefined;
-      return { type: 'share', url: url || undefined, link, title: share.name || payload.title, previewUrl };
+      const reel = payload.reel && typeof payload.reel === 'object' ? payload.reel : {};
+      const mediaItem = firstMediaItem(share.media, payload.media, attachment.media, reel.media);
+      const videoUrl = firstMediaUrl(
+        reel.video_url,
+        reel.playable_url,
+        mediaItem?.video_url,
+        mediaItem?.video_src,
+        mediaItem?.playable_url,
+        mediaItem?.playable_url_quality_hd,
+      );
+      const directMediaUrl = firstMediaUrl(
+        url,
+        reel.media_url,
+        mediaItem?.media_url,
+        mediaItem?.source,
+        mediaItem?.src,
+        mediaItem?.url,
+      );
+      const imageUrl = firstMediaUrl(
+        mediaItem?.animated_gif_url,
+        mediaItem?.gif_url,
+        mediaItem?.image_src,
+        mediaItem?.thumbnail_src,
+        mediaItem?.thumbnail_url,
+        mediaItem?.preview_url,
+        reel.thumbnail_url,
+        reel.image_url,
+        payload.picture,
+        share.picture,
+      );
+      const previewUrl = firstMediaUrl(
+        mediaItem?.image_src,
+        mediaItem?.thumbnail_src,
+        mediaItem?.thumbnail_url,
+        mediaItem?.preview_url,
+        reel.thumbnail_url,
+        reel.image_url,
+        payload.picture,
+        share.picture,
+      );
+      const mediaUrl = videoUrl || directMediaUrl || imageUrl;
+      const link = firstText(share.link, payload.link, payload.url, attachment.url);
+      if (mediaUrl || previewUrl) {
+        const attachmentType = videoUrl
+          ? 'video'
+          : directMediaUrl
+            ? inferAttachmentType(type, directMediaUrl, mediaItem?.media_type || mediaItem?.type || reel.media_type || payload.media_type)
+            : inferAttachmentType('image', mediaUrl || previewUrl, mediaItem?.media_type || mediaItem?.type || reel.media_type || payload.media_type);
+        return {
+          type: attachmentType,
+          url: mediaUrl || previewUrl,
+          link,
+          title: firstText(share.name, share.title, payload.title),
+          previewUrl,
+        };
+      }
+      return link ? { type: 'share', link, title: firstText(share.name, share.title, payload.title) } : null;
     }
     default:
       return url ? { type: 'generic', url } : null;
@@ -606,15 +725,46 @@ const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment
 
 const normalizeShare = (share: any): InstagramMessageAttachment | null => {
   if (!share || typeof share !== 'object') return null;
-  const mediaItem = Array.isArray(share.media) ? share.media[0] : null;
-  const previewUrl =
-    (mediaItem && (mediaItem.image_src || mediaItem.url)) || share.picture || undefined;
-  return {
-    type: 'share',
-    link: share.link || undefined,
-    title: share.title || share.name,
-    previewUrl,
-  };
+  const mediaItem = firstMediaItem(share.media);
+  const videoUrl = firstMediaUrl(
+    mediaItem?.video_url,
+    mediaItem?.video_src,
+    mediaItem?.playable_url,
+    mediaItem?.playable_url_quality_hd,
+  );
+  const directMediaUrl = firstMediaUrl(
+    mediaItem?.media_url,
+    mediaItem?.source,
+    mediaItem?.src,
+    mediaItem?.url,
+  );
+  const imageUrl = firstMediaUrl(
+    mediaItem?.animated_gif_url,
+    mediaItem?.gif_url,
+    mediaItem?.image_src,
+    mediaItem?.thumbnail_src,
+    mediaItem?.thumbnail_url,
+    mediaItem?.preview_url,
+    share.picture,
+  );
+  const previewUrl = firstMediaUrl(mediaItem?.image_src, mediaItem?.thumbnail_src, mediaItem?.thumbnail_url, mediaItem?.preview_url, share.picture);
+  const mediaUrl = videoUrl || directMediaUrl || imageUrl;
+  const link = firstText(share.link);
+  if (mediaUrl || previewUrl) {
+    const attachmentType = videoUrl
+      ? 'video'
+      : directMediaUrl
+        ? inferAttachmentType('share', directMediaUrl, mediaItem?.media_type || mediaItem?.type)
+        : inferAttachmentType('image', mediaUrl || previewUrl, mediaItem?.media_type || mediaItem?.type);
+    return {
+      type: attachmentType,
+      url: mediaUrl || previewUrl,
+      link,
+      title: firstText(share.title, share.name),
+      previewUrl,
+    };
+  }
+  return link ? { type: 'share', link, title: firstText(share.title, share.name) } : null;
 };
 
 const extractAttachments = (message: any): InstagramMessageAttachment[] => {

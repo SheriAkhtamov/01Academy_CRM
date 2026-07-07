@@ -355,7 +355,7 @@ const mediaTypeLabel = (type: MediaType, t: (key: TranslationKey) => string) => 
     case 'audio':
       return t('mediaAudio');
     case 'share':
-      return t('mediaPost');
+      return t('mediaAttachment');
     default:
       return t('mediaAttachment');
   }
@@ -369,52 +369,24 @@ function AttachmentMedia({
   onOpen: (media: { url: string; type: MediaType; title?: string }) => void;
 }) {
   const { t } = useTranslation();
-
-  if (attachment.type === 'share') {
-    const preview = attachment.previewUrl || attachment.url;
-    return (
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        {preview ? (
-          <button
-            type="button"
-            className="block w-full"
-            onClick={() => attachment.link && window.open(attachment.link, '_blank', 'noopener')}
-          >
-            <img src={preview} alt={attachment.title || t('mediaPost')} className="max-h-72 w-full object-cover" loading="lazy" />
-          </button>
-        ) : null}
-        <div className="flex items-center gap-2 p-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-slate-900">{attachment.title || t('mediaPost')}</p>
-            <p className="truncate text-xs text-slate-500">{t('mediaPost')}</p>
-          </div>
-          {attachment.link ? (
-            <Button asChild size="sm" variant="outline" className="shrink-0">
-              <a href={attachment.link} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-4 w-4" />
-                {t('openInInstagram')}
-              </a>
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
+  const mediaUrl = attachment.url || attachment.previewUrl;
+  const isVisualMedia = ['image', 'animated_gif', 'sticker', 'like', 'share'].includes(attachment.type);
 
   if (attachment.type === 'audio') {
-    return attachment.url ? (
-      <audio controls src={attachment.url} className="max-w-full" />
+    return mediaUrl ? (
+      <audio controls src={mediaUrl} className="max-w-full" />
     ) : null;
   }
 
-  if (attachment.url) {
+  if (mediaUrl) {
     if (attachment.type === 'video') {
       return (
         <div className="relative overflow-hidden rounded-xl bg-black">
           <video
             controls
-            src={attachment.url}
+            src={mediaUrl}
             className="max-h-80 w-full"
+            poster={attachment.previewUrl}
           />
           <Button
             type="button"
@@ -422,26 +394,40 @@ function AttachmentMedia({
             size="icon"
             className="absolute right-2 top-2 h-8 w-8 bg-background/90 shadow-sm hover:bg-background"
             aria-label={t('viewMedia')}
-            onClick={() => onOpen({ url: attachment.url as string, type: 'video', title: attachment.title })}
+            onClick={() => onOpen({ url: mediaUrl, type: 'video', title: attachment.title })}
           >
             <Maximize2 className="h-4 w-4" />
           </Button>
         </div>
       );
     }
+
+    if (isVisualMedia) {
+      return (
+        <button
+          type="button"
+          className="block overflow-hidden rounded-xl"
+          onClick={() => onOpen({ url: mediaUrl, type: 'image', title: attachment.title })}
+        >
+          <img
+            src={mediaUrl}
+            alt={attachment.title || t('viewMedia')}
+            className="max-h-80 w-full max-w-sm object-cover transition-transform hover:scale-[1.01]"
+            loading="lazy"
+          />
+        </button>
+      );
+    }
+
     return (
-      <button
-        type="button"
-        className="block overflow-hidden rounded-xl"
-        onClick={() => onOpen({ url: attachment.url as string, type: 'image', title: attachment.title })}
-      >
-        <img
-          src={attachment.url}
-          alt={attachment.title || t('viewMedia')}
-          className="max-h-80 w-full max-w-sm object-cover transition-transform hover:scale-[1.01]"
-          loading="lazy"
-        />
-      </button>
+      <div className="max-w-sm rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <ImageIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-medium text-primary underline-offset-2 hover:underline">
+            {attachment.title || mediaTypeLabel(attachment.type, t)}
+          </a>
+        </div>
+      </div>
     );
   }
 
@@ -454,7 +440,7 @@ function AttachmentMedia({
         className="inline-flex items-center gap-1 text-sm text-primary underline"
       >
         <ExternalLink className="h-4 w-4" />
-        {t('openInInstagram')}
+        {attachment.title || t('mediaAttachment')}
       </a>
     );
   }

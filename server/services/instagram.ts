@@ -60,6 +60,8 @@ type InstagramGraphMessage = {
   shares?: {
     data?: any[];
   } | any[];
+  story?: any;
+  is_unsupported?: boolean;
   sticker?: string;
 };
 
@@ -90,11 +92,8 @@ type InstagramImportJobStatus = {
 };
 
 type EnsureLeadOptions = {
-  createTask?: boolean;
-  notify?: boolean;
   leadComment?: string;
   stageComment?: string;
-  assignmentComment?: string;
 };
 
 const INSTAGRAM_SCOPES = [
@@ -110,6 +109,21 @@ const INSTAGRAM_WEBHOOK_FIELDS = [
 ];
 const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const INSTAGRAM_FETCH_TIMEOUT_MS = 30_000;
+const INSTAGRAM_MESSAGE_ATTACHMENT_FIELDS = 'file_url,generic_template,id,image_data,name,video_data';
+const INSTAGRAM_MESSAGE_SHARE_FIELDS = 'link,template';
+const INSTAGRAM_MESSAGE_FIELDS = [
+  'id',
+  'created_time',
+  'from',
+  'to',
+  'message',
+  `attachments{${INSTAGRAM_MESSAGE_ATTACHMENT_FIELDS}}`,
+  `shares{${INSTAGRAM_MESSAGE_SHARE_FIELDS}}`,
+  'story',
+  'is_unsupported',
+  'sticker',
+].join(',');
+const INSTAGRAM_MESSAGE_FIELDS_LEGACY = 'id,created_time,from,to,message,attachments,shares,story,is_unsupported,sticker';
 
 let broadcastToClients: InstagramBroadcast = () => undefined;
 
@@ -123,17 +137,6 @@ const leadershipUserAccessSql = `
     )
   )
 `;
-const salesUserAccessSql = `
-  (
-    u.workspace = 'sales'
-    OR EXISTS (
-      SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
-    )
-  )
-`;
-
 export const setInstagramBroadcastFunction = (broadcast: InstagramBroadcast) => {
   broadcastToClients = broadcast;
 };
@@ -327,9 +330,34 @@ const findConversationParticipant = (
   return explicitParticipant ?? null;
 };
 
+const getMessageDataArray = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  return [];
+};
+
+const logImportedMediaExtractionMiss = (message: InstagramGraphMessage) => {
+  const rawAttachments = getMessageDataArray(message.attachments);
+  const rawShares = getMessageDataArray(message.shares);
+  if (!rawAttachments.length && !rawShares.length && !message.story) return;
+
+  logger.warn('Instagram imported message has media fields without extractable media URL', {
+    messageId: message.id,
+    attachmentTypes: rawAttachments.map((attachment) => attachment?.type).filter(Boolean).slice(0, 8),
+    attachmentKeys: [...new Set(rawAttachments.flatMap((attachment) => (
+      isObjectRecord(attachment) ? Object.keys(attachment) : []
+    )))].slice(0, 24),
+    shareKeys: [...new Set(rawShares.flatMap((share) => (
+      isObjectRecord(share) ? Object.keys(share) : []
+    )))].slice(0, 24),
+    hasStory: Boolean(message.story),
+  });
+};
+
 const extractImportedMessageContent = (message: InstagramGraphMessage) => {
   const text = typeof message?.message === 'string' ? message.message.trim() : '';
   const attachments = extractAttachments(message);
+  if (!attachments.length) logImportedMediaExtractionMiss(message);
   let messageType = 'text';
   if (attachments.length) messageType = primaryTypeFromAttachments(attachments);
   else if (message?.sticker) messageType = 'sticker';
@@ -578,9 +606,14 @@ const firstText = (...values: unknown[]) => {
   return undefined;
 };
 
+const isObjectRecord = (value: unknown): value is Record<string, any> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
 const firstMediaItem = (...values: unknown[]): Record<string, any> | null => {
   for (const value of values) {
-    if (Array.isArray(value) && value[0] && typeof value[0] === 'object') return value[0];
+    if (Array.isArray(value) && isObjectRecord(value[0])) return value[0];
+    if (isObjectRecord(value) && Array.isArray(value.data) && isObjectRecord(value.data[0])) return value.data[0];
+    if (isObjectRecord(value) && Object.keys(value).some((key) => key !== 'data')) return value;
   }
   return null;
 };
@@ -612,159 +645,321 @@ const firstMediaUrl = (...values: unknown[]) => {
   return undefined;
 };
 
+type MediaUrlCandidate = {
+  url: string;
+  key: string;
+};
+
+const collectMediaUrls = (
+  value: unknown,
+  keyHint = '',
+  candidates: MediaUrlCandidate[] = [],
+  seen = new Set<object>(),
+  depth = 0,
+) => {
+  if (depth > 6 || value == null) return candidates;
+  if (typeof value === 'string') {
+    if (isLikelyMediaUrl(value)) candidates.push({ url: value.trim(), key: keyHint });
+    return candidates;
+  }
+  if (typeof value !== 'object') return candidates;
+  if (seen.has(value)) return candidates;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectMediaUrls(item, keyHint, candidates, seen, depth + 1));
+    return candidates;
+  }
+
+  Object.entries(value).forEach(([key, nested]) => {
+    collectMediaUrls(nested, key, candidates, seen, depth + 1);
+  });
+  return candidates;
+};
+
+const collectDeepMediaUrlCandidates = (values: unknown[]) =>
+  values.flatMap((value) => collectMediaUrls(value));
+
+const firstPreferredDeepMediaUrlByKey = (
+  predicate: (key: string) => boolean,
+  ...values: unknown[]
+) => collectDeepMediaUrlCandidates(values)
+  .find((candidate) => predicate(candidate.key.toLowerCase()))?.url;
+
+const firstDeepMediaUrlByKey = (
+  predicate: (key: string) => boolean,
+  ...values: unknown[]
+) => {
+  const candidates = collectDeepMediaUrlCandidates(values);
+  return candidates.find((candidate) => predicate(candidate.key.toLowerCase()))?.url
+    ?? candidates[0]?.url;
+};
+
+const firstDeepMediaUrl = (...values: unknown[]) =>
+  firstDeepMediaUrlByKey(() => false, ...values);
+
+const isDirectMediaKey = (key: string) => (
+  key === 'url'
+  || key === 'src'
+  || key.includes('media')
+  || key.includes('source')
+  || key.includes('file')
+) && !key.includes('preview') && !key.includes('thumbnail') && !key.includes('picture');
+
 const inferAttachmentType = (declaredType: string, url?: string, metadata?: unknown): InstagramMessageAttachment['type'] => {
   const normalizedType = String(declaredType || '').toLowerCase();
   const metadataType = typeof metadata === 'string' ? metadata.toLowerCase() : '';
   const urlPath = String(url || '').split('?')[0].toLowerCase();
 
-  if (['image', 'video', 'animated_gif', 'audio', 'sticker', 'like', 'file'].includes(normalizedType)) {
-    return normalizedType as InstagramMessageAttachment['type'];
-  }
+  if (normalizedType.includes('reel') || metadataType.includes('reel')) return 'video';
   if (metadataType.includes('video') || /\.(mp4|mov|webm|m4v)$/i.test(urlPath)) return 'video';
   if (metadataType.includes('audio') || /\.(mp3|m4a|ogg|wav|aac)$/i.test(urlPath)) return 'audio';
   if (metadataType.includes('gif') || /\.gif$/i.test(urlPath)) return 'animated_gif';
+  if (['video', 'audio', 'animated_gif', 'sticker', 'like', 'file'].includes(normalizedType)) {
+    return normalizedType as InstagramMessageAttachment['type'];
+  }
   if (metadataType.includes('image') || /\.(jpg|jpeg|png|webp|heic|avif)$/i.test(urlPath)) return 'image';
+  if (normalizedType === 'image' || normalizedType.includes('post') || normalizedType === 'share') return 'image';
   return 'image';
 };
 
-const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment | null => {
-  if (!attachment || typeof attachment !== 'object') return null;
-  const type = String(attachment.type || 'attachment');
-  const payload = attachment.payload && typeof attachment.payload === 'object' ? attachment.payload : {};
-  const url = firstMediaUrl(
-    payload.media_url,
-    payload.image_url,
-    payload.video_url,
-    payload.audio_url,
-    payload.animated_gif_url,
-    payload.gif_url,
-    attachment.media_url,
-    attachment.image_url,
-    attachment.video_url,
-    attachment.audio_url,
-    attachment.animated_gif_url,
-    attachment.gif_url,
-    attachment.url,
-    payload.url,
-  );
-  switch (type) {
-    case 'image':
-    case 'video':
-    case 'animated_gif':
-    case 'audio':
-      return { type, url };
-    case 'sticker':
-      return { type: 'sticker', url };
-    case 'like':
-      return { type: 'like', url };
-    case 'share':
-    case 'xma': {
-      const share = payload.share && typeof payload.share === 'object' ? payload.share : {};
-      const reel = payload.reel && typeof payload.reel === 'object' ? payload.reel : {};
-      const mediaItem = firstMediaItem(share.media, payload.media, attachment.media, reel.media);
-      const videoUrl = firstMediaUrl(
-        reel.video_url,
-        reel.playable_url,
-        mediaItem?.video_url,
-        mediaItem?.video_src,
-        mediaItem?.playable_url,
-        mediaItem?.playable_url_quality_hd,
-      );
-      const directMediaUrl = firstMediaUrl(
-        url,
-        reel.media_url,
-        mediaItem?.media_url,
-        mediaItem?.source,
-        mediaItem?.src,
-        mediaItem?.url,
-      );
-      const imageUrl = firstMediaUrl(
-        mediaItem?.animated_gif_url,
-        mediaItem?.gif_url,
-        mediaItem?.image_src,
-        mediaItem?.thumbnail_src,
-        mediaItem?.thumbnail_url,
-        mediaItem?.preview_url,
-        reel.thumbnail_url,
-        reel.image_url,
-        payload.picture,
-        share.picture,
-      );
-      const previewUrl = firstMediaUrl(
-        mediaItem?.image_src,
-        mediaItem?.thumbnail_src,
-        mediaItem?.thumbnail_url,
-        mediaItem?.preview_url,
-        reel.thumbnail_url,
-        reel.image_url,
-        payload.picture,
-        share.picture,
-      );
-      const mediaUrl = videoUrl || directMediaUrl || imageUrl;
-      const link = firstText(share.link, payload.link, payload.url, attachment.url);
-      if (mediaUrl || previewUrl) {
-        const attachmentType = videoUrl
-          ? 'video'
-          : directMediaUrl
-            ? inferAttachmentType(type, directMediaUrl, mediaItem?.media_type || mediaItem?.type || reel.media_type || payload.media_type)
-            : inferAttachmentType('image', mediaUrl || previewUrl, mediaItem?.media_type || mediaItem?.type || reel.media_type || payload.media_type);
-        return {
-          type: attachmentType,
-          url: mediaUrl || previewUrl,
-          link,
-          title: firstText(share.name, share.title, payload.title),
-          previewUrl,
-        };
-      }
-      return link ? { type: 'share', link, title: firstText(share.name, share.title, payload.title) } : null;
-    }
-    default:
-      return url ? { type: 'generic', url } : null;
+const mediaMetadata = (...values: unknown[]) =>
+  values.filter((value) => value != null && value !== '').map((value) => String(value)).join(' ');
+
+const makeMediaAttachment = ({
+  declaredType,
+  mediaUrl,
+  previewUrl,
+  link,
+  title,
+  subtitle,
+  metadata,
+}: {
+  declaredType: string;
+  mediaUrl?: string;
+  previewUrl?: string;
+  link?: string;
+  title?: string;
+  subtitle?: string;
+  metadata?: unknown;
+}): InstagramMessageAttachment | null => {
+  const displayUrl = mediaUrl || previewUrl;
+  if (!displayUrl) {
+    return link ? { type: 'share', link, title, subtitle } : null;
   }
+
+  const type = mediaUrl
+    ? inferAttachmentType(declaredType, mediaUrl, metadata)
+    : 'image';
+  return {
+    type,
+    url: displayUrl,
+    previewUrl,
+    link,
+    title,
+    subtitle,
+  };
 };
 
-const normalizeShare = (share: any): InstagramMessageAttachment | null => {
-  if (!share || typeof share !== 'object') return null;
-  const mediaItem = firstMediaItem(share.media);
+const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment | null => {
+  if (!isObjectRecord(attachment)) return null;
+  const type = String(attachment.type || 'attachment');
+  const normalizedType = type.toLowerCase();
+  const payload = isObjectRecord(attachment.payload) ? attachment.payload : {};
+  const imageData = isObjectRecord(attachment.image_data)
+    ? attachment.image_data
+    : isObjectRecord(payload.image_data)
+      ? payload.image_data
+      : {};
+  const videoData = isObjectRecord(attachment.video_data)
+    ? attachment.video_data
+    : isObjectRecord(payload.video_data)
+      ? payload.video_data
+      : {};
+  const genericTemplate = isObjectRecord(attachment.generic_template)
+    ? attachment.generic_template
+    : isObjectRecord(payload.generic_template)
+      ? payload.generic_template
+      : {};
+  const genericPayload = isObjectRecord(genericTemplate.payload) ? genericTemplate.payload : {};
+  const share = isObjectRecord(payload.share) ? payload.share : {};
+  const reel = isObjectRecord(payload.reel) ? payload.reel : {};
+  const mediaItem = firstMediaItem(
+    share.media,
+    payload.media,
+    attachment.media,
+    reel.media,
+    genericPayload.media,
+    genericPayload.elements,
+    genericTemplate.elements,
+  );
+  const link = firstText(share.link, payload.link, payload.permalink, attachment.link, payload.url, attachment.url);
+  const title = firstText(
+    attachment.name,
+    share.name,
+    share.title,
+    payload.name,
+    payload.title,
+    genericTemplate.title,
+    genericPayload.title,
+    mediaItem?.name,
+    mediaItem?.title,
+  );
+  const subtitle = firstText(attachment.subtitle, payload.subtitle, genericTemplate.subtitle, genericPayload.subtitle);
   const videoUrl = firstMediaUrl(
+    videoData.url,
+    videoData.video_url,
+    payload.video_url,
+    payload.playable_url,
+    payload.reel_video_url,
+    reel.video_url,
+    reel.playable_url,
     mediaItem?.video_url,
     mediaItem?.video_src,
     mediaItem?.playable_url,
     mediaItem?.playable_url_quality_hd,
-  );
+  ) ?? firstPreferredDeepMediaUrlByKey((key) => key.includes('video') || key.includes('playable') || key.includes('reel'), videoData, reel, payload, mediaItem);
+  const gifUrl = firstMediaUrl(
+    imageData.animated_gif_url,
+    imageData.gif_url,
+    payload.animated_gif_url,
+    payload.gif_url,
+    attachment.animated_gif_url,
+    attachment.gif_url,
+    mediaItem?.animated_gif_url,
+    mediaItem?.gif_url,
+  ) ?? firstPreferredDeepMediaUrlByKey((key) => key.includes('gif'), imageData, payload, mediaItem);
+  const imageUrl = firstMediaUrl(
+    imageData.url,
+    imageData.medial_url,
+    imageData.media_url,
+    payload.image_url,
+    attachment.image_url,
+    reel.image_url,
+    mediaItem?.image_src,
+    mediaItem?.image_url,
+    mediaItem?.thumbnail_src,
+    mediaItem?.thumbnail_url,
+    payload.picture,
+    share.picture,
+  ) ?? firstDeepMediaUrlByKey((key) => key.includes('image') || key.includes('picture') || key.includes('thumbnail'), imageData, payload, share, mediaItem);
+  const audioUrl = firstMediaUrl(
+    payload.audio_url,
+    attachment.audio_url,
+    mediaItem?.audio_url,
+  ) ?? firstPreferredDeepMediaUrlByKey((key) => key.includes('audio'), payload, attachment, mediaItem);
+  const fileUrl = firstMediaUrl(attachment.file_url, payload.file_url, mediaItem?.file_url);
   const directMediaUrl = firstMediaUrl(
+    payload.media_url,
+    attachment.media_url,
+    attachment.url,
+    payload.url,
+    reel.media_url,
     mediaItem?.media_url,
     mediaItem?.source,
     mediaItem?.src,
     mediaItem?.url,
-  );
-  const imageUrl = firstMediaUrl(
-    mediaItem?.animated_gif_url,
-    mediaItem?.gif_url,
+  ) ?? firstPreferredDeepMediaUrlByKey(isDirectMediaKey, attachment, payload, genericTemplate);
+  const previewUrl = firstMediaUrl(
+    imageData.preview_url,
+    imageData.animated_gif_preview_url,
+    videoData.preview_url,
+    videoData.thumbnail_url,
     mediaItem?.image_src,
     mediaItem?.thumbnail_src,
     mediaItem?.thumbnail_url,
     mediaItem?.preview_url,
+    reel.thumbnail_url,
+    reel.image_url,
+    payload.picture,
     share.picture,
   );
+  const mediaUrl = videoUrl || gifUrl || imageUrl || audioUrl || fileUrl || directMediaUrl;
+  const declaredType = normalizedType.includes('reel')
+    ? 'video'
+    : normalizedType.includes('post')
+      ? (videoUrl ? 'video' : 'image')
+      : type;
+
+  return makeMediaAttachment({
+    declaredType,
+    mediaUrl,
+    previewUrl,
+    link,
+    title,
+    subtitle,
+    metadata: mediaMetadata(
+      normalizedType,
+      videoUrl ? 'video' : '',
+      gifUrl ? 'gif' : '',
+      imageUrl ? 'image' : '',
+      audioUrl ? 'audio' : '',
+      mediaItem?.media_type,
+      mediaItem?.type,
+      reel.media_type,
+      payload.media_type,
+      imageData.render_as_sticker ? 'sticker' : '',
+    ),
+  });
+};
+
+const normalizeShare = (share: any): InstagramMessageAttachment | null => {
+  if (!isObjectRecord(share)) return null;
+  const template = isObjectRecord(share.template) ? share.template : {};
+  const payload = isObjectRecord(template.payload) ? template.payload : {};
+  const product = isObjectRecord(payload.product) ? payload.product : {};
+  const mediaItem = firstMediaItem(share.media, payload.media, product.elements, payload.elements, template.elements);
+  const videoUrl = firstMediaUrl(
+    share.video_url,
+    mediaItem?.video_url,
+    mediaItem?.video_src,
+    mediaItem?.playable_url,
+    mediaItem?.playable_url_quality_hd,
+  ) ?? firstPreferredDeepMediaUrlByKey((key) => key.includes('video') || key.includes('playable') || key.includes('reel'), share, template, payload, mediaItem);
+  const gifUrl = firstMediaUrl(mediaItem?.animated_gif_url, mediaItem?.gif_url)
+    ?? firstPreferredDeepMediaUrlByKey((key) => key.includes('gif'), share, template, payload, mediaItem);
+  const directMediaUrl = firstMediaUrl(
+    share.media_url,
+    mediaItem?.media_url,
+    mediaItem?.source,
+    mediaItem?.src,
+    mediaItem?.url,
+  ) ?? firstPreferredDeepMediaUrlByKey(isDirectMediaKey, share, template, payload, mediaItem);
+  const imageUrl = firstMediaUrl(
+    share.image_url,
+    mediaItem?.image_src,
+    mediaItem?.image_url,
+    mediaItem?.thumbnail_src,
+    mediaItem?.thumbnail_url,
+    mediaItem?.preview_url,
+    share.picture,
+  ) ?? firstDeepMediaUrlByKey((key) => key.includes('image') || key.includes('picture') || key.includes('thumbnail'), share, template, payload, mediaItem);
   const previewUrl = firstMediaUrl(mediaItem?.image_src, mediaItem?.thumbnail_src, mediaItem?.thumbnail_url, mediaItem?.preview_url, share.picture);
-  const mediaUrl = videoUrl || directMediaUrl || imageUrl;
+  const mediaUrl = videoUrl || gifUrl || directMediaUrl || imageUrl;
   const link = firstText(share.link);
-  if (mediaUrl || previewUrl) {
-    const attachmentType = videoUrl
-      ? 'video'
-      : directMediaUrl
-        ? inferAttachmentType('share', directMediaUrl, mediaItem?.media_type || mediaItem?.type)
-        : inferAttachmentType('image', mediaUrl || previewUrl, mediaItem?.media_type || mediaItem?.type);
-    return {
-      type: attachmentType,
-      url: mediaUrl || previewUrl,
-      link,
-      title: firstText(share.title, share.name),
-      previewUrl,
-    };
-  }
-  return link ? { type: 'share', link, title: firstText(share.title, share.name) } : null;
+  return makeMediaAttachment({
+    declaredType: videoUrl ? 'video' : 'share',
+    mediaUrl,
+    previewUrl,
+    link,
+    title: firstText(share.title, share.name, template.title, payload.title, mediaItem?.name),
+    subtitle: firstText(share.subtitle, template.subtitle, payload.subtitle),
+    metadata: mediaMetadata(videoUrl ? 'video' : '', gifUrl ? 'gif' : '', mediaItem?.media_type, mediaItem?.type),
+  });
+};
+
+const normalizeStory = (story: any): InstagramMessageAttachment | null => {
+  const storyItem = firstMediaItem(story) ?? (isObjectRecord(story) ? story : null);
+  if (!storyItem) return null;
+  const mediaUrl = firstMediaUrl(storyItem.link, storyItem.url, storyItem.media_url)
+    ?? firstDeepMediaUrl(storyItem);
+  return makeMediaAttachment({
+    declaredType: 'story',
+    mediaUrl,
+    link: firstText(storyItem.permalink),
+    title: firstText(storyItem.title),
+    metadata: mediaMetadata(storyItem.media_type, storyItem.type),
+  });
 };
 
 const extractAttachments = (message: any): InstagramMessageAttachment[] => {
@@ -787,6 +982,8 @@ const extractAttachments = (message: any): InstagramMessageAttachment[] => {
     const normalized = normalizeShare(share);
     if (normalized) result.push(normalized);
   }
+  const story = normalizeStory(message?.story);
+  if (story) result.push(story);
   return result;
 };
 
@@ -844,22 +1041,6 @@ const getSystemUserId = async (client: PoolClient) => {
   return Number(rows[0].id);
 };
 
-const getLeadAssigneeId = async (client: PoolClient, fallbackUserId: number) => {
-  const { rows } = await client.query(
-    `SELECT u.id
-     FROM users u
-     LEFT JOIN academy_leads l
-       ON l.manager_id = u.id
-      AND l.status_code NOT IN ('paid', 'not_now')
-      AND COALESCE(l.is_archived, false) = false
-     WHERE ${salesUserAccessSql} AND u.is_active = true
-     GROUP BY u.id
-     ORDER BY COUNT(l.id), u.id
-     LIMIT 1`,
-  );
-  return rows[0]?.id ? Number(rows[0].id) : fallbackUserId;
-};
-
 const ensureLeadForConversation = async (
   client: PoolClient,
   account: InstagramAccountRow,
@@ -890,8 +1071,6 @@ const ensureLeadForConversation = async (
   }
 
   const systemUserId = await getSystemUserId(client);
-  await client.query(`SELECT pg_advisory_xact_lock(19012026)`);
-  const managerId = await getLeadAssigneeId(client, systemUserId);
   const username = profile.username?.trim();
   const contactName = String(profile.name || (username ? `@${username}` : 'Instagram lead')).slice(0, 255);
   const messenger = username ? `@${username}`.slice(0, 120) : syntheticPhone.slice(0, 120);
@@ -906,7 +1085,7 @@ const ensureLeadForConversation = async (
       syntheticPhone,
       messenger,
       account.source_id,
-      managerId,
+      null,
       options.leadComment ?? 'Создан автоматически из нового диалога Instagram.',
       systemUserId,
     ],
@@ -923,30 +1102,6 @@ const ensureLeadForConversation = async (
      VALUES ($1,NULL,'new_request',$2,$3)`,
     [lead.id, systemUserId, options.stageComment ?? 'Instagram Direct'],
   );
-  await client.query(
-    `INSERT INTO academy_lead_assignment_history
-      (lead_id, from_manager_id, to_manager_id, changed_by, comment)
-     VALUES ($1,NULL,$2,$3,$4)`,
-    [lead.id, managerId, systemUserId, options.assignmentComment ?? 'Автоматическое распределение лида из Instagram'],
-  );
-
-  if (options.createTask !== false) {
-    await client.query(
-      `INSERT INTO academy_tasks
-        (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-       VALUES ('Ответить на сообщение в Instagram','Новый лид написал в Direct. Ответить в течение 15 минут.',$1,NOW() + INTERVAL '15 minutes','lead',$2,'new')`,
-      [managerId, lead.id],
-    );
-  }
-
-  if (options.notify !== false) {
-    await client.query(
-      `INSERT INTO notifications
-        (user_id, type, title, message, related_entity_type, related_entity_id)
-       VALUES ($1,'instagram_lead','Новый лид из Instagram',$2,'lead',$3)`,
-      [managerId, `${contactName} написал(а) в Instagram Direct.`, lead.id],
-    );
-  }
 
   return lead;
 };
@@ -1165,6 +1320,15 @@ const broadcastInstagramImportJobStatus = () => {
   });
 };
 
+const updateInstagramImportJobProgress = (stats: InstagramImportStats) => {
+  if (instagramImportJobStatus.status !== 'running') return;
+  instagramImportJobStatus = {
+    ...instagramImportJobStatus,
+    stats: { ...stats },
+  };
+  broadcastInstagramImportJobStatus();
+};
+
 const buildConversationListUrl = (account: InstagramAccountRow, accessToken: string, useMeEndpoint = false) => {
   const config = instagramConfig();
   const nodeId = useMeEndpoint ? 'me' : account.ig_user_id;
@@ -1207,10 +1371,23 @@ const fetchInstagramConversationDetail = async (
   const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${conversationId}`);
   url.searchParams.set(
     'fields',
-    'id,updated_time,participants,messages.limit(100){id,created_time,from,to,message,attachments,shares,sticker}',
+    `id,updated_time,participants,messages.limit(100){${INSTAGRAM_MESSAGE_FIELDS}}`,
   );
   url.searchParams.set('access_token', accessToken);
-  return fetchInstagramJson<InstagramGraphConversation>(url.toString());
+  try {
+    return await fetchInstagramJson<InstagramGraphConversation>(url.toString());
+  } catch (error) {
+    if (isInstagramRateLimitError(error)) throw error;
+    logger.warn('Failed to fetch Instagram conversation with expanded media fields, retrying legacy fields', {
+      conversationId,
+      error,
+    });
+    url.searchParams.set(
+      'fields',
+      `id,updated_time,participants,messages.limit(100){${INSTAGRAM_MESSAGE_FIELDS_LEGACY}}`,
+    );
+    return fetchInstagramJson<InstagramGraphConversation>(url.toString());
+  }
 };
 
 const getImportedMessageKey = (
@@ -1242,10 +1419,20 @@ const fetchInstagramConversationMessages = async (
   if (byKey.size === 0) {
     const config = instagramConfig();
     const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${conversationId}/messages`);
-    url.searchParams.set('fields', 'id,created_time,from,to,message,attachments,shares,sticker');
+    url.searchParams.set('fields', INSTAGRAM_MESSAGE_FIELDS);
     url.searchParams.set('limit', '100');
     url.searchParams.set('access_token', accessToken);
-    appendMessages(await fetchInstagramPages<InstagramGraphMessage>(url.toString()));
+    try {
+      appendMessages(await fetchInstagramPages<InstagramGraphMessage>(url.toString()));
+    } catch (error) {
+      if (isInstagramRateLimitError(error)) throw error;
+      logger.warn('Failed to fetch Instagram messages with expanded media fields, retrying legacy fields', {
+        conversationId,
+        error,
+      });
+      url.searchParams.set('fields', INSTAGRAM_MESSAGE_FIELDS_LEGACY);
+      appendMessages(await fetchInstagramPages<InstagramGraphMessage>(url.toString()));
+    }
   }
 
   return [...byKey.values()].sort((a, b) => {
@@ -1352,11 +1539,8 @@ const upsertImportedInstagramConversation = async (
       participantIgsid,
       profile,
       {
-        createTask: false,
-        notify: false,
         leadComment: 'Импортирован из истории Instagram Direct.',
         stageComment: 'Импорт истории Instagram Direct',
-        assignmentComment: 'Автоматическое распределение лида из импортированной истории Instagram',
       },
     );
     if (lead?.created_lead) stats.leadsCreated += 1;
@@ -1412,12 +1596,14 @@ const upsertImportedInstagramConversation = async (
 const importInstagramAccountHistory = async (
   account: InstagramAccountRow,
   requestedBy: number,
+  onProgress?: (stats: InstagramImportStats) => void,
 ) => {
   const stats = emptyImportStats();
   stats.accounts = 1;
 
   if (!account.access_token_encrypted) {
     stats.skipped += 1;
+    onProgress?.(stats);
     return stats;
   }
 
@@ -1446,6 +1632,7 @@ const importInstagramAccountHistory = async (
       const participantIgsid = String(participant?.id ?? '');
       if (!participantIgsid || participantIgsid === String(account.ig_user_id)) {
         stats.skipped += 1;
+        onProgress?.(stats);
         continue;
       }
 
@@ -1471,6 +1658,7 @@ const importInstagramAccountHistory = async (
           participantIgsid,
         ),
       );
+      onProgress?.(stats);
     } catch (error) {
       if (isInstagramRateLimitError(error)) {
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
@@ -1478,6 +1666,7 @@ const importInstagramAccountHistory = async (
         });
       }
       stats.errors += 1;
+      onProgress?.(stats);
       logger.warn('Failed to import Instagram conversation', {
         accountId: account.id,
         igUserId: account.ig_user_id,
@@ -1507,7 +1696,13 @@ export const importInstagramConversationHistory = async (requestedBy: number) =>
 
   for (const account of rows) {
     try {
-      mergeImportStats(stats, await importInstagramAccountHistory(account, requestedBy));
+      const accountStats = await importInstagramAccountHistory(account, requestedBy, (partialAccountStats) => {
+        const progress = { ...stats };
+        mergeImportStats(progress, partialAccountStats);
+        updateInstagramImportJobProgress(progress);
+      });
+      mergeImportStats(stats, accountStats);
+      updateInstagramImportJobProgress(stats);
     } catch (error: any) {
       if (error?.partialStats) {
         mergeImportStats(stats, error.partialStats);
@@ -1515,6 +1710,7 @@ export const importInstagramConversationHistory = async (requestedBy: number) =>
         stats.accounts += 1;
       }
       stats.errors += 1;
+      updateInstagramImportJobProgress(stats);
       await pool.query(
         `UPDATE instagram_accounts SET last_error = $1, updated_at = NOW() WHERE id = $2`,
         [error?.message ?? String(error), account.id],
@@ -1612,7 +1808,15 @@ const assertConversationAccess = async (conversationId: number, user: InstagramU
   if (!conversation) {
     throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
   }
-  if (!hasLeadershipAccess(user) && Number(conversation.manager_id) !== Number(user.id)) {
+  const hasSalesAccess = user.workspace === 'sales' || Boolean(user.workspaces?.includes('sales'));
+  const assignedManagerId = conversation.manager_id ? Number(conversation.manager_id) : null;
+  if (
+    !hasLeadershipAccess(user)
+    && (
+      (assignedManagerId && assignedManagerId !== Number(user.id))
+      || (!assignedManagerId && !hasSalesAccess)
+    )
+  ) {
     throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
   }
   return conversation;
@@ -1638,7 +1842,7 @@ export const listInstagramConversations = async (user: InstagramUser) => {
   const params: unknown[] = [];
   const ownershipFilter = hasLeadershipAccess(user)
     ? ''
-    : `AND l.manager_id = $${params.push(user.id)}`;
+    : `AND (l.manager_id = $${params.push(user.id)} OR l.manager_id IS NULL)`;
   const { rows } = await pool.query(
     `SELECT c.id, c.account_id, c.lead_id, c.participant_igsid, c.participant_username,
             c.participant_name, c.participant_profile_picture_url, c.unread_count,

@@ -1427,9 +1427,15 @@ export default function MessagesPage() {
       : syncStatus?.status === 'failed'
         ? t('instagramSyncFailed')
         : t('instagramSyncComplete');
+  const hasSyncProgress = Object.values(syncStatus?.stats ?? {}).some((value) => Number(value) > 0);
+  const syncStatusError = syncStatus?.error && syncStatus.error !== 'instagramSyncPartial'
+    ? syncStatus.error
+    : '';
   const syncStatusDescription = syncStatus?.status === 'running'
-    ? t('instagramSyncRunningDesc')
-    : syncSummaryText(syncStatus?.stats, t);
+    ? hasSyncProgress
+      ? syncSummaryText(syncStatus?.stats, t)
+      : t('instagramSyncRunningDesc')
+    : [syncSummaryText(syncStatus?.stats, t), syncStatusError].filter(Boolean).join(' ');
 
   if (conversationsQuery.isLoading) return <MessagesSkeleton />;
 

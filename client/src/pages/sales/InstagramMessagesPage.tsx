@@ -1259,6 +1259,22 @@ export default function MessagesPage() {
     }
   }, [selectedConversation?.unreadCount, selectedConversationId]);
 
+  // Lightweight "typing…" heuristic for the participant. Instagram does not
+  // expose inbound typing events to the business account, so we surface a
+  // transient, clearly tentative indicator only when the very last inbound
+  // message is within a few seconds — it reads as "just arrived".
+  useEffect(() => {
+    setParticipantTyping(false);
+    if (!selectedConversation) return;
+    const lastInboundAt = selectedConversation.lastInboundAt;
+    if (!lastInboundAt || selectedConversation.unreadCount === 0) return;
+    const ageMs = Date.now() - new Date(lastInboundAt).getTime();
+    if (!Number.isFinite(ageMs) || ageMs > 8_000) return;
+    setParticipantTyping(true);
+    const timer = window.setTimeout(() => setParticipantTyping(false), 9_000);
+    return () => window.clearTimeout(timer);
+  }, [selectedConversation]);
+
   const getViewport = () => {
     const root = threadScrollRef.current;
     if (!root) return null;
@@ -1436,8 +1452,18 @@ export default function MessagesPage() {
     if (!text) return;
     navigator.clipboard?.writeText(text).catch(() => undefined);
     setCopiedId(id);
+    setActiveMessageId(null);
     window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1400);
   };
+
+  const replyToMessage = (message: ThreadMessage) => {
+    const firstLine = (message.content || '').split('\n')[0].slice(0, 120);
+    setReplyTarget({ id: message.id, text: firstLine });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+    setActiveMessageId(null);
+  };
+
+  const dismissReply = () => setReplyTarget(null);
 
   const selectConversation = (id: number) => {
     setSelectedConversationId(id);
@@ -1464,17 +1490,17 @@ export default function MessagesPage() {
   }, [lightbox]);
 
   const handleListKeyDown = (event: React.KeyboardEvent) => {
-    if (filteredConversations.length === 0) return;
+    if (sortedConversations.length === 0) return;
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     event.preventDefault();
-    const index = filteredConversations.findIndex((c) => c.id === selectedConversationId);
+    const index = sortedConversations.findIndex((c) => c.id === selectedConversationId);
     let nextIndex = index;
     if (event.key === 'ArrowDown') {
-      nextIndex = index < 0 ? 0 : Math.min(index + 1, filteredConversations.length - 1);
+      nextIndex = index < 0 ? 0 : Math.min(index + 1, sortedConversations.length - 1);
     } else {
-      nextIndex = index < 0 ? filteredConversations.length - 1 : Math.max(index - 1, 0);
+      nextIndex = index < 0 ? sortedConversations.length - 1 : Math.max(index - 1, 0);
     }
-    const next = filteredConversations[nextIndex];
+    const next = sortedConversations[nextIndex];
     if (next) selectConversation(next.id);
   };
 
@@ -1483,8 +1509,8 @@ export default function MessagesPage() {
 
   const threadQuery = threadSearch.trim().toLowerCase();
   const threadItems = useMemo(
-    () => buildThreadItems(messages, t, threadQuery),
-    [messages, t, threadQuery],
+    () => buildThreadItems(messages, t, threadQuery, selectedConversation?.lastReadMessageAt),
+    [messages, t, threadQuery, selectedConversation?.lastReadMessageAt],
   );
   const threadMatchCount = useMemo(
     () => threadItems.filter((item) => item.kind === 'message').length,
@@ -1685,6 +1711,25 @@ export default function MessagesPage() {
                       </button>
                     );
                   })}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => toggleSortByUnread(!sortByUnread)}
+                        aria-pressed={sortByUnread}
+                        className={cn(
+                          'ml-auto flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                          sortByUnread
+                            ? 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-border bg-background text-slate-500 hover:bg-muted',
+                        )}
+                      >
+                        <ArrowDownUp className="h-3.5 w-3.5" />
+                        {sortByUnread ? t('sortByUnread') : t('sortNewest')}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{sortByUnread ? t('sortByUnread') : t('sortNewest')}</TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
 
@@ -1695,9 +1740,9 @@ export default function MessagesPage() {
               >
                 <ScrollArea className="h-full">
                   <div className="space-y-1 p-2">
-                    {filteredConversations.length === 0 ? (
+                    {sortedConversations.length === 0 ? (
                       <div className="p-6 text-center text-sm text-muted-foreground">{t('noSearchResults')}</div>
-                    ) : filteredConversations.map((conversation) => {
+                    ) : sortedConversations.map((conversation) => {
                       const participantLabel = conversation.participantName
                         || conversation.participantUsername
                         || conversation.contactName
@@ -1913,7 +1958,7 @@ export default function MessagesPage() {
                     </Alert>
                   ) : null}
 
-                  <div className="relative min-h-0 flex-1 bg-[radial-gradient(theme(colors.slate.200)_1px,transparent_1px)] [background-size:24px_24px] bg-muted/20">
+                  <div className="relative min-h-0 flex-1 bg-muted/30">
                     <ScrollArea
                       ref={threadScrollRef}
                       className="h-full"
@@ -1974,7 +2019,7 @@ export default function MessagesPage() {
                               return (
                                 <div key={item.id} className="my-4 flex items-center gap-3">
                                   <div className="h-px flex-1 bg-primary/30" />
-                                  <span className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground shadow-sm">
+                                  <span className="rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow-sm">
                                     {item.label}
                                   </span>
                                   <div className="h-px flex-1 bg-primary/30" />
@@ -1990,29 +2035,39 @@ export default function MessagesPage() {
                                 ? parseLegacyAttachment(message.content)
                                 : [];
                             const hasRealText = Boolean(message.content) && !legacy && !/^\[.+\]$/.test(message.content);
+                            const receipt = receiptStateFor(message);
+                            const showReceiptCheck = outbound && !message.failed;
+                            const isActive = activeMessageId === message.id;
+                            const activate = () => setActiveMessageId((current) => (current === message.id ? null : message.id));
+
                             const meta = (
                               <div
                                 className={cn(
-                                  'mt-0.5 flex items-center gap-1.5 px-1 text-[10px]',
-                                  outbound ? 'justify-end text-primary-foreground/70' : 'text-slate-400',
+                                  'mt-1 flex items-center gap-1.5 px-1 text-[10px]',
+                                  outbound ? 'justify-end text-slate-400' : 'text-slate-400',
                                 )}
                               >
                                 {item.showTime ? <span>{clockTime(message.createdAt)}</span> : null}
                                 {message.pending ? (
-                                  <span title={t('sendingMessage')}>
+                                  <span className="inline-flex items-center gap-1" title={t('sendingMessage')}>
+                                    {t('sendingMessage')}
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                   </span>
-                                ) : message.failed ? (
-                                  <button
-                                    type="button"
-                                    className="font-medium underline underline-offset-2"
-                                    title={t('messageFailed')}
-                                    onClick={() => retryMessage(message.content)}
+                                ) : message.failed ? null : showReceiptCheck ? (
+                                  <span
+                                    className={cn(
+                                      'inline-flex items-center gap-1',
+                                      receipt === 'read' ? 'text-primary' : 'text-slate-400',
+                                    )}
                                   >
-                                    {t('retrySend')}
-                                  </button>
-                                ) : outbound ? (
-                                  <CheckCheck className="h-3 w-3" />
+                                    {receipt === 'read' ? (
+                                      <span title={t('messageRead')}><CheckCheck className="h-3.5 w-3.5" /></span>
+                                    ) : receipt === 'delivered' ? (
+                                      <span title={t('messageDelivered')}><CheckCheck className="h-3 w-3" /></span>
+                                    ) : (
+                                      <span title={t('messageSent')}><Check className="h-3 w-3" /></span>
+                                    )}
+                                  </span>
                                 ) : null}
                               </div>
                             );
@@ -2027,22 +2082,44 @@ export default function MessagesPage() {
                                     outbound ? 'items-end' : 'items-start',
                                   )}
                                 >
-                                  {hasRealText ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => copyMessage(message.content, message.id)}
+                                  {/* Action toolbar: copy / reply (and retry for failed).
+                                      Visible on hover for pointer devices and while active
+                                      (tap-to-toggle on touch), so mobile users can reach it. */}
+                                  {hasRealText && !message.pending ? (
+                                    <div
                                       className={cn(
-                                        'absolute -top-3 z-10 hidden h-7 w-7 items-center justify-center rounded-full border border-border bg-background text-slate-500 shadow-sm transition hover:text-primary group-hover/bubble:flex',
-                                        outbound ? 'left-0 -translate-x-1/2' : 'right-0 translate-x-1/2',
+                                        'absolute z-10 flex items-center gap-0.5 rounded-full border border-border bg-background/95 p-0.5 shadow-md backdrop-blur',
+                                        outbound
+                                          ? 'left-0 top-0 -translate-x-2 -translate-y-1/2'
+                                          : 'right-0 top-0 translate-x-2 -translate-y-1/2',
+                                        isActive
+                                          ? 'flex'
+                                          : 'hidden group-hover/bubble:flex',
                                       )}
-                                      aria-label={t('copy')}
                                     >
-                                      {copiedId === message.id ? (
-                                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                                      ) : (
-                                        <Copy className="h-3.5 w-3.5" />
-                                      )}
-                                    </button>
+                                      <button
+                                        type="button"
+                                        className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-muted hover:text-primary"
+                                        aria-label={t('replyToMessage')}
+                                        title={t('replyToMessage')}
+                                        onClick={() => replyToMessage(message)}
+                                      >
+                                        <CornerUpLeft className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-muted hover:text-primary"
+                                        aria-label={t('copy')}
+                                        title={t('copy')}
+                                        onClick={() => copyMessage(message.content, message.id)}
+                                      >
+                                        {copiedId === message.id ? (
+                                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                        ) : (
+                                          <Copy className="h-3.5 w-3.5" />
+                                        )}
+                                      </button>
+                                    </div>
                                   ) : null}
                                   {attachments.map((attachment, index) => (
                                     <div
@@ -2053,21 +2130,33 @@ export default function MessagesPage() {
                                     </div>
                                   ))}
                                   {hasRealText ? (
-                                    <div
+                                    <button
+                                      type="button"
+                                      onClick={activate}
                                       className={cn(
-                                        'rounded-2xl px-4 py-2.5 shadow-sm',
+                                        'rounded-[1.25rem] px-4 py-2.5 text-left shadow-sm ring-1 transition active:scale-[0.99]',
                                         outbound
-                                          ? 'rounded-br-md bg-primary text-primary-foreground shadow-primary'
-                                          : 'rounded-bl-md border border-border bg-card text-card-foreground',
-                                        message.failed ? 'opacity-60 ring-1 ring-destructive' : '',
+                                          ? 'rounded-br-md bg-gradient-to-br from-primary to-primary/90 text-primary-foreground ring-primary/20'
+                                          : 'rounded-bl-md border border-border bg-card text-card-foreground ring-black/[0.03]',
+                                        message.failed ? 'opacity-60 ring-destructive' : '',
                                       )}
                                     >
-                                      <p className="whitespace-pre-wrap break-words text-sm">
+                                      <p className="whitespace-pre-wrap break-words text-[0.92rem] leading-relaxed">
                                         <Highlight text={message.content} query={threadSearch} />
                                       </p>
-                                    </div>
+                                    </button>
                                   ) : null}
                                   {meta}
+                                  {message.failed ? (
+                                    <button
+                                      type="button"
+                                      className="mt-1 inline-flex items-center gap-1.5 self-end rounded-full border border-destructive/30 bg-destructive/5 px-3 py-1 text-[11px] font-medium text-destructive transition hover:bg-destructive/10"
+                                      onClick={() => retryMessage(message.content)}
+                                    >
+                                      <RotateCw className="h-3 w-3" />
+                                      {t('retrySend')}
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
                             );
@@ -2076,6 +2165,19 @@ export default function MessagesPage() {
                       </div>
                     </ScrollArea>
 
+                    {participantTyping && selectedConversation?.canReply ? (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+                          <span className="flex items-center gap-0.5">
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+                          </span>
+                          {t('typingParticipant')}
+                        </span>
+                      </div>
+                    ) : null}
+
                     {!atBottom && messages.length > 0 ? (
                       <button
                         type="button"
@@ -2083,7 +2185,7 @@ export default function MessagesPage() {
                         className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-lg transition-transform hover:scale-105"
                       >
                         <ArrowDown className="h-3.5 w-3.5" />
-                        {t('jumpToLatest')}
+                        {selectedConversation?.unreadCount ? t('jumpToLatest') : t('jumpToBottom')}
                       </button>
                     ) : null}
                   </div>
@@ -2208,10 +2310,31 @@ export default function MessagesPage() {
                         </div>
                       </Popover>
 
-                      <span className="ml-auto text-[11px] tabular-nums text-slate-400">
+                      <span
+                        className={cn(
+                          'ml-auto text-[11px] tabular-nums transition-opacity',
+                          draft.length > 0 ? 'opacity-100' : 'opacity-0',
+                          draft.length > 900 ? 'font-medium text-amber-600' : 'text-slate-400',
+                        )}
+                      >
                         {draft.length}/1000
                       </span>
                     </div>
+
+                    {replyTarget ? (
+                      <div className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1.5">
+                        <CornerUpLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate text-xs text-muted-foreground">{replyTarget.text}</span>
+                        <button
+                          type="button"
+                          className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label={t('closeLeadPanel')}
+                          onClick={dismissReply}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
 
                     <div className="flex items-end gap-2">
                       <Textarea

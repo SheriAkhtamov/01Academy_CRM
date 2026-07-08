@@ -366,7 +366,9 @@ function ArchiveLeadDialog({
           ) : null}
 
           <div className="space-y-2">
-            <FormLabel htmlFor="archive-reason">{t('archiveReason')}</FormLabel>
+            <label htmlFor="archive-reason" className="text-sm font-medium leading-none">
+              {t('archiveReason')}
+            </label>
             <select
               id="archive-reason"
               value={reason}

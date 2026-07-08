@@ -646,6 +646,20 @@ const firstMediaUrl = (...values: unknown[]) => {
   return undefined;
 };
 
+const instagramPreviewUrlFromLink = (link?: string) => {
+  if (!link) return undefined;
+  try {
+    const parsed = new URL(link);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'instagram.com' && host !== 'www.instagram.com') return undefined;
+    const match = parsed.pathname.match(/^\/(?:p|reel|tv)\/([^/?#]+)/i);
+    if (!match?.[1]) return undefined;
+    return `https://www.instagram.com/p/${match[1]}/media/?size=l`;
+  } catch {
+    return undefined;
+  }
+};
+
 type MediaUrlCandidate = {
   url: string;
   key: string;
@@ -746,6 +760,10 @@ const makeMediaAttachment = ({
 }): InstagramMessageAttachment | null => {
   const displayUrl = mediaUrl || previewUrl;
   if (!displayUrl) {
+    const instagramPreviewUrl = instagramPreviewUrlFromLink(link);
+    if (instagramPreviewUrl) {
+      return { type: 'image', url: instagramPreviewUrl, link, title, subtitle };
+    }
     return link ? { type: 'share', link, title, subtitle } : null;
   }
 

@@ -225,6 +225,13 @@
       "when": 1783699200000,
       "tag": "0031_add_instagram_message_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783785600000,
+      "tag": "0032_add_instagram_message_read_tracking",
+      "breakpoints": true
     }
   ]
 }

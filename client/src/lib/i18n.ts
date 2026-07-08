@@ -1216,6 +1216,17 @@ export const translations = {
   mediaAudio: { en: 'Audio', ru: 'Аудио' },
   mediaAttachment: { en: 'Attachment', ru: 'Вложение' },
   viewMedia: { en: 'View media', ru: 'Посмотреть медиа' },
+  // Messages inbox — read receipts, actions, sorting
+  messageSent: { en: 'Sent', ru: 'Отправлено' },
+  messageDelivered: { en: 'Delivered', ru: 'Доставлено' },
+  messageRead: { en: 'Read', ru: 'Прочитано' },
+  replyToMessage: { en: 'Reply', ru: 'Ответить' },
+  unreadMessages: { en: 'Unread messages', ru: 'Новые сообщения' },
+  sortByUnread: { en: 'Unread first', ru: 'Сначала новые' },
+  sortNewest: { en: 'Newest', ru: 'По времени' },
+  jumpToBottom: { en: 'To latest', ru: 'К последнему' },
+  typingManager: { en: '{name} is typing…', ru: '{name} печатает…' },
+  typingParticipant: { en: 'typing…', ru: 'печатает…' },
 
   // UX improvements — administration dashboard
   adminDashboardTitle: { en: 'Dashboard', ru: 'Дашборд' },

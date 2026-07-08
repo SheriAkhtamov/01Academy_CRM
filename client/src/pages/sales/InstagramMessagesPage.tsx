@@ -31,6 +31,7 @@ import {
 import {
   AlertCircle,
   ArrowDown,
+  ArrowDownUp,
   AtSign,
   Check,
   CheckCheck,
@@ -38,6 +39,7 @@ import {
   Clock3,
   Copy,
   CornerDownLeft,
+  CornerUpLeft,
   ExternalLink,
   Image as ImageIcon,
   Info,
@@ -50,6 +52,7 @@ import {
   PanelRightOpen,
   Plus,
   RefreshCw,
+  RotateCw,
   Save,
   Search,
   SearchX,
@@ -74,6 +77,7 @@ interface InstagramConversation {
   lastMessageAt?: string | null;
   lastInboundAt?: string | null;
   lastOutboundAt?: string | null;
+  lastReadMessageAt?: string | null;
   accountUsername: string;
   accountStatus: string;
   contactName?: string | null;
@@ -98,6 +102,8 @@ interface InstagramMessage {
   status: string;
   sentBy?: number | null;
   attachments?: InstagramMessageAttachment[];
+  deliveredAt?: string | null;
+  readAt?: string | null;
   createdAt: string;
 }
 
@@ -125,6 +131,7 @@ type ThreadMessage = InstagramMessage & { pending?: boolean; failed?: boolean };
 
 type ThreadItem =
   | { kind: 'date'; id: string; label: string }
+  | { kind: 'unread'; id: string; label: string }
   | { kind: 'message'; id: number; message: ThreadMessage; showTime: boolean };
 
 interface InstagramSyncStats {
@@ -288,15 +295,38 @@ const syncSummaryText = (stats: Partial<InstagramSyncStats> | undefined, t: (key
     .replace('{messages}', String(stats?.messages ?? 0))
     .replace('{leads}', String(stats?.leadsCreated ?? 0));
 
+// Outbound receipt state, derived from the webhook-backed timestamps.
+//   pending  – optimistic, not yet confirmed by the server
+//   sent     – accepted by Graph API, no delivery/read event yet
+//   delivered – message_deliveries webhook confirmed delivery
+//   read     – messaging_seen webhook confirmed the participant saw it
+type ReceiptState = 'pending' | 'sent' | 'delivered' | 'read';
+
+const receiptStateFor = (message: ThreadMessage): ReceiptState => {
+  if (message.pending) return 'pending';
+  if (message.failed) return 'sent';
+  if (message.direction !== 'outbound') return 'sent';
+  if (message.readAt) return 'read';
+  if (message.deliveredAt) return 'delivered';
+  return 'sent';
+};
+
 const buildThreadItems = (
   messages: ThreadMessage[],
   t: (key: TranslationKey) => string,
   searchQuery = '',
+  lastReadAt?: string | null,
 ): ThreadItem[] => {
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const visibleMessages = normalizedSearch
     ? messages.filter((message) => message.content?.toLowerCase().includes(normalizedSearch))
     : messages;
+
+  // Insert the "unread" divider above the first inbound message newer than the
+  // manager's high-water mark. Only relevant when not searching (search hides
+  // messages, so a divider would be misleading) and the conversation is unread.
+  const readWatermark = lastReadAt ? new Date(lastReadAt).getTime() : null;
+  let unreadDividerInserted = Boolean(readWatermark !== null && !normalizedSearch);
 
   const items: ThreadItem[] = [];
   let lastDay = '';
@@ -312,6 +342,12 @@ const buildThreadItems = (
     }
 
     const time = new Date(message.createdAt).getTime();
+
+    if (unreadDividerInserted && readWatermark !== null
+      && message.direction === 'inbound' && time > readWatermark) {
+      items.push({ kind: 'unread', id: 'unread-divider', label: t('unreadMessages') });
+      unreadDividerInserted = false;
+    }
     const withinGroup = lastDirection === message.direction && time - lastTime < 5 * 60 * 1000;
     items.push({ kind: 'message', id: message.id, message, showTime: !withinGroup });
     lastDirection = message.direction;
@@ -1055,6 +1091,16 @@ export default function MessagesPage() {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [newTemplate, setNewTemplate] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [sortByUnread, setSortByUnread] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ig_sort_unread_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [activeMessageId, setActiveMessageId] = useState<number | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{ id: number; text: string } | null>(null);
+  const [participantTyping, setParticipantTyping] = useState(false);
 
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1123,6 +1169,31 @@ export default function MessagesPage() {
       return haystack.includes(normalizedSearch);
     });
   }, [conversations, filter, search]);
+
+  // Two-tier ordering: unread first (by most recent inbound), then the rest by
+  // most recent activity. Toggleable so users who prefer strict chronological
+  // order can keep the old behavior.
+  const sortedConversations = useMemo(() => {
+    if (!sortByUnread) return filteredConversations;
+    const time = (value?: string | null) => (value ? new Date(value).getTime() : 0);
+    return [...filteredConversations].sort((left, right) => {
+      const lu = left.unreadCount > 0;
+      const ru = right.unreadCount > 0;
+      if (lu !== ru) return lu ? -1 : 1;
+      const lt = time(lu ? left.lastInboundAt : left.lastMessageAt);
+      const rt = time(ru ? right.lastInboundAt : right.lastMessageAt);
+      return rt - lt;
+    });
+  }, [filteredConversations, sortByUnread]);
+
+  const toggleSortByUnread = (next: boolean) => {
+    setSortByUnread(next);
+    try {
+      localStorage.setItem('ig_sort_unread_v1', next ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  };
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
@@ -1896,6 +1967,17 @@ export default function MessagesPage() {
                                     {item.label}
                                   </span>
                                   <div className="h-px flex-1 bg-border" />
+                                </div>
+                              );
+                            }
+                            if (item.kind === 'unread') {
+                              return (
+                                <div key={item.id} className="my-4 flex items-center gap-3">
+                                  <div className="h-px flex-1 bg-primary/30" />
+                                  <span className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground shadow-sm">
+                                    {item.label}
+                                  </span>
+                                  <div className="h-px flex-1 bg-primary/30" />
                                 </div>
                               );
                             }

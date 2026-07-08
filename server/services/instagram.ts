@@ -104,6 +104,7 @@ const INSTAGRAM_SCOPES = [
 const INSTAGRAM_WEBHOOK_FIELDS = [
   'messages',
   'messaging_postbacks',
+  'message_deliveries',
   'messaging_seen',
   'message_reactions',
 ];
@@ -1106,9 +1107,97 @@ const ensureLeadForConversation = async (
   return lead;
 };
 
+const processReceiptEvent = async (account: InstagramAccountRow, event: any) => {
+  const watermarkMs = Number(event?.read?.watermark ?? event?.delivery?.watermark);
+  if (!Number.isFinite(watermarkMs) || watermarkMs <= 0) return;
+  const isRead = event?.read?.watermark != null;
+  const watermark = new Date(watermarkMs);
+
+  // sender here is the participant (who saw/received), recipient is the IG account.
+  const participantIgsid = String(event?.sender?.id ?? '');
+  if (!participantIgsid || participantIgsid === String(account.ig_user_id)) return;
+
+  const client = await pool.connect();
+  let conversation: { id: number; lead_id: number | null; manager_id: number | null } | null = null;
+  try {
+    const conversationResult = await client.query(
+      `SELECT c.id, c.lead_id, l.manager_id
+       FROM instagram_conversations c
+       LEFT JOIN academy_leads l ON l.id = c.lead_id
+       WHERE c.account_id = $1 AND c.participant_igsid = $2
+       LIMIT 1`,
+      [account.id, participantIgsid],
+    );
+    conversation = conversationResult.rows[0] ?? null;
+    if (!conversation) return;
+
+    if (isRead) {
+      await client.query(
+        `UPDATE instagram_messages
+           SET read_at = COALESCE(read_at, NOW()),
+               delivered_at = COALESCE(delivered_at, NOW())
+         WHERE conversation_id = $1
+           AND direction = 'outbound'
+           AND created_at <= $2`,
+        [conversation.id, watermark],
+      );
+      await client.query(
+        `UPDATE instagram_conversations
+           SET last_read_message_at = GREATEST(COALESCE(last_read_message_at, 'epoch'::timestamp), $2),
+               updated_at = NOW()
+         WHERE id = $1
+           AND (last_read_message_at IS NULL OR last_read_message_at < $2)`,
+        [conversation.id, watermark],
+      );
+    } else {
+      await client.query(
+        `UPDATE instagram_messages
+           SET delivered_at = COALESCE(delivered_at, NOW())
+         WHERE conversation_id = $1
+           AND direction = 'outbound'
+           AND created_at <= $2
+           AND delivered_at IS NULL`,
+        [conversation.id, watermark],
+      );
+    }
+  } catch (error) {
+    logger.warn('Failed to process Instagram message receipt event', {
+      accountId: account.id,
+      isRead,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    client.release();
+  }
+
+  if (conversation) {
+    broadcastToClients({
+      type: 'INSTAGRAM_CONVERSATION_UPDATED',
+      data: {
+        conversationId: Number(conversation.id),
+        receipt: { read: isRead, watermark: watermark.toISOString() },
+      },
+      audienceUserIds: conversation.manager_id ? [Number(conversation.manager_id)] : undefined,
+    });
+  }
+};
+
 const processMessagingEvent = async (account: InstagramAccountRow, event: any) => {
   const message = event?.message;
-  if (!message || (!message.mid && !message.text && !message.attachments)) return;
+
+  // Receipt events carry no `message` payload — they only carry a watermark.
+  // Instagram delivers these as:
+  //   read:     { sender: {id: participantIgsid}, recipient: {id: igUserId},
+  //               read: { watermark: <epochMs> } }
+  //   delivery: { ... recipient: {id: igUserId}, delivery: { watermark: <epochMs> } }
+  // The participant is the one who saw/delivered-to, so we stamp our own
+  // OUTBOUND messages in that conversation up to (and including) the watermark.
+  if (!message || (!message.mid && !message.text && !message.attachments)) {
+    if (event?.read?.watermark != null || event?.delivery?.watermark != null) {
+      return processReceiptEvent(account, event);
+    }
+    return;
+  }
 
   const senderIgsid = String(event.sender?.id ?? '');
   const recipientIgsid = String(event.recipient?.id ?? '');
@@ -1363,6 +1452,45 @@ const fetchInstagramConversationSummaries = async (
   }
 };
 
+type ExistingInstagramConversationImportState = {
+  id: number;
+  participant_igsid: string;
+  last_message_at: Date | string | null;
+};
+
+const loadExistingInstagramConversationImportState = async (accountId: number) => {
+  const { rows } = await pool.query<ExistingInstagramConversationImportState>(
+    `SELECT id, participant_igsid, last_message_at
+     FROM instagram_conversations
+     WHERE account_id = $1`,
+    [accountId],
+  );
+  return new Map(rows.map((row) => [String(row.participant_igsid), row]));
+};
+
+const findConversationSummaryParticipant = (
+  conversation: InstagramGraphConversation,
+  account: InstagramAccountRow,
+) => getGraphParticipantList(conversation.participants)
+  .find((participant) => participant.id && !isAccountParticipant(participant, account));
+
+const shouldSkipImportedConversation = (
+  existing: ExistingInstagramConversationImportState | undefined,
+  summary: InstagramGraphConversation,
+) => {
+  if (!existing) return false;
+  const summaryUpdatedAt = parseInstagramDate(summary.updated_time);
+  const localLastMessageAt = parseInstagramDate(existing.last_message_at);
+
+  // If Meta did not send an update timestamp in the list response, avoid a
+  // detail/messages call for an already known participant. New conversations
+  // still import because `existing` is absent.
+  if (!summaryUpdatedAt) return true;
+  if (!localLastMessageAt) return false;
+
+  return localLastMessageAt.getTime() >= summaryUpdatedAt.getTime() - 2000;
+};
+
 const fetchInstagramConversationDetail = async (
   conversationId: string,
   accessToken: string,
@@ -1556,7 +1684,7 @@ const upsertImportedInstagramConversation = async (
            message_type = EXCLUDED.message_type,
            attachments = EXCLUDED.attachments,
            updated_at = NOW()
-         RETURNING id`,
+         RETURNING (xmax = 0) AS inserted`,
         [
           conversationRow.id,
           message.externalMessageId,
@@ -1571,7 +1699,7 @@ const upsertImportedInstagramConversation = async (
           message.createdAt,
         ],
       );
-      if (inserted.rows[0]) stats.messages += 1;
+      if (inserted.rows[0]?.inserted === true) stats.messages += 1;
     }
 
     await client.query(
@@ -1620,8 +1748,21 @@ const importInstagramAccountHistory = async (
     throw error;
   }
 
+  const existingConversations = await loadExistingInstagramConversationImportState(account.id);
+
   for (const conversationSummary of conversations) {
     try {
+      const summaryParticipant = findConversationSummaryParticipant(conversationSummary, account);
+      const summaryParticipantIgsid = String(summaryParticipant?.id ?? '');
+      const existingConversation = summaryParticipantIgsid
+        ? existingConversations.get(summaryParticipantIgsid)
+        : undefined;
+      if (shouldSkipImportedConversation(existingConversation, conversationSummary)) {
+        stats.skipped += 1;
+        onProgress?.(stats);
+        continue;
+      }
+
       const conversation = await fetchInstagramConversationDetail(conversationSummary.id, accessToken);
       const messages = await fetchInstagramConversationMessages(
         conversation.id,
@@ -1658,6 +1799,11 @@ const importInstagramAccountHistory = async (
           participantIgsid,
         ),
       );
+      existingConversations.set(participantIgsid, {
+        id: existingConversation?.id ?? 0,
+        participant_igsid: participantIgsid,
+        last_message_at: parseInstagramDate(conversation.updated_time) ?? null,
+      });
       onProgress?.(stats);
     } catch (error) {
       if (isInstagramRateLimitError(error)) {
@@ -1846,7 +1992,7 @@ export const listInstagramConversations = async (user: InstagramUser) => {
   const { rows } = await pool.query(
     `SELECT c.id, c.account_id, c.lead_id, c.participant_igsid, c.participant_username,
             c.participant_name, c.participant_profile_picture_url, c.unread_count,
-            c.last_message_at, c.last_inbound_at, c.last_outbound_at,
+            c.last_message_at, c.last_inbound_at, c.last_outbound_at, c.last_read_message_at,
             a.username AS account_username, a.status AS account_status,
             l.contact_name, l.status_code, l.manager_id, u.full_name AS manager_name,
             last_message.content AS last_message,
@@ -1879,7 +2025,8 @@ export const listInstagramMessages = async (conversationId: number, user: Instag
   await assertConversationAccess(conversationId, user);
   const { rows } = await pool.query(
     `SELECT id, conversation_id, external_message_id, direction, sender_igsid,
-            recipient_igsid, content, message_type, status, sent_by, attachments, created_at, updated_at
+            recipient_igsid, content, message_type, status, sent_by, attachments,
+            delivered_at, read_at, created_at, updated_at
      FROM instagram_messages
      WHERE conversation_id = $1
      ORDER BY created_at ASC, id ASC`,

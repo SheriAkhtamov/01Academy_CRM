@@ -622,6 +622,10 @@ export const instagramConversations = pgTable("instagram_conversations", {
   lastMessageAt: timestamp("last_message_at"),
   lastInboundAt: timestamp("last_inbound_at"),
   lastOutboundAt: timestamp("last_outbound_at"),
+  // High-water mark: timestamp of the most recent outbound message seen by the
+  // participant. Backed by the `messaging_seen` webhook. Drives the unread
+  // separator and the "sent / delivered / read" receipt state.
+  lastReadMessageAt: timestamp("last_read_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
@@ -654,12 +658,18 @@ export const instagramMessages = pgTable("instagram_messages", {
     title?: string;
     subtitle?: string;
   }>>().notNull().default([]),
+  // Receipt timestamps (outbound only). Populated by the Instagram
+  // `message_deliveries` and `messaging_seen` webhooks. Null before the
+  // corresponding event arrives.
+  deliveredAt: timestamp("delivered_at"),
+  readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   externalMessageUnique: uniqueIndex("instagram_messages_external_message_unique").on(table.externalMessageId),
   conversationIdx: index("instagram_messages_conversation_idx").on(table.conversationId),
   createdIdx: index("instagram_messages_created_idx").on(table.createdAt),
+  conversationReadIdx: index("instagram_messages_conversation_read_idx").on(table.conversationId, table.readAt),
 }));
 
 export const academyNotificationOutbox = pgTable("academy_notification_outbox", {

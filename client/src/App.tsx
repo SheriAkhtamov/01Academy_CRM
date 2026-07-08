@@ -20,6 +20,7 @@ import AcademySettings from '@/pages/academy-settings';
 import AdminTasksPage from '@/pages/admin/tasks';
 import AuditPage from '@/pages/admin/audit';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
+import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 
 function WorkspaceBasedHome() {
   const { user } = useAuth();
@@ -267,7 +268,9 @@ function App() {
         <AuthProvider>
           <TooltipProvider>
             <Toaster />
-            <Router />
+            <AppErrorBoundary>
+              <Router />
+            </AppErrorBoundary>
           </TooltipProvider>
         </AuthProvider>
       </QueryClientProvider>

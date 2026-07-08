@@ -3404,9 +3404,28 @@ router.post('/leads/:id/archive', async (req, res) => {
       return res.status(400).json({ error: 'archiveReasonRequired' });
     }
 
+    const assignToSelf = toBoolean(req.body.assignToSelf, false) === true;
     let archived: Row | undefined;
 
     await withTransaction(async () => {
+      let leadBeforeArchive = oldLead;
+
+      if (!leadBeforeArchive.managerId) {
+        if (!assignToSelf) {
+          throw Object.assign(new Error('leadRequiresResponsibleManager'), { statusCode: 409 });
+        }
+
+        const manager = await getActiveSalesManager(req.user!.id);
+        const assignedLead = await reassignLead(
+          req,
+          leadBeforeArchive,
+          manager,
+          nullableText(req.body.assignmentComment) ?? 'Присвоено себе перед архивированием',
+        );
+        await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', assignedLead.id, assignedLead, leadBeforeArchive);
+        leadBeforeArchive = assignedLead;
+      }
+
       archived = await updateRow('academy_leads', id, {
         isArchived: true,
         archiveReason,
@@ -3417,7 +3436,7 @@ router.post('/leads/:id/archive', async (req, res) => {
         throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
       }
 
-      await createAudit(req, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, oldLead);
+      await createAudit(req, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, leadBeforeArchive);
     });
 
     res.json(await getLead(id) ?? archived);

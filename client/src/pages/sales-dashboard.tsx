@@ -308,6 +308,104 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
   );
 }
 
+function ArchiveLeadDialog({
+  lead,
+  reason,
+  onReasonChange,
+  onClose,
+  onConfirm,
+  isPending,
+  t,
+}: {
+  lead: Lead | null;
+  reason: string;
+  onReasonChange: (reason: string) => void;
+  onClose: () => void;
+  onConfirm: (lead: Lead, assignToSelf: boolean) => void;
+  isPending: boolean;
+  t: (key: TranslationKey) => string;
+}) {
+  const needsManager = Boolean(lead && !lead.managerId);
+
+  useEffect(() => {
+    if (!lead) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isPending) onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isPending, lead, onClose]);
+
+  if (!lead) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" role="presentation" onMouseDown={() => !isPending && onClose()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="archive-lead-title"
+        aria-describedby="archive-lead-description"
+        className="w-full max-w-md rounded-xl border border-border/70 bg-background p-6 shadow-xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="space-y-1.5">
+          <h2 id="archive-lead-title" className="text-lg font-semibold leading-none tracking-tight">{t('archiveLead')}</h2>
+          <p id="archive-lead-description" className="text-sm text-muted-foreground">
+            {lead.contactName ? `${lead.contactName}. ` : null}
+            {t('archiveLeadDescription')}
+          </p>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          {needsManager ? (
+            <Alert>
+              <AlertCircle />
+              <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
+              <AlertDescription>{t('leadRequiresResponsibleManagerDescription')}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <div className="space-y-2">
+            <FormLabel htmlFor="archive-reason">{t('archiveReason')}</FormLabel>
+            <select
+              id="archive-reason"
+              value={reason}
+              onChange={(event) => onReasonChange(event.target.value)}
+              disabled={isPending}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-2xs outline-none transition-[border-color,box-shadow,background-color] duration-200 hover:border-slate-400 focus:border-primary-500 focus:ring-4 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="" disabled>{t('chooseArchiveReason')}</option>
+              {LEAD_ARCHIVE_REASONS.map((archiveReason) => (
+                <option key={archiveReason.code} value={archiveReason.code}>
+                  {t(archiveReason.translationKey as TranslationKey)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+              {t('cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                if (!reason) return;
+                onConfirm(lead, needsManager);
+              }}
+              disabled={!reason || isPending}
+            >
+              {needsManager ? <UserCheck data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
+              {isPending ? t('saving') : needsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -522,10 +620,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const archiveLead = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason }),
+    mutationFn: ({ id, reason, assignToSelf }: { id: number; reason: string; assignToSelf?: boolean }) =>
+      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, assignToSelf }),
     onSuccess: (_lead, variables) => {
-      toast({ title: t('leadArchived') });
+      toast({ title: variables.assignToSelf ? t('leadAssignedAndArchived') : t('leadArchived') });
       setArchiveDialogLead(null);
       setArchiveReason('');
       if (selectedLeadId === variables.id) {
@@ -742,7 +840,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     : section === 'archive'
       ? t('leadArchiveDescription')
       : salesWorkspaceDescription;
-
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
@@ -869,53 +966,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         />
       ) : null}
 
-      <Dialog open={Boolean(archiveDialogLead)} onOpenChange={handleArchiveDialogState}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('archiveLead')}</DialogTitle>
-            <DialogDescription>
-              {archiveDialogLead?.contactName ? `${archiveDialogLead.contactName}. ` : null}
-              {t('archiveLeadDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <FormLabel>{t('archiveReason')}</FormLabel>
-              <Select value={archiveReason} onValueChange={setArchiveReason} disabled={archiveLead.isPending}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('chooseArchiveReason')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {LEAD_ARCHIVE_REASONS.map((reason) => (
-                      <SelectItem key={reason.code} value={reason.code}>
-                        {t(reason.translationKey as TranslationKey)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => handleArchiveDialogState(false)} disabled={archiveLead.isPending}>
-                {t('cancel')}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => {
-                  if (!archiveDialogLead || !archiveReason) return;
-                  archiveLead.mutate({ id: archiveDialogLead.id, reason: archiveReason });
-                }}
-                disabled={!archiveReason || archiveLead.isPending}
-              >
-                <Archive data-icon="inline-start" />
-                {archiveLead.isPending ? t('saving') : t('sendToArchive')}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ArchiveLeadDialog
+        lead={archiveDialogLead}
+        reason={archiveReason}
+        onReasonChange={setArchiveReason}
+        onClose={() => handleArchiveDialogState(false)}
+        onConfirm={(lead, assignToSelf) => archiveLead.mutate({ id: lead.id, reason: archiveReason, assignToSelf })}
+        isPending={archiveLead.isPending}
+        t={t}
+      />
 
       <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">

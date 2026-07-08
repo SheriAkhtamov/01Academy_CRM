@@ -345,6 +345,16 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveDialogLead, setArchiveDialogLead] = useState<Lead | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
 
+  const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
+    const params = new URLSearchParams(routeSearch);
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    });
+    const query = params.toString();
+    setLocation(query ? `${pagePath}?${query}` : pagePath, { replace: true });
+  }, [pagePath, routeSearch, setLocation]);
+
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/sales'],
   });
@@ -512,12 +522,17 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const archiveLead = useMutation({
-    mutationFn: ({ id, reason, assignToSelf }: { id: number; reason: string; assignToSelf?: boolean }) =>
-      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, assignToSelf }),
+    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason }),
     onSuccess: (_lead, variables) => {
-      toast({ title: variables.assignToSelf ? t('leadAssignedAndArchived') : t('leadArchived') });
+      toast({ title: t('leadArchived') });
       setArchiveDialogLead(null);
       setArchiveReason('');
+      if (selectedLeadId === variables.id) {
+        setLeadSheetOpen(false);
+        setSelectedLeadId(null);
+        replaceSalesParams({ lead: null });
+      }
       invalidate();
     },
     onError: (error: any) => toast({ title: t('leadArchiveFailed'), description: error.message, variant: 'destructive' }),
@@ -553,16 +568,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     },
     onError: (error: Error) => toast({ title: ceoCopy.student.updateFailed, description: error.message, variant: 'destructive' }),
   });
-
-  const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
-    const params = new URLSearchParams(routeSearch);
-    Object.entries(changes).forEach(([key, value]) => {
-      if (value === null) params.delete(key);
-      else params.set(key, value);
-    });
-    const query = params.toString();
-    setLocation(query ? `${pagePath}?${query}` : pagePath, { replace: true });
-  }, [pagePath, routeSearch, setLocation]);
 
   const openLead = useCallback((leadId: number, tab: LeadSheetTab = 'deal') => {
     setSelectedLeadId(leadId);
@@ -737,7 +742,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     : section === 'archive'
       ? t('leadArchiveDescription')
       : salesWorkspaceDescription;
-  const archiveLeadNeedsManager = Boolean(archiveDialogLead && !archiveDialogLead.managerId);
 
   return (
     <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
@@ -875,13 +879,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {archiveLeadNeedsManager ? (
-              <Alert>
-                <AlertCircle />
-                <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
-                <AlertDescription>{t('leadRequiresResponsibleManagerDescription')}</AlertDescription>
-              </Alert>
-            ) : null}
             <div className="space-y-2">
               <FormLabel>{t('archiveReason')}</FormLabel>
               <Select value={archiveReason} onValueChange={setArchiveReason} disabled={archiveLead.isPending}>
@@ -908,12 +905,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
                 variant="destructive"
                 onClick={() => {
                   if (!archiveDialogLead || !archiveReason) return;
-                  archiveLead.mutate({ id: archiveDialogLead.id, reason: archiveReason, assignToSelf: archiveLeadNeedsManager });
+                  archiveLead.mutate({ id: archiveDialogLead.id, reason: archiveReason });
                 }}
                 disabled={!archiveReason || archiveLead.isPending}
               >
-                {archiveLeadNeedsManager ? <UserCheck data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
-                {archiveLead.isPending ? t('saving') : archiveLeadNeedsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
+                <Archive data-icon="inline-start" />
+                {archiveLead.isPending ? t('saving') : t('sendToArchive')}
               </Button>
             </div>
           </div>

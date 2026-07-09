@@ -1639,7 +1639,9 @@ export default function MessagesPage() {
     );
   }
 
-  const gridCols = 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
+  const gridCols = leadCollapsed
+    ? 'xl:grid-cols-[320px_minmax(0,1fr)_56px]'
+    : 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
 
   return (
     <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
@@ -2011,6 +2013,22 @@ export default function MessagesPage() {
                         </TooltipTrigger>
                         <TooltipContent>{t('search')}</TooltipContent>
                       </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={cn('hidden xl:inline-flex', !leadCollapsed && 'bg-muted text-primary')}
+                            aria-label={leadCollapsed ? t('expandLeadCard') : t('collapseLeadCard')}
+                            aria-pressed={!leadCollapsed}
+                            onClick={() => setLeadCollapsed((collapsed) => !collapsed)}
+                          >
+                            {leadCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{leadCollapsed ? t('expandLeadCard') : t('collapseLeadCard')}</TooltipContent>
+                      </Tooltip>
                       <Button
                         type="button"
                         variant="ghost"
@@ -2248,7 +2266,7 @@ export default function MessagesPage() {
                                       className={cn(
                                         'rounded-[1.25rem] px-4 py-2.5 text-left shadow-sm ring-1 transition active:scale-[0.99]',
                                         outbound
-                                          ? 'rounded-br-md bg-gradient-to-br from-primary to-primary/90 text-primary-foreground ring-primary/20'
+                                          ? 'rounded-br-md border border-primary/20 bg-primary/10 text-foreground shadow-none ring-0'
                                           : 'rounded-bl-md border border-border bg-card text-card-foreground ring-black/[0.03]',
                                         message.failed ? 'opacity-60 ring-destructive' : '',
                                       )}
@@ -2493,16 +2511,25 @@ export default function MessagesPage() {
 
             {/* Lead panel (desktop) */}
             {leadCollapsed ? (
-              <div className="hidden xl:flex flex-col items-center border-l border-border bg-background py-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t('expandLeadCard')}
-                  onClick={() => setLeadCollapsed(false)}
-                >
-                  <PanelRightOpen className="h-4 w-4" />
-                </Button>
+              <div className="hidden xl:flex flex-col items-center border-l border-border bg-muted/20 py-3">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10"
+                      aria-label={t('expandLeadCard')}
+                      onClick={() => setLeadCollapsed(false)}
+                    >
+                      <PanelRightOpen className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">{t('expandLeadCard')}</TooltipContent>
+                </Tooltip>
+                <span className="mt-3 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground [writing-mode:vertical-rl]">
+                  {t('leadCard')}
+                </span>
               </div>
             ) : (
               <div className="hidden min-h-0 flex-col border-l border-border bg-background xl:flex">

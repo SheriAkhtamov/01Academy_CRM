@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { Readable } from 'node:stream';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -36,6 +37,22 @@ const ensureMessagingAccess = (req: any, res: any) => {
   res.status(403).json({ error: 'Sales access required' });
   return false;
 };
+
+const allowedMediaProxyHosts = [
+  'instagram.com',
+  'cdninstagram.com',
+  'fbcdn.net',
+  'fbsbx.com',
+  'facebook.com',
+];
+
+const isAllowedMediaProxyUrl = (url: URL) => (
+  url.protocol === 'https:'
+  && allowedMediaProxyHosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))
+);
+
+const isProxyableMediaType = (contentType: string) =>
+  /^(image|video|audio)\//i.test(contentType);
 
 const parseId = (value: string) => {
   const id = Number.parseInt(value, 10);
@@ -200,6 +217,63 @@ router.post('/conversations/sync', async (req, res) => {
 router.get('/conversations/sync/status', async (req, res) => {
   if (!ensureMessagingAccess(req, res)) return;
   res.json(getInstagramConversationSyncStatus());
+});
+
+router.get('/media-proxy', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+
+  const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+  let mediaUrl: URL;
+
+  try {
+    mediaUrl = new URL(rawUrl);
+  } catch {
+    return res.status(400).json({ error: 'invalidData' });
+  }
+
+  if (!isAllowedMediaProxyUrl(mediaUrl)) {
+    return res.status(400).json({ error: 'invalidData' });
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      Accept: 'image/avif,image/webp,image/apng,image/*,video/*,audio/*,*/*;q=0.8',
+      'User-Agent': 'Mozilla/5.0 (compatible; 01AcademyCRM/1.0)',
+    };
+    if (typeof req.headers.range === 'string') {
+      headers.Range = req.headers.range;
+    }
+
+    const upstream = await fetch(mediaUrl, {
+      headers,
+      redirect: 'follow',
+    });
+    const contentType = upstream.headers.get('content-type') ?? '';
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: 'instagramMediaUnavailable' });
+    }
+    if (!isProxyableMediaType(contentType)) {
+      return res.status(415).json({ error: 'instagramMediaUnavailable' });
+    }
+
+    res.status(upstream.status);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+
+    const contentLength = upstream.headers.get('content-length');
+    const contentRange = upstream.headers.get('content-range');
+    const acceptRanges = upstream.headers.get('accept-ranges');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+
+    if (!upstream.body) return res.end();
+    return Readable.fromWeb(upstream.body as any).pipe(res);
+  } catch (error) {
+    logger.error('Failed to proxy Instagram media', { error, host: mediaUrl.hostname });
+    return res.status(502).json({ error: 'instagramMediaUnavailable' });
+  }
 });
 
 router.get('/conversations/:id/messages', async (req, res) => {

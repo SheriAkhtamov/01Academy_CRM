@@ -167,6 +167,9 @@ const parseLegacyAttachment = (content?: string): InstagramMessageAttachment[] =
   return [{ type, url }];
 };
 
+const mediaProxyUrl = (url?: string) =>
+  url ? `/api/instagram/media-proxy?url=${encodeURIComponent(url)}` : undefined;
+
 interface LookupOption {
   id: number;
   name: string;
@@ -406,23 +409,26 @@ function AttachmentMedia({
 }) {
   const { t } = useTranslation();
   const mediaUrl = attachment.url || attachment.previewUrl;
+  const proxiedMediaUrl = mediaProxyUrl(mediaUrl);
+  const [mediaFailed, setMediaFailed] = useState(false);
   const isVisualMedia = ['image', 'animated_gif', 'sticker', 'like', 'share'].includes(attachment.type);
 
-  if (attachment.type === 'audio') {
-    return mediaUrl ? (
-      <audio controls src={mediaUrl} className="max-w-full" />
-    ) : null;
+  if (attachment.type === 'audio' && proxiedMediaUrl && !mediaFailed) {
+    return (
+      <audio controls src={proxiedMediaUrl} className="max-w-full" onError={() => setMediaFailed(true)} />
+    );
   }
 
-  if (mediaUrl) {
+  if (proxiedMediaUrl && !mediaFailed) {
     if (attachment.type === 'video') {
       return (
         <div className="relative overflow-hidden rounded-xl bg-black">
           <video
             controls
-            src={mediaUrl}
+            src={proxiedMediaUrl}
             className="max-h-80 w-full"
-            poster={attachment.previewUrl}
+            poster={mediaProxyUrl(attachment.previewUrl)}
+            onError={() => setMediaFailed(true)}
           />
           <Button
             type="button"
@@ -430,7 +436,7 @@ function AttachmentMedia({
             size="icon"
             className="absolute right-2 top-2 h-8 w-8 bg-background/90 shadow-sm hover:bg-background"
             aria-label={t('viewMedia')}
-            onClick={() => onOpen({ url: mediaUrl, type: 'video', title: attachment.title })}
+            onClick={() => onOpen({ url: proxiedMediaUrl, type: 'video', title: attachment.title })}
           >
             <Maximize2 className="h-4 w-4" />
           </Button>
@@ -443,13 +449,15 @@ function AttachmentMedia({
         <button
           type="button"
           className="block overflow-hidden rounded-xl"
-          onClick={() => onOpen({ url: mediaUrl, type: 'image', title: attachment.title })}
+          onClick={() => onOpen({ url: proxiedMediaUrl, type: 'image', title: attachment.title })}
         >
           <img
-            src={mediaUrl}
+            src={proxiedMediaUrl}
             alt={attachment.title || t('viewMedia')}
             className="max-h-80 w-full max-w-sm object-cover transition-transform hover:scale-[1.01]"
             loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setMediaFailed(true)}
           />
         </button>
       );
@@ -467,10 +475,11 @@ function AttachmentMedia({
     );
   }
 
-  if (attachment.link) {
+  const fallbackUrl = attachment.link || mediaUrl;
+  if (fallbackUrl) {
     return (
       <a
-        href={attachment.link}
+        href={fallbackUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1 text-sm text-primary underline"

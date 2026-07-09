@@ -1200,7 +1200,6 @@ export const translations = {
     ru: 'Этот диалог ещё не привязан к лиду в воронке. Он привяжется автоматически после следующей синхронизации.',
   },
   sendingMessage: { en: 'Sending…', ru: 'Отправка…' },
-  messageFailed: { en: 'Not delivered', ru: 'Не доставлено' },
   retrySend: { en: 'Retry', ru: 'Повторить' },
   messagesCount: {
     en: '{count} dialogs',
@@ -1225,9 +1224,6 @@ export const translations = {
   sortByUnread: { en: 'Unread first', ru: 'Сначала новые' },
   sortNewest: { en: 'Newest', ru: 'По времени' },
   jumpToBottom: { en: 'To latest', ru: 'К последнему' },
-  typingManager: { en: '{name} is typing…', ru: '{name} печатает…' },
-  typingParticipant: { en: 'typing…', ru: 'печатает…' },
-
   // UX improvements — administration dashboard
   adminDashboardTitle: { en: 'Dashboard', ru: 'Дашборд' },
   adminDashboardSubtitle: {

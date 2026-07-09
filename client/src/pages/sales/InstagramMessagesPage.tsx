@@ -22,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import {
   Tooltip,
@@ -768,7 +769,7 @@ function LeadPanel({
     <div className="flex items-center justify-between gap-2 border-b border-border p-4">
       <div className="flex min-w-0 items-center gap-2">
         <UserRoundCog className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <p className="truncate text-sm font-semibold text-slate-900">{t('leadCard')}</p>
+        <h2 className="truncate text-sm font-semibold text-slate-900">{t('leadCard')}</h2>
       </div>
       <div className="flex items-center gap-1">
         <Button
@@ -888,10 +889,11 @@ function LeadPanel({
       <div className="border-b border-border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase text-muted-foreground">{t('leadCard')}</p>
+            <p className="text-sm font-medium text-muted-foreground">{t('leadCard')}</p>
             <h2 className="mt-1 truncate text-base font-semibold text-slate-900">{lead.contactName}</h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{statusName(lead.statusCode)}</Badge>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span>{statusName(lead.statusCode)}</span>
               {lead.managerName ? (
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                   <UserRoundCog className="h-3.5 w-3.5" />
@@ -931,7 +933,7 @@ function LeadPanel({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-4 p-4">
+        <div className="space-y-5 p-4">
           <div className="space-y-2">
             <Label htmlFor="instagram-lead-contact">{t('contactPersonName')}</Label>
             <Input
@@ -986,7 +988,7 @@ function LeadPanel({
           <div className="space-y-2">
             <Label>{t('course')}</Label>
             <Select value={draft.courseId || 'none'} onValueChange={(value) => patchDraft({ courseId: value === 'none' ? '' : value })}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('course')}>
                 <SelectValue placeholder={t('courseNotSelected')} />
               </SelectTrigger>
               <SelectContent>
@@ -1008,7 +1010,7 @@ function LeadPanel({
                 onValueChange={(value) => patchDraft({ statusCode: value })}
                 disabled={lead.statusCode === 'paid'}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label={t('status')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1026,7 +1028,7 @@ function LeadPanel({
             <div className="space-y-2">
               <Label>{t('source')}</Label>
               <Select value={draft.sourceId} onValueChange={(value) => patchDraft({ sourceId: value })}>
-                <SelectTrigger>
+                <SelectTrigger aria-label={t('source')}>
                   <SelectValue placeholder={t('selectSource')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1043,7 +1045,7 @@ function LeadPanel({
           <div className="space-y-2">
             <Label>{t('communicationLanguage')}</Label>
             <Select value={draft.language} onValueChange={(value) => patchDraft({ language: value })}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('communicationLanguage')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1109,7 +1111,6 @@ export default function MessagesPage() {
   });
   const [activeMessageId, setActiveMessageId] = useState<number | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ id: number; text: string } | null>(null);
-  const [participantTyping, setParticipantTyping] = useState(false);
 
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1267,22 +1268,6 @@ export default function MessagesPage() {
       markRead.mutate(selectedConversationId);
     }
   }, [selectedConversation?.unreadCount, selectedConversationId]);
-
-  // Lightweight "typing…" heuristic for the participant. Instagram does not
-  // expose inbound typing events to the business account, so we surface a
-  // transient, clearly tentative indicator only when the very last inbound
-  // message is within a few seconds — it reads as "just arrived".
-  useEffect(() => {
-    setParticipantTyping(false);
-    if (!selectedConversation) return;
-    const lastInboundAt = selectedConversation.lastInboundAt;
-    if (!lastInboundAt || selectedConversation.unreadCount === 0) return;
-    const ageMs = Date.now() - new Date(lastInboundAt).getTime();
-    if (!Number.isFinite(ageMs) || ageMs > 8_000) return;
-    setParticipantTyping(true);
-    const timer = window.setTimeout(() => setParticipantTyping(false), 9_000);
-    return () => window.clearTimeout(timer);
-  }, [selectedConversation]);
 
   const getViewport = () => {
     const root = threadScrollRef.current;
@@ -1561,7 +1546,7 @@ export default function MessagesPage() {
     );
   }
 
-  const gridCols = 'xl:grid-cols-[340px_minmax(0,1fr)_372px]';
+  const gridCols = 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
 
   return (
     <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
@@ -1614,7 +1599,7 @@ export default function MessagesPage() {
 
       <Card
         ref={inboxCardRef}
-        className="mt-6 flex h-[calc(100dvh-9rem)] min-h-[600px] flex-col overflow-hidden rounded-2xl border-border shadow-sm"
+        className="mt-6 flex h-[calc(100dvh-10rem)] min-h-[620px] flex-col overflow-hidden rounded-lg border-border bg-background shadow-none"
       >
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">
@@ -1649,38 +1634,49 @@ export default function MessagesPage() {
                 'xl:flex xl:border-r',
               )}
             >
-              <div className="space-y-3 border-b border-border bg-gradient-to-b from-primary/5 to-transparent p-4">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-primary"
-                    style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
-                  >
-                    <Instagram className="h-5 w-5" />
-                  </div>
+              <div className="space-y-4 border-b border-border bg-background p-4">
+                <div className="flex items-start gap-3">
                   <div className="min-w-0">
-                    <h2 className="font-semibold leading-tight text-slate-900">{t('conversations')}</h2>
-                    <p className="text-xs text-muted-foreground">
+                    <h2 className="text-base font-semibold leading-tight text-slate-900">{t('conversations')}</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {t('messagesCount').replace('{count}', String(conversations.length))}
                       {unreadCount > 0 ? ` · ${unreadCount} ${t('unreadConversations').toLowerCase()}` : ''}
                     </p>
                   </div>
-                  {conversations.length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="ml-auto"
-                      aria-label={t('instagramSync')}
-                      onClick={() => syncConversations.mutate()}
-                      disabled={syncRunning}
-                    >
-                      {syncRunning ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  ) : null}
+                  <div className="ml-auto flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={sortByUnread ? t('sortByUnread') : t('sortNewest')}
+                          aria-pressed={sortByUnread}
+                          onClick={() => toggleSortByUnread(!sortByUnread)}
+                          className={cn('h-8 w-8', sortByUnread && 'bg-primary/10 text-primary')}
+                        >
+                          <ArrowDownUp className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{sortByUnread ? t('sortByUnread') : t('sortNewest')}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          aria-label={t('instagramSync')}
+                          onClick={() => syncConversations.mutate()}
+                          disabled={syncRunning}
+                        >
+                          {syncRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('instagramSync')}</TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1691,7 +1687,7 @@ export default function MessagesPage() {
                     className="pl-9"
                   />
                 </div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                <div className="flex items-center gap-1 overflow-x-auto border-b border-border">
                   {FILTERS.map(({ value, labelKey }) => {
                     const count = value === 'all'
                       ? conversations.length
@@ -1707,45 +1703,28 @@ export default function MessagesPage() {
                         type="button"
                         onClick={() => setFilter(value)}
                         className={cn(
-                          'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                          'relative flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-1.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                           active
-                            ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                            : 'border-border bg-background text-slate-600 hover:bg-muted',
+                            ? 'border-primary text-primary'
+                            : 'text-slate-500 hover:text-slate-900',
                         )}
                       >
                         <span>{t(labelKey)}</span>
-                        <span className={cn('tabular-nums', active ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
+                        <span className={cn('tabular-nums', active ? 'text-primary/70' : 'text-muted-foreground')}>
                           {count}
                         </span>
                       </button>
                     );
                   })}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => toggleSortByUnread(!sortByUnread)}
-                        aria-pressed={sortByUnread}
-                        className={cn(
-                          'ml-auto flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                          sortByUnread
-                            ? 'border-primary/40 bg-primary/10 text-primary'
-                            : 'border-border bg-background text-slate-500 hover:bg-muted',
-                        )}
-                      >
-                        <ArrowDownUp className="h-3.5 w-3.5" />
-                        {sortByUnread ? t('sortByUnread') : t('sortNewest')}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{sortByUnread ? t('sortByUnread') : t('sortNewest')}</TooltipContent>
-                  </Tooltip>
                 </div>
               </div>
 
               <div
                 ref={listRef}
-                className="min-h-0 flex-1"
+                className="min-h-0 flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 onKeyDown={handleListKeyDown}
+                tabIndex={0}
+                aria-label={t('conversations')}
               >
                 <ScrollArea className="h-full">
                   <div className="space-y-1 p-2">
@@ -1765,8 +1744,8 @@ export default function MessagesPage() {
                           type="button"
                           aria-current={selected}
                           className={cn(
-                            'relative flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors',
-                            selected ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-muted',
+                            'relative flex w-full items-start gap-3 rounded-md px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                            selected ? 'bg-primary/10' : 'hover:bg-muted/70',
                           )}
                           onClick={() => selectConversation(conversation.id)}
                         >
@@ -1812,20 +1791,13 @@ export default function MessagesPage() {
                                 );
                               })()}
                             </p>
-                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                              {conversation.leadId ? (
-                                <Badge variant="outline" className="px-1.5 py-0 text-[10px]">#{conversation.leadId}</Badge>
-                              ) : null}
-                              <Badge
-                                variant={conversation.canReply ? 'success' : 'secondary'}
-                                className="px-1.5 py-0 text-[10px]"
-                              >
-                                {conversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
-                              </Badge>
+                            <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                              <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', conversation.canReply ? 'bg-emerald-500' : 'bg-slate-300')} />
+                              <span className="truncate">{conversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
                               {unread ? (
-                                <Badge className="ml-auto h-5 min-w-5 justify-center px-1.5">
+                                <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                                   {conversation.unreadCount}
-                                </Badge>
+                                </span>
                               ) : null}
                             </div>
                           </div>
@@ -1847,7 +1819,7 @@ export default function MessagesPage() {
             >
               {selectedConversation ? (
                 <>
-                  <div className="flex items-center gap-3 border-b border-border bg-background/80 p-3 backdrop-blur sm:p-4">
+                  <div className="flex items-center gap-3 border-b border-border bg-background p-3 sm:p-4">
                     <Button
                       type="button"
                       variant="ghost"
@@ -1877,7 +1849,13 @@ export default function MessagesPage() {
                           ? `@${selectedConversation.participantUsername}`
                           : selectedConversation.participantName || selectedConversation.contactName}
                       </p>
-                      <p className="truncate text-xs text-slate-500">
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+                        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', selectedConversation.canReply ? 'bg-emerald-500' : 'bg-slate-300')} />
+                        <span className="truncate">{selectedConversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="truncate">@{selectedConversation.accountUsername}</span>
+                      </div>
+                      <p className="sr-only">
                         {[
                           selectedConversation.leadId ? `${t('lead')} #${selectedConversation.leadId}` : null,
                           `@${selectedConversation.accountUsername}`,
@@ -1900,14 +1878,6 @@ export default function MessagesPage() {
                         </TooltipTrigger>
                         <TooltipContent>{t('search')}</TooltipContent>
                       </Tooltip>
-                      <Badge variant={selectedConversation.canReply ? 'success' : 'secondary'}>
-                        {selectedConversation.canReply ? (
-                          <CheckCheck className="mr-1 h-3.5 w-3.5" />
-                        ) : (
-                          <Clock3 className="mr-1 h-3.5 w-3.5" />
-                        )}
-                        {selectedConversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
-                      </Badge>
                       <Button
                         type="button"
                         variant="ghost"
@@ -1967,7 +1937,7 @@ export default function MessagesPage() {
                     </Alert>
                   ) : null}
 
-                  <div className="relative min-h-0 flex-1 bg-muted/30">
+                  <div className="relative min-h-0 flex-1 bg-muted/40">
                     <ScrollArea
                       ref={threadScrollRef}
                       className="h-full"
@@ -2017,7 +1987,7 @@ export default function MessagesPage() {
                               return (
                                 <div key={item.id} className="my-4 flex items-center gap-3">
                                   <div className="h-px flex-1 bg-border" />
-                                  <span className="rounded-full bg-background px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm">
+                                  <span className="bg-muted/40 px-2 text-[11px] font-medium text-slate-500">
                                     {item.label}
                                   </span>
                                   <div className="h-px flex-1 bg-border" />
@@ -2028,7 +1998,7 @@ export default function MessagesPage() {
                               return (
                                 <div key={item.id} className="my-4 flex items-center gap-3">
                                   <div className="h-px flex-1 bg-primary/30" />
-                                  <span className="rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow-sm">
+                                  <span className="bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
                                     {item.label}
                                   </span>
                                   <div className="h-px flex-1 bg-primary/30" />
@@ -2174,19 +2144,6 @@ export default function MessagesPage() {
                       </div>
                     </ScrollArea>
 
-                    {participantTyping && selectedConversation?.canReply ? (
-                      <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
-                          <span className="flex items-center gap-0.5">
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
-                          </span>
-                          {t('typingParticipant')}
-                        </span>
-                      </div>
-                    ) : null}
-
                     {!atBottom && messages.length > 0 ? (
                       <button
                         type="button"
@@ -2199,7 +2156,7 @@ export default function MessagesPage() {
                     ) : null}
                   </div>
 
-                  <div className="border-t border-border bg-background/80 p-3 backdrop-blur sm:p-4">
+                  <div className="border-t border-border bg-background p-3 sm:p-4">
                     <div className="mb-2 flex items-center gap-1">
                       <Popover
                         open={quickOpen}
@@ -2211,6 +2168,8 @@ export default function MessagesPage() {
                             size="sm"
                             className={cn('gap-1.5 text-xs', quickOpen && 'bg-muted text-primary')}
                             onClick={() => setQuickOpen((value) => !value)}
+                            aria-expanded={quickOpen}
+                            aria-haspopup="dialog"
                             disabled={!selectedConversation.canReply}
                           >
                             <Sparkles className="h-4 w-4" />
@@ -2296,6 +2255,8 @@ export default function MessagesPage() {
                             className={cn('h-8 w-8', emojiOpen && 'bg-muted text-primary')}
                             aria-label={t('emoji')}
                             onClick={() => setEmojiOpen((value) => !value)}
+                            aria-expanded={emojiOpen}
+                            aria-haspopup="dialog"
                             disabled={!selectedConversation.canReply}
                           >
                             <Smile className="h-4 w-4" />
@@ -2360,12 +2321,12 @@ export default function MessagesPage() {
                           ? t('instagramMessagePlaceholder')
                           : t('replyWindowClosed')}
                         disabled={!selectedConversation.canReply || sendMessage.isPending}
-                        className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl"
+                        className="max-h-40 min-h-[44px] flex-1 resize-none rounded-md"
                         maxLength={1000}
                         aria-label={t('instagramMessagePlaceholder')}
                       />
                       <Button
-                        className="h-11 w-11 shrink-0 rounded-xl p-0 shadow-primary"
+                        className="h-11 w-11 shrink-0 rounded-md p-0 shadow-sm"
                         onClick={submitMessage}
                         disabled={!draft.trim() || !selectedConversation.canReply || sendMessage.isPending}
                         aria-label={t('sendMessage')}
@@ -2422,13 +2383,16 @@ export default function MessagesPage() {
             )}
 
             {/* Lead panel (mobile overlay) */}
-            {mobileLeadOpen ? (
-              <>
-                <div
-                  className="fixed inset-0 z-40 bg-black/40 xl:hidden"
-                  onClick={() => setMobileLeadOpen(false)}
-                />
-                <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-border bg-background shadow-xl xl:hidden">
+            <Sheet open={mobileLeadOpen} onOpenChange={setMobileLeadOpen}>
+              <SheetContent
+                side="right"
+                showCloseButton={false}
+                className="flex h-dvh w-full max-w-md flex-col gap-0 border-l border-border p-0 sm:max-w-md xl:hidden"
+              >
+                <SheetHeader className="sr-only">
+                  <SheetTitle>{t('leadCard')}</SheetTitle>
+                </SheetHeader>
+                <div className="flex min-h-0 flex-1 flex-col">
                   <LeadPanel
                     leadId={selectedConversation?.leadId}
                     conversation={selectedConversation}
@@ -2442,8 +2406,8 @@ export default function MessagesPage() {
                     onCloseMobile={() => setMobileLeadOpen(false)}
                   />
                 </div>
-              </>
-            ) : null}
+              </SheetContent>
+            </Sheet>
           </div>
         )}
       </Card>

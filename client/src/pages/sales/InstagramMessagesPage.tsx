@@ -52,6 +52,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  Play,
   RefreshCw,
   RotateCw,
   Save,
@@ -114,6 +115,8 @@ type MediaType =
   | 'animated_gif'
   | 'audio'
   | 'share'
+  | 'reel'
+  | 'story'
   | 'sticker'
   | 'like'
   | 'file'
@@ -156,7 +159,7 @@ interface InstagramSyncStatus {
   alreadyRunning?: boolean;
 }
 
-const LEGACY_ATTACHMENT = /^\[(image|video|animated_gif|audio|share|sticker|like|attachment|generic)\]\s*(\S+)\s*$/;
+const LEGACY_ATTACHMENT = /^\[(image|video|animated_gif|audio|share|reel|story|sticker|like|file|attachment|generic)\]\s*(\S+)\s*$/;
 
 const parseLegacyAttachment = (content?: string): InstagramMessageAttachment[] => {
   if (!content) return [];
@@ -422,8 +425,26 @@ const mediaTypeLabel = (type: MediaType, t: (key: TranslationKey) => string) => 
       return t('mediaAudio');
     case 'share':
       return t('mediaAttachment');
+    case 'reel':
+      return t('mediaReel');
+    case 'story':
+      return t('mediaStory');
+    case 'file':
+      return t('mediaFile');
     default:
       return t('mediaAttachment');
+  }
+};
+
+const isInstagramReelLink = (value?: string) => {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return (host === 'instagram.com' || host === 'www.instagram.com')
+      && /^\/(?:reel|tv)\//i.test(url.pathname);
+  } catch {
+    return /instagram\.com\/(?:reel|tv)\//i.test(value);
   }
 };
 
@@ -438,7 +459,54 @@ function AttachmentMedia({
   const mediaUrl = attachment.url || attachment.previewUrl;
   const proxiedMediaUrl = mediaProxyUrl(mediaUrl);
   const [mediaFailed, setMediaFailed] = useState(false);
-  const isVisualMedia = ['image', 'animated_gif', 'sticker', 'like', 'share'].includes(attachment.type);
+  const isReelShare = attachment.type === 'reel'
+    || (attachment.type !== 'video' && isInstagramReelLink(attachment.link));
+  const isLinkedInstagramMedia = isReelShare || attachment.type === 'share' || attachment.type === 'story';
+  const linkTarget = attachment.link || mediaUrl;
+  const label = attachment.title || mediaTypeLabel(isReelShare ? 'reel' : attachment.type, t);
+
+  // Meta does not always send a direct MP4 for a shared Reel — frequently it
+  // sends only a permalink and a preview image. Treat that as a Reel card and
+  // open the original Reel, instead of trying to play a JPEG in a <video>.
+  // This also repairs already stored Reel shares that were previously saved as
+  // image attachments.
+  if (isLinkedInstagramMedia && linkTarget) {
+    return (
+      <a
+        href={linkTarget}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group relative block w-full max-w-sm overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        {proxiedMediaUrl && !mediaFailed ? (
+          <img
+            src={proxiedMediaUrl}
+            alt=""
+            className="max-h-72 w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setMediaFailed(true)}
+          />
+        ) : (
+          <div className="flex h-40 items-center justify-center bg-muted text-muted-foreground">
+            <Play className="h-8 w-8" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 p-3 text-white">
+          {isReelShare ? (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-slate-900 shadow-sm">
+              <Play className="ml-0.5 h-4 w-4 fill-current" />
+            </span>
+          ) : (
+            <ExternalLink className="h-4 w-4 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{label}</span>
+          <ExternalLink className="h-4 w-4 shrink-0 opacity-80" />
+        </div>
+      </a>
+    );
+  }
 
   if (attachment.type === 'audio' && proxiedMediaUrl && !mediaFailed) {
     return (
@@ -471,7 +539,7 @@ function AttachmentMedia({
       );
     }
 
-    if (isVisualMedia) {
+    if (['image', 'animated_gif', 'sticker', 'like'].includes(attachment.type)) {
       return (
         <button
           type="button"
@@ -495,7 +563,7 @@ function AttachmentMedia({
         <div className="flex items-center gap-2">
           <ImageIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-medium text-primary underline-offset-2 hover:underline">
-            {attachment.title || mediaTypeLabel(attachment.type, t)}
+            {label}
           </a>
         </div>
       </div>
@@ -512,7 +580,7 @@ function AttachmentMedia({
         className="inline-flex items-center gap-1 text-sm text-primary underline"
       >
         <ExternalLink className="h-4 w-4" />
-        {attachment.title || t('mediaAttachment')}
+        {label}
       </a>
     );
   }
@@ -2266,7 +2334,7 @@ export default function MessagesPage() {
                                       className={cn(
                                         'rounded-[1.25rem] px-4 py-2.5 text-left shadow-sm ring-1 transition active:scale-[0.99]',
                                         outbound
-                                          ? 'rounded-br-md border border-primary/20 bg-primary/10 text-foreground shadow-none ring-0'
+                                          ? 'rounded-br-md border border-primary/40 bg-primary-100 text-primary-700 shadow-none ring-0'
                                           : 'rounded-bl-md border border-border bg-card text-card-foreground ring-black/[0.03]',
                                         message.failed ? 'opacity-60 ring-destructive' : '',
                                       )}

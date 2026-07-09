@@ -57,7 +57,6 @@ import {
   getAssignedWorkspaces,
   hasLeadershipAccess,
   LEAD_ARCHIVE_REASONS,
-  LEAD_STATUSES,
 } from '@shared/academy';
 import {
   AlertCircle,
@@ -158,20 +157,14 @@ interface Task {
   createdAt?: string;
 }
 
-const statusColor = (code: string) => LEAD_STATUSES.find((s) => s.code === code)?.color ?? '#64748b';
-
-const leadStatusTranslationKeys: Record<string, TranslationKey> = {
-  new_request: 'leadStatusNewRequest',
-  first_contact: 'leadStatusFirstContact',
-  qualified: 'leadStatusQualified',
-  demo_invited: 'leadStatusDemoInvited',
-  demo_attended: 'leadStatusDemoAttended',
-  offer: 'leadStatusOffer',
-  thinking: 'leadStatusThinking',
-  enrolled: 'leadStatusEnrolled',
-  paid: 'leadStatusPaid',
-  not_now: 'leadStatusNotNow',
-};
+interface PipelineStatus {
+  code: string;
+  name: string;
+  color: string;
+  sortOrder: number;
+  isPipeline?: boolean;
+  isActive?: boolean;
+}
 
 const archiveReasonTranslationKeys = Object.fromEntries(
   LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
@@ -463,10 +456,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const leadStatusName = (code: string) => {
-    const key = leadStatusTranslationKeys[code];
-    if (key) return t(key);
     return data?.statuses?.find((status: any) => status.code === code)?.name ?? code;
   };
+  const leadStatusColor = (code: string) =>
+    data?.statuses?.find((status: PipelineStatus) => status.code === code)?.color ?? '#64748b';
 
   const archiveReasonName = (code: string | null | undefined) => {
     if (!code) return t('noData');
@@ -546,7 +539,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }, [currentSalesManagerId, salesManagers, user?.fullName]);
 
   const activePipelineStatuses = useMemo(
-    () => [...(data?.statuses ?? [])]
+    (): PipelineStatus[] => [...(data?.statuses ?? [])]
       .filter((status: any) => status.isActive !== false && status.isPipeline !== false)
       .sort((left: any, right: any) => Number(left.sortOrder) - Number(right.sortOrder)),
     [data?.statuses],
@@ -782,16 +775,19 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const managerFunnel = useMemo(() => {
-    const funnelMap: Record<string, number> = {};
-    LEAD_STATUSES.forEach((status) => {
-      funnelMap[status.code] = myLeads.filter((l) => l.statusCode === status.code).length;
+    const funnelMap = new Map<string, number>();
+    for (const lead of myLeads) {
+      funnelMap.set(lead.statusCode, (funnelMap.get(lead.statusCode) ?? 0) + 1);
+    }
+    return activePipelineStatuses.flatMap((status) => {
+      const count = funnelMap.get(status.code) ?? 0;
+      return count > 0 ? [{
+        code: status.code,
+        count,
+        color: status.color,
+      }] : [];
     });
-    return LEAD_STATUSES.filter((s) => funnelMap[s.code] > 0).map((status) => ({
-      code: status.code,
-      count: funnelMap[status.code],
-      color: status.color,
-    }));
-  }, [myLeads]);
+  }, [activePipelineStatuses, myLeads]);
 
   if (isLoading) {
     return (
@@ -877,6 +873,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             managerFunnel={managerFunnel}
             managerStats={managerStats}
             leadStatusName={leadStatusName}
+            statusColor={leadStatusColor}
             money={money}
             myTasks={myTasks}
             dateTime={dateTime}
@@ -1035,6 +1032,7 @@ function OverviewTab({
   managerFunnel,
   managerStats,
   leadStatusName,
+  statusColor,
   money,
   myTasks,
   dateTime,
@@ -1052,6 +1050,7 @@ function OverviewTab({
     overdueTasks: number;
   };
   leadStatusName: (code: string) => string;
+  statusColor: (code: string) => string;
   money: (value: number | string | null | undefined) => string;
   myTasks: Task[];
   dateTime: (value: string | null | undefined) => string;
@@ -1120,7 +1119,7 @@ function PipelineTab({
   t: (key: TranslationKey) => string;
   leadStatusName: (code: string) => string;
   leads: Lead[];
-  activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
+  activePipelineStatuses: PipelineStatus[];
   onLeadClick: (lead: Lead) => void;
   onQuickAction: (action: QuickAction, lead: Lead) => void;
   onArchiveLead: (lead: Lead) => void;
@@ -1166,7 +1165,7 @@ function ArchiveTab({
 }: {
   t: (key: TranslationKey) => string;
   leads: Lead[];
-  activePipelineStatuses: readonly (typeof LEAD_STATUSES)[number][];
+  activePipelineStatuses: PipelineStatus[];
   leadStatusName: (code: string) => string;
   archiveReasonName: (code: string | null | undefined) => string;
   dateTime: (v: string | null | undefined) => string;

@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/lib/i18n';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -32,7 +31,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, ArrowRightLeft, Trash2, UsersRound } from 'lucide-react';
-import { getAssignedWorkspaces, LEAD_STATUSES } from '@shared/academy';
+import { getAssignedWorkspaces } from '@shared/academy';
 
 interface AdminLead {
   id: number;
@@ -52,18 +51,13 @@ interface SalesManager {
   fullName: string;
 }
 
-const leadStatusTranslationKeys: Record<string, TranslationKey> = {
-  new_request: 'leadStatusNewRequest',
-  first_contact: 'leadStatusFirstContact',
-  qualified: 'leadStatusQualified',
-  demo_invited: 'leadStatusDemoInvited',
-  demo_attended: 'leadStatusDemoAttended',
-  offer: 'leadStatusOffer',
-  thinking: 'leadStatusThinking',
-  enrolled: 'leadStatusEnrolled',
-  paid: 'leadStatusPaid',
-  not_now: 'leadStatusNotNow',
-};
+interface PipelineStatus {
+  id: number;
+  code: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+}
 
 export function LeadAssignmentContent() {
   const { t } = useTranslation();
@@ -78,6 +72,16 @@ export function LeadAssignmentContent() {
 
   const leadsQuery = useQuery<AdminLead[]>({ queryKey: ['/api/academy/leads'] });
   const usersQuery = useQuery<any[]>({ queryKey: ['/api/users'] });
+  const statusesQuery = useQuery<PipelineStatus[]>({ queryKey: ['/api/academy/pipeline-statuses'] });
+
+  const statuses = useMemo(
+    () => [...(statusesQuery.data ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),
+    [statusesQuery.data],
+  );
+  const statusNames = useMemo(
+    () => new Map(statuses.map((status) => [status.code, status.name])),
+    [statuses],
+  );
 
   const managers = useMemo<SalesManager[]>(
     () => (usersQuery.data ?? [])
@@ -163,8 +167,7 @@ export function LeadAssignmentContent() {
   });
 
   const statusName = (code: string) => {
-    const key = leadStatusTranslationKeys[code];
-    return key ? t(key) : code;
+    return statusNames.get(code) ?? code;
   };
 
   const toggleVisibleLeads = (checked: boolean) => {
@@ -306,10 +309,11 @@ export function LeadAssignmentContent() {
     managers,
     selectedLeadIds,
     someVisibleSelected,
+    statusNames,
     t,
   ]);
 
-  if (leadsQuery.isError || usersQuery.isError) {
+  if (leadsQuery.isError || usersQuery.isError || statusesQuery.isError) {
     return (
       <Alert variant="destructive">
         <AlertCircle />
@@ -352,7 +356,7 @@ export function LeadAssignmentContent() {
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="all">{t('allStatuses')}</SelectItem>
-                  {LEAD_STATUSES.map((status) => (
+                  {statuses.filter((status) => status.isActive !== false).map((status) => (
                     <SelectItem key={status.code} value={status.code}>{statusName(status.code)}</SelectItem>
                   ))}
                 </SelectGroup>
@@ -393,7 +397,7 @@ export function LeadAssignmentContent() {
 
         <Card>
           <CardContent className="p-0">
-            {leadsQuery.isLoading || usersQuery.isLoading ? (
+            {leadsQuery.isLoading || usersQuery.isLoading || statusesQuery.isLoading ? (
               <div className="flex flex-col gap-3 p-4">
                 {Array.from({ length: 6 }, (_, index) => (
                   <Skeleton key={index} className="h-14 w-full" />

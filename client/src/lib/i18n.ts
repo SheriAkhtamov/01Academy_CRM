@@ -1220,6 +1220,9 @@ export const translations = {
   mediaVideo: { en: 'Video', ru: 'Видео' },
   mediaGif: { en: 'GIF', ru: 'Гифка' },
   mediaAudio: { en: 'Audio', ru: 'Аудио' },
+  mediaReel: { en: 'Reel', ru: 'Рилс' },
+  mediaStory: { en: 'Story', ru: 'История' },
+  mediaFile: { en: 'File', ru: 'Файл' },
   mediaAttachment: { en: 'Attachment', ru: 'Вложение' },
   viewMedia: { en: 'View media', ru: 'Посмотреть медиа' },
   // Messages inbox — read receipts, actions, sorting

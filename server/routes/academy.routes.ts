@@ -8,7 +8,6 @@ import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
 import {
-  ACTIVE_PIPELINE_STATUSES,
   CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
@@ -210,6 +209,44 @@ const toBoolean = (value: unknown, fallback?: boolean) => {
   return fallback;
 };
 
+// Pipeline codes identify a stage in leads, history and automation.  They are
+// intentionally language-neutral and stay unchanged if an administrator later
+// renames the visible stage.
+const pipelineCodeTransliteration: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', ғ: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+  к: 'k', қ: 'q', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ў: 'o',
+  ф: 'f', х: 'h', ҳ: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+};
+
+const normalizePipelineStatusCode = (name: string) => {
+  const transliterated = name
+    .trim()
+    .toLowerCase()
+    .split('')
+    .map((character) => pipelineCodeTransliteration[character] ?? character)
+    .join('');
+  const normalized = transliterated
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  return normalized || 'stage';
+};
+
+const createPipelineStatusCode = async (name: string) => {
+  const base = normalizePipelineStatusCode(name);
+  for (let suffix = 1; suffix < 10_000; suffix += 1) {
+    const candidate = suffix === 1 ? base : `${base}_${suffix}`;
+    const existing = await queryOne<{ id: number }>(
+      `SELECT id FROM academy_lead_statuses WHERE code = $1`,
+      [candidate],
+    );
+    if (!existing) return candidate;
+  }
+  throw Object.assign(new Error('pipelineStageCodeGenerationFailed'), { statusCode: 409 });
+};
+
 const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
   const executor = transactionContext.getStore() ?? pool;
   const result = await executor.query(sql, values as any[]);
@@ -238,6 +275,33 @@ const withTransaction = async <T>(callback: () => Promise<T>): Promise<T> => {
 const queryOne = async <T = Row>(sql: string, values: DbValue[] = []) => {
   const rows = await query<T>(sql, values);
   return rows[0] as T | undefined;
+};
+
+const getActiveLeadStatus = async (code: string, pipelineOnly = false) => queryOne<{ code: string }>(
+  `SELECT code
+   FROM academy_lead_statuses
+   WHERE code = $1
+     AND is_active = true
+     ${pipelineOnly ? 'AND is_pipeline = true' : ''}`,
+  [code],
+);
+
+const resolveInitialLeadStatusCode = async (requestedCode: string | null | undefined) => {
+  if (requestedCode) {
+    const status = await getActiveLeadStatus(requestedCode);
+    if (status) return status.code;
+    throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 400 });
+  }
+
+  const firstPipelineStatus = await queryOne<{ code: string }>(
+    `SELECT code
+     FROM academy_lead_statuses
+     WHERE is_active = true AND is_pipeline = true
+     ORDER BY sort_order, id
+     LIMIT 1`,
+  );
+  if (firstPipelineStatus) return firstPipelineStatus.code;
+  throw Object.assign(new Error('noActivePipelineStages'), { statusCode: 409 });
 };
 
 const normalizeDbValue = (value: DbValue) => {
@@ -2042,7 +2106,11 @@ const buildAnalytics = async () => {
       return acc;
     }, {});
 
-  const funnel = LEAD_STATUSES.map((status) => ({
+  const activePipelineStatuses = data.statuses
+    .filter((status) => status.isActive !== false && status.isPipeline !== false)
+    .sort((left, right) => Number(left.sortOrder) - Number(right.sortOrder));
+  const activePipelineStatusCodes = new Set(activePipelineStatuses.map((status) => String(status.code)));
+  const funnel = activePipelineStatuses.map((status) => ({
     ...status,
     count: data.leads.filter((lead) => lead.statusCode === status.code).length }));
 
@@ -2143,7 +2211,7 @@ const buildAnalytics = async () => {
     summary: {
       newLeadsWeek: data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: data.leads.filter((lead) => new Date(lead.createdAt) >= monthStart).length,
-      activeLeads: data.leads.filter((lead) => ACTIVE_PIPELINE_STATUSES.includes(lead.statusCode)).length,
+      activeLeads: data.leads.filter((lead) => activePipelineStatusCodes.has(String(lead.statusCode))).length,
       warmBaseSize: data.leads.filter((lead) => lead.statusCode === 'not_now').length,
       warmReactivated,
       activeStudents: data.students.filter((student) => student.status === 'studying').length,
@@ -3133,7 +3201,7 @@ router.post('/leads', async (req, res) => {
         courseId = Number(enrolledGroup.courseId);
       }
       const schoolId = enrolledGroup?.schoolId ? Number(enrolledGroup.schoolId) : null;
-      const statusCode = nullableText(req.body.statusCode) ?? 'new_request';
+      const statusCode = await resolveInitialLeadStatusCode(nullableText(req.body.statusCode));
       const validationError = validateLeadForStatusChange({
         nextStatus: statusCode,
         studentName: nullableText(req.body.studentName),
@@ -3535,7 +3603,12 @@ router.patch('/leads/:id', async (req, res) => {
     const requestedGroup = requestedGroupId
       ? await validateEnrollmentGroup(requestedGroupId, id)
       : null;
-    const nextStatus = nullableText(req.body.statusCode) ?? oldLead.statusCode;
+    const requestedStatusCode = nullableText(req.body.statusCode);
+    if (requestedStatusCode && requestedStatusCode !== oldLead.statusCode) {
+      const targetStatus = await getActiveLeadStatus(requestedStatusCode);
+      if (!targetStatus) return res.status(400).json({ error: 'invalidLeadStatus' });
+    }
+    const nextStatus = requestedStatusCode ?? oldLead.statusCode;
     const transitionError = validateLeadStatusTransition(oldLead.statusCode, nextStatus);
     if (transitionError) return res.status(400).json({ error: transitionError });
     const merged = {
@@ -4029,6 +4102,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   requireAdministration?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
+  beforeCreate?: (context: { values: Row; req: any }) => Promise<void>;
   beforeDelete?: (context: { id: number; row: Row; req: any }) => Promise<void>;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
@@ -4108,6 +4182,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         values.status = 'pending';
         values.approvedBy = null;
         values.approvedAt = null;
+      }
+      if (options.beforeCreate) {
+        await options.beforeCreate({ values, req });
       }
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
@@ -4957,10 +5034,14 @@ registerSimpleCrud('courses', 'academy_courses', [
 ], { orderBy: 'is_active DESC, name', requireAdministration: true });
 
 registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
-  'code', 'name', 'color', 'sortOrder', 'isPipeline', 'isSystem', 'isActive',
+  'name', 'color', 'sortOrder', 'isPipeline', 'isActive',
 ], {
   orderBy: 'sort_order, id',
   requireAdministration: true,
+  beforeCreate: async ({ values }) => {
+    values.code = await createPipelineStatusCode(String(values.name ?? ''));
+    values.isSystem = false;
+  },
   beforeDelete: async ({ row }) => {
     const leadCount = await getLeadCountForStatusCode(String(row.code));
     if (leadCount > 0) {

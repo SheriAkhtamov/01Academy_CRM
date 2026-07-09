@@ -592,7 +592,7 @@ export const verifyInstagramWebhookChallenge = (mode: unknown, token: unknown) =
 };
 
 export interface InstagramMessageAttachment {
-  type: 'image' | 'video' | 'animated_gif' | 'audio' | 'share' | 'sticker' | 'like' | 'file' | 'generic';
+  type: 'image' | 'video' | 'animated_gif' | 'audio' | 'share' | 'reel' | 'story' | 'sticker' | 'like' | 'file' | 'generic';
   url?: string;
   previewUrl?: string;
   link?: string;
@@ -646,13 +646,31 @@ const firstMediaUrl = (...values: unknown[]) => {
   return undefined;
 };
 
+const instagramSharedContentType = (link?: string): 'share' | 'reel' | 'story' => {
+  if (!link) return 'share';
+  try {
+    const parsed = new URL(link);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'instagram.com' && host !== 'www.instagram.com') return 'share';
+    if (/^\/(?:reel|tv)\//i.test(parsed.pathname)) return 'reel';
+    if (/^\/stories\//i.test(parsed.pathname)) return 'story';
+  } catch {
+    return 'share';
+  }
+  return 'share';
+};
+
 const instagramPreviewUrlFromLink = (link?: string) => {
   if (!link) return undefined;
   try {
     const parsed = new URL(link);
     const host = parsed.hostname.toLowerCase();
     if (host !== 'instagram.com' && host !== 'www.instagram.com') return undefined;
-    const match = parsed.pathname.match(/^\/(?:p|reel|tv)\/([^/?#]+)/i);
+    // Meta often provides only a permalink for shared Reels. A Reel permalink
+    // is not a media file and must not be turned into an <img>; it is rendered
+    // as an explicit "open Reel" card by the client. Feed posts can still use
+    // Instagram's image preview endpoint.
+    const match = parsed.pathname.match(/^\/p\/([^/?#]+)/i);
     if (!match?.[1]) return undefined;
     return `https://www.instagram.com/p/${match[1]}/media/?size=l`;
   } catch {
@@ -726,13 +744,18 @@ const inferAttachmentType = (declaredType: string, url?: string, metadata?: unkn
   const metadataType = typeof metadata === 'string' ? metadata.toLowerCase() : '';
   const urlPath = String(url || '').split('?')[0].toLowerCase();
 
-  if (normalizedType.includes('reel') || metadataType.includes('reel')) return 'video';
-  if (metadataType.includes('video') || /\.(mp4|mov|webm|m4v)$/i.test(urlPath)) return 'video';
-  if (metadataType.includes('audio') || /\.(mp3|m4a|ogg|wav|aac)$/i.test(urlPath)) return 'audio';
-  if (metadataType.includes('gif') || /\.gif$/i.test(urlPath)) return 'animated_gif';
+  // A Reel is only a playable <video> when Meta gave us a direct video URL.
+  // Otherwise it is a share permalink and the user should open it in Instagram.
+  if (normalizedType.includes('reel')) return 'reel';
+  if (normalizedType.includes('story')) return 'story';
+  if (normalizedType === 'share') return 'share';
   if (['video', 'audio', 'animated_gif', 'sticker', 'like', 'file'].includes(normalizedType)) {
     return normalizedType as InstagramMessageAttachment['type'];
   }
+  if (metadataType.includes('reel')) return 'reel';
+  if (metadataType.includes('video') || /\.(mp4|mov|webm|m4v)$/i.test(urlPath)) return 'video';
+  if (metadataType.includes('audio') || /\.(mp3|m4a|ogg|wav|aac)$/i.test(urlPath)) return 'audio';
+  if (metadataType.includes('gif') || /\.gif$/i.test(urlPath)) return 'animated_gif';
   if (metadataType.includes('image') || /\.(jpg|jpeg|png|webp|heic|avif)$/i.test(urlPath)) return 'image';
   if (normalizedType === 'image' || normalizedType.includes('post') || normalizedType === 'share') return 'image';
   return 'image';
@@ -762,9 +785,9 @@ const makeMediaAttachment = ({
   if (!displayUrl) {
     const instagramPreviewUrl = instagramPreviewUrlFromLink(link);
     if (instagramPreviewUrl) {
-      return { type: 'image', url: instagramPreviewUrl, link, title, subtitle };
+      return { type: 'share', url: instagramPreviewUrl, link, title, subtitle };
     }
-    return link ? { type: 'share', link, title, subtitle } : null;
+    return link ? { type: instagramSharedContentType(link), link, title, subtitle } : null;
   }
 
   const type = mediaUrl
@@ -895,7 +918,7 @@ const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment
   );
   const mediaUrl = videoUrl || gifUrl || imageUrl || audioUrl || fileUrl || directMediaUrl;
   const declaredType = normalizedType.includes('reel')
-    ? 'video'
+    ? (videoUrl ? 'video' : 'reel')
     : normalizedType.includes('post')
       ? (videoUrl ? 'video' : 'image')
       : type;
@@ -954,10 +977,10 @@ const normalizeShare = (share: any): InstagramMessageAttachment | null => {
     share.picture,
   ) ?? firstDeepMediaUrlByKey((key) => key.includes('image') || key.includes('picture') || key.includes('thumbnail'), share, template, payload, mediaItem);
   const previewUrl = firstMediaUrl(mediaItem?.image_src, mediaItem?.thumbnail_src, mediaItem?.thumbnail_url, mediaItem?.preview_url, share.picture);
-  const mediaUrl = videoUrl || gifUrl || directMediaUrl || imageUrl;
   const link = firstText(share.link);
+  const mediaUrl = videoUrl || gifUrl || directMediaUrl || imageUrl;
   return makeMediaAttachment({
-    declaredType: videoUrl ? 'video' : 'share',
+    declaredType: videoUrl ? 'video' : instagramSharedContentType(link),
     mediaUrl,
     previewUrl,
     link,
@@ -970,11 +993,24 @@ const normalizeShare = (share: any): InstagramMessageAttachment | null => {
 const normalizeStory = (story: any): InstagramMessageAttachment | null => {
   const storyItem = firstMediaItem(story) ?? (isObjectRecord(story) ? story : null);
   if (!storyItem) return null;
-  const mediaUrl = firstMediaUrl(storyItem.link, storyItem.url, storyItem.media_url)
+  const videoUrl = firstMediaUrl(
+    storyItem.video_url,
+    storyItem.video_src,
+    storyItem.playable_url,
+  ) ?? firstPreferredDeepMediaUrlByKey((key) => key.includes('video') || key.includes('playable'), storyItem);
+  const imageUrl = firstMediaUrl(
+    storyItem.image_url,
+    storyItem.image_src,
+    storyItem.thumbnail_url,
+    storyItem.preview_url,
+  ) ?? firstDeepMediaUrlByKey((key) => key.includes('image') || key.includes('picture') || key.includes('thumbnail'), storyItem);
+  const directMediaUrl = firstMediaUrl(storyItem.link, storyItem.url, storyItem.media_url)
     ?? firstDeepMediaUrl(storyItem);
+  const mediaUrl = videoUrl || imageUrl || directMediaUrl;
   return makeMediaAttachment({
-    declaredType: 'story',
+    declaredType: videoUrl ? 'video' : imageUrl ? 'image' : 'story',
     mediaUrl,
+    previewUrl: imageUrl,
     link: firstText(storyItem.permalink),
     title: firstText(storyItem.title),
     metadata: mediaMetadata(storyItem.media_type, storyItem.type),
@@ -1003,8 +1039,16 @@ const extractAttachments = (message: any): InstagramMessageAttachment[] => {
   }
   const story = normalizeStory(message?.story);
   if (story) result.push(story);
-  return result;
+  return result.filter((attachment, index) => result.findIndex((candidate) => (
+    candidate.type === attachment.type
+    && candidate.url === attachment.url
+    && candidate.link === attachment.link
+  )) === index);
 };
+
+// Kept public so webhook/import media payloads can be covered by isolated tests
+// without reaching the database or the Meta API.
+export const normalizeInstagramMessageAttachments = (message: unknown) => extractAttachments(message);
 
 const primaryTypeFromAttachments = (attachments: InstagramMessageAttachment[]): string => {
   if (attachments.length === 0) return 'text';

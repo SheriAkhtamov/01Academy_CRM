@@ -198,7 +198,6 @@ const courseSchema = z.object({
 
 const statusSchema = z.object({
   name: z.string().trim().min(1),
-  code: z.string().trim().min(1).regex(/^[a-z0-9_]+$/),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   sortOrder: z.coerce.number().int().min(0),
   isPipeline: z.boolean(),
@@ -436,7 +435,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     resolver: zodResolver(statusSchema),
     defaultValues: {
       name: '',
-      code: '',
       color: '#2563eb',
       sortOrder: 10,
       isPipeline: true,
@@ -595,10 +593,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const saveStatus = useMutation({
     mutationFn: (values: StatusValues) => {
-      const payload = { ...values, isSystem: editingStatus?.isSystem ?? false };
       return editingStatus
-        ? apiRequest('PATCH', `/api/academy/pipeline-statuses/${editingStatus.id}`, payload)
-        : apiRequest('POST', '/api/academy/pipeline-statuses', payload);
+        ? apiRequest('PATCH', `/api/academy/pipeline-statuses/${editingStatus.id}`, values)
+        : apiRequest('POST', '/api/academy/pipeline-statuses', values);
     },
     onSuccess: () => {
       toast({ title: editingStatus ? t('pipelineStageUpdated') : t('pipelineStageCreated') });
@@ -606,6 +603,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       setEditingStatus(null);
       statusForm.reset();
       invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
     onError: (error: Error) => toast({
@@ -636,6 +634,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       toast({ title: t('resourceDeleted') });
       setDeleteTarget(null);
       invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
     onError: (error: Error & { rawMessage?: string }, target) => {
@@ -698,6 +697,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       setPipelineDeleteTarget(null);
       setPipelineTransferTargetId('');
       invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] });
     },
@@ -727,6 +727,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     },
     onSuccess: () => {
       invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
   });
@@ -821,14 +822,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setEditingStatus(status ?? null);
     statusForm.reset(status ? {
       name: status.name,
-      code: status.code,
       color: status.color,
       sortOrder: status.sortOrder,
       isPipeline: status.isPipeline,
       isActive: status.isActive,
     } : {
       name: '',
-      code: '',
       color: '#2563eb',
       sortOrder: ((configuration.data?.statuses.length ?? 0) + 1) * 10,
       isPipeline: true,
@@ -1352,7 +1351,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-foreground">{status.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{status.code}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={status.isPipeline ? 'default' : 'secondary'}>
@@ -1836,13 +1834,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <FormItem>
                   <FormLabel>{t('name')}</FormLabel>
                   <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={statusForm.control} name="code" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('code')}</FormLabel>
-                  <FormControl><Input {...field} disabled={editingStatus?.isSystem} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

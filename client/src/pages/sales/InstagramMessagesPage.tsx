@@ -293,6 +293,25 @@ const clockTime = (value?: string | null) => {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 };
 
+const isReplyWindowOpen = (conversation: InstagramConversation, now = Date.now()) => {
+  if (!conversation.canReply) return false;
+  if (!conversation.messagingWindowExpiresAt) return true;
+  const expiresAt = new Date(conversation.messagingWindowExpiresAt).getTime();
+  return Number.isNaN(expiresAt) || expiresAt > now;
+};
+
+const replyWindowDeadline = (value: string | null | undefined, language: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const syncSummaryText = (stats: Partial<InstagramSyncStats> | undefined, t: (key: TranslationKey) => string) =>
   t('instagramSyncSummary')
     .replace('{conversations}', String(stats?.conversations ?? 0))
@@ -319,18 +338,26 @@ const buildThreadItems = (
   messages: ThreadMessage[],
   t: (key: TranslationKey) => string,
   searchQuery = '',
-  lastReadAt?: string | null,
+  unreadCount = 0,
 ): ThreadItem[] => {
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const visibleMessages = normalizedSearch
     ? messages.filter((message) => message.content?.toLowerCase().includes(normalizedSearch))
     : messages;
 
-  // Insert the "unread" divider above the first inbound message newer than the
-  // manager's high-water mark. Only relevant when not searching (search hides
-  // messages, so a divider would be misleading) and the conversation is unread.
-  const readWatermark = lastReadAt ? new Date(lastReadAt).getTime() : null;
-  let unreadDividerInserted = Boolean(readWatermark !== null && !normalizedSearch);
+  // The server gives us the number of inbound messages that have not been read,
+  // but not a per-message read timestamp. Mark the last N inbound messages,
+  // which keeps the divider accurate even when no outbound read receipt exists.
+  const unreadMessageIds = new Set<number>();
+  let remainingUnread = unreadCount;
+  for (let index = messages.length - 1; index >= 0 && remainingUnread > 0; index -= 1) {
+    const message = messages[index];
+    if (message.direction === 'inbound') {
+      unreadMessageIds.add(message.id);
+      remainingUnread -= 1;
+    }
+  }
+  let unreadDividerPending = !normalizedSearch && unreadMessageIds.size > 0;
 
   const items: ThreadItem[] = [];
   let lastDay = '';
@@ -347,10 +374,9 @@ const buildThreadItems = (
 
     const time = new Date(message.createdAt).getTime();
 
-    if (unreadDividerInserted && readWatermark !== null
-      && message.direction === 'inbound' && time > readWatermark) {
+    if (unreadDividerPending && unreadMessageIds.has(message.id)) {
       items.push({ kind: 'unread', id: 'unread-divider', label: t('unreadMessages') });
-      unreadDividerInserted = false;
+      unreadDividerPending = false;
     }
     const withinGroup = lastDirection === message.direction && time - lastTime < 5 * 60 * 1000;
     items.push({ kind: 'message', id: message.id, message, showTime: !withinGroup });
@@ -449,7 +475,7 @@ function AttachmentMedia({
       return (
         <button
           type="button"
-          className="block overflow-hidden rounded-xl"
+          className="block overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           onClick={() => onOpen({ url: proxiedMediaUrl, type: 'image', title: attachment.title })}
         >
           <img
@@ -605,6 +631,7 @@ function Popover({
   open,
   onClose,
   align = 'left',
+  label,
   trigger,
   children,
   className,
@@ -612,6 +639,7 @@ function Popover({
   open: boolean;
   onClose: () => void;
   align?: 'left' | 'right';
+  label: string;
   trigger: React.ReactNode;
   children: React.ReactNode;
   className?: string;
@@ -640,10 +668,12 @@ function Popover({
       {open ? (
         <div
           className={cn(
-            'absolute bottom-full z-50 mb-2 w-72 origin-bottom rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95',
+            'absolute bottom-full z-50 mb-2 w-[min(18rem,calc(100vw-2rem))] origin-bottom rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95',
             align === 'right' ? 'right-0' : 'left-0',
             className,
           )}
+          role="dialog"
+          aria-label={label}
         >
           {children}
         </div>
@@ -657,6 +687,8 @@ function LeadPanel({
   conversation,
   workspaceData,
   statusName,
+  replyAvailable,
+  replyWindowDeadlineText,
   onCollapsedChange,
   onChanged,
   onCloseMobile,
@@ -665,6 +697,8 @@ function LeadPanel({
   conversation?: InstagramConversation | null;
   workspaceData?: SalesWorkspaceData;
   statusName: (code: string) => string;
+  replyAvailable?: boolean;
+  replyWindowDeadlineText?: string;
   onCollapsedChange: () => void;
   onChanged: () => void;
   onCloseMobile: () => void;
@@ -829,11 +863,16 @@ function LeadPanel({
                 <span className="truncate">@{conversation?.accountUsername}</span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={conversation?.canReply ? 'success' : 'secondary'}>
-                  {conversation?.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}
+                <Badge variant={replyAvailable ? 'success' : 'secondary'}>
+                  {replyAvailable ? t('replyWindowOpen') : t('replyWindowClosed')}
                 </Badge>
                 {conversation?.leadId ? <Badge variant="outline">#{conversation.leadId}</Badge> : null}
               </div>
+              {replyAvailable && replyWindowDeadlineText ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {t('replyWindowEndsAt').replace('{time}', replyWindowDeadlineText)}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -1069,22 +1108,38 @@ function LeadPanel({
         </div>
       </ScrollArea>
 
-      <div className="border-t border-border p-4">
-        <Button
-          className="w-full"
-          onClick={() => updateLead.mutate()}
-          disabled={!isDirty || updateLead.isPending || !compact(draft.contactName) || !draft.sourceId}
-        >
-          {updateLead.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {updateLead.isPending ? t('saving') : t('saveChanges')}
-        </Button>
+      <div className="border-t border-border bg-muted/20 p-4">
+        {isDirty ? (
+          <p className="mb-2 text-xs font-medium text-amber-700" aria-live="polite">
+            {t('unsavedChanges')}
+          </p>
+        ) : null}
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            onClick={() => setDraft(baselineDraft)}
+            disabled={!isDirty || updateLead.isPending}
+          >
+            {t('reset')}
+          </Button>
+          <Button
+            className="flex-[1.4]"
+            onClick={() => updateLead.mutate()}
+            disabled={!isDirty || updateLead.isPending || !compact(draft.contactName) || !draft.sourceId}
+          >
+            {updateLead.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {updateLead.isPending ? t('saving') : t('saveChanges')}
+          </Button>
+        </div>
       </div>
     </aside>
   );
 }
 
 export default function MessagesPage() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
@@ -1111,6 +1166,8 @@ export default function MessagesPage() {
   });
   const [activeMessageId, setActiveMessageId] = useState<number | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ id: number; text: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [openedUnreadBoundary, setOpenedUnreadBoundary] = useState<{ conversationId: number; unreadCount: number } | null>(null);
 
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1120,6 +1177,8 @@ export default function MessagesPage() {
 
   const { replies: quickReplies, addReply, removeReply } = useQuickReplies();
   const draft = selectedConversationId ? draftsByConversation[selectedConversationId] ?? '' : '';
+  const replyQuotePrefix = replyTarget ? `«${replyTarget.text}»\n` : '';
+  const composerMaxLength = Math.max(0, 1000 - replyQuotePrefix.length);
   const setDraft = (value: string | ((current: string) => string)) => {
     if (!selectedConversationId) return;
     setDraftsByConversation((currentDrafts) => {
@@ -1152,6 +1211,16 @@ export default function MessagesPage() {
   const conversations = conversationsQuery.data ?? [];
   const syncStatus = syncStatusQuery.data;
   const syncStatusRunning = syncStatus?.status === 'running';
+
+  // The API provides the initial state, but a reply window can expire while the
+  // inbox is open. Re-evaluate it locally so the composer never looks usable
+  // after Instagram has stopped accepting messages.
+  useEffect(() => {
+    if (!conversations.some((conversation) => conversation.canReply && conversation.messagingWindowExpiresAt)) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [conversations]);
+
   const requestedLeadId = useMemo(() => {
     const value = new URLSearchParams(routeSearch).get('lead');
     const parsed = Number(value);
@@ -1163,8 +1232,8 @@ export default function MessagesPage() {
     return conversations.filter((conversation) => {
       const matchesFilter = filter === 'all'
         || (filter === 'unread' && conversation.unreadCount > 0)
-        || (filter === 'reply' && conversation.canReply)
-        || (filter === 'closed' && !conversation.canReply);
+        || (filter === 'reply' && isReplyWindowOpen(conversation, now))
+        || (filter === 'closed' && !isReplyWindowOpen(conversation, now));
       if (!matchesFilter) return false;
       if (!normalizedSearch) return true;
 
@@ -1178,7 +1247,7 @@ export default function MessagesPage() {
       ].filter(Boolean).join(' ').toLowerCase();
       return haystack.includes(normalizedSearch);
     });
-  }, [conversations, filter, search]);
+  }, [conversations, filter, now, search]);
 
   // Two-tier ordering: unread first (by most recent inbound), then the rest by
   // most recent activity. Toggleable so users who prefer strict chronological
@@ -1209,6 +1278,26 @@ export default function MessagesPage() {
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const selectedCanReply = selectedConversation ? isReplyWindowOpen(selectedConversation, now) : false;
+  const selectedReplyDeadline = selectedConversation && selectedCanReply
+    ? replyWindowDeadline(selectedConversation.messagingWindowExpiresAt, language)
+    : '';
+  const threadUnreadCount = openedUnreadBoundary?.conversationId === selectedConversationId
+    ? openedUnreadBoundary.unreadCount
+    : selectedConversation?.unreadCount ?? 0;
+
+  // Keep the unread boundary visible for the current reading session even though
+  // the list is immediately marked as read after opening the conversation.
+  useEffect(() => {
+    if (!selectedConversationId) {
+      setOpenedUnreadBoundary(null);
+      return;
+    }
+    setOpenedUnreadBoundary({
+      conversationId: selectedConversationId,
+      unreadCount: selectedConversation?.unreadCount ?? 0,
+    });
+  }, [selectedConversationId]);
 
   const messagesKey = useMemo(
     () => ['/api/instagram/conversations', selectedConversationId, 'messages'] as const,
@@ -1248,6 +1337,7 @@ export default function MessagesPage() {
     setSearch('');
     setLeadCollapsed(false);
     setMobileLeadOpen(false);
+    setReplyTarget(null);
     if (target.id !== selectedConversationId) {
       setSelectedConversationId(target.id);
     }
@@ -1363,11 +1453,11 @@ export default function MessagesPage() {
     },
   });
 
-  const retryMessage = (content: string) => {
+  const retryMessage = (message: ThreadMessage) => {
     queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
-      previous.filter((item) => !(item.failed && item.content === content)),
+      previous.filter((item) => item.id !== message.id),
     );
-    if (selectedConversationId) sendMessage.mutate(content);
+    if (selectedConversationId) sendMessage.mutate(message.content);
   };
 
   const syncConversations = useMutation({
@@ -1418,10 +1508,12 @@ export default function MessagesPage() {
   }, [draft]);
 
   const submitMessage = () => {
-    const content = draft.trim();
-    if (!content || !selectedConversationId || !selectedConversation?.canReply) return;
+    const messageText = draft.trim();
+    const content = `${replyQuotePrefix}${messageText}`.trim();
+    if (!content || content.length > 1000 || !selectedConversationId || !selectedCanReply) return;
     if (sendMessage.isPending) return;
     sendMessage.mutate(content);
+    setReplyTarget(null);
   };
 
   const insertAtCursor = (text: string) => {
@@ -1432,7 +1524,7 @@ export default function MessagesPage() {
     }
     const start = el.selectionStart ?? draft.length;
     const end = el.selectionEnd ?? draft.length;
-    const next = draft.slice(0, start) + text + draft.slice(end);
+    const next = (draft.slice(0, start) + text + draft.slice(end)).slice(0, composerMaxLength);
     setDraft(next);
     requestAnimationFrame(() => {
       el.focus();
@@ -1465,6 +1557,7 @@ export default function MessagesPage() {
     setThreadSearchOpen(false);
     setQuickOpen(false);
     setEmojiOpen(false);
+    setReplyTarget(null);
     setMobileLeadOpen(false);
     if (window.matchMedia('(max-width: 1279px)').matches) {
       setMobileView('thread');
@@ -1499,12 +1592,12 @@ export default function MessagesPage() {
   };
 
   const unreadCount = conversations.reduce((count, conversation) => count + (conversation.unreadCount > 0 ? 1 : 0), 0);
-  const replyableCount = conversations.filter((conversation) => conversation.canReply).length;
+  const replyableCount = conversations.filter((conversation) => isReplyWindowOpen(conversation, now)).length;
 
   const threadQuery = threadSearch.trim().toLowerCase();
   const threadItems = useMemo(
-    () => buildThreadItems(messages, t, threadQuery, selectedConversation?.lastReadMessageAt),
-    [messages, t, threadQuery, selectedConversation?.lastReadMessageAt],
+    () => buildThreadItems(messages, t, threadQuery, threadUnreadCount),
+    [messages, t, threadQuery, threadUnreadCount],
   );
   const threadMatchCount = useMemo(
     () => threadItems.filter((item) => item.kind === 'message').length,
@@ -1599,7 +1692,7 @@ export default function MessagesPage() {
 
       <Card
         ref={inboxCardRef}
-        className="mt-6 flex h-[calc(100dvh-10rem)] min-h-[620px] flex-col overflow-hidden rounded-lg border-border bg-background shadow-none"
+        className="mt-5 flex h-[calc(100dvh-11.5rem)] min-h-[30rem] flex-col overflow-hidden rounded-lg border-border bg-background shadow-none sm:h-[calc(100dvh-10.5rem)] lg:mt-6 lg:h-[calc(100dvh-10rem)] lg:min-h-[620px]"
       >
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">
@@ -1684,10 +1777,22 @@ export default function MessagesPage() {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder={t('instagramSearchPlaceholder')}
-                    className="pl-9"
+                    className="pr-9 pl-9"
                   />
+                  {search ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                      aria-label={t('clearSearch')}
+                      onClick={() => setSearch('')}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  ) : null}
                 </div>
-                <div className="flex items-center gap-1 overflow-x-auto border-b border-border">
+                <div className="flex items-center gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label={t('conversations')}>
                   {FILTERS.map(({ value, labelKey }) => {
                     const count = value === 'all'
                       ? conversations.length
@@ -1702,6 +1807,8 @@ export default function MessagesPage() {
                         key={value}
                         type="button"
                         onClick={() => setFilter(value)}
+                        role="tab"
+                        aria-selected={active}
                         className={cn(
                           'relative flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-1.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                           active
@@ -1725,11 +1832,29 @@ export default function MessagesPage() {
                 onKeyDown={handleListKeyDown}
                 tabIndex={0}
                 aria-label={t('conversations')}
+                role="listbox"
               >
                 <ScrollArea className="h-full">
                   <div className="space-y-1 p-2">
                     {sortedConversations.length === 0 ? (
-                      <div className="p-6 text-center text-sm text-muted-foreground">{t('noSearchResults')}</div>
+                      <div className="p-6 text-center">
+                        <SearchX className="mx-auto mb-2 h-7 w-7 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">{t('noSearchResults')}</p>
+                        {(search || filter !== 'all') ? (
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="mt-1"
+                            onClick={() => {
+                              setSearch('');
+                              setFilter('all');
+                            }}
+                          >
+                            {t('resetFilters')}
+                          </Button>
+                        ) : null}
+                      </div>
                     ) : sortedConversations.map((conversation) => {
                       const participantLabel = conversation.participantName
                         || conversation.participantUsername
@@ -1737,12 +1862,15 @@ export default function MessagesPage() {
                         || t('instagramUser');
                       const selected = conversation.id === selectedConversationId;
                       const unread = conversation.unreadCount > 0;
+                      const canReply = isReplyWindowOpen(conversation, now);
                       const previewPrefix = conversation.lastMessageDirection === 'outbound' ? `${t('linkOutbound')}: ` : '';
                       return (
                         <button
                           key={conversation.id}
                           type="button"
-                          aria-current={selected}
+                          role="option"
+                          aria-selected={selected}
+                          aria-label={`${participantLabel}. ${canReply ? t('replyWindowOpen') : t('replyWindowClosed')}${unread ? `. ${conversation.unreadCount} ${t('unreadMessages').toLowerCase()}` : ''}`}
                           className={cn(
                             'relative flex w-full items-start gap-3 rounded-md px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                             selected ? 'bg-primary/10' : 'hover:bg-muted/70',
@@ -1792,8 +1920,8 @@ export default function MessagesPage() {
                               })()}
                             </p>
                             <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                              <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', conversation.canReply ? 'bg-emerald-500' : 'bg-slate-300')} />
-                              <span className="truncate">{conversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
+                              <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', canReply ? 'bg-emerald-500' : 'bg-slate-300')} />
+                              <span className="truncate">{canReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
                               {unread ? (
                                 <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                                   {conversation.unreadCount}
@@ -1850,11 +1978,16 @@ export default function MessagesPage() {
                           : selectedConversation.participantName || selectedConversation.contactName}
                       </p>
                       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
-                        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', selectedConversation.canReply ? 'bg-emerald-500' : 'bg-slate-300')} />
-                        <span className="truncate">{selectedConversation.canReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
+                        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', selectedCanReply ? 'bg-emerald-500' : 'bg-slate-300')} />
+                        <span className="truncate">{selectedCanReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
                         <span aria-hidden="true">·</span>
                         <span className="truncate">@{selectedConversation.accountUsername}</span>
                       </div>
+                      {selectedCanReply && selectedReplyDeadline ? (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {t('replyWindowEndsAt').replace('{time}', selectedReplyDeadline)}
+                        </p>
+                      ) : null}
                       <p className="sr-only">
                         {[
                           selectedConversation.leadId ? `${t('lead')} #${selectedConversation.leadId}` : null,
@@ -1918,7 +2051,7 @@ export default function MessagesPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        aria-label={t('closeLeadPanel')}
+                        aria-label={t('close')}
                         onClick={() => {
                           setThreadSearch('');
                           setThreadSearchOpen(false);
@@ -1929,7 +2062,7 @@ export default function MessagesPage() {
                     </div>
                   ) : null}
 
-                  {!selectedConversation.canReply ? (
+                  {!selectedCanReply ? (
                     <Alert className="m-4 mb-0">
                       <Clock3 className="h-4 w-4" />
                       <AlertTitle>{t('instagramMessagingWindowExpiredTitle')}</AlertTitle>
@@ -2073,7 +2206,7 @@ export default function MessagesPage() {
                                           : 'right-0 top-0 translate-x-2 -translate-y-1/2',
                                         isActive
                                           ? 'flex'
-                                          : 'hidden group-hover/bubble:flex',
+                                          : 'hidden group-hover/bubble:flex group-focus-within/bubble:flex',
                                       )}
                                     >
                                       <button
@@ -2130,7 +2263,7 @@ export default function MessagesPage() {
                                     <button
                                       type="button"
                                       className="mt-1 inline-flex items-center gap-1.5 self-end rounded-full border border-destructive/30 bg-destructive/5 px-3 py-1 text-[11px] font-medium text-destructive transition hover:bg-destructive/10"
-                                      onClick={() => retryMessage(message.content)}
+                                      onClick={() => retryMessage(message)}
                                     >
                                       <RotateCw className="h-3 w-3" />
                                       {t('retrySend')}
@@ -2161,6 +2294,7 @@ export default function MessagesPage() {
                       <Popover
                         open={quickOpen}
                         onClose={() => setQuickOpen(false)}
+                        label={t('quickReplies')}
                         trigger={
                           <Button
                             type="button"
@@ -2170,7 +2304,7 @@ export default function MessagesPage() {
                             onClick={() => setQuickOpen((value) => !value)}
                             aria-expanded={quickOpen}
                             aria-haspopup="dialog"
-                            disabled={!selectedConversation.canReply}
+                            disabled={!selectedCanReply}
                           >
                             <Sparkles className="h-4 w-4" />
                             {t('quickReplies')}
@@ -2202,7 +2336,7 @@ export default function MessagesPage() {
                                   </button>
                                   <button
                                     type="button"
-                                    className="hidden h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-destructive/10 hover:text-destructive group-hover/qr:flex"
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     aria-label={t('delete')}
                                     onClick={() => removeReply(reply)}
                                   >
@@ -2247,6 +2381,7 @@ export default function MessagesPage() {
                         open={emojiOpen}
                         onClose={() => setEmojiOpen(false)}
                         align="left"
+                        label={t('emoji')}
                         trigger={
                           <Button
                             type="button"
@@ -2257,7 +2392,7 @@ export default function MessagesPage() {
                             onClick={() => setEmojiOpen((value) => !value)}
                             aria-expanded={emojiOpen}
                             aria-haspopup="dialog"
-                            disabled={!selectedConversation.canReply}
+                            disabled={!selectedCanReply}
                           >
                             <Smile className="h-4 w-4" />
                           </Button>
@@ -2284,10 +2419,14 @@ export default function MessagesPage() {
                         className={cn(
                           'ml-auto text-[11px] tabular-nums transition-opacity',
                           draft.length > 0 ? 'opacity-100' : 'opacity-0',
-                          draft.length > 900 ? 'font-medium text-amber-600' : 'text-slate-400',
+                          draft.length > composerMaxLength
+                            ? 'font-medium text-destructive'
+                            : draft.length > composerMaxLength - 100
+                              ? 'font-medium text-amber-600'
+                              : 'text-slate-400',
                         )}
                       >
-                        {draft.length}/1000
+                        {draft.length}/{composerMaxLength}
                       </span>
                     </div>
 
@@ -2298,7 +2437,7 @@ export default function MessagesPage() {
                         <button
                           type="button"
                           className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                          aria-label={t('closeLeadPanel')}
+                          aria-label={t('close')}
                           onClick={dismissReply}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -2317,18 +2456,18 @@ export default function MessagesPage() {
                             submitMessage();
                           }
                         }}
-                        placeholder={selectedConversation.canReply
+                        placeholder={selectedCanReply
                           ? t('instagramMessagePlaceholder')
                           : t('replyWindowClosed')}
-                        disabled={!selectedConversation.canReply || sendMessage.isPending}
+                        disabled={!selectedCanReply || sendMessage.isPending}
                         className="max-h-40 min-h-[44px] flex-1 resize-none rounded-md"
-                        maxLength={1000}
+                        maxLength={composerMaxLength}
                         aria-label={t('instagramMessagePlaceholder')}
                       />
                       <Button
                         className="h-11 w-11 shrink-0 rounded-md p-0 shadow-sm"
                         onClick={submitMessage}
-                        disabled={!draft.trim() || !selectedConversation.canReply || sendMessage.isPending}
+                        disabled={!draft.trim() || draft.length > composerMaxLength || !selectedCanReply || sendMessage.isPending}
                         aria-label={t('sendMessage')}
                       >
                         {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -2372,6 +2511,8 @@ export default function MessagesPage() {
                   conversation={selectedConversation}
                   workspaceData={workspaceQuery.data}
                   statusName={statusName}
+                  replyAvailable={selectedCanReply}
+                  replyWindowDeadlineText={selectedReplyDeadline}
                   onCollapsedChange={() => setLeadCollapsed(true)}
                   onChanged={() => {
                     queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
@@ -2398,6 +2539,8 @@ export default function MessagesPage() {
                     conversation={selectedConversation}
                     workspaceData={workspaceQuery.data}
                     statusName={statusName}
+                    replyAvailable={selectedCanReply}
+                    replyWindowDeadlineText={selectedReplyDeadline}
                     onCollapsedChange={() => setMobileLeadOpen(false)}
                     onChanged={() => {
                       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
@@ -2425,7 +2568,7 @@ export default function MessagesPage() {
             variant="ghost"
             size="icon"
             className="absolute right-4 top-4 text-white hover:bg-white/10 hover:text-white"
-            aria-label={t('closeLeadPanel')}
+            aria-label={t('close')}
             onClick={() => setLightbox(null)}
           >
             <X className="h-5 w-5" />

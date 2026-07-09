@@ -1177,6 +1177,13 @@ export const translations = {
     en: 'Reply available',
     ru: 'Можно ответить',
   },
+  replyWindowEndsAt: {
+    en: 'Replies available until {time}',
+    ru: 'Можно ответить до {time}',
+  },
+  clearSearch: { en: 'Clear search', ru: 'Очистить поиск' },
+  resetFilters: { en: 'Reset filters', ru: 'Сбросить фильтры' },
+  unsavedChanges: { en: 'You have unsaved changes', ru: 'Есть несохранённые изменения' },
   selectConversation: {
     en: 'Select a conversation',
     ru: 'Выберите диалог',

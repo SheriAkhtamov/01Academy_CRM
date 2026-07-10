@@ -18,7 +18,10 @@ export type GroupScheduleValidationError =
   | 'groupScheduleInvalid'
   | 'groupScheduleOverlap';
 
-const readScheduleArray = (value: unknown): WeeklyScheduleItemInput[] => {
+const isScheduleItemInput = (value: unknown): value is WeeklyScheduleItemInput =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const readScheduleArray = (value: unknown): unknown[] => {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string') return [];
   try {
@@ -50,6 +53,7 @@ export const normalizeWeeklySchedule = (
   fallbackDurationMinutes = 60,
 ): NormalizedWeeklyScheduleItem[] =>
   readScheduleArray(value).flatMap((item) => {
+    if (!isScheduleItemInput(item)) return [];
     const dayOfWeek = Number(item.dayOfWeek);
     const startMinutes = parseScheduleTimeToMinutes(item.startTime ?? item.time);
     const parsedEnd = parseScheduleTimeToMinutes(item.endTime);
@@ -57,7 +61,7 @@ export const normalizeWeeklySchedule = (
       return [];
     }
     const endMinutes = parsedEnd === null ? startMinutes + fallbackDurationMinutes : parsedEnd;
-    if (endMinutes <= startMinutes || endMinutes > 24 * 60) return [];
+    if (!Number.isFinite(endMinutes) || endMinutes <= startMinutes || endMinutes > 24 * 60) return [];
     const parsedSchoolId = Number(item.schoolId);
     return [{
       dayOfWeek,
@@ -74,6 +78,7 @@ export const getGroupScheduleValidationError = (
   if (rawItems.length === 0) return 'groupScheduleRequired';
 
   const hasInvalidInterval = rawItems.some((item) => {
+    if (!isScheduleItemInput(item)) return true;
     const dayOfWeek = Number(item.dayOfWeek);
     const startMinutes = parseScheduleTimeToMinutes(item.startTime ?? item.time);
     const endMinutes = parseScheduleTimeToMinutes(item.endTime);
@@ -124,9 +129,34 @@ export const scheduleDateRangesOverlap = (
   rightStart?: Date | null,
   rightEnd?: Date | null,
 ) => {
+  if (
+    (leftStart && Number.isNaN(leftStart.getTime()))
+    || (leftEnd && Number.isNaN(leftEnd.getTime()))
+    || (rightStart && Number.isNaN(rightStart.getTime()))
+    || (rightEnd && Number.isNaN(rightEnd.getTime()))
+  ) return false;
   const leftStartTime = leftStart?.getTime() ?? Number.NEGATIVE_INFINITY;
   const leftEndTime = leftEnd?.getTime() ?? Number.POSITIVE_INFINITY;
   const rightStartTime = rightStart?.getTime() ?? Number.NEGATIVE_INFINITY;
   const rightEndTime = rightEnd?.getTime() ?? Number.POSITIVE_INFINITY;
   return leftStartTime <= rightEndTime && leftEndTime >= rightStartTime;
+};
+
+/** Group start/end values are calendar dates, so the entire end date is active. */
+export const isDateInsideInclusiveDayRange = (
+  value: Date,
+  start?: Date | null,
+  end?: Date | null,
+) => {
+  if (
+    Number.isNaN(value.getTime())
+    || (start && Number.isNaN(start.getTime()))
+    || (end && Number.isNaN(end.getTime()))
+  ) return false;
+
+  const toLocalDay = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const day = toLocalDay(value);
+  return day >= (start ? toLocalDay(start) : Number.NEGATIVE_INFINITY)
+    && day <= (end ? toLocalDay(end) : Number.POSITIVE_INFINITY);
 };

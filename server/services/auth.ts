@@ -15,7 +15,11 @@ class AuthService {
   }
 
   async authenticateUser(loginOrEmailId: string, password: string): Promise<User | null> {
-    const user = await storage.getUserByLoginOrEmail(loginOrEmailId);
+    const trimmedLogin = loginOrEmailId.trim();
+    const normalizedLogin = trimmedLogin.includes('@')
+      ? trimmedLogin.toLowerCase()
+      : trimmedLogin;
+    const user = await storage.getUserByLoginOrEmail(normalizedLogin);
     if (!user || !user.isActive) {
       return null;
     }

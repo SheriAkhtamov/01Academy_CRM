@@ -1443,6 +1443,40 @@ const getActiveSalesManager = async (managerId: number) => {
   return manager;
 };
 
+const syncLeadManagerAssignment = async (
+  req: any,
+  lead: Row,
+  manager: { id: number; fullName: string },
+  comment?: string | null,
+) => {
+  await query(
+    `UPDATE academy_students
+     SET manager_id = $1, updated_at = NOW()
+     WHERE lead_id = $2`,
+    [manager.id, lead.id],
+  );
+  await query(
+    `UPDATE academy_tasks
+     SET responsible_id = $1, updated_at = NOW()
+     WHERE status <> 'done'
+       AND (
+         (entity_type = 'lead' AND entity_id = $2)
+         OR (
+           entity_type = 'student'
+           AND entity_id IN (SELECT id FROM academy_students WHERE lead_id = $2)
+         )
+       )`,
+    [manager.id, lead.id],
+  );
+  await insertRow('academy_lead_assignment_history', {
+    leadId: lead.id,
+    fromManagerId: lead.managerId ?? null,
+    toManagerId: manager.id,
+    changedBy: req.user!.id,
+    comment: comment ?? null,
+  });
+};
+
 const reassignLead = async (
   req: any,
   lead: Row,
@@ -1459,32 +1493,7 @@ const reassignLead = async (
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
 
-    await query(
-      `UPDATE academy_students
-       SET manager_id = $1, updated_at = NOW()
-       WHERE lead_id = $2`,
-      [manager.id, lead.id],
-    );
-    await query(
-      `UPDATE academy_tasks
-       SET responsible_id = $1, updated_at = NOW()
-       WHERE status <> 'done'
-         AND (
-           (entity_type = 'lead' AND entity_id = $2)
-           OR (
-             entity_type = 'student'
-             AND entity_id IN (SELECT id FROM academy_students WHERE lead_id = $2)
-           )
-         )`,
-      [manager.id, lead.id],
-    );
-    await insertRow('academy_lead_assignment_history', {
-      leadId: lead.id,
-      fromManagerId: lead.managerId ?? null,
-      toManagerId: manager.id,
-      changedBy: req.user!.id,
-      comment: comment ?? null,
-    });
+    await syncLeadManagerAssignment(req, lead, manager, comment);
 
     return { ...updated, managerName: manager.fullName };
   });
@@ -3403,6 +3412,11 @@ router.post('/leads/:id/assign', async (req, res) => {
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, oldLead)) return;
 
+    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
+    if (!canAssignAnyManager && Number(managerId) !== Number(req.user!.id)) {
+      return res.status(403).json({ error: 'Only leadership can assign a lead to another manager' });
+    }
+
     const manager = await getActiveSalesManager(managerId);
     const lead = await reassignLead(req, oldLead, manager, nullableText(req.body.comment));
     await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
@@ -3624,10 +3638,21 @@ router.patch('/leads/:id', async (req, res) => {
     };
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
-    const canManageLeadAssignment = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
-    const managerId = canManageLeadAssignment && req.body.managerId !== undefined
-      ? await resolveLeadManagerId(req, req.body.managerId)
+    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
+    const hasRequestedManager = req.body.managerId !== undefined;
+    const requestedManagerId = hasRequestedManager ? parseId(req.body.managerId) : undefined;
+    if (hasRequestedManager && !requestedManagerId) {
+      return res.status(400).json({ error: 'Active account manager is required' });
+    }
+    if (requestedManagerId && !canAssignAnyManager && Number(requestedManagerId) !== Number(req.user!.id)) {
+      return res.status(403).json({ error: 'Only leadership can assign a lead to another manager' });
+    }
+    const managerId = requestedManagerId
+      ? await resolveLeadManagerId(req, requestedManagerId)
       : undefined;
+    if (nextStatus !== oldLead.statusCode && !oldLead.managerId && !managerId) {
+      return res.status(409).json({ error: 'leadRequiresResponsibleManager' });
+    }
     const requestedPhones = req.body.phoneNumbers !== undefined || req.body.phone !== undefined
       ? normalizeLeadPhones(req.body.phoneNumbers ?? req.body.phone)
       : undefined;
@@ -3685,7 +3710,9 @@ router.patch('/leads/:id', async (req, res) => {
       referralCode: nullableText(req.body.referralCode),
       referrerStudentId: parseId(req.body.referrerStudentId) };
 
-    const lead = await withTransaction(async () => {
+    const manager = managerId ? await getActiveSalesManager(managerId) : null;
+    const managerChanged = Boolean(manager && Number(oldLead.managerId) !== Number(manager.id));
+    const lead: Row | undefined = await withTransaction<Row | undefined>(async () => {
       const groupToReserve = Number(merged.enrolledGroupId || 0);
       const mustValidateCapacity = Boolean(requestedGroupId)
         || ['enrolled', 'paid'].includes(nextStatus);
@@ -3694,11 +3721,23 @@ router.patch('/leads/:id', async (req, res) => {
         await validateEnrollmentGroup(groupToReserve, id);
       }
       const updated = await updateRow('academy_leads', id, updates);
+      if (updated && manager && managerChanged) {
+        await syncLeadManagerAssignment(
+          req,
+          oldLead,
+          manager,
+          nullableText(req.body.assignmentComment) ?? 'Ответственный назначен при переносе лида',
+        );
+      }
       if (updated && requestedPhones !== undefined) {
         await syncLeadPhones(id, requestedPhones);
-        return { ...updated, phoneNumbers: requestedPhones.map((phone) => phone.phone) };
+        return {
+          ...updated,
+          managerName: manager?.fullName ?? oldLead.managerName,
+          phoneNumbers: requestedPhones.map((phone) => phone.phone),
+        };
       }
-      return updated;
+      return updated ? { ...updated, managerName: manager?.fullName ?? oldLead.managerName } : updated;
     });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
@@ -3709,6 +3748,16 @@ router.patch('/leads/:id', async (req, res) => {
 
     if (lead.statusCode === 'paid') {
       await createStudentFromLead(req, lead.id);
+    }
+
+    if (manager && managerChanged) {
+      await createNotification(
+        manager.id,
+        'Вам назначен лид',
+        leadContactSummary(lead),
+        'lead',
+        lead.id,
+      );
     }
 
     await createAudit(req, 'UPDATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);

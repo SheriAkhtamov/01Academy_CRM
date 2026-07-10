@@ -257,7 +257,10 @@ export function validateLeadForStatusChange(input: {
   courseId?: number | null;
   enrolledGroupId?: number | null;
 }): string | null {
-  if (["enrolled", "paid"].includes(input.nextStatus) && !input.enrolledGroupId) {
+  if (
+    ["enrolled", "paid"].includes(input.nextStatus)
+    && (!Number.isInteger(Number(input.enrolledGroupId)) || Number(input.enrolledGroupId) <= 0)
+  ) {
     return "groupRequiredForEnrollment";
   }
 
@@ -265,7 +268,13 @@ export function validateLeadForStatusChange(input: {
     return null;
   }
 
-  if (!input.studentName?.trim() || !input.studentAge || !input.courseId) {
+  if (
+    !input.studentName?.trim()
+    || !Number.isInteger(Number(input.studentAge))
+    || Number(input.studentAge) <= 0
+    || !Number.isInteger(Number(input.courseId))
+    || Number(input.courseId) <= 0
+  ) {
     return "completeQualificationFields";
   }
 
@@ -283,7 +292,7 @@ export function validateLeadStatusTransition(currentStatus: string, nextStatus: 
 }
 
 export function getComputedPaymentStatus(status: string, dueAt?: string | Date | null): string {
-  if (status === "paid") return "paid";
+  if (status !== "pending") return status;
   if (!dueAt) return status;
 
   const dueDate = dueAt instanceof Date ? dueAt : new Date(dueAt);
@@ -293,20 +302,21 @@ export function getComputedPaymentStatus(status: string, dueAt?: string | Date |
 }
 
 export function calculateAttendancePercent(presentCount: number, conductedLessonsCount: number): number {
-  if (conductedLessonsCount <= 0) return 0;
-  return Math.round((presentCount / conductedLessonsCount) * 100);
+  if (!Number.isFinite(presentCount) || !Number.isFinite(conductedLessonsCount) || conductedLessonsCount <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((presentCount / conductedLessonsCount) * 100)));
 }
 
 export function calculateProgressPercent(completedLessonsCount: number, totalLessonsCount: number): number {
-  if (totalLessonsCount <= 0) return 0;
-  return Math.min(100, Math.round((completedLessonsCount / totalLessonsCount) * 100));
+  if (!Number.isFinite(completedLessonsCount) || !Number.isFinite(totalLessonsCount) || totalLessonsCount <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((completedLessonsCount / totalLessonsCount) * 100)));
 }
 
 export function calculateNps(scores: number[]): number | null {
-  if (scores.length === 0) return null;
-  const promoters = scores.filter((score) => score >= 9).length;
-  const detractors = scores.filter((score) => score <= 6).length;
-  return Math.round(((promoters - detractors) / scores.length) * 100);
+  const validScores = scores.filter((score) => Number.isInteger(score) && score >= 0 && score <= 10);
+  if (validScores.length === 0) return null;
+  const promoters = validScores.filter((score) => score >= 9).length;
+  const detractors = validScores.filter((score) => score <= 6).length;
+  return Math.round(((promoters - detractors) / validScores.length) * 100);
 }
 
 // Trend: compares the average of the last `windowSize` points with the previous window.

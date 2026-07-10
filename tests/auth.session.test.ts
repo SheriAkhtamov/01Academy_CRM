@@ -82,6 +82,28 @@ describe("auth session routes", () => {
     expect(sessionResponse.body.user.password).toBeUndefined();
   });
 
+  it("normalizes surrounding whitespace and email case before authentication", async () => {
+    const password = "Secret123";
+    const hashedPassword = await bcrypt.hash(password, 1);
+    mockStorage.getUserByLoginOrEmail.mockResolvedValue({
+      id: 7,
+      email: "admin@example.com",
+      password: hashedPassword,
+      fullName: "Admin User",
+      workspace: "administration",
+      hasReportAccess: true,
+      isActive: true,
+    });
+
+    const app = await createApp();
+    const response = await request(app)
+      .post("/api/auth/login")
+      .send({ login: "  Admin@Example.COM  ", password });
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.getUserByLoginOrEmail).toHaveBeenCalledWith("admin@example.com");
+  });
+
   it("rejects login with invalid credentials", async () => {
     const password = "Secret123";
     const hashedPassword = await bcrypt.hash(password, 1);

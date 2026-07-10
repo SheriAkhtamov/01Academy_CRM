@@ -97,6 +97,12 @@ describe("01 Academy business rules", () => {
       studentAge: 10,
       courseId: 1,
     })).toBeNull();
+    expect(validateLeadForStatusChange({
+      nextStatus: "qualified",
+      studentName: "Timur",
+      studentAge: -10,
+      courseId: 1,
+    })).toBe("completeQualificationFields");
   });
 
   it("requires a group before enrolling a lead", () => {
@@ -136,9 +142,17 @@ describe("01 Academy business rules", () => {
     expect(calculateLtv([1200000, 1200000, 960000])).toBe(3360000);
   });
 
+  it("keeps percentage metrics bounded and ignores invalid NPS answers", () => {
+    expect(calculateAttendancePercent(12, 10)).toBe(100);
+    expect(calculateAttendancePercent(-1, 10)).toBe(0);
+    expect(calculateProgressPercent(-2, 10)).toBe(0);
+    expect(calculateNps([10, 0, 11, Number.NaN])).toBe(0);
+  });
+
   it("marks unpaid payments as overdue after due date", () => {
     expect(getComputedPaymentStatus("paid", "2020-01-01")).toBe("paid");
     expect(getComputedPaymentStatus("pending", "2020-01-01")).toBe("overdue");
+    expect(getComputedPaymentStatus("refunded", "2020-01-01")).toBe("refunded");
   });
 
   it("generates a stable referral code shape", () => {

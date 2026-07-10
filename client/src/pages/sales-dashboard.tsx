@@ -166,6 +166,11 @@ interface PipelineStatus {
   isActive?: boolean;
 }
 
+interface PendingLeadMove {
+  lead: Lead;
+  statusCode: string;
+}
+
 const archiveReasonTranslationKeys = Object.fromEntries(
   LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
 ) as Record<string, TranslationKey>;
@@ -401,6 +406,91 @@ function ArchiveLeadDialog({
   );
 }
 
+function AssignLeadBeforeMoveDialog({
+  pendingMove,
+  managers,
+  canChooseAnyManager,
+  currentUserId,
+  managerId,
+  onManagerIdChange,
+  onClose,
+  onConfirm,
+  isPending,
+  t,
+}: {
+  pendingMove: PendingLeadMove | null;
+  managers: Array<{ id: number; fullName: string }>;
+  canChooseAnyManager: boolean;
+  currentUserId?: number;
+  managerId: string;
+  onManagerIdChange: (managerId: string) => void;
+  onClose: () => void;
+  onConfirm: (managerId: number) => void;
+  isPending: boolean;
+  t: (key: TranslationKey) => string;
+}) {
+  if (!pendingMove) return null;
+
+  const selectedManagerId = canChooseAnyManager ? Number(managerId) : Number(currentUserId);
+  const canConfirm = Number.isInteger(selectedManagerId) && selectedManagerId > 0;
+
+  return (
+    <Dialog open onOpenChange={(open) => {
+      if (!open && !isPending) onClose();
+    }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('leadRequiresResponsibleManager')}</DialogTitle>
+          <DialogDescription>
+            {pendingMove.lead.contactName ? `${pendingMove.lead.contactName}. ` : null}
+            {t('leadMoveRequiresResponsibleManagerDescription')}
+          </DialogDescription>
+        </DialogHeader>
+
+        <Alert>
+          <AlertCircle />
+          <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
+          <AlertDescription>{t('leadMoveRequiresResponsibleManagerDescription')}</AlertDescription>
+        </Alert>
+
+        {canChooseAnyManager ? (
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="lead-move-manager">
+              {t('responsibleManager')}
+            </label>
+            <Select value={managerId} onValueChange={onManagerIdChange} disabled={isPending}>
+              <SelectTrigger id="lead-move-manager">
+                <SelectValue placeholder={t('selectResponsibleManager')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {managers.map((manager) => (
+                    <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+            {t('cancel')}
+          </Button>
+          <Button
+            type="button"
+            disabled={!canConfirm || isPending}
+            onClick={() => onConfirm(selectedManagerId)}
+          >
+            <UserCheck data-icon="inline-start" />
+            {isPending ? t('saving') : canChooseAnyManager ? t('assignManagerAndMove') : t('assignToMeAndMove')}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -437,6 +527,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
   const [archiveDialogLead, setArchiveDialogLead] = useState<Lead | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
+  const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
+  const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
 
   const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(routeSearch);
@@ -614,6 +706,22 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     onError: (error: any) => toast({ title: t('statusNotUpdated'), description: error.message, variant: 'destructive' }),
   });
 
+  const assignAndMoveLead = useMutation({
+    mutationFn: ({ leadId, statusCode, managerId }: { leadId: number; statusCode: string; managerId: number }) =>
+      apiRequest('PATCH', `/api/academy/leads/${leadId}`, { statusCode, managerId }),
+    onSuccess: () => {
+      setPendingLeadMove(null);
+      setPendingLeadMoveManagerId('');
+      toast({ title: t('leadAssignedAndMoved') });
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: t('statusNotUpdated'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
   const archiveLead = useMutation({
     mutationFn: ({ id, reason, assignToSelf }: { id: number; reason: string; assignToSelf?: boolean }) =>
       apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, assignToSelf }),
@@ -711,6 +819,18 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     }
   }, [data, myStudents, routeSearch, selectedLeadId, selectedStudent?.id]);
 
+  const requestLeadStatusChange = useCallback(async (leadId: number, statusCode: string) => {
+    const lead = myLeads.find((item) => item.id === leadId);
+    if (!lead) return false;
+    if (!lead.managerId) {
+      setPendingLeadMove({ lead, statusCode });
+      setPendingLeadMoveManagerId(isAdministrationWorkspace ? '' : String(user?.id ?? ''));
+      return false;
+    }
+    await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
+    return true;
+  }, [isAdministrationWorkspace, myLeads, updateLead, user?.id]);
+
   const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
     if (action === 'payment') {
       openLead(lead.id, 'payment');
@@ -744,10 +864,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         toast({ title: t('completeQualificationFields') });
         return;
       }
-      updateLead.mutate({ id: lead.id, payload: { statusCode: 'qualified' } });
+      void requestLeadStatusChange(lead.id, 'qualified');
       return;
     }
-  }, [openLead, setLocation, t, toast, updateLead]);
+  }, [openLead, requestLeadStatusChange, setLocation, t, toast]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
@@ -897,10 +1017,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               openLead(leadId, 'payment');
               return false;
             }
-            await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
-            return true;
+            return requestLeadStatusChange(leadId, statusCode);
           }}
-          isPending={updateLead.isPending}
+          isPending={updateLead.isPending || assignAndMoveLead.isPending}
           showManager={isAdministrationWorkspace}
         />
       ) : null}
@@ -975,6 +1094,30 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         t={t}
       />
 
+      <AssignLeadBeforeMoveDialog
+        pendingMove={pendingLeadMove}
+        managers={salesManagers}
+        canChooseAnyManager={isAdministrationWorkspace}
+        currentUserId={user?.id}
+        managerId={pendingLeadMoveManagerId}
+        onManagerIdChange={setPendingLeadMoveManagerId}
+        onClose={() => {
+          if (assignAndMoveLead.isPending) return;
+          setPendingLeadMove(null);
+          setPendingLeadMoveManagerId('');
+        }}
+        onConfirm={(managerId) => {
+          if (!pendingLeadMove) return;
+          assignAndMoveLead.mutate({
+            leadId: pendingLeadMove.lead.id,
+            statusCode: pendingLeadMove.statusCode,
+            managerId,
+          });
+        }}
+        isPending={assignAndMoveLead.isPending}
+        t={t}
+      />
+
       <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
@@ -1014,7 +1157,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         groups={data.groups ?? []}
         sources={data.sources ?? []}
         statuses={data.statuses ?? []}
-        managers={salesManagers}
+        managers={isAdministrationWorkspace
+          ? salesManagers
+          : salesManagers.filter((manager) => Number(manager.id) === Number(user?.id))}
         currentUserId={user?.id}
         leadStatusName={leadStatusName}
         dateTime={dateTime}

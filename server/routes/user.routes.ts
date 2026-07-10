@@ -180,6 +180,111 @@ const syncAcademyTeacherForUser = async (user: {
     }
 };
 
+const getAssignedSalesLeadCount = async (managerId: number) => {
+    const result = await pool.query<{ lead_count: number | string }>(
+        `SELECT COUNT(*)::int AS lead_count
+         FROM academy_leads
+         WHERE manager_id = $1`,
+        [managerId],
+    );
+    return Number(result.rows[0]?.lead_count ?? 0);
+};
+
+const getActiveSalesManagerForTransfer = async (managerId: number) => {
+    const result = await pool.query<{ id: number; full_name: string }>(
+        `SELECT u.id, u.full_name
+         FROM users u
+         WHERE u.id = $1
+           AND u.is_active = true
+           AND (
+             u.workspace = 'sales'
+             OR EXISTS (
+               SELECT 1
+               FROM user_workspaces uw
+               WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+             )
+           )`,
+        [managerId],
+    );
+    return result.rows[0] ?? null;
+};
+
+const transferAssignedSalesLeads = async ({
+    fromManagerId,
+    toManagerId,
+    changedBy,
+}: {
+    fromManagerId: number;
+    toManagerId: number;
+    changedBy: number;
+}) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const leads = await client.query<{ id: number }>(
+            `SELECT id
+             FROM academy_leads
+             WHERE manager_id = $1
+             FOR UPDATE`,
+            [fromManagerId],
+        );
+        const leadIds = leads.rows.map((lead) => Number(lead.id));
+        if (leadIds.length === 0) {
+            await client.query('COMMIT');
+            return 0;
+        }
+
+        await client.query(
+            `UPDATE academy_leads
+             SET manager_id = $1, updated_at = NOW()
+             WHERE id = ANY($2::int[])`,
+            [toManagerId, leadIds],
+        );
+        await client.query(
+            `UPDATE academy_students
+             SET manager_id = $1, updated_at = NOW()
+             WHERE lead_id = ANY($2::int[])`,
+            [toManagerId, leadIds],
+        );
+        await client.query(
+            `UPDATE academy_tasks
+             SET responsible_id = $1, updated_at = NOW()
+             WHERE status <> 'done'
+               AND (
+                 (entity_type = 'lead' AND entity_id = ANY($2::int[]))
+                 OR (
+                   entity_type = 'student'
+                   AND entity_id IN (
+                     SELECT id FROM academy_students WHERE lead_id = ANY($2::int[])
+                   )
+                 )
+               )`,
+            [toManagerId, leadIds],
+        );
+        await client.query(
+            `INSERT INTO academy_lead_assignment_history
+              (lead_id, from_manager_id, to_manager_id, changed_by, comment)
+             SELECT id, $1, $2, $3, $4
+             FROM academy_leads
+             WHERE id = ANY($5::int[])`,
+            [
+                fromManagerId,
+                toManagerId,
+                changedBy,
+                'Передано при отключении модуля продаж',
+                leadIds,
+            ],
+        );
+        await client.query('COMMIT');
+        return leadIds.length;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
 router.get('/', requireAuth, async (_req, res) => {
     try {
         const users = await storage.getUsers();
@@ -199,6 +304,23 @@ router.get('/online-status', requireAuth, async (_req, res) => {
     } catch (error) {
         logger.error('Error fetching online status', { error });
         res.status(500).json({ error: 'Failed to fetch online status' });
+    }
+});
+
+router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
+    try {
+        const id = Number.parseInt(req.params.id, 10);
+        if (Number.isNaN(id)) {
+            return res.status(400).json({ error: 'Invalid user ID' });
+        }
+        const user = await storage.getUser(id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json({ leadCount: await getAssignedSalesLeadCount(id) });
+    } catch (error) {
+        logger.error('Error fetching assigned sales lead count', { error, userId: req.params.id });
+        res.status(500).json({ error: 'Failed to fetch assigned sales lead count' });
     }
 });
 
@@ -550,6 +672,9 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         const nextWorkspaces = requestedWorkspaces ?? getAssignedWorkspaces(existingUser);
+        const isRemovingSalesAccess =
+            getAssignedWorkspaces(existingUser).includes('sales') &&
+            !nextWorkspaces.includes('sales');
         const isRemovingActiveLeadershipAccess =
             hasLeadershipAccess(existingUser) &&
             existingUser.isActive &&
@@ -567,6 +692,29 @@ router.put('/:id', requireAuth, async (req, res) => {
                     error: 'Cannot remove or deactivate the last active leadership account.',
                 });
             }
+        }
+
+        let salesLeadTransferTarget: { id: number; full_name: string } | null = null;
+        if (isRemovingSalesAccess) {
+            const leadCount = await getAssignedSalesLeadCount(id);
+            if (leadCount > 0) {
+                const transferManagerId = Number.parseInt(String(req.body.leadTransferManagerId ?? ''), 10);
+                if (!Number.isInteger(transferManagerId) || transferManagerId === id) {
+                    return res.status(409).json({ error: 'salesLeadTransferRequired', leadCount });
+                }
+                salesLeadTransferTarget = await getActiveSalesManagerForTransfer(transferManagerId);
+                if (!salesLeadTransferTarget) {
+                    return res.status(400).json({ error: 'Active sales manager is required' });
+                }
+            }
+        }
+
+        if (salesLeadTransferTarget) {
+            await transferAssignedSalesLeads({
+                fromManagerId: id,
+                toManagerId: salesLeadTransferTarget.id,
+                changedBy: req.user!.id,
+            });
         }
 
         let updatedUser = await storage.updateUser(id, updateData);

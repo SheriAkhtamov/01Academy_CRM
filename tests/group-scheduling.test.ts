@@ -3,6 +3,7 @@ import {
   getGroupScheduleValidationError,
   normalizeWeeklySchedule,
   scheduleDateRangesOverlap,
+  isDateInsideInclusiveDayRange,
   weeklySchedulesOverlap,
 } from '../shared/scheduling';
 
@@ -12,6 +13,13 @@ describe('group scheduling', () => {
     expect(getGroupScheduleValidationError([
       { dayOfWeek: 1, startTime: '11:00', endTime: '10:00' },
     ])).toBe('groupScheduleInvalid');
+    expect(getGroupScheduleValidationError([null])).toBe('groupScheduleInvalid');
+  });
+
+  it('does not emit an interval when a fallback duration is invalid', () => {
+    expect(normalizeWeeklySchedule([
+      { dayOfWeek: 1, startTime: '11:00' },
+    ], Number.NaN)).toEqual([]);
   });
 
   it('detects overlaps inside one timetable', () => {
@@ -42,6 +50,19 @@ describe('group scheduling', () => {
       new Date('2026-02-01'),
       new Date('2026-02-02'),
       new Date('2026-03-01'),
+    )).toBe(false);
+  });
+
+  it('treats a group end date as inclusive for the whole calendar day', () => {
+    expect(isDateInsideInclusiveDayRange(
+      new Date(2026, 6, 10, 18, 30),
+      new Date(2026, 6, 1),
+      new Date(2026, 6, 10),
+    )).toBe(true);
+    expect(isDateInsideInclusiveDayRange(
+      new Date(2026, 6, 11, 0, 1),
+      new Date(2026, 6, 1),
+      new Date(2026, 6, 10),
     )).toBe(false);
   });
 });

@@ -26,7 +26,7 @@ const loginLimiter = rateLimit({
     message: t('tooManyLoginAttempts'),
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: false,
+    skipSuccessfulRequests: true,
 });
 
 const accountLimiter = rateLimit({

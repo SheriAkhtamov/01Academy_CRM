@@ -31,6 +31,7 @@ export async function initializeDatabase(): Promise<void> {
       message: error?.message,
       code: error?.code,
     });
+    throw error;
   }
 }
 

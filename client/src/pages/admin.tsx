@@ -115,6 +115,9 @@ const createCredentialsSchema = (t: any) => z.object({
   }
 });
 
+type UserFormValues = z.infer<ReturnType<typeof createUserSchema>>;
+type UserUpdatePayload = Partial<UserFormValues> & { leadTransferManagerId?: number };
+
 const formatDateInputValue = (value: unknown) => {
   if (!value) return '';
   if (typeof value === 'string') return value.slice(0, 10);
@@ -135,6 +138,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [userCredentials, setUserCredentials] = useState<any>(null);
   const [pendingCredentialUpdate, setPendingCredentialUpdate] = useState<z.infer<ReturnType<typeof createCredentialsSchema>> | null>(null);
   const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
+  const [salesModuleTransfer, setSalesModuleTransfer] = useState<{
+    user: any;
+    data: UserFormValues;
+    leadCount: number;
+  } | null>(null);
+  const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const { user } = useAuth();
@@ -180,6 +189,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     setShowCreateUserModal(open);
     if (!open) {
       setSelectedUser(null);
+      setSalesModuleTransfer(null);
+      setSalesLeadTransferManagerId('');
       userForm.reset();
     }
   };
@@ -240,7 +251,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   });
 
   const updateUserMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<z.infer<ReturnType<typeof createUserSchema>>> }) => {
+    mutationFn: async ({ id, data }: { id: number; data: UserUpdatePayload }) => {
       return await apiRequest('PUT', `/api/users/${id}`, data);
     },
     onSuccess: () => {
@@ -250,6 +261,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         description: t('userInformationUpdatedDescription'),
       });
       setSelectedUser(null);
+      setSalesModuleTransfer(null);
+      setSalesLeadTransferManagerId('');
       setShowCreateUserModal(false);
     },
     onError: () => {
@@ -352,7 +365,16 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     }
   };
 
-  const onSubmitUser = (data: z.infer<ReturnType<typeof createUserSchema>>) => {
+  const salesTransferManagers = useMemo(
+    () => users.filter((candidate: any) => (
+      candidate.isActive !== false
+      && Number(candidate.id) !== Number(selectedUser?.id)
+      && getAssignedWorkspaces(candidate).includes('sales')
+    )),
+    [selectedUser?.id, users],
+  );
+
+  const onSubmitUser = async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
     const workspaces = Array.from(new Set([data.workspace, ...data.workspaces]));
     const payload = {
       ...data,
@@ -360,6 +382,29 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     };
 
     if (selectedUser) {
+      const isRemovingSalesModule =
+        getAssignedWorkspaces(selectedUser).includes('sales') &&
+        !workspaces.includes('sales');
+      if (isRemovingSalesModule) {
+        try {
+          const impact = await apiRequest('GET', `/api/users/${selectedUser.id}/sales-lead-count`);
+          const leadCount = Number(impact?.leadCount ?? 0);
+          if (leadCount > 0) {
+            setSalesModuleTransfer({ user: selectedUser, data: payload, leadCount });
+            setSalesLeadTransferManagerId(salesTransferManagers[0]
+              ? String(salesTransferManagers[0].id)
+              : '');
+            return;
+          }
+        } catch (error: any) {
+          toast({
+            title: t('error'),
+            description: error.message || t('failedUpdateUserDescription'),
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
       const { email: _email, ...profileData } = payload;
       updateUserMutation.mutate({ id: selectedUser.id, data: profileData });
     } else {
@@ -1031,6 +1076,84 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={Boolean(salesModuleTransfer)}
+        onOpenChange={(open) => {
+          if (!open && !updateUserMutation.isPending) {
+            setSalesModuleTransfer(null);
+            setSalesLeadTransferManagerId('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('salesModuleLeadsTransferTitle')}</DialogTitle>
+            <DialogDescription>
+              {salesModuleTransfer
+                ? t('salesModuleLeadsTransferDescription')
+                  .replace('{count}', String(salesModuleTransfer.leadCount))
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="sales-lead-transfer-manager">
+              {t('responsibleManager')}
+            </label>
+            <Select
+              value={salesLeadTransferManagerId}
+              onValueChange={setSalesLeadTransferManagerId}
+              disabled={updateUserMutation.isPending || salesTransferManagers.length === 0}
+            >
+              <SelectTrigger id="sales-lead-transfer-manager">
+                <SelectValue placeholder={t('selectResponsibleManager')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {salesTransferManagers.map((manager) => (
+                    <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {salesTransferManagers.length === 0 ? (
+              <p className="text-sm text-destructive">{t('salesModuleLeadsTransferRequired')}</p>
+            ) : null}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSalesModuleTransfer(null);
+                setSalesLeadTransferManagerId('');
+              }}
+              disabled={updateUserMutation.isPending}
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={!salesLeadTransferManagerId || updateUserMutation.isPending}
+              onClick={() => {
+                if (!salesModuleTransfer) return;
+                const { email: _email, ...profileData } = salesModuleTransfer.data;
+                updateUserMutation.mutate({
+                  id: salesModuleTransfer.user.id,
+                  data: {
+                    ...profileData,
+                    leadTransferManagerId: Number(salesLeadTransferManagerId),
+                  },
+                });
+              }}
+            >
+              {updateUserMutation.isPending ? t('saving') : t('disableSalesAndTransfer')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* User Credentials Modal */}
       <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>

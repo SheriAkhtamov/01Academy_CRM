@@ -309,6 +309,13 @@
       "when": 1784736000000,
       "tag": "0043_enforce_attendance_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784822400000,
+      "tag": "0044_materialize_group_lessons",
+      "breakpoints": true
     }
   ]
 }

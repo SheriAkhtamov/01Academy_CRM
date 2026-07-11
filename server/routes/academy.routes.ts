@@ -14,6 +14,10 @@ import {
   getZonedMonthRange,
   zonedWallClockToInstant,
 } from '../lib/academy-time';
+import {
+  buildRecurringLessonSchedule,
+  type CalendarDate,
+} from '../lib/lesson-schedule';
 import { runAutomations } from '../services/automations';
 import { normalizeOutboxRecipient } from '../services/message-recipients';
 import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
@@ -5329,8 +5333,17 @@ const prepareLessonMutation = async (options: {
       ?? (await queryOne(`SELECT lesson_duration_minutes FROM academy_courses WHERE id = $1`, [courseId]))?.lessonDurationMinutes
       ?? 120,
   );
+  const lessonNumber = Number(options.values.lessonNumber ?? options.oldRow?.lessonNumber);
 
-  if (!courseId || !schoolId || !roomId || Number.isNaN(scheduledAt.getTime()) || durationMinutes < 15) {
+  if (
+    !courseId
+    || !schoolId
+    || !roomId
+    || !Number.isSafeInteger(lessonNumber)
+    || lessonNumber < 1
+    || Number.isNaN(scheduledAt.getTime())
+    || durationMinutes < 15
+  ) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
   if (!LESSON_STATUSES.some((item) => item.code === status)) {
@@ -5340,7 +5353,22 @@ const prepareLessonMutation = async (options: {
   options.values.courseId = courseId;
   options.values.schoolId = schoolId;
   options.values.roomId = roomId;
+  options.values.lessonNumber = lessonNumber;
   options.values.durationMinutes = durationMinutes;
+
+  const duplicateLessonNumber = await queryOne(
+    `SELECT id
+     FROM academy_lessons
+     WHERE group_id = $1
+       AND lesson_number = $2
+       AND ($3::integer IS NULL OR id <> $3)
+     LIMIT 1`,
+    [groupId, lessonNumber, options.excludeLessonId ?? null],
+  );
+  if (duplicateLessonNumber) {
+    throw Object.assign(new Error('groupLessonNumberDuplicate'), { statusCode: 409 });
+  }
+
   // Cancelling an already conflicting lesson must always be possible.
   if (status === 'cancelled') {
     await assertActiveRoomInSchool(roomId, schoolId);
@@ -5383,6 +5411,99 @@ const prepareLessonMutation = async (options: {
   }
 };
 
+const calendarDateFromDateOnly = (value: Date): CalendarDate => ({
+  year: value.getUTCFullYear(),
+  month: value.getUTCMonth() + 1,
+  day: value.getUTCDate(),
+});
+
+const calendarDateFromInstant = (value: Date): CalendarDate => {
+  const parts = getZonedDateTimeParts(value, ACADEMY_TIME_ZONE);
+  return { year: parts.year, month: parts.month, day: parts.day };
+};
+
+const calendarDateToUtcMarker = (value: CalendarDate) =>
+  new Date(Date.UTC(value.year, value.month - 1, value.day));
+
+const materializeGroupLessons = async (groupId: number): Promise<Row[]> => {
+  if (!transactionContext.getStore()) {
+    return withTransaction(() => materializeGroupLessons(groupId));
+  }
+
+  await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+  const group = await queryOne(
+    `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
+    [groupId],
+  );
+  if (!group) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+  if (!['open', 'in_progress'].includes(String(group.status)) || !group.teacherId) return [];
+
+  const existingLessons = await query<Row>(
+    `SELECT id FROM academy_lessons WHERE group_id = $1 ORDER BY scheduled_at, id`,
+    [groupId],
+  );
+  if (existingLessons.length > 0) return existingLessons;
+
+  const [course, membership] = await Promise.all([
+    queryOne(`SELECT program FROM academy_courses WHERE id = $1`, [group.courseId]),
+    queryOne<{ membershipStart: Date | null }>(
+      `SELECT MIN(COALESCE(enrolled_at, created_at)) AS membership_start
+       FROM academy_students
+       WHERE group_id = $1`,
+      [groupId],
+    ),
+  ]);
+  const explicitStartDate = group.startDate ? new Date(group.startDate) : null;
+  const fallbackStart = membership?.membershipStart
+    ? new Date(membership.membershipStart)
+    : new Date(group.createdAt ?? Date.now());
+  const startDate = explicitStartDate && !Number.isNaN(explicitStartDate.getTime())
+    ? calendarDateFromDateOnly(explicitStartDate)
+    : calendarDateFromInstant(fallbackStart);
+  const lessonCount = Number(group.lessonCount);
+  const generatedSlots = buildRecurringLessonSchedule({
+    startDate,
+    schedule: group.schedule,
+    lessonCount,
+    fallbackDurationMinutes: Number(group.lessonDurationMinutes),
+    timeZone: ACADEMY_TIME_ZONE,
+  });
+  if (generatedSlots.length !== lessonCount) {
+    throw Object.assign(new Error('groupLessonGenerationFailed'), { statusCode: 409 });
+  }
+
+  const program = readJsonArray(course?.program);
+  const createdLessons: Row[] = [];
+  for (const slot of generatedSlots) {
+    const programLesson = program.find(
+      (item) => Number(item.lessonNumber) === slot.lessonNumber,
+    );
+    const values: Row = {
+      groupId,
+      courseId: Number(group.courseId),
+      schoolId: Number(group.schoolId),
+      roomId: Number(group.roomId),
+      teacherId: Number(group.teacherId),
+      lessonNumber: slot.lessonNumber,
+      topic: nullableText(programLesson?.topic) ?? `Занятие ${slot.lessonNumber}`,
+      materials: nullableText(programLesson?.description) ?? null,
+      scheduledAt: slot.scheduledAt,
+      durationMinutes: slot.durationMinutes,
+      status: 'scheduled',
+    };
+    await prepareLessonMutation({ values, forceAutoAssign: false });
+    createdLessons.push(await insertRow('academy_lessons', values));
+  }
+
+  const lastLesson = createdLessons[createdLessons.length - 1];
+  const lastLessonDate = calendarDateFromInstant(new Date(lastLesson.scheduledAt));
+  await updateRow('academy_groups', groupId, {
+    startDate: calendarDateToUtcMarker(startDate),
+    endDate: calendarDateToUtcMarker(lastLessonDate),
+  });
+  return createdLessons;
+};
+
 const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) => {
   const groups = await query<{ id: number }>(
     `SELECT id
@@ -5419,6 +5540,9 @@ const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) =
         await updateRow('academy_groups', Number(lockedGroup.id), {
           teacherId: nextTeacherId,
         });
+        if (nextTeacherId) {
+          await materializeGroupLessons(Number(lockedGroup.id));
+        }
         return true;
       });
       if (updated) updatedCount += 1;
@@ -5547,7 +5671,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
           await prepareGroupMutation({ values, forceAutoAssign: req.body.autoAssign === true });
-          return insertRow(table, values);
+          const group = await insertRow(table, values);
+          await materializeGroupLessons(Number(group.id));
+          return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [group.id]) ?? group;
         })
         : table === 'academy_lessons'
           ? await withTransaction(async () => {
@@ -5641,7 +5767,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             excludeGroupId: id,
             forceAutoAssign: req.body.autoAssign === true,
           });
-          return updateRow(table, id, values);
+          const updatedGroup = await updateRow(table, id, values);
+          await materializeGroupLessons(id);
+          return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [id]) ?? updatedGroup;
         })
         : table === 'academy_lessons'
           ? await withTransaction(async () => {

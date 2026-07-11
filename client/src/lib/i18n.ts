@@ -791,6 +791,8 @@ export const translations = {
   groupHasScheduledLessons: { en: 'Complete or reschedule all planned lessons before completing the group.', ru: 'Перед завершением группы проведите или перенесите все запланированные занятия.' },
   groupHasStudyingStudents: { en: 'Transfer or complete all active students before completing the group.', ru: 'Перед завершением группы переведите или завершите обучение всех активных учеников.' },
   groupLessonsLockSchedule: { en: 'This group already has lessons. Change lesson dates, rooms, and teachers through the lesson schedule.', ru: 'У группы уже созданы занятия. Меняйте даты, кабинеты и преподавателей через расписание занятий.' },
+  groupLessonGenerationFailed: { en: 'Lessons could not be created from this group schedule.', ru: 'Не удалось создать занятия по расписанию этой группы.' },
+  groupLessonNumberDuplicate: { en: 'A lesson with this number already exists in the group.', ru: 'В этой группе уже есть занятие с таким номером.' },
   groupName: { en: 'Group name', ru: 'Название группы' },
   groupNamePlaceholder: { en: 'For example: Vibe Coding 01', ru: 'Например: Вайбкодинг 01' },
   groupNotOpen: { en: 'Enrollment for this group is closed.', ru: 'Набор в эту группу закрыт.' },

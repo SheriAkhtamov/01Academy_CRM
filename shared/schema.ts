@@ -382,6 +382,8 @@ export const academyLessons = pgTable("academy_lessons", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
+  groupLessonNumberUnique: uniqueIndex("academy_lessons_group_lesson_number_unique")
+    .on(table.groupId, table.lessonNumber),
   groupIdx: index("academy_lessons_group_idx").on(table.groupId),
   schoolIdx: index("academy_lessons_school_idx").on(table.schoolId),
   roomIdx: index("academy_lessons_room_idx").on(table.roomId),

@@ -106,6 +106,7 @@ const lessonFixture = (overrides: Record<string, unknown> = {}) => ({
   room_id: 3,
   teacher_id: 4,
   teacher_user_id: 1,
+  lesson_number: 1,
   duration_minutes: 60,
   status: 'scheduled',
   scheduled_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
@@ -372,6 +373,7 @@ describe('academy route logic boundaries', () => {
       room_id: 3,
       teacher_id: 4,
       teacher_user_id: 1,
+      lesson_number: id - 9,
       duration_minutes: 60,
       status: 'scheduled',
       scheduled_at: scheduledAt,
@@ -919,6 +921,8 @@ describe('academy route logic boundaries', () => {
       .send({
         groupId: 20,
         teacherId: 4,
+        lessonNumber: 1,
+        topic: 'Conflict validation',
         scheduledAt: '2026-07-13T10:00:00.000+05:00',
         durationMinutes: 60,
       });
@@ -959,6 +963,8 @@ describe('academy route logic boundaries', () => {
       .send({
         groupId: 20,
         teacherId: 4,
+        lessonNumber: 1,
+        topic: 'Group overlap validation',
         scheduledAt: '2026-07-13T10:00:00.000+05:00',
         durationMinutes: 60,
       });

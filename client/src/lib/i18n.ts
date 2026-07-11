@@ -38,6 +38,7 @@ export const translations = {
   attendanceSaved: { en: 'Attendance saved', ru: 'Посещаемость сохранена' },
   attendanceSavedDesc: { en: 'Attendance percentage and risks have been recalculated.', ru: 'Процент посещаемости и риски пересчитаны.' },
   attendanceAvailableAfterLessonStart: { en: 'You can complete the lesson after its scheduled start.', ru: 'Завершить урок можно после времени его начала.' },
+  attendancePending: { en: 'Attendance pending', ru: 'Нужно отметить посещаемость' },
   attendanceRosterLoadFailed: { en: 'Failed to load the lesson roster', ru: 'Не удалось загрузить список учеников' },
   attendanceTab: { en: 'Attendance', ru: 'Посещ.' },
   autoByAgeOrManual: { en: 'Auto by age or manual', ru: 'Авто по возрасту или вручную' },

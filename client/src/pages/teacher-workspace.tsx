@@ -38,6 +38,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { sortAttendanceLessons } from '@/lib/attendance';
 import { getAssignedWorkspaces } from '@shared/academy';
 
 type Lesson = {
@@ -498,8 +499,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   );
 
   const attendanceLessons = useMemo(
-    () => lessons.filter((lesson) => ['scheduled', 'conducted'].includes(lesson.status)),
-    [lessons],
+    () => sortAttendanceLessons(lessons, now),
+    [lessons, now],
   );
 
   const attendanceRosterQuery = useQuery<{
@@ -1146,17 +1147,14 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <SelectValue placeholder={t('selectLessonPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {[...attendanceLessons]
-                      .sort(
-                        (a, b) =>
-                          new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
-                      )
-                      .map((lesson) => (
+                    {attendanceLessons.map((lesson) => (
                         <SelectItem key={lesson.id} value={String(lesson.id)}>
                           {formatDate(lesson.scheduledAt)} {formatTime(lesson.scheduledAt)} —{' '}
                           {lesson.groupName || t('noGroup')} — {lesson.topic} ({
                             lesson.status === 'conducted'
                               ? t('lessonStatusConducted')
+                              : new Date(lesson.scheduledAt).getTime() <= now
+                                ? t('attendancePending')
                               : t('lessonStatusScheduled')
                           })
                         </SelectItem>

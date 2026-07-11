@@ -17,7 +17,7 @@ class NotificationStorage {
         return result[0];
     }
 
-    async markNotificationAsRead(id: number, userId?: number): Promise<Notification> {
+    async markNotificationAsRead(id: number, userId?: number): Promise<Notification | undefined> {
         const conditions = [eq(notifications.id, id)];
         if (userId) {
             conditions.push(eq(notifications.userId, userId));
@@ -38,12 +38,13 @@ class NotificationStorage {
             .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
     }
 
-    async deleteNotification(id: number, userId?: number): Promise<void> {
+    async deleteNotification(id: number, userId?: number): Promise<boolean> {
         const conditions = [eq(notifications.id, id)];
         if (userId) {
             conditions.push(eq(notifications.userId, userId));
         }
-        await db.delete(notifications).where(and(...conditions));
+        const deleted = await db.delete(notifications).where(and(...conditions)).returning({ id: notifications.id });
+        return deleted.length > 0;
     }
 }
 

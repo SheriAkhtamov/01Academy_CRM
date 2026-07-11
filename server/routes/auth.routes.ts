@@ -11,6 +11,8 @@ import { appConfig } from '../config';
 import { logger } from '../lib/logger';
 import { getLinkedAccountId } from '@shared/account-switching';
 import { encryptCredentialPassword } from '../services/credential-password';
+import { pool } from '../db';
+import { hasLeadershipAccess } from '@shared/academy';
 
 const router = Router();
 
@@ -40,6 +42,13 @@ const accountLimiter = rateLimit({
 const normalizeLogin = (value: unknown) =>
     typeof value === 'string' ? value.trim().toLowerCase() : '';
 
+const parsePositiveId = (value: unknown): number | null => {
+    const text = String(value ?? '').trim();
+    if (!/^\d+$/.test(text)) return null;
+    const parsed = Number(text);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
 const isValidLogin = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
@@ -56,11 +65,11 @@ router.post('/login', loginLimiter, async (req, res) => {
         const { login, email, password } = req.body;
         const loginOrEmail = login || email;
 
-        if (!loginOrEmail) {
+        if (typeof loginOrEmail !== 'string' || !loginOrEmail.trim()) {
             return res.status(400).json({ error: 'Login is required' });
         }
 
-        if (!password) {
+        if (typeof password !== 'string' || !password) {
             return res.status(400).json({ error: 'Password is required' });
         }
 
@@ -115,6 +124,149 @@ router.post('/logout', (req, res) => {
         });
         res.json({ success: true });
     });
+});
+
+router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
+    try {
+        const currentUser = req.user!;
+        if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim() || req.body.fullName.trim().length > 255) {
+            return res.status(400).json({ error: 'fullNameRequired' });
+        }
+        const fullName = req.body.fullName.trim();
+        const email = normalizeLogin(req.body.email);
+        if (!email || !isValidLogin(email)) {
+            return res.status(400).json({ error: 'invalidEmailAddress' });
+        }
+        if (req.body.position !== undefined && req.body.position !== null && typeof req.body.position !== 'string') {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (req.body.phone !== undefined && req.body.phone !== null && typeof req.body.phone !== 'string') {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        const position = typeof req.body.position === 'string' ? req.body.position.trim() || null : null;
+        const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() || null : null;
+        if ((position?.length ?? 0) > 255 || (phone?.length ?? 0) > 50) {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (req.body.hasReportAccess !== undefined && typeof req.body.hasReportAccess !== 'boolean') {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+
+        const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
+        const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+        const confirmNewPassword = typeof req.body.confirmNewPassword === 'string'
+            ? req.body.confirmNewPassword
+            : '';
+        const passwordChanged = Boolean(currentPassword || newPassword || confirmNewPassword);
+        let newPasswordHash: string | null = null;
+        let passwordCiphertext: string | null = null;
+        if (passwordChanged) {
+            if (!currentPassword) return res.status(400).json({ error: 'currentPasswordRequired' });
+            if (!newPassword) return res.status(400).json({ error: 'newPasswordRequired' });
+            if (newPassword.length < 8) return res.status(400).json({ error: 'passwordTooShort' });
+            if (newPassword !== confirmNewPassword) return res.status(400).json({ error: 'passwordsDoNotMatch' });
+            if (!await authService.verifyPassword(currentPassword, currentUser.password)) {
+                return res.status(401).json({ error: 'currentPasswordInvalid' });
+            }
+            newPasswordHash = await authService.hashPassword(newPassword);
+            passwordCiphertext = encryptCredentialPassword(newPassword);
+        }
+
+        const client = await pool.connect();
+        let oldEmail = currentUser.email;
+        try {
+            await client.query('BEGIN');
+            const locked = await client.query<{
+                password: string;
+                email: string;
+                has_report_access: boolean;
+            }>(
+                `SELECT password, email, has_report_access
+                 FROM users
+                 WHERE id = $1
+                 FOR UPDATE`,
+                [currentUser.id],
+            );
+            const lockedUser = locked.rows[0];
+            if (!lockedUser) {
+                throw Object.assign(new Error('User not found'), { statusCode: 404 });
+            }
+            if (passwordChanged && lockedUser.password !== currentUser.password) {
+                throw Object.assign(new Error('credentialsChangedConcurrently'), { statusCode: 409 });
+            }
+            oldEmail = lockedUser.email;
+            const hasReportAccess = hasLeadershipAccess(currentUser) && req.body.hasReportAccess !== undefined
+                ? req.body.hasReportAccess
+                : lockedUser.has_report_access;
+            await client.query(
+                `UPDATE users
+                 SET full_name = $2,
+                     email = $3,
+                     position = $4,
+                     phone = $5,
+                     has_report_access = $6,
+                     password = COALESCE($7, password),
+                     credential_password_ciphertext = COALESCE($8, credential_password_ciphertext),
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [
+                    currentUser.id,
+                    fullName,
+                    email,
+                    position,
+                    phone,
+                    hasReportAccess,
+                    newPasswordHash,
+                    passwordCiphertext,
+                ],
+            );
+            await client.query(
+                `UPDATE academy_teachers
+                 SET full_name = $2, updated_at = NOW()
+                 WHERE user_id = $1`,
+                [currentUser.id, fullName],
+            );
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            client.release();
+        }
+
+        const updatedUser = await storage.getUser(currentUser.id);
+        if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+        await storage.createAuditLog({
+            userId: currentUser.id,
+            action: 'UPDATE_OWN_SETTINGS',
+            entityType: 'user',
+            entityId: currentUser.id,
+            oldValues: [{ email: oldEmail }],
+            newValues: [{
+                email: updatedUser.email,
+                fullName: updatedUser.fullName,
+                position: updatedUser.position,
+                phone: updatedUser.phone,
+                hasReportAccess: updatedUser.hasReportAccess,
+                passwordChanged,
+            }],
+        }).catch((error) => logger.error('Failed to audit own settings update', { error, userId: currentUser.id }));
+
+        res.json({
+            user: authService.sanitizeUser(updatedUser),
+            loginChanged: oldEmail.toLowerCase() !== updatedUser.email.toLowerCase(),
+            passwordChanged,
+        }).catch((error) => logger.error('Failed to audit own credential update', {
+            error,
+            userId: currentUser.id,
+        }));
+    } catch (error: any) {
+        logger.error('Failed to update own settings', { error, userId: req.user?.id });
+        if (error?.code === '23505' && String(error?.constraint ?? '').includes('users_email_unique')) {
+            return res.status(409).json({ error: 'loginAlreadyExists' });
+        }
+        res.status(error?.statusCode || 500).json({ error: error?.message || 'failedToUpdateCredentials' });
+    }
 });
 
 router.patch('/me/credentials', requireAuth, async (req: Request, res: Response) => {
@@ -242,8 +394,11 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
         const ownerUserId = req.session.userId!;
         const { login, password, label } = req.body;
 
-        if (!login || !password) {
+        if (typeof login !== 'string' || !login.trim() || typeof password !== 'string' || !password) {
             return res.status(400).json({ error: 'Login and password are required' });
+        }
+        if (label !== undefined && label !== null && (typeof label !== 'string' || label.trim().length > 255)) {
+            return res.status(400).json({ error: 'invalidData' });
         }
 
         const user = await authService.authenticateUser(login, password);
@@ -269,14 +424,15 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
         const token = crypto.randomBytes(32).toString('hex');
         const tokenHash = await bcrypt.hash(token, 10);
 
-        const savedAccount = await storage.addSavedAccount(ownerUserId, user.id, label || null, tokenHash);
+        const normalizedLabel = typeof label === 'string' ? label.trim() || null : null;
+        const savedAccount = await storage.addSavedAccount(ownerUserId, user.id, normalizedLabel, tokenHash);
 
         res.json({
             id: user.id,
             savedAccountId: savedAccount.id,
             user: authService.sanitizeUser(user),
             token,
-            label: label || null,
+            label: normalizedLabel,
         });
     } catch (error) {
         logger.error('Failed to add saved account', { error });
@@ -290,17 +446,19 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
         const { token, tokens, targetAccountId } = req.body;
         const candidateTokens = Array.from(new Set(
             (Array.isArray(tokens) ? tokens : [token])
-                .filter((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0),
+                .filter((candidate): candidate is string => (
+                    typeof candidate === 'string' && /^[a-f0-9]{64}$/i.test(candidate)
+                )),
         )).slice(0, 25);
         const requestedTargetId = targetAccountId === undefined
             ? null
-            : Number(targetAccountId);
+            : parsePositiveId(targetAccountId);
 
         if (candidateTokens.length === 0) {
             return res.status(400).json({ error: 'Token is required' });
         }
 
-        if (requestedTargetId !== null && (!Number.isInteger(requestedTargetId) || requestedTargetId <= 0)) {
+        if (targetAccountId !== undefined && requestedTargetId === null) {
             return res.status(400).json({ error: 'Target account ID is invalid' });
         }
 
@@ -363,9 +521,9 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
 router.delete('/accounts/:id', requireAuth, async (req: Request, res: Response) => {
     try {
         const userId = req.session.userId!;
-        const savedAccountId = parseInt(req.params.id, 10);
+        const savedAccountId = parsePositiveId(req.params.id);
 
-        if (isNaN(savedAccountId)) {
+        if (!savedAccountId) {
             return res.status(400).json({ error: 'Invalid account ID' });
         }
 

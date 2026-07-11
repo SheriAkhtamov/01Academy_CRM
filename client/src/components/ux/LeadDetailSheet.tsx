@@ -107,6 +107,7 @@ interface LeadDetails {
   offerPriceUzs?: number | null;
   firstContactAt?: string | null;
   createdAt: string;
+  updatedAt?: string | null;
   history?: Array<{
     id: number;
     fromStatusCode?: string | null;
@@ -265,6 +266,21 @@ type ContactFormValues = z.infer<typeof contactSchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type TaskFormValues = z.infer<typeof taskSchema>;
 
+const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
+  contactName: lead.contactName ?? '',
+  phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
+  messenger: lead.messenger ?? '',
+  studentName: lead.studentName ?? '',
+  studentAge: lead.studentAge ? String(lead.studentAge) : '',
+  courseId: lead.courseId ? String(lead.courseId) : '',
+  sourceId: lead.sourceId ? String(lead.sourceId) : '',
+  enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
+  language: lead.language ?? 'ru',
+  statusCode: lead.statusCode,
+  expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
+  comment: lead.comment ?? '',
+});
+
 const toInputDate = (value?: string | null) => {
   if (!value) return '';
   const date = new Date(value);
@@ -366,6 +382,7 @@ export function LeadDetailSheet({
   // so we only reseed when the lead identity changes or when the deal data itself changed
   // AND the user hasn't started editing the affected form.
   const hydratedLeadKey = useRef<string | null>(null);
+  const hydratedLeadId = useRef<number | null>(null);
   const hydratedTransientKey = useRef<string | null>(null);
 
   const leadSnapshotKey = useMemo(() => {
@@ -406,24 +423,13 @@ export function LeadDetailSheet({
     // Reseed the deal form only when the lead itself changes, or when the
     // server data changed AND the user is not mid-edit in the deal tab.
     if (hydratedLeadKey.current !== leadSnapshotKey) {
-      const shouldReseed = !leadForm.formState.isDirty || hydratedLeadKey.current === null;
-      if (shouldReseed) {
-        leadForm.reset({
-          contactName: lead.contactName ?? '',
-          phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
-          messenger: lead.messenger ?? '',
-          studentName: lead.studentName ?? '',
-          studentAge: lead.studentAge ? String(lead.studentAge) : '',
-          courseId: lead.courseId ? String(lead.courseId) : '',
-          sourceId: lead.sourceId ? String(lead.sourceId) : '',
-          enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
-          language: lead.language ?? 'ru',
-          statusCode: lead.statusCode,
-          expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
-          comment: lead.comment ?? '',
-        });
-      }
+      const changedLead = hydratedLeadId.current !== lead.id;
+      leadForm.reset(
+        leadToFormValues(lead),
+        changedLead ? undefined : { keepDirtyValues: true },
+      );
       hydratedLeadKey.current = leadSnapshotKey;
+      hydratedLeadId.current = lead.id;
     }
 
     // The payment form is a transient single-shot action. Only reseed it on first
@@ -448,6 +454,7 @@ export function LeadDetailSheet({
   useEffect(() => {
     if (!open) {
       hydratedLeadKey.current = null;
+      hydratedLeadId.current = null;
       hydratedTransientKey.current = null;
       setPendingManagerId(null);
     }
@@ -476,6 +483,7 @@ export function LeadDetailSheet({
 
       return apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
         ...rest,
+        expectedUpdatedAt: currentLead?.updatedAt,
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
         studentAge: values.studentAge ? Number(values.studentAge) : null,
         courseId: values.courseId ? Number(values.courseId) : null,
@@ -484,7 +492,12 @@ export function LeadDetailSheet({
         expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
       });
     },
-    onSuccess: () => finishMutation(t('leadSaved')),
+    onSuccess: async (updatedLead: LeadDetails) => {
+      leadForm.reset(leadToFormValues(updatedLead));
+      hydratedLeadKey.current = null;
+      hydratedLeadId.current = updatedLead.id;
+      await finishMutation(t('leadSaved'));
+    },
     onError: (error: Error) => toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' }),
   });
 
@@ -526,7 +539,17 @@ export function LeadDetailSheet({
       }),
     onSuccess: async () => {
       const clientExisted = leadQuery.data?.statusCode === 'paid';
-      await leadQuery.refetch();
+      const refreshed = await leadQuery.refetch();
+      const refreshedLead = refreshed.data;
+      paymentForm.reset({
+        amountUzs: String(refreshedLead?.expectedPaymentUzs ?? refreshedLead?.offerPriceUzs ?? ''),
+        method: 'transfer',
+        type: 'full',
+        discount: 'none',
+        paidUntil: nextPaymentDate(refreshedLead?.payments),
+        comment: '',
+      });
+      hydratedTransientKey.current = null;
       onChanged();
       toast({
         title: clientExisted ? t('paymentSaved') : t('clientCreated'),
@@ -538,7 +561,9 @@ export function LeadDetailSheet({
 
   const createTask = useMutation({
     mutationFn: (values: TaskFormValues) => apiRequest('POST', '/api/academy/tasks', {
-      ...values,
+      title: values.title,
+      description: values.description,
+      deadlineAt: values.deadlineAt ? new Date(values.deadlineAt).toISOString() : null,
       responsibleId: currentUserId,
       entityType: 'lead',
       entityId: leadId,
@@ -938,7 +963,15 @@ export function LeadDetailSheet({
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel>{t('course')}</FormLabel>
-                                <Select value={field.value || 'none'} onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}>
+                                <Select value={field.value || 'none'} onValueChange={(value) => {
+                                  const nextCourseId = value === 'none' ? '' : value;
+                                  field.onChange(nextCourseId);
+                                  const currentGroupId = leadForm.getValues('enrolledGroupId');
+                                  const currentGroup = groups.find((group) => String(group.id) === currentGroupId);
+                                  if (currentGroupId && (!nextCourseId || (currentGroup?.courseId && Number(currentGroup.courseId) !== Number(nextCourseId)))) {
+                                    leadForm.setValue('enrolledGroupId', '', { shouldDirty: true, shouldValidate: true });
+                                  }
+                                }}>
                                   <FormControl><SelectTrigger><SelectValue placeholder={t('courseNotSelected')} /></SelectTrigger></FormControl>
                                   <SelectContent>
                                     <SelectGroup>

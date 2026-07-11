@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { canAccessAcademyWorkspace, hasLeadershipAccess, TARGET_ROAS } from '@shared/academy';
+import { expenseOverlapsMonth, funnelForSource, leadToPaidConversion } from '@/lib/marketingLogic';
 import {
   Megaphone,
   TrendingUp,
@@ -163,7 +164,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     return date.toLocaleDateString('ru-RU');
   };
 
-  const { data, isLoading } = useQuery<any>({
+  const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/marketing'],
   });
 
@@ -218,21 +219,22 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
 
   const filteredExpenses = useMemo(() => {
     if (!expensePeriodFilter) return expenses;
-    return expenses.filter((exp: any) =>
-      String(exp.periodStart || exp.createdAt).startsWith(expensePeriodFilter)
-    );
+    return expenses.filter((expense: any) => expenseOverlapsMonth(expense, expensePeriodFilter));
   }, [expenses, expensePeriodFilter]);
 
   const funnelData = useMemo(() => {
-    if (funnelSourceFilter === 'all') return funnel;
-    const sourceFunnel = analytics?.funnelBySource?.[funnelSourceFilter];
-    return sourceFunnel || funnel;
-  }, [analytics, funnel, funnelSourceFilter]);
+    return funnelForSource(funnel, leads, funnelSourceFilter);
+  }, [funnel, funnelSourceFilter, leads]);
 
   const expenseFormDirty = useMemo(
     () => JSON.stringify(expenseForm) !== JSON.stringify(EMPTY_EXPENSE_FORM),
     [expenseForm],
   );
+  const expenseFormValid = Number(expenseForm.amountUzs) > 0
+    && Boolean(expenseForm.channel.trim())
+    && Boolean(expenseForm.periodStart)
+    && Boolean(expenseForm.periodEnd)
+    && expenseForm.periodEnd >= expenseForm.periodStart;
   const handleExpenseDialogState = useCallback((open: boolean) => {
     setExpenseDialogOpen(open);
     if (!open) setExpenseForm(EMPTY_EXPENSE_FORM);
@@ -277,6 +279,16 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   }, [referrals, students, t]);
 
   /* ─── loading state ─── */
+  if (isError) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 p-8 text-center">
+        <p className="font-medium text-destructive">{t('error')}</p>
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
+        <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
+      </div>
+    );
+  }
+
   if (isLoading || !data) {
     return (
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
@@ -291,17 +303,20 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     );
   }
 
-  const summary = analytics?.summary ?? {};
+  const summary = {
+    ...(analytics?.summary ?? {}),
+    leadToPaidConversion: analytics?.summary?.leadToPaidConversion ?? leadToPaidConversion(leads),
+  };
 
   /* ─── tab: sources ─── */
   const sourceColumns = [
     { key: 'sourceName', header: t('source'), accessor: (row: any) => row.sourceName, sortable: true },
     { key: 'leads', header: t('navLeads'), accessor: (row: any) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'paidStudents', header: t('paidReferrals'), accessor: (row: any) => row.paidStudents, sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'revenue', header: t('revenueLabel'), accessor: (row: any) => money(row.revenue), sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'expenses', header: t('expenses'), accessor: (row: any) => money(row.expenses), sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'cpl', header: t('cplColumn'), accessor: (row: any) => money(row.cpl), sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'cac', header: t('cacLabel'), accessor: (row: any) => money(row.cac), sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'revenue', header: t('revenueLabel'), accessor: (row: any) => Number(row.revenue || 0), render: (row: any) => money(row.revenue), sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'expenses', header: t('expenses'), accessor: (row: any) => Number(row.expenses || 0), render: (row: any) => money(row.expenses), sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'cpl', header: t('cplColumn'), accessor: (row: any) => Number(row.cpl || 0), render: (row: any) => money(row.cpl), sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'cac', header: t('cacLabel'), accessor: (row: any) => Number(row.cac || 0), render: (row: any) => money(row.cac), sortable: true, cellClassName: 'tabular-nums' },
     {
       key: 'roas',
       header: t('roasLabel'),
@@ -310,7 +325,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
       sortable: true,
       cellClassName: 'tabular-nums',
     },
-    { key: 'ltvCac', header: t('ltvCacLabel'), accessor: (row: any) => `${row.ltvCac}:1`, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'ltvCac', header: t('ltvCacLabel'), accessor: (row: any) => Number(row.ltvCac || 0), render: (row: any) => `${row.ltvCac}:1`, sortable: true, cellClassName: 'tabular-nums' },
   ];
 
   /* ─── tab: warm base ─── */
@@ -318,7 +333,13 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     { key: 'contactName', header: t('contactPersonName'), accessor: (row: any) => row.contactName, sortable: true },
     { key: 'phone', header: t('phone'), accessor: (row: any) => row.phone || '-', sortable: true },
     { key: 'courseName', header: t('course'), accessor: (row: any) => row.courseName || t('noCourse'), sortable: true },
-    { key: 'movedAt', header: t('dateColumn'), accessor: (row: any) => dateOnly(row.movedToWarmAt || row.updatedAt), sortable: true },
+    {
+      key: 'movedAt',
+      header: t('dateColumn'),
+      accessor: (row: any) => new Date(row.movedToWarmAt || row.updatedAt || 0).getTime(),
+      render: (row: any) => dateOnly(row.movedToWarmAt || row.updatedAt),
+      sortable: true,
+    },
     {
       key: 'reason',
       header: t('comment'),
@@ -366,22 +387,18 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     {
       key: 'period',
       header: t('period'),
-      accessor: (row: any) => `${dateOnly(row.periodStart)} – ${dateOnly(row.periodEnd)}`,
+      accessor: (row: any) => new Date(row.periodStart || row.createdAt || 0).getTime(),
+      render: (row: any) => `${dateOnly(row.periodStart || row.createdAt)} – ${dateOnly(row.periodEnd || row.periodStart || row.createdAt)}`,
       sortable: true,
     },
-    { key: 'amount', header: t('amount'), accessor: (row: any) => money(row.amountUzs), sortable: true, cellClassName: 'tabular-nums font-medium' },
+    { key: 'amount', header: t('amount'), accessor: (row: any) => Number(row.amountUzs || 0), render: (row: any) => money(row.amountUzs), sortable: true, cellClassName: 'tabular-nums font-medium' },
   ];
 
-  const funnelStages = [
-    { code: 'new_request', label: t('leadStatusNewRequest'), color: '#2563eb' },
-    { code: 'first_contact', label: t('leadStatusFirstContact'), color: '#0ea5e9' },
-    { code: 'qualified', label: t('leadStatusQualified'), color: '#14b8a6' },
-    { code: 'demo_invited', label: t('leadStatusDemoInvited'), color: '#8b5cf6' },
-    { code: 'demo_attended', label: t('leadStatusDemoAttended'), color: '#a855f7' },
-    { code: 'offer', label: t('leadStatusOffer'), color: '#f59e0b' },
-    { code: 'thinking', label: t('leadStatusThinking'), color: '#f97316' },
-    { code: 'paid', label: t('leadStatusPaid'), color: '#16a34a' },
-  ];
+  const funnelStages = funnelData.map((stage: any) => ({
+    code: String(stage.code),
+    label: String(stage.name || stage.code),
+    color: String(stage.color || '#64748b'),
+  }));
 
   const avgDealCycle = summary.avgDealCycleDays ?? t('noData');
   const sectionTitle: Record<MarketingSection, string> = {
@@ -753,14 +770,23 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
                 <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
               </Field>
               <Field label={t('start')}>
-                <Input type="date" value={expenseForm.periodStart} onChange={(e) => setExpenseForm({ ...expenseForm, periodStart: e.target.value })} />
+                <Input type="date" max={expenseForm.periodEnd || undefined} value={expenseForm.periodStart} onChange={(e) => setExpenseForm({ ...expenseForm, periodStart: e.target.value })} />
               </Field>
               <Field label={t('end')}>
-                <Input type="date" value={expenseForm.periodEnd} onChange={(e) => setExpenseForm({ ...expenseForm, periodEnd: e.target.value })} />
+                <Input type="date" min={expenseForm.periodStart || undefined} value={expenseForm.periodEnd} onChange={(e) => setExpenseForm({ ...expenseForm, periodEnd: e.target.value })} />
               </Field>
               <div className="md:col-span-2 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
-                <Button onClick={() => createExpense.mutate()} disabled={createExpense.isPending}>
+                <Button
+                  onClick={() => {
+                    if (!expenseFormValid) {
+                      toast({ title: t('invalidData'), variant: 'destructive' });
+                      return;
+                    }
+                    createExpense.mutate();
+                  }}
+                  disabled={createExpense.isPending}
+                >
                   {createExpense.isPending ? t('saving') : t('saveExpense')}
                 </Button>
               </div>

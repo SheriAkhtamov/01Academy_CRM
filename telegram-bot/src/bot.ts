@@ -2,10 +2,22 @@ import { Bot } from 'grammy';
 import { config, requireBotConfig } from './config.js';
 import { getActiveTasks } from './queries.js';
 import { buildSummary, type SummaryKind } from './summary.js';
+import { isAuthorizedCommandChat, splitTelegramText } from './telegramText.js';
 
 requireBotConfig();
 
 export const bot = new Bot(config.botToken);
+
+bot.use(async (ctx, next) => {
+    const text = ctx.message?.text;
+    if (!text?.startsWith('/')) return next();
+
+    const command = text.slice(1).split(/[\s@]/, 1)[0]?.toLowerCase() ?? '';
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined && isAuthorizedCommandChat(config.groupChatId, chatId, command)) return next();
+
+    await ctx.reply('Команда недоступна в этом чате.');
+});
 
 bot.command('start', (ctx) =>
     ctx.reply(
@@ -26,7 +38,9 @@ bot.command('chatid', (ctx) =>
 bot.command('summary', async (ctx) => {
     const tasks = await getActiveTasks();
     const text = buildSummary(tasks, currentKind());
-    await ctx.reply(text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    for (const chunk of splitTelegramText(text)) {
+        await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    }
 });
 
 function currentKind(): SummaryKind {
@@ -44,9 +58,12 @@ export async function sendSummaryToGroup(kind: SummaryKind): Promise<void> {
     }
     const tasks = await getActiveTasks();
     const text = buildSummary(tasks, kind);
-    await bot.api.sendMessage(config.groupChatId, text, {
-        parse_mode: 'HTML',
-        link_preview_options: { is_disabled: true },
-    });
-    console.log(`[bot] sent ${kind} summary to ${config.groupChatId}`);
+    const chunks = splitTelegramText(text);
+    for (const chunk of chunks) {
+        await bot.api.sendMessage(config.groupChatId, chunk, {
+            parse_mode: 'HTML',
+            link_preview_options: { is_disabled: true },
+        });
+    }
+    console.log(`[bot] sent ${kind} summary to ${config.groupChatId} (${chunks.length} message(s))`);
 }

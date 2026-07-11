@@ -96,8 +96,13 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
         mutation.mutate();
     };
 
+    const handleOpenChange = (next: boolean) => {
+        if (!next) reset();
+        onOpenChange(next);
+    };
+
     return (
-        <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next); }}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{t('addTask')}</DialogTitle>
@@ -174,7 +179,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
+                    <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                         {t('cancel')}
                     </Button>
                     <Button onClick={handleSubmit} disabled={mutation.isPending}>

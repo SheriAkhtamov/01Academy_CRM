@@ -140,7 +140,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
   const [salesModuleTransfer, setSalesModuleTransfer] = useState<{
     user: any;
-    data: UserFormValues;
+    action: 'update' | 'delete';
+    data?: UserFormValues;
     leadCount: number;
   } | null>(null);
   const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
@@ -200,23 +201,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onOpenChange: handleUserModalState,
   });
 
-  // Check admin access
-  if (!user || !canManageUsers(user)) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">{t('accessDenied')}</h3>
-            <p className="text-slate-500">
-              {t('noAdminPermission')}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const { data: users = [], isLoading: usersLoading } = useQuery<any[]>({
     queryKey: ['/api/users'],
   });
@@ -275,8 +259,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return await apiRequest('DELETE', `/api/users/${id}`);
+    mutationFn: async ({ id, leadTransferManagerId }: { id: number; leadTransferManagerId?: number }) => {
+      const params = new URLSearchParams();
+      if (leadTransferManagerId) params.set('leadTransferManagerId', String(leadTransferManagerId));
+      const query = params.toString();
+      return await apiRequest('DELETE', `/api/users/${id}${query ? `?${query}` : ''}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -284,6 +271,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         title: t('userDeletedSuccessfullyTitle'),
         description: t('userRemovedFromSystemDescription'),
       });
+      setUserToDelete(null);
+      setSalesModuleTransfer(null);
+      setSalesLeadTransferManagerId('');
     },
     onError: (error: Error) => {
       toast({
@@ -368,11 +358,29 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const salesTransferManagers = useMemo(
     () => users.filter((candidate: any) => (
       candidate.isActive !== false
-      && Number(candidate.id) !== Number(selectedUser?.id)
+      && Number(candidate.id) !== Number(salesModuleTransfer?.user.id ?? selectedUser?.id)
       && getAssignedWorkspaces(candidate).includes('sales')
     )),
-    [selectedUser?.id, users],
+    [salesModuleTransfer?.user.id, selectedUser?.id, users],
   );
+
+  const openLeadTransferDialog = (pending: typeof salesModuleTransfer) => {
+    setSalesModuleTransfer(pending);
+    const firstEligibleManager = users.find((candidate: any) => (
+      candidate.isActive !== false
+      && Number(candidate.id) !== Number(pending?.user.id)
+      && getAssignedWorkspaces(candidate).includes('sales')
+    ));
+    setSalesLeadTransferManagerId(firstEligibleManager ? String(firstEligibleManager.id) : '');
+  };
+
+  const getAssignedResponsibilityCount = async (employee: any, includeAllOpenTasks = false) => {
+    const impact = await apiRequest('GET', `/api/users/${employee.id}/sales-lead-count`);
+    const fallback = Number(impact?.leadCount ?? 0);
+    return Number(includeAllOpenTasks
+      ? impact?.offboardingResponsibilityCount ?? fallback
+      : impact?.salesResponsibilityCount ?? fallback);
+  };
 
   const onSubmitUser = async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
     const workspaces = Array.from(new Set([data.workspace, ...data.workspaces]));
@@ -382,18 +390,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     };
 
     if (selectedUser) {
-      const isRemovingSalesModule =
-        getAssignedWorkspaces(selectedUser).includes('sales') &&
-        !workspaces.includes('sales');
-      if (isRemovingSalesModule) {
+      const losesSalesEligibility = !data.isActive || !workspaces.includes('sales');
+      if (losesSalesEligibility) {
         try {
-          const impact = await apiRequest('GET', `/api/users/${selectedUser.id}/sales-lead-count`);
-          const leadCount = Number(impact?.leadCount ?? 0);
+          const leadCount = await getAssignedResponsibilityCount(selectedUser, !data.isActive);
           if (leadCount > 0) {
-            setSalesModuleTransfer({ user: selectedUser, data: payload, leadCount });
-            setSalesLeadTransferManagerId(salesTransferManagers[0]
-              ? String(salesTransferManagers[0].id)
-              : '');
+            openLeadTransferDialog({ user: selectedUser, action: 'update', data: payload, leadCount });
             return;
           }
         } catch (error: any) {
@@ -618,6 +620,20 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       ),
     },
   ];
+
+  if (!user || !canManageUsers(user)) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="p-12 text-center">
+            <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-slate-900 mb-2">{t('accessDenied')}</h3>
+            <p className="text-slate-500">{t('noAdminPermission')}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
@@ -1080,7 +1096,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       <Dialog
         open={Boolean(salesModuleTransfer)}
         onOpenChange={(open) => {
-          if (!open && !updateUserMutation.isPending) {
+          if (!open && !updateUserMutation.isPending && !deleteUserMutation.isPending) {
             setSalesModuleTransfer(null);
             setSalesLeadTransferManagerId('');
           }
@@ -1104,7 +1120,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             <Select
               value={salesLeadTransferManagerId}
               onValueChange={setSalesLeadTransferManagerId}
-              disabled={updateUserMutation.isPending || salesTransferManagers.length === 0}
+              disabled={updateUserMutation.isPending || deleteUserMutation.isPending || salesTransferManagers.length === 0}
             >
               <SelectTrigger id="sales-lead-transfer-manager">
                 <SelectValue placeholder={t('selectResponsibleManager')} />
@@ -1130,26 +1146,30 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 setSalesModuleTransfer(null);
                 setSalesLeadTransferManagerId('');
               }}
-              disabled={updateUserMutation.isPending}
+              disabled={updateUserMutation.isPending || deleteUserMutation.isPending}
             >
               {t('cancel')}
             </Button>
             <Button
               type="button"
-              disabled={!salesLeadTransferManagerId || updateUserMutation.isPending}
+              disabled={!salesLeadTransferManagerId || updateUserMutation.isPending || deleteUserMutation.isPending}
               onClick={() => {
                 if (!salesModuleTransfer) return;
-                const { email: _email, ...profileData } = salesModuleTransfer.data;
-                updateUserMutation.mutate({
-                  id: salesModuleTransfer.user.id,
-                  data: {
-                    ...profileData,
-                    leadTransferManagerId: Number(salesLeadTransferManagerId),
-                  },
-                });
+                const leadTransferManagerId = Number(salesLeadTransferManagerId);
+                if (salesModuleTransfer.action === 'delete') {
+                  deleteUserMutation.mutate({ id: salesModuleTransfer.user.id, leadTransferManagerId });
+                  return;
+                }
+                if (salesModuleTransfer.data) {
+                  const { email: _email, ...profileData } = salesModuleTransfer.data;
+                  updateUserMutation.mutate({
+                    id: salesModuleTransfer.user.id,
+                    data: { ...profileData, leadTransferManagerId },
+                  });
+                }
               }}
             >
-              {updateUserMutation.isPending ? t('saving') : t('disableSalesAndTransfer')}
+              {updateUserMutation.isPending || deleteUserMutation.isPending ? t('saving') : t('disableSalesAndTransfer')}
             </Button>
           </div>
         </DialogContent>
@@ -1348,8 +1368,22 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         cancelLabel={t('cancel')}
         onConfirm={() => {
           if (userToDelete) {
-            deleteUserMutation.mutate(userToDelete.id);
-            setUserToDelete(null);
+            const employee = userToDelete;
+            void getAssignedResponsibilityCount(employee, true)
+              .then((leadCount) => {
+                if (leadCount > 0) {
+                  openLeadTransferDialog({ user: employee, action: 'delete', leadCount });
+                  return;
+                }
+                deleteUserMutation.mutate({ id: employee.id });
+              })
+              .catch((error: Error) => {
+                toast({
+                  title: t('error'),
+                  description: error.message || t('failedDeleteUserDescription'),
+                  variant: 'destructive',
+                });
+              });
           }
         }}
         variant="destructive"

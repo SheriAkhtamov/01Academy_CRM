@@ -6,6 +6,7 @@ import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
+import { runAutomations } from '../services/automations';
 import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -43,12 +44,14 @@ import {
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
+  resolveStudentRiskFlags,
   resolveReferralLevel,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
 import {
   getGroupScheduleValidationError,
+  isDateInsideInclusiveDayRange,
   normalizeWeeklySchedule,
   parseScheduleTimeToMinutes,
   scheduleDateRangesOverlap,
@@ -71,6 +74,12 @@ const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
 const SALES_WORKSPACES = new Set(['sales', 'administration']);
 const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
 const SOURCE_MANAGEMENT_WORKSPACES = new Set(['administration', 'marketing']);
+// All group and lesson mutations take this transaction-scoped lock before
+// checking room/teacher availability. It closes the race where two requests
+// checked the same free slot in different rooms and assigned one teacher twice.
+const ACADEMY_SCHEDULING_ADVISORY_LOCK = 7_315_001;
+const ACADEMY_REFERRAL_ADVISORY_LOCK = 7_315_002;
+const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || 'Asia/Tashkent';
 const salesUserAccessSql = `
   (
     u.workspace = 'sales'
@@ -115,8 +124,24 @@ const TABLES_WITHOUT_UPDATED_AT = new Set([
 ]);
 
 const parseId = (value: unknown) => {
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isNaN(parsed) ? null : parsed;
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  if (!/^[1-9]\d*$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+};
+
+const toIdOrNull = (value: unknown, fieldName: string) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = parseId(value);
+  if (!parsed) {
+    throw Object.assign(new Error(`Invalid ${fieldName}`), { statusCode: 400 });
+  }
+  return parsed;
 };
 
 const nullableText = (value: unknown) => {
@@ -180,11 +205,22 @@ const nullableDate = (value: unknown) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const parseOptionalDate = (value: unknown, fieldName: string) => {
+  const parsed = nullableDate(value);
+  if (value !== undefined && value !== null && value !== '' && parsed === null) {
+    throw Object.assign(new Error(`Invalid ${fieldName}`), { statusCode: 400 });
+  }
+  return parsed;
+};
+
 const toIntegerOrNull = (value: unknown) => {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+  if (!Number.isSafeInteger(parsed)) {
+    throw Object.assign(new Error('Invalid integer value'), { statusCode: 400 });
+  }
+  return parsed;
 };
 
 const safeJson = (value: unknown, fallback: unknown[] = []) => {
@@ -193,12 +229,14 @@ const safeJson = (value: unknown, fallback: unknown[] = []) => {
   if (value === null || value === '') return JSON.stringify(fallback);
   if (typeof value === 'string') {
     try {
-      return JSON.stringify(JSON.parse(value));
+      const parsed = JSON.parse(value);
+      if (!Array.isArray(parsed)) throw new Error('Expected an array');
+      return JSON.stringify(parsed);
     } catch {
-      return JSON.stringify(fallback);
+      throw Object.assign(new Error('Invalid JSON array'), { statusCode: 400 });
     }
   }
-  return JSON.stringify(value);
+  throw Object.assign(new Error('Invalid JSON array'), { statusCode: 400 });
 };
 
 const toBoolean = (value: unknown, fallback?: boolean) => {
@@ -206,7 +244,7 @@ const toBoolean = (value: unknown, fallback?: boolean) => {
   if (typeof value === 'boolean') return value;
   if (value === 'true' || value === '1' || value === 1) return true;
   if (value === 'false' || value === '0' || value === 0) return false;
-  return fallback;
+  throw Object.assign(new Error('Invalid boolean value'), { statusCode: 400 });
 };
 
 // Pipeline codes identify a stage in leads, history and automation.  They are
@@ -282,7 +320,8 @@ const getActiveLeadStatus = async (code: string, pipelineOnly = false) => queryO
    FROM academy_lead_statuses
    WHERE code = $1
      AND is_active = true
-     ${pipelineOnly ? 'AND is_pipeline = true' : ''}`,
+     ${pipelineOnly ? 'AND is_pipeline = true' : ''}
+     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
   [code],
 );
 
@@ -298,7 +337,8 @@ const resolveInitialLeadStatusCode = async (requestedCode: string | null | undef
      FROM academy_lead_statuses
      WHERE is_active = true AND is_pipeline = true
      ORDER BY sort_order, id
-     LIMIT 1`,
+     LIMIT 1
+     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
   );
   if (firstPipelineStatus) return firstPipelineStatus.code;
   throw Object.assign(new Error('noActivePipelineStages'), { statusCode: 409 });
@@ -405,7 +445,7 @@ const updateRow = async (table: string, id: number, values: Record<string, DbVal
 };
 
 const deleteRow = async (table: string, id: number) => {
-  await pool.query(`DELETE FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
+  await query(`DELETE FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
 };
 
 const syncLeadPhones = async (leadId: number, phones: NormalizedLeadPhone[]) => {
@@ -474,12 +514,29 @@ const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
   return false;
 };
 
+const canMutateLeadRow = (req: any, lead?: Row | null) => Boolean(
+  lead
+  && (
+    hasLeadershipAccess(req.user)
+    || canAccessAcademyWorkspace(req.user, 'marketing')
+    || (
+      canAccessAcademyWorkspace(req.user, 'sales')
+      && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id))
+    )
+  ),
+);
+
+const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) => {
+  if (canMutateLeadRow(req, lead)) return true;
+  res.status(403).json({ error: 'Lead mutation access required' });
+  return false;
+};
+
 const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
-  if (
-    actor?.scopeWorkspace !== 'sales' ||
-    !getAssignedWorkspaces(actor).includes('sales') ||
-    hasLeadershipAccess(actor)
-  ) return leads;
+  const actorWorkspaces = getAssignedWorkspaces(actor);
+  if (!actor || !actorWorkspaces.includes('sales') || actorWorkspaces.includes('marketing') || hasLeadershipAccess(actor)) {
+    return leads;
+  }
   const policy = await getWorkforcePolicy();
   return leads.map((lead) => {
     const ownsLead = Number(lead.managerId) === Number(actor.userId);
@@ -497,6 +554,15 @@ const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: 
       : lead;
   });
 };
+
+const redactLeadForRequest = async (req: any, lead: Row) => (
+  await redactLeadPhonesForActor({
+    userId: req.user!.id,
+    workspace: String(req.user!.workspace),
+    workspaces: getAssignedWorkspaces(req.user),
+    scopeWorkspace: 'sales',
+  }, [lead])
+)[0];
 
 const academyConstants = () => ({
   leadStatuses: LEAD_STATUSES,
@@ -585,6 +651,27 @@ const createTask = async (title: string, options: {
   entityId: options.entityId ?? null,
   status: 'new' });
 
+const createTaskOnce = async (title: string, options: {
+  responsibleId?: number | null;
+  description?: string | null;
+  deadlineAt?: Date | null;
+  entityType?: string | null;
+  entityId?: number | null;
+}) => {
+  const existing = await queryOne(
+    `SELECT *
+     FROM academy_tasks
+     WHERE title = $1
+       AND entity_type IS NOT DISTINCT FROM $2::text
+       AND entity_id IS NOT DISTINCT FROM $3::integer
+     ORDER BY id
+     LIMIT 1`,
+    [title, options.entityType ?? null, options.entityId ?? null],
+  );
+  if (existing) return { task: existing, created: false };
+  return { task: await createTask(title, options), created: true };
+};
+
 const createOutbox = async (channel: string, recipient: string | null | undefined, message: string, options: {
   scheduledAt?: Date | null;
   entityType?: string | null;
@@ -638,12 +725,6 @@ const normalizeScheduleItems = normalizeWeeklySchedule;
 const intervalsOverlap = scheduleIntervalsOverlap;
 const dateRangesOverlap = scheduleDateRangesOverlap;
 
-const isDateInsideRange = (date: Date, start?: Date | null, end?: Date | null) => {
-  const value = date.getTime();
-  return value >= (start?.getTime() ?? Number.NEGATIVE_INFINITY)
-    && value <= (end?.getTime() ?? Number.POSITIVE_INFINITY);
-};
-
 const parseDateOnly = (value: unknown) => {
   const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
@@ -688,6 +769,8 @@ const findAvailableTeacher = async (options: {
   schoolId?: number | null;
   scheduledAt: Date;
   durationMinutes: number;
+  excludeGroupId?: number | null;
+  excludeLessonId?: number | null;
 }) => {
   const candidates = await query(
     `SELECT t.*,
@@ -713,8 +796,10 @@ const findAvailableTeacher = async (options: {
   const existingGroups = teacherIds.length > 0
     ? await query(
       `SELECT * FROM academy_groups
-       WHERE teacher_id = ANY($1::int[]) AND status IN ('open', 'in_progress')`,
-      [teacherIds],
+       WHERE teacher_id = ANY($1::int[])
+         AND status IN ('open', 'in_progress')
+         AND ($2::int IS NULL OR id <> $2)`,
+      [teacherIds, options.excludeGroupId ?? null],
     )
     : [];
 
@@ -745,7 +830,7 @@ const findAvailableTeacher = async (options: {
     const groupConflict = existingGroups
       .filter((group) => Number(group.teacherId) === Number(teacher.id))
       .some((group) =>
-        isDateInsideRange(
+        isDateInsideInclusiveDayRange(
           options.scheduledAt,
           group.startDate ? new Date(group.startDate) : null,
           group.endDate ? new Date(group.endDate) : null,
@@ -766,8 +851,9 @@ const findAvailableTeacher = async (options: {
          AND status <> 'cancelled'
          AND scheduled_at < $3
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+         AND ($4::int IS NULL OR id <> $4)
        LIMIT 1`,
-      [teacher.id, options.scheduledAt, lessonEnd],
+      [teacher.id, options.scheduledAt, lessonEnd, options.excludeLessonId ?? null],
     );
     if (!conflict) return teacher;
   }
@@ -971,9 +1057,92 @@ const assertTeacherCanLeadGroupSchedule = async (options: {
   return teacher;
 };
 
+const assertTeacherCanLeadLesson = async (options: {
+  teacherId: number;
+  courseId: number;
+  schoolId: number;
+  scheduledAt: Date;
+  durationMinutes: number;
+  excludeGroupId?: number | null;
+  excludeLessonId?: number | null;
+}) => {
+  const teacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [options.teacherId]);
+  if (!teacher) throw Object.assign(new Error('teacherNotFound'), { statusCode: 404 });
+  if (teacher.status !== 'active') {
+    throw Object.assign(new Error('teacherNotActive'), { statusCode: 400 });
+  }
+
+  const courseIds = readJsonArray(teacher.courseIds).map(Number);
+  const schoolIds = readJsonArray(teacher.schoolIds).map(Number);
+  if (
+    (courseIds.length > 0 && !courseIds.includes(options.courseId))
+    || (schoolIds.length > 0 && !schoolIds.includes(options.schoolId))
+  ) {
+    throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
+  }
+
+  const startsAt = new Date(options.scheduledAt);
+  const endsAt = addMinutes(startsAt, options.durationMinutes);
+  const dayOfWeek = academyDayOfWeek(startsAt);
+  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+  const endMinutes = startMinutes + options.durationMinutes;
+  if (!scheduleCoversSlot(
+    getTeacherAvailability(teacher, options.durationMinutes),
+    dayOfWeek,
+    startMinutes,
+    endMinutes,
+    options.schoolId,
+  )) {
+    throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
+  }
+
+  const [lessonConflict, groups] = await Promise.all([
+    queryOne(
+      `SELECT id
+       FROM academy_lessons
+       WHERE teacher_id = $1
+         AND status <> 'cancelled'
+         AND scheduled_at < $3
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+         AND ($4::int IS NULL OR id <> $4)
+       LIMIT 1`,
+      [options.teacherId, startsAt, endsAt, options.excludeLessonId ?? null],
+    ),
+    query(
+      `SELECT *
+       FROM academy_groups
+       WHERE teacher_id = $1
+         AND status IN ('open', 'in_progress')
+         AND ($2::int IS NULL OR id <> $2)`,
+      [options.teacherId, options.excludeGroupId ?? null],
+    ),
+  ]);
+  const recurringConflict = groups.some((group) =>
+    isDateInsideInclusiveDayRange(
+      startsAt,
+      group.startDate ? new Date(group.startDate) : null,
+      group.endDate ? new Date(group.endDate) : null,
+    )
+    && scheduleConflictsWithSlot(
+      normalizeScheduleItems(group.schedule),
+      dayOfWeek,
+      startMinutes,
+      endMinutes,
+    )
+  );
+  if (lessonConflict || recurringConflict) {
+    throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
+  }
+  await ensureTeacherCourseAssignment(teacher, options.courseId);
+  return teacher;
+};
+
 const assertActiveRoomInSchool = async (roomId: number, schoolId: number) => {
   const room = await queryOne(
-    `SELECT * FROM academy_rooms WHERE id = $1 AND school_id = $2 AND is_active = true`,
+    `SELECT room.*
+     FROM academy_rooms room
+     JOIN academy_schools school ON school.id = room.school_id AND school.is_active = true
+     WHERE room.id = $1 AND room.school_id = $2 AND room.is_active = true`,
     [roomId, schoolId],
   );
   if (!room) throw Object.assign(new Error('roomNotFound'), { statusCode: 404 });
@@ -1084,7 +1253,7 @@ const assertLessonRoomAvailable = async (options: {
   if (lessonConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
 
   const recurringConflict = groups.some((group) =>
-    isDateInsideRange(
+    isDateInsideInclusiveDayRange(
       startsAt,
       group.startDate ? new Date(group.startDate) : null,
       group.endDate ? new Date(group.endDate) : null,
@@ -1207,7 +1376,7 @@ const listAvailableSchoolSlots = async (options: {
           });
           const roomBusyByGroup = groups.some((group) => {
             if (Number(group.schoolId) !== options.schoolId) return false;
-            if (!isDateInsideRange(
+            if (!isDateInsideInclusiveDayRange(
               startsAt,
               group.startDate ? new Date(group.startDate) : null,
               group.endDate ? new Date(group.endDate) : null,
@@ -1229,7 +1398,7 @@ const listAvailableSchoolSlots = async (options: {
           });
           const teacherBusyByGroup = groups.some((group) => {
             if (Number(group.teacherId) !== Number(teacher.id)) return false;
-            if (!isDateInsideRange(
+            if (!isDateInsideInclusiveDayRange(
               startsAt,
               group.startDate ? new Date(group.startDate) : null,
               group.endDate ? new Date(group.endDate) : null,
@@ -1430,11 +1599,12 @@ const createStageHistory = async (leadId: number, fromStatusCode: string | null,
 const leadContactSummary = (lead: Row) =>
   [lead.contactName, lead.phone || lead.phoneNumbers?.[0] || lead.messenger || 'без телефона'].filter(Boolean).join(': ');
 
-const getActiveSalesManager = async (managerId: number) => {
+const getActiveSalesManager = async (managerId: number, lockForAssignment = false) => {
   const manager = await queryOne<{ id: number; fullName: string }>(
     `SELECT id, full_name
      FROM users u
-     WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
+     WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true
+     ${lockForAssignment ? 'FOR UPDATE OF u' : ''}`,
     [managerId],
   );
   if (!manager) {
@@ -1483,28 +1653,43 @@ const reassignLead = async (
   manager: { id: number; fullName: string },
   comment?: string | null,
 ): Promise<Row> => {
-  if (Number(lead.managerId) === Number(manager.id)) {
-    return { ...lead, managerId: manager.id, managerName: manager.fullName };
-  }
-
+  let assignmentChanged = false;
   const updatedLead = await withTransaction(async () => {
-    const updated = await updateRow('academy_leads', lead.id, { managerId: manager.id });
+    const lockedManager = await getActiveSalesManager(manager.id, true);
+    const lockedLead = await queryOne(
+      `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+      [lead.id],
+    );
+    if (!lockedLead) {
+      throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+    }
+    if (!canAccessLeadRow(req, lockedLead)) {
+      throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
+    }
+    if (Number(lockedLead.managerId) === Number(lockedManager.id)) {
+      return { ...lockedLead, managerName: lockedManager.fullName };
+    }
+
+    const updated = await updateRow('academy_leads', lead.id, { managerId: lockedManager.id });
     if (!updated) {
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
 
-    await syncLeadManagerAssignment(req, lead, manager, comment);
+    await syncLeadManagerAssignment(req, lockedLead, lockedManager, comment);
+    assignmentChanged = true;
 
-    return { ...updated, managerName: manager.fullName };
+    return { ...updated, managerName: lockedManager.fullName };
   });
 
-  await createNotification(
-    manager.id,
-    'Вам назначен лид',
-    leadContactSummary(lead),
-    'lead',
-    lead.id,
-  );
+  if (assignmentChanged) {
+    await createNotification(
+      manager.id,
+      'Вам назначен лид',
+      leadContactSummary(lead),
+      'lead',
+      lead.id,
+    );
+  }
   return updatedLead;
 };
 
@@ -1574,6 +1759,23 @@ const validateEnrollmentGroup = async (
   if (!['open', 'in_progress'].includes(String(group.status))) {
     throw Object.assign(new Error('groupNotOpen'), { statusCode: 409 });
   }
+  const resources = await queryOne<{ resourcesActive: boolean }>(
+    `SELECT (
+       course.is_active = true
+       AND school.is_active = true
+       AND room.is_active = true
+       AND room.school_id = academy_group.school_id
+     ) AS resources_active
+     FROM academy_groups academy_group
+     JOIN academy_courses course ON course.id = academy_group.course_id
+     JOIN academy_schools school ON school.id = academy_group.school_id
+     JOIN academy_rooms room ON room.id = academy_group.room_id
+     WHERE academy_group.id = $1`,
+    [groupId],
+  );
+  if (resources && resources.resourcesActive !== true) {
+    throw Object.assign(new Error('groupHasInactiveResources'), { statusCode: 409 });
+  }
   await ensureGroupCapacity(groupId, excludeLeadId);
   return group;
 };
@@ -1582,21 +1784,59 @@ const recalculateStudentMetrics = async (studentId: number) => {
   const student = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
   if (!student?.groupId) return;
 
+  const latestGroupEntry = await queryOne<{ createdAt: Date }>(
+    `SELECT created_at
+     FROM academy_student_transfers
+     WHERE student_id = $1 AND to_group_id = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [studentId, student.groupId],
+  );
+  const membershipStartedAt = latestGroupEntry?.createdAt ?? student.enrolledAt ?? student.createdAt;
+
   const conductedLessons = await query<{ id: number }>(
-    `SELECT id FROM academy_lessons WHERE group_id = $1 AND status = 'conducted'`,
-    [student.groupId],
+    `SELECT id
+     FROM academy_lessons
+     WHERE group_id = $1
+       AND status = 'conducted'
+       AND scheduled_at >= $2`,
+    [student.groupId, membershipStartedAt],
   );
   const presentRows = await query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
      FROM academy_attendance a
      JOIN academy_lessons l ON l.id = a.lesson_id
-     WHERE a.student_id = $1 AND a.status = 'present' AND l.status = 'conducted'`,
-    [studentId],
+     WHERE a.student_id = $1
+       AND a.status = 'present'
+       AND l.status = 'conducted'
+       AND l.group_id = $2
+       AND l.scheduled_at >= $3`,
+    [studentId, student.groupId, membershipStartedAt],
   );
   const group = await queryOne(`SELECT lesson_count FROM academy_groups WHERE id = $1`, [student.groupId]);
   const surveyRows = await query<{ score: number }>(
     `SELECT score FROM academy_lesson_surveys WHERE student_id = $1`,
     [studentId],
+  );
+  const monthlyAttendanceRows = await query<{
+    conductedCount: number;
+    presentCount: number;
+  }>(
+    `SELECT
+       COUNT(DISTINCT l.id)::int AS conducted_count,
+       COUNT(DISTINCT CASE WHEN a.status = 'present' THEN l.id END)::int AS present_count
+     FROM academy_lessons l
+     LEFT JOIN academy_attendance a
+       ON a.lesson_id = l.id
+      AND a.student_id = $1
+     WHERE l.group_id = $2
+       AND l.status = 'conducted'
+       AND l.scheduled_at >= $3
+       AND l.scheduled_at >= (
+         (date_trunc('month', NOW() AT TIME ZONE $4) AT TIME ZONE $4)
+         AT TIME ZONE 'UTC'
+       )`,
+    [studentId, student.groupId, membershipStartedAt, ACADEMY_TIME_ZONE],
   );
 
   const presentCount = Number(presentRows[0]?.count ?? 0);
@@ -1604,11 +1844,16 @@ const recalculateStudentMetrics = async (studentId: number) => {
   const totalLessons = Number(group?.lessonCount) > 0 ? Number(group?.lessonCount) : conductedLessons.length;
   const progressPercent = calculateProgressPercent(presentCount, totalLessons);
   const satisfactionAvg = calculateAverage(surveyRows.map((row) => Number(row.score))) ?? 0;
-  const riskFlags = [
-    attendancePercent > 0 && attendancePercent < 70 ? 'attendance_below_70' : null,
-    attendancePercent > 0 && attendancePercent < 50 ? 'churn_risk' : null,
-    satisfactionAvg > 0 && satisfactionAvg < 3 ? 'low_satisfaction' : null,
-  ].filter(Boolean);
+  const monthConductedCount = Number(monthlyAttendanceRows[0]?.conductedCount ?? 0);
+  const monthPresentCount = Number(monthlyAttendanceRows[0]?.presentCount ?? 0);
+  const monthAttendancePercent = calculateAttendancePercent(monthPresentCount, monthConductedCount);
+  const riskFlags = resolveStudentRiskFlags({
+    conductedCount: conductedLessons.length,
+    attendancePercent,
+    monthConductedCount,
+    monthAttendancePercent,
+    satisfactionAvg,
+  });
 
   await updateRow('academy_students', studentId, {
     attendancePercent,
@@ -1617,35 +1862,84 @@ const recalculateStudentMetrics = async (studentId: number) => {
     riskFlags });
 };
 
-const createStudentFromLead = async (req: any, leadId: number, paymentId?: number | null) => {
+const advanceStudentNextPaymentAt = async (
+  studentId: number,
+  candidate: Date | string | null | undefined,
+) => {
+  if (!candidate) return queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
+  const candidateDate = candidate instanceof Date ? candidate : new Date(candidate);
+  if (Number.isNaN(candidateDate.getTime())) {
+    throw Object.assign(new Error('Invalid paidUntil'), { statusCode: 400 });
+  }
+  return queryOne(
+    `UPDATE academy_students
+     SET next_payment_at = CASE
+           WHEN next_payment_at IS NULL OR next_payment_at < $2 THEN $2
+           ELSE next_payment_at
+         END,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [studentId, candidateDate],
+  );
+};
+
+const createStudentFromLead = async (req: any, leadId: number, paymentId?: number | null): Promise<Row> => {
+  if (!transactionContext.getStore()) {
+    return withTransaction(() => createStudentFromLead(req, leadId, paymentId));
+  }
+
+  await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId]);
   const lead = await getLead(leadId);
   if (!lead) {
     throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
   }
 
-  const existingStudent = await queryOne(`SELECT * FROM academy_students WHERE lead_id = $1`, [leadId]);
+  const sourcePayment = paymentId
+    ? await queryOne(`SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE`, [paymentId])
+    : null;
+  if (paymentId && !sourcePayment) {
+    throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
+  }
+  if (sourcePayment?.leadId && Number(sourcePayment.leadId) !== Number(leadId)) {
+    throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+  }
+  const nextPaymentAt = sourcePayment?.paidUntil
+    ? new Date(sourcePayment.paidUntil)
+    : sourcePayment?.paidAt
+      ? addDays(new Date(sourcePayment.paidAt), 30)
+      : addDays(new Date(), 30);
+
+  const existingStudent = await queryOne(`SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`, [leadId]);
   if (existingStudent) {
+    let resolvedStudent = existingStudent;
     if (paymentId) {
-      await updateRow('academy_payments', paymentId, { studentId: existingStudent.id });
+      await updateRow('academy_payments', paymentId, {
+        leadId,
+        studentId: existingStudent.id,
+        groupId: existingStudent.groupId ?? lead.enrolledGroupId ?? null,
+      });
+    }
+    if (sourcePayment?.status === 'paid') {
+      resolvedStudent = await advanceStudentNextPaymentAt(Number(existingStudent.id), nextPaymentAt)
+        ?? existingStudent;
     }
     if (lead.statusCode !== 'paid') {
       await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
       await createStageHistory(lead.id, lead.statusCode, 'paid', req.user!.id, 'Подтверждена оплата существующего клиента');
     }
-    return existingStudent;
+    return resolvedStudent;
   }
   if (!lead.enrolledGroupId) {
     throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
   }
 
-  await ensureGroupCapacity(lead.enrolledGroupId, lead.id);
+  await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [lead.enrolledGroupId]);
+  const enrolledGroup = await validateEnrollmentGroup(Number(lead.enrolledGroupId), lead.id);
 
   const course = lead.courseId
     ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1`, [lead.courseId])
     : await resolveCourseByAge(lead.studentAge);
-  const enrolledGroup = lead.enrolledGroupId
-    ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [lead.enrolledGroupId])
-    : null;
 
   const referralCode = buildReferralCode(lead.studentName || lead.contactName, lead.id);
   const student = await insertRow('academy_students', {
@@ -1655,18 +1949,22 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
     messenger: lead.messenger ?? null,
     studentName: lead.studentName || lead.contactName,
     studentAge: lead.studentAge ?? null,
-    courseId: lead.courseId ?? course?.id ?? null,
-    schoolId: lead.schoolId ?? enrolledGroup?.schoolId ?? null,
+    courseId: enrolledGroup?.courseId ?? lead.courseId ?? course?.id ?? null,
+    schoolId: enrolledGroup?.schoolId ?? lead.schoolId ?? null,
     groupId: lead.enrolledGroupId ?? null,
     managerId: lead.managerId ?? req.user!.id,
     status: 'studying',
     enrolledAt: new Date(),
-    nextPaymentAt: addDays(new Date(), 30),
+    nextPaymentAt,
     referralCode,
     riskFlags: [] });
 
   if (paymentId) {
-    await updateRow('academy_payments', paymentId, { studentId: student.id });
+    await updateRow('academy_payments', paymentId, {
+      leadId,
+      studentId: student.id,
+      groupId: student.groupId,
+    });
   }
 
   await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
@@ -1699,12 +1997,23 @@ const applyReferralRewards = async (req: any, studentId: number, leadId: number 
 
   if (!referrerId || referrerId === studentId) return;
 
+  // Payments from two different referrals can finish simultaneously. Serialize
+  // tier calculation per referrer so neither transaction overwrites the other's
+  // newly earned level or creates a duplicate free-month reward.
+  await query(`SELECT pg_advisory_xact_lock($1, $2)`, [ACADEMY_REFERRAL_ADVISORY_LOCK, referrerId]);
+
   // 1. Mark any pending reward for this referral as applied.
-  await query(
-    `UPDATE academy_referral_rewards SET status = 'applied', applied_at = NOW()
-     WHERE referred_student_id = $1 AND referrer_student_id = $2 AND status = 'pending'`,
+  const newlyApplied = await query<{ id: number }>(
+    `UPDATE academy_referral_rewards
+     SET status = 'applied', applied_at = NOW()
+     WHERE referred_student_id = $1
+       AND referrer_student_id = $2
+       AND status = 'pending'
+     RETURNING id`,
     [studentId, referrerId],
   );
+  // Only the first successful payment for a referral may grant a reward.
+  if (newlyApplied.length === 0) return;
 
   // 2. Recompute the referrer's tier from paid referrals count.
   const paidCountRow = await queryOne<{ count: string }>(
@@ -1715,6 +2024,13 @@ const applyReferralRewards = async (req: any, studentId: number, leadId: number 
   const paidReferrals = Number(paidCountRow?.count ?? 0);
   const level = resolveReferralLevel(paidReferrals);
   await updateRow('academy_students', referrerId, { referralLevel: level });
+  const referrer = await queryOne(
+    `SELECT messenger, phone, student_name, next_payment_at
+     FROM academy_students
+     WHERE id = $1`,
+    [referrerId],
+  );
+  if (!referrer) return;
 
   // 3. Free month tier (3+ paid referrals) → create a zero-amount payment for the referrer's next month.
   if (level === 'free_month' || level === 'ai_ambassador') {
@@ -1723,28 +2039,30 @@ const applyReferralRewards = async (req: any, studentId: number, leadId: number 
       [referrerId],
     );
     if (!existingFree) {
+      const now = new Date();
+      const existingCoverageEnd = referrer.nextPaymentAt ? new Date(referrer.nextPaymentAt) : null;
+      const coverageStart = existingCoverageEnd && existingCoverageEnd > now ? existingCoverageEnd : now;
+      const coverageEnd = addDays(coverageStart, 30);
       await insertRow('academy_payments', {
         studentId: referrerId,
         amountUzs: 0,
         type: 'full',
         method: 'transfer',
-        paidAt: new Date(),
+        paidAt: now,
         period: 'referral_bonus',
         discount: 'referral_15',
         status: 'paid',
-        paidUntil: addDays(new Date(), 30),
+        paidUntil: coverageEnd,
         comment: 'Бесплатный месяц по реферальной программе',
         confirmedBy: req.user!.id,
       });
+      await advanceStudentNextPaymentAt(referrerId, coverageEnd);
     }
   } else {
     // discount_15 tier → enqueue a notification to the referrer about their earned discount.
-    const referrer = await queryOne(`SELECT messenger, phone, student_name FROM academy_students WHERE id = $1`, [referrerId]);
-    if (referrer) {
-      await createOutbox('telegram', referrer.messenger || referrer.phone,
-        `${referrer.studentName}, вы получили скидку 15% на следующий месяц за рекомендацию 01 Academy! 🎁`,
-        { entityType: 'student', entityId: referrerId });
-    }
+    await createOutbox('telegram', referrer.messenger || referrer.phone,
+      `${referrer.studentName}, вы получили скидку 15% на следующий месяц за рекомендацию 01 Academy! 🎁`,
+      { entityType: 'student', entityId: referrerId });
   }
 };
 
@@ -1846,7 +2164,10 @@ interface DatasetActor {
 }
 
 const resolveTeacherId = async (userId: number): Promise<number | null> => {
-  const row = await queryOne<{ id: string }>(`SELECT id FROM academy_teachers WHERE user_id = $1`, [userId]);
+  const row = await queryOne<{ id: string }>(
+    `SELECT id FROM academy_teachers WHERE user_id = $1 AND status = 'active'`,
+    [userId],
+  );
   return row ? Number(row.id) : null;
 };
 
@@ -1854,10 +2175,15 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   // Workspace scoping: teachers see only their own groups; sales employees see only
   // their own leads/students; marketing receives its workspace dataset.
   const actorWorkspaces = getAssignedWorkspaces(actor);
-  const teacherId = actor?.scopeWorkspace === 'teacher' && actorWorkspaces.includes('teacher')
+  const shouldScopeToTeacher = actor?.scopeWorkspace === 'teacher'
+    && actorWorkspaces.includes('teacher')
+    && !hasLeadershipAccess(actor);
+  const teacherId = shouldScopeToTeacher
     ? await resolveTeacherId(actor.userId)
     : null;
-  const isTeacherScoped = teacherId !== null;
+  // A missing teacher profile must fail closed. Treating a null mapping as an
+  // unscoped dataset would expose every teacher's groups and students.
+  const isTeacherScoped = shouldScopeToTeacher;
   const isManagerScoped =
     actor?.scopeWorkspace === 'sales' &&
     actorWorkspaces.includes('sales') &&
@@ -1952,7 +2278,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         sc.name AS school_name,
         (
           SELECT CASE
-            WHEN p.status <> 'paid' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
+            WHEN p.status = 'pending' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
             ELSE p.status
           END
           FROM academy_payments p
@@ -2047,7 +2373,10 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
   ]);
 
-  const visibleLeads = await redactLeadPhonesForActor(actor, leads);
+  const [visibleLeads, visibleArchivedLeads] = await Promise.all([
+    redactLeadPhonesForActor(actor, leads),
+    redactLeadPhonesForActor(actor, archivedLeads),
+  ]);
   return {
     schools,
     rooms,
@@ -2057,7 +2386,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     teachers,
     groups,
     leads: visibleLeads,
-    archivedLeads,
+    archivedLeads: visibleArchivedLeads,
     students,
     lessons,
     attendance,
@@ -2071,6 +2400,46 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   };
 };
 
+const getValidDate = (value: unknown): Date | null => {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const expenseAmountInsidePeriod = (
+  expense: Row,
+  periodStart: Date,
+  periodEndExclusive: Date,
+): number => {
+  const expenseStart = getValidDate(expense.periodStart);
+  const rawExpenseEnd = getValidDate(expense.periodEnd);
+  if (!expenseStart || !rawExpenseEnd || rawExpenseEnd < expenseStart) return 0;
+
+  // Marketing expense periods are inclusive calendar dates. Converting the end
+  // to an exclusive boundary makes overlapping multi-month expenses contribute
+  // proportionally instead of being counted in full in every touched month.
+  const expenseEndExclusive = new Date(rawExpenseEnd);
+  expenseEndExclusive.setDate(expenseEndExclusive.getDate() + 1);
+  const overlapStart = Math.max(expenseStart.getTime(), periodStart.getTime());
+  const overlapEnd = Math.min(expenseEndExclusive.getTime(), periodEndExclusive.getTime());
+  if (overlapEnd <= overlapStart) return 0;
+
+  const expenseDuration = expenseEndExclusive.getTime() - expenseStart.getTime();
+  if (expenseDuration <= 0) return 0;
+  return Number(expense.amountUzs || 0) * ((overlapEnd - overlapStart) / expenseDuration);
+};
+
+const hasStudentRiskFlag = (student: Row, flag: string) => {
+  if (Array.isArray(student.riskFlags)) return student.riskFlags.includes(flag);
+  if (typeof student.riskFlags !== 'string') return false;
+  try {
+    const parsed = JSON.parse(student.riskFlags);
+    return Array.isArray(parsed) && parsed.includes(flag);
+  } catch {
+    return false;
+  }
+};
+
 const buildAnalytics = async () => {
   const [data, companySettings] = await Promise.all([getAcademyDataset(), getCompanySettings()]);
   const targets = toAnalyticsTargets(companySettings);
@@ -2078,26 +2447,67 @@ const buildAnalytics = async () => {
   const weekStart = addDays(now, -7);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
   const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid');
+  const studentById = new Map(data.students.map((student) => [Number(student.id), student]));
+  const leadById = new Map(data.leads.map((lead) => [Number(lead.id), lead]));
+  const leadIdForPayment = (payment: Row): number | null => {
+    const directLeadId = Number(payment.leadId);
+    if (Number.isInteger(directLeadId) && directLeadId > 0) return directLeadId;
+    const studentId = Number(payment.studentId);
+    const studentLeadId = Number(studentById.get(studentId)?.leadId);
+    return Number.isInteger(studentLeadId) && studentLeadId > 0 ? studentLeadId : null;
+  };
+  const customerKeyForPayment = (payment: Row): string | null => {
+    const leadId = leadIdForPayment(payment);
+    if (leadId) return `lead:${leadId}`;
+    const studentId = Number(payment.studentId);
+    return Number.isInteger(studentId) && studentId > 0 ? `student:${studentId}` : null;
+  };
+  const firstPaidAtByCustomer = new Map<string, Date>();
+  const paidLeadIds = new Set<number>();
+  const paidStudentIds = new Set<number>();
+  for (const payment of paidPayments) {
+    const leadId = leadIdForPayment(payment);
+    if (leadId && leadById.has(leadId)) paidLeadIds.add(leadId);
+    const studentId = Number(payment.studentId);
+    if (Number.isInteger(studentId) && studentId > 0) paidStudentIds.add(studentId);
+    const customerKey = customerKeyForPayment(payment);
+    const paidAt = getValidDate(payment.paidAt);
+    if (!customerKey || !paidAt) continue;
+    const previous = firstPaidAtByCustomer.get(customerKey);
+    if (!previous || paidAt < previous) firstPaidAtByCustomer.set(customerKey, paidAt);
+  }
+  const newPaidCustomersThisMonth = new Set(
+    [...firstPaidAtByCustomer.entries()]
+      .filter(([, paidAt]) => paidAt >= monthStart && paidAt < nextMonthStart)
+      .map(([customerKey]) => customerKey),
+  );
   const revenueMonth = paidPayments
-    .filter((payment) => payment.paidAt && new Date(payment.paidAt) >= monthStart && new Date(payment.paidAt) <= monthEnd)
+    .filter((payment) => {
+      const paidAt = getValidDate(payment.paidAt);
+      return paidAt !== null && paidAt >= monthStart && paidAt < nextMonthStart;
+    })
     .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
   const revenueTotal = paidPayments.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
   const avgCheck = calculateAverage(paidPayments.map((payment) => Number(payment.amountUzs || 0))) ?? 0;
-  const newPaidStudents = new Set(paidPayments.map((payment) => payment.studentId).filter(Boolean));
   const expensesMonth = data.expenses
-    .filter((expense) => new Date(expense.periodStart) <= monthEnd && new Date(expense.periodEnd) >= monthStart)
-    .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
-  const cac = calculateCac(expensesMonth, newPaidStudents.size) ?? 0;
+    .reduce((sum, expense) => sum + expenseAmountInsidePeriod(expense, monthStart, nextMonthStart), 0);
+  const cac = calculateCac(expensesMonth, newPaidCustomersThisMonth.size) ?? 0;
   const roas = calculateRoas(revenueMonth, expensesMonth) ?? 0;
   const ltvByStudent = data.students.map((student) => ({
     studentId: student.id,
-    ltv: calculateLtv(paidPayments.filter((payment) => payment.studentId === student.id).map((payment) => Number(payment.amountUzs || 0))) }));
+    ltv: calculateLtv(paidPayments
+      .filter((payment) => Number(payment.studentId) === Number(student.id))
+      .map((payment) => Number(payment.amountUzs || 0))) }));
   const averageLtv = calculateAverage(ltvByStudent.map((item) => item.ltv)) ?? 0;
   const overduePayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'overdue');
   const overdueTasks = data.tasks.filter((task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now);
-  const lowAttendanceStudents = data.students.filter((student) => Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance);
+  const lowAttendanceStudents = data.students.filter((student) => (
+    hasStudentRiskFlag(student, 'attendance_below_70')
+    || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance)
+  ));
   const lowScores = data.lessonSurveys.filter((survey) => Number(survey.score) < 3);
   const longThinkingLeads = data.leads.filter((lead) =>
     lead.statusCode === 'thinking' && lead.updatedAt && new Date(lead.updatedAt) < addDays(now, -7)
@@ -2115,13 +2525,30 @@ const buildAnalytics = async () => {
       return acc;
     }, {});
 
-  const activePipelineStatuses = data.statuses
+  const activePipelineStatuses = [...data.statuses]
     .filter((status) => status.isActive !== false && status.isPipeline !== false)
     .sort((left, right) => Number(left.sortOrder) - Number(right.sortOrder));
   const activePipelineStatusCodes = new Set(activePipelineStatuses.map((status) => String(status.code)));
-  const funnel = activePipelineStatuses.map((status) => ({
+  const activePipelineStatusIndex = new Map(
+    activePipelineStatuses.map((status, index) => [String(status.code), index]),
+  );
+  const reachedStageCount = (leads: Row[], stageIndex: number) => leads.filter((lead) => {
+    const currentIndex = activePipelineStatusIndex.get(String(lead.statusCode));
+    return currentIndex !== undefined && currentIndex >= stageIndex;
+  }).length;
+  // A conversion funnel is cumulative: every lead at a later stage has also
+  // reached all earlier stages. Exact-status counts could make a later stage
+  // larger than the preceding one and produce conversion above 100%.
+  const funnel = activePipelineStatuses.map((status, stageIndex) => ({
     ...status,
-    count: data.leads.filter((lead) => lead.statusCode === status.code).length }));
+    count: reachedStageCount(data.leads, stageIndex) }));
+  const funnelBySource = Object.fromEntries(data.sources.map((source) => {
+    const sourceLeads = data.leads.filter((lead) => Number(lead.sourceId) === Number(source.id));
+    return [String(source.id), activePipelineStatuses.map((status, stageIndex) => ({
+      ...status,
+      count: reachedStageCount(sourceLeads, stageIndex),
+    }))];
+  }));
 
   const groupsWithCapacity = data.groups.map((group) => ({
     ...group,
@@ -2134,20 +2561,38 @@ const buildAnalytics = async () => {
     .reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0);
 
   // --- Marketing metrics (TZ 4.2): conversions, CPL, deal cycle, warm-base conversion. ---
-  const newRequestCount = data.leads.filter((lead) => lead.statusCode !== 'new_request' || true).length;
+  const newRequestCount = data.leads.length;
   const invitedToDemoCount = data.leads.filter((lead) =>
     ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
     || lead.demoAttended).length;
+  const paidAfterDemoCount = data.leads.filter((lead) =>
+    paidLeadIds.has(Number(lead.id))
+    && (['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
+      || lead.demoAttended),
+  ).length;
   const leadToDemoConversion = newRequestCount > 0 ? Number(((invitedToDemoCount / newRequestCount) * 100).toFixed(1)) : 0;
-  const demoToPaidConversion = invitedToDemoCount > 0 ? Number(((newPaidStudents.size / invitedToDemoCount) * 100).toFixed(1)) : 0;
-  const cpl = data.leads.length > 0 ? Math.round(expensesMonth / data.leads.filter((lead) => new Date(lead.createdAt) >= monthStart).length) : 0;
+  const demoToPaidConversion = invitedToDemoCount > 0 ? Number(((paidAfterDemoCount / invitedToDemoCount) * 100).toFixed(1)) : 0;
+  const leadToPaidConversion = newRequestCount > 0 ? Number(((paidLeadIds.size / newRequestCount) * 100).toFixed(1)) : 0;
+  const newLeadsMonth = data.leads.filter((lead) => {
+    const createdAt = getValidDate(lead.createdAt);
+    return createdAt !== null && createdAt >= monthStart && createdAt < nextMonthStart;
+  });
+  const cpl = newLeadsMonth.length > 0 ? Math.round(expensesMonth / newLeadsMonth.length) : 0;
   // Average deal cycle (days) from lead creation to first paid payment.
+  const firstPaidAtByLead = new Map<number, Date>();
+  for (const payment of paidPayments) {
+    const leadId = leadIdForPayment(payment);
+    const paidAt = getValidDate(payment.paidAt);
+    if (!leadId || !paidAt) continue;
+    const previous = firstPaidAtByLead.get(leadId);
+    if (!previous || paidAt < previous) firstPaidAtByLead.set(leadId, paidAt);
+  }
   const dealCycleDays = data.leads
-    .filter((lead) => lead.statusCode === 'paid')
     .map((lead) => {
-      const firstPaid = paidPayments.find((payment) => payment.leadId === lead.id || payment.studentId === lead.id);
-      if (!firstPaid?.paidAt) return null;
-      return (new Date(firstPaid.paidAt).getTime() - new Date(lead.createdAt).getTime()) / (24 * 60 * 60 * 1000);
+      const firstPaidAt = firstPaidAtByLead.get(Number(lead.id));
+      const createdAt = getValidDate(lead.createdAt);
+      if (!firstPaidAt || !createdAt || firstPaidAt < createdAt) return null;
+      return (firstPaidAt.getTime() - createdAt.getTime()) / (24 * 60 * 60 * 1000);
     })
     .filter((d): d is number => d !== null && Number.isFinite(d));
   const avgDealCycleDays = calculateAvgDealCycleDays(dealCycleDays) ?? 0;
@@ -2158,11 +2603,13 @@ const buildAnalytics = async () => {
   const lessonScores = data.lessonSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
   const avgLessonScore = calculateAverage(lessonScores) ?? 0;
   const byTeacher = data.teachers.map((teacher) => {
-    const teacherLessons = data.lessons.filter((lesson) => lesson.teacherId === teacher.id && lesson.status === 'conducted');
-    const teacherSurveys = data.lessonSurveys.filter((survey) => survey.teacherId === teacher.id);
+    const teacherLessons = data.lessons.filter((lesson) => Number(lesson.teacherId) === Number(teacher.id) && lesson.status === 'conducted');
+    const teacherSurveys = data.lessonSurveys.filter((survey) => Number(survey.teacherId) === Number(teacher.id));
     const teacherStudents = data.students.filter((student) =>
-      data.groups.filter((group) => group.teacherId === teacher.id).some((group) => group.id === student.groupId));
-    const scoresByDate = teacherSurveys
+      data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id))
+        .some((group) => Number(group.id) === Number(student.groupId)));
+    const scoresByDate = [...teacherSurveys]
+      .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
       .map((survey) => Number(survey.score))
       .filter(Number.isFinite);
     return {
@@ -2170,22 +2617,27 @@ const buildAnalytics = async () => {
       teacherName: teacher.fullName,
       hours: teacherLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0),
       avgScore: calculateAverage(scoresByDate) ?? 0,
-      attendance: calculateAverage(teacherStudents.map((student) => Number(student.attendancePercent || 0)).filter(Boolean)) ?? 0,
-      groupsCount: data.groups.filter((group) => group.teacherId === teacher.id).length,
+      attendance: calculateAverage(teacherStudents
+        .map((student) => Number(student.attendancePercent || 0))
+        .filter(Number.isFinite)) ?? 0,
+      groupsCount: data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id)).length,
       trend: calculateTrend(scoresByDate),
     };
   });
   const byCourseLessonNps = data.courses.map((course) => {
-    const courseSurveys = data.lessonSurveys.filter((survey) => survey.courseId === course.id);
-    const scores = courseSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
+    const courseSurveys = data.lessonSurveys.filter((survey) => Number(survey.courseId) === Number(course.id));
+    const scores = [...courseSurveys]
+      .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
+      .map((survey) => Number(survey.score))
+      .filter(Number.isFinite);
     return {
       courseId: course.id,
       courseName: course.name,
       avgLessonScore: calculateAverage(scores) ?? 0,
       trend: calculateTrend(scores),
       progressAvg: calculateAverage(
-        data.students.filter((student) => student.courseId === course.id && student.status === 'studying')
-          .map((student) => Number(student.progressPercent || 0)).filter(Boolean),
+        data.students.filter((student) => Number(student.courseId) === Number(course.id) && student.status === 'studying')
+          .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
       ) ?? 0,
     };
   });
@@ -2195,16 +2647,18 @@ const buildAnalytics = async () => {
     capacity: Number(group.currentStudents || 0),
     maxCapacity: Number(group.maxStudents || 12),
     attendanceAvg: calculateAverage(
-      data.students.filter((student) => student.groupId === group.id).map((student) => Number(student.attendancePercent || 0)).filter(Boolean),
+      data.students.filter((student) => Number(student.groupId) === Number(group.id))
+        .map((student) => Number(student.attendancePercent || 0)).filter(Number.isFinite),
     ) ?? 0,
     progressAvg: calculateAverage(
-      data.students.filter((student) => student.groupId === group.id).map((student) => Number(student.progressPercent || 0)).filter(Boolean),
+      data.students.filter((student) => Number(student.groupId) === Number(group.id))
+        .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
     ) ?? 0,
   }));
 
   // --- Cohort retention (TZ 3.4) as percentages. ---
   const retentionByCourse = data.courses.map((course) => {
-    const courseStudents = data.students.filter((student) => student.courseId === course.id);
+    const courseStudents = data.students.filter((student) => Number(student.courseId) === Number(course.id));
     const monthsValues = courseStudents
       .filter((student) => student.enrolledAt)
       .map((student) => (now.getTime() - new Date(student.enrolledAt).getTime()) / (30 * 24 * 60 * 60 * 1000));
@@ -2219,7 +2673,7 @@ const buildAnalytics = async () => {
   return {
     summary: {
       newLeadsWeek: data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
-      newLeadsMonth: data.leads.filter((lead) => new Date(lead.createdAt) >= monthStart).length,
+      newLeadsMonth: newLeadsMonth.length,
       activeLeads: data.leads.filter((lead) => activePipelineStatusCodes.has(String(lead.statusCode))).length,
       warmBaseSize: data.leads.filter((lead) => lead.statusCode === 'not_now').length,
       warmReactivated,
@@ -2232,7 +2686,9 @@ const buildAnalytics = async () => {
       cpl,
       averageLtv,
       ltvCac: cac ? Number((averageLtv / cac).toFixed(2)) : 0,
-      avgAttendance: calculateAverage(data.students.map((student) => Number(student.attendancePercent || 0)).filter(Boolean)) ?? 0,
+      avgAttendance: calculateAverage(data.students
+        .map((student) => Number(student.attendancePercent || 0))
+        .filter(Number.isFinite)) ?? 0,
       avgLessonScore,
       nps,
       npsBelowTarget: nps < targets.nps,
@@ -2240,10 +2696,12 @@ const buildAnalytics = async () => {
       avgDealCycleDays,
       leadToDemoConversion,
       demoToPaidConversion,
+      leadToPaidConversion,
       overduePayments: overduePayments.length,
       overdueTasks: overdueTasks.length,
-      newPaidStudents: newPaidStudents.size },
+      newPaidStudents: newPaidCustomersThisMonth.size },
     funnel,
+    funnelBySource,
     groups: groupsWithCapacity,
     risks: {
       lowAttendanceStudents,
@@ -2252,50 +2710,68 @@ const buildAnalytics = async () => {
       longThinkingLeads,
       overdueTasks },
     byCourse: data.courses.map((course) => {
-      const courseStudentIds = data.students.filter((student) => student.courseId === course.id).map((student) => student.id);
-      const coursePaidStudents = new Set(paidPayments.filter((payment) => payment.studentId && courseStudentIds.includes(payment.studentId)).map((payment) => payment.studentId));
-      const courseExpenses = data.expenses
-        .filter((expense) => data.sources.find((source) => source.id === expense.sourceId)?.channel === course.slug
-          || data.leads.find((lead) => lead.courseId === course.id && lead.sourceId === data.sources.find((s) => s.id === data.expenses.find((e) => e.id === expense.id)?.sourceId)?.id))
-        .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
+      const coursePaidCustomers = new Set(paidPayments
+        .filter((payment) => {
+          const studentCourseId = studentById.get(Number(payment.studentId))?.courseId;
+          const leadCourseId = leadById.get(Number(leadIdForPayment(payment)))?.courseId;
+          return Number(studentCourseId ?? leadCourseId) === Number(course.id);
+        })
+        .map(customerKeyForPayment)
+        .filter((key): key is string => Boolean(key)));
+      const courseExpenses = data.expenses.reduce((sum, expense) => {
+        const sourceLeads = data.leads.filter((lead) => Number(lead.sourceId) === Number(expense.sourceId));
+        if (sourceLeads.length === 0) return sum;
+        const courseLeadCount = sourceLeads.filter((lead) => Number(lead.courseId) === Number(course.id)).length;
+        return sum + (Number(expense.amountUzs || 0) * courseLeadCount) / sourceLeads.length;
+      }, 0);
       return {
         courseId: course.id,
         courseName: course.name,
-        leads: data.leads.filter((lead) => lead.courseId === course.id).length,
-        students: data.students.filter((student) => student.courseId === course.id && student.status === 'studying').length,
+        leads: data.leads.filter((lead) => Number(lead.courseId) === Number(course.id)).length,
+        students: data.students.filter((student) => Number(student.courseId) === Number(course.id) && student.status === 'studying').length,
         revenue: paidPayments
-          .filter((payment) => data.students.find((student) => student.id === payment.studentId)?.courseId === course.id)
+          .filter((payment) => {
+            const studentCourseId = studentById.get(Number(payment.studentId))?.courseId;
+            const leadCourseId = leadById.get(Number(leadIdForPayment(payment)))?.courseId;
+            return Number(studentCourseId ?? leadCourseId) === Number(course.id);
+          })
           .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
         averageLtv: calculateAverage(
           ltvByStudent
-            .filter((item) => data.students.find((student) => student.id === item.studentId)?.courseId === course.id)
+            .filter((item) => Number(studentById.get(Number(item.studentId))?.courseId) === Number(course.id))
             .map((item) => item.ltv),
         ) ?? 0,
         ltvTargetMinUzs: course.ltvTargetMinUzs,
         ltvTargetMaxUzs: course.ltvTargetMaxUzs,
-        cac: calculateCac(courseExpenses, coursePaidStudents.size) ?? 0 };
+        cac: calculateCac(courseExpenses, coursePaidCustomers.size) ?? 0 };
     }),
     bySource: data.sources.map((source) => {
-      const sourceLeads = data.leads.filter((lead) => lead.sourceId === source.id);
-      const sourceStudents = data.students.filter((student) => sourceLeads.some((lead) => lead.id === student.leadId));
+      const sourceLeads = data.leads.filter((lead) => Number(lead.sourceId) === Number(source.id));
+      const sourceLeadIds = new Set(sourceLeads.map((lead) => Number(lead.id)));
+      const sourceStudents = data.students.filter((student) => sourceLeadIds.has(Number(student.leadId)));
+      const paidSourceStudents = sourceStudents.filter((student) => paidStudentIds.has(Number(student.id)));
+      const paidSourceLeadIds = new Set([...paidLeadIds].filter((leadId) => sourceLeadIds.has(leadId)));
       const sourceRevenue = paidPayments
-        .filter((payment) => sourceStudents.some((student) => student.id === payment.studentId))
+        .filter((payment) => {
+          const leadId = leadIdForPayment(payment);
+          return leadId !== null && sourceLeadIds.has(leadId);
+        })
         .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
       const sourceExpenses = data.expenses
-        .filter((expense) => expense.sourceId === source.id)
+        .filter((expense) => Number(expense.sourceId) === Number(source.id))
         .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
-      const sourceCac = calculateCac(sourceExpenses, sourceStudents.length) ?? 0;
+      const sourceCac = calculateCac(sourceExpenses, paidSourceLeadIds.size) ?? 0;
       return {
         sourceId: source.id,
         sourceName: source.name,
         leads: sourceLeads.length,
-        paidStudents: sourceStudents.length,
+        paidStudents: paidSourceLeadIds.size,
         revenue: sourceRevenue,
         expenses: sourceExpenses,
         cpl: sourceLeads.length > 0 ? Math.round(sourceExpenses / sourceLeads.length) : 0,
         cac: sourceCac,
         roas: calculateRoas(sourceRevenue, sourceExpenses) ?? 0,
-        ltvCac: sourceCac ? Number(((calculateAverage(sourceStudents.map((student) => ltvByStudent.find((item) => item.studentId === student.id)?.ltv || 0)) ?? 0) / sourceCac).toFixed(2)) : 0 };
+        ltvCac: sourceCac ? Number(((calculateAverage(paidSourceStudents.map((student) => ltvByStudent.find((item) => Number(item.studentId) === Number(student.id))?.ltv || 0)) ?? 0) / sourceCac).toFixed(2)) : 0 };
     }),
     byTeacher,
     byCourseLessonNps,
@@ -2399,8 +2875,10 @@ const buildAdministrationDashboard = async () => {
   const todayStart = startOfDay(now);
   const tomorrowStart = addDays(todayStart, 1);
   const dayAfterTomorrowStart = addDays(todayStart, 2);
-  const scheduledLessons = data.lessons.filter((lesson) =>
-    lesson.status === 'scheduled' && lesson.scheduledAt && new Date(lesson.scheduledAt) >= now);
+  const nonCancelledLessons = data.lessons.filter((lesson) =>
+    lesson.status !== 'cancelled' && getValidDate(lesson.scheduledAt));
+  const scheduledLessons = nonCancelledLessons.filter((lesson) =>
+    lesson.status === 'scheduled' && new Date(lesson.scheduledAt) >= now);
   const upcomingLessons = [...scheduledLessons]
     .sort((left, right) =>
       new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime())
@@ -2485,11 +2963,11 @@ const buildAdministrationDashboard = async () => {
       onlineUsers: onlineUsers.length,
       newStudentsMonth: currentMonthStudents,
       groupLoadPercent: totalActiveCapacity > 0
-        ? Math.round((occupiedActiveSeats / totalActiveCapacity) * 100)
+        ? Math.min(100, Math.round((occupiedActiveSeats / totalActiveCapacity) * 100))
         : 0,
-      lessonsToday: scheduledLessons.filter((lesson) =>
+      lessonsToday: nonCancelledLessons.filter((lesson) =>
         inRange(lesson.scheduledAt, todayStart, tomorrowStart)).length,
-      lessonsTomorrow: scheduledLessons.filter((lesson) =>
+      lessonsTomorrow: nonCancelledLessons.filter((lesson) =>
         inRange(lesson.scheduledAt, tomorrowStart, dayAfterTomorrowStart)).length,
       revenueChangePercent: percentageChange(currentMonthRevenue, previousMonthRevenue),
       leadsChangePercent: percentageChange(currentMonthLeads, previousMonthLeads),
@@ -2544,17 +3022,20 @@ const buildMarketingAnalyticsPayload = (analytics: Row) => ({
     warmReactivated: analytics.summary.warmReactivated,
     leadToDemoConversion: analytics.summary.leadToDemoConversion,
     demoToPaidConversion: analytics.summary.demoToPaidConversion,
+    leadToPaidConversion: analytics.summary.leadToPaidConversion,
     cpl: analytics.summary.cpl,
     cac: analytics.summary.cac,
     roas: analytics.summary.roas,
     avgDealCycleDays: analytics.summary.avgDealCycleDays,
   },
   funnel: analytics.funnel,
+  funnelBySource: analytics.funnelBySource,
   bySource: analytics.bySource,
   warmBaseSize: analytics.summary.warmBaseSize,
   warmReactivated: analytics.summary.warmReactivated,
   leadToDemoConversion: analytics.summary.leadToDemoConversion,
   demoToPaidConversion: analytics.summary.demoToPaidConversion,
+  leadToPaidConversion: analytics.summary.leadToPaidConversion,
   cpl: analytics.summary.cpl,
   avgDealCycleDays: analytics.summary.avgDealCycleDays,
   targets: analytics.targets,
@@ -2935,7 +3416,13 @@ router.get('/search', async (req, res) => {
          LIMIT $${params.length + 2}`,
         [...params, like, remaining()],
       );
-      results.push(...rows.map((lead) => ({
+      const visibleRows = await redactLeadPhonesForActor({
+        userId: req.user!.id,
+        workspace: String(req.user!.workspace),
+        workspaces: assignedWorkspaces,
+        scopeWorkspace: 'sales',
+      }, rows);
+      results.push(...visibleRows.map((lead) => ({
         id: `lead-${lead.id}`,
         entityType: 'lead',
         title: lead.contactName,
@@ -3167,7 +3654,7 @@ router.get('/leads', async (req, res) => {
         userId: req.user!.id,
         workspace: String(req.user!.workspace),
         workspaces: assignedWorkspaces,
-        scopeWorkspace: canSeeAllLeads || wantsArchived ? 'marketing' : 'sales',
+        scopeWorkspace: 'sales',
       },
       leads,
     ));
@@ -3204,13 +3691,22 @@ router.post('/leads', async (req, res) => {
         courseId = Number((await resolveCourseByAge(studentAge))?.id ?? 0) || null;
       }
 
+      const statusCode = await resolveInitialLeadStatusCode(nullableText(req.body.statusCode));
+      if (statusCode === 'paid') {
+        throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
+      }
+      const managerId = await resolveLeadManagerId(req, req.body.managerId);
+      await getActiveSalesManager(managerId, true);
+
       const enrolledGroupId = parseId(req.body.enrolledGroupId);
+      if (enrolledGroupId) {
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [enrolledGroupId]);
+      }
       const enrolledGroup = await validateEnrollmentGroup(enrolledGroupId);
       if (enrolledGroup) {
         courseId = Number(enrolledGroup.courseId);
       }
       const schoolId = enrolledGroup?.schoolId ? Number(enrolledGroup.schoolId) : null;
-      const statusCode = await resolveInitialLeadStatusCode(nullableText(req.body.statusCode));
       const validationError = validateLeadForStatusChange({
         nextStatus: statusCode,
         studentName: nullableText(req.body.studentName),
@@ -3223,7 +3719,6 @@ router.post('/leads', async (req, res) => {
       }
 
       const source = await queryOne(`SELECT * FROM academy_lead_sources WHERE id = $1`, [sourceId]);
-      const managerId = await resolveLeadManagerId(req, req.body.managerId);
       const createdLead = await insertRow('academy_leads', {
         contactName,
         phone: primaryPhone,
@@ -3283,61 +3778,67 @@ router.post('/leads/bulk-assign', async (req, res) => {
     if (!managerId) {
       return res.status(400).json({ error: 'Active account manager is required' });
     }
-    const manager = await getActiveSalesManager(managerId);
     const comment = nullableText(req.body.comment) ?? 'Массовое переназначение администратором';
-    const leads = await query(
-      `SELECT l.*, u.full_name AS manager_name
-       FROM academy_leads l
-       LEFT JOIN users u ON u.id = l.manager_id
-       WHERE l.id = ANY($1::int[])`,
-      [leadIds],
-    );
-    if (leads.length !== leadIds.length) {
-      return res.status(404).json({ error: 'One or more leads were not found' });
-    }
+    const { manager, changedLeads } = await withTransaction(async () => {
+      const lockedManager = await getActiveSalesManager(managerId, true);
+      const leads = await query(
+        `SELECT *
+         FROM academy_leads
+         WHERE id = ANY($1::int[])
+         ORDER BY id
+         FOR UPDATE`,
+        [leadIds],
+      );
+      if (leads.length !== leadIds.length) {
+        throw Object.assign(new Error('One or more leads were not found'), { statusCode: 404 });
+      }
+      const changed = leads.filter(
+        (lead) => Number(lead.managerId) !== Number(lockedManager.id),
+      );
+      if (changed.length === 0) return { manager: lockedManager, changedLeads: changed };
 
-    const changedLeads = leads.filter((lead) => Number(lead.managerId) !== Number(manager.id));
+      const changedIds = changed.map((lead) => Number(lead.id));
+      await query(
+        `UPDATE academy_leads
+         SET manager_id = $1, updated_at = NOW()
+         WHERE id = ANY($2::int[])`,
+        [lockedManager.id, changedIds],
+      );
+      await query(
+        `UPDATE academy_students
+         SET manager_id = $1, updated_at = NOW()
+         WHERE lead_id = ANY($2::int[])`,
+        [lockedManager.id, changedIds],
+      );
+      await query(
+        `UPDATE academy_tasks
+         SET responsible_id = $1, updated_at = NOW()
+         WHERE status <> 'done'
+           AND (
+             (entity_type = 'lead' AND entity_id = ANY($2::int[]))
+             OR (
+               entity_type = 'student'
+               AND entity_id IN (
+                 SELECT id FROM academy_students WHERE lead_id = ANY($2::int[])
+               )
+             )
+           )`,
+        [lockedManager.id, changedIds],
+      );
+      for (const lead of changed) {
+        await insertRow('academy_lead_assignment_history', {
+          leadId: lead.id,
+          fromManagerId: lead.managerId ?? null,
+          toManagerId: lockedManager.id,
+          changedBy: req.user!.id,
+          comment,
+        });
+      }
+      return { manager: lockedManager, changedLeads: changed };
+    });
+
     if (changedLeads.length > 0) {
       const changedIds = changedLeads.map((lead) => Number(lead.id));
-      await withTransaction(async () => {
-        await query(
-          `UPDATE academy_leads
-           SET manager_id = $1, updated_at = NOW()
-           WHERE id = ANY($2::int[])`,
-          [manager.id, changedIds],
-        );
-        await query(
-          `UPDATE academy_students
-           SET manager_id = $1, updated_at = NOW()
-           WHERE lead_id = ANY($2::int[])`,
-          [manager.id, changedIds],
-        );
-        await query(
-          `UPDATE academy_tasks
-           SET responsible_id = $1, updated_at = NOW()
-           WHERE status <> 'done'
-             AND (
-               (entity_type = 'lead' AND entity_id = ANY($2::int[]))
-               OR (
-                 entity_type = 'student'
-                 AND entity_id IN (
-                   SELECT id FROM academy_students WHERE lead_id = ANY($2::int[])
-                 )
-               )
-             )`,
-          [manager.id, changedIds],
-        );
-        for (const lead of changedLeads) {
-          await insertRow('academy_lead_assignment_history', {
-            leadId: lead.id,
-            fromManagerId: lead.managerId ?? null,
-            toManagerId: manager.id,
-            changedBy: req.user!.id,
-            comment,
-          });
-        }
-      });
-
       await createNotification(
         manager.id,
         'Вам назначены лиды',
@@ -3385,8 +3886,14 @@ router.get('/leads/:id', async (req, res) => {
       query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
       query(`SELECT * FROM academy_payments WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
     ]);
+    const [visibleLead] = await redactLeadPhonesForActor({
+      userId: req.user!.id,
+      workspace: String(req.user!.workspace),
+      workspaces: getAssignedWorkspaces(req.user),
+      scopeWorkspace: 'sales',
+    }, [lead]);
     res.json({
-      ...lead,
+      ...visibleLead,
       history,
       assignmentHistory,
       stageDurations: buildLeadStageDurations(history),
@@ -3410,7 +3917,7 @@ router.post('/leads/:id/assign', async (req, res) => {
 
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
     const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
     if (!canAssignAnyManager && Number(managerId) !== Number(req.user!.id)) {
@@ -3420,7 +3927,7 @@ router.post('/leads/:id/assign', async (req, res) => {
     const manager = await getActiveSalesManager(managerId);
     const lead = await reassignLead(req, oldLead, manager, nullableText(req.body.comment));
     await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
-    res.json(lead);
+    res.json(await redactLeadForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to assign lead', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign lead' });
@@ -3476,7 +3983,7 @@ router.post('/leads/:id/archive', async (req, res) => {
 
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
     if (oldLead.isArchived) return res.json(oldLead);
     if (oldLead.statusCode === 'paid') return res.status(400).json({ error: 'paidLeadCannotArchive' });
@@ -3536,7 +4043,7 @@ router.post('/leads/:id/restore', async (req, res) => {
 
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
     if (!oldLead.isArchived) return res.json(oldLead);
 
     const targetStatusCode = nullableText(req.body.statusCode) ?? oldLead.statusCode;
@@ -3607,9 +4114,10 @@ router.patch('/leads/:id', async (req, res) => {
     }
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+    const expectedUpdatedAt = parseOptionalDate(req.body.expectedUpdatedAt, 'expectedUpdatedAt');
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
     const requestedGroupId = req.body.enrolledGroupId === undefined
       ? undefined
@@ -3695,7 +4203,7 @@ router.patch('/leads/:id', async (req, res) => {
       firstContactAt: nullableDate(req.body.firstContactAt),
       firstContactChannel: nullableText(req.body.firstContactChannel),
       firstContactResult: nullableText(req.body.firstContactResult),
-      demoAttended: req.body.demoAttended === undefined ? undefined : Boolean(req.body.demoAttended),
+      demoAttended: toBoolean(req.body.demoAttended),
       demoResult: nullableText(req.body.demoResult),
       offerCourseId: parseId(req.body.offerCourseId),
       offerPriceUzs: toIntegerOrNull(req.body.offerPriceUzs),
@@ -3706,43 +4214,90 @@ router.patch('/leads/:id', async (req, res) => {
       paymentMethod: nullableText(req.body.paymentMethod),
       warmReason: nullableText(req.body.warmReason),
       warmMovedAt: nullableDate(req.body.warmMovedAt),
-      noMailing: req.body.noMailing === undefined ? undefined : Boolean(req.body.noMailing),
+      noMailing: toBoolean(req.body.noMailing),
       referralCode: nullableText(req.body.referralCode),
       referrerStudentId: parseId(req.body.referrerStudentId) };
 
     const manager = managerId ? await getActiveSalesManager(managerId) : null;
     const managerChanged = Boolean(manager && Number(oldLead.managerId) !== Number(manager.id));
+    let didChangeManager = false;
     const lead: Row | undefined = await withTransaction<Row | undefined>(async () => {
+      if (requestedStatusCode && requestedStatusCode !== oldLead.statusCode) {
+        const lockedStatus = await getActiveLeadStatus(requestedStatusCode);
+        if (!lockedStatus) {
+          throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 400 });
+        }
+      }
+      const lockedManager = manager
+        ? await getActiveSalesManager(manager.id, true)
+        : manager;
+      const lockedLead = await queryOne(
+        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (!lockedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (!canMutateLeadRow(req, lockedLead)) {
+        throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
+      }
+      const previousVersion = new Date(expectedUpdatedAt ?? oldLead.updatedAt).getTime();
+      const lockedVersion = new Date(lockedLead.updatedAt).getTime();
+      if (
+        Number.isFinite(previousVersion)
+        && Number.isFinite(lockedVersion)
+        && previousVersion !== lockedVersion
+      ) {
+        throw Object.assign(new Error('leadChangedConcurrently'), { statusCode: 409 });
+      }
       const groupToReserve = Number(merged.enrolledGroupId || 0);
       const mustValidateCapacity = Boolean(requestedGroupId)
         || ['enrolled', 'paid'].includes(nextStatus);
       if (mustValidateCapacity && groupToReserve) {
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupToReserve]);
-        await validateEnrollmentGroup(groupToReserve, id);
+        const lockedGroup = await validateEnrollmentGroup(groupToReserve, id);
+        if (req.body.enrolledGroupId !== undefined && lockedGroup) {
+          updates.courseId = Number(lockedGroup.courseId);
+          updates.schoolId = Number(lockedGroup.schoolId);
+        }
       }
       const updated = await updateRow('academy_leads', id, updates);
-      if (updated && manager && managerChanged) {
+      const actualManagerChanged = Boolean(
+        updated
+        && lockedManager
+        && Number(lockedLead.managerId) !== Number(lockedManager.id),
+      );
+      if (updated && lockedManager && actualManagerChanged) {
         await syncLeadManagerAssignment(
           req,
-          oldLead,
-          manager,
+          lockedLead,
+          lockedManager,
           nullableText(req.body.assignmentComment) ?? 'Ответственный назначен при переносе лида',
+        );
+        didChangeManager = true;
+      }
+      if (updated && lockedLead.statusCode !== updated.statusCode) {
+        await createStageHistory(
+          updated.id,
+          lockedLead.statusCode,
+          updated.statusCode,
+          req.user!.id,
+          nullableText(req.body.statusComment),
         );
       }
       if (updated && requestedPhones !== undefined) {
         await syncLeadPhones(id, requestedPhones);
         return {
           ...updated,
-          managerName: manager?.fullName ?? oldLead.managerName,
+          managerName: lockedManager?.fullName ?? oldLead.managerName,
           phoneNumbers: requestedPhones.map((phone) => phone.phone),
         };
       }
-      return updated ? { ...updated, managerName: manager?.fullName ?? oldLead.managerName } : updated;
+      return updated ? { ...updated, managerName: lockedManager?.fullName ?? oldLead.managerName } : updated;
     });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     if (oldLead.statusCode !== lead.statusCode) {
-      await createStageHistory(lead.id, oldLead.statusCode, lead.statusCode, req.user!.id, nullableText(req.body.statusComment));
       await handleLeadAutomation(req, lead, oldLead.statusCode);
     }
 
@@ -3750,7 +4305,7 @@ router.patch('/leads/:id', async (req, res) => {
       await createStudentFromLead(req, lead.id);
     }
 
-    if (manager && managerChanged) {
+    if (manager && managerChanged && didChangeManager) {
       await createNotification(
         manager.id,
         'Вам назначен лид',
@@ -3761,7 +4316,7 @@ router.patch('/leads/:id', async (req, res) => {
     }
 
     await createAudit(req, 'UPDATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
-    res.json(lead);
+    res.json(await redactLeadForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to update lead', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update lead' });
@@ -3775,7 +4330,7 @@ router.post('/leads/:id/contact', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, lead)) return;
+    if (!ensureLeadMutationAccess(req, res, lead)) return;
 
     const communication = await insertRow('academy_communications', {
       leadId: id,
@@ -3806,7 +4361,7 @@ router.post('/leads/:id/contact', async (req, res) => {
         entityId: id });
     }
 
-    res.status(201).json({ communication, lead: updatedLead });
+    res.status(201).json({ communication, lead: await redactLeadForRequest(req, updatedLead) });
   } catch (error) {
     logger.error('Failed to add lead contact', { error });
     res.status(500).json({ error: 'Failed to add lead contact' });
@@ -3825,7 +4380,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, oldLead)) return;
+    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
     const attended = req.body.attended !== false;
     const nextStatus = attended ? 'demo_attended' : oldLead.statusCode;
@@ -3840,7 +4395,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
       await createStageHistory(id, oldLead.statusCode, nextStatus, req.user!.id, 'Отмечено посещение демо');
       await handleLeadAutomation(req, lead, oldLead.statusCode);
     }
-    res.json(lead);
+    res.json(await redactLeadForRequest(req, lead));
   } catch (error) {
     logger.error('Failed to mark demo attendance', { error });
     res.status(500).json({ error: 'Failed to mark demo attendance' });
@@ -3854,7 +4409,7 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, lead)) return;
+    if (!ensureLeadMutationAccess(req, res, lead)) return;
     const student = await withTransaction(async () => {
       await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
       const paidPayment = await queryOne(
@@ -3932,14 +4487,41 @@ const prepareGroupMutation = async (options: {
   if (!roomId) {
     throw Object.assign(new Error('roomRequired'), { statusCode: 400 });
   }
+  if (!GROUP_STATUSES.some((item) => item.code === status)) {
+    throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
+  }
+  await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+
+  if (
+    options.oldRow
+    && (
+      Number(options.oldRow.courseId) !== courseId
+      || Number(options.oldRow.schoolId) !== schoolId
+    )
+  ) {
+    const usage = await queryOne<{ hasEnrollments: boolean }>(
+      `SELECT (
+         EXISTS (SELECT 1 FROM academy_students WHERE group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_leads WHERE enrolled_group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
+       ) AS has_enrollments`,
+      [options.oldRow.id],
+    );
+    if (usage?.hasEnrollments) {
+      throw Object.assign(new Error('groupHasEnrollments'), { statusCode: 409 });
+    }
+  }
   const course = await queryOne(
-    `SELECT id, lesson_count, lesson_duration_minutes, duration_days, frequency
+    `SELECT id, lesson_count, lesson_duration_minutes, duration_days, frequency, is_active
      FROM academy_courses
      WHERE id = $1`,
     [courseId],
   );
   if (!course) {
     throw Object.assign(new Error('Course not found'), { statusCode: 404 });
+  }
+  if (course.isActive === false) {
+    throw Object.assign(new Error('Course is inactive'), { statusCode: 409 });
   }
 
   const lessonCount = Number(
@@ -3982,6 +4564,33 @@ const prepareGroupMutation = async (options: {
   if (maxStudents < 1 || maxStudents > 12) {
     throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
   }
+  if (options.oldRow) {
+    const occupancy = await queryOne<{ currentStudents: number; reservedStudents: number }>(
+      `SELECT
+         COUNT(DISTINCT s.id)::int AS current_students,
+         COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students
+       FROM academy_groups g
+       LEFT JOIN academy_students s
+         ON s.group_id = g.id AND s.status = 'studying'
+       LEFT JOIN academy_leads reserved
+         ON reserved.enrolled_group_id = g.id
+        AND reserved.status_code <> 'not_now'
+        AND COALESCE(reserved.is_archived, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
+        )
+       WHERE g.id = $1
+       GROUP BY g.id`,
+      [options.oldRow.id],
+    );
+    if (
+      Number(occupancy?.currentStudents ?? 0)
+      + Number(occupancy?.reservedStudents ?? 0)
+      > maxStudents
+    ) {
+      throw Object.assign(new Error('groupCapacityBelowOccupancy'), { statusCode: 409 });
+    }
+  }
   options.values.maxStudents = maxStudents;
   const room = await assertActiveRoomInSchool(roomId, schoolId);
   if (maxStudents > Number(room.capacity)) {
@@ -4013,6 +4622,10 @@ const prepareGroupMutation = async (options: {
   }
 
   const teacherId = Number(options.values.teacherId ?? options.oldRow?.teacherId) || null;
+  if (status === 'completed') {
+    options.values.teacherId = teacherId;
+    return;
+  }
   if (options.forceAutoAssign || !teacherId) {
     const teacher = await findTeacherForGroupSchedule({
       courseId,
@@ -4047,16 +4660,23 @@ const prepareLessonMutation = async (options: {
   excludeLessonId?: number | null;
   forceAutoAssign?: boolean;
 }) => {
+  await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
   const groupId = Number(options.values.groupId ?? options.oldRow?.groupId);
   const group = groupId
-    ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId])
+    ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1 FOR SHARE`, [groupId])
     : null;
   if (!group) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
 
-  const courseId = Number(options.values.courseId ?? options.oldRow?.courseId ?? group.courseId);
-  const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId ?? group.schoolId);
+  const requestedCourseId = Number(options.values.courseId ?? options.oldRow?.courseId ?? group.courseId);
+  const requestedSchoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId ?? group.schoolId);
+  if (requestedCourseId !== Number(group.courseId) || requestedSchoolId !== Number(group.schoolId)) {
+    throw Object.assign(new Error('lessonGroupMismatch'), { statusCode: 409 });
+  }
+  const courseId = Number(group.courseId);
+  const schoolId = Number(group.schoolId);
   const roomId = Number(options.values.roomId ?? options.oldRow?.roomId ?? group.roomId);
   const scheduledAt = new Date(options.values.scheduledAt ?? options.oldRow?.scheduledAt);
+  const status = String(options.values.status ?? options.oldRow?.status ?? 'scheduled');
   const durationMinutes = Number(
     options.values.durationMinutes
       ?? options.oldRow?.durationMinutes
@@ -4068,11 +4688,20 @@ const prepareLessonMutation = async (options: {
   if (!courseId || !schoolId || !roomId || Number.isNaN(scheduledAt.getTime()) || durationMinutes < 15) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
+  if (!LESSON_STATUSES.some((item) => item.code === status)) {
+    throw Object.assign(new Error('Invalid lesson status'), { statusCode: 400 });
+  }
 
   options.values.courseId = courseId;
   options.values.schoolId = schoolId;
   options.values.roomId = roomId;
   options.values.durationMinutes = durationMinutes;
+  // Cancelling an already conflicting lesson must always be possible.
+  if (status === 'cancelled') {
+    await assertActiveRoomInSchool(roomId, schoolId);
+    return;
+  }
+
   await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
   await assertLessonRoomAvailable({
     schoolId,
@@ -4083,15 +4712,29 @@ const prepareLessonMutation = async (options: {
     excludeGroupId: groupId,
   });
 
-  if (options.forceAutoAssign || (!options.values.teacherId && !options.oldRow?.teacherId)) {
+  const teacherId = Number(options.values.teacherId ?? options.oldRow?.teacherId ?? group.teacherId) || null;
+  if (options.forceAutoAssign || !teacherId) {
     const teacher = await findAvailableTeacher({
       courseId,
       schoolId,
       scheduledAt,
       durationMinutes,
+      excludeGroupId: groupId,
+      excludeLessonId: options.excludeLessonId,
     });
     if (!teacher) throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
     options.values.teacherId = Number(teacher.id);
+  } else {
+    await assertTeacherCanLeadLesson({
+      teacherId,
+      courseId,
+      schoolId,
+      scheduledAt,
+      durationMinutes,
+      excludeGroupId: groupId,
+      excludeLessonId: options.excludeLessonId,
+    });
+    options.values.teacherId = teacherId;
   }
 };
 
@@ -4109,6 +4752,7 @@ const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) =
   for (const group of groups) {
     try {
       const updated = await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
         const lockedGroup = await queryOne(
           `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
           [group.id],
@@ -4134,6 +4778,7 @@ const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) =
       });
       if (updated) updatedCount += 1;
     } catch (error) {
+      if (transactionContext.getStore()) throw error;
       logger.warn('Skipped automatic teacher assignment reconciliation for group', {
         groupId: group.id,
         error,
@@ -4151,7 +4796,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   requireAdministration?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
+  allowCreate?: boolean;
+  allowUpdate?: boolean;
   beforeCreate?: (context: { values: Row; req: any }) => Promise<void>;
+  beforeUpdate?: (context: { id: number; values: Row; row: Row; req: any }) => Promise<void>;
   beforeDelete?: (context: { id: number; row: Row; req: any }) => Promise<void>;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
@@ -4200,22 +4848,19 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if (options.allowCreate === false) return res.status(405).json({ error: 'methodNotAllowed' });
     if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
-    }
-    if (table === 'academy_tasks' && !hasLeadershipAccess(req.user)) {
-      const responsibleId = parseId(req.body.responsibleId) ?? req.user!.id;
-      if (Number(responsibleId) !== Number(req.user!.id)) {
-        return res.status(403).json({ error: 'Task mutation access required' });
-      }
     }
     try {
       const values: Row = {  };
       for (const column of columns) {
         const value = req.body[column];
         if (column.endsWith('At') || column.endsWith('Date') || column === 'periodStart' || column === 'periodEnd') {
-          values[column] = nullableDate(value);
-        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
+          values[column] = parseOptionalDate(value, column);
+        } else if (column.endsWith('Id')) {
+          values[column] = toIdOrNull(value, column);
+        } else if (column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
         } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
@@ -4224,6 +4869,25 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         } else {
           values[column] = nullableText(value);
         }
+      }
+
+      if (table === 'academy_tasks' && !hasLeadershipAccess(req.user)) {
+        const hasRequestedResponsible = req.body.responsibleId !== undefined
+          && req.body.responsibleId !== null
+          && req.body.responsibleId !== '';
+        const requestedResponsibleId = hasRequestedResponsible
+          ? parseId(req.body.responsibleId)
+          : req.user!.id;
+        if (!requestedResponsibleId) {
+          return res.status(400).json({ error: 'Invalid responsible user' });
+        }
+        if (Number(requestedResponsibleId) !== Number(req.user!.id)) {
+          return res.status(403).json({ error: 'Task mutation access required' });
+        }
+        // Staff-created tasks always remain in the creator's own scope. The old
+        // pre-check defaulted to self but left the value itself undefined, which
+        // inserted a NULL owner and made the new task immediately disappear.
+        values.responsibleId = req.user!.id;
       }
 
       if (table === 'academy_marketing_expenses') {
@@ -4242,14 +4906,21 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         })
         : table === 'academy_lessons'
           ? await withTransaction(async () => {
-            await prepareLessonMutation({ values, forceAutoAssign: true });
+            await prepareLessonMutation({
+              values,
+              forceAutoAssign: req.body.autoAssign === true || !values.teacherId,
+            });
             return insertRow(table, values);
+          })
+        : table === 'academy_teachers'
+          ? await withTransaction(async () => {
+            await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+            const teacher = await insertRow(table, values);
+            await reconcileAutomaticTeacherAssignments(Number(teacher.id));
+            return teacher;
           })
         : await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
-      if (table === 'academy_teachers') {
-        await reconcileAutomaticTeacherAssignments(Number(row.id));
-      }
       res.status(201).json(row);
     } catch (error: any) {
       logger.error(`Failed to create ${path}`, { error });
@@ -4262,6 +4933,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
+    if (options.allowUpdate === false) return res.status(405).json({ error: 'methodNotAllowed' });
     if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
@@ -4278,8 +4950,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         if (!(column in req.body)) continue;
         const value = req.body[column];
         if (column.endsWith('At') || column.endsWith('Date') || column === 'periodStart' || column === 'periodEnd') {
-          values[column] = nullableDate(value);
-        } else if (column.endsWith('Id') || column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
+          values[column] = parseOptionalDate(value, column);
+        } else if (column.endsWith('Id')) {
+          values[column] = toIdOrNull(value, column);
+        } else if (column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
         } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
@@ -4289,14 +4963,32 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           values[column] = nullableText(value);
         }
       }
+      if (
+        table === 'academy_tasks'
+        && !hasLeadershipAccess(req.user)
+        && Object.prototype.hasOwnProperty.call(req.body, 'responsibleId')
+      ) {
+        const requestedResponsibleId = parseId(req.body.responsibleId);
+        if (!requestedResponsibleId) {
+          return res.status(400).json({ error: 'Invalid responsible user' });
+        }
+        if (Number(requestedResponsibleId) !== Number(req.user!.id)) {
+          return res.status(403).json({ error: 'Task mutation access required' });
+        }
+        values.responsibleId = req.user!.id;
+      }
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
+          await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
           const lockedRow = await queryOne(
             `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
             [id],
           );
           if (!lockedRow) {
             throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+          }
+          if (options.beforeUpdate) {
+            await options.beforeUpdate({ id, values, row: lockedRow, req });
           }
           await prepareGroupMutation({
             values,
@@ -4308,6 +5000,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         })
         : table === 'academy_lessons'
           ? await withTransaction(async () => {
+            await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
             const lockedRow = await queryOne(
               `SELECT * FROM academy_lessons WHERE id = $1 FOR UPDATE`,
               [id],
@@ -4315,30 +5008,59 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             if (!lockedRow) {
               throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
             }
+            if (options.beforeUpdate) {
+              await options.beforeUpdate({ id, values, row: lockedRow, req });
+            }
             await prepareLessonMutation({
               values,
               oldRow: lockedRow,
               excludeLessonId: id,
               forceAutoAssign: req.body.autoAssign === true,
             });
+            const updatedLesson = await updateRow(table, id, values);
+            if (values.status !== undefined && lockedRow.status !== updatedLesson?.status) {
+              await insertRow('academy_lesson_status_history', {
+                lessonId: id,
+                fromStatus: lockedRow.status ?? null,
+                toStatus: updatedLesson?.status ?? String(values.status),
+                changedBy: req.user!.id,
+                comment: nullableText(req.body.statusComment) ?? null,
+              });
+            }
+            return updatedLesson;
+          })
+        : table === 'academy_teachers'
+          && ['courseIds', 'schoolIds', 'availability', 'schedule', 'status']
+            .some((field) => field in req.body)
+          ? await withTransaction(async () => {
+            await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+            const lockedTeacher = await queryOne(
+              `SELECT * FROM academy_teachers WHERE id = $1 FOR UPDATE`,
+              [id],
+            );
+            if (!lockedTeacher) {
+              throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+            }
+            if (options.beforeUpdate) {
+              await options.beforeUpdate({ id, values, row: lockedTeacher, req });
+            }
+            const updatedTeacher = await updateRow(table, id, values);
+            await reconcileAutomaticTeacherAssignments(id);
+            return updatedTeacher;
+          })
+        : options.beforeUpdate
+          ? await withTransaction(async () => {
+            const lockedRow = await queryOne(
+              `SELECT * FROM ${quoteIdent(table)} WHERE id = $1 FOR UPDATE`,
+              [id],
+            );
+            if (!lockedRow) {
+              throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+            }
+            await options.beforeUpdate!({ id, values, row: lockedRow, req });
             return updateRow(table, id, values);
           })
-        : await updateRow(table, id, values);
-      if (table === 'academy_lessons' && values.status !== undefined && oldRow.status !== row?.status) {
-        await insertRow('academy_lesson_status_history', {
-                    lessonId: id,
-          fromStatus: oldRow.status ?? null,
-          toStatus: row?.status ?? String(values.status),
-          changedBy: req.user!.id,
-          comment: nullableText(req.body.statusComment) ?? null });
-      }
-      if (
-        table === 'academy_teachers'
-        && ['courseIds', 'schoolIds', 'availability', 'schedule', 'status']
-          .some((field) => field in req.body)
-      ) {
-        await reconcileAutomaticTeacherAssignments(id);
-      }
+          : await updateRow(table, id, values);
       await createAudit(req, `UPDATE_${table.toUpperCase()}`, table, id, row, oldRow);
       res.json(row);
     } catch (error: any) {
@@ -4363,10 +5085,51 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       const scopedWhere = scope.whereSql ? `AND ${scope.whereSql}` : '';
       const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere}`, [id, ...scope.params]);
       if (!row) return res.status(404).json({ error: `${path} not found` });
-      if (options.beforeDelete) {
-        await options.beforeDelete({ id, row, req });
+      if (table === 'academy_lead_statuses') {
+        await withTransaction(async () => {
+          const lockedRow = await queryOne(
+            `SELECT * FROM academy_lead_statuses WHERE id = $1 FOR UPDATE`,
+            [id],
+          );
+          if (!lockedRow) {
+            throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+          }
+          if (options.beforeDelete) {
+            await options.beforeDelete({ id, row: lockedRow, req });
+          }
+          await deleteRow(table, id);
+        });
+      } else if (table === 'academy_teachers') {
+        await withTransaction(async () => {
+          await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+          const lockedTeacher = await queryOne(
+            `SELECT * FROM academy_teachers WHERE id = $1 FOR UPDATE`,
+            [id],
+          );
+          if (!lockedTeacher) {
+            throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+          }
+          if (options.beforeDelete) {
+            await options.beforeDelete({ id, row: lockedTeacher, req });
+          }
+          await deleteRow(table, id);
+          await reconcileAutomaticTeacherAssignments(null);
+        });
+      } else {
+        await withTransaction(async () => {
+          const lockedRow = await queryOne(
+            `SELECT * FROM ${quoteIdent(table)} WHERE id = $1 FOR UPDATE`,
+            [id],
+          );
+          if (!lockedRow) {
+            throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
+          }
+          if (options.beforeDelete) {
+            await options.beforeDelete({ id, row: lockedRow, req });
+          }
+          await deleteRow(table, id);
+        });
       }
-      await deleteRow(table, id);
       res.json({ ok: true });
     } catch (error: any) {
       logger.error(`Failed to delete ${path}`, { error });
@@ -4389,89 +5152,230 @@ const getLeadCountForStatusCode = async (statusCode: string) => {
 };
 
 router.post('/lessons/:id/attendance', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
   try {
     const lessonId = parseId(req.params.id);
     if (!lessonId) return res.status(400).json({ error: 'Invalid lesson id' });
-    const lesson = await queryOne(
-      `SELECT l.*, t.user_id AS teacher_user_id
-       FROM academy_lessons l
-       LEFT JOIN academy_teachers t ON t.id = l.teacher_id
-       WHERE l.id = $1`,
-      [lessonId],
-    );
-    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    if (lesson.status === 'cancelled') return res.status(400).json({ error: 'cancelledLessonAttendanceNotAllowed' });
-    if (
-      getAssignedWorkspaces(req.user).includes('teacher') &&
-      !hasLeadershipAccess(req.user) &&
-      (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)
-    ) {
-      return res.status(403).json({ error: 'Teacher can mark only own lessons' });
+    if (!Array.isArray(req.body.attendance)) {
+      return res.status(400).json({ error: 'Invalid attendance payload' });
+    }
+    const requestedLessonStatus = nullableText(req.body.lessonStatus) ?? 'conducted';
+    if (!['scheduled', 'conducted'].includes(String(requestedLessonStatus))) {
+      return res.status(400).json({ error: 'Invalid lesson status' });
     }
 
-    const items = Array.isArray(req.body.attendance) ? req.body.attendance : [];
-    const saved = [];
-    for (const item of items) {
-      const studentId = parseId(item.studentId);
-      if (!studentId) continue;
-      const student = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
-      if (!student || Number(student.groupId) !== Number(lesson.groupId)) {
-        return res.status(403).json({ error: 'Attendance can include only students from this lesson group' });
+    const normalizedItems: Array<Row & { studentId: number; status: 'present' | 'absent' }> = [];
+    const seenStudentIds = new Set<number>();
+    for (const item of req.body.attendance) {
+      const studentId = parseId(item?.studentId);
+      if (!studentId || !['present', 'absent'].includes(String(item?.status))) {
+        return res.status(400).json({ error: 'Invalid attendance item' });
       }
-      const status = item.status === 'present' ? 'present' : 'absent';
-      const result = await pool.query(
-        `INSERT INTO academy_attendance (lesson_id, student_id, status, project_url, note, marked_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (lesson_id, student_id)
-         DO UPDATE SET status = EXCLUDED.status, project_url = EXCLUDED.project_url, note = EXCLUDED.note, marked_by = EXCLUDED.marked_by, updated_at = NOW()
-         RETURNING *`,
-        [lessonId, studentId, status, nullableText(item.projectUrl), nullableText(item.note), req.user!.id],
-      );
-      saved.push(camelize(result.rows[0]));
+      if (seenStudentIds.has(studentId)) {
+        return res.status(400).json({ error: 'Duplicate attendance student' });
+      }
+      seenStudentIds.add(studentId);
+      normalizedItems.push({ ...item, studentId, status: item.status });
+    }
 
-      const recentAbsences = await query<{ status: string }>(
-        `SELECT COALESCE(a.status, 'absent') AS status
+    const result = await withTransaction(async () => {
+      const lesson = await queryOne(
+        `SELECT l.*, t.user_id AS teacher_user_id
          FROM academy_lessons l
-         LEFT JOIN academy_attendance a ON a.lesson_id = l.id AND a.student_id = $2
-         WHERE l.group_id = $1 AND l.status = 'conducted'
-         ORDER BY l.scheduled_at DESC
-         LIMIT 3`,
-        [lesson.groupId, studentId],
+         LEFT JOIN academy_teachers t ON t.id = l.teacher_id AND t.status = 'active'
+         WHERE l.id = $1
+         FOR UPDATE OF l`,
+        [lessonId],
       );
-      if (recentAbsences.length === 3 && recentAbsences.every((row) => row.status === 'absent')) {
-        await createTask('3 пропуска подряд: позвонить родителю', {
-          responsibleId: student?.managerId ?? req.user!.id,
-          entityType: 'student',
-          entityId: studentId,
-          deadlineAt: addDays(new Date(), 1) });
-        await createNotification(student?.managerId ?? req.user!.id, 'Риск по посещаемости', `${student?.studentName ?? 'Ученик'} пропустил 3 занятия подряд`, 'student', studentId);
+      if (!lesson) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
+      if (lesson.status === 'cancelled') {
+        throw Object.assign(new Error('cancelledLessonAttendanceNotAllowed'), { statusCode: 400 });
       }
-    }
+      if (
+        getAssignedWorkspaces(req.user).includes('teacher')
+        && !hasLeadershipAccess(req.user)
+        && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)
+      ) {
+        throw Object.assign(new Error('Teacher can mark only own lessons'), { statusCode: 403 });
+      }
 
-    const updatedLesson = await updateRow('academy_lessons', lessonId, {
-      status: nullableText(req.body.lessonStatus) ?? 'conducted' });
+      const groupStudents = await query(
+        `SELECT student.*
+         FROM academy_students student
+         WHERE COALESCE(student.enrolled_at, student.created_at) <= $2
+           AND COALESCE(
+             (
+               SELECT transfer.to_group_id
+               FROM academy_student_transfers transfer
+               WHERE transfer.student_id = student.id
+                 AND transfer.created_at <= $2
+               ORDER BY transfer.created_at DESC, transfer.id DESC
+               LIMIT 1
+             ),
+             (
+               SELECT first_transfer.from_group_id
+               FROM academy_student_transfers first_transfer
+               WHERE first_transfer.student_id = student.id
+               ORDER BY first_transfer.created_at, first_transfer.id
+               LIMIT 1
+             ),
+             student.group_id
+           ) = $1
+           AND COALESCE(
+             (
+               SELECT history.to_status
+               FROM academy_student_status_history history
+               WHERE history.student_id = student.id
+                 AND history.created_at <= $2
+               ORDER BY history.created_at DESC, history.id DESC
+               LIMIT 1
+             ),
+             'studying'
+           ) = 'studying'
+         ORDER BY student.id
+         FOR UPDATE OF student`,
+        [lesson.groupId, lesson.scheduledAt],
+      );
+      if (groupStudents.length > 0 && normalizedItems.length === 0) {
+        throw Object.assign(new Error('attendanceRequired'), { statusCode: 400 });
+      }
+      const studentsById = new Map(groupStudents.map((student) => [Number(student.id), student]));
+      if (normalizedItems.some((item) => !studentsById.has(item.studentId))) {
+        throw Object.assign(
+          new Error('Attendance can include only active students from this lesson group'),
+          { statusCode: 403 },
+        );
+      }
+      if (
+        requestedLessonStatus === 'conducted'
+        && normalizedItems.length !== groupStudents.length
+      ) {
+        throw Object.assign(new Error('attendanceIncomplete'), { statusCode: 409 });
+      }
 
-    const groupStudents = await query(
-      `SELECT * FROM academy_students WHERE group_id = $1 AND status = 'studying'`,
-      [lesson.groupId],
-    );
-    for (const student of groupStudents) {
-      await recalculateStudentMetrics(Number(student.id));
-    }
+      const saved: Row[] = [];
+      for (const item of normalizedItems) {
+        const rows = await query(
+          `INSERT INTO academy_attendance (lesson_id, student_id, status, project_url, note, marked_by)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (lesson_id, student_id)
+           DO UPDATE SET
+             status = EXCLUDED.status,
+             project_url = EXCLUDED.project_url,
+             note = EXCLUDED.note,
+             marked_by = EXCLUDED.marked_by,
+             updated_at = NOW()
+           RETURNING *`,
+          [
+            lessonId,
+            item.studentId,
+            item.status,
+            nullableText(item.projectUrl) ?? null,
+            nullableText(item.note) ?? null,
+            req.user!.id,
+          ],
+        );
+        saved.push(rows[0]);
+      }
 
-    if (updatedLesson?.status === 'conducted') {
+      const updatedLesson = await updateRow('academy_lessons', lessonId, {
+        status: requestedLessonStatus,
+      });
+      if (lesson.status !== updatedLesson?.status) {
+        await insertRow('academy_lesson_status_history', {
+          lessonId,
+          fromStatus: lesson.status ?? null,
+          toStatus: updatedLesson?.status ?? requestedLessonStatus,
+          changedBy: req.user!.id,
+          comment: nullableText(req.body.statusComment) ?? 'Статус изменён при сохранении посещаемости',
+        });
+      }
+      const absenceAlerts: Row[] = [];
+      if (requestedLessonStatus === 'conducted') {
+        for (const item of normalizedItems) {
+          if (item.status !== 'absent') continue;
+          const recentAbsences = await query<{ status: string }>(
+            `SELECT a.status
+             FROM academy_lessons l
+             JOIN academy_attendance a ON a.lesson_id = l.id AND a.student_id = $2
+             WHERE l.group_id = $1
+               AND l.status = 'conducted'
+               AND l.scheduled_at >= COALESCE(
+                 (
+                   SELECT MAX(transfer.created_at)
+                   FROM academy_student_transfers transfer
+                   WHERE transfer.student_id = $2 AND transfer.to_group_id = $1
+                 ),
+                 (
+                   SELECT COALESCE(student.enrolled_at, student.created_at)
+                   FROM academy_students student
+                   WHERE student.id = $2
+                 )
+               )
+             ORDER BY l.scheduled_at DESC
+             LIMIT 3`,
+            [lesson.groupId, item.studentId],
+          );
+          if (recentAbsences.length !== 3 || recentAbsences.some((row) => row.status !== 'absent')) continue;
+          const existingTask = await queryOne(
+            `SELECT id
+             FROM academy_tasks
+             WHERE entity_type = 'student'
+               AND entity_id = $1
+               AND title = '3 пропуска подряд: позвонить родителю'
+               AND status <> 'done'
+             LIMIT 1`,
+            [item.studentId],
+          );
+          if (existingTask) continue;
+          const student = studentsById.get(item.studentId)!;
+          await createTask('3 пропуска подряд: позвонить родителю', {
+            responsibleId: student.managerId ?? req.user!.id,
+            entityType: 'student',
+            entityId: item.studentId,
+            deadlineAt: addDays(new Date(), 1),
+          });
+          absenceAlerts.push(student);
+        }
+      }
+
       for (const student of groupStudents) {
-        await createOutbox(Number(student.age || 0) <= 10 ? 'whatsapp' : 'telegram', student.messenger || student.phone, 'Оцените сегодняшний урок 01 Academy: /survey', {
-          scheduledAt: addMinutes(new Date(lesson.scheduledAt), Number(lesson.durationMinutes || 120) + 30),
-          entityType: 'lesson',
-          entityId: lessonId });
+        await recalculateStudentMetrics(Number(student.id));
       }
-    }
 
-    res.json({ lesson: updatedLesson, attendance: saved });
-  } catch (error) {
+      if (lesson.status !== 'conducted' && updatedLesson?.status === 'conducted') {
+        for (const student of groupStudents) {
+          await createOutbox(
+            Number(student.studentAge || 0) <= 10 ? 'whatsapp' : 'telegram',
+            student.messenger || student.phone,
+            'Оцените сегодняшний урок 01 Academy: /survey',
+            {
+              scheduledAt: addMinutes(
+                new Date(lesson.scheduledAt),
+                Number(lesson.durationMinutes || 120) + 30,
+              ),
+              entityType: 'lesson',
+              entityId: lessonId,
+            },
+          );
+        }
+      }
+      return { lesson: updatedLesson, attendance: saved, absenceAlerts };
+    });
+
+    for (const student of result.absenceAlerts) {
+      await createNotification(
+        student.managerId ?? req.user!.id,
+        'Риск по посещаемости',
+        `${student.studentName ?? 'Ученик'} пропустил 3 занятия подряд`,
+        'student',
+        Number(student.id),
+      );
+    }
+    res.json({ lesson: result.lesson, attendance: result.attendance });
+  } catch (error: any) {
     logger.error('Failed to save attendance', { error });
-    res.status(500).json({ error: 'Failed to save attendance' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save attendance' });
   }
 });
 
@@ -4481,16 +5385,56 @@ router.post('/students/:id/transfer', async (req, res) => {
     const studentId = parseId(req.params.id);
     const toGroupId = parseId(req.body.toGroupId);
     if (!studentId || !toGroupId) return res.status(400).json({ error: 'Student and target group are required' });
-    await ensureGroupCapacity(toGroupId);
-    const oldStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
-    if (!oldStudent) return res.status(404).json({ error: 'Student not found' });
-    await insertRow('academy_student_transfers', {
-      studentId,
-      fromGroupId: oldStudent.groupId ?? null,
-      toGroupId,
-      reason: nullableText(req.body.reason) ?? null,
-      createdBy: req.user!.id });
-    const student = await updateRow('academy_students', studentId, { groupId: toGroupId });
+    const initialStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
+    if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+
+    const student = await withTransaction(async () => {
+      // Payments lock lead -> student -> group. Keep the same order here to
+      // avoid deadlocks between a payment and a simultaneous transfer.
+      if (initialStudent.leadId) {
+        await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId]);
+      }
+      const lockedStudent = await queryOne(
+        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+        [studentId],
+      );
+      if (!lockedStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      if (Number(lockedStudent.groupId) === Number(toGroupId)) return lockedStudent;
+
+      await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [toGroupId]);
+      const targetGroup = await validateEnrollmentGroup(toGroupId);
+      if (!targetGroup) {
+        throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      }
+
+      const updatedStudent = await updateRow('academy_students', studentId, {
+        groupId: toGroupId,
+        courseId: Number(targetGroup.courseId),
+        schoolId: Number(targetGroup.schoolId),
+      });
+      if (!updatedStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+
+      if (lockedStudent.leadId) {
+        await updateRow('academy_leads', Number(lockedStudent.leadId), {
+          enrolledGroupId: toGroupId,
+          courseId: Number(targetGroup.courseId),
+          schoolId: Number(targetGroup.schoolId),
+        });
+      }
+      await insertRow('academy_student_transfers', {
+        studentId,
+        fromGroupId: lockedStudent.groupId ?? null,
+        toGroupId,
+        reason: nullableText(req.body.reason) ?? null,
+        createdBy: req.user!.id,
+      });
+      await recalculateStudentMetrics(studentId);
+      return updatedStudent;
+    });
     res.json(student);
   } catch (error: any) {
     logger.error('Failed to transfer student', { error });
@@ -4511,26 +5455,62 @@ router.patch('/students/:id/status', async (req, res) => {
     if (['paused', 'expelled'].includes(status) && (!exitReason || !CHURN_REASONS.includes(exitReason as typeof CHURN_REASONS[number]))) {
       return res.status(400).json({ error: 'Churn reason is required for paused or expelled students' });
     }
-    const current = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [id]);
-    if (!current) return res.status(404).json({ error: 'Student not found' });
-    const student = await updateRow('academy_students', id, {
-      status,
-      exitReason: ['paused', 'expelled'].includes(status) ? exitReason : null,
-    });
-    if (current.status !== status) {
-      await insertRow('academy_student_status_history', {
-        studentId: id,
-        fromStatus: current.status,
-        toStatus: status,
-        changedBy: req.user!.id,
-        comment: nullableText(req.body.comment) ?? null,
+    const { current, student } = await withTransaction(async () => {
+      const lockedStudent = await queryOne(
+        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (!lockedStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      if (getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
+        const teacherId = await resolveTeacherId(req.user!.id);
+        const ownsStudent = teacherId && lockedStudent.groupId
+          ? await queryOne(
+            `SELECT id FROM academy_groups WHERE id = $1 AND teacher_id = $2`,
+            [lockedStudent.groupId, teacherId],
+          )
+          : null;
+        if (!ownsStudent) {
+          throw Object.assign(
+            new Error('Teacher can update only own students'),
+            { statusCode: 403 },
+          );
+        }
+      }
+      if (status === 'studying' && lockedStudent.status !== 'studying') {
+        if (!lockedStudent.groupId) {
+          throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
+        }
+        await queryOne(
+          `SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`,
+          [lockedStudent.groupId],
+        );
+        await validateEnrollmentGroup(Number(lockedStudent.groupId));
+      }
+      const updatedStudent = await updateRow('academy_students', id, {
+        status,
+        exitReason: ['paused', 'expelled'].includes(status) ? exitReason : null,
       });
-    }
+      if (!updatedStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      if (lockedStudent.status !== status) {
+        await insertRow('academy_student_status_history', {
+          studentId: id,
+          fromStatus: lockedStudent.status,
+          toStatus: status,
+          changedBy: req.user!.id,
+          comment: nullableText(req.body.comment) ?? null,
+        });
+      }
+      return { current: lockedStudent, student: updatedStudent };
+    });
     await createAudit(req, 'UPDATE_ACADEMY_STUDENT_STATUS', 'academy_student', id, student, current);
     res.json(student);
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Failed to update student status', { error });
-    res.status(500).json({ error: 'Failed to update student status' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update student status' });
   }
 });
 
@@ -4540,11 +5520,50 @@ router.post('/payments', async (req, res) => {
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
     const studentId = parseId(req.body.studentId);
+    const requestedPaymentId = req.body.paymentId === undefined
+      ? null
+      : parseId(req.body.paymentId);
+    if (req.body.paymentId !== undefined && !requestedPaymentId) {
+      return res.status(400).json({ error: 'Invalid payment id' });
+    }
+    const requestedGroupId = req.body.groupId === undefined || req.body.groupId === null || req.body.groupId === ''
+      ? null
+      : parseId(req.body.groupId);
+    if (req.body.groupId !== undefined && req.body.groupId !== null && req.body.groupId !== '' && !requestedGroupId) {
+      return res.status(400).json({ error: 'Invalid group id' });
+    }
     if (!amountUzs) return res.status(400).json({ error: 'paymentAmountRequired' });
     if (!leadId && !studentId) return res.status(400).json({ error: 'paymentPartyRequired' });
     const status = nullableText(req.body.status) ?? 'paid';
-    if (!PAYMENT_STATUSES.some((item) => item.code === status)) {
+    if (!['paid', 'pending'].includes(status)) {
       return res.status(400).json({ error: 'Invalid payment status' });
+    }
+    const paymentType = nullableText(req.body.type) ?? 'full';
+    const paymentMethod = nullableText(req.body.method) ?? 'transfer';
+    const paymentDiscount = nullableText(req.body.discount) ?? 'none';
+    if (!PAYMENT_TYPES.includes(paymentType as typeof PAYMENT_TYPES[number])) {
+      return res.status(400).json({ error: 'Invalid payment type' });
+    }
+    if (!PAYMENT_METHODS.includes(paymentMethod as typeof PAYMENT_METHODS[number])) {
+      return res.status(400).json({ error: 'Invalid payment method' });
+    }
+    if (!PAYMENT_DISCOUNTS.includes(paymentDiscount as typeof PAYMENT_DISCOUNTS[number])) {
+      return res.status(400).json({ error: 'Invalid payment discount' });
+    }
+
+    const requestedPaidAt = parseOptionalDate(req.body.paidAt, 'paidAt');
+    const requestedPaidUntil = parseOptionalDate(req.body.paidUntil, 'paidUntil');
+    const requestedDueAt = parseOptionalDate(req.body.dueAt, 'dueAt');
+    const paymentPeriod = nullableText(req.body.period) ?? 'month_1';
+    const paidAt = status === 'paid' ? requestedPaidAt ?? new Date() : requestedPaidAt;
+    const paidUntil = requestedPaidUntil
+      ?? (status === 'paid' && paidAt instanceof Date ? addDays(paidAt, 30) : null);
+    if (
+      paidAt instanceof Date
+      && paidUntil instanceof Date
+      && paidUntil.getTime() < paidAt.getTime()
+    ) {
+      return res.status(400).json({ error: 'paidUntilBeforePaidAt' });
     }
 
     const result = await withTransaction(async () => {
@@ -4553,6 +5572,9 @@ router.post('/payments', async (req, res) => {
         : undefined;
       if (leadId && !lead) {
         throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (lead?.isArchived) {
+        throw Object.assign(new Error('archivedLeadMustBeRestoredBeforePayment'), { statusCode: 409 });
       }
 
       const existingStudent = studentId
@@ -4578,36 +5600,100 @@ router.post('/payments', async (req, res) => {
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [lead.enrolledGroupId]);
       }
 
-      const paidAt = status === 'paid' ? nullableDate(req.body.paidAt) ?? new Date() : nullableDate(req.body.paidAt);
-      const payment = await insertRow('academy_payments', {
-        leadId,
-        studentId: existingStudent?.id ?? studentId,
-        groupId: existingStudent?.groupId ?? lead?.enrolledGroupId ?? parseId(req.body.groupId),
+      const paymentLeadId = leadId ?? (existingStudent?.leadId ? Number(existingStudent.leadId) : null);
+      const resolvedStudentId = existingStudent?.id ?? studentId ?? null;
+      let pendingPayment: Row | undefined;
+      if (status === 'paid') {
+        if (requestedPaymentId) {
+          pendingPayment = await queryOne(
+            `SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE`,
+            [requestedPaymentId],
+          );
+          if (!pendingPayment) {
+            throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
+          }
+          if (!['pending', 'overdue'].includes(String(pendingPayment.status))) {
+            throw Object.assign(new Error('paymentAlreadyFinalized'), { statusCode: 409 });
+          }
+          const sameLead = !pendingPayment.leadId
+            || Number(pendingPayment.leadId) === Number(paymentLeadId);
+          const sameStudent = !pendingPayment.studentId
+            || Number(pendingPayment.studentId) === Number(resolvedStudentId);
+          if (!sameLead || !sameStudent) {
+            throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+          }
+        } else {
+          pendingPayment = await queryOne(
+            `SELECT *
+             FROM academy_payments
+             WHERE status IN ('pending', 'overdue')
+               AND COALESCE(period, '') = $1
+               AND (
+                 ($2::int IS NOT NULL AND lead_id = $2)
+                 OR ($3::int IS NOT NULL AND student_id = $3)
+               )
+             ORDER BY due_at NULLS LAST, created_at, id
+             LIMIT 1
+             FOR UPDATE`,
+            [paymentPeriod, paymentLeadId, resolvedStudentId],
+          );
+        }
+      }
+
+      const paymentValues = {
+        leadId: paymentLeadId,
+        studentId: resolvedStudentId,
+        groupId: existingStudent?.groupId ?? lead?.enrolledGroupId ?? requestedGroupId,
         amountUzs,
-        type: nullableText(req.body.type) ?? 'full',
-        method: nullableText(req.body.method) ?? 'transfer',
+        type: paymentType,
+        method: paymentMethod,
         paidAt,
-        period: nullableText(req.body.period) ?? 'month_1',
-        discount: nullableText(req.body.discount) ?? 'none',
+        period: paymentPeriod,
+        discount: paymentDiscount,
         status,
-        dueAt: nullableDate(req.body.dueAt),
-        paidUntil: nullableDate(req.body.paidUntil) ?? (status === 'paid' ? addDays(new Date(), 30) : null),
+        dueAt: requestedDueAt,
+        paidUntil,
         comment: nullableText(req.body.comment),
         receiptUrl: nullableText(req.body.receiptUrl),
-        confirmedBy: status === 'paid' ? req.user!.id : null });
+        confirmedBy: status === 'paid' ? req.user!.id : null,
+      };
+      const payment = pendingPayment
+        ? await updateRow('academy_payments', Number(pendingPayment.id), paymentValues)
+        : await insertRow('academy_payments', paymentValues);
+      if (!payment) throw Object.assign(new Error('Failed to save payment'), { statusCode: 500 });
+
+      if (pendingPayment) {
+        await query(
+          `UPDATE academy_tasks
+           SET status = 'done', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
+           WHERE entity_type = 'payment'
+             AND entity_id = $1
+             AND status <> 'done'`,
+          [pendingPayment.id],
+        );
+      }
 
       let student = existingStudent ?? null;
       if (status === 'paid' && leadId) {
         student = await createStudentFromLead(req, leadId, payment.id);
       }
-      const resolvedStudentId = student?.id ?? studentId;
-      if (status === 'paid' && resolvedStudentId) {
-        await updateRow('academy_students', Number(resolvedStudentId), {
-          nextPaymentAt: payment.paidUntil ?? addDays(new Date(), 30) });
-        await applyReferralRewards(req, Number(resolvedStudentId), leadId, payment.id);
+      const paidStudentId = student?.id ?? studentId;
+      if (status === 'paid' && paidStudentId) {
+        await advanceStudentNextPaymentAt(
+          Number(paidStudentId),
+          payment.paidUntil ?? paidUntil,
+        );
+        await applyReferralRewards(req, Number(paidStudentId), paymentLeadId, payment.id);
       }
 
-      await createAudit(req, 'CREATE_ACADEMY_PAYMENT', 'academy_payment', payment.id, payment);
+      await createAudit(
+        req,
+        pendingPayment ? 'CONFIRM_ACADEMY_PAYMENT' : 'CREATE_ACADEMY_PAYMENT',
+        'academy_payment',
+        payment.id,
+        payment,
+        pendingPayment,
+      );
       return { payment, student };
     });
 
@@ -4619,91 +5705,244 @@ router.post('/payments', async (req, res) => {
 });
 
 router.post('/surveys/lesson', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
   try {
     const score = Number(req.body.score);
-    if (!Number.isFinite(score) || score < 1 || score > 5) return res.status(400).json({ error: 'Score must be from 1 to 5' });
+    if (!Number.isInteger(score) || score < 1 || score > 5) return res.status(400).json({ error: 'Score must be from 1 to 5' });
     const lessonId = parseId(req.body.lessonId);
     const studentId = parseId(req.body.studentId);
     if (!lessonId || !studentId) return res.status(400).json({ error: 'Lesson and student are required' });
-    const lesson = await queryOne(`SELECT * FROM academy_lessons WHERE id = $1`, [lessonId]);
-    const survey = await insertRow('academy_lesson_surveys', {
-      studentId,
-      lessonId,
-      groupId: lesson?.groupId ?? parseId(req.body.groupId),
-      teacherId: lesson?.teacherId ?? parseId(req.body.teacherId),
-      courseId: lesson?.courseId ?? parseId(req.body.courseId),
-      score,
-      liked: nullableText(req.body.liked),
-      improve: nullableText(req.body.improve) });
-    await recalculateStudentMetrics(studentId);
-    if (score < 3) {
-      const student = await queryOne(`SELECT manager_id FROM academy_students WHERE id = $1`, [studentId]);
-      const leader = await queryOne<{ id: string }>(
-        `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`);
-      const responsibleId = Number(student?.managerId ?? leader?.id ?? req.user!.id);
-      const task = await createTask('Оценка урока ниже 3 — связаться с учеником', {
-        responsibleId,
-        description: `Ученик поставил ${score}/5. Свяжитесь и узнайте причину.`,
-        entityType: 'lesson_survey',
-        entityId: Number(survey.id),
-        deadlineAt: addMinutes(new Date(), 12 * 60) });
-      if (student?.managerId) {
-        await createNotification(Number(student.managerId), 'Низкая оценка урока', `Оценка ${score}/5 — задача закрывается за 12 часов.`, 'academy_task', Number(task.id));
+    const result = await withTransaction(async () => {
+      await query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`lesson-survey:${lessonId}:${studentId}`]);
+      const lesson = await queryOne(
+        `SELECT l.*, t.user_id AS teacher_user_id
+         FROM academy_lessons l
+         LEFT JOIN academy_teachers t ON t.id = l.teacher_id
+         WHERE l.id = $1
+         FOR UPDATE OF l`,
+        [lessonId],
+      );
+      if (!lesson) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
+      const student = await queryOne(
+        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+        [studentId],
+      );
+      if (!student) throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      const membership = await queryOne<{ belongsToGroup: boolean }>(
+        `SELECT COALESCE(
+           (
+             SELECT transfer.to_group_id
+             FROM academy_student_transfers transfer
+             WHERE transfer.student_id = $1
+               AND transfer.created_at <= $3
+             ORDER BY transfer.created_at DESC, transfer.id DESC
+             LIMIT 1
+           ),
+           (
+             SELECT first_transfer.from_group_id
+             FROM academy_student_transfers first_transfer
+             WHERE first_transfer.student_id = $1
+             ORDER BY first_transfer.created_at, first_transfer.id
+             LIMIT 1
+           ),
+           (SELECT group_id FROM academy_students WHERE id = $1)
+         ) = $2 AS belongs_to_group`,
+        [studentId, lesson.groupId, lesson.scheduledAt],
+      );
+      if (membership && membership.belongsToGroup !== true) {
+        throw Object.assign(new Error('Student does not belong to this lesson group'), { statusCode: 400 });
       }
+      if (
+        !hasLeadershipAccess(req.user)
+        && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== Number(req.user!.id))
+      ) {
+        throw Object.assign(new Error('Teacher can submit surveys only for own lessons'), { statusCode: 403 });
+      }
+
+      const oldSurvey = await queryOne(
+        `SELECT *
+         FROM academy_lesson_surveys
+         WHERE lesson_id = $1 AND student_id = $2
+         ORDER BY id DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [lessonId, studentId],
+      );
+      const values = {
+        groupId: lesson.groupId,
+        teacherId: lesson.teacherId,
+        courseId: lesson.courseId,
+        score,
+        liked: nullableText(req.body.liked),
+        improve: nullableText(req.body.improve),
+      };
+      const survey = oldSurvey
+        ? await updateRow('academy_lesson_surveys', Number(oldSurvey.id), values)
+        : await insertRow('academy_lesson_surveys', { studentId, lessonId, ...values });
+      if (!survey) throw Object.assign(new Error('Failed to save lesson survey'), { statusCode: 500 });
+      await recalculateStudentMetrics(studentId);
+
+      let notification: { userId: number; taskId: number } | null = null;
+      if (score < 3) {
+        const leader = await queryOne<{ id: string }>(
+          `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`,
+        );
+        const responsibleId = Number(student.managerId ?? leader?.id ?? req.user!.id);
+        const taskResult = await createTaskOnce('Оценка урока ниже 3 — связаться с учеником', {
+          responsibleId,
+          description: `Ученик поставил ${score}/5. Свяжитесь и узнайте причину.`,
+          entityType: 'lesson_survey',
+          entityId: Number(survey.id),
+          deadlineAt: addMinutes(new Date(), 12 * 60),
+        });
+        if (taskResult.created && student.managerId) {
+          notification = { userId: Number(student.managerId), taskId: Number(taskResult.task.id) };
+        }
+      }
+      return { survey, oldSurvey, created: !oldSurvey, notification };
+    });
+
+    if (result.notification) {
+      await createNotification(
+        result.notification.userId,
+        'Низкая оценка урока',
+        `Оценка ${score}/5 — задача закрывается за 12 часов.`,
+        'academy_task',
+        result.notification.taskId,
+      );
     }
-    res.status(201).json(survey);
-  } catch (error) {
+    await createAudit(
+      req,
+      result.created ? 'CREATE_ACADEMY_LESSON_SURVEY' : 'UPDATE_ACADEMY_LESSON_SURVEY',
+      'academy_lesson_survey',
+      Number(result.survey.id),
+      result.survey,
+      result.oldSurvey,
+    );
+    res.status(result.created ? 201 : 200).json(result.survey);
+  } catch (error: any) {
     logger.error('Failed to save lesson survey', { error });
-    res.status(500).json({ error: 'Failed to save lesson survey' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save lesson survey' });
   }
 });
 
 router.post('/surveys/parent', async (req, res) => {
+  if (!ensureSalesAccess(req, res)) return;
   try {
     const studentId = parseId(req.body.studentId);
     if (!studentId) return res.status(400).json({ error: 'Student is required' });
-    const student = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-    const period = nullableText(req.body.period) ?? new Date().toISOString().slice(0, 7);
-    const survey = await insertRow('academy_parent_surveys', {
-      studentId,
-      groupId: student.groupId ?? null,
-      courseId: student.courseId ?? null,
-      progressAnswer: nullableText(req.body.progressAnswer),
-      joyAnswer: nullableText(req.body.joyAnswer),
-      continueAnswer: nullableText(req.body.continueAnswer),
-      npsScore: toIntegerOrNull(req.body.npsScore),
-      comment: nullableText(req.body.comment),
-      period });
-    await updateRow('academy_students', studentId, { parentFeedback: nullableText(req.body.comment) });
-    const npsScore = Number(survey.npsScore);
-    if (Number.isFinite(npsScore) && npsScore <= 6) {
-      const leader = await queryOne<{ id: string }>(
-        `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`);
-      const responsibleId = Number(student.managerId ?? leader?.id ?? req.user!.id);
-      const task = await createTask('Низкий NPS родителя — связаться с семьёй', {
-        responsibleId,
-        description: `Родитель поставил NPS ${npsScore}/10. Уточните причину и зафиксируйте решение.`,
-        entityType: 'parent_survey',
-        entityId: Number(survey.id),
-        deadlineAt: addMinutes(new Date(), 12 * 60),
-      });
-      if (student.managerId) {
-        await createNotification(Number(student.managerId), 'Низкий NPS родителя', `Создана задача со сроком 12 часов.`, 'academy_task', Number(task.id));
+    const rawNpsScore = req.body.npsScore;
+    const npsScore = rawNpsScore === undefined || rawNpsScore === null || rawNpsScore === ''
+      ? null
+      : Number(rawNpsScore);
+    if (npsScore !== null && (!Number.isInteger(npsScore) || npsScore < 0 || npsScore > 10)) {
+      return res.status(400).json({ error: 'NPS score must be from 0 to 10' });
+    }
+    let period = nullableText(req.body.period);
+    if (!period) {
+      const periodRow = await queryOne<{ period: string }>(
+        `SELECT to_char(NOW() AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM') AS period`,
+      );
+      period = periodRow?.period;
+    }
+    if (!period || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+      return res.status(400).json({ error: 'Invalid survey period' });
+    }
+
+    const result = await withTransaction(async () => {
+      await query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`parent-survey:${studentId}:${period}`]);
+      const student = await queryOne(
+        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+        [studentId],
+      );
+      if (!student) throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      if (
+        !hasLeadershipAccess(req.user)
+        && Number(student.managerId) !== Number(req.user!.id)
+      ) {
+        throw Object.assign(new Error('Sales employee can submit surveys only for own students'), { statusCode: 403 });
       }
+
+      const oldSurvey = await queryOne(
+        `SELECT *
+         FROM academy_parent_surveys
+         WHERE student_id = $1 AND period = $2
+         ORDER BY id DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [studentId, period],
+      );
+      const values = {
+        groupId: student.groupId ?? null,
+        courseId: student.courseId ?? null,
+        progressAnswer: nullableText(req.body.progressAnswer),
+        joyAnswer: nullableText(req.body.joyAnswer),
+        continueAnswer: nullableText(req.body.continueAnswer),
+        npsScore,
+        comment: nullableText(req.body.comment),
+        period,
+      };
+      const survey = oldSurvey
+        ? await updateRow('academy_parent_surveys', Number(oldSurvey.id), values)
+        : await insertRow('academy_parent_surveys', { studentId, ...values });
+      if (!survey) throw Object.assign(new Error('Failed to save parent survey'), { statusCode: 500 });
+      await updateRow('academy_students', studentId, { parentFeedback: values.comment });
+
+      const notifications: Array<{ userId: number; taskId: number; title: string; message: string }> = [];
+      const responsibleId = Number(student.managerId ?? req.user!.id);
+      if (npsScore !== null && npsScore <= 6) {
+        const leader = await queryOne<{ id: string }>(
+          `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`,
+        );
+        const lowNpsTask = await createTaskOnce('Низкий NPS родителя — связаться с семьёй', {
+          responsibleId: Number(student.managerId ?? leader?.id ?? req.user!.id),
+          description: `Родитель поставил NPS ${npsScore}/10. Уточните причину и зафиксируйте решение.`,
+          entityType: 'parent_survey',
+          entityId: Number(survey.id),
+          deadlineAt: addMinutes(new Date(), 12 * 60),
+        });
+        if (lowNpsTask.created && student.managerId) {
+          notifications.push({
+            userId: Number(student.managerId),
+            taskId: Number(lowNpsTask.task.id),
+            title: 'Низкий NPS родителя',
+            message: 'Создана задача со сроком 12 часов.',
+          });
+        }
+      }
+      if (['Не уверен', 'Нет', 'not_sure', 'no'].includes(String(req.body.continueAnswer))) {
+        await createTaskOnce('Родитель сомневается в продолжении', {
+          responsibleId,
+          description: 'Позвонить и узнать причину.',
+          entityType: 'parent_survey',
+          entityId: Number(survey.id),
+          deadlineAt: addDays(new Date(), 1),
+        });
+      }
+      return { survey, oldSurvey, created: !oldSurvey, notifications };
+    });
+
+    for (const notification of result.notifications) {
+      await createNotification(
+        notification.userId,
+        notification.title,
+        notification.message,
+        'academy_task',
+        notification.taskId,
+      );
     }
-    if (['Не уверен', 'Нет', 'not_sure', 'no'].includes(String(req.body.continueAnswer))) {
-      await createTask('Родитель сомневается в продолжении', {
-        responsibleId: student.managerId ?? req.user!.id,
-        description: 'Позвонить и узнать причину.',
-        entityType: 'student',
-        entityId: studentId,
-        deadlineAt: addDays(new Date(), 1) });
-    }
-    res.status(201).json(survey);
-  } catch (error) {
+    await createAudit(
+      req,
+      result.created ? 'CREATE_ACADEMY_PARENT_SURVEY' : 'UPDATE_ACADEMY_PARENT_SURVEY',
+      'academy_parent_survey',
+      Number(result.survey.id),
+      result.survey,
+      result.oldSurvey,
+    );
+    res.status(result.created ? 201 : 200).json(result.survey);
+  } catch (error: any) {
     logger.error('Failed to save parent survey', { error });
-    res.status(500).json({ error: 'Failed to save parent survey' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save parent survey' });
   }
 });
 
@@ -4781,101 +6020,10 @@ router.post('/integrations/:provider/test', async (req, res) => {
 router.post('/automations/run', async (req, res) => {
   if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
   try {
-    const now = new Date();
-    const actions: string[] = [];
-
-    const staleLeads = await query(
-      `SELECT * FROM academy_leads
-       WHERE status_code <> 'not_now'
-         AND status_code <> 'paid'
-         AND COALESCE(is_archived, false) = false
-         AND updated_at < NOW() - INTERVAL '14 days'`,
-      [],
-    );
-
-    for (const lead of staleLeads) {
-      const updated = await updateRow('academy_leads', lead.id, {
-        statusCode: 'not_now',
-        warmMovedAt: now,
-        warmReason: 'Нет ответа 14+ дней' });
-      await createStageHistory(lead.id, lead.statusCode, 'not_now', req.user!.id, 'Автоматический перенос: нет ответа 14+ дней');
-      actions.push(`lead:${lead.id}:not_now`);
-      if (updated?.managerId) {
-        await createTask('Лид автоматически перенесён в тёплую базу', {
-          responsibleId: updated.managerId,
-          entityType: 'lead',
-          entityId: lead.id,
-          deadlineAt: addDays(now, 1) });
-      }
-    }
-
-    const renewalPayments = await query(
-      `SELECT p.*, s.manager_id, s.phone, s.messenger, s.student_name
-       FROM academy_payments p
-       LEFT JOIN academy_students s ON s.id = p.student_id
-       WHERE p.status = 'paid'
-         AND p.paid_until BETWEEN NOW() AND NOW() + INTERVAL '5 days'`,
-      [],
-    );
-
-    for (const payment of renewalPayments) {
-      await createTask('Напоминание о продлении оплаты', {
-        responsibleId: payment.managerId ?? req.user!.id,
-        description: 'Позвонить и уточнить продление.',
-        entityType: 'payment',
-        entityId: payment.id,
-        deadlineAt: addDays(now, 1) });
-      await createOutbox('whatsapp', payment.phone || payment.messenger || 'unknown', `01 Academy: оплаченный период ${payment.studentName ?? 'ученика'} скоро заканчивается.`, {
-        scheduledAt: new Date(payment.paidUntil),
-        entityType: 'payment',
-        entityId: payment.id });
-      actions.push(`payment:${payment.id}:renewal_reminder`);
-    }
-
-    const overduePayments = await query(
-      `SELECT p.*, s.manager_id
-       FROM academy_payments p
-       LEFT JOIN academy_students s ON s.id = p.student_id
-       WHERE p.status <> 'paid'
-         AND p.due_at < NOW() - INTERVAL '3 days'`,
-      [],
-    );
-
-    for (const payment of overduePayments) {
-      await updateRow('academy_payments', payment.id, { status: 'overdue' });
-      await createTask('Просрочена оплата', {
-        responsibleId: payment.managerId ?? req.user!.id,
-        entityType: 'payment',
-        entityId: payment.id,
-        deadlineAt: addDays(now, 1) });
-      actions.push(`payment:${payment.id}:overdue`);
-    }
-
-    const warmLeads = await query(
-      `SELECT * FROM academy_leads
-       WHERE status_code = 'not_now'
-         AND no_mailing = false
-         AND COALESCE(is_archived, false) = false`,
-      [],
-    );
-
-    for (const lead of warmLeads) {
-      await createOutbox('telegram', lead.messenger || lead.phone, '01 Academy: результат недели и новые проекты учеников. Хотите прийти на демо?', {
-        scheduledAt: now,
-        entityType: 'lead',
-        entityId: lead.id });
-      await createOutbox('telegram', lead.messenger || lead.phone, '01 Academy приглашает на демо-урок. Подберём курс по возрасту.', {
-        scheduledAt: addDays(now, 14),
-        entityType: 'lead',
-        entityId: lead.id });
-      await createOutbox('whatsapp', lead.phone, 'Специальное предложение 01 Academy на этот месяц.', {
-        scheduledAt: addDays(now, 30),
-        entityType: 'lead',
-        entityId: lead.id });
-      actions.push(`lead:${lead.id}:warm_mailings`);
-    }
-
-    await logIntegration('academy_automation', 'internal', 'completed', { actions });
+    // Manual and scheduled runs must share the same locking/idempotency rules.
+    // Keeping a second implementation here previously produced duplicate tasks
+    // and mailings that the scheduled worker correctly avoided.
+    const actions = await runAutomations(req.user!.id);
     res.json({ ok: true, actions });
   } catch (error) {
     logger.error('Failed to run academy automations', { error });
@@ -4932,6 +6080,215 @@ router.all(
   },
 );
 
+const parseCourseWithTeachersPayload = (body: Row) => {
+  const name = nullableText(body.name);
+  const slug = nullableText(body.slug);
+  const ageCategory = nullableText(body.ageCategory);
+  const description = nullableText(body.description) ?? null;
+  const basePriceUzs = Number(body.basePriceUzs);
+  if (!name || name.length > 255) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  if (!slug || slug.length > 100 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  if (!ageCategory || ageCategory.length > 100) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  if (!Number.isSafeInteger(basePriceUzs) || basePriceUzs < 0 || basePriceUzs > 2_147_483_647) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  if (typeof body.isActive !== 'boolean') {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  if (!Array.isArray(body.teacherIds) || body.teacherIds.length > 1_000) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  const parsedTeacherIds = body.teacherIds.map(parseId);
+  if (parsedTeacherIds.some((id) => !id)) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  const teacherIds = [...new Set(parsedTeacherIds as number[])].sort((left, right) => left - right);
+  return {
+    courseValues: { name, slug, ageCategory, description, basePriceUzs, isActive: body.isActive },
+    teacherIds,
+  };
+};
+
+const readTeacherCourseIds = (value: unknown): number[] => {
+  let raw = value;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw
+    .map(Number)
+    .filter((id) => Number.isSafeInteger(id) && id > 0))]
+    .sort((left, right) => left - right);
+};
+
+const syncCourseTeacherAssignments = async (courseId: number, selectedTeacherIds: number[]) => {
+  const teachers = await query(
+    `SELECT * FROM academy_teachers ORDER BY id FOR UPDATE`,
+  );
+  const teacherIds = new Set(teachers.map((teacher) => Number(teacher.id)));
+  if (selectedTeacherIds.some((teacherId) => !teacherIds.has(teacherId))) {
+    throw Object.assign(new Error('One or more teachers were not found'), { statusCode: 400 });
+  }
+  const selected = new Set(selectedTeacherIds);
+  for (const teacher of teachers) {
+    const previousIds = readTeacherCourseIds(teacher.courseIds);
+    const nextIds = previousIds.filter((id) => id !== courseId);
+    if (selected.has(Number(teacher.id))) nextIds.push(courseId);
+    nextIds.sort((left, right) => left - right);
+    if (
+      previousIds.length !== nextIds.length
+      || previousIds.some((id, index) => id !== nextIds[index])
+    ) {
+      await updateRow('academy_teachers', Number(teacher.id), { courseIds: nextIds });
+    }
+  }
+};
+
+const saveCourseWithTeachers = async (req: any, courseId?: number) => {
+  const { courseValues, teacherIds } = parseCourseWithTeachersPayload(req.body ?? {});
+  return withTransaction(async () => {
+    const oldCourse = courseId
+      ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1 FOR UPDATE`, [courseId])
+      : null;
+    if (courseId && !oldCourse) {
+      throw Object.assign(new Error('courses not found'), { statusCode: 404 });
+    }
+    if (courseId && oldCourse?.isActive !== false && courseValues.isActive === false) {
+      const activeGroup = await queryOne(
+        `SELECT id
+         FROM academy_groups
+         WHERE course_id = $1 AND status IN ('open', 'in_progress')
+         LIMIT 1
+         FOR SHARE`,
+        [courseId],
+      );
+      if (activeGroup) {
+        throw Object.assign(new Error('courseHasActiveGroups'), { statusCode: 409 });
+      }
+    }
+    const course = courseId
+      ? await updateRow('academy_courses', courseId, courseValues)
+      : await insertRow('academy_courses', courseValues);
+    if (!course) throw Object.assign(new Error('Failed to save courses'), { statusCode: 500 });
+    await syncCourseTeacherAssignments(Number(course.id), teacherIds);
+    return { course, oldCourse };
+  });
+};
+
+router.post('/courses/with-teachers', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const result = await saveCourseWithTeachers(req);
+    await createAudit(req, 'CREATE_ACADEMY_COURSE_WITH_TEACHERS', 'academy_course', Number(result.course.id), result.course);
+    res.status(201).json(result.course);
+  } catch (error: any) {
+    logger.error('Failed to create course with teacher assignments', { error });
+    const duplicateSlug = error?.code === '23505' && String(error?.constraint ?? '').includes('academy_courses_slug');
+    res.status(duplicateSlug ? 409 : error.statusCode || 500).json({
+      error: duplicateSlug ? 'courseSlugAlreadyExists' : error.message || 'Failed to create courses',
+    });
+  }
+});
+
+router.patch('/courses/:id/with-teachers', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  const courseId = parseId(req.params.id);
+  if (!courseId) return res.status(400).json({ error: 'Invalid courses id' });
+  try {
+    const result = await saveCourseWithTeachers(req, courseId);
+    await createAudit(
+      req,
+      'UPDATE_ACADEMY_COURSE_WITH_TEACHERS',
+      'academy_course',
+      courseId,
+      result.course,
+      result.oldCourse,
+    );
+    res.json(result.course);
+  } catch (error: any) {
+    logger.error('Failed to update course with teacher assignments', { error, courseId });
+    const duplicateSlug = error?.code === '23505' && String(error?.constraint ?? '').includes('academy_courses_slug');
+    res.status(duplicateSlug ? 409 : error.statusCode || 500).json({
+      error: duplicateSlug ? 'courseSlugAlreadyExists' : error.message || 'Failed to update courses',
+    });
+  }
+});
+
+router.delete('/courses/:id', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  const courseId = parseId(req.params.id);
+  if (!courseId) return res.status(400).json({ error: 'Invalid courses id' });
+  try {
+    const oldCourse = await withTransaction(async () => {
+      const course = await queryOne(`SELECT * FROM academy_courses WHERE id = $1 FOR UPDATE`, [courseId]);
+      if (!course) throw Object.assign(new Error('courses not found'), { statusCode: 404 });
+      await syncCourseTeacherAssignments(courseId, []);
+      await query(`DELETE FROM academy_courses WHERE id = $1`, [courseId]);
+      return course;
+    });
+    await createAudit(req, 'DELETE_ACADEMY_COURSE', 'academy_course', courseId, undefined, oldCourse);
+    res.json({ ok: true });
+  } catch (error: any) {
+    logger.error('Failed to delete course', { error, courseId });
+    const isForeignKeyConflict = error?.code === '23503';
+    res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
+      error: isForeignKeyConflict ? 'resourceInUse' : error.message || 'Failed to delete courses',
+    });
+  }
+});
+
+router.put('/pipeline-statuses/reorder', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    if (!Array.isArray(req.body.orderedStatusIds) || req.body.orderedStatusIds.length === 0) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    const parsedIds = req.body.orderedStatusIds.map(parseId);
+    if (parsedIds.some((id: number | null) => !id) || new Set(parsedIds).size !== parsedIds.length) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    const orderedStatusIds = parsedIds as number[];
+    const statuses = await withTransaction(async () => {
+      const locked = await query(
+        `SELECT * FROM academy_lead_statuses ORDER BY id FOR UPDATE`,
+      );
+      const actualIds = new Set(locked.map((status) => Number(status.id)));
+      if (
+        actualIds.size !== orderedStatusIds.length
+        || orderedStatusIds.some((statusId) => !actualIds.has(statusId))
+      ) {
+        throw Object.assign(new Error('pipelineConfigurationChanged'), { statusCode: 409 });
+      }
+      await query(
+        `UPDATE academy_lead_statuses AS status
+         SET sort_order = (ordered.position * 10)::int,
+             updated_at = NOW()
+         FROM UNNEST($1::int[]) WITH ORDINALITY AS ordered(id, position)
+         WHERE status.id = ordered.id`,
+        [orderedStatusIds],
+      );
+      return query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order, id`);
+    });
+    await createAudit(req, 'REORDER_ACADEMY_LEAD_STATUSES', 'academy_lead_statuses', 0, {
+      orderedStatusIds,
+    });
+    res.json(statuses);
+  } catch (error: any) {
+    logger.error('Failed to reorder pipeline statuses', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to reorder pipeline statuses' });
+  }
+});
+
 router.get('/pipeline-statuses/:id/usage', async (req, res) => {
   if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
@@ -4965,48 +6322,88 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
     const targetStatusId = parseId(req.body.targetStatusId);
     if (!id) return res.status(400).json({ error: 'Invalid pipeline stage id' });
     if (!targetStatusId) return res.status(400).json({ error: 'targetPipelineStageRequired' });
+    if (Number(targetStatusId) === Number(id)) {
+      return res.status(400).json({ error: 'targetPipelineStageMustDiffer' });
+    }
 
     const result = await withTransaction(async () => {
-      const source = await queryOne(
+      const lockedStatuses = await query(
         `SELECT *
          FROM academy_lead_statuses
-         WHERE id = $1
+         WHERE id = ANY($1::int[])
+         ORDER BY id
          FOR UPDATE`,
-        [id],
+        [[id, targetStatusId]],
       );
+      const source = lockedStatuses.find((status) => Number(status.id) === Number(id));
       if (!source) {
         throw Object.assign(new Error('pipeline-statuses not found'), { statusCode: 404 });
       }
+      if (source.isPipeline !== true) {
+        throw Object.assign(new Error('sourcePipelineStageRequired'), { statusCode: 400 });
+      }
+      if (source.isSystem === true) {
+        throw Object.assign(new Error('systemPipelineStageCannotBeDeleted'), { statusCode: 409 });
+      }
 
-      const target = await queryOne(
-        `SELECT *
-         FROM academy_lead_statuses
-         WHERE id = $1
-         FOR UPDATE`,
-        [targetStatusId],
+      const target = lockedStatuses.find(
+        (status) => Number(status.id) === Number(targetStatusId),
       );
       if (!target) {
         throw Object.assign(new Error('targetPipelineStageRequired'), { statusCode: 400 });
       }
-      if (Number(target.id) === Number(source.id)) {
-        throw Object.assign(new Error('targetPipelineStageMustDiffer'), { statusCode: 400 });
-      }
       if (target.isActive === false) {
         throw Object.assign(new Error('targetPipelineStageMustBeActive'), { statusCode: 400 });
+      }
+      if (target.isPipeline !== true) {
+        throw Object.assign(new Error('targetPipelineStageRequired'), { statusCode: 400 });
       }
       const transitionError = validateLeadStatusTransition(String(source.code), String(target.code));
       if (transitionError) {
         throw Object.assign(new Error(transitionError), { statusCode: 409 });
       }
 
-      const leads = await query<{ id: number }>(
-        `SELECT id
+      const leads = await query<Row>(
+        `SELECT *
          FROM academy_leads
          WHERE status_code = $1
+         ORDER BY id
          FOR UPDATE`,
         [source.code],
       );
       const leadIds = leads.map((lead) => Number(lead.id));
+
+      for (const lead of leads) {
+        const validationError = validateLeadForStatusChange({
+          nextStatus: String(target.code),
+          studentName: lead.studentName,
+          studentAge: lead.studentAge,
+          courseId: lead.courseId,
+          enrolledGroupId: lead.enrolledGroupId,
+        });
+        if (validationError) {
+          throw Object.assign(new Error(validationError), {
+            statusCode: 409,
+            leadId: lead.id,
+          });
+        }
+      }
+
+      const enrollmentGroupIds = [...new Set(
+        leads
+          .filter(() => ['enrolled', 'paid'].includes(String(target.code)))
+          .map((lead) => Number(lead.enrolledGroupId))
+          .filter((groupId) => Number.isInteger(groupId) && groupId > 0),
+      )].sort((left, right) => left - right);
+      for (const groupId of enrollmentGroupIds) {
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+        const leadsInGroup = leads.filter(
+          (lead) => Number(lead.enrolledGroupId) === Number(groupId),
+        );
+        for (const lead of leadsInGroup) {
+          await validateEnrollmentGroup(groupId, Number(lead.id));
+        }
+      }
 
       if (leadIds.length > 0) {
         await query(
@@ -5031,6 +6428,13 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
            WHERE id = ANY($2::int[])`,
           [target.code, leadIds],
         );
+        for (const lead of leads) {
+          await handleLeadAutomation(
+            req,
+            { ...lead, statusCode: target.code },
+            String(source.code),
+          );
+        }
       }
 
       await query(`DELETE FROM academy_lead_statuses WHERE id = $1`, [id]);
@@ -5070,17 +6474,80 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
 
 registerSimpleCrud('schools', 'academy_schools', [
   'name', 'code', 'address', 'timezone', 'isActive',
-], { orderBy: 'is_active DESC, name', requireAdministration: true });
+], {
+  orderBy: 'is_active DESC, name',
+  requireAdministration: true,
+  beforeUpdate: async ({ id, values, row }) => {
+    if (row.isActive !== false && values.isActive === false) {
+      const usage = await queryOne<{ inUse: boolean }>(
+        `SELECT (
+           EXISTS (
+             SELECT 1 FROM academy_groups
+             WHERE school_id = $1 AND status IN ('open', 'in_progress')
+           )
+           OR EXISTS (
+             SELECT 1 FROM academy_rooms
+             WHERE school_id = $1 AND is_active = true
+           )
+         ) AS in_use`,
+        [id],
+      );
+      if (usage?.inUse) throw Object.assign(new Error('schoolHasActiveResources'), { statusCode: 409 });
+    }
+  },
+});
 
 registerSimpleCrud('rooms', 'academy_rooms', [
   'schoolId', 'name', 'capacity', 'isActive',
-], { orderBy: 'school_id, is_active DESC, name', requireAdministration: true });
+], {
+  orderBy: 'school_id, is_active DESC, name',
+  requireAdministration: true,
+  beforeUpdate: async ({ id, values, row }) => {
+    const nextSchoolId = Number(values.schoolId ?? row.schoolId);
+    if (Number(values.schoolId) > 0 && Number(row.schoolId) !== nextSchoolId) {
+      const usage = await queryOne<{ inUse: boolean }>(
+        `SELECT (
+           EXISTS (SELECT 1 FROM academy_groups WHERE room_id = $1)
+           OR EXISTS (SELECT 1 FROM academy_lessons WHERE room_id = $1)
+         ) AS in_use`,
+        [id],
+      );
+      if (usage?.inUse) throw Object.assign(new Error('roomSchoolCannotChangeWhileInUse'), { statusCode: 409 });
+    }
+    const school = await queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true`, [nextSchoolId]);
+    if (!school) throw Object.assign(new Error('School not found'), { statusCode: 404 });
+    const nextCapacity = Number(values.capacity ?? row.capacity);
+    const maxGroup = await queryOne<{ maxStudents: number }>(
+      `SELECT COALESCE(MAX(max_students), 0)::int AS max_students
+       FROM academy_groups
+       WHERE room_id = $1`,
+      [id],
+    );
+    if (nextCapacity < Number(maxGroup?.maxStudents ?? 0)) {
+      throw Object.assign(new Error('roomCapacityBelowGroupCapacity'), { statusCode: 409 });
+    }
+    if (row.isActive !== false && values.isActive === false) {
+      const activeGroup = await queryOne(
+        `SELECT id FROM academy_groups
+         WHERE room_id = $1 AND status IN ('open', 'in_progress')
+         LIMIT 1`,
+        [id],
+      );
+      if (activeGroup) throw Object.assign(new Error('roomHasActiveGroups'), { statusCode: 409 });
+    }
+  },
+});
 
 registerSimpleCrud('courses', 'academy_courses', [
   'name', 'slug', 'ageCategory',
   'description', 'basePriceUzs', 'discountedPriceUzs',
   'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
-], { orderBy: 'is_active DESC, name', requireAdministration: true });
+], {
+  orderBy: 'is_active DESC, name',
+  requireAdministration: true,
+  allowCreate: false,
+  allowUpdate: false,
+});
 
 registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
   'name', 'color', 'sortOrder', 'isPipeline', 'isActive',
@@ -5092,6 +6559,11 @@ registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
     values.isSystem = false;
   },
   beforeDelete: async ({ row }) => {
+    if (row.isSystem === true) {
+      throw Object.assign(new Error('systemPipelineStageCannotBeDeleted'), {
+        statusCode: 409,
+      });
+    }
     const leadCount = await getLeadCountForStatusCode(String(row.code));
     if (leadCount > 0) {
       throw Object.assign(new Error('pipelineStageHasLeads'), {
@@ -5110,7 +6582,27 @@ registerSimpleCrud('groups', 'academy_groups', [
   'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule',
   'lessonCount', 'lessonDurationMinutes', 'durationDays', 'frequency',
   'maxStudents', 'status', 'startDate', 'endDate',
-], { orderBy: 'created_at DESC', requireAdministration: true });
+], {
+  orderBy: 'created_at DESC',
+  requireAdministration: true,
+  beforeDelete: async ({ id }) => {
+    const usage = await queryOne<{ inUse: boolean }>(
+      `SELECT (
+         EXISTS (SELECT 1 FROM academy_students WHERE group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_leads WHERE enrolled_group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_payments WHERE group_id = $1)
+         OR EXISTS (
+           SELECT 1 FROM academy_student_transfers
+           WHERE from_group_id = $1 OR to_group_id = $1
+         )
+         OR EXISTS (SELECT 1 FROM academy_portfolio_projects WHERE group_id = $1)
+       ) AS in_use`,
+      [id],
+    );
+    if (usage?.inUse) throw Object.assign(new Error('groupHistoryCannotBeDeleted'), { statusCode: 409 });
+  },
+});
 
 registerSimpleCrud('sources', 'academy_lead_sources', [
   'code', 'name', 'channel', 'campaignName', 'costPerLeadUzs', 'isSystem', 'isActive',
@@ -5121,8 +6613,26 @@ registerSimpleCrud('sources', 'academy_lead_sources', [
 });
 
 registerSimpleCrud('lessons', 'academy_lessons', [
-  'groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes', 'status',
-], { orderBy: 'scheduled_at DESC', requireOperations: true });
+  'groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'topic', 'materials', 'scheduledAt', 'durationMinutes',
+], {
+  orderBy: 'scheduled_at DESC',
+  requireOperations: true,
+  beforeDelete: async ({ id, row }) => {
+    if (row.status !== 'scheduled') {
+      throw Object.assign(new Error('conductedLessonCannotBeDeleted'), { statusCode: 409 });
+    }
+    const usage = await queryOne<{ inUse: boolean }>(
+      `SELECT (
+         EXISTS (SELECT 1 FROM academy_attendance WHERE lesson_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lesson_surveys WHERE lesson_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lesson_status_history WHERE lesson_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_portfolio_projects WHERE lesson_id = $1)
+       ) AS in_use`,
+      [id],
+    );
+    if (usage?.inUse) throw Object.assign(new Error('lessonHistoryCannotBeDeleted'), { statusCode: 409 });
+  },
+});
 
 registerSimpleCrud('tasks', 'academy_tasks', [
   'title', 'description', 'responsibleId', 'deadlineAt', 'status', 'entityType', 'entityId', 'completedAt',
@@ -5130,6 +6640,26 @@ registerSimpleCrud('tasks', 'academy_tasks', [
 
 registerSimpleCrud('expenses', 'academy_marketing_expenses', [
   'sourceId', 'channel', 'campaignName', 'periodStart', 'periodEnd', 'amountUzs', 'createdBy',
-], { orderBy: 'period_start DESC', requireMarketing: true });
+], {
+  orderBy: 'period_start DESC',
+  requireMarketing: true,
+  beforeCreate: async ({ values }) => {
+    if (!values.channel || Number(values.amountUzs) <= 0 || !values.periodStart || !values.periodEnd) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    if (new Date(values.periodEnd).getTime() < new Date(values.periodStart).getTime()) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+  },
+  beforeUpdate: async ({ values, row }) => {
+    const channel = values.channel ?? row.channel;
+    const amount = Number(values.amountUzs ?? row.amountUzs);
+    const start = values.periodStart ?? row.periodStart;
+    const end = values.periodEnd ?? row.periodEnd;
+    if (!channel || amount <= 0 || !start || !end || new Date(end).getTime() < new Date(start).getTime()) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+  },
+});
 
 export default router;

@@ -212,6 +212,7 @@ const groupSchema = z.object({
   teacherId: z.string(),
   lessonCount: z.coerce.number().int().min(1),
   lessonDurationMinutes: z.coerce.number().int().min(15),
+  maxStudents: z.coerce.number().int().min(1).max(12),
   status: z.enum(['open', 'in_progress', 'completed']),
   startDate: z.string(),
   endDate: z.string(),
@@ -232,12 +233,20 @@ type GroupValues = z.infer<typeof groupSchema>;
 type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
 const AUTO_TEACHER_VALUE = 'auto';
 
-const normalizeSchedule = (items: unknown): WeekScheduleItem[] => {
+const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekScheduleItem[] => {
   if (!Array.isArray(items)) return [];
   return items.flatMap((item: any) => {
     const dayOfWeek = Number(item?.dayOfWeek);
     const startTime = String(item?.startTime ?? item?.time ?? '');
-    const endTime = String(item?.endTime ?? item?.time ?? '');
+    const explicitEndTime = String(item?.endTime ?? '');
+    const [startHours, startMinutes] = startTime.split(':').map(Number);
+    const legacyEndMinutes = Number.isFinite(startHours) && Number.isFinite(startMinutes)
+      ? Math.min(startHours * 60 + startMinutes + fallbackDurationMinutes, 23 * 60 + 59)
+      : 0;
+    const legacyEndTime = legacyEndMinutes > startHours * 60 + startMinutes
+      ? `${String(Math.floor(legacyEndMinutes / 60)).padStart(2, '0')}:${String(legacyEndMinutes % 60).padStart(2, '0')}`
+      : '';
+    const endTime = explicitEndTime || legacyEndTime;
     if (!dayOfWeek || !startTime) return [];
     return [{
       dayOfWeek,
@@ -379,9 +388,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setActiveTab(requestedTabValue);
   }, [requestedTabValue]);
 
-  const invalidate = () => queryClient.invalidateQueries({
-    queryKey: ['/api/academy/configuration'],
-  });
+  const invalidate = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/configuration'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] }),
+  ]);
 
   const handleTabChange = (nextTab: string) => {
     if (!availableTabs.includes(nextTab)) return;
@@ -452,6 +465,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       teacherId: AUTO_TEACHER_VALUE,
       lessonCount: 10,
       lessonDurationMinutes: 120,
+      maxStudents: 12,
       status: 'open',
       startDate: '',
       endDate: '',
@@ -512,23 +526,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           configuration.data?.courses ?? [],
           editingCourse?.id,
         ),
+        teacherIds: courseTeacherIds,
       };
-      const course = editingCourse
-        ? await apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}`, payload)
-        : await apiRequest('POST', '/api/academy/courses', payload);
-
-      const courseId = Number(course.id);
-      const teachers = configuration.data?.teachers ?? [];
-      await Promise.all(teachers.map((teacher) => {
-        const ids = new Set((teacher.courseIds ?? []).map(Number));
-        if (courseTeacherIds.includes(teacher.id)) ids.add(courseId);
-        else ids.delete(courseId);
-        const nextIds = [...ids].sort((left, right) => left - right);
-        const currentIds = [...(teacher.courseIds ?? [])].map(Number).sort((left, right) => left - right);
-        if (JSON.stringify(nextIds) === JSON.stringify(currentIds)) return Promise.resolve();
-        return apiRequest('PATCH', `/api/academy/teachers/${teacher.id}`, { courseIds: nextIds });
-      }));
-      return course;
+      return editingCourse
+        ? apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}/with-teachers`, payload)
+        : apiRequest('POST', '/api/academy/courses/with-teachers', payload);
     },
     onSuccess: () => {
       toast({ title: editingCourse ? t('courseUpdated') : t('courseCreated') });
@@ -538,11 +540,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       courseForm.reset();
       invalidate();
     },
-    onError: (error: Error) => toast({
-      title: t('error'),
-      description: error.message,
-      variant: 'destructive',
-    }),
+    onError: (error: Error) => {
+      void invalidate();
+      toast({
+        title: t('error'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
   });
 
   const saveGroup = useMutation({
@@ -559,7 +564,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         schedule: groupSchedule,
         lessonCount: Number(values.lessonCount),
         lessonDurationMinutes: Number(values.lessonDurationMinutes),
-        maxStudents: 12,
+        maxStudents: Number(values.maxStudents),
         status: values.status,
         startDate: values.startDate || null,
         endDate: values.endDate || null,
@@ -716,19 +721,22 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       const index = statuses.findIndex((item) => item.id === status.id);
       const neighbor = statuses[index + direction];
       if (!neighbor) return;
-      await Promise.all([
-        apiRequest('PATCH', `/api/academy/pipeline-statuses/${status.id}`, {
-          sortOrder: neighbor.sortOrder,
-        }),
-        apiRequest('PATCH', `/api/academy/pipeline-statuses/${neighbor.id}`, {
-          sortOrder: status.sortOrder,
-        }),
-      ]);
+      const orderedStatusIds = statuses.map((item) => item.id);
+      [orderedStatusIds[index], orderedStatusIds[index + direction]] = [
+        orderedStatusIds[index + direction],
+        orderedStatusIds[index],
+      ];
+      await apiRequest('PUT', '/api/academy/pipeline-statuses/reorder', { orderedStatusIds });
     },
     onSuccess: () => {
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+    },
+    onError: (error: Error) => {
+      void invalidate();
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
+      toast({ title: t('error'), description: error.message, variant: 'destructive' });
     },
   });
 
@@ -797,6 +805,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       teacherId: group.teacherId ? String(group.teacherId) : AUTO_TEACHER_VALUE,
       lessonCount: group.lessonCount || 10,
       lessonDurationMinutes: group.lessonDurationMinutes || 120,
+      maxStudents: group.maxStudents || 12,
       status: ['open', 'in_progress', 'completed'].includes(group.status)
         ? group.status as GroupValues['status']
         : 'open',
@@ -810,11 +819,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       teacherId: AUTO_TEACHER_VALUE,
       lessonCount: 10,
       lessonDurationMinutes: 120,
+      maxStudents: 12,
       status: 'open',
       startDate: '',
       endDate: '',
     });
-    setGroupSchedule(normalizeSchedule(group?.schedule));
+    setGroupSchedule(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
     setGroupDialogOpen(true);
   };
 
@@ -860,6 +870,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   );
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const selectedGroupTeacherId = groupForm.watch('teacherId');
+  const selectedGroupRoomId = groupForm.watch('roomId');
+  const selectedGroupRoomCapacity = rooms.find((room) => String(room.id) === selectedGroupRoomId)?.capacity;
 
   useEffect(() => {
     if (!pipelineDeleteTarget) return;
@@ -1678,11 +1690,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="flex flex-col justify-center gap-1 rounded-lg border border-border px-3 py-2">
-                  <p className="text-xs text-muted-foreground">{t('groupCapacity')}</p>
-                  <p className="text-sm font-semibold text-foreground">12 {t('students')}</p>
-                  <p className="text-[11px] text-muted-foreground">{t('groupCapacityDescription')}</p>
-                </div>
+                <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('groupCapacity')}</FormLabel>
+                    <FormControl><Input type="number" min="1" max={Math.min(12, selectedGroupRoomCapacity ?? 12)} {...field} /></FormControl>
+                    <p className="text-[11px] text-muted-foreground">{t('groupCapacityDescription')}</p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={groupForm.control} name="courseId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('course')}</FormLabel>

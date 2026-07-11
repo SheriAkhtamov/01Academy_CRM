@@ -37,13 +37,14 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
+  emailUnique: uniqueIndex("users_email_unique").on(sql`lower(${table.email})`),
   workspaceIdx: index("users_workspace_idx").on(table.workspace),
   workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
 
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
   type: varchar("type", { length: 50 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message"),
@@ -68,7 +69,7 @@ export const userWorkspaces = pgTable("user_workspaces", {
 
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
   action: varchar("action", { length: 255 }).notNull(),
   entityType: varchar("entity_type", { length: 50 }).notNull(),
   entityId: integer("entity_id"),
@@ -315,7 +316,7 @@ export const academyStudents = pgTable("academy_students", {
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
   groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
   contactName: varchar("contact_name", { length: 255 }).notNull(),
-  phone: varchar("phone", { length: 50 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
   messenger: varchar("messenger", { length: 120 }),
   studentName: varchar("student_name", { length: 255 }),
   studentAge: integer("student_age"),
@@ -493,6 +494,7 @@ export const academyLessonSurveys = pgTable("academy_lesson_surveys", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   lessonIdx: index("academy_lesson_surveys_lesson_idx").on(table.lessonId),
+  lessonStudentUnique: uniqueIndex("academy_lesson_surveys_lesson_student_unique").on(table.lessonId, table.studentId),
 }));
 
 export const academyParentSurveys = pgTable("academy_parent_surveys", {
@@ -509,6 +511,7 @@ export const academyParentSurveys = pgTable("academy_parent_surveys", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   studentIdx: index("academy_parent_surveys_student_idx").on(table.studentId),
+  studentPeriodUnique: uniqueIndex("academy_parent_surveys_student_period_unique").on(table.studentId, table.period),
 }));
 
 export const academyPortfolioProjects = pgTable("academy_portfolio_projects", {
@@ -670,6 +673,23 @@ export const instagramMessages = pgTable("instagram_messages", {
   conversationIdx: index("instagram_messages_conversation_idx").on(table.conversationId),
   createdIdx: index("instagram_messages_created_idx").on(table.createdAt),
   conversationReadIdx: index("instagram_messages_conversation_read_idx").on(table.conversationId, table.readAt),
+}));
+
+/** Per-employee read cursor for shared Instagram conversations. */
+export const instagramConversationReads = pgTable("instagram_conversation_reads", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").references(() => instagramConversations.id, { onDelete: "cascade" }).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  lastReadMessageId: integer("last_read_message_id").notNull().default(0),
+  lastReadAt: timestamp("last_read_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  conversationUserUnique: uniqueIndex("instagram_conversation_reads_conversation_user_unique").on(
+    table.conversationId,
+    table.userId,
+  ),
+  userIdx: index("instagram_conversation_reads_user_idx").on(table.userId),
 }));
 
 export const academyNotificationOutbox = pgTable("academy_notification_outbox", {

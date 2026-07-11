@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { logger } from './lib/logger';
 import * as schema from "@shared/schema";
@@ -12,6 +12,11 @@ if (!appConfig.database.url) {
 let pool: Pool;
 let db: NodePgDatabase<typeof schema>;
 
+// The legacy schema uses `timestamp without time zone`. Treat those values as
+// UTC consistently on both read and write so host/container local time cannot
+// silently shift persisted instants.
+types.setTypeParser(1114, (value: string) => new Date(`${value.replace(' ', 'T')}Z`));
+
 try {
   pool = new Pool({
     connectionString: appConfig.database.url,
@@ -19,6 +24,8 @@ try {
     max: appConfig.database.pool?.max ?? 20,
     idleTimeoutMillis: appConfig.database.pool?.idleTimeoutMillis ?? 30000,
     connectionTimeoutMillis: appConfig.database.pool?.connectionTimeoutMillis ?? 2000,
+    parseInputDatesAsUTC: true,
+    options: '-c timezone=UTC',
   });
 
   db = drizzle(pool, { schema });

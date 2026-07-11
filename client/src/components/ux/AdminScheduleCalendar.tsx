@@ -4,6 +4,8 @@ import { CalendarDays, DoorOpen, UsersRound } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -187,6 +189,17 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-20 w-full" />
             <Skeleton className="h-20 w-full" />
+          </div>
+        ) : schedule.isError ? (
+          <div className="p-5">
+            <Alert variant="destructive">
+              <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+              <AlertDescription>
+                <Button className="mt-3" size="sm" variant="outline" onClick={() => schedule.refetch()}>
+                  {t('retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
           </div>
         ) : schedule.data?.rooms.length ? (
           <div className="overflow-x-auto">

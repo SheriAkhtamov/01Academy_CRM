@@ -48,6 +48,8 @@ export default function Header({
 
   const { data: notifications = [] } = useQuery<any[]>({
     queryKey: ['/api/notifications'],
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const unreadCount = notifications.filter((n: any) => !n.isRead).length;

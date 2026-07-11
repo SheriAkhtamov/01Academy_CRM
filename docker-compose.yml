@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: crm
       POSTGRES_PASSWORD: crm_password_2026
       POSTGRES_DB: crm
+      TZ: UTC
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -30,6 +31,8 @@ services:
       - ./uploads:/app/uploads
     environment:
       - NODE_ENV=production
+      - TZ=UTC
+      - ACADEMY_TIME_ZONE=Asia/Tashkent
 
 volumes:
   pgdata:

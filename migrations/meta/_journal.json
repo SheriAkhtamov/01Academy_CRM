@@ -239,6 +239,41 @@
       "when": 1783872000000,
       "tag": "0033_enrich_instagram_leads_from_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783958400000,
+      "tag": "0034_enforce_unique_user_logins",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1784044800000,
+      "tag": "0035_deduplicate_academy_surveys",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784131200000,
+      "tag": "0036_add_instagram_per_user_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784217600000,
+      "tag": "0037_allow_students_without_phone",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784304000000,
+      "tag": "0038_fix_user_deletion_references",
+      "breakpoints": true
     }
   ]
 }

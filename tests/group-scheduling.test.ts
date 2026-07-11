@@ -53,6 +53,15 @@ describe('group scheduling', () => {
     )).toBe(false);
   });
 
+  it('treats two ranges touching the same calendar date as overlapping', () => {
+    expect(scheduleDateRangesOverlap(
+      new Date(2026, 6, 1, 9, 0),
+      new Date(2026, 6, 10, 0, 0),
+      new Date(2026, 6, 10, 18, 0),
+      new Date(2026, 6, 20, 18, 0),
+    )).toBe(true);
+  });
+
   it('treats a group end date as inclusive for the whole calendar day', () => {
     expect(isDateInsideInclusiveDayRange(
       new Date(2026, 6, 10, 18, 30),

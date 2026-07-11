@@ -41,9 +41,34 @@ const canManageTask = (user: User, task: BoardTask) =>
 const canAcceptOrReopen = (user: User, task: BoardTask) =>
     user.id === task.creatorId || isTaskSupervisor(user);
 
-const parseId = (raw: string) => {
-    const id = Number.parseInt(raw, 10);
-    return Number.isNaN(id) ? null : id;
+const parseId = (raw: unknown) => {
+    const text = String(raw ?? '').trim();
+    if (!/^\d+$/.test(text)) return null;
+    const id = Number(text);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
+const parseDateInput = (value: unknown): { date: Date | null; valid: boolean } => {
+    if (value === undefined || value === null || value === '') return { date: null, valid: true };
+    if (typeof value !== 'string') return { date: null, valid: false };
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? { date: null, valid: false } : { date, valid: true };
+};
+
+const normalizeOptionalText = (value: unknown): { value: string | null; valid: boolean } => {
+    if (value === undefined || value === null) return { value: null, valid: true };
+    return typeof value === 'string'
+        ? { value: value.trim() || null, valid: true }
+        : { value: null, valid: false };
+};
+
+const removeUploadedFile = async (filePath?: string) => {
+    if (!filePath) return;
+    try {
+        await fs.promises.unlink(filePath);
+    } catch (error: any) {
+        if (error?.code !== 'ENOENT') logger.error('Failed to remove orphaned board upload', { error, filePath });
+    }
 };
 
 const isStatus = (value: unknown): value is BoardTaskStatus =>
@@ -142,8 +167,12 @@ router.get('/boards', async (_req, res) => {
 // List tasks for a board (defaults to the shared board when boardId is omitted).
 router.get('/tasks', async (req, res) => {
     try {
-        let boardId = req.query.boardId ? parseId(String(req.query.boardId)) : null;
-        if (!boardId) {
+        const hasBoardId = req.query.boardId !== undefined && req.query.boardId !== '';
+        let boardId = hasBoardId ? parseId(req.query.boardId) : null;
+        if (hasBoardId && !boardId) {
+            return res.status(400).json({ error: 'Invalid board id' });
+        }
+        if (boardId === null) {
             const board = await storage.board.getDefaultBoard();
             if (!board) return res.json({ board: null, tasks: [] });
             boardId = board.id;
@@ -183,20 +212,42 @@ router.post('/tasks', async (req, res) => {
         if (!title || typeof title !== 'string' || !title.trim()) {
             return res.status(400).json({ error: 'Title is required' });
         }
-        if (priority && !(BOARD_TASK_PRIORITIES as readonly string[]).includes(priority)) {
+        if (title.trim().length > 255) {
+            return res.status(400).json({ error: 'Title is too long' });
+        }
+        const normalizedDescription = normalizeOptionalText(description);
+        if (!normalizedDescription.valid) {
+            return res.status(400).json({ error: 'Invalid description' });
+        }
+        if (priority !== undefined && !(BOARD_TASK_PRIORITIES as readonly string[]).includes(priority)) {
             return res.status(400).json({ error: 'Invalid priority' });
         }
-        if (status && !isStatus(status)) {
+        if (status !== undefined && !isStatus(status)) {
             return res.status(400).json({ error: 'Invalid status' });
         }
 
-        if (!boardId) {
+        if (boardId !== undefined && boardId !== null && boardId !== '') {
+            boardId = parseId(boardId);
+            if (!boardId) return res.status(400).json({ error: 'Invalid board id' });
+            if (!await storage.board.getBoard(boardId)) {
+                return res.status(404).json({ error: 'Board not found' });
+            }
+        } else {
             const board = await storage.board.getDefaultBoard();
             if (!board) return res.status(400).json({ error: 'No board available' });
             boardId = board.id;
         }
 
+        const parsedDueAt = parseDateInput(dueAt);
+        if (!parsedDueAt.valid) return res.status(400).json({ error: 'Invalid due date' });
+
         const targetStatus: BoardTaskStatus = isStatus(status) ? status : 'backlog';
+        // `accepted` is not an initial state. It records the creator's approval
+        // of work that has already reached `done`, and therefore must only be
+        // entered through the guarded status-transition endpoint below.
+        if (targetStatus === 'accepted') {
+            return res.status(400).json({ error: 'Task must be in Done before it can be accepted' });
+        }
         const position = (await storage.board.getMaxPosition(boardId, targetStatus)) + 1;
 
         const resolvedAssignee = await resolveAssignee(assigneeId, req.user!, { forceSelfForStaff: true });
@@ -204,26 +255,31 @@ router.post('/tasks', async (req, res) => {
             return res.status(resolvedAssignee.error.code).json({ error: resolvedAssignee.error.message });
         }
 
-        const task = await storage.board.createTask({
+        const taskValues = {
             boardId,
             title: title.trim(),
-            description: description ?? null,
+            description: normalizedDescription.value,
             status: targetStatus,
             priority: priority ?? 'normal',
             position,
             creatorId: req.user!.id,
             assigneeId: resolvedAssignee.assigneeId,
-            dueAt: dueAt ? new Date(dueAt) : null,
-        });
-
-        await storage.board.createActivity({
-            taskId: task.id,
+            dueAt: parsedDueAt.date,
+        };
+        const activityValues = {
             actorId: req.user!.id,
             type: 'created',
             fromValue: null,
             toValue: targetStatus,
             meta: null,
-        });
+        };
+        const atomicCreate = (storage.board as any).createTaskWithActivity;
+        const task = atomicCreate
+            ? await atomicCreate.call(storage.board, taskValues, activityValues)
+            : await storage.board.createTask(taskValues);
+        if (!atomicCreate) {
+            await storage.board.createActivity({ taskId: task.id, ...activityValues });
+        }
 
         broadcastTask('BOARD_TASK_CREATED', task);
         res.json(task);
@@ -249,10 +305,17 @@ router.patch('/tasks/:id', async (req, res) => {
         const { title, description, priority, assigneeId, dueAt } = req.body;
 
         if (title !== undefined) {
-            if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title cannot be empty' });
-            updates.title = String(title).trim();
+            if (typeof title !== 'string' || !title.trim()) {
+                return res.status(400).json({ error: 'Title cannot be empty' });
+            }
+            if (title.trim().length > 255) return res.status(400).json({ error: 'Title is too long' });
+            updates.title = title.trim();
         }
-        if (description !== undefined) updates.description = description ?? null;
+        if (description !== undefined) {
+            const normalizedDescription = normalizeOptionalText(description);
+            if (!normalizedDescription.valid) return res.status(400).json({ error: 'Invalid description' });
+            updates.description = normalizedDescription.value;
+        }
         if (priority !== undefined) {
             if (!(BOARD_TASK_PRIORITIES as readonly string[]).includes(priority)) {
                 return res.status(400).json({ error: 'Invalid priority' });
@@ -266,13 +329,15 @@ router.patch('/tasks/:id', async (req, res) => {
             }
             updates.assigneeId = resolvedAssignee.assigneeId;
         }
-        if (dueAt !== undefined) updates.dueAt = dueAt ? new Date(dueAt) : null;
+        if (dueAt !== undefined) {
+            const parsedDueAt = parseDateInput(dueAt);
+            if (!parsedDueAt.valid) return res.status(400).json({ error: 'Invalid due date' });
+            updates.dueAt = parsedDueAt.date;
+        }
 
-        const updated = await storage.board.updateTask(id, updates);
-
+        const activities: Array<Record<string, unknown>> = [];
         if (updates.assigneeId !== undefined && updates.assigneeId !== task.assigneeId) {
-            await storage.board.createActivity({
-                taskId: id,
+            activities.push({
                 actorId: req.user!.id,
                 type: updates.assigneeId ? 'assigned' : 'unassigned',
                 fromValue: task.assigneeId ? String(task.assigneeId) : null,
@@ -281,14 +346,22 @@ router.patch('/tasks/:id', async (req, res) => {
             });
         }
         if (updates.priority !== undefined && updates.priority !== task.priority) {
-            await storage.board.createActivity({
-                taskId: id,
+            activities.push({
                 actorId: req.user!.id,
                 type: 'priority_changed',
                 fromValue: task.priority,
                 toValue: String(updates.priority),
                 meta: null,
             });
+        }
+        const atomicUpdate = (storage.board as any).updateTaskWithActivities;
+        const updated = atomicUpdate
+            ? await atomicUpdate.call(storage.board, id, task.status, updates, activities)
+            : await storage.board.updateTask(id, updates);
+        if (!atomicUpdate) {
+            for (const activity of activities) {
+                await storage.board.createActivity({ taskId: id, ...activity } as any);
+            }
         }
 
         broadcastTask('BOARD_TASK_UPDATED', updated);
@@ -307,6 +380,12 @@ router.patch('/tasks/:id/status', async (req, res) => {
 
         const { status, position } = req.body;
         if (!isStatus(status)) return res.status(400).json({ error: 'Invalid status' });
+        if (
+            position !== undefined
+            && (!Number.isSafeInteger(position) || position < 0)
+        ) {
+            return res.status(400).json({ error: 'Invalid position' });
+        }
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -320,7 +399,7 @@ router.patch('/tasks/:id/status', async (req, res) => {
         }
 
         const updates: Record<string, unknown> = { status };
-        if (typeof position === 'number') {
+        if (position !== undefined) {
             updates.position = position;
         } else {
             updates.position = (await storage.board.getMaxPosition(task.boardId, status)) + 1;
@@ -337,23 +416,27 @@ router.patch('/tasks/:id/status', async (req, res) => {
             updates.acceptedBy = null;
         }
 
-        const updated = await storage.board.updateTask(id, updates);
-
         const activityType = movingToAccepted ? 'accepted' : reopening ? 'reopened' : 'status_changed';
-        await storage.board.createActivity({
-            taskId: id,
+        const activity = {
             actorId: req.user!.id,
             type: activityType,
             fromValue: task.status,
             toValue: status,
             meta: null,
-        });
+        };
+        const atomicUpdate = (storage.board as any).updateTaskWithActivities;
+        const updated = atomicUpdate
+            ? await atomicUpdate.call(storage.board, id, task.status, updates, [activity])
+            : await storage.board.updateTask(id, updates);
+        if (!atomicUpdate) {
+            await storage.board.createActivity({ taskId: id, ...activity });
+        }
 
         broadcastTask('BOARD_TASK_UPDATED', updated);
         res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
         logger.error('Failed to change task status', { error, taskId: req.params.id });
-        res.status(500).json({ error: 'Failed to change status' });
+        res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'Failed to change status' });
     }
 });
 
@@ -384,25 +467,31 @@ router.post('/tasks/:id/comments', async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
         const { body } = req.body;
-        if (!body || !String(body).trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
+        if (typeof body !== 'string' || !body.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
         if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
-        const comment = await storage.board.createComment({
+        const commentValues = {
             taskId: id,
             authorId: req.user!.id,
-            body: String(body).trim(),
-        });
-        await storage.board.createActivity({
-            taskId: id,
+            body: body.trim(),
+        };
+        const activityValues = {
             actorId: req.user!.id,
             type: 'comment_added',
             fromValue: null,
             toValue: null,
             meta: null,
-        });
+        };
+        const atomicComment = (storage.board as any).createCommentWithActivity;
+        const comment = atomicComment
+            ? await atomicComment.call(storage.board, commentValues, activityValues)
+            : await storage.board.createComment(commentValues);
+        if (!atomicComment) {
+            await storage.board.createActivity({ taskId: id, ...activityValues });
+        }
 
         broadcastTask('BOARD_TASK_UPDATED', task);
         res.json(comment);
@@ -417,7 +506,7 @@ router.patch('/comments/:id', async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid comment id' });
         const { body } = req.body;
-        if (!body || !String(body).trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
+        if (typeof body !== 'string' || !body.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
 
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
@@ -427,7 +516,7 @@ router.patch('/comments/:id', async (req, res) => {
             return res.status(403).json({ error: 'You can only edit your own comments' });
         }
 
-        const updated = await storage.board.updateComment(id, String(body).trim());
+        const updated = await storage.board.updateComment(id, body.trim());
         broadcastTask('BOARD_TASK_UPDATED', { id: comment.taskId, boardId: 0 });
         res.json(updated);
     } catch (error) {
@@ -465,7 +554,8 @@ router.post('/tasks/:id/checklist', async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
         const { content } = req.body;
-        if (!content || !String(content).trim()) return res.status(400).json({ error: 'Item cannot be empty' });
+        if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ error: 'Item cannot be empty' });
+        if (content.trim().length > 500) return res.status(400).json({ error: 'Item is too long' });
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -473,7 +563,7 @@ router.post('/tasks/:id/checklist', async (req, res) => {
 
         const item = await storage.board.createChecklistItem({
             taskId: id,
-            content: String(content).trim(),
+            content: content.trim(),
             isDone: false,
             position: 0,
             createdBy: req.user!.id,
@@ -498,10 +588,16 @@ router.patch('/checklist/:id', async (req, res) => {
 
         const updates: Record<string, unknown> = {};
         if (req.body.content !== undefined) {
-            if (!String(req.body.content).trim()) return res.status(400).json({ error: 'Item cannot be empty' });
-            updates.content = String(req.body.content).trim();
+            if (typeof req.body.content !== 'string' || !req.body.content.trim()) {
+                return res.status(400).json({ error: 'Item cannot be empty' });
+            }
+            if (req.body.content.trim().length > 500) return res.status(400).json({ error: 'Item is too long' });
+            updates.content = req.body.content.trim();
         }
-        if (req.body.isDone !== undefined) updates.isDone = Boolean(req.body.isDone);
+        if (req.body.isDone !== undefined) {
+            if (typeof req.body.isDone !== 'boolean') return res.status(400).json({ error: 'Invalid completion state' });
+            updates.isDone = req.body.isDone;
+        }
 
         const updated = await storage.board.updateChecklistItem(id, updates);
         broadcastTask('BOARD_TASK_UPDATED', { id: item.taskId, boardId: 0 });
@@ -534,19 +630,22 @@ router.delete('/checklist/:id', async (req, res) => {
 // --- Attachments ------------------------------------------------------------
 
 router.post('/tasks/:id/attachments', boardAttachmentUpload.single('file'), async (req, res) => {
+    let persistedAttachmentId: number | null = null;
     try {
         const id = parseId(req.params.id);
-        if (!id) return res.status(400).json({ error: 'Invalid task id' });
+        if (!id) {
+            await removeUploadedFile(req.file?.path);
+            return res.status(400).json({ error: 'Invalid task id' });
+        }
         if (!req.file) return res.status(400).json({ error: 'File is required' });
 
         const task = await storage.board.getTask(id);
         if (!task) {
-            // Clean up the orphaned upload.
-            fs.unlink(req.file.path, () => { });
+            await removeUploadedFile(req.file.path);
             return res.status(404).json({ error: 'Task not found' });
         }
         if (!canReadTask(req.user!, task)) {
-            fs.unlink(req.file.path, () => { });
+            await removeUploadedFile(req.file.path);
             return res.status(403).json({ error: 'accessDenied' });
         }
 
@@ -558,6 +657,7 @@ router.post('/tasks/:id/attachments', boardAttachmentUpload.single('file'), asyn
             size: req.file.size,
             uploadedBy: req.user!.id,
         });
+        persistedAttachmentId = attachment.id;
         await storage.board.createActivity({
             taskId: id,
             actorId: req.user!.id,
@@ -570,6 +670,15 @@ router.post('/tasks/:id/attachments', boardAttachmentUpload.single('file'), asyn
         broadcastTask('BOARD_TASK_UPDATED', task);
         res.json(attachment);
     } catch (error) {
+        if (persistedAttachmentId !== null) {
+            await storage.board.deleteAttachment(persistedAttachmentId).catch((cleanupError) => {
+                logger.error('Failed to roll back attachment metadata', {
+                    cleanupError,
+                    attachmentId: persistedAttachmentId,
+                });
+            });
+        }
+        await removeUploadedFile(req.file?.path);
         logger.error('Failed to upload attachment', { error, taskId: req.params.id });
         res.status(500).json({ error: 'Failed to upload attachment' });
     }

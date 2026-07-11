@@ -43,6 +43,7 @@ export const storage = {
     getConversationsByUser: messageStorage.getConversations.bind(messageStorage),
     getMessagesBetweenUsers: messageStorage.getMessagesBetweenUsers.bind(messageStorage),
     createMessage: messageStorage.createMessage.bind(messageStorage),
+    markConversationAsRead: messageStorage.markConversationAsRead.bind(messageStorage),
     markMessageAsRead: async (id: number, userId: number) => {
         if (!userId) {
             throw new Error('userId is required to mark message as read');

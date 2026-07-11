@@ -101,18 +101,26 @@ class MessageStorage {
         } as Message;
     }
 
-    async markMessageAsRead(messageId: number, userId: number): Promise<Message> {
+    async markMessageAsRead(messageId: number, userId: number): Promise<Message | null> {
         const [updatedMessage] = await db
             .update(messages)
             .set({ isRead: true })
             .where(and(eq(messages.id, messageId), eq(messages.receiverId, userId)))
             .returning();
 
-        if (!updatedMessage) {
-            throw new Error('Message not found or access denied');
-        }
+        return updatedMessage ?? null;
+    }
 
-        return updatedMessage;
+    async markConversationAsRead(otherUserId: number, userId: number): Promise<Message[]> {
+        return db
+            .update(messages)
+            .set({ isRead: true, updatedAt: new Date() })
+            .where(and(
+                eq(messages.senderId, otherUserId),
+                eq(messages.receiverId, userId),
+                sql`${messages.isRead} IS NOT TRUE`,
+            ))
+            .returning();
     }
 }
 

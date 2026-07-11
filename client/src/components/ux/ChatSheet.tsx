@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Sheet,
@@ -46,8 +46,20 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const queryClient = useQueryClient();
   
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
-  const [newMessage, setNewMessage] = useState('');
+  const [draftsByEmployee, setDraftsByEmployee] = useState<Record<number, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const readAttemptedFor = useRef<number | null>(null);
+  const newMessage = selectedEmployeeId ? draftsByEmployee[selectedEmployeeId] ?? '' : '';
+  const setNewMessage = (value: string) => {
+    if (!selectedEmployeeId) return;
+    setDraftsByEmployee((current) => {
+      if (!value) {
+        const { [selectedEmployeeId]: _removed, ...rest } = current;
+        return rest;
+      }
+      return { ...current, [selectedEmployeeId]: value };
+    });
+  };
 
   // Fetch all employees only when searching
   const { data: employees = [] } = useQuery({
@@ -80,6 +92,49 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   // Ensure messages is always an array
   const messages = Array.isArray(messagesData) ? messagesData : [];
 
+  const markConversationRead = useMutation({
+    mutationFn: (employeeId: number) =>
+      apiRequest('PUT', `/api/messages/conversations/${employeeId}/read`),
+    onMutate: async (employeeId) => {
+      const queryKey = ['/api/messages', employeeId];
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<Message[]>(queryKey);
+      queryClient.setQueryData<Message[]>(queryKey, (current = []) => current.map((message) => (
+        message.receiverId === user?.id && !message.isRead
+          ? { ...message, isRead: true }
+          : message
+      )));
+      return { employeeId, previous };
+    },
+    onError: (_error, _employeeId, context) => {
+      if (context) {
+        queryClient.setQueryData(['/api/messages', context.employeeId], context.previous);
+      }
+    },
+    onSettled: (_result, _error, employeeId) => {
+      if (readAttemptedFor.current === employeeId) {
+        readAttemptedFor.current = null;
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/messages', employeeId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
+    },
+  });
+
+  useEffect(() => {
+    readAttemptedFor.current = null;
+  }, [open, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (!open || !selectedEmployeeId || !Array.isArray(messagesData)) return;
+    const hasUnreadInbound = messagesData.some(
+      (message: Message) => message.receiverId === user?.id && !message.isRead,
+    );
+    if (hasUnreadInbound && readAttemptedFor.current !== selectedEmployeeId) {
+      readAttemptedFor.current = selectedEmployeeId;
+      markConversationRead.mutate(selectedEmployeeId);
+    }
+  }, [messagesData, open, selectedEmployeeId, user?.id]);
+
   // Filter employees based on search query or show conversation history
   const filteredEmployees = useMemo(() => {
     if (searchQuery.trim()) {
@@ -98,22 +153,29 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: (messageData: { receiverId: number; content: string }) =>
-      apiRequest('POST', '/api/messages', messageData),
-    onSuccess: (newMessage) => {
-      setNewMessage('');
-      if (newMessage?.id) {
-        queryClient.setQueryData(['/api/messages', selectedEmployeeId], (prev: any) =>
-          prev ? [...prev, newMessage] : [newMessage]
+    mutationFn: (messageData: { receiverId: number; content: string; draftSnapshot: string }) =>
+      apiRequest('POST', '/api/messages', {
+        receiverId: messageData.receiverId,
+        content: messageData.content,
+      }),
+    onSuccess: (createdMessage, variables) => {
+      setDraftsByEmployee((current) => {
+        if ((current[variables.receiverId] ?? '') !== variables.draftSnapshot) return current;
+        const { [variables.receiverId]: _removed, ...rest } = current;
+        return rest;
+      });
+      if (createdMessage?.id) {
+        queryClient.setQueryData(['/api/messages', variables.receiverId], (prev: any) =>
+          prev ? [...prev, createdMessage] : [createdMessage]
         );
       }
       
       // Force refresh of messages
-      queryClient.invalidateQueries({ queryKey: ['/api/messages', selectedEmployeeId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/messages', variables.receiverId] });
       queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
       
       // Check if this is the first message to this employee
-      const isNewConversation = !conversationEmployees.some((emp: any) => emp.id === selectedEmployeeId);
+      const isNewConversation = !conversationEmployees.some((emp: any) => emp.id === variables.receiverId);
       
       if (isNewConversation) {
         setSearchQuery('');
@@ -127,6 +189,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
     sendMessageMutation.mutate({
       receiverId: selectedEmployeeId,
       content: newMessage.trim(),
+      draftSnapshot: newMessage,
     });
   };
 

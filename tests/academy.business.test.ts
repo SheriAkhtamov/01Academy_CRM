@@ -12,6 +12,8 @@ import {
   getAssignedWorkspaces,
   getComputedPaymentStatus,
   hasLeadershipAccess,
+  normalizeMoney,
+  resolveStudentRiskFlags,
   suggestAgeGroup,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
@@ -157,5 +159,28 @@ describe("01 Academy business rules", () => {
 
   it("generates a stable referral code shape", () => {
     expect(buildReferralCode("Timur Aliyev", 7, 2026)).toBe("TIMURALI72026");
+  });
+
+  it("rejects fractional money instead of silently changing the paid amount", () => {
+    expect(normalizeMoney(1_200_000)).toBe(1_200_000);
+    expect(normalizeMoney(1_200_000.49)).toBe(0);
+    expect(normalizeMoney("not-money")).toBe(0);
+  });
+
+  it("keeps attendance risk rules identical for manual and scheduled recalculation", () => {
+    expect(resolveStudentRiskFlags({
+      conductedCount: 4,
+      attendancePercent: 0,
+      monthConductedCount: 2,
+      monthAttendancePercent: 0,
+      satisfactionAvg: 2,
+    })).toEqual(["attendance_below_70", "churn_risk", "low_satisfaction"]);
+    expect(resolveStudentRiskFlags({
+      conductedCount: 0,
+      attendancePercent: 0,
+      monthConductedCount: 0,
+      monthAttendancePercent: 0,
+      satisfactionAvg: 0,
+    })).toEqual([]);
   });
 });

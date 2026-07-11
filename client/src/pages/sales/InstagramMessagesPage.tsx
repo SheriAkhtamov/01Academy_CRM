@@ -212,7 +212,7 @@ interface SalesWorkspaceData {
 
 interface LeadDraft {
   contactName: string;
-  phone: string;
+  phoneNumbers: string[];
   messenger: string;
   studentName: string;
   studentAge: string;
@@ -227,7 +227,7 @@ type ConversationFilter = 'all' | 'unread' | 'reply' | 'closed';
 
 const emptyLeadDraft: LeadDraft = {
   contactName: '',
-  phone: '',
+  phoneNumbers: [''],
   messenger: '',
   studentName: '',
   studentAge: '',
@@ -242,13 +242,23 @@ const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'IG';
 
 const compact = (value: string) => value.trim();
+const compactPhones = (values: string[]) => {
+  const seen = new Set<string>();
+  return values.flatMap((value) => {
+    const phone = compact(value);
+    const key = phone.replace(/\D/g, '');
+    if (!phone || !key || seen.has(key)) return [];
+    seen.add(key);
+    return [phone];
+  });
+};
 
 const buildLeadDraft = (lead: LeadDetails): LeadDraft => {
-  const phone = visibleLeadPhones(lead)[0] ?? '';
+  const phoneNumbers = visibleLeadPhones(lead);
 
   return {
     contactName: lead.contactName ?? '',
-    phone,
+    phoneNumbers: phoneNumbers.length > 0 ? phoneNumbers : [''],
     messenger: lead.messenger ?? '',
     studentName: lead.studentName ?? '',
     studentAge: lead.studentAge ? String(lead.studentAge) : '',
@@ -775,6 +785,8 @@ function LeadPanel({
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<LeadDraft>(emptyLeadDraft);
   const hydratedKey = useRef<string | null>(null);
+  const hydratedLeadId = useRef<number | null>(null);
+  const dirtyDraftFields = useRef<Set<keyof LeadDraft>>(new Set());
 
   const leadQuery = useQuery<LeadDetails>({
     queryKey: ['/api/academy/leads', leadId],
@@ -804,8 +816,20 @@ function LeadPanel({
 
   useEffect(() => {
     if (!lead || !leadSnapshotKey) return;
-    if (hydratedKey.current !== leadSnapshotKey) {
+    const changedLead = hydratedLeadId.current !== lead.id;
+    if (changedLead) {
+      dirtyDraftFields.current.clear();
       setDraft(buildLeadDraft(lead));
+      hydratedKey.current = leadSnapshotKey;
+      hydratedLeadId.current = lead.id;
+    } else if (hydratedKey.current !== leadSnapshotKey) {
+      const serverDraft = buildLeadDraft(lead);
+      setDraft((current) => Object.fromEntries(
+        (Object.keys(serverDraft) as Array<keyof LeadDraft>).map((field) => [
+          field,
+          dirtyDraftFields.current.has(field) ? current[field] : serverDraft[field],
+        ]),
+      ) as unknown as LeadDraft);
       hydratedKey.current = leadSnapshotKey;
     }
   }, [lead, leadSnapshotKey]);
@@ -820,17 +844,24 @@ function LeadPanel({
   const sources = workspaceData?.sources ?? [];
   const statuses = useMemo(
     () => [...(workspaceData?.statuses ?? [])]
-      .filter((status) => status.isActive !== false && (status.code !== 'paid' || lead?.statusCode === 'paid'))
+      .filter((status) => (
+        status.isActive !== false
+        && (
+          !['enrolled', 'paid'].includes(String(status.code))
+          || status.code === lead?.statusCode
+        )
+      ))
       .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
     [lead?.statusCode, workspaceData?.statuses],
   );
 
   const updateLead = useMutation({
     mutationFn: () => {
-      const nextPhone = compact(draft.phone);
+      const nextPhoneNumbers = compactPhones(draft.phoneNumbers);
+      const changed = dirtyDraftFields.current;
       const hasOnlyHiddenInstagramPhone = Boolean(
         lead
-        && !nextPhone
+        && nextPhoneNumbers.length === 0
         && visibleLeadPhones(lead).length === 0
         && (
           isSyntheticInstagramPhone(lead.phone)
@@ -838,20 +869,23 @@ function LeadPanel({
         ),
       );
 
-      return apiRequest('PATCH', `/api/academy/leads/${leadId}`, {
-        contactName: compact(draft.contactName),
-        ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhone ? [nextPhone] : [] }),
-        messenger: compact(draft.messenger) || null,
-        studentName: compact(draft.studentName) || null,
-        studentAge: compact(draft.studentAge) ? Number(draft.studentAge) : null,
-        courseId: draft.courseId ? Number(draft.courseId) : null,
-        sourceId: Number(draft.sourceId || lead?.sourceId),
-        statusCode: draft.statusCode,
-        language: draft.language,
-        comment: compact(draft.comment) || null,
-      });
+      const payload: Record<string, unknown> = { expectedUpdatedAt: lead?.updatedAt };
+      if (changed.has('contactName')) payload.contactName = compact(draft.contactName);
+      if (changed.has('phoneNumbers') && !hasOnlyHiddenInstagramPhone) payload.phoneNumbers = nextPhoneNumbers;
+      if (changed.has('messenger')) payload.messenger = compact(draft.messenger) || null;
+      if (changed.has('studentName')) payload.studentName = compact(draft.studentName) || null;
+      if (changed.has('studentAge')) payload.studentAge = compact(draft.studentAge) ? Number(draft.studentAge) : null;
+      if (changed.has('courseId')) payload.courseId = draft.courseId ? Number(draft.courseId) : null;
+      if (changed.has('sourceId')) payload.sourceId = Number(draft.sourceId || lead?.sourceId);
+      if (changed.has('statusCode')) payload.statusCode = draft.statusCode;
+      if (changed.has('language')) payload.language = draft.language;
+      if (changed.has('comment')) payload.comment = compact(draft.comment) || null;
+      return apiRequest('PATCH', `/api/academy/leads/${leadId}`, payload);
     },
-    onSuccess: async () => {
+    onSuccess: async (updatedLead: LeadDetails) => {
+      dirtyDraftFields.current.clear();
+      setDraft(buildLeadDraft(updatedLead));
+      hydratedKey.current = null;
       toast({ title: t('leadSaved') });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['/api/academy/leads', leadId] }),
@@ -865,7 +899,10 @@ function LeadPanel({
     },
   });
 
-  const patchDraft = (changes: Partial<LeadDraft>) => setDraft((current) => ({ ...current, ...changes }));
+  const patchDraft = (changes: Partial<LeadDraft>) => {
+    (Object.keys(changes) as Array<keyof LeadDraft>).forEach((field) => dirtyDraftFields.current.add(field));
+    setDraft((current) => ({ ...current, ...changes }));
+  };
 
   const Header = (
     <div className="flex items-center justify-between gap-2 border-b border-border p-4">
@@ -958,20 +995,6 @@ function LeadPanel({
     );
   }
 
-  if (leadQuery.isLoading || !lead) {
-    return (
-      <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
-        {Header}
-        <div className="space-y-4 p-4">
-          <Skeleton className="h-8 w-44" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-28 w-full" />
-        </div>
-      </aside>
-    );
-  }
-
   if (leadQuery.isError) {
     return (
       <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
@@ -986,6 +1009,20 @@ function LeadPanel({
               </Button>
             </AlertDescription>
           </Alert>
+        </div>
+      </aside>
+    );
+  }
+
+  if (leadQuery.isLoading || !lead) {
+    return (
+      <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
+        {Header}
+        <div className="space-y-4 p-4">
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-28 w-full" />
         </div>
       </aside>
     );
@@ -1052,13 +1089,41 @@ function LeadPanel({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <div className="space-y-2">
-              <Label htmlFor="instagram-lead-phone">{t('phone')}</Label>
-              <Input
-                id="instagram-lead-phone"
-                value={draft.phone}
-                onChange={(event) => patchDraft({ phone: event.target.value })}
-                placeholder="+998..."
-              />
+              <Label htmlFor="instagram-lead-phone-0">{t('phone')}</Label>
+              {draft.phoneNumbers.map((phone, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    id={`instagram-lead-phone-${index}`}
+                    value={phone}
+                    onChange={(event) => {
+                      const phoneNumbers = [...draft.phoneNumbers];
+                      phoneNumbers[index] = event.target.value;
+                      patchDraft({ phoneNumbers });
+                    }}
+                    placeholder="+998..."
+                  />
+                  {draft.phoneNumbers.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={t('removePhone')}
+                      onClick={() => patchDraft({ phoneNumbers: draft.phoneNumbers.filter((_, phoneIndex) => phoneIndex !== index) })}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => patchDraft({ phoneNumbers: [...draft.phoneNumbers, ''] })}
+              >
+                <Plus className="h-4 w-4" />
+                {t('addPhone')}
+              </Button>
             </div>
             <div className="space-y-2">
               <Label htmlFor="instagram-lead-messenger">{isInstagramLead(lead) ? t('instagramContactChannel') : t('telegramWhatsapp')}</Label>
@@ -1094,7 +1159,11 @@ function LeadPanel({
 
           <div className="space-y-2">
             <Label>{t('course')}</Label>
-            <Select value={draft.courseId || 'none'} onValueChange={(value) => patchDraft({ courseId: value === 'none' ? '' : value })}>
+            <Select
+              value={draft.courseId || 'none'}
+              onValueChange={(value) => patchDraft({ courseId: value === 'none' ? '' : value })}
+              disabled={['enrolled', 'paid'].includes(lead.statusCode)}
+            >
               <SelectTrigger aria-label={t('course')}>
                 <SelectValue placeholder={t('courseNotSelected')} />
               </SelectTrigger>
@@ -1187,7 +1256,11 @@ function LeadPanel({
             type="button"
             variant="outline"
             className="flex-1"
-            onClick={() => setDraft(baselineDraft)}
+            onClick={() => {
+              editingDraft.current = false;
+              setDraft(baselineDraft);
+              hydratedKey.current = leadSnapshotKey;
+            }}
             disabled={!isDirty || updateLead.isPending}
           >
             {t('reset')}
@@ -1481,13 +1554,15 @@ export default function MessagesPage() {
   }, [messageCount, selectedConversationId, atBottom]);
 
   const sendMessage = useMutation({
-    mutationFn: (content: string) =>
-      apiRequest('POST', `/api/instagram/conversations/${selectedConversationId}/messages`, { content }),
-    onMutate: (content) => {
-      if (!selectedConversationId) return;
+    mutationFn: ({ conversationId, content }: { conversationId: number; content: string }) =>
+      apiRequest('POST', `/api/instagram/conversations/${conversationId}/messages`, { content }),
+    onMutate: async ({ conversationId, content }) => {
+      const optimisticId = -Date.now();
+      const queryKey = ['/api/instagram/conversations', conversationId, 'messages'] as const;
+      await queryClient.cancelQueries({ queryKey });
       const optimistic: ThreadMessage = {
-        id: -Date.now(),
-        conversationId: selectedConversationId,
+        id: optimisticId,
+        conversationId,
         externalMessageId: null,
         direction: 'outbound',
         senderIgsid: '',
@@ -1499,19 +1574,34 @@ export default function MessagesPage() {
         createdAt: new Date().toISOString(),
         pending: true,
       };
-      setDraft('');
-      queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) => [...previous, optimistic]);
+      setDraftsByConversation((current) => {
+        const { [conversationId]: _removed, ...rest } = current;
+        return rest;
+      });
+      queryClient.setQueryData<ThreadMessage[]>(queryKey, (previous = []) => [...previous, optimistic]);
+      return { optimisticId, queryKey };
     },
-    onSuccess: (message: InstagramMessage) => {
-      queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
-        previous.map((item) => (item.pending ? (message as ThreadMessage) : item)),
-      );
+    onSuccess: (message: InstagramMessage, _variables, context) => {
+      if (!context) return;
+      queryClient.setQueryData<ThreadMessage[]>(context.queryKey, (previous = []) => {
+        const replacement = message as ThreadMessage;
+        const optimisticIndex = previous.findIndex((item) => item.id === context.optimisticId);
+        const withoutDuplicate = previous.filter((item) => (
+          item.id !== replacement.id
+          && (!replacement.externalMessageId || item.externalMessageId !== replacement.externalMessageId)
+        ));
+        if (optimisticIndex < 0) return [...withoutDuplicate, replacement];
+        return previous.map((item) => (
+          item.id === context.optimisticId ? replacement : item
+        )).filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
+      });
+      queryClient.invalidateQueries({ queryKey: context.queryKey });
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
-    onError: (error: Error) => {
-      queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
-        previous.map((item) => (item.pending ? { ...item, pending: false, failed: true } : item)),
+    onError: (error: Error, _variables, context) => {
+      if (context) queryClient.setQueryData<ThreadMessage[]>(context.queryKey, (previous = []) =>
+        previous.map((item) => (item.id === context.optimisticId ? { ...item, pending: false, failed: true } : item)),
       );
       toast({
         title: t('instagramMessageNotSent'),
@@ -1522,10 +1612,11 @@ export default function MessagesPage() {
   });
 
   const retryMessage = (message: ThreadMessage) => {
-    queryClient.setQueryData<ThreadMessage[]>(messagesKey, (previous = []) =>
+    const queryKey = ['/api/instagram/conversations', message.conversationId, 'messages'] as const;
+    queryClient.setQueryData<ThreadMessage[]>(queryKey, (previous = []) =>
       previous.filter((item) => item.id !== message.id),
     );
-    if (selectedConversationId) sendMessage.mutate(message.content);
+    sendMessage.mutate({ conversationId: message.conversationId, content: message.content });
   };
 
   const syncConversations = useMutation({
@@ -1580,7 +1671,7 @@ export default function MessagesPage() {
     const content = `${replyQuotePrefix}${messageText}`.trim();
     if (!content || content.length > 1000 || !selectedConversationId || !selectedCanReply) return;
     if (sendMessage.isPending) return;
-    sendMessage.mutate(content);
+    sendMessage.mutate({ conversationId: selectedConversationId, content });
     setReplyTarget(null);
   };
 

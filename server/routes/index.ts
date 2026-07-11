@@ -3,7 +3,7 @@ import type { IncomingMessage, Server } from 'http';
 import type { WebSocket } from 'ws';
 import session from 'express-session';
 import pgSession from 'connect-pg-simple';
-import type { WebSocketEvent } from '@shared/websocket';
+import { isWebSocketEventVisibleToUser, type WebSocketEvent } from '@shared/websocket';
 import { pool } from '../db';
 import { storage } from '../storage';
 import userRoutes from './user.routes';
@@ -138,11 +138,9 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
                 return;
             }
 
-            if (Array.isArray(data.audienceUserIds) && data.audienceUserIds.length > 0) {
-                if (!data.audienceUserIds.includes(context.userId)) {
-                    return;
-                }
-            } else if (data.recipientId !== undefined && context.userId !== data.recipientId) {
+            // Supplying an audience is an explicit routing decision. In
+            // particular, an empty audience means "send to nobody".
+            if (!isWebSocketEventVisibleToUser(data, context.userId)) {
                 return;
             }
 

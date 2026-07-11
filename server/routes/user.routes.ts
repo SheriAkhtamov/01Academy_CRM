@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import type { PoolClient } from 'pg';
 import { storage } from '../storage';
 import { pool } from '../db';
 import { authService } from '../services/auth';
@@ -27,6 +28,16 @@ const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     marketing: 'marketing',
 };
 const maxGeneratedLoginAttempts = 8;
+const USER_ACCESS_ADVISORY_LOCK = 10_100_001;
+
+type QueryExecutor = Pick<PoolClient, 'query'>;
+
+const parsePositiveId = (value: unknown): number | null => {
+    const text = String(value ?? '').trim();
+    if (!/^\d+$/.test(text)) return null;
+    const parsed = Number(text);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
 
 const translitMap: Record<string, string> = {
     а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i',
@@ -95,11 +106,16 @@ const findUserByLogin = async (login: string, exceptUserId?: number) => {
 };
 
 const normalizeRequestedWorkspaces = (value: unknown, primaryWorkspace: AcademyWorkspace) => {
-    const requested = Array.isArray(value)
-        ? value
-            .map((workspace) => String(workspace))
-            .filter((workspace): workspace is AcademyWorkspace => workspaceSet.has(workspace))
-        : [];
+    if (value !== undefined && !Array.isArray(value)) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    const rawWorkspaces = value ?? [];
+    if ((rawWorkspaces as unknown[]).some((workspace) => (
+        typeof workspace !== 'string' || !workspaceSet.has(workspace)
+    ))) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    const requested = rawWorkspaces as AcademyWorkspace[];
 
     return [...new Set([primaryWorkspace, ...requested])];
 };
@@ -108,8 +124,20 @@ const parseDateOfBirth = (value: unknown) => {
     if (value === undefined) return undefined;
     if (value === null || value === '') return null;
 
-    const date = new Date(String(value));
-    if (Number.isNaN(date.getTime())) {
+    const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+        throw Object.assign(new Error('invalidDateOfBirth'), { statusCode: 400 });
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(year, month - 1, day);
+    if (
+        date.getFullYear() !== year
+        || date.getMonth() !== month - 1
+        || date.getDate() !== day
+        || date.getTime() > Date.now()
+    ) {
         throw Object.assign(new Error('invalidDateOfBirth'), { statusCode: 400 });
     }
     return date;
@@ -146,8 +174,8 @@ const syncAcademyTeacherForUser = async (user: {
     workspace: string;
     workspaces?: string[] | null;
     isActive?: boolean | null;
-}) => {
-    const existing = await pool.query<{ id: number }>(
+}, executor: QueryExecutor = pool) => {
+    const existing = await executor.query<{ id: number }>(
         'SELECT id FROM academy_teachers WHERE user_id = $1 LIMIT 1',
         [user.id],
     );
@@ -157,14 +185,14 @@ const syncAcademyTeacherForUser = async (user: {
         const status = user.isActive === false ? 'dismissed' : 'active';
 
         if (teacherRecord) {
-            await pool.query(
+            await executor.query(
                 'UPDATE academy_teachers SET full_name = $1, status = $2, updated_at = NOW() WHERE id = $3',
                 [user.fullName, status, teacherRecord.id],
             );
             return;
         }
 
-        await pool.query(
+        await executor.query(
             `INSERT INTO academy_teachers (user_id, full_name, course_ids, schedule, status)
              VALUES ($1, $2, '[]'::jsonb, '[]'::jsonb, $3)`,
             [user.id, user.fullName, status],
@@ -173,25 +201,40 @@ const syncAcademyTeacherForUser = async (user: {
     }
 
     if (teacherRecord) {
-        await pool.query(
+        await executor.query(
             'UPDATE academy_teachers SET full_name = $1, status = $2, updated_at = NOW() WHERE id = $3',
             [user.fullName, 'dismissed', teacherRecord.id],
         );
     }
 };
 
-const getAssignedSalesLeadCount = async (managerId: number) => {
-    const result = await pool.query<{ lead_count: number | string }>(
-        `SELECT COUNT(*)::int AS lead_count
-         FROM academy_leads
-         WHERE manager_id = $1`,
+const getAssignedWorkload = async (managerId: number, executor: QueryExecutor = pool) => {
+    const result = await executor.query<{
+        lead_count: number | string;
+        student_count: number | string;
+        open_task_count: number | string;
+    }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM academy_leads WHERE manager_id = $1) AS lead_count,
+           (SELECT COUNT(*)::int FROM academy_students WHERE manager_id = $1) AS student_count,
+           (SELECT COUNT(*)::int FROM academy_tasks WHERE responsible_id = $1 AND status <> 'done') AS open_task_count`,
         [managerId],
     );
-    return Number(result.rows[0]?.lead_count ?? 0);
+    const row = result.rows[0];
+    const leadCount = Number(row?.lead_count ?? 0);
+    const studentCount = Number(row?.student_count ?? 0);
+    const openTaskCount = Number(row?.open_task_count ?? 0);
+    return {
+        leadCount,
+        studentCount,
+        openTaskCount,
+        salesResponsibilityCount: leadCount + studentCount,
+        offboardingResponsibilityCount: leadCount + studentCount + openTaskCount,
+    };
 };
 
-const getActiveSalesManagerForTransfer = async (managerId: number) => {
-    const result = await pool.query<{ id: number; full_name: string }>(
+const getActiveSalesManagerForTransfer = async (managerId: number, executor: QueryExecutor = pool) => {
+    const result = await executor.query<{ id: number; full_name: string }>(
         `SELECT u.id, u.full_name
          FROM users u
          WHERE u.id = $1
@@ -203,65 +246,74 @@ const getActiveSalesManagerForTransfer = async (managerId: number) => {
                FROM user_workspaces uw
                WHERE uw.user_id = u.id AND uw.workspace = 'sales'
              )
-           )`,
+           )
+         FOR UPDATE OF u`,
         [managerId],
     );
     return result.rows[0] ?? null;
 };
 
 const transferAssignedSalesLeads = async ({
+    client,
     fromManagerId,
     toManagerId,
     changedBy,
+    transferAllOpenTasks = false,
 }: {
+    client: PoolClient;
     fromManagerId: number;
     toManagerId: number;
     changedBy: number;
+    transferAllOpenTasks?: boolean;
 }) => {
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-        const leads = await client.query<{ id: number }>(
+    const leads = await client.query<{ id: number }>(
             `SELECT id
              FROM academy_leads
              WHERE manager_id = $1
              FOR UPDATE`,
             [fromManagerId],
         );
-        const leadIds = leads.rows.map((lead) => Number(lead.id));
-        if (leadIds.length === 0) {
-            await client.query('COMMIT');
-            return 0;
-        }
+    const leadIds = leads.rows.map((lead) => Number(lead.id));
+    const students = await client.query<{ id: number }>(
+        `SELECT id
+         FROM academy_students
+         WHERE manager_id = $1
+            OR lead_id = ANY($2::int[])
+         FOR UPDATE`,
+        [fromManagerId, leadIds],
+    );
+    const studentIds = students.rows.map((student) => Number(student.id));
 
-        await client.query(
+    if (leadIds.length > 0) await client.query(
             `UPDATE academy_leads
              SET manager_id = $1, updated_at = NOW()
              WHERE id = ANY($2::int[])`,
             [toManagerId, leadIds],
         );
-        await client.query(
+    if (studentIds.length > 0) await client.query(
             `UPDATE academy_students
              SET manager_id = $1, updated_at = NOW()
-             WHERE lead_id = ANY($2::int[])`,
-            [toManagerId, leadIds],
+             WHERE id = ANY($2::int[])`,
+            [toManagerId, studentIds],
         );
-        await client.query(
+    const taskUpdate = await client.query(
             `UPDATE academy_tasks
              SET responsible_id = $1, updated_at = NOW()
              WHERE status <> 'done'
                AND (
-                 (entity_type = 'lead' AND entity_id = ANY($2::int[]))
+                 ($4::boolean = true AND responsible_id = $3)
                  OR (
-                   entity_type = 'student'
-                   AND entity_id IN (
-                     SELECT id FROM academy_students WHERE lead_id = ANY($2::int[])
+                   $4::boolean = false
+                   AND (
+                     (entity_type = 'lead' AND entity_id = ANY($2::int[]))
+                     OR (entity_type = 'student' AND entity_id = ANY($5::int[]))
                    )
                  )
-               )`,
-            [toManagerId, leadIds],
+               )
+            `,
+            [toManagerId, leadIds, fromManagerId, transferAllOpenTasks, studentIds],
         );
-        await client.query(
+    if (leadIds.length > 0) await client.query(
             `INSERT INTO academy_lead_assignment_history
               (lead_id, from_manager_id, to_manager_id, changed_by, comment)
              SELECT id, $1, $2, $3, $4
@@ -275,14 +327,65 @@ const transferAssignedSalesLeads = async ({
                 leadIds,
             ],
         );
-        await client.query('COMMIT');
-        return leadIds.length;
-    } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-    } finally {
-        client.release();
-    }
+    return {
+        leadCount: leadIds.length,
+        studentCount: studentIds.length,
+        taskCount: taskUpdate.rowCount ?? 0,
+    };
+};
+
+type UserUpdateData = {
+    fullName?: string;
+    position?: string | null;
+    phone?: string | null;
+    email?: string;
+    dateOfBirth?: Date | null;
+    workspace?: AcademyWorkspace;
+    hasReportAccess?: boolean;
+    isActive?: boolean;
+};
+
+const userUpdateColumns: Record<keyof UserUpdateData, string> = {
+    fullName: 'full_name',
+    position: 'position',
+    phone: 'phone',
+    email: 'email',
+    dateOfBirth: 'date_of_birth',
+    workspace: 'workspace',
+    hasReportAccess: 'has_report_access',
+    isActive: 'is_active',
+};
+
+const updateUserWithExecutor = async (
+    executor: QueryExecutor,
+    userId: number,
+    updateData: UserUpdateData,
+) => {
+    const entries = (Object.entries(updateData) as Array<[keyof UserUpdateData, unknown]>)
+        .filter(([, value]) => value !== undefined);
+    if (entries.length === 0) return;
+
+    const assignments = entries.map(([key], index) => `${userUpdateColumns[key]} = $${index + 2}`);
+    await executor.query(
+        `UPDATE users
+         SET ${assignments.join(', ')}, updated_at = NOW()
+         WHERE id = $1`,
+        [userId, ...entries.map(([, value]) => value)],
+    );
+};
+
+const replaceUserWorkspaces = async (
+    executor: QueryExecutor,
+    userId: number,
+    workspaces: AcademyWorkspace[],
+) => {
+    await executor.query('DELETE FROM user_workspaces WHERE user_id = $1', [userId]);
+    await executor.query(
+        `INSERT INTO user_workspaces (user_id, workspace)
+         SELECT $1, workspace
+         FROM UNNEST($2::text[]) AS workspace`,
+        [userId, workspaces],
+    );
 };
 
 router.get('/', requireAuth, async (_req, res) => {
@@ -309,15 +412,15 @@ router.get('/online-status', requireAuth, async (_req, res) => {
 
 router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
-        if (Number.isNaN(id)) {
+        const id = parsePositiveId(req.params.id);
+        if (!id) {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
         const user = await storage.getUser(id);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        res.json({ leadCount: await getAssignedSalesLeadCount(id) });
+        res.json(await getAssignedWorkload(id));
     } catch (error) {
         logger.error('Error fetching assigned sales lead count', { error, userId: req.params.id });
         res.status(500).json({ error: 'Failed to fetch assigned sales lead count' });
@@ -326,9 +429,29 @@ router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
 
 router.post('/', requireAdministration, async (req, res) => {
     try {
-        const { fullName, phone, position, hasReportAccess, isActive } = req.body;
-        if (!fullName || typeof fullName !== 'string' || !fullName.trim()) {
+        const { phone, position, hasReportAccess, isActive } = req.body;
+        if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim()) {
             return res.status(400).json({ error: 'Full name is required' });
+        }
+        const fullName = req.body.fullName.trim();
+        if (fullName.length > 255) return res.status(400).json({ error: 'invalidData' });
+        if (phone !== undefined && phone !== null && typeof phone !== 'string') {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (typeof phone === 'string' && phone.trim().length > 50) {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (position !== undefined && position !== null && typeof position !== 'string') {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (typeof position === 'string' && position.trim().length > 255) {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (hasReportAccess !== undefined && typeof hasReportAccess !== 'boolean') {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+        if (isActive !== undefined && typeof isActive !== 'boolean') {
+            return res.status(400).json({ error: 'invalidData' });
         }
 
         if (!workspaceSet.has(req.body.workspace)) {
@@ -351,30 +474,63 @@ router.post('/', requireAdministration, async (req, res) => {
         }
 
         const temporaryPassword = crypto.randomBytes(12).toString('base64url');
+        const hashedPassword = await authService.hashPassword(temporaryPassword);
+        const credentialPasswordCiphertext = encryptCredentialPassword(temporaryPassword);
         let email = providedEmail || generateLogin(fullName, workspace, unavailableLogins);
-        let newUser: (Awaited<ReturnType<typeof authService.createUser>> & { workspaces?: AcademyWorkspace[] }) | null = null;
+        let newUser: any = null;
 
         for (let attempt = 0; attempt < maxGeneratedLoginAttempts; attempt += 1) {
+            const client = await pool.connect();
             try {
-                newUser = await authService.createUser({
-                    email,
-                    password: temporaryPassword,
-                    credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
-                    fullName,
-                    phone: phone || null,
-                    dateOfBirth: dateOfBirth ?? null,
-                    position: position || null,
-                    workspace,
-                    hasReportAccess: hasReportAccess || false,
-                    isActive: isActive !== undefined ? isActive : true,
-                });
-                const savedWorkspaces = await storage.setUserWorkspaces(newUser.id, workspaces);
+                await client.query('BEGIN');
+                const inserted = await client.query(
+                    `INSERT INTO users
+                       (email, password, credential_password_ciphertext, full_name, phone,
+                        date_of_birth, position, workspace, has_report_access, is_active)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                     RETURNING
+                       id, email, password,
+                       credential_password_ciphertext AS "credentialPasswordCiphertext",
+                       full_name AS "fullName", phone, date_of_birth AS "dateOfBirth",
+                       position, workspace, has_report_access AS "hasReportAccess",
+                       is_active AS "isActive", is_online AS "isOnline",
+                       last_seen_at AS "lastSeenAt", created_at AS "createdAt",
+                       updated_at AS "updatedAt"`,
+                    [
+                        email,
+                        hashedPassword,
+                        credentialPasswordCiphertext,
+                        fullName,
+                        typeof phone === 'string' ? phone.trim() || null : null,
+                        dateOfBirth ?? null,
+                        typeof position === 'string' ? position.trim() || null : null,
+                        workspace,
+                        hasReportAccess ?? false,
+                        isActive !== undefined ? isActive : true,
+                    ],
+                );
+                newUser = inserted.rows[0];
+                await replaceUserWorkspaces(client, newUser.id, workspaces);
                 newUser = {
                     ...newUser,
-                    workspaces: savedWorkspaces,
+                    workspaces,
                 };
+                await syncAcademyTeacherForUser(newUser, client);
+                await client.query(
+                    `INSERT INTO audit_logs
+                       (user_id, action, entity_type, entity_id, new_values)
+                     VALUES ($1, 'CREATE_USER', 'user', $2, $3::jsonb)`,
+                    [
+                        req.user!.id,
+                        newUser.id,
+                        JSON.stringify([authService.sanitizeUser(newUser)]),
+                    ],
+                );
+                await client.query('COMMIT');
                 break;
             } catch (error) {
+                await client.query('ROLLBACK').catch(() => undefined);
+                newUser = null;
                 if (!isUsersEmailUniqueViolation(error)) {
                     throw error;
                 }
@@ -385,6 +541,8 @@ router.post('/', requireAdministration, async (req, res) => {
 
                 unavailableLogins.add(email.toLowerCase());
                 email = generateLogin(fullName, workspace, unavailableLogins);
+            } finally {
+                client.release();
             }
         }
 
@@ -392,21 +550,11 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(500).json({ error: 'failedCreateUserDescription' });
         }
 
-        await syncAcademyTeacherForUser(newUser);
-
         try {
             await emailService.sendWelcomeEmail(newUser.email, fullName, temporaryPassword);
         } catch (emailError) {
             logger.error('Failed to send welcome email', { error: emailError, userId: newUser.id });
         }
-
-        await storage.createAuditLog({
-            userId: req.user!.id,
-            action: 'CREATE_USER',
-            entityType: 'user',
-            entityId: newUser.id,
-            newValues: [authService.sanitizeUser(newUser)],
-        });
 
         res.json({
             ...authService.sanitizeUser(newUser),
@@ -423,9 +571,9 @@ router.post('/', requireAdministration, async (req, res) => {
 
 router.get('/:id/credentials', requireAdministration, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
+        const id = parsePositiveId(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!id) {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
@@ -444,9 +592,9 @@ router.get('/:id/credentials', requireAdministration, async (req, res) => {
 
 router.patch('/:id/credentials', requireAdministration, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
+        const id = parsePositiveId(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!id) {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
@@ -533,7 +681,10 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
                 passwordChanged,
                 updatedBy: req.user!.id,
             }],
-        });
+        }).catch((error) => logger.error('Failed to audit user credential update', {
+            error,
+            userId: updatedUser.id,
+        }));
 
         res.json({
             ...buildCredentialPayload(
@@ -555,9 +706,9 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
 
 router.post('/:id/reset-password', requireAdministration, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
+        const id = parsePositiveId(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!id) {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
@@ -586,7 +737,10 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
                 email: user.email,
                 passwordResetBy: req.user!.id,
             }],
-        });
+        }).catch((error) => logger.error('Failed to audit password reset', {
+            error,
+            userId: user.id,
+        }));
 
         res.json(buildCredentialPayload(
             updatedUser,
@@ -601,10 +755,10 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
 
 router.put('/:id', requireAuth, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
+        const id = parsePositiveId(req.params.id);
         const currentUser = req.user;
 
-        if (Number.isNaN(id)) {
+        if (!id) {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
@@ -617,11 +771,30 @@ router.put('/:id', requireAuth, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        const updateData: any = {
-            fullName: req.body.fullName,
-            position: req.body.position,
-            phone: req.body.phone || null,
-        };
+        const updateData: UserUpdateData = {};
+
+        if (req.body.fullName !== undefined) {
+            if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim() || req.body.fullName.trim().length > 255) {
+                return res.status(400).json({ error: 'Full name is required' });
+            }
+            updateData.fullName = req.body.fullName.trim();
+        }
+        if (req.body.position !== undefined) {
+            if (req.body.position !== null && typeof req.body.position !== 'string') {
+                return res.status(400).json({ error: 'invalidData' });
+            }
+            const position = typeof req.body.position === 'string' ? req.body.position.trim() : '';
+            if (position.length > 255) return res.status(400).json({ error: 'invalidData' });
+            updateData.position = position || null;
+        }
+        if (req.body.phone !== undefined) {
+            if (req.body.phone !== null && typeof req.body.phone !== 'string') {
+                return res.status(400).json({ error: 'invalidData' });
+            }
+            const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+            if (phone.length > 50) return res.status(400).json({ error: 'invalidData' });
+            updateData.phone = phone || null;
+        }
 
         if (req.body.email !== undefined) {
             const nextLogin = normalizeLogin(req.body.email);
@@ -664,68 +837,157 @@ router.put('/:id', requireAuth, async (req, res) => {
                 );
             }
             if (req.body.hasReportAccess !== undefined) {
-                updateData.hasReportAccess = Boolean(req.body.hasReportAccess);
+                if (typeof req.body.hasReportAccess !== 'boolean') {
+                    return res.status(400).json({ error: 'invalidData' });
+                }
+                updateData.hasReportAccess = req.body.hasReportAccess;
             }
             if (req.body.isActive !== undefined) {
-                updateData.isActive = Boolean(req.body.isActive);
+                if (typeof req.body.isActive !== 'boolean') {
+                    return res.status(400).json({ error: 'invalidData' });
+                }
+                updateData.isActive = req.body.isActive;
             }
         }
 
-        const nextWorkspaces = requestedWorkspaces ?? getAssignedWorkspaces(existingUser);
-        const isRemovingSalesAccess =
-            getAssignedWorkspaces(existingUser).includes('sales') &&
-            !nextWorkspaces.includes('sales');
-        const isRemovingActiveLeadershipAccess =
-            hasLeadershipAccess(existingUser) &&
-            existingUser.isActive &&
-            (
-                !nextWorkspaces.some(isLeadershipWorkspace) ||
-                updateData.isActive === false
+        if (Object.values(updateData).every((value) => value === undefined) && requestedWorkspaces === null) {
+            return res.status(400).json({ error: 'invalidData' });
+        }
+
+        const client = await pool.connect();
+        let transferredLeadCount = 0;
+        let transferManagerId: number | null = null;
+        try {
+            await client.query('BEGIN');
+            await client.query('SELECT pg_advisory_xact_lock($1)', [USER_ACCESS_ADVISORY_LOCK]);
+
+            const lockedUserResult = await client.query<{
+                id: number;
+                full_name: string;
+                workspace: AcademyWorkspace;
+                is_active: boolean;
+            }>(
+                `SELECT id, full_name, workspace, is_active
+                 FROM users
+                 WHERE id = $1
+                 FOR UPDATE`,
+                [id],
             );
-
-        if (isRemovingActiveLeadershipAccess) {
-            const allUsers = await storage.getUsers();
-            const activeLeadershipUsers = allUsers.filter((u: any) => hasLeadershipAccess(u) && u.isActive);
-
-            if (activeLeadershipUsers.length <= 1) {
-                return res.status(403).json({
-                    error: 'Cannot remove or deactivate the last active leadership account.',
-                });
+            const lockedUser = lockedUserResult.rows[0];
+            if (!lockedUser) {
+                throw Object.assign(new Error('User not found'), { statusCode: 404 });
             }
-        }
 
-        let salesLeadTransferTarget: { id: number; full_name: string } | null = null;
-        if (isRemovingSalesAccess) {
-            const leadCount = await getAssignedSalesLeadCount(id);
-            if (leadCount > 0) {
-                const transferManagerId = Number.parseInt(String(req.body.leadTransferManagerId ?? ''), 10);
-                if (!Number.isInteger(transferManagerId) || transferManagerId === id) {
-                    return res.status(409).json({ error: 'salesLeadTransferRequired', leadCount });
-                }
-                salesLeadTransferTarget = await getActiveSalesManagerForTransfer(transferManagerId);
-                if (!salesLeadTransferTarget) {
-                    return res.status(400).json({ error: 'Active sales manager is required' });
-                }
-            }
-        }
-
-        if (salesLeadTransferTarget) {
-            await transferAssignedSalesLeads({
-                fromManagerId: id,
-                toManagerId: salesLeadTransferTarget.id,
-                changedBy: req.user!.id,
+            const assignedRows = await client.query<{ workspace: AcademyWorkspace }>(
+                'SELECT workspace FROM user_workspaces WHERE user_id = $1',
+                [id],
+            );
+            const currentWorkspaces = getAssignedWorkspaces({
+                workspace: lockedUser.workspace,
+                workspaces: assignedRows.rows.map((row) => row.workspace),
             });
+            const nextPrimaryWorkspace = updateData.workspace ?? lockedUser.workspace;
+            const nextWorkspaces = requestedWorkspaces
+                ? [...new Set([nextPrimaryWorkspace, ...requestedWorkspaces])]
+                : [...new Set([nextPrimaryWorkspace, ...currentWorkspaces])];
+            const nextIsActive = updateData.isActive ?? lockedUser.is_active;
+
+            const isRemovingActiveLeadershipAccess =
+                lockedUser.is_active
+                && currentWorkspaces.some(isLeadershipWorkspace)
+                && (!nextIsActive || !nextWorkspaces.some(isLeadershipWorkspace));
+            if (isRemovingActiveLeadershipAccess) {
+                const leadershipCount = await client.query<{ count: number | string }>(
+                    `SELECT COUNT(*)::int AS count
+                     FROM users u
+                     WHERE u.is_active = true
+                       AND (
+                         u.workspace = 'administration'
+                         OR EXISTS (
+                           SELECT 1 FROM user_workspaces uw
+                           WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+                         )
+                       )`,
+                );
+                if (Number(leadershipCount.rows[0]?.count ?? 0) <= 1) {
+                    throw Object.assign(
+                        new Error('Cannot remove or deactivate the last active leadership account.'),
+                        { statusCode: 403 },
+                    );
+                }
+            }
+
+            const losesSalesEligibility = !nextIsActive || !nextWorkspaces.includes('sales');
+            if (losesSalesEligibility) {
+                const workload = await getAssignedWorkload(id, client);
+                const responsibilityCount = nextIsActive
+                    ? workload.salesResponsibilityCount
+                    : workload.offboardingResponsibilityCount;
+                if (responsibilityCount > 0) {
+                    transferManagerId = parsePositiveId(req.body.leadTransferManagerId);
+                    if (!transferManagerId || transferManagerId === id) {
+                        throw Object.assign(new Error('salesLeadTransferRequired'), {
+                            statusCode: 409,
+                            leadCount: responsibilityCount,
+                        });
+                    }
+                    const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client);
+                    if (!transferTarget) {
+                        throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
+                    }
+                    const transferred = await transferAssignedSalesLeads({
+                        client,
+                        fromManagerId: id,
+                        toManagerId: transferManagerId,
+                        changedBy: req.user!.id,
+                        transferAllOpenTasks: !nextIsActive,
+                    });
+                    transferredLeadCount = transferred.leadCount + transferred.studentCount + transferred.taskCount;
+                }
+            }
+
+            await updateUserWithExecutor(client, id, updateData);
+            if (requestedWorkspaces) {
+                await replaceUserWorkspaces(client, id, nextWorkspaces);
+            } else if (!currentWorkspaces.includes(nextPrimaryWorkspace)) {
+                await client.query(
+                    `INSERT INTO user_workspaces (user_id, workspace)
+                     VALUES ($1, $2)
+                     ON CONFLICT (user_id, workspace) DO NOTHING`,
+                    [id, nextPrimaryWorkspace],
+                );
+            }
+
+            await syncAcademyTeacherForUser({
+                id,
+                fullName: updateData.fullName ?? lockedUser.full_name,
+                workspace: nextPrimaryWorkspace,
+                workspaces: nextWorkspaces,
+                isActive: nextIsActive,
+            }, client);
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
 
-        let updatedUser = await storage.updateUser(id, updateData);
-        if (requestedWorkspaces) {
-            const savedWorkspaces = await storage.setUserWorkspaces(id, requestedWorkspaces);
-            updatedUser = {
-                ...updatedUser,
-                workspaces: savedWorkspaces,
-            };
-        }
-        await syncAcademyTeacherForUser(updatedUser);
+        const updatedUser = await storage.getUser(id);
+        if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+
+        await storage.createAuditLog({
+            userId: req.user!.id,
+            action: 'UPDATE_USER',
+            entityType: 'user',
+            entityId: id,
+            oldValues: [authService.sanitizeUser(existingUser)],
+            newValues: [{
+                ...authService.sanitizeUser(updatedUser),
+                transferredLeadCount,
+                transferManagerId,
+            }],
+        }).catch((error) => logger.error('Failed to audit user update', { error, userId: id }));
 
         res.json(authService.sanitizeUser(updatedUser));
     } catch (error) {
@@ -733,16 +995,19 @@ router.put('/:id', requireAuth, async (req, res) => {
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
-        const typedError = error as { statusCode?: number; message?: string };
-        res.status(typedError.statusCode || 500).json({ error: typedError.message || 'Failed to update user' });
+        const typedError = error as { statusCode?: number; message?: string; leadCount?: number };
+        res.status(typedError.statusCode || 500).json({
+            error: typedError.message || 'Failed to update user',
+            ...(typedError.leadCount !== undefined ? { leadCount: typedError.leadCount } : {}),
+        });
     }
 });
 
 router.delete('/:id', requireAdministration, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
+        const id = parsePositiveId(req.params.id);
 
-        if (Number.isNaN(id)) {
+        if (!id) {
             return res.status(400).json({ error: 'Invalid user ID' });
         }
 
@@ -755,21 +1020,105 @@ router.delete('/:id', requireAdministration, async (req, res) => {
             return res.status(403).json({ error: 'Cannot delete your own account.' });
         }
 
-        const allUsers = await storage.getUsers();
-        const activeLeadershipUsers = allUsers.filter((u: any) => hasLeadershipAccess(u) && u.isActive);
-        if (hasLeadershipAccess(user) && user.isActive && activeLeadershipUsers.length <= 1) {
-            return res.status(403).json({ error: 'Cannot delete the last active leadership account.' });
+        const client = await pool.connect();
+        let transferredLeadCount = 0;
+        let transferManagerId: number | null = null;
+        try {
+            await client.query('BEGIN');
+            await client.query('SELECT pg_advisory_xact_lock($1)', [USER_ACCESS_ADVISORY_LOCK]);
+
+            const lockedUser = await client.query<{ id: number; is_active: boolean; has_leadership: boolean }>(
+                `SELECT u.id,
+                        u.is_active,
+                        (
+                          u.workspace = 'administration'
+                          OR EXISTS (
+                            SELECT 1 FROM user_workspaces uw
+                            WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+                          )
+                        ) AS has_leadership
+                 FROM users u
+                 WHERE u.id = $1
+                 FOR UPDATE OF u`,
+                [id],
+            );
+            if (!lockedUser.rows[0]) {
+                throw Object.assign(new Error('User not found'), { statusCode: 404 });
+            }
+
+            if (lockedUser.rows[0].has_leadership && lockedUser.rows[0].is_active) {
+                const leadershipCount = await client.query<{ count: number | string }>(
+                    `SELECT COUNT(*)::int AS count
+                     FROM users u
+                     WHERE u.is_active = true
+                       AND (
+                         u.workspace = 'administration'
+                         OR EXISTS (
+                           SELECT 1 FROM user_workspaces uw
+                           WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+                         )
+                       )`,
+                );
+                if (Number(leadershipCount.rows[0]?.count ?? 0) <= 1) {
+                    throw Object.assign(
+                        new Error('Cannot delete the last active leadership account.'),
+                        { statusCode: 403 },
+                    );
+                }
+            }
+
+            const workload = await getAssignedWorkload(id, client);
+            if (workload.offboardingResponsibilityCount > 0) {
+                transferManagerId = parsePositiveId(req.query.leadTransferManagerId);
+                if (!transferManagerId || transferManagerId === id) {
+                    throw Object.assign(new Error('salesLeadTransferRequired'), {
+                        statusCode: 409,
+                        leadCount: workload.offboardingResponsibilityCount,
+                    });
+                }
+                const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client);
+                if (!transferTarget) {
+                    throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
+                }
+                const transferred = await transferAssignedSalesLeads({
+                    client,
+                    fromManagerId: id,
+                    toManagerId: transferManagerId,
+                    changedBy: req.user!.id,
+                    transferAllOpenTasks: true,
+                });
+                transferredLeadCount = transferred.leadCount + transferred.studentCount + transferred.taskCount;
+            }
+
+            await client.query(
+                "UPDATE academy_teachers SET status = 'dismissed', updated_at = NOW() WHERE user_id = $1",
+                [id],
+            );
+            await client.query('DELETE FROM users WHERE id = $1', [id]);
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
 
-        await pool.query(
-            "UPDATE academy_teachers SET status = 'dismissed', updated_at = NOW() WHERE user_id = $1",
-            [id],
-        );
-        await storage.deleteUser(id);
-        res.json({ message: 'User deleted successfully' });
+        await storage.createAuditLog({
+            userId: req.user!.id,
+            action: 'DELETE_USER',
+            entityType: 'user',
+            entityId: id,
+            oldValues: [authService.sanitizeUser(user)],
+            newValues: [{ transferredLeadCount, transferManagerId }],
+        }).catch((error) => logger.error('Failed to audit user deletion', { error, userId: id }));
+        res.json({ message: 'User deleted successfully', transferredLeadCount });
     } catch (error) {
         logger.error('Error deleting user', { error, userId: req.params.id });
-        res.status(500).json({ error: 'Failed to delete user' });
+        const typedError = error as { statusCode?: number; message?: string; leadCount?: number };
+        res.status(typedError.statusCode || 500).json({
+            error: typedError.message || 'Failed to delete user',
+            ...(typedError.leadCount !== undefined ? { leadCount: typedError.leadCount } : {}),
+        });
     }
 });
 

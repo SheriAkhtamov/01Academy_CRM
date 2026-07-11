@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     closestCorners,
     DndContext,
@@ -14,6 +14,12 @@ import {
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useTranslation } from '@/hooks/useTranslation';
+import {
+    finishOptimisticChange,
+    incomingValueChangedSinceStart,
+    reconcileOptimisticItems,
+    type OptimisticChange,
+} from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
 import { TaskCard } from './TaskCard';
 import { BOARD_COLUMNS, type BoardStatus, type TaskSummary } from '@/lib/boardTypes';
@@ -22,7 +28,19 @@ interface TaskBoardProps {
     tasks: TaskSummary[];
     onStatusChange: (taskId: number, status: BoardStatus) => Promise<boolean>;
     onTaskClick: (taskId: number) => void;
+    canMoveTask?: (task: TaskSummary, status: BoardStatus) => boolean;
 }
+
+const reconcileBoardTasks = (
+    incoming: TaskSummary[],
+    pending: ReadonlyMap<number, OptimisticChange<BoardStatus>>,
+) => reconcileOptimisticItems(
+    incoming,
+    pending,
+    (task) => task.id,
+    (task) => task.status,
+    (task, status) => ({ ...task, status }),
+);
 
 function DraggableTaskCard({
     task,
@@ -92,10 +110,14 @@ function TaskColumn({
     );
 }
 
-export function TaskBoard({ tasks, onStatusChange, onTaskClick }: TaskBoardProps) {
+export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: TaskBoardProps) {
     const { t } = useTranslation();
     const [boardTasks, setBoardTasks] = useState(tasks);
     const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
+    const latestTasksRef = useRef(tasks);
+    const pendingMovesRef = useRef(new Map<number, OptimisticChange<BoardStatus>>());
+    const nextMoveTokenRef = useRef(0);
+    latestTasksRef.current = tasks;
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -103,22 +125,7 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick }: TaskBoardProps
     );
 
     useEffect(() => {
-        // Keep any in-flight optimistic status while the server value catches up.
-        setBoardTasks((current) => {
-            if (current.length === 0) return tasks;
-            const optimistic = new Map<number, BoardStatus>();
-            current.forEach((task) => {
-                const incoming = tasks.find((next) => next.id === task.id);
-                if (incoming && incoming.status !== task.status) {
-                    optimistic.set(task.id, task.status);
-                }
-            });
-            if (optimistic.size === 0) return tasks;
-            return tasks.map((task) => {
-                const status = optimistic.get(task.id);
-                return status && status !== task.status ? { ...task, status } : task;
-            });
-        });
+        setBoardTasks(reconcileBoardTasks(tasks, pendingMovesRef.current));
     }, [tasks]);
 
     const activeTask = activeTaskId === null ? null : boardTasks.find((task) => task.id === activeTaskId) ?? null;
@@ -127,29 +134,38 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick }: TaskBoardProps
         (taskId: number, status: BoardStatus) => {
             const task = boardTasks.find((item) => item.id === taskId);
             if (!task || task.status === status) return;
-            const previous = task.status;
+            if (canMoveTask && !canMoveTask(task, status)) return;
+            const baselineStatus = latestTasksRef.current.find((item) => item.id === taskId)?.status
+                ?? task.status;
+            const token = ++nextMoveTokenRef.current;
+            pendingMovesRef.current.set(taskId, {
+                token,
+                value: status,
+                baselineValue: baselineStatus,
+            });
 
             setBoardTasks((current) => current.map((item) => (item.id === taskId ? { ...item, status } : item)));
 
-            onStatusChange(taskId, status)
+            const finishMove = (accepted: boolean) => {
+                const change = finishOptimisticChange(pendingMovesRef.current, taskId, token);
+                if (!change) return;
+
+                const latestTask = latestTasksRef.current.find((item) => item.id === taskId);
+                if (!accepted || incomingValueChangedSinceStart(latestTask, change, (item) => item.status)) {
+                    setBoardTasks(reconcileBoardTasks(latestTasksRef.current, pendingMovesRef.current));
+                }
+            };
+
+            Promise.resolve()
+                .then(() => onStatusChange(taskId, status))
                 .then((ok) => {
-                    if (!ok) {
-                        setBoardTasks((current) =>
-                            current.map((item) =>
-                                item.id === taskId && item.status === status ? { ...item, status: previous } : item,
-                            ),
-                        );
-                    }
+                    finishMove(ok);
                 })
                 .catch(() => {
-                    setBoardTasks((current) =>
-                        current.map((item) =>
-                            item.id === taskId && item.status === status ? { ...item, status: previous } : item,
-                        ),
-                    );
+                    finishMove(false);
                 });
         },
-        [boardTasks, onStatusChange],
+        [boardTasks, canMoveTask, onStatusChange],
     );
 
     const handleDragStart = useCallback((event: DragStartEvent) => {

@@ -6,7 +6,7 @@ import {
   formatUserWorkspace,
   canAccessReports,
 } from '@/lib/auth';
-import { getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import {
@@ -63,7 +63,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const assignedWorkspaces = getAssignedWorkspaces(user);
   const additionalWorkspaces = assignedWorkspaces.filter((workspace) => workspace !== user.workspace);
-  const hasWorkspace = (workspaceName: AcademyWorkspace) => assignedWorkspaces.includes(workspaceName);
+  const hasWorkspace = (workspaceName: AcademyWorkspace) => canAccessAcademyWorkspace(user, workspaceName);
 
   const isItemActive = (href: string) => {
     const currentPath = location.split('?')[0];

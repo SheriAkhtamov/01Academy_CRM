@@ -7,6 +7,8 @@ import { buildWeeklyReport } from "./weekly-report";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
 
+export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
+
 const leadershipUserAccessSql = `
   (
     u.workspace = 'administration'
@@ -41,21 +43,25 @@ export const startScheduler = () => {
     } catch (error) {
       logger.error("[scheduler] outbox worker error", { error });
     }
-  });
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   // The escalation monitor makes overdue work and cash risks push themselves to leadership.
   cron.schedule("0 * * * *", async () => {
-    const actions = await runEscalations();
-    if (actions.length > 0) {
-      logger.warn(`[scheduler] escalations raised (${actions.join(', ')})`);
+    try {
+      const actions = await runEscalations();
+      if (actions.length > 0) {
+        logger.warn(`[scheduler] escalations raised (${actions.join(', ')})`);
+      }
+    } catch (error) {
+      logger.error("[scheduler] escalation monitor error", { error });
     }
-  });
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   // Daily automations at 09:00.
   cron.schedule("0 9 * * *", async () => {
-    const actorId = await getSystemUserId();
-    if (!actorId) return;
     try {
+      const actorId = await getSystemUserId();
+      if (!actorId) return;
       const [actions, refreshedInstagramTokens] = await Promise.all([
         runAutomations(actorId),
         refreshExpiringInstagramTokens(),
@@ -67,21 +73,23 @@ export const startScheduler = () => {
     } catch (error) {
       logger.error("[scheduler] daily automations error", { error });
     }
-  });
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   // Weekly leadership report every Monday at 09:00.
   cron.schedule("0 9 * * 1", async () => {
-    const actorId = await getSystemUserId();
-    if (!actorId) return;
     try {
+      const actorId = await getSystemUserId();
+      if (!actorId) return;
       const result = await buildWeeklyReport(actorId);
       logger.info("[scheduler] weekly report enqueued", { outboxId: result.outboxId });
     } catch (error) {
       logger.error("[scheduler] weekly report error", { error });
     }
-  });
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
-  logger.info("Scheduler started (outbox: 1m, escalations: hourly, automations: daily 09:00, weekly report: Mon 09:00)");
+  logger.info(
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; outbox: 1m, escalations: hourly, automations: daily 09:00, weekly report: Mon 09:00)`,
+  );
 };
 
 const getSystemUserId = async (): Promise<number | null> => {

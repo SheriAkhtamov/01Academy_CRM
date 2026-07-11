@@ -37,7 +37,7 @@ import {
   MessagesSquare,
   Archive,
 } from 'lucide-react';
-import { getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, type AcademyWorkspace } from '@shared/academy';
 
 interface SearchItem {
   id: string;
@@ -117,8 +117,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
       ];
 
-      const assignedWorkspaces = getAssignedWorkspaces(user);
-      const hasWorkspace = (workspace: AcademyWorkspace) => assignedWorkspaces.includes(workspace);
+      const hasWorkspace = (workspace: AcademyWorkspace) => canAccessAcademyWorkspace(user, workspace);
 
       return [
         ...(hasWorkspace('administration') ? administrationItems : []),

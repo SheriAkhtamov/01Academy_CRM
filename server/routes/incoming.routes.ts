@@ -129,6 +129,7 @@ const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace' | 'websi
 type QueryExecutor = {
   query: (text: string, values?: any[]) => Promise<{ rows: any[] }>;
 };
+const USER_ACCESS_ADVISORY_LOCK = 10_100_001;
 
 const leadershipUserAccessSql = `
   (
@@ -175,6 +176,9 @@ const getSystemUserId = async (executor: QueryExecutor = pool): Promise<number> 
 };
 
 const getLeadAssigneeId = async (executor: QueryExecutor = pool): Promise<number> => {
+  // Share the same transaction lock as user offboarding so a webhook cannot
+  // assign fresh work between the workload check and access removal.
+  await executor.query('SELECT pg_advisory_xact_lock($1)', [USER_ACCESS_ADVISORY_LOCK]);
   const { rows } = await executor.query(
     `SELECT u.id
      FROM users u
@@ -218,6 +222,36 @@ const normalizeTelegramUsername = (value: unknown) => {
   return username ? `@${username}`.slice(0, 120) : null;
 };
 
+const parseOptionalPositiveId = (value: unknown): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const text = String(value).trim();
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const lockIncomingContact = async (
+  executor: QueryExecutor,
+  phone: string | null | undefined,
+  messenger?: string | null,
+) => {
+  const normalizedPhone = normalizePhoneForStorage(phone)?.normalizedPhone ?? '';
+  const normalizedMessenger = String(messenger ?? '').trim().toLowerCase();
+  // The phone table is unique, but the lead itself is created first. Serializing
+  // every supplied identifier independently prevents the same phone paired
+  // with two different messenger values (or vice versa) from using two locks.
+  const contactKeys = [
+    normalizedPhone ? `phone:${normalizedPhone}` : null,
+    normalizedMessenger ? `messenger:${normalizedMessenger}` : null,
+  ].filter((key): key is string => Boolean(key)).sort();
+  for (const contactKey of contactKeys) {
+    await executor.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+      [contactKey],
+    );
+  }
+};
+
 const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, phone: string) => {
   const normalized = normalizePhoneForStorage(phone);
   if (!normalized) return;
@@ -231,7 +265,7 @@ const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, ph
 
 const findIncomingDuplicate = async (
   executor: QueryExecutor,
-  phone: string,
+  phone: string | null | undefined,
   messenger?: string | null,
 ) => {
   const normalizedPhone = normalizePhoneForStorage(phone)?.normalizedPhone ?? null;
@@ -249,11 +283,17 @@ const findIncomingDuplicate = async (
              AND lp.normalized_phone = $1
          )
        )
-     ) OR ($2::text IS NOT NULL AND l.messenger = $2)
+     ) OR (
+       $2::text IS NOT NULL
+       AND LOWER(BTRIM(l.messenger)) = LOWER(BTRIM($2))
+     )
      UNION ALL
      SELECT 'student' AS entity_type, id, lead_id, student_name AS name, phone, messenger
      FROM academy_students
-     WHERE phone = $1 OR ($2::text IS NOT NULL AND messenger = $2)
+     WHERE phone = $1 OR (
+       $2::text IS NOT NULL
+       AND LOWER(BTRIM(messenger)) = LOWER(BTRIM($2))
+     )
      LIMIT 1`,
     [normalizedPhone, messenger ?? null],
   );
@@ -266,16 +306,17 @@ router.post('/chatplace', async (req, res) => {
   try {
     const body = req.body ?? {};
     const contactName = String(body.contactName ?? body.name ?? 'Instagram lead').slice(0, 255);
-    const messenger = body.messenger ?? body.instagramUsername ?? null;
-    const phone = String(body.phone ?? messenger ?? '').trim();
-    const storedPhone = normalizePhoneForStorage(phone)?.phone ?? phone;
-    if (!phone) {
+    const messenger = nullableText(body.messenger ?? body.instagramUsername, 120);
+    const phone = nullableText(body.phone, 50);
+    const storedPhone = phone ? normalizePhoneForStorage(phone)?.phone ?? phone : null;
+    if (!phone && !messenger) {
       return res.status(400).json({ error: 'phone or messenger is required' });
     }
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
       const managerId = await getLeadAssigneeId(client);
+      await lockIncomingContact(client, phone, messenger);
       const duplicate = await findIncomingDuplicate(client, phone, messenger);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
@@ -292,7 +333,7 @@ router.post('/chatplace', async (req, res) => {
         [contactName, storedPhone, messenger, sourceId, body.campaign ?? null, managerId, systemUserId],
       );
       const lead = camelize(inserted[0]);
-      await syncIncomingLeadPhone(client, lead.id, storedPhone);
+      if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
          VALUES ($1,NULL,'new_request',$2,'ChatPlace')`,
@@ -329,11 +370,20 @@ router.post('/google-forms', async (req, res) => {
     const phone = String(body.phone ?? '').trim();
     const storedPhone = normalizePhoneForStorage(phone)?.phone ?? phone;
     if (!phone) return res.status(400).json({ error: 'phone is required' });
-    const statusCode = body.demoAt ? 'demo_invited' : 'new_request';
+    const courseId = parseOptionalPositiveId(body.courseId);
+    if (body.courseId !== undefined && body.courseId !== null && body.courseId !== '' && !courseId) {
+      return res.status(400).json({ error: 'Invalid course id' });
+    }
+    const demoAt = body.demoAt ? new Date(String(body.demoAt)) : null;
+    if (demoAt && Number.isNaN(demoAt.getTime())) {
+      return res.status(400).json({ error: 'Invalid demo date' });
+    }
+    const statusCode = demoAt ? 'demo_invited' : 'new_request';
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
       const managerId = await getLeadAssigneeId(client);
+      await lockIncomingContact(client, phone);
       const duplicate = await findIncomingDuplicate(client, phone);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
@@ -347,7 +397,7 @@ router.post('/google-forms', async (req, res) => {
         `INSERT INTO academy_leads
           (contact_name, phone, student_name, course_id, source_id, status_code, manager_id, demo_at, language, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ru',$9) RETURNING *`,
-        [contactName, storedPhone, body.studentName ?? null, body.courseId ?? null, sourceId, statusCode, managerId, body.demoAt ?? null, systemUserId],
+        [contactName, storedPhone, body.studentName ?? null, courseId, sourceId, statusCode, managerId, demoAt, systemUserId],
       );
       const lead = camelize(inserted[0]);
       await syncIncomingLeadPhone(client, lead.id, storedPhone);
@@ -401,6 +451,7 @@ router.post('/website-lead', async (req, res) => {
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
+      await lockIncomingContact(client, phone, messenger);
       const duplicate = await findIncomingDuplicate(client, phone, messenger);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 

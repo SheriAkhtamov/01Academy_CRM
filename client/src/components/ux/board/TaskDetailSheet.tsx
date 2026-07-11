@@ -122,7 +122,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     const queryClient = useQueryClient();
 
     const queryKey = [`/api/board/tasks/${taskId}`];
-    const { data: task, isLoading } = useQuery<TaskDetail>({
+    const { data: task, isLoading, isError, refetch } = useQuery<TaskDetail>({
         queryKey,
         enabled: open && taskId !== null,
     });
@@ -137,6 +137,13 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     const [checklistText, setChecklistText] = useState('');
     const [confirmDelete, setConfirmDelete] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        setEditing(false);
+        setCommentText('');
+        setChecklistText('');
+        setConfirmDelete(false);
+    }, [taskId, open]);
 
     useEffect(() => {
         if (task && !editing) {
@@ -242,7 +249,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
-                {isLoading || !task ? (
+                {isError ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                        <p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p>
+                        <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
+                            {t('retry')}
+                        </Button>
+                    </div>
+                ) : isLoading || !task ? (
                     <div className="flex h-full items-center justify-center">
                         <Loader2 className="size-6 animate-spin text-muted-foreground" />
                     </div>

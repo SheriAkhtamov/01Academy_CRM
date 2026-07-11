@@ -23,3 +23,10 @@ export type WebSocketEvent = {
   recipientId?: number;
   audienceUserIds?: number[];
 };
+
+export const isWebSocketEventVisibleToUser = (event: WebSocketEvent, userId: number): boolean => {
+  if (Array.isArray(event.audienceUserIds)) {
+    return event.audienceUserIds.includes(userId);
+  }
+  return event.recipientId === undefined || event.recipientId === userId;
+};

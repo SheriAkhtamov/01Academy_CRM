@@ -5,6 +5,13 @@ import { logger } from '../lib/logger';
 
 const router = Router();
 
+const parsePositiveId = (value: unknown): number | null => {
+    const text = String(value ?? '').trim();
+    if (!/^\d+$/.test(text)) return null;
+    const parsed = Number(text);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
 router.get('/', requireAuth, async (req, res) => {
     try {
         const notifications = await storage.getNotificationsByUser(req.user!.id);
@@ -28,13 +35,14 @@ router.put('/read-all', requireAuth, async (req, res) => {
 
 router.put('/:id/read', requireAuth, async (req, res) => {
     try {
-        const notificationId = Number.parseInt(req.params.id, 10);
+        const notificationId = parsePositiveId(req.params.id);
 
-        if (Number.isNaN(notificationId)) {
+        if (!notificationId) {
             return res.status(400).json({ error: 'Invalid notification id' });
         }
 
-        await storage.markNotificationAsRead(notificationId, req.user!.id);
+        const notification = await storage.markNotificationAsRead(notificationId, req.user!.id);
+        if (!notification) return res.status(404).json({ error: 'Notification not found' });
         res.json({ success: true });
     } catch (error) {
         logger.error('Failed to mark notification as read', { error, notificationId: req.params.id });
@@ -44,13 +52,14 @@ router.put('/:id/read', requireAuth, async (req, res) => {
 
 router.delete('/:id', requireAuth, async (req, res) => {
     try {
-        const notificationId = Number.parseInt(req.params.id, 10);
+        const notificationId = parsePositiveId(req.params.id);
 
-        if (Number.isNaN(notificationId)) {
+        if (!notificationId) {
             return res.status(400).json({ error: 'Invalid notification id' });
         }
 
-        await storage.deleteNotification(notificationId, req.user!.id);
+        const deleted = await storage.deleteNotification(notificationId, req.user!.id);
+        if (!deleted) return res.status(404).json({ error: 'Notification not found' });
         res.json({ success: true });
     } catch (error) {
         logger.error('Failed to delete notification', { error, notificationId: req.params.id });

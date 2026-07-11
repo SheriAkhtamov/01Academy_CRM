@@ -248,6 +248,17 @@ class BoardStorage {
         return row;
     }
 
+    async createTaskWithActivity(
+        data: InsertBoardTask,
+        activity: Omit<InsertBoardTaskActivity, 'taskId'>,
+    ): Promise<BoardTask> {
+        return db.transaction(async (tx) => {
+            const [row] = await tx.insert(boardTasks).values(data).returning();
+            await tx.insert(boardTaskActivity).values({ ...activity, taskId: row.id });
+            return row;
+        });
+    }
+
     async updateTask(id: number, data: Partial<InsertBoardTask> & { acceptedAt?: Date | null; acceptedBy?: number | null }): Promise<BoardTask> {
         const [row] = await db
             .update(boardTasks)
@@ -255,6 +266,30 @@ class BoardStorage {
             .where(eq(boardTasks.id, id))
             .returning();
         return row;
+    }
+
+    async updateTaskWithActivities(
+        id: number,
+        expectedStatus: string,
+        data: Partial<InsertBoardTask> & { acceptedAt?: Date | null; acceptedBy?: number | null },
+        activities: Omit<InsertBoardTaskActivity, 'taskId'>[],
+    ): Promise<BoardTask> {
+        return db.transaction(async (tx) => {
+            const [row] = await tx
+                .update(boardTasks)
+                .set({ ...data, updatedAt: new Date() })
+                .where(and(eq(boardTasks.id, id), eq(boardTasks.status, expectedStatus)))
+                .returning();
+            if (!row) {
+                throw Object.assign(new Error('Task changed concurrently'), { statusCode: 409 });
+            }
+            if (activities.length > 0) {
+                await tx.insert(boardTaskActivity).values(
+                    activities.map((activity) => ({ ...activity, taskId: id })),
+                );
+            }
+            return row;
+        });
     }
 
     async deleteTask(id: number): Promise<void> {
@@ -265,6 +300,17 @@ class BoardStorage {
     async createComment(data: InsertBoardTaskComment) {
         const [row] = await db.insert(boardTaskComments).values(data).returning();
         return row;
+    }
+
+    async createCommentWithActivity(
+        data: InsertBoardTaskComment,
+        activity: Omit<InsertBoardTaskActivity, 'taskId'>,
+    ) {
+        return db.transaction(async (tx) => {
+            const [row] = await tx.insert(boardTaskComments).values(data).returning();
+            await tx.insert(boardTaskActivity).values({ ...activity, taskId: data.taskId });
+            return row;
+        });
     }
 
     async getComment(id: number) {

@@ -128,7 +128,7 @@ interface Student {
   courseId?: number;
   courseName?: string;
   contactName: string;
-  phone: string;
+  phone: string | null;
   studentName?: string;
   studentAge?: number;
   managerId?: number;
@@ -601,8 +601,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     }
     if (riskFilter === 'low-attendance') {
       const attendanceTarget = Number(data?.constants?.targets?.attendance ?? 70);
-      return myStudents.filter((student) => Number(student.attendancePercent || 0) > 0
-        && Number(student.attendancePercent || 0) < attendanceTarget);
+      return myStudents.filter((student) => (
+        student.riskFlags?.includes('attendance_below_70')
+        || (
+          Number(student.attendancePercent || 0) > 0
+          && Number(student.attendancePercent || 0) < attendanceTarget
+        )
+      ));
     }
     return myStudents;
   }, [data?.constants?.targets?.attendance, myStudents, riskFilter]);
@@ -653,7 +658,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
     const newLeadsWeek = myLeads.filter((lead) => new Date(lead.createdAt) >= weekAgo).length;
     const activeLeads = myLeads.filter(
-      (lead) => lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
+      (lead) => !lead.isArchived && lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
     ).length;
     const totalStudents = myStudents.length;
 
@@ -665,7 +670,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       (task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now
     ).length;
 
-    return { newLeadsWeek, activeLeads, totalStudents, conversionRate, overdueTasks };
+    return { newLeadsWeek, activeLeads, totalStudents, conversionRate, overdueTasks, totalTasks: myTasks.length };
   }, [activePipelineCodes, myLeads, myStudents, myTasks]);
 
   const createLead = useMutation({
@@ -895,17 +900,18 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const managerFunnel = useMemo(() => {
-    const funnelMap = new Map<string, number>();
-    for (const lead of myLeads) {
-      funnelMap.set(lead.statusCode, (funnelMap.get(lead.statusCode) ?? 0) + 1);
-    }
-    return activePipelineStatuses.flatMap((status) => {
-      const count = funnelMap.get(status.code) ?? 0;
-      return count > 0 ? [{
+    const statusIndex = new Map(activePipelineStatuses.map((status, index) => [status.code, index]));
+    const visibleLeads = myLeads.filter((lead) => !lead.isArchived);
+    return activePipelineStatuses.map((status, index) => {
+      const count = visibleLeads.filter((lead) => {
+        const currentIndex = statusIndex.get(lead.statusCode);
+        return currentIndex !== undefined && currentIndex >= index;
+      }).length;
+      return {
         code: status.code,
         count,
         color: status.color,
-      }] : [];
+      };
     });
   }, [activePipelineStatuses, myLeads]);
 
@@ -985,7 +991,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             <KpiCard title={isAdministrationWorkspace ? t('activeLeads') : t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
             <KpiCard title={isAdministrationWorkspace ? t('allClients') : t('myStudents')} value={managerStats.totalStudents} detail={isAdministrationWorkspace ? t('allManagers') : t('assignedToMe')} icon={GraduationCap} tone="green" />
             <KpiCard title={isAdministrationWorkspace ? t('conversionRate') : t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
-            <KpiCard title={isAdministrationWorkspace ? t('allTasks') : t('overdueTasks')} value={managerStats.overdueTasks} detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')} icon={AlertCircle} tone={managerStats.overdueTasks > 0 ? 'red' : 'green'} />
+            <KpiCard
+              title={isAdministrationWorkspace ? t('allTasks') : t('overdueTasks')}
+              value={isAdministrationWorkspace ? managerStats.totalTasks : managerStats.overdueTasks}
+              detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')}
+              icon={AlertCircle}
+              tone={managerStats.overdueTasks > 0 ? 'red' : 'green'}
+            />
           </div>
           <OverviewTab
             t={t}
@@ -1193,6 +1205,7 @@ function OverviewTab({
     totalStudents: number;
     conversionRate: number;
     overdueTasks: number;
+    totalTasks: number;
   };
   leadStatusName: (code: string) => string;
   statusColor: (code: string) => string;
@@ -1202,9 +1215,13 @@ function OverviewTab({
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
   noTasksText: string;
 }) {
-  const priorityTasks = myTasks
+  const priorityTasks = [...myTasks]
     .filter((task) => task.status !== 'done')
-    .sort((a, b) => new Date(a.deadlineAt || 0).getTime() - new Date(b.deadlineAt || 0).getTime())
+    .sort((a, b) => {
+      const leftDeadline = a.deadlineAt ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+      const rightDeadline = b.deadlineAt ? new Date(b.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+      return leftDeadline - rightDeadline;
+    })
     .slice(0, 5);
 
   return (
@@ -1557,7 +1574,7 @@ function StudentsTab({
         </CardContent>
       </Card>
       <StudentDetailSheet
-        student={selectedStudent}
+        student={myStudents.find((student) => student.id === selectedStudent?.id) ?? selectedStudent}
         open={studentSheetOpen}
         onOpenChange={onStudentSheetOpenChange}
         onRecordPayment={(leadId) => openLead(leadId, 'payment')}
@@ -1594,7 +1611,9 @@ function TasksTab({
     const bOverdue = b.deadlineAt && new Date(b.deadlineAt) < now && b.status !== 'done';
     if (aOverdue && !bOverdue) return -1;
     if (!aOverdue && bOverdue) return 1;
-    return new Date(a.deadlineAt || 0).getTime() - new Date(b.deadlineAt || 0).getTime();
+    const leftDeadline = a.deadlineAt ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+    const rightDeadline = b.deadlineAt ? new Date(b.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
+    return leftDeadline - rightDeadline;
   });
 
   return (

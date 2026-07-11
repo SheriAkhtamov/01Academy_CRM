@@ -13,7 +13,7 @@ import {
 const SUPER = {
   username: process.env.SUPER_USERNAME || 'Sheri',
   fullName: process.env.SUPER_FULLNAME || process.env.SUPER_USERNAME || 'Sheri',
-  email: process.env.SUPER_EMAIL || 'admin@01academy.uz',
+  email: (process.env.SUPER_EMAIL || 'admin@01academy.uz').trim().toLowerCase(),
   password: process.env.SUPER_PASSWORD || 'Sheri2001',
 };
 

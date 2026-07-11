@@ -10,6 +10,7 @@ import { TaskDetailSheet } from '@/components/ux/board/TaskDetailSheet';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { hasLeadershipAccess } from '@shared/academy';
 import type { BoardStatus, BoardTasksResponse, UserMini } from '@/lib/boardTypes';
 
@@ -24,6 +25,7 @@ interface ApiUser {
 export default function AdminTasksPage() {
     const { t } = useTranslation();
     const { user } = useAuth();
+    const { toast } = useToast();
     const queryClient = useQueryClient();
     const isTaskSupervisor = hasLeadershipAccess(user);
 
@@ -65,11 +67,23 @@ export default function AdminTasksPage() {
             queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${taskId}`] });
             return true;
-        } catch {
-            // The board reverts the optimistic move; the error toast is shown by apiRequest consumers.
+        } catch (error) {
             queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+            toast({
+                title: t('taskUpdateFailed'),
+                description: error instanceof Error ? error.message : t('errorOccurred'),
+                variant: 'destructive',
+            });
             return false;
         }
+    };
+
+    const canMoveTask = (task: BoardTasksResponse['tasks'][number], status: BoardStatus) => {
+        if (task.status === status) return true;
+        const canAcceptOrReopen = isTaskSupervisor || task.creator?.id === user?.id;
+        if (status === 'accepted') return task.status === 'done' && canAcceptOrReopen;
+        if (task.status === 'accepted') return canAcceptOrReopen;
+        return true;
     };
 
     const openTask = (taskId: number) => {
@@ -106,6 +120,7 @@ export default function AdminTasksPage() {
                             tasks={data?.tasks ?? []}
                             onStatusChange={handleStatusChange}
                             onTaskClick={openTask}
+                            canMoveTask={canMoveTask}
                         />
                     </div>
                 )}

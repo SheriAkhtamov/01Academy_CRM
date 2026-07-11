@@ -135,10 +135,15 @@ export const scheduleDateRangesOverlap = (
     || (rightStart && Number.isNaN(rightStart.getTime()))
     || (rightEnd && Number.isNaN(rightEnd.getTime()))
   ) return false;
-  const leftStartTime = leftStart?.getTime() ?? Number.NEGATIVE_INFINITY;
-  const leftEndTime = leftEnd?.getTime() ?? Number.POSITIVE_INFINITY;
-  const rightStartTime = rightStart?.getTime() ?? Number.NEGATIVE_INFINITY;
-  const rightEndTime = rightEnd?.getTime() ?? Number.POSITIVE_INFINITY;
+  // Group ranges come from date-only controls. Comparing their raw timestamps
+  // made an end date at 00:00 appear not to overlap another group beginning
+  // later on that same calendar day.
+  const toLocalDay = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const leftStartTime = leftStart ? toLocalDay(leftStart) : Number.NEGATIVE_INFINITY;
+  const leftEndTime = leftEnd ? toLocalDay(leftEnd) : Number.POSITIVE_INFINITY;
+  const rightStartTime = rightStart ? toLocalDay(rightStart) : Number.NEGATIVE_INFINITY;
+  const rightEndTime = rightEnd ? toLocalDay(rightEnd) : Number.POSITIVE_INFINITY;
   return leftStartTime <= rightEndTime && leftEndTime >= rightStartTime;
 };
 

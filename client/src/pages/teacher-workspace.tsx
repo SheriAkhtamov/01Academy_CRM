@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
@@ -71,7 +71,7 @@ type Group = {
   maxStudents: number;
   currentStudents?: number;
   capacityLabel?: string;
-  schedule?: Array<{ dayOfWeek: number; time: string }>;
+  schedule?: Array<{ dayOfWeek: number; time?: string; startTime?: string; endTime?: string }>;
   status: string;
 };
 
@@ -84,6 +84,7 @@ type Student = {
   contactName: string;
   attendancePercent: number;
   progressPercent: number;
+  status: string;
 };
 
 type LessonSurvey = {
@@ -107,6 +108,30 @@ type TeacherProfile = {
   schoolIds?: number[];
   availability?: WeekScheduleItem[];
 };
+
+type AttendanceRecord = {
+  lessonId: number;
+  studentId: number;
+  status: 'present' | 'absent';
+  note?: string | null;
+};
+
+function mondayBasedDayIndex(date: Date): number {
+  return (date.getDay() + 6) % 7;
+}
+
+function localDateKey(value: string): string {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatScheduleTime(item: { time?: string; startTime?: string; endTime?: string }): string {
+  const start = item.startTime || item.time || '';
+  return item.endTime && item.endTime !== start ? `${start}–${item.endTime}` : start;
+}
 
 function KpiCard({
   title,
@@ -204,35 +229,37 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const dayNames = [
-    t('sundayShort'),
     t('mondayShort'),
     t('tuesdayShort'),
     t('wednesdayShort'),
     t('thursdayShort'),
     t('fridayShort'),
     t('saturdayShort'),
+    t('sundayShort'),
   ];
   const dayNamesFull = [
-    t('sunday'),
     t('monday'),
     t('tuesday'),
     t('wednesday'),
     t('thursday'),
     t('friday'),
     t('saturday'),
+    t('sunday'),
   ];
 
   // Attendance state
   const [selectedLessonId, setSelectedLessonId] = useState<string>('');
   const [attendanceDraft, setAttendanceDraft] = useState<Record<number, 'present' | 'absent'>>({});
   const [attendanceNote, setAttendanceNote] = useState('');
+  const attendanceDraftDirty = useRef(false);
+  const hydratedAttendanceLessonId = useRef<number | null>(null);
 
   // Group detail dialog
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [availabilityDraft, setAvailabilityDraft] = useState<WeekScheduleItem[]>([]);
   const [availabilitySchoolIds, setAvailabilitySchoolIds] = useState<number[]>([]);
 
-  const { data, isLoading } = useQuery<any>({
+  const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/teacher'],
   });
 
@@ -268,14 +295,13 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         lessonStatus: 'conducted',
         attendance: selectedLessonStudents.map((student: Student) => ({
           studentId: student.id,
-          status: attendanceDraft[student.id] || 'absent',
+          status: attendanceDraft[student.id],
+          note: attendanceNote,
         })),
-        note: attendanceNote,
       }),
     onSuccess: () => {
       toast({ title: t('attendanceSaved'), description: t('attendanceSavedDesc') });
-      setAttendanceDraft({});
-      setAttendanceNote('');
+      attendanceDraftDirty.current = false;
       invalidate();
     },
     onError: (error: any) =>
@@ -288,7 +314,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const students: Student[] = useMemo(() => data?.students ?? [], [data]);
   const schools: Array<{ id: number; name: string }> = useMemo(() => data?.schools ?? [], [data]);
   const surveys: LessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
-  const attendanceRecords: any[] = useMemo(() => data?.attendance ?? [], [data]);
+  const attendanceRecords: AttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
 
   const totalStudents = useMemo(
     () => groups.reduce((sum, g) => sum + (g.currentStudents || 0), 0),
@@ -316,7 +342,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const scheduleByDay = useMemo(() => {
     const now = new Date();
     const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay() + 1); // Monday
+    startOfWeek.setDate(now.getDate() - mondayBasedDayIndex(now));
     startOfWeek.setHours(0, 0, 0, 0);
 
     const days: { date: Date; lessons: Lesson[] }[] = [];
@@ -347,8 +373,48 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   const selectedLessonStudents = useMemo(() => {
     if (!selectedLesson) return [];
-    return students.filter((s) => s.groupId === selectedLesson.groupId);
+    return students.filter((student) => (
+      student.groupId === selectedLesson.groupId
+      && student.status === 'studying'
+    ));
   }, [students, selectedLesson]);
+
+  const selectedAttendanceRecords = useMemo(() => {
+    if (!selectedLesson) return [];
+    return attendanceRecords.filter((record) => record.lessonId === selectedLesson.id);
+  }, [attendanceRecords, selectedLesson]);
+
+  const attendanceHydrationKey = useMemo(() => JSON.stringify({
+    lessonId: selectedLesson?.id ?? null,
+    studentIds: selectedLessonStudents.map((student) => student.id),
+    records: selectedAttendanceRecords.map((record) => [record.studentId, record.status, record.note ?? '']),
+  }), [selectedAttendanceRecords, selectedLesson?.id, selectedLessonStudents]);
+
+  useEffect(() => {
+    if (!selectedLesson) {
+      setAttendanceDraft({});
+      setAttendanceNote('');
+      return;
+    }
+
+    const changedLesson = hydratedAttendanceLessonId.current !== selectedLesson.id;
+    if (!changedLesson && attendanceDraftDirty.current) return;
+
+    const studentIds = new Set(selectedLessonStudents.map((student) => student.id));
+    const nextDraft: Record<number, 'present' | 'absent'> = {};
+    for (const record of selectedAttendanceRecords) {
+      if (studentIds.has(record.studentId) && (record.status === 'present' || record.status === 'absent')) {
+        nextDraft[record.studentId] = record.status;
+      }
+    }
+    setAttendanceDraft(nextDraft);
+    setAttendanceNote(selectedAttendanceRecords.find((record) => record.note?.trim())?.note ?? '');
+    hydratedAttendanceLessonId.current = selectedLesson.id;
+    attendanceDraftDirty.current = false;
+  }, [attendanceHydrationKey]);
+
+  const allAttendanceMarked = selectedLessonStudents.length > 0
+    && selectedLessonStudents.every((student) => attendanceDraft[student.id] !== undefined);
 
   const groupStudents = useMemo(() => {
     if (!selectedGroup) return [];
@@ -384,16 +450,30 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const ratingChartData = useMemo(() => {
     const byDate: Record<string, { total: number; count: number }> = {};
     surveys.forEach((s) => {
-      const date = new Date(s.createdAt).toLocaleDateString('ru-RU');
+      const date = localDateKey(s.createdAt);
       if (!byDate[date]) byDate[date] = { total: 0, count: 0 };
       byDate[date].total += s.score;
       byDate[date].count += 1;
     });
     return Object.entries(byDate)
-      .map(([date, { total, count }]) => ({ date, avgScore: Math.round((total / count) * 10) / 10, count }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(-14);
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-14)
+      .map(([date, { total, count }]) => ({
+        date: new Date(`${date}T00:00:00`).toLocaleDateString('ru-RU'),
+        avgScore: Math.round((total / count) * 10) / 10,
+        count,
+      }));
   }, [surveys]);
+
+  if (isError) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 p-8 text-center">
+        <p className="font-medium text-destructive">{t('error')}</p>
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
+        <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
+      </div>
+    );
+  }
 
   if (isLoading || !data) {
     return (
@@ -439,10 +519,12 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   };
 
   const handleToggleAttendance = (studentId: number, status: 'present' | 'absent') => {
+    attendanceDraftDirty.current = true;
     setAttendanceDraft((prev) => ({ ...prev, [studentId]: status }));
   };
 
   const handleSetAllAttendance = (status: 'present' | 'absent') => {
+    attendanceDraftDirty.current = true;
     const update: Record<number, 'present' | 'absent'> = {};
     selectedLessonStudents.forEach((s) => {
       update[s.id] = status;
@@ -523,7 +605,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <CardHeader className="pb-3 pt-4 px-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
-                        {dayNames[day.date.getDay() || 0]}
+                        {dayNames[mondayBasedDayIndex(day.date)]}
                       </CardTitle>
                       {isTodayFlag && (
                         <Badge className="bg-primary-100 text-primary-700 text-[10px]">
@@ -583,7 +665,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <CardTitle className="text-base">{t('todayLessons')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {todayLessons
+                {[...todayLessons]
                   .sort(
                     (a, b) =>
                       new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
@@ -685,7 +767,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <div className="flex flex-wrap gap-2">
                       {selectedGroup.schedule.map((s, i) => (
                         <Badge key={i} variant="outline" className="text-xs">
-                          {dayNamesFull[s.dayOfWeek - 1] || ''} {s.time}
+                          {dayNamesFull[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
                         </Badge>
                       ))}
                     </div>
@@ -780,7 +862,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       <div className="flex flex-wrap gap-1.5">
                         {group.schedule.map((s, i) => (
                           <Badge key={i} variant="outline" className="text-[10px]">
-                            {dayNames[s.dayOfWeek - 1] || ''} {s.time}
+                            {dayNames[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
                           </Badge>
                         ))}
                       </div>
@@ -820,6 +902,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <Select
                   value={selectedLessonId}
                   onValueChange={(val) => {
+                    attendanceDraftDirty.current = false;
                     setSelectedLessonId(val);
                     setAttendanceDraft({});
                     setAttendanceNote('');
@@ -829,7 +912,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <SelectValue placeholder={t('selectLessonPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {lessons
+                    {[...lessons]
                       .sort(
                         (a, b) =>
                           new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
@@ -942,7 +1025,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <Label className="text-xs text-slate-500">{t('comment')}</Label>
                     <Textarea
                       value={attendanceNote}
-                      onChange={(e) => setAttendanceNote(e.target.value)}
+                      onChange={(e) => {
+                        attendanceDraftDirty.current = true;
+                        setAttendanceNote(e.target.value);
+                      }}
                       placeholder={t('attendanceNotePlaceholder')}
                       rows={2}
                     />
@@ -951,7 +1037,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <div className="flex justify-end">
                     <Button
                       onClick={() => saveAttendance.mutate()}
-                      disabled={saveAttendance.isPending || !selectedLessonId}
+                      disabled={saveAttendance.isPending || !selectedLessonId || !allAttendanceMarked}
                     >
                       {saveAttendance.isPending ? t('saving') : t('saveAttendanceLabel')}
                     </Button>
@@ -1279,7 +1365,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <WeekScheduleEditor
                   value={availabilityDraft}
                   onChange={setAvailabilityDraft}
-                  dayNames={dayNamesFull.slice(1).concat(dayNamesFull[0])}
+                  dayNames={dayNamesFull}
                   schools={schools}
                   showSchool
                   allSchoolsLabel={t('allSchools')}
@@ -1316,7 +1402,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     {group.schedule && group.schedule.length > 0 ? (
                       group.schedule.map((s, i) => (
                         <Badge key={i} variant="outline" className="text-xs">
-                          {dayNamesFull[s.dayOfWeek - 1] || ''} {s.time}
+                          {dayNamesFull[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
                         </Badge>
                       ))
                     ) : (

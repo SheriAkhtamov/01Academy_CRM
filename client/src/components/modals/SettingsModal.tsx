@@ -34,14 +34,13 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import { Switch } from '@/components/ui/switch';
-import { User, Mail, Briefcase, Phone, MapPin, Save, KeyRound } from 'lucide-react';
+import { User, Mail, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
 
 const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
   email: z.string().email(t('validEmailRequired')),
-  position: z.string().min(1, t('positionRequired')),
+  position: z.string().max(255),
   phone: z.string().optional(),
-  location: z.string().optional(),
   hasReportAccess: z.boolean().optional(),
   currentPassword: z.string().optional(),
   newPassword: z.string().optional(),
@@ -106,7 +105,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       email: user?.email || '',
       position: user?.position || '',
       phone: user?.phone || '',
-      location: '',
       hasReportAccess: user?.hasReportAccess || false,
       currentPassword: '',
       newPassword: '',
@@ -127,7 +125,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         email: user.email || '',
         position: user.position || '',
         phone: user.phone || '',
-        location: '',
         hasReportAccess: user.hasReportAccess || false,
         currentPassword: '',
         newPassword: '',
@@ -146,24 +143,20 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         currentPassword,
         newPassword,
         confirmNewPassword,
-        location: _location,
         ...profileData
       } = data;
       const shouldChangePassword = Boolean(currentPassword || newPassword || confirmNewPassword);
       const normalizedEmail = profileData.email.trim().toLowerCase();
-      const shouldChangeLogin = normalizedEmail !== user.email.toLowerCase();
+      const result = await apiRequest('PUT', '/api/auth/me/settings', {
+        fullName: profileData.fullName.trim(),
+        email: normalizedEmail,
+        position: profileData.position.trim(),
+        phone: profileData.phone?.trim() || null,
+        hasReportAccess: profileData.hasReportAccess,
+        ...(shouldChangePassword ? { currentPassword, newPassword, confirmNewPassword } : {}),
+      });
 
-      if (shouldChangeLogin || shouldChangePassword) {
-        await apiRequest('PATCH', '/api/auth/me/credentials', {
-          ...(shouldChangeLogin ? { email: normalizedEmail } : {}),
-          ...(shouldChangePassword ? { currentPassword, newPassword, confirmNewPassword } : {}),
-        });
-      }
-
-      const { email: _email, ...profileWithoutCredentials } = profileData;
-      const updatedUser = await apiRequest('PUT', `/api/users/${user.id}`, profileWithoutCredentials);
-
-      return updatedUser;
+      return result.user ?? result;
     },
     onSuccess: (updatedUser) => {
       setUser(updatedUser);
@@ -276,24 +269,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                         placeholder={t('phonePlaceholder')}
                         aria-label={t('enterPhone')}
                       />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Location */}
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
-                      {t('location')}
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder={t('enterLocation')} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -138,8 +138,50 @@ const leadershipUserAccessSql = `
     )
   )
 `;
+const salesUserAccessSql = `
+  (
+    u.workspace = 'sales'
+    OR EXISTS (
+      SELECT 1
+      FROM user_workspaces uw
+      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+    )
+  )
+`;
+const USER_ACCESS_ADVISORY_LOCK = 10_100_001;
 export const setInstagramBroadcastFunction = (broadcast: InstagramBroadcast) => {
   broadcastToClients = broadcast;
+};
+
+/**
+ * Mirrors the HTTP access boundary for realtime Instagram events: leadership
+ * sees every conversation, while sales staff see either their assigned
+ * conversation or the shared unassigned queue. Returning [] on an access-query
+ * failure is deliberate fail-closed behaviour; the socket router treats an
+ * explicit empty audience as "send to nobody".
+ */
+export const getInstagramConversationAudienceUserIds = async (
+  managerId?: number | null,
+): Promise<number[]> => {
+  const normalizedManagerId = Number(managerId) > 0 ? Number(managerId) : null;
+  try {
+    const params: unknown[] = normalizedManagerId ? [normalizedManagerId] : [];
+    const salesScope = normalizedManagerId
+      ? `(u.id = $1 AND ${salesUserAccessSql})`
+      : salesUserAccessSql;
+    const { rows } = await pool.query<{ id: number | string }>(
+      `SELECT DISTINCT u.id
+       FROM users u
+       WHERE u.is_active = true
+         AND (${leadershipUserAccessSql} OR ${salesScope})
+       ORDER BY u.id`,
+      params,
+    );
+    return [...new Set(rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0))];
+  } catch (error) {
+    logger.error('Failed to resolve Instagram realtime audience', { managerId: normalizedManagerId, error });
+    return [];
+  }
 };
 
 const instagramConfig = () => {
@@ -1104,6 +1146,23 @@ const getSystemUserId = async (client: PoolClient) => {
   return Number(rows[0].id);
 };
 
+const getLeadAssigneeId = async (client: PoolClient) => {
+  await client.query('SELECT pg_advisory_xact_lock($1)', [USER_ACCESS_ADVISORY_LOCK]);
+  const { rows } = await client.query(
+    `SELECT u.id
+     FROM users u
+     LEFT JOIN academy_leads lead
+       ON lead.manager_id = u.id
+      AND lead.status_code NOT IN ('paid', 'not_now')
+      AND COALESCE(lead.is_archived, false) = false
+     WHERE ${salesUserAccessSql} AND u.is_active = true
+     GROUP BY u.id
+     ORDER BY COUNT(lead.id), u.id
+     LIMIT 1`,
+  );
+  return rows[0]?.id ? Number(rows[0].id) : getSystemUserId(client);
+};
+
 const ensureLeadForConversation = async (
   client: PoolClient,
   account: InstagramAccountRow,
@@ -1120,10 +1179,14 @@ const ensureLeadForConversation = async (
     if (existing.rows[0]) return existing.rows[0];
   }
 
-  const syntheticPhone = `instagram:${participantIgsid}`.slice(0, 50);
+  const stableMessenger = `instagram:${participantIgsid}`.slice(0, 120);
   const existing = await client.query(
-    `SELECT id, manager_id, false AS created_lead FROM academy_leads WHERE phone = $1 LIMIT 1`,
-    [syntheticPhone],
+    `SELECT id, manager_id, false AS created_lead
+     FROM academy_leads
+     WHERE phone = $1
+        OR LOWER(BTRIM(messenger)) = LOWER(BTRIM($2))
+     LIMIT 1`,
+    [`instagram:${participantIgsid}`.slice(0, 50), stableMessenger],
   );
   if (existing.rows[0]) {
     await client.query(
@@ -1134,21 +1197,21 @@ const ensureLeadForConversation = async (
   }
 
   const systemUserId = await getSystemUserId(client);
+  const managerId = await getLeadAssigneeId(client);
   const username = profile.username?.trim();
   const contactName = String(profile.name || (username ? `@${username}` : 'Instagram lead')).slice(0, 255);
-  const messenger = username ? `@${username}`.slice(0, 120) : syntheticPhone.slice(0, 120);
+  const messenger = username ? `@${username}`.slice(0, 120) : stableMessenger;
 
   const inserted = await client.query(
     `INSERT INTO academy_leads
       (contact_name, phone, messenger, source_id, status_code, manager_id, language, comment, created_by)
-     VALUES ($1,$2,$3,$4,'new_request',$5,'ru',$6,$7)
+     VALUES ($1,NULL,$2,$3,'new_request',$4,'ru',$5,$6)
      RETURNING id, manager_id, true AS created_lead`,
     [
       contactName,
-      syntheticPhone,
       messenger,
       account.source_id,
-      null,
+      managerId,
       options.leadComment ?? 'Создан автоматически из нового диалога Instagram.',
       systemUserId,
     ],
@@ -1164,6 +1227,26 @@ const ensureLeadForConversation = async (
       (lead_id, from_status_code, to_status_code, changed_by, comment)
      VALUES ($1,NULL,'new_request',$2,$3)`,
     [lead.id, systemUserId, options.stageComment ?? 'Instagram Direct'],
+  );
+  await client.query(
+    `INSERT INTO academy_tasks
+       (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
+     VALUES (
+       'Первый контакт по новой заявке',
+       'Ответить на новый диалог Instagram в течение 15 минут.',
+       $1,
+       NOW() + INTERVAL '15 minutes',
+       'lead',
+       $2,
+       'new'
+     )`,
+    [managerId, lead.id],
+  );
+  await client.query(
+    `INSERT INTO notifications
+       (user_id, type, title, message, related_entity_type, related_entity_id)
+     VALUES ($1, 'academy_task', 'Новая заявка Instagram', $2, 'lead', $3)`,
+    [managerId, contactName, lead.id],
   );
 
   return lead;
@@ -1233,13 +1316,14 @@ const processReceiptEvent = async (account: InstagramAccountRow, event: any) => 
   }
 
   if (conversation) {
+    const audienceUserIds = await getInstagramConversationAudienceUserIds(conversation.manager_id);
     broadcastToClients({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: {
         conversationId: Number(conversation.id),
         receipt: { read: isRead, watermark: watermark.toISOString() },
       },
-      audienceUserIds: conversation.manager_id ? [Number(conversation.manager_id)] : undefined,
+      audienceUserIds,
     });
   }
 };
@@ -1345,9 +1429,15 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     if (messageResult.rows[0]) {
       await client.query(
         `UPDATE instagram_conversations
-         SET last_message_at = $2,
-             last_inbound_at = CASE WHEN $3 = 'inbound' THEN $2 ELSE last_inbound_at END,
-             last_outbound_at = CASE WHEN $3 = 'outbound' THEN $2 ELSE last_outbound_at END,
+         SET last_message_at = GREATEST(COALESCE(last_message_at, $2), $2),
+             last_inbound_at = CASE
+               WHEN $3 = 'inbound' THEN GREATEST(COALESCE(last_inbound_at, $2), $2)
+               ELSE last_inbound_at
+             END,
+             last_outbound_at = CASE
+               WHEN $3 = 'outbound' THEN GREATEST(COALESCE(last_outbound_at, $2), $2)
+               ELSE last_outbound_at
+             END,
              unread_count = CASE WHEN $3 = 'inbound' THEN unread_count + 1 ELSE unread_count END,
              updated_at = NOW()
          WHERE id = $1`,
@@ -1375,6 +1465,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
   }
 
   if (result.inserted) {
+    const audienceUserIds = await getInstagramConversationAudienceUserIds(result.managerId);
     broadcastToClients({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: {
@@ -1382,13 +1473,13 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
         message: result.message,
         leadId: result.lead?.id,
       },
-      audienceUserIds: result.managerId ? [result.managerId] : undefined,
+      audienceUserIds,
     });
     if (!outbound && result.lead?.createdLead) {
       broadcastToClients({
         type: 'ACADEMY_LEAD_CREATED',
         data: { id: result.lead.id },
-        audienceUserIds: result.managerId ? [result.managerId] : undefined,
+        audienceUserIds,
       });
     }
   }
@@ -2047,13 +2138,17 @@ export const listInstagramAccounts = async () => {
 };
 
 export const listInstagramConversations = async (user: InstagramUser) => {
-  const params: unknown[] = [];
+  const params: unknown[] = [user.id];
   const ownershipFilter = hasLeadershipAccess(user)
     ? ''
-    : `AND (l.manager_id = $${params.push(user.id)} OR l.manager_id IS NULL)`;
+    : `AND (l.manager_id = $1 OR l.manager_id IS NULL)`;
   const { rows } = await pool.query(
     `SELECT c.id, c.account_id, c.lead_id, c.participant_igsid, c.participant_username,
-            c.participant_name, c.participant_profile_picture_url, c.unread_count,
+            c.participant_name, c.participant_profile_picture_url,
+            CASE
+              WHEN conversation_read.user_id IS NULL THEN c.unread_count
+              ELSE COALESCE(reader_unread.unread_count, 0)
+            END::int AS unread_count,
             c.last_message_at, c.last_inbound_at, c.last_outbound_at, c.last_read_message_at,
             a.username AS account_username, a.status AS account_status,
             l.contact_name, l.status_code, l.manager_id, u.full_name AS manager_name,
@@ -2063,6 +2158,16 @@ export const listInstagramConversations = async (user: InstagramUser) => {
      JOIN instagram_accounts a ON a.id = c.account_id
      LEFT JOIN academy_leads l ON l.id = c.lead_id
      LEFT JOIN users u ON u.id = l.manager_id
+     LEFT JOIN instagram_conversation_reads conversation_read
+       ON conversation_read.conversation_id = c.id
+      AND conversation_read.user_id = $1
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*)::int AS unread_count
+       FROM instagram_messages unread_message
+       WHERE unread_message.conversation_id = c.id
+         AND unread_message.direction = 'inbound'
+         AND unread_message.id > COALESCE(conversation_read.last_read_message_id, 0)
+     ) reader_unread ON true
      LEFT JOIN LATERAL (
        SELECT content, direction
        FROM instagram_messages m
@@ -2100,11 +2205,21 @@ export const listInstagramMessages = async (conversationId: number, user: Instag
 export const markInstagramConversationRead = async (conversationId: number, user: InstagramUser) => {
   await assertConversationAccess(conversationId, user);
   const { rows } = await pool.query(
-    `UPDATE instagram_conversations
-     SET unread_count = 0, updated_at = NOW()
-     WHERE id = $1
-     RETURNING id, unread_count, updated_at`,
-    [conversationId],
+    `INSERT INTO instagram_conversation_reads
+       (conversation_id, user_id, last_read_message_id, last_read_at, created_at, updated_at)
+     SELECT $1, $2, COALESCE(MAX(id), 0), NOW(), NOW(), NOW()
+     FROM instagram_messages
+     WHERE conversation_id = $1
+     ON CONFLICT (conversation_id, user_id)
+     DO UPDATE SET
+       last_read_message_id = GREATEST(
+         instagram_conversation_reads.last_read_message_id,
+         EXCLUDED.last_read_message_id
+       ),
+       last_read_at = NOW(),
+       updated_at = NOW()
+     RETURNING conversation_id AS id, 0::int AS unread_count, updated_at`,
+    [conversationId, user.id],
   );
   return camelize(rows[0]);
 };
@@ -2176,15 +2291,49 @@ export const sendInstagramTextMessage = async (
     );
     await client.query('COMMIT');
     const message = camelize(inserted.rows[0]);
+    const audienceUserIds = await getInstagramConversationAudienceUserIds(
+      conversation.manager_id ? Number(conversation.manager_id) : null,
+    );
     broadcastToClients({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: { conversationId, message },
-      audienceUserIds: conversation.manager_id ? [Number(conversation.manager_id)] : undefined,
+      audienceUserIds,
     });
     return message;
   } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
+    await client.query('ROLLBACK').catch(() => undefined);
+    // Meta has already accepted the message at this point. Returning an error
+    // would invite a retry and duplicate the real outbound message. The webhook
+    // echo/history sync will reconcile persistence when the database recovers.
+    logger.error('Instagram message sent but local persistence failed', {
+      conversationId,
+      externalMessageId: response.message_id,
+      error,
+    });
+    const message = {
+      id: -Date.now(),
+      conversationId,
+      externalMessageId: response.message_id ?? null,
+      direction: 'outbound',
+      senderIgsid: conversation.ig_user_id,
+      recipientIgsid: conversation.participant_igsid,
+      content: text,
+      messageType: 'text',
+      status: 'sent',
+      sentBy: user.id,
+      attachments: [],
+      createdAt: new Date(),
+      persistencePending: true,
+    };
+    const audienceUserIds = await getInstagramConversationAudienceUserIds(
+      conversation.manager_id ? Number(conversation.manager_id) : null,
+    );
+    broadcastToClients({
+      type: 'INSTAGRAM_CONVERSATION_UPDATED',
+      data: { conversationId, message },
+      audienceUserIds,
+    });
+    return message;
   } finally {
     client.release();
   }
@@ -2210,17 +2359,23 @@ export const refreshExpiringInstagramTokens = async () => {
       const expiresAt = result.expires_in
         ? new Date(Date.now() + Number(result.expires_in) * 1000)
         : null;
-      await pool.query(
+      const updated = await pool.query(
         `UPDATE instagram_accounts
          SET access_token_encrypted = $1, token_expires_at = $2, last_error = NULL, updated_at = NOW()
-         WHERE id = $3`,
-        [encryptInstagramToken(result.access_token), expiresAt, account.id],
+         WHERE id = $3
+           AND status = 'connected'
+           AND access_token_encrypted = $4`,
+        [encryptInstagramToken(result.access_token), expiresAt, account.id, account.access_token_encrypted],
       );
-      refreshed += 1;
+      if ((updated.rowCount ?? 0) > 0) refreshed += 1;
     } catch (error: any) {
       await pool.query(
-        `UPDATE instagram_accounts SET last_error = $1, updated_at = NOW() WHERE id = $2`,
-        [error?.message ?? String(error), account.id],
+        `UPDATE instagram_accounts
+         SET last_error = $1, updated_at = NOW()
+         WHERE id = $2
+           AND status = 'connected'
+           AND access_token_encrypted = $3`,
+        [error?.message ?? String(error), account.id, account.access_token_encrypted],
       );
       logger.error('Failed to refresh Instagram access token', { accountId: account.id, error });
     }

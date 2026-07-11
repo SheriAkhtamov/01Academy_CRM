@@ -64,8 +64,16 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
     }
   };
 
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      form.reset();
+      setError('');
+    }
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -132,7 +140,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleOpenChange(false)}
                 disabled={isAdding}
               >
                 {t('cancel')}

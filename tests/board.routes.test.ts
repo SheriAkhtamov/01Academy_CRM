@@ -94,6 +94,22 @@ describe("board routes", () => {
     mockStorage.board.getDefaultBoard.mockResolvedValue(defaultBoard);
     mockStorage.board.getBoard.mockResolvedValue(defaultBoard);
     mockStorage.board.getTasks.mockResolvedValue([]);
+    mockStorage.board.getTask.mockResolvedValue({
+      id: 100,
+      boardId: defaultBoard.id,
+      title: "Existing task",
+      description: null,
+      status: "todo",
+      priority: "normal",
+      position: 0,
+      creatorId: staffUser.id,
+      assigneeId: staffUser.id,
+      dueAt: null,
+      acceptedAt: null,
+      acceptedBy: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     mockStorage.board.getMaxPosition.mockResolvedValue(0);
     mockStorage.board.createActivity.mockResolvedValue({});
     mockStorage.board.createTask.mockImplementation(async (data: any) => ({
@@ -194,5 +210,101 @@ describe("board routes", () => {
       creatorId: adminUser.id,
       assigneeId: assigneeUser.id,
     }));
+  });
+
+  it("does not allow creating an already accepted task", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: adminUser.id });
+    const response = await agent.post("/api/board/tasks").send({
+      title: "Skip approval",
+      status: "accepted",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Task must be in Done before it can be accepted" });
+    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+  });
+
+  it("strictly rejects malformed and negative ids instead of truncating them", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: staffUser.id });
+
+    const taskResponse = await agent.get("/api/board/tasks/100oops");
+    const boardResponse = await agent.get("/api/board/tasks?boardId=-1");
+
+    expect(taskResponse.status).toBe(400);
+    expect(boardResponse.status).toBe(400);
+    expect(mockStorage.board.getTaskDetail).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid due dates, board ids, and object-valued text", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: adminUser.id });
+
+    const dueDateResponse = await agent.post("/api/board/tasks").send({
+      title: "Bad date",
+      dueAt: "not-a-date",
+    });
+    const boardResponse = await agent.post("/api/board/tasks").send({
+      title: "Bad board",
+      boardId: "1oops",
+    });
+    const descriptionResponse = await agent.post("/api/board/tasks").send({
+      title: "Bad description",
+      description: { nested: true },
+    });
+
+    expect(dueDateResponse.status).toBe(400);
+    expect(boardResponse.status).toBe(400);
+    expect(descriptionResponse.status).toBe(400);
+    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+  });
+
+  it("requires a real boolean for checklist completion", async () => {
+    mockStorage.board.getChecklistItem.mockResolvedValue({
+      id: 12,
+      taskId: 100,
+      content: "Check item",
+      isDone: true,
+    });
+    mockStorage.board.updateChecklistItem.mockResolvedValue({
+      id: 12,
+      taskId: 100,
+      content: "Check item",
+      isDone: false,
+    });
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: staffUser.id });
+
+    const stringResponse = await agent.patch("/api/board/checklist/12").send({ isDone: "false" });
+    const booleanResponse = await agent.patch("/api/board/checklist/12").send({ isDone: false });
+
+    expect(stringResponse.status).toBe(400);
+    expect(booleanResponse.status).toBe(200);
+    expect(mockStorage.board.updateChecklistItem).toHaveBeenCalledTimes(1);
+    expect(mockStorage.board.updateChecklistItem).toHaveBeenCalledWith(12, { isDone: false });
+  });
+
+  it("removes an uploaded file when attachment metadata cannot be saved", async () => {
+    const fs = await import("node:fs/promises");
+    const { BOARD_UPLOAD_DIR } = await import("../server/middleware/upload.middleware");
+    const before = new Set(await fs.readdir(BOARD_UPLOAD_DIR));
+    mockStorage.board.createAttachment.mockRejectedValueOnce(new Error("database unavailable"));
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent
+      .post("/api/board/tasks/100/attachments")
+      .attach("file", Buffer.from("temporary upload"), "temporary.txt");
+
+    expect(response.status).toBe(500);
+    const after = new Set(await fs.readdir(BOARD_UPLOAD_DIR));
+    expect(after).toEqual(before);
   });
 });

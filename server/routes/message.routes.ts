@@ -7,6 +7,13 @@ const router = Router();
 
 let broadcastToClients: (data: any) => void = () => { };
 
+const parsePositiveId = (value: unknown): number | null => {
+    const text = String(value ?? '').trim();
+    if (!/^\d+$/.test(text)) return null;
+    const id = Number(text);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
 export function setBroadcastFunction(fn: (data: any) => void) {
     broadcastToClients = fn;
 }
@@ -25,8 +32,8 @@ router.get('/conversations', requireAuth, async (req, res) => {
 router.get('/:receiverId', requireAuth, async (req, res) => {
     try {
         const senderId = req.user!.id;
-        const receiverId = parseInt(req.params.receiverId);
-        if (Number.isNaN(receiverId)) {
+        const receiverId = parsePositiveId(req.params.receiverId);
+        if (!receiverId) {
             return res.status(400).json({ error: 'Invalid receiver id' });
         }
 
@@ -40,25 +47,26 @@ router.get('/:receiverId', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
     try {
-        const { receiverId, content } = req.body;
-
+        const receiverId = parsePositiveId(req.body.receiverId);
+        const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
         if (!receiverId || !content) {
             return res.status(400).json({ error: 'Receiver and content are required' });
         }
-
-        const parsedReceiverId = parseInt(receiverId, 10);
-        if (Number.isNaN(parsedReceiverId)) {
-            return res.status(400).json({ error: 'Invalid receiver id' });
+        if (content.length > 10_000) {
+            return res.status(400).json({ error: 'Message is too long' });
+        }
+        if (receiverId === req.user!.id) {
+            return res.status(400).json({ error: 'Cannot send a message to yourself' });
         }
 
-        const receiver = await storage.getUser(parsedReceiverId);
-        if (!receiver) {
+        const receiver = await storage.getUser(receiverId);
+        if (!receiver || receiver.isActive === false) {
             return res.status(404).json({ error: 'Receiver not found' });
         }
 
         const message = await storage.createMessage({
             senderId: req.user!.id,
-            receiverId: parsedReceiverId,
+            receiverId,
             content,
             isRead: false,
         });
@@ -66,7 +74,7 @@ router.post('/', requireAuth, async (req, res) => {
         broadcastToClients({
             type: 'NEW_MESSAGE',
             data: message,
-            audienceUserIds: [req.user!.id, parsedReceiverId],
+            audienceUserIds: [req.user!.id, receiverId],
         });
 
         res.json(message);
@@ -76,11 +84,37 @@ router.post('/', requireAuth, async (req, res) => {
     }
 });
 
+router.put('/conversations/:otherUserId/read', requireAuth, async (req, res) => {
+    try {
+        const otherUserId = parsePositiveId(req.params.otherUserId);
+        if (!otherUserId || otherUserId === req.user!.id) {
+            return res.status(400).json({ error: 'Invalid conversation user id' });
+        }
+
+        const messages = await storage.markConversationAsRead(otherUserId, req.user!.id);
+        const messageIds = messages.map((message) => message.id);
+        if (messageIds.length > 0) {
+            broadcastToClients({
+                type: 'MESSAGE_READ',
+                data: { messageIds, senderId: otherUserId, receiverId: req.user!.id },
+                audienceUserIds: [otherUserId, req.user!.id],
+            });
+        }
+        res.json({ updated: messageIds.length, messageIds });
+    } catch (error) {
+        logger.error('Error marking conversation as read', {
+            error,
+            userId: req.user?.id,
+            otherUserId: req.params.otherUserId,
+        });
+        res.status(500).json({ error: 'Failed to mark conversation as read' });
+    }
+});
+
 router.put('/:id/read', requireAuth, async (req, res) => {
     try {
-        const id = Number.parseInt(req.params.id, 10);
-
-        if (Number.isNaN(id)) {
+        const id = parsePositiveId(req.params.id);
+        if (!id) {
             return res.status(400).json({ error: 'Invalid message id' });
         }
 
@@ -91,7 +125,7 @@ router.put('/:id/read', requireAuth, async (req, res) => {
         }
 
         broadcastToClients({
-            type: 'MESSAGE_READ' as any,
+            type: 'MESSAGE_READ',
             data: { messageId: id, senderId: message.senderId, receiverId: message.receiverId },
             audienceUserIds: [message.senderId, message.receiverId],
         });

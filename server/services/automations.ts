@@ -1,181 +1,534 @@
+import type { PoolClient } from "pg";
+import { addDays, resolveStudentRiskFlags } from "@shared/academy";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
-import { addDays } from "@shared/academy";
+
+const AUTOMATION_ADVISORY_LOCK = 10_100_002;
+const AUTOMATION_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
+
+type QueryExecutor = Pick<PoolClient, "query">;
+
+const withTransaction = async <T>(client: PoolClient, work: () => Promise<T>): Promise<T> => {
+  await client.query("BEGIN");
+  try {
+    const result = await work();
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch((rollbackError) => {
+      logger.error("Automation transaction rollback failed", { rollbackError });
+    });
+    throw error;
+  }
+};
 
 /**
- * Periodic automations extracted from the /automations/run route so the scheduler
- * can run them without an HTTP request. actorUserId is the system user (admin) that
- * gets attributed as the actor for history/tasks.
+ * Runs the periodic CRM automations. The advisory lock and all automation SQL
+ * share one connection, while each multi-step entity action is committed as a
+ * transaction. A crash therefore cannot leave a state change without its task,
+ * history entry, or queued notification.
  */
 export const runAutomations = async (actorUserId: number): Promise<string[]> => {
   if (!pool) return [];
-  const now = new Date();
-  const actions: string[] = [];
 
-  // 1. Move stale leads (no answer for 14+ days) to the warm base.
-  const { rows: staleLeads } = await pool.query(
-    `SELECT id, status_code, manager_id FROM academy_leads
-     WHERE status_code <> 'not_now' AND status_code <> 'paid'
-       AND COALESCE(is_archived, false) = false
-       AND updated_at < NOW() - INTERVAL '14 days'`,
-  );
-  for (const lead of staleLeads) {
-    await pool.query(
-      `UPDATE academy_leads SET status_code='not_now', warm_moved_at=$1, warm_reason=$2, updated_at=NOW() WHERE id=$3`,
-      [now, "Нет ответа 14+ дней", lead.id],
+  const client = await pool.connect();
+  let lockHeld = false;
+  try {
+    const lockResult = await client.query<{ acquired: boolean }>(
+      "SELECT pg_try_advisory_lock($1) AS acquired",
+      [AUTOMATION_ADVISORY_LOCK],
     );
-    await pool.query(
-      `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
-       VALUES ($1,$2,'not_now',$3,'Автоматический перенос: нет ответа 14+ дней')`,
-      [lead.id, lead.status_code, actorUserId],
-    );
-    await createTask("Лид автоматически перенесён в тёплую базу", lead.manager_id ?? actorUserId, {
-      entityType: "lead", entityId: lead.id, deadlineAt: addDays(now, 1),
-    });
-    actions.push(`lead:${lead.id}:not_now`);
-  }
-
-  // 2. Renewal reminders: paid_until within next 5 days.
-  const { rows: renewalPayments } = await pool.query(
-    `SELECT p.id, p.paid_until, p.student_id, s.manager_id, s.phone, s.messenger, s.student_name
-     FROM academy_payments p
-     LEFT JOIN academy_students s ON s.id = p.student_id
-     WHERE p.status = 'paid'
-       AND p.paid_until BETWEEN NOW() AND NOW() + INTERVAL '5 days'`,
-  );
-  for (const payment of renewalPayments) {
-    await createTask("Напоминание о продлении оплаты", payment.manager_id ?? actorUserId, {
-      description: "Позвонить и уточнить продление.",
-      entityType: "payment", entityId: payment.id, deadlineAt: addDays(now, 1),
-    });
-    await createOutbox("whatsapp", payment.phone || payment.messenger || "unknown",
-      `01 Academy: оплаченный период ${payment.student_name ?? "ученика"} скоро заканчивается.`,
-      { scheduledAt: payment.paid_until, entityType: "payment", entityId: payment.id });
-    actions.push(`payment:${payment.id}:renewal_reminder`);
-  }
-
-  // 3. Overdue payments (>3 days past due).
-  const { rows: overduePayments } = await pool.query(
-    `SELECT p.id, p.student_id, s.manager_id FROM academy_payments p
-     LEFT JOIN academy_students s ON s.id = p.student_id
-     WHERE p.status <> 'paid' AND p.due_at < NOW() - INTERVAL '3 days'`,
-  );
-  for (const payment of overduePayments) {
-    await pool.query(`UPDATE academy_payments SET status='overdue', updated_at=NOW() WHERE id=$1`, [payment.id]);
-    await createTask("Просрочена оплата", payment.manager_id ?? actorUserId, {
-      entityType: "payment", entityId: payment.id, deadlineAt: addDays(now, 1),
-    });
-    actions.push(`payment:${payment.id}:overdue`);
-  }
-
-  // 4. Warm-base mailings (only leads that didn't decline mailings).
-  const { rows: warmLeads } = await pool.query(
-    `SELECT id, messenger, phone FROM academy_leads
-     WHERE status_code='not_now'
-       AND no_mailing=false
-       AND COALESCE(is_archived, false) = false`,
-  );
-  for (const lead of warmLeads) {
-    const recipient = lead.messenger || lead.phone;
-    await createOutbox("telegram", recipient,
-      "01 Academy: результат недели и новые проекты учеников. Хотите прийти на демо?",
-      { scheduledAt: now, entityType: "lead", entityId: lead.id });
-    await createOutbox("telegram", recipient,
-      "01 Academy приглашает на демо-урок. Подберём курс по возрасту.",
-      { scheduledAt: addDays(now, 14), entityType: "lead", entityId: lead.id });
-    await createOutbox("whatsapp", lead.phone,
-      "Специальное предложение 01 Academy на этот месяц.",
-      { scheduledAt: addDays(now, 30), entityType: "lead", entityId: lead.id });
-    actions.push(`lead:${lead.id}:warm_mailings`);
-  }
-
-  // 5. Recompute attendance/progress/risk flags for all active students.
-  const { rows: activeStudents } = await pool.query(
-    `SELECT id FROM academy_students WHERE status='studying'`,
-  );
-  for (const s of activeStudents) {
-    try {
-      await recalcStudent(s.id);
-      actions.push(`student:${s.id}:recalc`);
-    } catch (error) {
-      logger.error("recalc student failed", { id: s.id, error });
+    if (lockResult.rows[0]?.acquired !== true) {
+      logger.info("Automation run skipped because another worker owns the lease");
+      return [];
     }
+    lockHeld = true;
+
+    const now = new Date();
+    const actions: string[] = [];
+
+    // 1. Move stale leads (no answer for 14+ days) to the warm base.
+    const { rows: staleLeadCandidates } = await client.query<{ id: number }>(
+      `SELECT id
+       FROM academy_leads
+       WHERE status_code NOT IN ('not_now', 'paid')
+         AND COALESCE(is_archived, false) = false
+         AND updated_at < NOW() - INTERVAL '14 days'`,
+    );
+    for (const candidate of staleLeadCandidates) {
+      const moved = await withTransaction(client, async () => {
+        const { rows } = await client.query<{
+          id: number;
+          status_code: string;
+          manager_id: number | null;
+        }>(
+          `SELECT id, status_code, manager_id
+           FROM academy_leads
+           WHERE id = $1
+             AND status_code NOT IN ('not_now', 'paid')
+             AND COALESCE(is_archived, false) = false
+             AND updated_at < NOW() - INTERVAL '14 days'
+           FOR UPDATE`,
+          [candidate.id],
+        );
+        const lead = rows[0];
+        if (!lead) return false;
+
+        await createTask(client, "Лид автоматически перенесён в тёплую базу", lead.manager_id ?? actorUserId, {
+          entityType: "lead",
+          entityId: lead.id,
+          deadlineAt: addDays(now, 1),
+        });
+        await client.query(
+          `INSERT INTO academy_lead_stage_history
+             (lead_id, from_status_code, to_status_code, changed_by, comment)
+           VALUES ($1,$2,'not_now',$3,'Автоматический перенос: нет ответа 14+ дней')`,
+          [lead.id, lead.status_code, actorUserId],
+        );
+        await client.query(
+          `UPDATE academy_leads
+           SET status_code = 'not_now', warm_moved_at = $1,
+               warm_reason = $2, updated_at = NOW()
+           WHERE id = $3`,
+          [now, "Нет ответа 14+ дней", lead.id],
+        );
+        return true;
+      });
+      if (moved) actions.push(`lead:${candidate.id}:not_now`);
+    }
+
+    // 2. Renewal reminders follow the student's effective coverage end, not an
+    // arbitrary older payment row. Only active students need a renewal task.
+    const { rows: renewalCandidates } = await client.query<{ id: number }>(
+      `SELECT id
+       FROM academy_students
+       WHERE status = 'studying'
+         AND next_payment_at BETWEEN NOW() AND NOW() + INTERVAL '5 days'`,
+    );
+    for (const candidate of renewalCandidates) {
+      const created = await withTransaction(client, async () => {
+        const { rows } = await client.query<{
+          id: number;
+          next_payment_at: Date | string;
+          manager_id: number | null;
+          phone: string | null;
+          student_name: string | null;
+        }>(
+          `SELECT id, next_payment_at, manager_id, phone, student_name
+           FROM academy_students
+           WHERE id = $1
+             AND status = 'studying'
+             AND next_payment_at BETWEEN NOW() AND NOW() + INTERVAL '5 days'
+           FOR UPDATE`,
+          [candidate.id],
+        );
+        const student = rows[0];
+        if (!student) return false;
+
+        const taskCreated = await createTaskOnce(client, "Напоминание о продлении оплаты", student.manager_id ?? actorUserId, {
+          description: "Позвонить и уточнить продление.",
+          entityType: "student",
+          entityId: student.id,
+          deadlineAt: addDays(now, 1),
+        });
+        const reminderCreated = await createOutboxOnce(
+          client,
+          "whatsapp",
+          student.phone,
+          `01 Academy: оплаченный период ${student.student_name ?? "ученика"} скоро заканчивается.`,
+          {
+            scheduledAt: now,
+            entityType: "renewal",
+            entityId: student.id,
+            dedupeByEntityOnly: true,
+            dedupeSince: addDays(new Date(student.next_payment_at), -5),
+          },
+        );
+        return taskCreated || reminderCreated;
+      });
+      if (created) actions.push(`student:${candidate.id}:renewal_reminder`);
+    }
+
+    // 3. Only pending payments become overdue. The task and status transition
+    // commit together, so a retry cannot strand either half of the action.
+    const { rows: overdueCandidates } = await client.query<{ id: number }>(
+      `SELECT id
+       FROM academy_payments
+       WHERE status = 'pending'
+         AND due_at < NOW() - INTERVAL '3 days'`,
+    );
+    for (const candidate of overdueCandidates) {
+      const transitioned = await withTransaction(client, async () => {
+        const { rows } = await client.query<{ id: number; manager_id: number | null }>(
+          `SELECT p.id, COALESCE(s.manager_id, l.manager_id) AS manager_id
+           FROM academy_payments p
+           LEFT JOIN academy_students s ON s.id = p.student_id
+           LEFT JOIN academy_leads l ON l.id = p.lead_id
+           WHERE p.id = $1
+             AND p.status = 'pending'
+             AND p.due_at < NOW() - INTERVAL '3 days'
+           FOR UPDATE OF p`,
+          [candidate.id],
+        );
+        const payment = rows[0];
+        if (!payment) return false;
+
+        await createTaskOnce(client, "Просрочена оплата", payment.manager_id ?? actorUserId, {
+          entityType: "payment",
+          entityId: payment.id,
+          deadlineAt: addDays(now, 1),
+        });
+        await client.query(
+          "UPDATE academy_payments SET status = 'overdue', updated_at = NOW() WHERE id = $1",
+          [payment.id],
+        );
+        return true;
+      });
+      if (transitioned) actions.push(`payment:${candidate.id}:overdue`);
+    }
+
+    // 4. Warm-base mailings (only leads that did not decline mailings).
+    const { rows: warmCandidates } = await client.query<{ id: number }>(
+      `SELECT id
+       FROM academy_leads
+       WHERE status_code = 'not_now'
+         AND no_mailing = false
+         AND COALESCE(is_archived, false) = false`,
+    );
+    for (const candidate of warmCandidates) {
+      const created = await withTransaction(client, async () => {
+        const { rows } = await client.query<{
+          id: number;
+          messenger: string | null;
+          phone: string | null;
+          warm_moved_at: Date | string | null;
+        }>(
+          `SELECT id, messenger, phone, warm_moved_at
+           FROM academy_leads
+           WHERE id = $1
+             AND status_code = 'not_now'
+             AND no_mailing = false
+             AND COALESCE(is_archived, false) = false
+           FOR UPDATE`,
+          [candidate.id],
+        );
+        const lead = rows[0];
+        if (!lead) return false;
+
+        const recipient = lead.messenger || lead.phone;
+        const immediateCreated = await createOutboxOnce(
+          client,
+          "telegram",
+          recipient,
+          "01 Academy: результат недели и новые проекты учеников. Хотите прийти на демо?",
+          {
+            scheduledAt: now,
+            entityType: "lead",
+            entityId: lead.id,
+            dedupeSince: lead.warm_moved_at,
+          },
+        );
+        const demoCreated = await createOutboxOnce(
+          client,
+          "telegram",
+          recipient,
+          "01 Academy приглашает на демо-урок. Подберём курс по возрасту.",
+          {
+            scheduledAt: addDays(now, 14),
+            entityType: "lead",
+            entityId: lead.id,
+            dedupeSince: lead.warm_moved_at,
+          },
+        );
+        const offerCreated = await createOutboxOnce(
+          client,
+          "whatsapp",
+          lead.phone,
+          "Специальное предложение 01 Academy на этот месяц.",
+          {
+            scheduledAt: addDays(now, 30),
+            entityType: "lead",
+            entityId: lead.id,
+            dedupeSince: lead.warm_moved_at,
+          },
+        );
+        return immediateCreated || demoCreated || offerCreated;
+      });
+      if (created) actions.push(`lead:${candidate.id}:warm_mailings`);
+    }
+
+    // 5. Recompute attendance/progress/risk flags for all active students.
+    const { rows: activeStudents } = await client.query<{ id: number }>(
+      "SELECT id FROM academy_students WHERE status = 'studying'",
+    );
+    for (const student of activeStudents) {
+      try {
+        const recalculated = await recalcStudent(client, student.id);
+        if (recalculated) actions.push(`student:${student.id}:recalc`);
+      } catch (error) {
+        logger.error("recalc student failed", { id: student.id, error });
+      }
+    }
+
+    // 6. Monthly parent survey. Both the period and the monthly dedupe boundary
+    // use the academy timezone rather than the host process/database timezone.
+    const { rows: periodRows } = await client.query<{ period: string }>(
+      "SELECT to_char(NOW() AT TIME ZONE $1, 'YYYY-MM') AS period",
+      [AUTOMATION_TIME_ZONE],
+    );
+    const period = periodRows[0]?.period;
+    if (!period) throw new Error("Failed to resolve automation survey period");
+
+    const { rows: surveyCandidates } = await client.query<{ id: number }>(
+      `SELECT s.id
+       FROM academy_students s
+       WHERE s.status = 'studying'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM academy_parent_surveys ps
+           WHERE ps.student_id = s.id AND ps.period = $1
+         )`,
+      [period],
+    );
+    for (const candidate of surveyCandidates) {
+      const enqueued = await withTransaction(client, async () => {
+        const { rows } = await client.query<{
+          id: number;
+          phone: string | null;
+          student_name: string | null;
+        }>(
+          `SELECT s.id, s.phone, s.student_name
+           FROM academy_students s
+           WHERE s.id = $1
+             AND s.status = 'studying'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM academy_parent_surveys ps
+               WHERE ps.student_id = s.id AND ps.period = $2
+             )
+           FOR UPDATE`,
+          [candidate.id, period],
+        );
+        const target = rows[0];
+        if (!target) return false;
+        return createOutboxOnce(
+          client,
+          "whatsapp",
+          target.phone,
+          `01 Academy: ежемесячный опрос по ученику ${target.student_name}. Поделитесь впечатлениями о прогрессе.`,
+          {
+            scheduledAt: now,
+            entityType: "parent_survey",
+            entityId: target.id,
+            dedupeThisMonth: true,
+            dedupeByEntityOnly: true,
+          },
+        );
+      });
+      if (enqueued) actions.push(`student:${candidate.id}:parent_survey_enqueued`);
+    }
+
+    await client.query(
+      `INSERT INTO academy_integration_logs (provider, direction, status, payload, retry_count)
+       VALUES ('academy_automation','internal','completed',$1,0)`,
+      [{ actions }],
+    );
+
+    return actions;
+  } finally {
+    if (lockHeld) {
+      await client.query("SELECT pg_advisory_unlock($1)", [AUTOMATION_ADVISORY_LOCK]).catch((error) => {
+        logger.error("Failed to release automation lease", { error });
+      });
+    }
+    client.release();
   }
-
-  // 6. Monthly parent survey (TZ 2.5): enqueue survey links early in the month for
-  //    active students whose parents haven't been surveyed this month yet.
-  const period = now.toISOString().slice(0, 7);
-  const { rows: surveyTargets } = await pool.query(
-    `SELECT s.id, s.phone, s.messenger, s.student_name
-     FROM academy_students s
-     WHERE s.status='studying'
-       AND NOT EXISTS (
-         SELECT 1 FROM academy_parent_surveys ps WHERE ps.student_id = s.id AND ps.period = $1
-       )`,
-    [period],
-  );
-  for (const target of surveyTargets) {
-    await createOutbox("whatsapp", target.phone || target.messenger || "unknown",
-      `01 Academy: ежемесячный опрос по ученику ${target.student_name}. Поделитесь впечатлениями о прогрессе.`,
-      { scheduledAt: now, entityType: "parent_survey", entityId: target.id });
-    actions.push(`student:${target.id}:parent_survey_enqueued`);
-  }
-
-  await pool.query(
-    `INSERT INTO academy_integration_logs (provider, direction, status, payload, retry_count)
-     VALUES ('academy_automation','internal','completed',$1,0)`,
-    [{ actions }],
-  );
-
-  return actions;
 };
 
 const createTask = async (
+  executor: QueryExecutor,
   title: string,
   responsibleId: number,
   options: { description?: string; entityType?: string; entityId?: number; deadlineAt?: Date | null },
 ) => {
-  await pool.query(
+  await executor.query(
     `INSERT INTO academy_tasks (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
      VALUES ($1,$2,$3,$4,$5,$6,'new')`,
-    [title, options.description ?? null, responsibleId, options.deadlineAt ?? null,
-     options.entityType ?? null, options.entityId ?? null],
+    [
+      title,
+      options.description ?? null,
+      responsibleId,
+      options.deadlineAt ?? null,
+      options.entityType ?? null,
+      options.entityId ?? null,
+    ],
   );
 };
 
-const createOutbox = async (
-  channel: string, recipient: string, message: string,
-  options: { scheduledAt?: Date | null; entityType?: string | null; entityId?: number | null },
+const createTaskOnce = async (
+  executor: QueryExecutor,
+  title: string,
+  responsibleId: number,
+  options: { description?: string; entityType?: string; entityId?: number; deadlineAt?: Date | null },
 ) => {
-  await pool.query(
-    `INSERT INTO academy_notification_outbox (channel, recipient, message, status, scheduled_at, entity_type, entity_id)
-     VALUES ($1,$2,$3,'pending',$4,$5,$6)`,
-    [channel, recipient, message, options.scheduledAt ?? new Date(),
-     options.entityType ?? null, options.entityId ?? null],
+  const { rows } = await executor.query(
+    `INSERT INTO academy_tasks (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
+     SELECT $1,$2,$3,$4,$5,$6,'new'
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM academy_tasks
+       WHERE title = $1
+         AND entity_type IS NOT DISTINCT FROM $5::text
+         AND entity_id IS NOT DISTINCT FROM $6::integer
+         AND status <> 'done'
+     )
+     RETURNING id`,
+    [
+      title,
+      options.description ?? null,
+      responsibleId,
+      options.deadlineAt ?? null,
+      options.entityType ?? null,
+      options.entityId ?? null,
+    ],
   );
+  return Boolean(rows[0]?.id);
 };
 
-const recalcStudent = async (studentId: number) => {
-  const { rows } = await pool.query(`SELECT group_id FROM academy_students WHERE id=$1`, [studentId]);
-  const student = rows[0];
-  if (!student?.group_id) return;
+const createOutboxOnce = async (
+  executor: QueryExecutor,
+  channel: string,
+  recipient: string | null | undefined,
+  message: string,
+  options: {
+    scheduledAt?: Date | null;
+    entityType?: string | null;
+    entityId?: number | null;
+    dedupeThisMonth?: boolean;
+    dedupeByEntityOnly?: boolean;
+    dedupeSince?: Date | string | null;
+  },
+) => {
+  const normalizedRecipient = String(recipient ?? "").trim();
+  if (!normalizedRecipient) return false;
 
-  const { rows: conducted } = await pool.query(
-    `SELECT id FROM academy_lessons WHERE group_id=$1 AND status='conducted'`, [student.group_id]);
-  const { rows: present } = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM academy_attendance a JOIN academy_lessons l ON l.id=a.lesson_id
-     WHERE a.student_id=$1 AND a.status='present' AND l.status='conducted'`, [studentId]);
-  const { rows: group } = await pool.query(`SELECT lesson_count FROM academy_groups WHERE id=$1`, [student.group_id]);
-  const { rows: monthPresent } = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM academy_attendance a JOIN academy_lessons l ON l.id=a.lesson_id
-     WHERE a.student_id=$1 AND a.status='present' AND l.status='conducted'
-       AND l.scheduled_at >= date_trunc('month', NOW())`, [studentId]);
-  const { rows: monthConducted } = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM academy_lessons
-     WHERE group_id=$1 AND status='conducted' AND scheduled_at >= date_trunc('month', NOW())`,
-    [student.group_id]);
-  const { rows: surveys } = await pool.query(
-    `SELECT score FROM academy_lesson_surveys WHERE student_id=$1`, [studentId]);
+  const { rows } = await executor.query(
+    `INSERT INTO academy_notification_outbox
+       (channel, recipient, message, status, scheduled_at, entity_type, entity_id)
+     SELECT $1,$2,$3,'pending',$4,$5,$6
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM academy_notification_outbox
+       WHERE channel = $1
+         AND entity_type IS NOT DISTINCT FROM $5::text
+         AND entity_id IS NOT DISTINCT FROM $6::integer
+         AND (
+           (
+             $7::boolean = true
+             AND created_at >= (
+               (date_trunc('month', NOW() AT TIME ZONE $8) AT TIME ZONE $8)
+               AT TIME ZONE 'UTC'
+             )
+           )
+           OR (
+             $7::boolean = false
+             AND ($9::boolean = true OR (recipient = $2 AND message = $3))
+             AND ($10::timestamp IS NULL OR created_at >= $10)
+           )
+         )
+     )
+     RETURNING id`,
+    [
+      channel,
+      normalizedRecipient,
+      message,
+      options.scheduledAt ?? new Date(),
+      options.entityType ?? null,
+      options.entityId ?? null,
+      options.dedupeThisMonth === true,
+      AUTOMATION_TIME_ZONE,
+      options.dedupeByEntityOnly === true,
+      options.dedupeSince ?? null,
+    ],
+  );
+  return Boolean(rows[0]?.id);
+};
+
+const recalcStudent = async (executor: QueryExecutor, studentId: number): Promise<boolean> => {
+  const { rows } = await executor.query(
+    `SELECT
+       student.group_id,
+       COALESCE(
+         (
+           SELECT MAX(transfer.created_at)
+           FROM academy_student_transfers transfer
+           WHERE transfer.student_id = student.id
+             AND transfer.to_group_id = student.group_id
+         ),
+         student.enrolled_at,
+         student.created_at
+       ) AS membership_started_at
+     FROM academy_students student
+     WHERE student.id = $1 AND student.status = 'studying'`,
+    [studentId],
+  );
+  const student = rows[0];
+  if (!student?.group_id) return false;
+
+  const { rows: conducted } = await executor.query(
+    `SELECT id
+     FROM academy_lessons
+     WHERE group_id = $1
+       AND status = 'conducted'
+       AND scheduled_at >= $2`,
+    [student.group_id, student.membership_started_at],
+  );
+  const { rows: present } = await executor.query(
+    `SELECT COUNT(*)::int AS c
+     FROM academy_attendance a
+     JOIN academy_lessons l ON l.id = a.lesson_id
+     WHERE a.student_id = $1
+       AND a.status = 'present'
+       AND l.status = 'conducted'
+       AND l.group_id = $2
+       AND l.scheduled_at >= $3`,
+    [studentId, student.group_id, student.membership_started_at],
+  );
+  const { rows: group } = await executor.query(
+    "SELECT lesson_count FROM academy_groups WHERE id = $1",
+    [student.group_id],
+  );
+  const { rows: monthPresent } = await executor.query(
+    `SELECT COUNT(*)::int AS c
+     FROM academy_attendance a
+     JOIN academy_lessons l ON l.id = a.lesson_id
+     WHERE a.student_id = $1
+       AND a.status = 'present'
+       AND l.status = 'conducted'
+       AND l.group_id = $2
+       AND l.scheduled_at >= $3
+       AND l.scheduled_at >= (
+         (date_trunc('month', NOW() AT TIME ZONE $4) AT TIME ZONE $4)
+         AT TIME ZONE 'UTC'
+       )`,
+    [studentId, student.group_id, student.membership_started_at, AUTOMATION_TIME_ZONE],
+  );
+  const { rows: monthConducted } = await executor.query(
+    `SELECT COUNT(*)::int AS c
+     FROM academy_lessons
+     WHERE group_id = $1
+       AND status = 'conducted'
+       AND scheduled_at >= $2
+       AND scheduled_at >= (
+         (date_trunc('month', NOW() AT TIME ZONE $3) AT TIME ZONE $3)
+         AT TIME ZONE 'UTC'
+       )`,
+    [student.group_id, student.membership_started_at, AUTOMATION_TIME_ZONE],
+  );
+  const { rows: surveys } = await executor.query(
+    "SELECT score FROM academy_lesson_surveys WHERE student_id = $1",
+    [studentId],
+  );
 
   const presentCount = present[0]?.c ?? 0;
   const conductedCount = conducted.length;
@@ -183,17 +536,26 @@ const recalcStudent = async (studentId: number) => {
   const attendancePercent = conductedCount > 0 ? Math.round((presentCount / conductedCount) * 100) : 0;
   const progressPercent = lessonTotal > 0 ? Math.min(100, Math.round((presentCount / lessonTotal) * 100)) : 0;
   const monthAttendance = (monthConducted[0]?.c ?? 0) > 0
-    ? Math.round(((monthPresent[0]?.c ?? 0) / monthConducted[0].c) * 100) : 0;
+    ? Math.round(((monthPresent[0]?.c ?? 0) / monthConducted[0].c) * 100)
+    : 0;
   const satisfactionAvg = surveys.length
-    ? Math.round(surveys.reduce((s: number, r: any) => s + Number(r.score), 0) / surveys.length) : 0;
+    ? Math.round(surveys.reduce((sum: number, row: any) => sum + Number(row.score), 0) / surveys.length)
+    : 0;
 
-  const riskFlags: string[] = [];
-  if (attendancePercent > 0 && attendancePercent < 70) riskFlags.push("attendance_below_70");
-  if (monthAttendance > 0 && monthAttendance < 50) riskFlags.push("churn_risk");
-  if (satisfactionAvg > 0 && satisfactionAvg < 3) riskFlags.push("low_satisfaction");
+  const riskFlags = resolveStudentRiskFlags({
+    conductedCount,
+    attendancePercent,
+    monthConductedCount: monthConducted[0]?.c ?? 0,
+    monthAttendancePercent: monthAttendance,
+    satisfactionAvg,
+  });
 
-  await pool.query(
-    `UPDATE academy_students SET attendance_percent=$1, progress_percent=$2, satisfaction_avg=$3, risk_flags=$4, updated_at=NOW() WHERE id=$5`,
+  await executor.query(
+    `UPDATE academy_students
+     SET attendance_percent = $1, progress_percent = $2,
+         satisfaction_avg = $3, risk_flags = $4, updated_at = NOW()
+     WHERE id = $5 AND status = 'studying'`,
     [attendancePercent, progressPercent, satisfactionAvg, JSON.stringify(riskFlags), studentId],
   );
+  return true;
 };

@@ -412,5 +412,25 @@ export function addDays(date: Date, days: number): Date {
 
 export function normalizeMoney(value: unknown): number {
   const amount = Number(value ?? 0);
-  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : 0;
+}
+
+export function resolveStudentRiskFlags(metrics: {
+  conductedCount: number;
+  attendancePercent: number;
+  monthConductedCount: number;
+  monthAttendancePercent: number;
+  satisfactionAvg: number;
+}): string[] {
+  const flags: string[] = [];
+  if (metrics.conductedCount > 0 && metrics.attendancePercent < 70) {
+    flags.push("attendance_below_70");
+  }
+  if (metrics.monthConductedCount > 0 && metrics.monthAttendancePercent < 50) {
+    flags.push("churn_risk");
+  }
+  if (metrics.satisfactionAvg > 0 && metrics.satisfactionAvg < 3) {
+    flags.push("low_satisfaction");
+  }
+  return flags;
 }

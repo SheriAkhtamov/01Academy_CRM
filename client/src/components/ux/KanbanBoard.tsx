@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
 import {
   closestCorners,
   DndContext,
@@ -38,6 +38,12 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import {
+  finishOptimisticChange,
+  incomingValueChangedSinceStart,
+  reconcileOptimisticItems,
+  type OptimisticChange,
+} from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
 
 interface KanbanStatus {
@@ -75,6 +81,17 @@ interface KanbanBoardProps {
   showPaymentAction?: boolean;
   showManager?: boolean;
 }
+
+const reconcileKanbanLeads = (
+  incoming: KanbanLead[],
+  pending: ReadonlyMap<number, OptimisticChange<string>>,
+) => reconcileOptimisticItems(
+  incoming,
+  pending,
+  (lead) => lead.id,
+  (lead) => lead.statusCode,
+  (lead, statusCode) => ({ ...lead, statusCode }),
+);
 
 interface LeadCardContentProps {
   lead: KanbanLead;
@@ -351,6 +368,10 @@ export function KanbanBoard({
   const { t } = useTranslation();
   const [boardLeads, setBoardLeads] = useState(leads);
   const [activeLeadId, setActiveLeadId] = useState<number | null>(null);
+  const latestLeadsRef = useRef(leads);
+  const pendingMovesRef = useRef(new Map<number, OptimisticChange<string>>());
+  const nextMoveTokenRef = useRef(0);
+  latestLeadsRef.current = leads;
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, {
@@ -366,25 +387,7 @@ export function KanbanBoard({
   );
 
   useEffect(() => {
-    setBoardLeads((current) => {
-      // Preserve the in-flight optimistic status for any lead whose server value
-      // hasn't caught up yet, so dragging doesn't visually snap back mid-mutation.
-      if (current.length === 0) return leads;
-      const optimisticById = new Map<number, string>();
-      current.forEach((lead) => {
-        const incoming = leads.find((next) => next.id === lead.id);
-        if (incoming && incoming.statusCode !== lead.statusCode) {
-          optimisticById.set(lead.id, lead.statusCode);
-        }
-      });
-      if (optimisticById.size === 0) return leads;
-      return leads.map((lead) => {
-        const optimistic = optimisticById.get(lead.id);
-        return optimistic && optimistic !== lead.statusCode
-          ? { ...lead, statusCode: optimistic }
-          : lead;
-      });
-    });
+    setBoardLeads(reconcileKanbanLeads(leads, pendingMovesRef.current));
   }, [leads]);
 
   const statusesByCode = useMemo(
@@ -399,28 +402,36 @@ export function KanbanBoard({
   const moveLead = useCallback((leadId: number, statusCode: string) => {
     const lead = boardLeads.find((item) => item.id === leadId);
     if (!lead || lead.statusCode === statusCode || !statusesByCode.has(statusCode)) return;
-    const previousStatusCode = lead.statusCode;
+    const baselineStatusCode = latestLeadsRef.current.find((item) => item.id === leadId)?.statusCode
+      ?? lead.statusCode;
+    const token = ++nextMoveTokenRef.current;
+    pendingMovesRef.current.set(leadId, {
+      token,
+      value: statusCode,
+      baselineValue: baselineStatusCode,
+    });
 
     setBoardLeads((current) => current.map((item) => (
       item.id === leadId ? { ...item, statusCode } : item
     )));
 
-    Promise.resolve(onStatusChange(leadId, statusCode))
+    const finishMove = (accepted: boolean) => {
+      const change = finishOptimisticChange(pendingMovesRef.current, leadId, token);
+      if (!change) return;
+
+      const latestLead = latestLeadsRef.current.find((item) => item.id === leadId);
+      if (!accepted || incomingValueChangedSinceStart(latestLead, change, (item) => item.statusCode)) {
+        setBoardLeads(reconcileKanbanLeads(latestLeadsRef.current, pendingMovesRef.current));
+      }
+    };
+
+    Promise.resolve()
+      .then(() => onStatusChange(leadId, statusCode))
       .then((accepted) => {
-        if (accepted === false) {
-          setBoardLeads((current) => current.map((item) => (
-            item.id === leadId && item.statusCode === statusCode
-              ? { ...item, statusCode: previousStatusCode }
-              : item
-          )));
-        }
+        finishMove(accepted !== false);
       })
       .catch(() => {
-        setBoardLeads((current) => current.map((item) => (
-          item.id === leadId && item.statusCode === statusCode
-            ? { ...item, statusCode: previousStatusCode }
-            : item
-        )));
+        finishMove(false);
       });
   }, [boardLeads, onStatusChange, statusesByCode]);
 

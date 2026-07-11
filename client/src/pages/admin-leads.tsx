@@ -113,7 +113,13 @@ export function LeadAssignmentContent() {
   const allVisibleSelected = filteredLeads.length > 0 && selectedVisibleCount === filteredLeads.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
 
-  const invalidateLeads = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] });
+  const invalidateLeads = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
+  ]);
 
   const assignLead = useMutation({
     mutationFn: ({ leadId, managerId }: { leadId: number; managerId: number }) =>

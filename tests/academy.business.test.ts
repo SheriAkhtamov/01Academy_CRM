@@ -13,6 +13,7 @@ import {
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
+  resolveReferralMilestone,
   resolveStudentRiskFlags,
   suggestAgeGroup,
   suggestCourseSlugByAge,
@@ -127,6 +128,13 @@ describe("01 Academy business rules", () => {
       studentAge: 12,
       courseId: 1,
     })).toBe("groupRequiredForEnrollment");
+    expect(validateLeadForStatusChange({
+      nextStatus: "paid",
+      studentName: null,
+      studentAge: 12,
+      courseId: 1,
+      enrolledGroupId: 10,
+    })).toBe("completeQualificationFields");
   });
 
   it("keeps paid clients terminal and requires a payment to enter paid", () => {
@@ -159,6 +167,15 @@ describe("01 Academy business rules", () => {
 
   it("generates a stable referral code shape", () => {
     expect(buildReferralCode("Timur Aliyev", 7, 2026)).toBe("TIMURALI72026");
+  });
+
+  it("grants referral benefits only when a milestone is first reached", () => {
+    expect(resolveReferralMilestone(1)).toBe("next_payment_discount_15");
+    expect(resolveReferralMilestone(2)).toBeNull();
+    expect(resolveReferralMilestone(3)).toBe("free_month");
+    expect(resolveReferralMilestone(4)).toBeNull();
+    expect(resolveReferralMilestone(5)).toBe("ai_ambassador_free_training");
+    expect(resolveReferralMilestone(6)).toBeNull();
   });
 
   it("rejects fractional money instead of silently changing the paid amount", () => {

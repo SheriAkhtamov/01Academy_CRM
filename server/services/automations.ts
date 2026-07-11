@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { addDays, resolveStudentRiskFlags } from "@shared/academy";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
+import { normalizeOutboxRecipient } from "./message-recipients";
 
 const AUTOMATION_ADVISORY_LOCK = 10_100_002;
 const AUTOMATION_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
@@ -199,11 +200,10 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       const created = await withTransaction(client, async () => {
         const { rows } = await client.query<{
           id: number;
-          messenger: string | null;
           phone: string | null;
           warm_moved_at: Date | string | null;
         }>(
-          `SELECT id, messenger, phone, warm_moved_at
+          `SELECT id, phone, warm_moved_at
            FROM academy_leads
            WHERE id = $1
              AND status_code = 'not_now'
@@ -215,11 +215,10 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
         const lead = rows[0];
         if (!lead) return false;
 
-        const recipient = lead.messenger || lead.phone;
         const immediateCreated = await createOutboxOnce(
           client,
-          "telegram",
-          recipient,
+          "whatsapp",
+          lead.phone,
           "01 Academy: результат недели и новые проекты учеников. Хотите прийти на демо?",
           {
             scheduledAt: now,
@@ -230,8 +229,8 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
         );
         const demoCreated = await createOutboxOnce(
           client,
-          "telegram",
-          recipient,
+          "whatsapp",
+          lead.phone,
           "01 Academy приглашает на демо-урок. Подберём курс по возрасту.",
           {
             scheduledAt: addDays(now, 14),
@@ -409,7 +408,8 @@ const createOutboxOnce = async (
     dedupeSince?: Date | string | null;
   },
 ) => {
-  const normalizedRecipient = String(recipient ?? "").trim();
+  const normalizedChannel = String(channel ?? "").trim().toLowerCase();
+  const normalizedRecipient = normalizeOutboxRecipient(normalizedChannel, recipient);
   if (!normalizedRecipient) return false;
 
   const { rows } = await executor.query(
@@ -432,14 +432,26 @@ const createOutboxOnce = async (
            )
            OR (
              $7::boolean = false
-             AND ($9::boolean = true OR (recipient = $2 AND message = $3))
+             AND (
+               $9::boolean = true
+               OR (
+                 message = $3
+                 AND (
+                   recipient = $2
+                   OR (
+                     $1 = 'whatsapp'
+                     AND regexp_replace(recipient, '\\D', '', 'g') = $2
+                   )
+                 )
+               )
+             )
              AND ($10::timestamp IS NULL OR created_at >= $10)
            )
          )
      )
      RETURNING id`,
     [
-      channel,
+      normalizedChannel,
       normalizedRecipient,
       message,
       options.scheduledAt ?? new Date(),
@@ -476,12 +488,23 @@ const recalcStudent = async (executor: QueryExecutor, studentId: number): Promis
   if (!student?.group_id) return false;
 
   const { rows: conducted } = await executor.query(
-    `SELECT id
-     FROM academy_lessons
-     WHERE group_id = $1
-       AND status = 'conducted'
-       AND scheduled_at >= $2`,
-    [student.group_id, student.membership_started_at],
+    `SELECT lesson.id
+     FROM academy_lessons lesson
+     WHERE lesson.group_id = $1
+       AND lesson.status = 'conducted'
+       AND lesson.scheduled_at >= $2
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $3
+             AND history.created_at <= lesson.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'`,
+    [student.group_id, student.membership_started_at, studentId],
   );
   const { rows: present } = await executor.query(
     `SELECT COUNT(*)::int AS c
@@ -491,7 +514,18 @@ const recalcStudent = async (executor: QueryExecutor, studentId: number): Promis
        AND a.status = 'present'
        AND l.status = 'conducted'
        AND l.group_id = $2
-       AND l.scheduled_at >= $3`,
+       AND l.scheduled_at >= $3
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $1
+             AND history.created_at <= l.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'`,
     [studentId, student.group_id, student.membership_started_at],
   );
   const { rows: group } = await executor.query(
@@ -507,6 +541,17 @@ const recalcStudent = async (executor: QueryExecutor, studentId: number): Promis
        AND l.status = 'conducted'
        AND l.group_id = $2
        AND l.scheduled_at >= $3
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $1
+             AND history.created_at <= l.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'
        AND l.scheduled_at >= (
          (date_trunc('month', NOW() AT TIME ZONE $4) AT TIME ZONE $4)
          AT TIME ZONE 'UTC'
@@ -515,19 +560,46 @@ const recalcStudent = async (executor: QueryExecutor, studentId: number): Promis
   );
   const { rows: monthConducted } = await executor.query(
     `SELECT COUNT(*)::int AS c
-     FROM academy_lessons
-     WHERE group_id = $1
-       AND status = 'conducted'
-       AND scheduled_at >= $2
-       AND scheduled_at >= (
-         (date_trunc('month', NOW() AT TIME ZONE $3) AT TIME ZONE $3)
+     FROM academy_lessons lesson
+     WHERE lesson.group_id = $1
+       AND lesson.status = 'conducted'
+       AND lesson.scheduled_at >= $2
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $3
+             AND history.created_at <= lesson.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'
+       AND lesson.scheduled_at >= (
+         (date_trunc('month', NOW() AT TIME ZONE $4) AT TIME ZONE $4)
          AT TIME ZONE 'UTC'
        )`,
-    [student.group_id, student.membership_started_at, AUTOMATION_TIME_ZONE],
+    [student.group_id, student.membership_started_at, studentId, AUTOMATION_TIME_ZONE],
   );
   const { rows: surveys } = await executor.query(
-    "SELECT score FROM academy_lesson_surveys WHERE student_id = $1",
-    [studentId],
+    `SELECT survey.score
+     FROM academy_lesson_surveys survey
+     JOIN academy_lessons lesson ON lesson.id = survey.lesson_id
+     WHERE survey.student_id = $1
+       AND lesson.group_id = $2
+       AND lesson.scheduled_at >= $3
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $1
+             AND history.created_at <= lesson.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'`,
+    [studentId, student.group_id, student.membership_started_at],
   );
 
   const presentCount = present[0]?.c ?? 0;

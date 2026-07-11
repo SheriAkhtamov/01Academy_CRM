@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { ACADEMY_WORKSPACES } from "./academy";
@@ -260,7 +260,10 @@ export const academyLeads = pgTable("academy_leads", {
   archivedAt: timestamp("archived_at"),
   archivedBy: integer("archived_by").references(() => users.id, { onDelete: "set null" }),
   referralCode: varchar("referral_code", { length: 80 }),
-  referrerStudentId: integer("referrer_student_id"),
+  referrerStudentId: integer("referrer_student_id").references(
+    (): AnyPgColumn => academyStudents.id,
+    { onDelete: "set null" },
+  ),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -270,6 +273,7 @@ export const academyLeads = pgTable("academy_leads", {
   managerIdx: index("academy_leads_manager_idx").on(table.managerId),
   schoolIdx: index("academy_leads_school_idx").on(table.schoolId),
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
+  referrerIdx: index("academy_leads_referrer_idx").on(table.referrerStudentId),
   archiveIdx: index("academy_leads_archive_idx").on(table.isArchived, table.archivedAt),
 }));
 
@@ -342,7 +346,9 @@ export const academyStudents = pgTable("academy_students", {
 }, (table) => ({
   phoneIdx: index("academy_students_phone_idx").on(table.phone),
   groupIdx: index("academy_students_group_idx").on(table.groupId),
-  leadIdx: index("academy_students_lead_idx").on(table.leadId),
+  leadUnique: uniqueIndex("academy_students_lead_unique")
+    .on(table.leadId)
+    .where(sql`${table.leadId} IS NOT NULL`),
   managerIdx: index("academy_students_manager_idx").on(table.managerId),
   schoolIdx: index("academy_students_school_idx").on(table.schoolId),
   statusIdx: index("academy_students_status_idx").on(table.status),
@@ -394,6 +400,19 @@ export const academyLessonStatusHistory = pgTable("academy_lesson_status_history
   lessonIdx: index("academy_lesson_status_history_lesson_idx").on(table.lessonId),
 }));
 
+export const academyLessonReschedules = pgTable("academy_lesson_reschedules", {
+  id: serial("id").primaryKey(),
+  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "restrict" }).notNull(),
+  previousScheduledAt: timestamp("previous_scheduled_at").notNull(),
+  nextScheduledAt: timestamp("next_scheduled_at").notNull(),
+  reason: text("reason").notNull(),
+  changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  lessonIdx: index("academy_lesson_reschedules_lesson_idx").on(table.lessonId),
+  changedByIdx: index("academy_lesson_reschedules_changed_by_idx").on(table.changedBy),
+}));
+
 export const academyAttendance = pgTable("academy_attendance", {
   id: serial("id").primaryKey(),
   lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "cascade" }).notNull(),
@@ -406,6 +425,11 @@ export const academyAttendance = pgTable("academy_attendance", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   lessonStudentUnique: uniqueIndex("academy_attendance_lesson_student_unique").on(table.lessonId, table.studentId),
+  studentIdx: index("academy_attendance_student_idx").on(table.studentId),
+  statusCheck: check(
+    "academy_attendance_status_check",
+    sql`${table.status} IN ('present', 'absent')`,
+  ),
 }));
 
 export const academyPayments = pgTable("academy_payments", {
@@ -572,11 +596,68 @@ export const academyReferralRewards = pgTable("academy_referral_rewards", {
   rewardType: varchar("reward_type", { length: 80 }).notNull(),
   rewardValue: varchar("reward_value", { length: 120 }).notNull(),
   status: varchar("status", { length: 50 }).notNull().default("pending"),
+  qualifiedByPaymentId: integer("qualified_by_payment_id").references(
+    () => academyPayments.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow(),
   appliedAt: timestamp("applied_at"),
 }, (table) => ({
   referrerIdx: index("academy_referral_rewards_referrer_idx").on(table.referrerStudentId),
   referredLeadIdx: index("academy_referral_rewards_referred_lead_idx").on(table.referredLeadId),
+  qualifiedPaymentIdx: index("academy_referral_rewards_qualified_payment_idx").on(table.qualifiedByPaymentId),
+}));
+
+export const academyReferralBenefits = pgTable("academy_referral_benefits", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  benefitType: varchar("benefit_type", { length: 80 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("pending"),
+  milestone: integer("milestone"),
+  sourceReferralCount: integer("source_referral_count"),
+  sourceReferralRewardId: integer("source_referral_reward_id").references(
+    () => academyReferralRewards.id,
+    { onDelete: "set null" },
+  ),
+  sourcePaymentId: integer("source_payment_id").references(() => academyPayments.id, { onDelete: "set null" }),
+  consumedByPaymentId: integer("consumed_by_payment_id").references(() => academyPayments.id, { onDelete: "set null" }),
+  grantedAt: timestamp("granted_at").defaultNow(),
+  consumedAt: timestamp("consumed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  studentTypeUnique: uniqueIndex("academy_referral_benefits_student_type_unique").on(
+    table.studentId,
+    table.benefitType,
+  ),
+  studentStatusIdx: index("academy_referral_benefits_student_status_idx").on(table.studentId, table.status),
+  statusIdx: index("academy_referral_benefits_status_idx").on(table.status),
+  benefitTypeCheck: check(
+    "academy_referral_benefits_type_check",
+    sql`${table.benefitType} IN ('referred_first_payment_discount_15', 'next_payment_discount_15', 'free_month', 'ai_ambassador_free_training')`,
+  ),
+  statusCheck: check(
+    "academy_referral_benefits_status_check",
+    sql`${table.status} IN ('pending', 'consumed', 'superseded')`,
+  ),
+  milestoneCheck: check(
+    "academy_referral_benefits_milestone_check",
+    sql`${table.milestone} IS NULL OR ${table.milestone} IN (1, 3, 5)`,
+  ),
+  typeMilestoneCheck: check(
+    "academy_referral_benefits_type_milestone_check",
+    sql`(
+      (${table.benefitType} = 'referred_first_payment_discount_15' AND ${table.milestone} IS NULL)
+      OR (
+        ${table.milestone} IS NOT NULL
+        AND (
+          (${table.benefitType} = 'next_payment_discount_15' AND ${table.milestone} = 1)
+          OR (${table.benefitType} = 'free_month' AND ${table.milestone} = 3)
+          OR (${table.benefitType} = 'ai_ambassador_free_training' AND ${table.milestone} = 5)
+        )
+      )
+    )`,
+  ),
 }));
 
 export const academyIntegrationLogs = pgTable("academy_integration_logs", {
@@ -916,6 +997,12 @@ export const insertAcademyReferralRewardSchema = createInsertSchema(academyRefer
   createdAt: true,
 });
 
+export const insertAcademyReferralBenefitSchema = createInsertSchema(academyReferralBenefits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyIntegrationLogSchema = createInsertSchema(academyIntegrationLogs).omit({
   id: true,
   createdAt: true,
@@ -1022,6 +1109,8 @@ export type AcademyMarketingExpense = typeof academyMarketingExpenses.$inferSele
 export type InsertAcademyMarketingExpense = z.infer<typeof insertAcademyMarketingExpenseSchema>;
 export type AcademyReferralReward = typeof academyReferralRewards.$inferSelect;
 export type InsertAcademyReferralReward = z.infer<typeof insertAcademyReferralRewardSchema>;
+export type AcademyReferralBenefit = typeof academyReferralBenefits.$inferSelect;
+export type InsertAcademyReferralBenefit = z.infer<typeof insertAcademyReferralBenefitSchema>;
 export type AcademyIntegrationLog = typeof academyIntegrationLogs.$inferSelect;
 export type InsertAcademyIntegrationLog = z.infer<typeof insertAcademyIntegrationLogSchema>;
 export type InstagramAccount = typeof instagramAccounts.$inferSelect;

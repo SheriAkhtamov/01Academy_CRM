@@ -274,6 +274,41 @@
       "when": 1784304000000,
       "tag": "0038_fix_user_deletion_references",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784390400000,
+      "tag": "0039_add_lesson_reschedule_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784476800000,
+      "tag": "0040_enforce_lead_referrers",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784563200000,
+      "tag": "0041_add_referral_benefits",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784649600000,
+      "tag": "0042_enforce_unique_student_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784736000000,
+      "tag": "0043_enforce_attendance_integrity",
+      "breakpoints": true
     }
   ]
 }

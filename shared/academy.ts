@@ -130,6 +130,16 @@ export const REFERRAL_TIERS = [
   { minReferrals: 1, level: "discount_15", rewardKey: "referralDiscount15" },
 ] as const;
 
+export const REFERRAL_BENEFIT_TYPES = [
+  "referred_first_payment_discount_15",
+  "next_payment_discount_15",
+  "free_month",
+  "ai_ambassador_free_training",
+] as const;
+export type ReferralBenefitType = (typeof REFERRAL_BENEFIT_TYPES)[number];
+
+export const REFERRAL_BENEFIT_STATUSES = ["pending", "consumed", "superseded"] as const;
+
 export const TARGET_NPS = 50;
 export const TARGET_CAC_UZS = 300000;
 export const TARGET_LTV_CAC_RATIO = 10;
@@ -247,7 +257,10 @@ export function suggestAgeGroup(age?: number | null): string | null {
 }
 
 function requiresQualificationFields(status: string): boolean {
-  return status === "qualified";
+  // Enrollment and payment are later pipeline stages, so qualification data
+  // must remain complete there as well. Otherwise a PATCH could erase the
+  // student/course fields after qualification and leave an unusable student.
+  return ["qualified", "enrolled", "paid"].includes(status);
 }
 
 export function validateLeadForStatusChange(input: {
@@ -386,6 +399,16 @@ export function resolveReferralLevel(paidReferralsCount: number): string {
     }
   }
   return "none";
+}
+
+/** One-time benefits are granted only when a referral milestone is first reached. */
+export function resolveReferralMilestone(
+  paidReferralsCount: number,
+): Extract<ReferralBenefitType, "next_payment_discount_15" | "free_month" | "ai_ambassador_free_training"> | null {
+  if (paidReferralsCount === 1) return "next_payment_discount_15";
+  if (paidReferralsCount === 3) return "free_month";
+  if (paidReferralsCount === 5) return "ai_ambassador_free_training";
+  return null;
 }
 
 // Average deal cycle (days) from lead creation to first paid payment.

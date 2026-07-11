@@ -68,7 +68,11 @@ export const processOutbox = async (batchSize = 50): Promise<number> => {
     try {
       const result = await dispatchChannel(row.channel, row.recipient, row.message);
       if (!result.ok) {
-        await recordFailure(row, result.error ?? `${row.channel} dispatch failed`);
+        await recordFailure(
+          row,
+          result.error ?? `${row.channel} dispatch failed`,
+          result.retryable !== false,
+        );
         continue;
       }
 
@@ -93,9 +97,9 @@ export const processOutbox = async (batchSize = 50): Promise<number> => {
   return dispatched;
 };
 
-const recordFailure = async (row: OutboxRow, error: string) => {
+const recordFailure = async (row: OutboxRow, error: string, retryable = true) => {
   const nextRetryCount = row.retry_count + 1;
-  const exhausted = nextRetryCount >= MAX_RETRY_ATTEMPTS;
+  const exhausted = !retryable || nextRetryCount >= MAX_RETRY_ATTEMPTS;
   const update = await pool.query(
     `UPDATE academy_notification_outbox
      SET status = $1,
@@ -126,6 +130,6 @@ const dispatchChannel = async (channel: string, recipient: string, message: stri
       return sendWhatsAppMessage(recipient, message);
     default:
       logger.error(`[outbox:unknown-channel:${channel}]`, { recipient, message });
-      return { ok: false, error: `Unknown channel: ${channel}` };
+      return { ok: false, retryable: false, error: `Unknown channel: ${channel}` };
   }
 };

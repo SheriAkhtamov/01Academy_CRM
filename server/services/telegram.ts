@@ -1,10 +1,11 @@
 import { appConfig } from "../config";
 import { logger } from "../lib/logger";
+import { resolveTelegramChatId } from "./message-recipients";
 
 let botClient: any = null;
 let initError: string | null = null;
 
-const getBot = () => {
+const getBot = async () => {
   const token = appConfig.integrations?.telegram?.botToken;
   if (!token) {
     return null;
@@ -15,8 +16,12 @@ const getBot = () => {
   }
 
   try {
-    // Lazy require so the dependency is only loaded when configured.
-    const TelegramBot = require("node-telegram-bot-api");
+    // The server is emitted as ESM. Dynamic import keeps initialization lazy
+    // without relying on CommonJS `require`, which is unavailable in the
+    // production bundle and previously downgraded configured sends to a
+    // misleading simulation.
+    const telegramModule = await import("node-telegram-bot-api");
+    const TelegramBot = (telegramModule as any).default ?? telegramModule;
     botClient = new TelegramBot(token, { polling: false });
     initError = null;
     logger.info("Telegram bot client initialized");
@@ -33,24 +38,45 @@ interface TelegramSendResult {
   messageId?: number;
   error?: string;
   simulated?: boolean;
+  retryable?: boolean;
 }
 
+interface TelegramClient {
+  sendMessage: (chatId: string, text: string) => Promise<{ message_id?: number }>;
+}
+
+export const sendPlainTelegramText = (
+  client: TelegramClient,
+  chatId: string,
+  text: string,
+) => client.sendMessage(chatId, text);
+
 /**
- * Sends a text message to a chat. Recipient can be a numeric chat id, a @username,
- * or a phone number (prefixed with "+" — Telegram requires the contact to be shared first).
+ * Sends plain text only to the numeric chat id explicitly configured for the
+ * leadership channel. The special leadership alias resolves to that same id.
+ * Bot API cannot address a private user by phone number or @username.
  * When the bot is not configured, the message is logged as a simulated send.
  */
 export const sendTelegramMessage = async (
   recipient: string,
   text: string,
 ): Promise<TelegramSendResult> => {
-  const bot = getBot();
-  const chatId = appConfig.integrations?.telegram?.leadershipChatId && isLeadershipRecipient(recipient)
-    ? appConfig.integrations.telegram.leadershipChatId
-    : recipient;
+  const chatId = resolveTelegramChatId(
+    recipient,
+    appConfig.integrations?.telegram?.leadershipChatId,
+  );
+  if (!chatId) {
+    return {
+      ok: false,
+      retryable: false,
+      error: "Telegram recipient must match the configured numeric chat id",
+    };
+  }
+
+  const bot = await getBot();
 
   if (!bot) {
-    logger.info("[telegram:simulated] message not sent (no bot token)", { recipient, text });
+    logger.info("[telegram:simulated] message not sent (no bot token)", { chatId });
     return {
       ok: true,
       simulated: true,
@@ -59,12 +85,11 @@ export const sendTelegramMessage = async (
   }
 
   try {
-    const result = await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+    // Outbox content contains customer and employee supplied values. Sending it
+    // as plain text avoids malformed HTML and markup injection.
+    const result = await sendPlainTelegramText(bot, chatId, text);
     return { ok: true, messageId: result?.message_id };
   } catch (error: any) {
     return { ok: false, error: error?.message ?? String(error) };
   }
 };
-
-const isLeadershipRecipient = (recipient: string) =>
-  ["leadership", "руководств", "head", "admin"].some((token) => recipient.toLowerCase().includes(token));

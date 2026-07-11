@@ -63,6 +63,55 @@ const readInsertValue = (sql: string, values: unknown[], column: string) => {
   return values[columns.indexOf(column)];
 };
 
+const leadFixture = (overrides: Record<string, unknown> = {}) => ({
+  id: 42,
+  contact_name: 'Parent',
+  student_name: 'Student',
+  student_age: 12,
+  course_id: 3,
+  source_id: 2,
+  status_code: 'new_request',
+  manager_id: 1,
+  enrolled_group_id: null,
+  offer_course_id: 8,
+  referrer_student_id: 7,
+  updated_at: new Date('2026-07-10T10:00:00.000Z'),
+  ...overrides,
+});
+
+const groupFixture = (overrides: Record<string, unknown> = {}) => ({
+  id: 20,
+  name: 'Vibe Coding 01',
+  course_id: 1,
+  school_id: 2,
+  room_id: 3,
+  teacher_id: 4,
+  schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '11:00', schoolId: 2 }],
+  lesson_count: 10,
+  lesson_duration_minutes: 60,
+  duration_days: 60,
+  frequency: 'weekly',
+  max_students: 12,
+  status: 'in_progress',
+  start_date: new Date('2026-07-01T00:00:00.000Z'),
+  end_date: new Date('2026-09-01T00:00:00.000Z'),
+  ...overrides,
+});
+
+const lessonFixture = (overrides: Record<string, unknown> = {}) => ({
+  id: 10,
+  group_id: 20,
+  course_id: 1,
+  school_id: 2,
+  room_id: 3,
+  teacher_id: 4,
+  teacher_user_id: 1,
+  duration_minutes: 60,
+  status: 'scheduled',
+  scheduled_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+  ...overrides,
+});
+
 describe('academy route logic boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -142,7 +191,331 @@ describe('academy route logic boundaries', () => {
       .send({ attendance: [{ studentId: 5, status: 'present' }] });
 
     expect(response.status).toBe(403);
-    expect(response.body.error).toBe('Teacher can mark only own lessons');
+    expect(response.body.error).toBe('teacherOwnLessonAttendanceOnly');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('does not let a scheduled lesson be completed before it starts', async () => {
+    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000);
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('FOR UPDATE OF l')) {
+        return {
+          rows: [{
+            id: 10,
+            group_id: 20,
+            status: 'scheduled',
+            scheduled_at: scheduledAt,
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/attendance')
+      .send({ lessonStatus: 'conducted', attendance: [] });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('lessonNotStarted');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_attendance'))).toBe(false);
+  });
+
+  it('does not reopen a conducted lesson through the attendance endpoint', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('FOR UPDATE OF l')) {
+        return {
+          rows: [{
+            id: 10,
+            group_id: 20,
+            status: 'conducted',
+            scheduled_at: new Date(Date.now() - 60 * 60 * 1000),
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/attendance')
+      .send({ lessonStatus: 'scheduled', attendance: [] });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('conductedLessonCannotBeReopened');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('marks a started lesson conducted and saves the complete historical roster atomically', async () => {
+    const scheduledAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('FOR UPDATE OF l')) {
+        return {
+          rows: [{
+            id: 10,
+            group_id: 20,
+            status: 'scheduled',
+            scheduled_at: scheduledAt,
+            duration_minutes: 60,
+          }],
+        };
+      }
+      if (sql.includes('FROM academy_students student') && sql.includes('FOR UPDATE OF student')) {
+        return {
+          rows: [
+            { id: 5, group_id: 20, phone: '+998901111111', manager_id: 1 },
+            { id: 6, group_id: 20, phone: '+998902222222', manager_id: 1 },
+          ],
+        };
+      }
+      if (sql.includes('INSERT INTO academy_attendance')) {
+        return {
+          rows: [{
+            lesson_id: values[0],
+            student_id: values[1],
+            status: values[2],
+          }],
+        };
+      }
+      if (sql.includes('UPDATE "academy_lessons"')) {
+        return { rows: [{ id: 10, group_id: 20, status: 'conducted', scheduled_at: scheduledAt }] };
+      }
+      if (sql.includes('INSERT INTO "academy_lesson_status_history"')) {
+        return { rows: [{ id: 90 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/attendance')
+      .send({
+        lessonStatus: 'conducted',
+        attendance: [
+          { studentId: 5, status: 'present' },
+          { studentId: 6, status: 'absent' },
+        ],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.lesson.status).toBe('conducted');
+    expect(response.body.attendance).toHaveLength(2);
+    const attendanceWrites = mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO academy_attendance'));
+    expect(attendanceWrites).toHaveLength(2);
+    expect(attendanceWrites.every(([, values]) => values[6] === false && values[7] === false)).toBe(true);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_status_history"'))).toBe(true);
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_notification_outbox"'))).toHaveLength(1);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('closes a stale three-absence task when corrected attendance removes the streak', async () => {
+    const scheduledAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('FOR UPDATE OF l')) {
+        return {
+          rows: [{
+            id: 10,
+            group_id: 20,
+            status: 'conducted',
+            scheduled_at: scheduledAt,
+            duration_minutes: 60,
+          }],
+        };
+      }
+      if (sql.includes('FROM academy_students student') && sql.includes('FOR UPDATE OF student')) {
+        return { rows: [{ id: 5, group_id: 20, manager_id: 1 }] };
+      }
+      if (sql.includes('INSERT INTO academy_attendance')) {
+        return { rows: [{ lesson_id: 10, student_id: 5, status: values[2] }] };
+      }
+      if (sql.includes('UPDATE "academy_lessons"')) {
+        return { rows: [{ id: 10, group_id: 20, status: 'conducted', scheduled_at: scheduledAt }] };
+      }
+      if (sql.includes('ORDER BY l.scheduled_at DESC') && sql.includes('LIMIT 3')) {
+        return { rows: [{ status: 'present' }, { status: 'absent' }, { status: 'absent' }] };
+      }
+      if (sql.includes("title = '3 пропуска подряд: позвонить родителю'")) {
+        return { rows: [{ id: 70 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/attendance')
+      .send({
+        lessonStatus: 'conducted',
+        attendance: [{ studentId: 5, status: 'present' }],
+      });
+
+    expect(response.status).toBe(200);
+    expect(mocks.clientQuery.mock.calls.some(([sql, values]) => (
+      String(sql).includes('UPDATE academy_tasks')
+      && String(sql).includes("status = 'done'")
+      && values[0] === 70
+    ))).toBe(true);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('reschedules a lesson chain atomically and preserves the lesson intervals', async () => {
+    const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    originalAt.setSeconds(17, 321);
+    const followingAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const nextAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    nextAt.setSeconds(0, 0);
+    const lessonRow = (id: number, scheduledAt: Date) => ({
+      id,
+      group_id: 20,
+      course_id: 1,
+      school_id: 2,
+      room_id: 3,
+      teacher_id: 4,
+      teacher_user_id: 1,
+      duration_minutes: 60,
+      status: 'scheduled',
+      scheduled_at: scheduledAt,
+    });
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) {
+        return { rows: [lessonRow(10, originalAt)] };
+      }
+      if (sql.includes('FROM academy_attendance WHERE lesson_id')) return emptyResult();
+      if (sql.includes('FROM academy_lessons affected_lesson') && sql.includes('affected_lesson.group_id = $1') && sql.includes('FOR UPDATE')) {
+        return { rows: [lessonRow(10, originalAt), lessonRow(11, followingAt)] };
+      }
+      if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+        return {
+          rows: [{
+            id: 20,
+            course_id: 1,
+            school_id: 2,
+            room_id: 3,
+            teacher_id: 4,
+            lesson_duration_minutes: 60,
+          }],
+        };
+      }
+      if (sql.includes('FROM academy_rooms room')) {
+        return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+      }
+      if (sql.includes('FROM academy_teachers WHERE id = $1')) {
+        return {
+          rows: [{
+            id: 4,
+            status: 'active',
+            course_ids: [1],
+            school_ids: [2],
+            availability: Array.from({ length: 7 }, (_, index) => ({
+              dayOfWeek: index + 1,
+              startTime: '00:00',
+              endTime: '23:59',
+              schoolId: 2,
+            })),
+          }],
+        };
+      }
+      if (sql.includes('SELECT id FROM academy_lessons') || sql.includes('FROM academy_groups\n')) {
+        return emptyResult();
+      }
+      if (sql.includes('UPDATE "academy_lessons"')) {
+        return { rows: [{ ...lessonRow(Number(values[0]), values[1] as Date), scheduled_at: values[1] }] };
+      }
+      if (sql.includes('INSERT INTO "academy_lesson_reschedules"')) {
+        return { rows: [{ id: 100 }] };
+      }
+      if (sql.includes('UPDATE academy_groups')) return emptyResult();
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/reschedule')
+      .send({
+        scheduledAt: nextAt.toISOString(),
+        reason: 'Учитель заболел',
+        shiftFollowing: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.shiftedCount).toBe(2);
+    expect(response.body.lessons.map((lesson: any) => new Date(lesson.scheduledAt).getTime())).toEqual([
+      nextAt.getTime(),
+      followingAt.getTime() + (nextAt.getTime() - originalAt.getTime()),
+    ]);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(2);
+  });
+
+  it('rolls back a chain reschedule when any following lesson already has attendance', async () => {
+    const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    originalAt.setSeconds(0, 0);
+    const followingAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const nextAt = new Date(originalAt.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const target = lessonFixture({ scheduled_at: originalAt });
+    const following = lessonFixture({ id: 11, scheduled_at: followingAt });
+
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [target] };
+      if (sql.includes('FROM academy_lessons affected_lesson') && sql.includes('FOR UPDATE OF affected_lesson')) {
+        return { rows: [target, following] };
+      }
+      if (sql.includes('FROM academy_attendance') && sql.includes('ANY($1::int[])')) {
+        return { rows: [{ lesson_id: 11 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/reschedule')
+      .send({
+        scheduledAt: nextAt.toISOString(),
+        reason: 'Перенос всей цепочки',
+        shiftFollowing: true,
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('lessonWithAttendanceCannotBeRescheduled');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_lessons"'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('does not let a teacher shift a following lesson assigned to another teacher', async () => {
+    mocks.actor = { id: 7, workspace: 'teacher', workspaces: ['teacher'] };
+    const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    originalAt.setSeconds(0, 0);
+    const nextAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const target = lessonFixture({ scheduled_at: originalAt, teacher_user_id: 7 });
+    const anotherTeacherLesson = lessonFixture({
+      id: 11,
+      scheduled_at: new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000),
+      teacher_id: 5,
+      teacher_user_id: 8,
+    });
+
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [target] };
+      if (sql.includes('FROM academy_lessons affected_lesson') && sql.includes('FOR UPDATE OF affected_lesson')) {
+        return { rows: [target, anotherTeacherLesson] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/reschedule')
+      .send({
+        scheduledAt: nextAt.toISOString(),
+        reason: 'Перенос цепочки',
+        shiftFollowing: true,
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('teacherOwnLessonRescheduleOnly');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_lessons"'))).toBe(false);
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
   });
 
@@ -334,6 +707,118 @@ describe('academy route logic boundaries', () => {
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
+  it('rejects a manually selected referral discount when no benefit is available', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 3, manager_id: 1 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({
+        studentId: 5,
+        amountUzs: 100_000,
+        discount: 'referral_15',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('referralDiscountNotAvailable');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('FROM academy_referral_benefits')
+      && String(sql).includes("benefit_type = 'next_payment_discount_15'")
+      && String(sql).includes("status = 'pending'")
+      && String(sql).includes('FOR UPDATE')
+    ))).toBe(true);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_payments"')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('automatically applies and atomically consumes a pending referral discount benefit', async () => {
+    let insertedDiscount: unknown;
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 3, manager_id: 1 }] };
+      }
+      if (
+        sql.includes('FROM academy_referral_benefits')
+        && sql.includes("benefit_type = 'next_payment_discount_15'")
+        && sql.includes("status = 'pending'")
+      ) {
+        return {
+          rows: [{
+            id: 77,
+            student_id: 5,
+            benefit_type: 'next_payment_discount_15',
+            status: 'pending',
+          }],
+        };
+      }
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        insertedDiscount = readInsertValue(sql, values, 'discount');
+        return {
+          rows: [{
+            id: 100,
+            lead_id: null,
+            student_id: 5,
+            discount: insertedDiscount,
+            paid_until: readInsertValue(sql, values, 'paid_until'),
+          }],
+        };
+      }
+      if (sql.includes('UPDATE academy_referral_benefits')) {
+        return {
+          rows: [{
+            id: 77,
+            student_id: 5,
+            benefit_type: 'next_payment_discount_15',
+            status: 'consumed',
+            consumed_by_payment_id: 100,
+          }],
+        };
+      }
+      if (sql.includes('UPDATE academy_students') && sql.includes('SET next_payment_at')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 3, manager_id: 1 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({ studentId: 5, amountUzs: 100_000 });
+
+    expect(response.status).toBe(201);
+    expect(insertedDiscount).toBe('referral_15');
+    expect(response.body.payment.discount).toBe('referral_15');
+    expect(mocks.clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE academy_referral_benefits'),
+      [77, 'consumed', 100],
+    );
+
+    const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+    const beginIndex = statements.indexOf('BEGIN');
+    const benefitLockIndex = statements.findIndex((sql) => (
+      sql.includes('FROM academy_referral_benefits') && sql.includes('FOR UPDATE')
+    ));
+    const paymentInsertIndex = statements.findIndex((sql) => sql.includes('INSERT INTO "academy_payments"'));
+    const benefitConsumeIndex = statements.findIndex((sql) => sql.includes('UPDATE academy_referral_benefits'));
+    const commitIndex = statements.indexOf('COMMIT');
+
+    expect(beginIndex).toBeGreaterThanOrEqual(0);
+    expect(benefitLockIndex).toBeGreaterThan(beginIndex);
+    expect(paymentInsertIndex).toBeGreaterThan(benefitLockIndex);
+    expect(benefitConsumeIndex).toBeGreaterThan(paymentInsertIndex);
+    expect(commitIndex).toBeGreaterThan(benefitConsumeIndex);
+    expect(mocks.clientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+  });
+
   it('does not grant the same referral reward on a later payment', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
@@ -341,7 +826,14 @@ describe('academy route logic boundaries', () => {
         return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
       }
       if (sql.includes('INSERT INTO "academy_payments"')) {
-        return { rows: [{ id: 100, lead_id: 42, student_id: 5, paid_until: values[9] }] };
+        return {
+          rows: [{
+            id: 100,
+            lead_id: 42,
+            student_id: 5,
+            paid_until: readInsertValue(sql, values, 'paid_until'),
+          }],
+        };
       }
       if (sql.includes('UPDATE "academy_students"')) {
         return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
@@ -402,7 +894,7 @@ describe('academy route logic boundaries', () => {
           }],
         };
       }
-      if (sql.includes('FROM academy_rooms WHERE id = $1')) {
+      if (sql.includes('FROM academy_rooms room')) {
         return { rows: [{ id: 3, school_id: 2, is_active: true }] };
       }
       if (sql.includes('FROM academy_teachers WHERE id = $1')) {
@@ -434,6 +926,267 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(409);
     expect(response.body.error).toBe('teacherUnavailableForLesson');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lessons"'))).toBe(false);
+  });
+
+  it('rejects overlapping lessons for the same group even in another room', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+        return {
+          rows: [{
+            id: 20,
+            course_id: 1,
+            school_id: 2,
+            room_id: 3,
+            teacher_id: 4,
+            lesson_duration_minutes: 60,
+          }],
+        };
+      }
+      if (sql.includes('FROM academy_rooms room')) {
+        return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+      }
+      if (sql.includes('WHERE group_id = $1') && sql.includes('scheduled_at < $3')) {
+        return { rows: [{ id: 998 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons')
+      .send({
+        groupId: 20,
+        teacherId: 4,
+        scheduledAt: '2026-07-13T10:00:00.000+05:00',
+        durationMinutes: 60,
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('groupLessonOverlap');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lessons"'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('accepts a 10:00 Tashkent lesson inside teacher availability when the server runs in UTC', async () => {
+    const previousTimeZone = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+        if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) {
+          return emptyResult();
+        }
+        if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+          return {
+            rows: [{
+              id: 20,
+              course_id: 1,
+              school_id: 2,
+              room_id: 3,
+              teacher_id: 4,
+              lesson_duration_minutes: 60,
+            }],
+          };
+        }
+        if (sql.includes('FROM academy_rooms room')) {
+          return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+        }
+        if (sql.includes('FROM academy_teachers WHERE id = $1')) {
+          return {
+            rows: [{
+              id: 4,
+              status: 'active',
+              course_ids: [1],
+              school_ids: [2],
+              availability: [{
+                dayOfWeek: 1,
+                startTime: '10:00',
+                endTime: '11:00',
+                schoolId: 2,
+              }],
+            }],
+          };
+        }
+        if (sql.includes('INSERT INTO "academy_lessons"')) {
+          return {
+            rows: [{
+              id: 101,
+              group_id: 20,
+              teacher_id: 4,
+              scheduled_at: readInsertValue(sql, values, 'scheduled_at'),
+              status: 'scheduled',
+            }],
+          };
+        }
+        return emptyResult();
+      });
+
+      const response = await request(await createApp())
+        .post('/api/academy/lessons')
+        .send({
+          groupId: 20,
+          teacherId: 4,
+          lessonNumber: 1,
+          topic: 'Timezone regression',
+          scheduledAt: '2026-07-13T10:00:00.000+05:00',
+          durationMinutes: 60,
+        });
+
+      expect(response.status).toBe(201);
+      expect(new Date(response.body.scheduledAt).toISOString()).toBe('2026-07-13T05:00:00.000Z');
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lessons"'))).toBe(true);
+    } finally {
+      if (previousTimeZone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimeZone;
+    }
+  });
+
+  it('builds 10:00 Tashkent availability slots from academy-day boundaries on a UTC server', async () => {
+    const previousTimeZone = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      mocks.poolQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM academy_courses') && sql.includes('is_active = true')) {
+          return { rows: [{ id: 1, name: 'Vibe Coding', lesson_duration_minutes: 60 }] };
+        }
+        if (sql.includes('FROM academy_schools') && sql.includes('is_active = true')) {
+          return { rows: [{ id: 2, name: 'Main school', is_active: true }] };
+        }
+        if (sql.includes('FROM academy_teachers t') && sql.includes('upcoming_lessons')) {
+          return {
+            rows: [{
+              id: 4,
+              full_name: 'Teacher',
+              status: 'active',
+              course_ids: [1],
+              school_ids: [2],
+              availability: [{
+                dayOfWeek: 1,
+                startTime: '10:00',
+                endTime: '11:00',
+                schoolId: 2,
+              }],
+            }],
+          };
+        }
+        return emptyResult();
+      });
+
+      const response = await request(await createApp())
+        .get('/api/academy/availability/slots')
+        .query({ schoolId: 2, courseId: 1, from: '2030-07-15', days: 1 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.from).toBe('2030-07-14T19:00:00.000Z');
+      expect(response.body.slots).toHaveLength(1);
+      expect(response.body.slots[0].startsAt).toBe('2030-07-15T05:00:00.000Z');
+      expect(response.body.slots[0].endsAt).toBe('2030-07-15T06:00:00.000Z');
+    } finally {
+      if (previousTimeZone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimeZone;
+    }
+  });
+
+  it('does not let group schedule-backed fields diverge from existing lessons', async () => {
+    const group = groupFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      if (sql.includes('AS has_lessons')) {
+        return {
+          rows: [{
+            has_lessons: true,
+            has_scheduled_lessons: false,
+            has_studying_students: false,
+            has_reserved_leads: false,
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/groups/20')
+      .send({ roomId: 9 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('groupLessonsLockSchedule');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
+  });
+
+  it.each([
+    {
+      dependency: 'scheduled lessons',
+      lifecycle: { has_lessons: true, has_scheduled_lessons: true },
+      error: 'groupHasScheduledLessons',
+    },
+    {
+      dependency: 'studying students',
+      lifecycle: { has_studying_students: true },
+      error: 'groupHasStudyingStudents',
+    },
+    {
+      dependency: 'reserved leads',
+      lifecycle: { has_reserved_leads: true },
+      error: 'groupHasReservedLeads',
+    },
+  ])('does not complete a group with $dependency', async ({ lifecycle, error }) => {
+    const group = groupFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      if (sql.includes('AS has_lessons')) {
+        return {
+          rows: [{
+            has_lessons: false,
+            has_scheduled_lessons: false,
+            has_studying_students: false,
+            has_reserved_leads: false,
+            ...lifecycle,
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/groups/20')
+      .send({
+        status: 'completed',
+        roomId: group.room_id,
+        teacherId: group.teacher_id,
+        schedule: group.schedule,
+        startDate: group.start_date,
+        endDate: group.end_date,
+        lessonCount: group.lesson_count,
+        lessonDurationMinutes: group.lesson_duration_minutes,
+        durationDays: group.duration_days,
+        frequency: group.frequency,
+        autoAssign: false,
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe(error);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
   });
 
   it('saves a course and every teacher assignment in one transaction', async () => {
@@ -478,6 +1231,63 @@ describe('academy route logic boundaries', () => {
     ]);
   });
 
+  it('preserves a course assignment required by an active group or scheduled lesson', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_courses WHERE id = $1 FOR UPDATE')) {
+        return {
+          rows: [{
+            id: 9,
+            name: 'AI Robotics',
+            slug: 'ai-robotics',
+            age_category: '10-15',
+            base_price_uzs: 1_500_000,
+            is_active: true,
+          }],
+        };
+      }
+      if (sql.includes('UPDATE "academy_courses"')) {
+        return { rows: [{ id: 9, name: 'AI Robotics', slug: 'ai-robotics', is_active: true }] };
+      }
+      if (sql.includes('SELECT DISTINCT assignment.teacher_id')) {
+        return { rows: [{ teacher_id: 2 }] };
+      }
+      if (sql.includes('SELECT * FROM academy_teachers ORDER BY id FOR UPDATE')) {
+        return {
+          rows: [
+            { id: 1, course_ids: [2, 9] },
+            { id: 2, course_ids: [9] },
+          ],
+        };
+      }
+      if (sql.includes('UPDATE "academy_teachers"')) return { rows: [{ id: 1 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/courses/9/with-teachers')
+      .send({
+        name: 'AI Robotics',
+        slug: 'ai-robotics',
+        ageCategory: '10-15',
+        description: '',
+        basePriceUzs: 1_500_000,
+        isActive: true,
+        teacherIds: [],
+      });
+
+    expect(response.status).toBe(200);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    const teacherUpdates = mocks.clientQuery.mock.calls.filter(
+      ([sql]) => String(sql).includes('UPDATE "academy_teachers"'),
+    );
+    expect(teacherUpdates).toEqual([
+      [expect.stringContaining('UPDATE "academy_teachers"'), [1, JSON.stringify([2])]],
+    ]);
+  });
+
   it('rejects a stale pipeline reorder without applying a partial order', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
@@ -495,6 +1305,257 @@ describe('academy route logic boundaries', () => {
     expect(response.body.error).toBe('pipelineConfigurationChanged');
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE academy_lead_statuses'))).toBe(false);
+  });
+
+  it('preserves omitted offer and referrer fields when patching a lead', async () => {
+    const existing = leadFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) {
+        return { rows: [{ ...existing, comment: 'Updated' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ comment: 'Updated' });
+
+    expect(response.status).toBe(200);
+    const updateSql = String(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_leads"'))?.[0]);
+    expect(updateSql).not.toContain('"offer_course_id"');
+    expect(updateSql).not.toContain('"referrer_student_id"');
+    expect(updateSql).not.toContain('"source_id"');
+  });
+
+  it('accepts explicit null for an optional offer course but rejects malformed ids', async () => {
+    const existing = leadFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) {
+        return { rows: [{ ...existing, offer_course_id: null }] };
+      }
+      return emptyResult();
+    });
+
+    const cleared = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ offerCourseId: null });
+    const malformed = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ offerCourseId: 'not-an-id' });
+
+    expect(cleared.status).toBe(200);
+    const updateCall = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_leads"'));
+    expect(String(updateCall?.[0])).toContain('"offer_course_id"');
+    expect(updateCall?.[1]).toContain(null);
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.error).toBe('Invalid offerCourseId');
+  });
+
+  it('does not clear qualification fields from an enrolled or paid lead', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return {
+          rows: [leadFixture({
+            status_code: 'paid',
+            enrolled_group_id: 9,
+          })],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ studentName: null });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('completeQualificationFields');
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it('validates referrers and prevents self-referral under the lead lock', async () => {
+    const existing = leadFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('FROM academy_referral_rewards')) return emptyResult();
+      if (sql.includes('FROM academy_students') && sql.includes('FOR SHARE')) {
+        return { rows: [{ id: 5, student_name: 'Same student', lead_id: 42 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ referrerStudentId: 5 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('leadCannotReferItself');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_leads"'))).toBe(false);
+  });
+
+  it('rejects a lead whose referrer student does not exist', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads')
+      .send({ contactName: 'Parent', referrerStudentId: 999 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('referrerStudentNotFound');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_lead_sources'))).toBe(false);
+  });
+
+  it('does not change a referral link after a reward has been created', async () => {
+    const existing = leadFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('FROM academy_referral_rewards')) return { rows: [{ id: 100 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ referrerStudentId: 8 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('referralAlreadyRewarded');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('uses case-insensitive messenger duplicate checks and excludes the same lead\'s student', async () => {
+    const existing = leadFixture();
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [{ ...existing, messenger: '@Student' }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ messenger: '@Student' });
+
+    expect(response.status).toBe(200);
+    const duplicateSql = mocks.poolQuery.mock.calls.map(([sql]) => String(sql));
+    expect(duplicateSql.some((sql) => sql.includes('LOWER(BTRIM(l.messenger)) = LOWER(BTRIM($2))'))).toBe(true);
+    expect(duplicateSql.some((sql) => sql.includes('lead_id IS DISTINCT FROM $3'))).toBe(true);
+    const studentDuplicateCall = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('lead_id IS DISTINCT FROM $3'));
+    expect(studentDuplicateCall?.[1]).toEqual([null, '@Student', 42]);
+  });
+
+  it('rejects an unknown explicit source and creates source codes only inside the lead transaction', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('INSERT INTO academy_lead_sources')) {
+        return { rows: [{ id: 12, code: 'event_robotics', is_active: true }] };
+      }
+      return emptyResult();
+    });
+
+    const unknown = await request(await createApp())
+      .post('/api/academy/leads')
+      .send({ contactName: 'Parent', sourceId: 999 });
+    const rolledBack = await request(await createApp())
+      .post('/api/academy/leads')
+      .send({ contactName: 'Parent', sourceCode: 'event_robotics' });
+
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.error).toBe('invalidLeadSource');
+    expect(rolledBack.status).toBe(409);
+    expect(rolledBack.body.error).toBe('noActivePipelineStages');
+    const sourceInsert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO academy_lead_sources'));
+    expect(String(sourceInsert?.[0])).toContain('ON CONFLICT (code) DO UPDATE');
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => sql === 'ROLLBACK')).toHaveLength(2);
+    expect(mocks.poolQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_lead_sources'))).toBe(false);
+  });
+
+  it('protects system lead sources from deletion and privilege changes', async () => {
+    mocks.actor = { id: 9, workspace: 'marketing', workspaces: ['marketing'] };
+    const systemSource = {
+      id: 5,
+      code: 'instagram',
+      name: 'Instagram',
+      channel: 'instagram',
+      is_system: true,
+      is_active: true,
+      cost_per_lead_uzs: 0,
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM "academy_lead_sources" WHERE id = $1')) {
+        return { rows: [systemSource] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM "academy_lead_sources" WHERE id = $1 FOR UPDATE')) {
+        return { rows: [systemSource] };
+      }
+      return emptyResult();
+    });
+
+    const remove = await request(await createApp()).delete('/api/academy/sources/5');
+    const demote = await request(await createApp())
+      .patch('/api/academy/sources/5')
+      .send({ isSystem: false });
+
+    expect(remove.status).toBe(409);
+    expect(remove.body.error).toBe('systemLeadSourceProtected');
+    expect(demote.status).toBe(409);
+    expect(demote.body.error).toBe('systemLeadSourceProtected');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM "academy_lead_sources"'))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_lead_sources"'))).toBe(false);
   });
 
   it('delegates manual automation runs to the shared idempotent service', async () => {

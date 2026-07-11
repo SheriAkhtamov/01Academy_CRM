@@ -589,11 +589,18 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
-    onError: (error: Error) => toast({
-      title: t('error'),
-      description: error.message,
-      variant: 'destructive',
-    }),
+    onError: (error: Error) => {
+      const description = error.message === 'groupLessonsLockSchedule'
+        ? t('groupLessonsLockSchedule')
+        : error.message === 'groupHasScheduledLessons'
+          ? t('groupHasScheduledLessons')
+          : error.message === 'groupHasStudyingStudents'
+            ? t('groupHasStudyingStudents')
+            : error.message === 'groupHasReservedLeads'
+              ? t('groupHasReservedLeads')
+              : error.message;
+      toast({ title: t('error'), description, variant: 'destructive' });
+    },
   });
 
   const saveStatus = useMutation({

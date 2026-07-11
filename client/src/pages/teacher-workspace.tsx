@@ -116,16 +116,121 @@ type AttendanceRecord = {
   note?: string | null;
 };
 
-function mondayBasedDayIndex(date: Date): number {
-  return (date.getDay() + 6) % 7;
+type AttendanceDraft = Record<number, 'present' | 'absent'>;
+
+type SaveAttendanceVariables = {
+  lessonId: number;
+  roster: Array<Pick<Student, 'id'>>;
+  draft: AttendanceDraft;
+  note?: string;
+};
+
+type RescheduleLessonVariables = {
+  lessonId: number;
+  payload: {
+    scheduledAt: string;
+    reason: string;
+    shiftFollowing: boolean;
+  };
+};
+
+const ACADEMY_TIME_ZONE = 'Asia/Tashkent';
+
+type AcademyDateTimeParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const academyDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ACADEMY_TIME_ZONE,
+  calendar: 'gregory',
+  numberingSystem: 'latn',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function academyDateTimeParts(value: Date): AcademyDateTimeParts {
+  const parts: Record<string, number> = {};
+  for (const part of academyDateTimeFormatter.formatToParts(value)) {
+    if (part.type !== 'literal') parts[part.type] = Number(part.value);
+  }
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+  };
+}
+
+function academyTimeZoneOffsetMs(value: Date): number {
+  const parts = academyDateTimeParts(value);
+  const wallClockAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  return wallClockAsUtc - Math.floor(value.getTime() / 1_000) * 1_000;
+}
+
+function academyWallClockToDate(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const [year, month, day, hour, minute] = match.slice(1).map(Number);
+  const wallClockAsUtc = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const normalized = new Date(wallClockAsUtc);
+  if (
+    normalized.getUTCFullYear() !== year
+    || normalized.getUTCMonth() + 1 !== month
+    || normalized.getUTCDate() !== day
+    || normalized.getUTCHours() !== hour
+    || normalized.getUTCMinutes() !== minute
+  ) return null;
+
+  let candidate = wallClockAsUtc;
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    const next = wallClockAsUtc - academyTimeZoneOffsetMs(new Date(candidate));
+    if (next === candidate) break;
+    candidate = next;
+  }
+  const result = new Date(candidate);
+  const resolved = academyDateTimeParts(result);
+  return resolved.year === year
+    && resolved.month === month
+    && resolved.day === day
+    && resolved.hour === hour
+    && resolved.minute === minute
+    ? result
+    : null;
 }
 
 function localDateKey(value: string): string {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const { year, month: rawMonth, day: rawDay } = academyDateTimeParts(new Date(value));
+  const month = String(rawMonth).padStart(2, '0');
+  const day = String(rawDay).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function toDateTimeLocal(value: Date): string {
+  const { year, month: rawMonth, day: rawDay, hour, minute } = academyDateTimeParts(value);
+  const month = String(rawMonth).padStart(2, '0');
+  const day = String(rawDay).padStart(2, '0');
+  const hours = String(hour).padStart(2, '0');
+  const minutes = String(minute).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function formatScheduleTime(item: { time?: string; startTime?: string; endTime?: string }): string {
@@ -199,28 +304,36 @@ function EmptyState({
 }
 
 function isToday(dateStr: string): boolean {
-  const d = new Date(dateStr);
-  const now = new Date();
-  return (
-    d.getDate() === now.getDate() &&
-    d.getMonth() === now.getMonth() &&
-    d.getFullYear() === now.getFullYear()
-  );
+  return localDateKey(dateStr) === localDateKey(new Date().toISOString());
 }
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', weekday: 'short' });
+  return d.toLocaleString('ru-RU', {
+    timeZone: ACADEMY_TIME_ZONE,
+    day: 'numeric',
+    month: 'short',
+    weekday: 'short',
+  });
 }
 
 function formatTime(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('ru-RU', {
+    timeZone: ACADEMY_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatDateFull(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  return d.toLocaleString('ru-RU', {
+    timeZone: ACADEMY_TIME_ZONE,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export default function TeacherWorkspace({ section = 'overview' }: { section?: TeacherSection }) {
@@ -249,10 +362,22 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   // Attendance state
   const [selectedLessonId, setSelectedLessonId] = useState<string>('');
-  const [attendanceDraft, setAttendanceDraft] = useState<Record<number, 'present' | 'absent'>>({});
+  const [attendanceDraft, setAttendanceDraft] = useState<AttendanceDraft>({});
   const [attendanceNote, setAttendanceNote] = useState('');
+  const [rescheduleAt, setRescheduleAt] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [shiftFollowingLessons, setShiftFollowingLessons] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
   const attendanceDraftDirty = useRef(false);
+  const attendanceNoteDirty = useRef(false);
   const hydratedAttendanceLessonId = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (section !== 'attendance') return;
+    setNow(Date.now());
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [section]);
 
   // Group detail dialog
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -289,19 +414,23 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     }),
   });
 
-  const saveAttendance = useMutation({
-    mutationFn: () =>
-      apiRequest('POST', `/api/academy/lessons/${selectedLessonId}/attendance`, {
+  const saveAttendance = useMutation<unknown, Error, SaveAttendanceVariables>({
+    mutationFn: ({ lessonId, roster, draft, note }) =>
+      apiRequest('POST', `/api/academy/lessons/${lessonId}/attendance`, {
         lessonStatus: 'conducted',
-        attendance: selectedLessonStudents.map((student: Student) => ({
+        attendance: roster.map((student) => ({
           studentId: student.id,
-          status: attendanceDraft[student.id],
-          note: attendanceNote,
+          status: draft[student.id],
+          ...(note !== undefined ? { note } : {}),
         })),
       }),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast({ title: t('attendanceSaved'), description: t('attendanceSavedDesc') });
       attendanceDraftDirty.current = false;
+      attendanceNoteDirty.current = false;
+      queryClient.invalidateQueries({
+        queryKey: ['/api/academy/lessons', variables.lessonId, 'attendance-roster'],
+      });
       invalidate();
     },
     onError: (error: any) =>
@@ -340,27 +469,24 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   // Schedule: group lessons by day of week
   const scheduleByDay = useMemo(() => {
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - mondayBasedDayIndex(now));
-    startOfWeek.setHours(0, 0, 0, 0);
+    const currentParts = academyDateTimeParts(new Date());
+    const currentDay = new Date(Date.UTC(currentParts.year, currentParts.month - 1, currentParts.day));
+    const mondayIndex = (currentDay.getUTCDay() + 6) % 7;
+    const startOfWeek = new Date(currentDay.getTime() - mondayIndex * 24 * 60 * 60 * 1000);
 
-    const days: { date: Date; lessons: Lesson[] }[] = [];
+    const days: { date: Date; dateKey: string; lessons: Lesson[] }[] = [];
     for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      const dayLessons = lessons.filter((l) => {
-        const ld = new Date(l.scheduledAt);
-        return (
-          ld.getDate() === date.getDate() &&
-          ld.getMonth() === date.getMonth() &&
-          ld.getFullYear() === date.getFullYear()
-        );
-      });
+      const date = new Date(startOfWeek.getTime() + i * 24 * 60 * 60 * 1000);
+      const dateKey = [
+        date.getUTCFullYear(),
+        String(date.getUTCMonth() + 1).padStart(2, '0'),
+        String(date.getUTCDate()).padStart(2, '0'),
+      ].join('-');
+      const dayLessons = lessons.filter((lesson) => localDateKey(lesson.scheduledAt) === dateKey);
       dayLessons.sort(
         (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
       );
-      days.push({ date, lessons: dayLessons });
+      days.push({ date, dateKey, lessons: dayLessons });
     }
     return days;
   }, [lessons]);
@@ -371,18 +497,75 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     [lessons, selectedLessonId]
   );
 
+  const attendanceLessons = useMemo(
+    () => lessons.filter((lesson) => ['scheduled', 'conducted'].includes(lesson.status)),
+    [lessons],
+  );
+
+  const attendanceRosterQuery = useQuery<{
+    lesson: Lesson;
+    students: Student[];
+    attendance: AttendanceRecord[];
+  }>({
+    queryKey: ['/api/academy/lessons', Number(selectedLessonId), 'attendance-roster'],
+    queryFn: () => apiRequest('GET', `/api/academy/lessons/${selectedLessonId}/attendance-roster`),
+    enabled: Boolean(selectedLessonId),
+  });
+  const selectedLessonDetails = selectedLesson
+    ? { ...selectedLesson, ...(attendanceRosterQuery.data?.lesson ?? {}) }
+    : attendanceRosterQuery.data?.lesson;
+
+  const rescheduleLesson = useMutation<
+    { shiftedCount?: number },
+    Error,
+    RescheduleLessonVariables
+  >({
+    mutationFn: ({ lessonId, payload }) => (
+      apiRequest('POST', `/api/academy/lessons/${lessonId}/reschedule`, payload)
+    ),
+    onSuccess: (result, variables) => {
+      toast({
+        title: t('lessonRescheduled'),
+        description: t('lessonRescheduledDesc').replace('{count}', String(result.shiftedCount ?? 1)),
+      });
+      setRescheduleReason('');
+      queryClient.invalidateQueries({
+        queryKey: ['/api/academy/lessons', variables.lessonId, 'attendance-roster'],
+      });
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: t('error'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  useEffect(() => {
+    if (!selectedLessonDetails) {
+      setRescheduleAt('');
+      setRescheduleReason('');
+      return;
+    }
+    const currentDate = new Date(selectedLessonDetails.scheduledAt);
+    const suggestedDate = new Date(Math.max(
+      currentDate.getTime() + 7 * 24 * 60 * 60 * 1000,
+      Date.now() + 60 * 60 * 1000,
+    ));
+    setRescheduleAt(toDateTimeLocal(suggestedDate));
+    setRescheduleReason('');
+    setShiftFollowingLessons(true);
+  }, [selectedLessonDetails?.id, selectedLessonDetails?.scheduledAt]);
+
   const selectedLessonStudents = useMemo(() => {
     if (!selectedLesson) return [];
-    return students.filter((student) => (
-      student.groupId === selectedLesson.groupId
-      && student.status === 'studying'
-    ));
-  }, [students, selectedLesson]);
+    return attendanceRosterQuery.data?.students ?? [];
+  }, [attendanceRosterQuery.data?.students, selectedLesson]);
 
   const selectedAttendanceRecords = useMemo(() => {
     if (!selectedLesson) return [];
-    return attendanceRecords.filter((record) => record.lessonId === selectedLesson.id);
-  }, [attendanceRecords, selectedLesson]);
+    return attendanceRosterQuery.data?.attendance ?? [];
+  }, [attendanceRosterQuery.data?.attendance, selectedLesson]);
 
   const attendanceHydrationKey = useMemo(() => JSON.stringify({
     lessonId: selectedLesson?.id ?? null,
@@ -394,6 +577,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     if (!selectedLesson) {
       setAttendanceDraft({});
       setAttendanceNote('');
+      attendanceNoteDirty.current = false;
       return;
     }
 
@@ -411,10 +595,31 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     setAttendanceNote(selectedAttendanceRecords.find((record) => record.note?.trim())?.note ?? '');
     hydratedAttendanceLessonId.current = selectedLesson.id;
     attendanceDraftDirty.current = false;
+    attendanceNoteDirty.current = false;
   }, [attendanceHydrationKey]);
 
-  const allAttendanceMarked = selectedLessonStudents.length > 0
-    && selectedLessonStudents.every((student) => attendanceDraft[student.id] !== undefined);
+  const allAttendanceMarked = selectedLessonStudents.every(
+    (student) => attendanceDraft[student.id] !== undefined,
+  );
+  const selectedLessonHasStarted = Boolean(
+    selectedLessonDetails && new Date(selectedLessonDetails.scheduledAt).getTime() <= now,
+  );
+  const canSaveAttendance = Boolean(
+    selectedLessonDetails
+    && allAttendanceMarked
+    && !attendanceRosterQuery.isPending
+    && !attendanceRosterQuery.isError
+    && (selectedLessonDetails.status === 'conducted' || selectedLessonHasStarted),
+  );
+  const parsedRescheduleAt = rescheduleAt ? academyWallClockToDate(rescheduleAt) : null;
+  const rescheduleTimestamp = parsedRescheduleAt?.getTime() ?? Number.NaN;
+  const canRescheduleLesson = Boolean(
+    selectedLessonDetails?.status === 'scheduled'
+    && Number.isFinite(rescheduleTimestamp)
+    && rescheduleTimestamp > now
+    && rescheduleReason.trim(),
+  );
+  const lessonMutationPending = saveAttendance.isPending || rescheduleLesson.isPending;
 
   const groupStudents = useMemo(() => {
     if (!selectedGroup) return [];
@@ -519,17 +724,41 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   };
 
   const handleToggleAttendance = (studentId: number, status: 'present' | 'absent') => {
+    if (lessonMutationPending) return;
     attendanceDraftDirty.current = true;
     setAttendanceDraft((prev) => ({ ...prev, [studentId]: status }));
   };
 
   const handleSetAllAttendance = (status: 'present' | 'absent') => {
+    if (lessonMutationPending) return;
     attendanceDraftDirty.current = true;
-    const update: Record<number, 'present' | 'absent'> = {};
+    const update: AttendanceDraft = {};
     selectedLessonStudents.forEach((s) => {
       update[s.id] = status;
     });
     setAttendanceDraft(update);
+  };
+
+  const handleSaveAttendance = () => {
+    if (!selectedLesson || !canSaveAttendance || lessonMutationPending) return;
+    saveAttendance.mutate({
+      lessonId: selectedLesson.id,
+      roster: selectedLessonStudents.map(({ id }) => ({ id })),
+      draft: { ...attendanceDraft },
+      note: attendanceNoteDirty.current ? attendanceNote : undefined,
+    });
+  };
+
+  const handleRescheduleLesson = () => {
+    if (!selectedLessonDetails || !parsedRescheduleAt || !canRescheduleLesson || lessonMutationPending) return;
+    rescheduleLesson.mutate({
+      lessonId: selectedLessonDetails.id,
+      payload: {
+        scheduledAt: parsedRescheduleAt.toISOString(),
+        reason: rescheduleReason.trim(),
+        shiftFollowing: shiftFollowingLessons,
+      },
+    });
   };
 
   return (
@@ -591,9 +820,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         <TabsContent value="schedule" className="mt-6 space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
             {scheduleByDay.map((day, idx) => {
-              const isTodayFlag =
-                day.date.getDate() === new Date().getDate() &&
-                day.date.getMonth() === new Date().getMonth();
+              const isTodayFlag = day.dateKey === localDateKey(new Date().toISOString());
               return (
                 <Card
                   key={idx}
@@ -605,7 +832,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <CardHeader className="pb-3 pt-4 px-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
-                        {dayNames[mondayBasedDayIndex(day.date)]}
+                        {dayNames[idx]}
                       </CardTitle>
                       {isTodayFlag && (
                         <Badge className="bg-primary-100 text-primary-700 text-[10px]">
@@ -614,7 +841,11 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       )}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {day.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                      {day.date.toLocaleDateString('ru-RU', {
+                        timeZone: 'UTC',
+                        day: 'numeric',
+                        month: 'short',
+                      })}
                     </p>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-2">
@@ -901,8 +1132,11 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <Label className="text-xs text-slate-500">{t('selectLesson')}</Label>
                 <Select
                   value={selectedLessonId}
+                  disabled={lessonMutationPending}
                   onValueChange={(val) => {
+                    if (lessonMutationPending) return;
                     attendanceDraftDirty.current = false;
+                    attendanceNoteDirty.current = false;
                     setSelectedLessonId(val);
                     setAttendanceDraft({});
                     setAttendanceNote('');
@@ -912,7 +1146,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <SelectValue placeholder={t('selectLessonPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {[...lessons]
+                    {[...attendanceLessons]
                       .sort(
                         (a, b) =>
                           new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
@@ -920,34 +1154,136 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       .map((lesson) => (
                         <SelectItem key={lesson.id} value={String(lesson.id)}>
                           {formatDate(lesson.scheduledAt)} {formatTime(lesson.scheduledAt)} —{' '}
-                          {lesson.groupName || t('noGroup')} — {lesson.topic}
+                          {lesson.groupName || t('noGroup')} — {lesson.topic} ({
+                            lesson.status === 'conducted'
+                              ? t('lessonStatusConducted')
+                              : t('lessonStatusScheduled')
+                          })
                         </SelectItem>
                       ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {selectedLesson && (
+              {selectedLessonDetails && (
                 <div className="rounded-lg border border-border/70 bg-muted/50 p-3 text-sm">
-                  <div className="font-medium text-slate-900">
-                    {selectedLesson.groupName || t('noGroup')} — {selectedLesson.topic}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium text-slate-900">
+                      {selectedLessonDetails.groupName || t('noGroup')} — {selectedLessonDetails.topic}
+                    </div>
+                    {getLessonStatusBadge(selectedLessonDetails.status)}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
-                    {formatDateFull(selectedLesson.scheduledAt)} •{' '}
-                    {formatTime(selectedLesson.scheduledAt)} •{' '}
-                    {selectedLesson.durationMinutes}
+                    {formatDateFull(selectedLessonDetails.scheduledAt)} •{' '}
+                    {formatTime(selectedLessonDetails.scheduledAt)} •{' '}
+                    {selectedLessonDetails.durationMinutes}
                     {t('minutes')}
                   </div>
                 </div>
               )}
 
-              {selectedLesson && selectedLessonStudents.length > 0 && (
+              {selectedLessonDetails?.status === 'scheduled' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+                  <div>
+                    <div className="font-medium text-sm text-slate-900">{t('rescheduleLesson')}</div>
+                    <p className="mt-0.5 text-xs text-slate-600">{t('rescheduleLessonHint')}</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="reschedule-at" className="text-xs text-slate-600">
+                        {t('newLessonDate')}
+                      </Label>
+                      <Input
+                        id="reschedule-at"
+                        type="datetime-local"
+                        min={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
+                        value={rescheduleAt}
+                        disabled={lessonMutationPending}
+                        onChange={(event) => setRescheduleAt(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="reschedule-reason" className="text-xs text-slate-600">
+                        {t('rescheduleReason')}
+                      </Label>
+                      <Input
+                        id="reschedule-reason"
+                        value={rescheduleReason}
+                        maxLength={500}
+                        disabled={lessonMutationPending}
+                        onChange={(event) => setRescheduleReason(event.target.value)}
+                        placeholder={t('rescheduleReasonPlaceholder')}
+                      />
+                    </div>
+                  </div>
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <Checkbox
+                      checked={shiftFollowingLessons}
+                      disabled={lessonMutationPending}
+                      onCheckedChange={(checked) => setShiftFollowingLessons(checked === true)}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-slate-800">
+                        {t('shiftFollowingLessons')}
+                      </span>
+                      <span className="block text-xs text-slate-500">
+                        {t('shiftFollowingLessonsHint')}
+                      </span>
+                    </span>
+                  </label>
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRescheduleLesson}
+                      disabled={!canRescheduleLesson || lessonMutationPending}
+                    >
+                      <Calendar className="h-4 w-4 mr-2" />
+                      {rescheduleLesson.isPending ? t('saving') : t('rescheduleLesson')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {selectedLesson && attendanceRosterQuery.isPending && (
+                <div className="space-y-3">
+                  <Skeleton className="h-8 w-56" />
+                  <Skeleton className="h-48 w-full" />
+                </div>
+              )}
+
+              {selectedLesson && attendanceRosterQuery.isError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
+                  <p className="text-sm font-medium text-destructive">{t('attendanceRosterLoadFailed')}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {attendanceRosterQuery.error instanceof Error
+                      ? attendanceRosterQuery.error.message
+                      : t('failedToLoadData')}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    disabled={lessonMutationPending}
+                    onClick={() => attendanceRosterQuery.refetch()}
+                  >
+                    {t('retry')}
+                  </Button>
+                </div>
+              )}
+
+              {selectedLesson
+                && !attendanceRosterQuery.isPending
+                && !attendanceRosterQuery.isError
+                && selectedLessonStudents.length > 0 && (
                 <>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-7 text-xs"
+                      disabled={lessonMutationPending}
                       onClick={() => handleSetAllAttendance('present')}
                     >
                       <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
@@ -957,6 +1293,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       variant="outline"
                       size="sm"
                       className="h-7 text-xs"
+                      disabled={lessonMutationPending}
                       onClick={() => handleSetAllAttendance('absent')}
                     >
                       <XCircle className="h-3.5 w-3.5 mr-1" />
@@ -964,8 +1301,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     </Button>
                   </div>
 
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
+                  <div className="border rounded-lg overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-sm">
                       <thead className="bg-muted/70">
                         <tr className="border-b border-border/70">
                           <th className="text-left p-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -996,6 +1333,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                               <td className="p-3 px-4 text-center">
                                 <Checkbox
                                   checked={status === 'present'}
+                                  disabled={lessonMutationPending}
                                   onCheckedChange={() =>
                                     handleToggleAttendance(student.id, 'present')
                                   }
@@ -1005,6 +1343,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                               <td className="p-3 px-4 text-center">
                                 <Checkbox
                                   checked={status === 'absent'}
+                                  disabled={lessonMutationPending}
                                   onCheckedChange={() =>
                                     handleToggleAttendance(student.id, 'absent')
                                   }
@@ -1025,8 +1364,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <Label className="text-xs text-slate-500">{t('comment')}</Label>
                     <Textarea
                       value={attendanceNote}
+                      disabled={lessonMutationPending}
                       onChange={(e) => {
                         attendanceDraftDirty.current = true;
+                        attendanceNoteDirty.current = true;
                         setAttendanceNote(e.target.value);
                       }}
                       placeholder={t('attendanceNotePlaceholder')}
@@ -1035,22 +1376,46 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   </div>
 
                   <div className="flex justify-end">
-                    <Button
-                      onClick={() => saveAttendance.mutate()}
-                      disabled={saveAttendance.isPending || !selectedLessonId || !allAttendanceMarked}
-                    >
-                      {saveAttendance.isPending ? t('saving') : t('saveAttendanceLabel')}
-                    </Button>
+                    <div className="space-y-1 text-right">
+                      {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
+                        <p className="text-xs text-amber-700">{t('attendanceAvailableAfterLessonStart')}</p>
+                      )}
+                      <Button
+                        onClick={handleSaveAttendance}
+                        disabled={lessonMutationPending || !canSaveAttendance}
+                      >
+                        {saveAttendance.isPending
+                          ? t('saving')
+                          : selectedLessonDetails?.status === 'conducted'
+                            ? t('updateAttendance')
+                            : t('finishLessonAndSaveAttendance')}
+                      </Button>
+                    </div>
                   </div>
                 </>
               )}
 
-              {selectedLesson && selectedLessonStudents.length === 0 && (
-                <EmptyState
-                  title={t('noStudents')}
-                  text={t('noStudentsInGroup')}
-                  icon={Users}
-                />
+              {selectedLesson
+                && !attendanceRosterQuery.isPending
+                && !attendanceRosterQuery.isError
+                && selectedLessonStudents.length === 0 && (
+                <div className="space-y-3">
+                  <EmptyState
+                    title={t('noStudents')}
+                    text={t('noStudentsInGroup')}
+                    icon={Users}
+                  />
+                  {selectedLessonDetails?.status === 'scheduled' && (
+                    <div className="flex justify-end">
+                      <Button
+                        onClick={handleSaveAttendance}
+                        disabled={!canSaveAttendance || lessonMutationPending}
+                      >
+                        {saveAttendance.isPending ? t('saving') : t('finishLessonAndSaveAttendance')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {!selectedLesson && (

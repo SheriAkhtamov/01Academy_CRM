@@ -6,7 +6,16 @@ import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
+import {
+  getTrailingZonedMonthRanges,
+  getZonedDateTimeParts,
+  getZonedDateOnlyRange,
+  getZonedDayRange,
+  getZonedMonthRange,
+  zonedWallClockToInstant,
+} from '../lib/academy-time';
 import { runAutomations } from '../services/automations';
+import { normalizeOutboxRecipient } from '../services/message-recipients';
 import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -19,6 +28,7 @@ import {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
+  REFERRAL_BENEFIT_TYPES,
   REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
@@ -46,15 +56,14 @@ import {
   normalizeMoney,
   resolveStudentRiskFlags,
   resolveReferralLevel,
+  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
 import {
   getGroupScheduleValidationError,
-  isDateInsideInclusiveDayRange,
   normalizeWeeklySchedule,
   parseScheduleTimeToMinutes,
-  scheduleDateRangesOverlap,
   scheduleIntervalsOverlap,
   weeklySchedulesOverlap,
   type NormalizedWeeklyScheduleItem,
@@ -66,6 +75,7 @@ router.use(requireAuth);
 
 type DbValue = string | number | boolean | Date | null | unknown[] | Record<string, unknown>;
 type Row = Record<string, any>;
+type ReferralBenefitType = (typeof REFERRAL_BENEFIT_TYPES)[number];
 const transactionContext = new AsyncLocalStorage<PoolClient>();
 
 const ADMINISTRATION_WORKSPACES = new Set(['administration']);
@@ -197,6 +207,25 @@ const leadPhoneNumbersSelect = (leadAlias = 'l') => `
 
 const phoneValues = (phones: NormalizedLeadPhone[]) =>
   phones.map((phone) => phone.normalizedPhone);
+
+const normalizeMessengerIdentity = (value: unknown) => nullableText(value)?.toLowerCase() ?? null;
+
+const lockLeadContactIdentities = async (
+  phones: NormalizedLeadPhone[],
+  messenger?: string | null,
+) => {
+  const identities = [
+    ...phoneValues(phones).map((phone) => `phone:${phone}`),
+    ...(normalizeMessengerIdentity(messenger)
+      ? [`messenger:${normalizeMessengerIdentity(messenger)}`]
+      : []),
+  ].sort();
+  for (const identity of identities) {
+    await query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `academy-lead-contact:${identity}`,
+    ]);
+  }
+};
 
 const nullableDate = (value: unknown) => {
   const text = nullableText(value);
@@ -677,10 +706,15 @@ const createOutbox = async (channel: string, recipient: string | null | undefine
   entityType?: string | null;
   entityId?: number | null;
 }) => {
-  const normalizedRecipient = nullableText(recipient);
-  if (!normalizedRecipient) return null;
+  const normalizedChannel = nullableText(channel)?.toLowerCase();
+  const normalizedRecipient = normalizeOutboxRecipient(
+    normalizedChannel,
+    recipient,
+    appConfig.integrations?.telegram?.leadershipChatId,
+  );
+  if (!normalizedChannel || !normalizedRecipient) return null;
   return insertRow('academy_notification_outbox', {
-    channel,
+    channel: normalizedChannel,
     recipient: normalizedRecipient,
     message,
     status: 'pending',
@@ -698,15 +732,23 @@ const logIntegration = async (provider: string, direction: string, status: strin
     errorMessage: errorMessage ?? null,
     retryCount: 0 });
 
-const getSourceByCode = async (code: string) =>
-  queryOne(`SELECT * FROM academy_lead_sources WHERE code = $1`, [code]);
-
 const parseTimeToMinutes = parseScheduleTimeToMinutes;
 
-const academyDayOfWeek = (date: Date) => {
-  const day = date.getDay();
-  return day === 0 ? 7 : day;
+const calendarDayOrdinal = (year: number, month: number, day: number) =>
+  Date.UTC(year, month - 1, day);
+
+const getAcademySlotPosition = (date: Date, durationMinutes = 0) => {
+  const parts = getZonedDateTimeParts(date, ACADEMY_TIME_ZONE);
+  const nativeDay = new Date(calendarDayOrdinal(parts.year, parts.month, parts.day)).getUTCDay();
+  const startMinutes = parts.hour * 60 + parts.minute;
+  return {
+    dayOfWeek: nativeDay === 0 ? 7 : nativeDay,
+    startMinutes,
+    endMinutes: startMinutes + durationMinutes,
+  };
 };
+
+const academyDayOfWeek = (date: Date) => getAcademySlotPosition(date).dayOfWeek;
 
 type NormalizedScheduleItem = NormalizedWeeklyScheduleItem;
 
@@ -723,17 +765,69 @@ const readJsonArray = (value: unknown): Row[] => {
 
 const normalizeScheduleItems = normalizeWeeklySchedule;
 const intervalsOverlap = scheduleIntervalsOverlap;
-const dateRangesOverlap = scheduleDateRangesOverlap;
+
+const dateOnlyDayOrdinal = (date: Date) => calendarDayOrdinal(
+  date.getUTCFullYear(),
+  date.getUTCMonth() + 1,
+  date.getUTCDate(),
+);
+
+const academyDayOrdinal = (date: Date) => {
+  const parts = getZonedDateTimeParts(date, ACADEMY_TIME_ZONE);
+  return calendarDayOrdinal(parts.year, parts.month, parts.day);
+};
+
+const dateRangesOverlap = (
+  leftStart?: Date | null,
+  leftEnd?: Date | null,
+  rightStart?: Date | null,
+  rightEnd?: Date | null,
+) => {
+  if (
+    (leftStart && Number.isNaN(leftStart.getTime()))
+    || (leftEnd && Number.isNaN(leftEnd.getTime()))
+    || (rightStart && Number.isNaN(rightStart.getTime()))
+    || (rightEnd && Number.isNaN(rightEnd.getTime()))
+  ) return false;
+  const leftStartDay = leftStart ? dateOnlyDayOrdinal(leftStart) : Number.NEGATIVE_INFINITY;
+  const leftEndDay = leftEnd ? dateOnlyDayOrdinal(leftEnd) : Number.POSITIVE_INFINITY;
+  const rightStartDay = rightStart ? dateOnlyDayOrdinal(rightStart) : Number.NEGATIVE_INFINITY;
+  const rightEndDay = rightEnd ? dateOnlyDayOrdinal(rightEnd) : Number.POSITIVE_INFINITY;
+  return leftStartDay <= rightEndDay && leftEndDay >= rightStartDay;
+};
+
+const isDateInsideInclusiveDayRange = (
+  value: Date,
+  start?: Date | null,
+  end?: Date | null,
+) => {
+  if (
+    Number.isNaN(value.getTime())
+    || (start && Number.isNaN(start.getTime()))
+    || (end && Number.isNaN(end.getTime()))
+  ) return false;
+  const day = academyDayOrdinal(value);
+  return day >= (start ? dateOnlyDayOrdinal(start) : Number.NEGATIVE_INFINITY)
+    && day <= (end ? dateOnlyDayOrdinal(end) : Number.POSITIVE_INFINITY);
+};
 
 const parseDateOnly = (value: unknown) => {
   const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0, 0);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const marker = new Date(calendarDayOrdinal(year, month, day));
+  if (
+    marker.getUTCFullYear() !== year
+    || marker.getUTCMonth() + 1 !== month
+    || marker.getUTCDate() !== day
+  ) return null;
+  return zonedWallClockToInstant({ year, month, day }, ACADEMY_TIME_ZONE);
 };
 
-const startOfDay = (date: Date) =>
-  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+const startOfAcademyDay = (date: Date) =>
+  getZonedDayRange(date, ACADEMY_TIME_ZONE).start;
 
 const scheduleCoversSlot = (
   schedule: NormalizedScheduleItem[],
@@ -788,9 +882,10 @@ const findAvailableTeacher = async (options: {
     [JSON.stringify([options.courseId])],
   );
 
-  const startMinutes = options.scheduledAt.getHours() * 60 + options.scheduledAt.getMinutes();
-  const endMinutes = startMinutes + options.durationMinutes;
-  const dayOfWeek = academyDayOfWeek(options.scheduledAt);
+  const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+    options.scheduledAt,
+    options.durationMinutes,
+  );
   const lessonEnd = addMinutes(options.scheduledAt, options.durationMinutes);
   const teacherIds = candidates.map((teacher) => Number(teacher.id));
   const existingGroups = teacherIds.length > 0
@@ -893,8 +988,12 @@ const findTeacherForGroupSchedule = async (options: {
       [teacherIds, options.excludeGroupId ?? null],
     )
     : [];
-  const rangeStart = startOfDay(options.startDate ?? new Date());
-  const rangeEnd = options.endDate ? addDays(startOfDay(options.endDate), 1) : null;
+  const rangeStart = options.startDate
+    ? getZonedDateOnlyRange(options.startDate, ACADEMY_TIME_ZONE).start
+    : startOfAcademyDay(new Date());
+  const rangeEnd = options.endDate
+    ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
+    : null;
   const existingLessons = teacherIds.length > 0
     ? await query(
       `SELECT teacher_id, scheduled_at, duration_minutes
@@ -947,10 +1046,12 @@ const findTeacherForGroupSchedule = async (options: {
       .filter((lesson) => Number(lesson.teacherId) === Number(teacher.id))
       .some((lesson) => {
         const scheduledAt = new Date(lesson.scheduledAt);
-        const startMinutes = scheduledAt.getHours() * 60 + scheduledAt.getMinutes();
-        const endMinutes = startMinutes + Number(lesson.durationMinutes || 60);
+        const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+          scheduledAt,
+          Number(lesson.durationMinutes || 60),
+        );
         return requestedSchedule.some((item) =>
-          item.dayOfWeek === academyDayOfWeek(scheduledAt)
+          item.dayOfWeek === dayOfWeek
           && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
         );
       });
@@ -1029,8 +1130,12 @@ const assertTeacherCanLeadGroupSchedule = async (options: {
     throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
   }
 
-  const rangeStart = startOfDay(options.startDate ?? new Date());
-  const rangeEnd = options.endDate ? addDays(startOfDay(options.endDate), 1) : null;
+  const rangeStart = options.startDate
+    ? getZonedDateOnlyRange(options.startDate, ACADEMY_TIME_ZONE).start
+    : startOfAcademyDay(new Date());
+  const rangeEnd = options.endDate
+    ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
+    : null;
   const existingLessons = await query(
     `SELECT scheduled_at, duration_minutes
      FROM academy_lessons
@@ -1042,10 +1147,12 @@ const assertTeacherCanLeadGroupSchedule = async (options: {
   );
   const lessonConflict = existingLessons.some((lesson) => {
     const scheduledAt = new Date(lesson.scheduledAt);
-    const startMinutes = scheduledAt.getHours() * 60 + scheduledAt.getMinutes();
-    const endMinutes = startMinutes + Number(lesson.durationMinutes || 60);
+    const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+      scheduledAt,
+      Number(lesson.durationMinutes || 60),
+    );
     return requestedSchedule.some((item) =>
-      item.dayOfWeek === academyDayOfWeek(scheduledAt)
+      item.dayOfWeek === dayOfWeek
       && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
     );
   });
@@ -1083,9 +1190,10 @@ const assertTeacherCanLeadLesson = async (options: {
 
   const startsAt = new Date(options.scheduledAt);
   const endsAt = addMinutes(startsAt, options.durationMinutes);
-  const dayOfWeek = academyDayOfWeek(startsAt);
-  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
-  const endMinutes = startMinutes + options.durationMinutes;
+  const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+    startsAt,
+    options.durationMinutes,
+  );
   if (!scheduleCoversSlot(
     getTeacherAvailability(teacher, options.durationMinutes),
     dayOfWeek,
@@ -1190,8 +1298,12 @@ const assertRoomScheduleAvailable = async (options: {
     throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
   }
 
-  const rangeStart = startOfDay(options.startDate ?? new Date());
-  const rangeEnd = options.endDate ? addDays(startOfDay(options.endDate), 1) : null;
+  const rangeStart = options.startDate
+    ? getZonedDateOnlyRange(options.startDate, ACADEMY_TIME_ZONE).start
+    : startOfAcademyDay(new Date());
+  const rangeEnd = options.endDate
+    ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
+    : null;
   const lessons = await query(
     `SELECT scheduled_at, duration_minutes
      FROM academy_lessons
@@ -1203,10 +1315,12 @@ const assertRoomScheduleAvailable = async (options: {
   );
   const lessonConflict = lessons.some((lesson) => {
     const scheduledAt = new Date(lesson.scheduledAt);
-    const startMinutes = scheduledAt.getHours() * 60 + scheduledAt.getMinutes();
-    const endMinutes = startMinutes + Number(lesson.durationMinutes || 60);
+    const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+      scheduledAt,
+      Number(lesson.durationMinutes || 60),
+    );
     return requestedSchedule.some((item) =>
-      item.dayOfWeek === academyDayOfWeek(scheduledAt)
+      item.dayOfWeek === dayOfWeek
       && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
     );
   });
@@ -1226,11 +1340,12 @@ const assertLessonRoomAvailable = async (options: {
   await assertActiveRoomInSchool(options.roomId, options.schoolId);
   const startsAt = new Date(options.scheduledAt);
   const endsAt = addMinutes(startsAt, options.durationMinutes);
-  const dayOfWeek = academyDayOfWeek(startsAt);
-  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
-  const endMinutes = startMinutes + options.durationMinutes;
+  const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+    startsAt,
+    options.durationMinutes,
+  );
 
-  const [lessonConflict, groups] = await Promise.all([
+  const [lessonConflict, groupLessonConflict, groups] = await Promise.all([
     queryOne(
       `SELECT id FROM academy_lessons
        WHERE room_id = $1
@@ -1241,6 +1356,19 @@ const assertLessonRoomAvailable = async (options: {
        LIMIT 1`,
       [options.roomId, startsAt, endsAt, options.excludeLessonId ?? null],
     ),
+    options.excludeGroupId
+      ? queryOne(
+        `SELECT id
+         FROM academy_lessons
+         WHERE group_id = $1
+           AND status <> 'cancelled'
+           AND scheduled_at < $3
+           AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+           AND ($4::int IS NULL OR id <> $4)
+         LIMIT 1`,
+        [options.excludeGroupId, startsAt, endsAt, options.excludeLessonId ?? null],
+      )
+      : Promise.resolve(null),
     query(
       `SELECT * FROM academy_groups
        WHERE room_id = $1
@@ -1251,6 +1379,9 @@ const assertLessonRoomAvailable = async (options: {
   ]);
 
   if (lessonConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
+  if (groupLessonConflict) {
+    throw Object.assign(new Error('groupLessonOverlap'), { statusCode: 409 });
+  }
 
   const recurringConflict = groups.some((group) =>
     isDateInsideInclusiveDayRange(
@@ -1283,8 +1414,8 @@ const listAvailableSchoolSlots = async (options: {
   if (!school) throw Object.assign(new Error('School not found'), { statusCode: 404 });
 
   const durationMinutes = Math.max(15, Number(course.lessonDurationMinutes || 60));
-  const rangeStart = startOfDay(options.from);
-  const rangeEnd = addDays(rangeStart, options.days);
+  const rangeStart = startOfAcademyDay(options.from);
+  const rangeEnd = getZonedDayRange(rangeStart, ACADEMY_TIME_ZONE, options.days).start;
   const teachers = await query(
     `SELECT t.*,
         (SELECT COUNT(*)::int FROM academy_lessons l
@@ -1334,7 +1465,8 @@ const listAvailableSchoolSlots = async (options: {
   const now = new Date();
 
   for (let offset = 0; offset < options.days; offset += 1) {
-    const date = addDays(rangeStart, offset);
+    const date = getZonedDayRange(rangeStart, ACADEMY_TIME_ZONE, offset).start;
+    const dateParts = getZonedDateTimeParts(date, ACADEMY_TIME_ZONE);
     const dayOfWeek = academyDayOfWeek(date);
 
     for (const teacher of teachers) {
@@ -1350,15 +1482,13 @@ const listAvailableSchoolSlots = async (options: {
           startMinutes + durationMinutes <= window.endMinutes;
           startMinutes += 30
         ) {
-          const startsAt = new Date(
-            date.getFullYear(),
-            date.getMonth(),
-            date.getDate(),
-            Math.floor(startMinutes / 60),
-            startMinutes % 60,
-            0,
-            0,
-          );
+          const startsAt = zonedWallClockToInstant({
+            year: dateParts.year,
+            month: dateParts.month,
+            day: dateParts.day,
+            hour: Math.floor(startMinutes / 60),
+            minute: startMinutes % 60,
+          }, ACADEMY_TIME_ZONE);
           if (startsAt.getTime() <= now.getTime()) continue;
           const endsAt = addMinutes(startsAt, durationMinutes);
           const slotKey = startsAt.getTime();
@@ -1452,7 +1582,7 @@ const assertBookableOfflineSlot = async (options: {
   const result = await listAvailableSchoolSlots({
     schoolId: options.schoolId,
     courseId: options.courseId,
-    from: startOfDay(options.startsAt),
+    from: startOfAcademyDay(options.startsAt),
     days: 1,
     excludeLeadId: options.excludeLeadId,
     excludeGroupId: options.excludeGroupId,
@@ -1480,21 +1610,82 @@ const buildTemplateSourceCode = (prefix: string, suffix: string) => {
   return slug ? `${prefix}_${slug}` : prefix;
 };
 
-const resolveSourceId = async (body: Row) => {
-  const explicitSourceId = parseId(body.sourceId);
-  if (explicitSourceId) return explicitSourceId;
+const assertValidReferrerStudent = async (
+  referrerStudentId: number,
+  referredLeadId?: number | null,
+) => {
+  const referrer = await queryOne(
+    `SELECT id, student_name, lead_id
+     FROM academy_students
+     WHERE id = $1
+     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
+    [referrerStudentId],
+  );
+  if (!referrer) {
+    throw Object.assign(new Error('referrerStudentNotFound'), { statusCode: 400 });
+  }
+  if (referredLeadId && Number(referrer.leadId) === referredLeadId) {
+    throw Object.assign(new Error('leadCannotReferItself'), { statusCode: 409 });
+  }
+  return referrer;
+};
+
+const findOrCreateActiveSource = async (values: {
+  code: string;
+  name: string;
+  channel: string;
+  campaignName?: string | null;
+}) => {
+  // A single UPSERT both closes the select-then-insert race on the unique code
+  // and returns the winning row when another request created it concurrently.
+  // Existing source metadata is intentionally preserved.
+  const source = await queryOne(
+    `INSERT INTO academy_lead_sources
+       (code, name, channel, campaign_name, is_system, is_active)
+     VALUES ($1, $2, $3, $4, false, true)
+     ON CONFLICT (code) DO UPDATE
+       SET code = academy_lead_sources.code
+     RETURNING *`,
+    [values.code, values.name, values.channel, values.campaignName ?? null],
+  );
+  if (!source) {
+    throw Object.assign(new Error('leadSourceResolutionFailed'), { statusCode: 409 });
+  }
+  if (source.isActive !== true) {
+    throw Object.assign(new Error('inactiveLeadSource'), { statusCode: 400 });
+  }
+  return source;
+};
+
+const resolveSourceId = async (body: Row, validatedReferrer?: Row | null) => {
+  const explicitSourceId = toIdOrNull(body.sourceId, 'sourceId');
+  if (explicitSourceId) {
+    const source = await queryOne(
+      `SELECT id
+       FROM academy_lead_sources
+       WHERE id = $1 AND is_active = true
+       ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
+      [explicitSourceId],
+    );
+    if (!source) {
+      throw Object.assign(new Error('invalidLeadSource'), { statusCode: 400 });
+    }
+    return explicitSourceId;
+  }
 
   // Referral leads: tag becomes referral_<referrer name> (TZ 1.2 / 5.1).
-  const referrerStudentId = parseId(body.referrerStudentId);
+  const referrerStudentId = toIdOrNull(body.referrerStudentId, 'referrerStudentId');
   if (referrerStudentId) {
-    const referrer = await queryOne(`SELECT student_name FROM academy_students WHERE id = $1`, [referrerStudentId]);
-    const referrerName = nullableText(referrer?.studentName) ?? `id${referrerStudentId}`;
+    const referrer = validatedReferrer
+      ?? await assertValidReferrerStudent(referrerStudentId);
+    const referrerName = nullableText(referrer.studentName) ?? `id${referrerStudentId}`;
     const code = buildTemplateSourceCode('referral', referrerName);
-    const existing = await getSourceByCode(code);
-    if (existing) return Number(existing.id);
-    const created = await insertRow('academy_lead_sources', {
-      code, name: `Реферал: ${referrerName}`, channel: 'referral', isSystem: false, isActive: true });
-    return Number(created.id);
+    const source = await findOrCreateActiveSource({
+      code,
+      name: `Реферал: ${referrerName}`,
+      channel: 'referral',
+    });
+    return Number(source.id);
   }
 
   const rawSourceCode = nullableText(body.sourceCode);
@@ -1505,16 +1696,13 @@ const resolveSourceId = async (body: Row) => {
     : rawSourceCode;
 
   if (sourceCode) {
-    const source = await getSourceByCode(sourceCode);
-    if (source) return Number(source.id);
-    const created = await insertRow('academy_lead_sources', {
+    const source = await findOrCreateActiveSource({
       code: sourceCode,
       name: sourceCode,
       channel: sourceCode.split('_')[0],
       campaignName: campaignName ?? null,
-      isSystem: false,
-      isActive: true });
-    return Number(created.id);
+    });
+    return Number(source.id);
   }
 
   return null;
@@ -1556,7 +1744,10 @@ const findDuplicate = async (
              )
            )
          )
-         OR ($2::text IS NOT NULL AND l.messenger = $2)
+         OR (
+           $2::text IS NOT NULL
+           AND LOWER(BTRIM(l.messenger)) = LOWER(BTRIM($2))
+         )
        )
      LIMIT 1`,
     [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
@@ -1566,9 +1757,16 @@ const findDuplicate = async (
   return queryOne(
     `SELECT 'student' AS entity_type, id, lead_id, student_name AS name, phone, messenger
      FROM academy_students
-     WHERE (($1::text[] IS NOT NULL AND phone = ANY($1::text[])) OR ($2::text IS NOT NULL AND messenger = $2))
+     WHERE ($3::int IS NULL OR lead_id IS DISTINCT FROM $3)
+       AND (
+         ($1::text[] IS NOT NULL AND phone = ANY($1::text[]))
+         OR (
+           $2::text IS NOT NULL
+           AND LOWER(BTRIM(messenger)) = LOWER(BTRIM($2))
+         )
+       )
      LIMIT 1`,
-    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null],
+    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
   );
 };
 
@@ -1795,12 +1993,23 @@ const recalculateStudentMetrics = async (studentId: number) => {
   const membershipStartedAt = latestGroupEntry?.createdAt ?? student.enrolledAt ?? student.createdAt;
 
   const conductedLessons = await query<{ id: number }>(
-    `SELECT id
-     FROM academy_lessons
-     WHERE group_id = $1
-       AND status = 'conducted'
-       AND scheduled_at >= $2`,
-    [student.groupId, membershipStartedAt],
+    `SELECT lesson.id
+     FROM academy_lessons lesson
+     WHERE lesson.group_id = $1
+       AND lesson.status = 'conducted'
+       AND lesson.scheduled_at >= $2
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $3
+             AND history.created_at <= lesson.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'`,
+    [student.groupId, membershipStartedAt, studentId],
   );
   const presentRows = await query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
@@ -1810,13 +2019,40 @@ const recalculateStudentMetrics = async (studentId: number) => {
        AND a.status = 'present'
        AND l.status = 'conducted'
        AND l.group_id = $2
-       AND l.scheduled_at >= $3`,
+       AND l.scheduled_at >= $3
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $1
+             AND history.created_at <= l.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'`,
     [studentId, student.groupId, membershipStartedAt],
   );
   const group = await queryOne(`SELECT lesson_count FROM academy_groups WHERE id = $1`, [student.groupId]);
   const surveyRows = await query<{ score: number }>(
-    `SELECT score FROM academy_lesson_surveys WHERE student_id = $1`,
-    [studentId],
+    `SELECT survey.score
+     FROM academy_lesson_surveys survey
+     JOIN academy_lessons lesson ON lesson.id = survey.lesson_id
+     WHERE survey.student_id = $1
+       AND lesson.group_id = $2
+       AND lesson.scheduled_at >= $3
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $1
+             AND history.created_at <= lesson.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'`,
+    [studentId, student.groupId, membershipStartedAt],
   );
   const monthlyAttendanceRows = await query<{
     conductedCount: number;
@@ -1832,6 +2068,17 @@ const recalculateStudentMetrics = async (studentId: number) => {
      WHERE l.group_id = $2
        AND l.status = 'conducted'
        AND l.scheduled_at >= $3
+       AND COALESCE(
+         (
+           SELECT history.to_status
+           FROM academy_student_status_history history
+           WHERE history.student_id = $1
+             AND history.created_at <= l.scheduled_at
+           ORDER BY history.created_at DESC, history.id DESC
+           LIMIT 1
+         ),
+         'studying'
+       ) = 'studying'
        AND l.scheduled_at >= (
          (date_trunc('month', NOW() AT TIME ZONE $4) AT TIME ZONE $4)
          AT TIME ZONE 'UTC'
@@ -1980,89 +2227,227 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
       status: 'pending' });
   }
 
-  await createOutbox('telegram', lead.messenger || lead.phone, `Добро пожаловать в 01 Academy, ${student.studentName}!`, {
+  await createOutbox('whatsapp', lead.phone, `Добро пожаловать в 01 Academy, ${student.studentName}!`, {
     entityType: 'student',
     entityId: student.id });
   await createAudit(req, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
   return student;
 };
 
-// TZ 5.1 referral mechanics: when a referred student pays, the referrer earns a 15%
-// discount on the next month and the new student gets 15% off the first month.
-// Referrer tier is recomputed from the count of paid referrals (1 → 15%, 3 → free month, 5+ → AI Ambassador).
-const applyReferralRewards = async (req: any, studentId: number, leadId: number | null, _paymentId: number) => {
-  // referrerStudentId lives on the lead (academy_leads.referrer_student_id), not on the student.
-  const lead = leadId ? await getLead(leadId) : null;
-  const referrerId = lead?.referrerStudentId ? Number(lead.referrerStudentId) : null;
+const ensureReferralBenefit = async (options: {
+  studentId: number;
+  benefitType: ReferralBenefitType;
+  status?: 'pending' | 'consumed' | 'superseded';
+  milestone?: 1 | 3 | 5 | null;
+  sourceReferralCount?: number | null;
+  sourceReferralRewardId?: number | null;
+  sourcePaymentId?: number | null;
+  consumedByPaymentId?: number | null;
+  consumedAt?: Date | null;
+}) => {
+  const created = await queryOne(
+    `INSERT INTO academy_referral_benefits
+       (student_id, benefit_type, status, milestone, source_referral_count,
+        source_referral_reward_id, source_payment_id, consumed_by_payment_id, consumed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (student_id, benefit_type) DO NOTHING
+     RETURNING *`,
+    [
+      options.studentId,
+      options.benefitType,
+      options.status ?? 'pending',
+      options.milestone ?? null,
+      options.sourceReferralCount ?? null,
+      options.sourceReferralRewardId ?? null,
+      options.sourcePaymentId ?? null,
+      options.consumedByPaymentId ?? null,
+      options.consumedAt ?? null,
+    ],
+  );
+  if (created) return { benefit: created, created: true };
+  const existing = await queryOne(
+    `SELECT *
+     FROM academy_referral_benefits
+     WHERE student_id = $1 AND benefit_type = $2
+     FOR UPDATE`,
+    [options.studentId, options.benefitType],
+  );
+  if (!existing) {
+    throw Object.assign(new Error('referralBenefitGrantFailed'), { statusCode: 409 });
+  }
+  return { benefit: existing, created: false };
+};
 
+const consumeReferralBenefit = async (
+  benefitId: number,
+  paymentId: number,
+  status: 'consumed' | 'superseded' = 'consumed',
+) => {
+  const benefit = await queryOne(
+    `UPDATE academy_referral_benefits
+     SET status = $2,
+         consumed_by_payment_id = $3,
+         consumed_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1 AND status = 'pending'
+     RETURNING *`,
+    [benefitId, status, paymentId],
+  );
+  if (!benefit) {
+    throw Object.assign(new Error('referralBenefitAlreadyConsumed'), { statusCode: 409 });
+  }
+  return benefit;
+};
+
+const ensureFreeMonthBenefit = async (req: any, options: {
+  referrerId: number;
+  paidReferrals: number;
+  sourceReferralRewardId: number;
+  sourcePaymentId: number;
+}) => {
+  const grant = await ensureReferralBenefit({
+    studentId: options.referrerId,
+    benefitType: 'free_month',
+    milestone: 3,
+    sourceReferralCount: options.paidReferrals,
+    sourceReferralRewardId: options.sourceReferralRewardId,
+    sourcePaymentId: options.sourcePaymentId,
+  });
+  if (grant.benefit.status !== 'pending') return grant.benefit;
+
+  const referrer = await queryOne(
+    `SELECT students.*,
+        GREATEST(COALESCE(students.next_payment_at, NOW()), NOW()) AS coverage_start,
+        GREATEST(COALESCE(students.next_payment_at, NOW()), NOW()) + INTERVAL '30 days' AS coverage_end
+     FROM academy_students students
+     WHERE students.id = $1
+     FOR UPDATE`,
+    [options.referrerId],
+  );
+  if (!referrer) {
+    throw Object.assign(new Error('referrerStudentNotFound'), { statusCode: 409 });
+  }
+
+  let freePayment = await queryOne(
+    `SELECT *
+     FROM academy_payments
+     WHERE student_id = $1
+       AND amount_uzs = 0
+       AND comment = 'Бесплатный месяц по реферальной программе'
+     ORDER BY created_at, id
+     LIMIT 1
+     FOR UPDATE`,
+    [options.referrerId],
+  );
+  if (!freePayment) {
+    freePayment = await insertRow('academy_payments', {
+      studentId: options.referrerId,
+      groupId: referrer.groupId ?? null,
+      amountUzs: 0,
+      type: 'full',
+      method: 'transfer',
+      paidAt: new Date(),
+      period: 'referral_bonus',
+      discount: 'referral_15',
+      status: 'paid',
+      paidUntil: referrer.coverageEnd,
+      comment: 'Бесплатный месяц по реферальной программе',
+      confirmedBy: req.user!.id,
+    });
+  } else if (!freePayment.paidUntil) {
+    freePayment = await updateRow('academy_payments', Number(freePayment.id), {
+      paidUntil: referrer.coverageEnd,
+    });
+  }
+  if (!freePayment) {
+    throw Object.assign(new Error('referralFreeMonthPaymentFailed'), { statusCode: 500 });
+  }
+  await consumeReferralBenefit(Number(grant.benefit.id), Number(freePayment.id));
+  await advanceStudentNextPaymentAt(options.referrerId, freePayment.paidUntil ?? referrer.coverageEnd);
+  return freePayment;
+};
+
+// A reward row records that one referred student qualified. Benefits are a
+// separate one-time ledger: milestone 1 is pending until the referrer's next
+// payment, milestone 3 is consumed by one free-month payment, and milestone 5
+// remains a pending AI Ambassador training entitlement.
+const applyReferralRewards = async (req: any, studentId: number, leadId: number | null, paymentId: number) => {
+  const lead = leadId
+    ? await queryOne(`SELECT id, referrer_student_id FROM academy_leads WHERE id = $1`, [leadId])
+    : null;
+  const referrerId = lead?.referrerStudentId ? Number(lead.referrerStudentId) : null;
   if (!referrerId || referrerId === studentId) return;
 
-  // Payments from two different referrals can finish simultaneously. Serialize
-  // tier calculation per referrer so neither transaction overwrites the other's
-  // newly earned level or creates a duplicate free-month reward.
   await query(`SELECT pg_advisory_xact_lock($1, $2)`, [ACADEMY_REFERRAL_ADVISORY_LOCK, referrerId]);
 
-  // 1. Mark any pending reward for this referral as applied.
   const newlyApplied = await query<{ id: number }>(
     `UPDATE academy_referral_rewards
-     SET status = 'applied', applied_at = NOW()
+     SET status = 'applied',
+         applied_at = COALESCE(applied_at, NOW()),
+         qualified_by_payment_id = COALESCE(qualified_by_payment_id, $3)
      WHERE referred_student_id = $1
        AND referrer_student_id = $2
        AND status = 'pending'
      RETURNING id`,
-    [studentId, referrerId],
+    [studentId, referrerId, paymentId],
   );
-  // Only the first successful payment for a referral may grant a reward.
   if (newlyApplied.length === 0) return;
 
-  // 2. Recompute the referrer's tier from paid referrals count.
   const paidCountRow = await queryOne<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM academy_referral_rewards
-     WHERE referrer_student_id = $1 AND status = 'applied'`,
+    `SELECT COUNT(DISTINCT referred_student_id)::text AS count
+     FROM academy_referral_rewards
+     WHERE referrer_student_id = $1
+       AND referred_student_id IS NOT NULL
+       AND status = 'applied'`,
     [referrerId],
   );
   const paidReferrals = Number(paidCountRow?.count ?? 0);
   const level = resolveReferralLevel(paidReferrals);
-  await updateRow('academy_students', referrerId, { referralLevel: level });
-  const referrer = await queryOne(
-    `SELECT messenger, phone, student_name, next_payment_at
-     FROM academy_students
-     WHERE id = $1`,
-    [referrerId],
-  );
+  const referrer = await updateRow('academy_students', referrerId, { referralLevel: level });
   if (!referrer) return;
+  const sourceReferralRewardId = Number(newlyApplied[0].id);
+  const milestoneBenefit = resolveReferralMilestone(paidReferrals);
 
-  // 3. Free month tier (3+ paid referrals) → create a zero-amount payment for the referrer's next month.
-  if (level === 'free_month' || level === 'ai_ambassador') {
-    const existingFree = await queryOne(
-      `SELECT id FROM academy_payments WHERE student_id = $1 AND discount = 'referral_15' AND amount_uzs = 0 AND comment = 'Бесплатный месяц по реферальной программе' LIMIT 1`,
-      [referrerId],
-    );
-    if (!existingFree) {
-      const now = new Date();
-      const existingCoverageEnd = referrer.nextPaymentAt ? new Date(referrer.nextPaymentAt) : null;
-      const coverageStart = existingCoverageEnd && existingCoverageEnd > now ? existingCoverageEnd : now;
-      const coverageEnd = addDays(coverageStart, 30);
-      await insertRow('academy_payments', {
-        studentId: referrerId,
-        amountUzs: 0,
-        type: 'full',
-        method: 'transfer',
-        paidAt: now,
-        period: 'referral_bonus',
-        discount: 'referral_15',
-        status: 'paid',
-        paidUntil: coverageEnd,
-        comment: 'Бесплатный месяц по реферальной программе',
-        confirmedBy: req.user!.id,
-      });
-      await advanceStudentNextPaymentAt(referrerId, coverageEnd);
+  if (milestoneBenefit === 'next_payment_discount_15') {
+    const discountGrant = await ensureReferralBenefit({
+      studentId: referrerId,
+      benefitType: 'next_payment_discount_15',
+      milestone: 1,
+      sourceReferralCount: paidReferrals,
+      sourceReferralRewardId,
+      sourcePaymentId: paymentId,
+    });
+    if (discountGrant.created) {
+      await createOutbox('whatsapp', referrer.phone,
+        `${referrer.studentName}, вы получили скидку 15% на следующий месяц за рекомендацию 01 Academy! 🎁`,
+        { entityType: 'student', entityId: referrerId });
     }
-  } else {
-    // discount_15 tier → enqueue a notification to the referrer about their earned discount.
-    await createOutbox('telegram', referrer.messenger || referrer.phone,
-      `${referrer.studentName}, вы получили скидку 15% на следующий месяц за рекомендацию 01 Academy! 🎁`,
+  }
+  if (milestoneBenefit === 'free_month') {
+    await ensureFreeMonthBenefit(req, {
+      referrerId,
+      paidReferrals,
+      sourceReferralRewardId,
+      sourcePaymentId: paymentId,
+    });
+    await createOutbox('whatsapp', referrer.phone,
+      `${referrer.studentName}, вы получили бесплатный месяц обучения за 3 рекомендации 01 Academy! 🎁`,
       { entityType: 'student', entityId: referrerId });
+  }
+  if (milestoneBenefit === 'ai_ambassador_free_training') {
+    const ambassadorGrant = await ensureReferralBenefit({
+      studentId: referrerId,
+      benefitType: 'ai_ambassador_free_training',
+      milestone: 5,
+      sourceReferralCount: paidReferrals,
+      sourceReferralRewardId,
+      sourcePaymentId: paymentId,
+    });
+    if (ambassadorGrant.created) {
+      await createOutbox('whatsapp', referrer.phone,
+        `${referrer.studentName}, вам присвоен статус AI-амбассадора и доступно бесплатное обучение в 01 Academy!`,
+        { entityType: 'student', entityId: referrerId });
+    }
   }
 };
 
@@ -2078,10 +2463,8 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
       entityId: lead.id,
       description: 'Связаться с лидом в течение 15 минут после заявки.' });
     await createNotification(managerId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
-    await createOutbox('telegram', String(managerId), `Новая заявка: ${leadContactSummary(lead)}`, {
-      scheduledAt: now,
-      entityType: 'lead',
-      entityId: lead.id });
+    // The manager already receives an internal CRM notification above. A CRM
+    // user id is not a Telegram chat id, so no Telegram outbox row is created.
   }
 
   if (lead.statusCode === 'first_contact' && !lead.firstContactAt) {
@@ -2090,7 +2473,7 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
 
   if (lead.statusCode === 'demo_invited' && lead.demoAt) {
     const demoAt = new Date(lead.demoAt);
-    await createOutbox('telegram', lead.messenger || lead.phone, `Напоминание: демо-урок 01 Academy через 24 часа`, {
+    await createOutbox('whatsapp', lead.phone, `Напоминание: демо-урок 01 Academy через 24 часа`, {
       scheduledAt: addDays(demoAt, -1),
       entityType: 'lead',
       entityId: lead.id });
@@ -2143,7 +2526,7 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
       period: 'month_1',
       discount: lead.offerDiscount || 'none',
       comment: 'Ожидаемая оплата после записи на курс' });
-    await createOutbox('telegram', lead.messenger || lead.phone, 'Реквизиты для оплаты 01 Academy: карта/перевод/наличные у администратора. После оплаты отправьте чек менеджеру.', {
+    await createOutbox('whatsapp', lead.phone, 'Реквизиты для оплаты 01 Academy: карта/перевод/наличные у администратора. После оплаты отправьте чек менеджеру.', {
       scheduledAt: now,
       entityType: 'lead',
       entityId: lead.id });
@@ -2211,6 +2594,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     expenses,
     projects,
     referrals,
+    referralBenefits,
   ] = await Promise.all([
     query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`),
     query(`SELECT * FROM academy_rooms ORDER BY school_id, is_active DESC, name`),
@@ -2303,7 +2687,11 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_rooms r ON r.id = l.room_id
       WHERE 1=1 ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}
       ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : []),
-    query(`SELECT a.* FROM academy_attendance a ${isTeacherScoped ? 'JOIN academy_lessons l ON l.id = a.lesson_id WHERE l.teacher_id = $1' : ''}`, isTeacherScoped ? [teacherId] : []),
+    query(`SELECT a.*
+      FROM academy_attendance a
+      JOIN academy_lessons l ON l.id = a.lesson_id
+      WHERE l.status = 'conducted' ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}`,
+    isTeacherScoped ? [teacherId] : []),
     query(`SELECT p.*, st.student_name, l.contact_name AS lead_name
       FROM academy_payments p
       LEFT JOIN academy_students st ON st.id = p.student_id
@@ -2315,8 +2703,9 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     query(`SELECT t.*, u.full_name AS responsible_name
       FROM academy_tasks t
       LEFT JOIN users u ON u.id = t.responsible_id
-      WHERE 1=1 ${isManagerScoped ? 'AND t.responsible_id = $1' : ''}
-      ORDER BY COALESCE(t.deadline_at, t.created_at)`, managerParams),
+      WHERE 1=1 ${isManagerScoped || isTeacherScoped ? 'AND t.responsible_id = $1' : ''}
+      ORDER BY COALESCE(t.deadline_at, t.created_at)`,
+    isTeacherScoped ? [actor!.userId] : managerParams),
     isTeacherScoped
       ? query(`SELECT ls.*, st.student_name, l.topic AS lesson_topic, g.name AS group_name
         FROM academy_lesson_surveys ls
@@ -2371,6 +2760,15 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       : isTeacherScoped
         ? Promise.resolve([])
         : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
+    isManagerScoped
+      ? query(`SELECT benefit.*
+        FROM academy_referral_benefits benefit
+        JOIN academy_students student ON student.id = benefit.student_id
+        WHERE student.manager_id = $1
+        ORDER BY benefit.created_at DESC`, managerParams)
+      : isTeacherScoped
+        ? Promise.resolve([])
+        : query(`SELECT * FROM academy_referral_benefits ORDER BY created_at DESC`),
   ]);
 
   const [visibleLeads, visibleArchivedLeads] = await Promise.all([
@@ -2397,6 +2795,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     expenses,
     projects,
     referrals,
+    referralBenefits,
   };
 };
 
@@ -2411,15 +2810,17 @@ const expenseAmountInsidePeriod = (
   periodStart: Date,
   periodEndExclusive: Date,
 ): number => {
-  const expenseStart = getValidDate(expense.periodStart);
+  const rawExpenseStart = getValidDate(expense.periodStart);
   const rawExpenseEnd = getValidDate(expense.periodEnd);
-  if (!expenseStart || !rawExpenseEnd || rawExpenseEnd < expenseStart) return 0;
+  if (!rawExpenseStart || !rawExpenseEnd || rawExpenseEnd < rawExpenseStart) return 0;
 
   // Marketing expense periods are inclusive calendar dates. Converting the end
   // to an exclusive boundary makes overlapping multi-month expenses contribute
   // proportionally instead of being counted in full in every touched month.
-  const expenseEndExclusive = new Date(rawExpenseEnd);
-  expenseEndExclusive.setDate(expenseEndExclusive.getDate() + 1);
+  // These date-only fields are stored as UTC-naive timestamps; map their UTC
+  // YYYY-MM-DD fields back to Tashkent midnights before comparing periods.
+  const expenseStart = getZonedDateOnlyRange(rawExpenseStart, ACADEMY_TIME_ZONE).start;
+  const expenseEndExclusive = getZonedDateOnlyRange(rawExpenseEnd, ACADEMY_TIME_ZONE).end;
   const overlapStart = Math.max(expenseStart.getTime(), periodStart.getTime());
   const overlapEnd = Math.min(expenseEndExclusive.getTime(), periodEndExclusive.getTime());
   if (overlapEnd <= overlapStart) return 0;
@@ -2445,9 +2846,10 @@ const buildAnalytics = async () => {
   const targets = toAnalyticsTargets(companySettings);
   const now = new Date();
   const weekStart = addDays(now, -7);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const { start: monthStart, end: nextMonthStart } = getZonedMonthRange(
+    now,
+    ACADEMY_TIME_ZONE,
+  );
 
   const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid');
   const studentById = new Map(data.students.map((student) => [Number(student.id), student]));
@@ -2504,9 +2906,19 @@ const buildAnalytics = async () => {
   const averageLtv = calculateAverage(ltvByStudent.map((item) => item.ltv)) ?? 0;
   const overduePayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'overdue');
   const overdueTasks = data.tasks.filter((task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now);
+  const activeStudentsWithAttendance = data.students.filter((student) => (
+    student.status === 'studying'
+    && (
+      Number(student.attendancePercent || 0) > 0
+      || hasStudentRiskFlag(student, 'attendance_below_70')
+    )
+  ));
   const lowAttendanceStudents = data.students.filter((student) => (
-    hasStudentRiskFlag(student, 'attendance_below_70')
-    || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance)
+    student.status === 'studying'
+    && (
+      hasStudentRiskFlag(student, 'attendance_below_70')
+      || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance)
+    )
   ));
   const lowScores = data.lessonSurveys.filter((survey) => Number(survey.score) < 3);
   const longThinkingLeads = data.leads.filter((lead) =>
@@ -2518,7 +2930,7 @@ const buildAnalytics = async () => {
       && student.exitReason
       && student.updatedAt
       && new Date(student.updatedAt) >= monthStart
-      && new Date(student.updatedAt) <= monthEnd)
+      && new Date(student.updatedAt) < nextMonthStart)
     .reduce<Record<string, number>>((acc, student) => {
       const reason = String(student.exitReason);
       acc[reason] = (acc[reason] ?? 0) + 1;
@@ -2605,7 +3017,7 @@ const buildAnalytics = async () => {
   const byTeacher = data.teachers.map((teacher) => {
     const teacherLessons = data.lessons.filter((lesson) => Number(lesson.teacherId) === Number(teacher.id) && lesson.status === 'conducted');
     const teacherSurveys = data.lessonSurveys.filter((survey) => Number(survey.teacherId) === Number(teacher.id));
-    const teacherStudents = data.students.filter((student) =>
+    const teacherStudents = activeStudentsWithAttendance.filter((student) =>
       data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id))
         .some((group) => Number(group.id) === Number(student.groupId)));
     const scoresByDate = [...teacherSurveys]
@@ -2647,24 +3059,35 @@ const buildAnalytics = async () => {
     capacity: Number(group.currentStudents || 0),
     maxCapacity: Number(group.maxStudents || 12),
     attendanceAvg: calculateAverage(
-      data.students.filter((student) => Number(student.groupId) === Number(group.id))
+      activeStudentsWithAttendance.filter((student) => (
+        Number(student.groupId) === Number(group.id)
+      ))
         .map((student) => Number(student.attendancePercent || 0)).filter(Number.isFinite),
     ) ?? 0,
     progressAvg: calculateAverage(
-      data.students.filter((student) => Number(student.groupId) === Number(group.id))
+      data.students.filter((student) => (
+        Number(student.groupId) === Number(group.id) && student.status === 'studying'
+      ))
         .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
     ) ?? 0,
   }));
 
-  // --- Cohort retention (TZ 3.4) as percentages. ---
+  // --- Retention by course: completed students are successful outcomes, while
+  // paused/expelled students represent churn from the enrolled cohort. ---
   const retentionByCourse = data.courses.map((course) => {
     const courseStudents = data.students.filter((student) => Number(student.courseId) === Number(course.id));
+    const retainedStudents = courseStudents.filter((student) => (
+      student.status === 'studying' || student.status === 'completed'
+    ));
     const monthsValues = courseStudents
       .filter((student) => student.enrolledAt)
       .map((student) => (now.getTime() - new Date(student.enrolledAt).getTime()) / (30 * 24 * 60 * 60 * 1000));
     return {
       courseId: course.id,
       courseName: course.name,
+      retentionPercent: courseStudents.length > 0
+        ? Math.round((retainedStudents.length / courseStudents.length) * 100)
+        : 0,
       avgStudyMonths: calculateAvgStudyMonths(monthsValues) ?? 0,
       studentCount: courseStudents.length,
     };
@@ -2686,7 +3109,7 @@ const buildAnalytics = async () => {
       cpl,
       averageLtv,
       ltvCac: cac ? Number((averageLtv / cac).toFixed(2)) : 0,
-      avgAttendance: calculateAverage(data.students
+      avgAttendance: calculateAverage(activeStudentsWithAttendance
         .map((student) => Number(student.attendancePercent || 0))
         .filter(Number.isFinite)) ?? 0,
       avgLessonScore,
@@ -2795,9 +3218,11 @@ const buildAdministrationDashboard = async () => {
   ]);
   const data = analytics.data;
   const now = new Date();
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const currentMonth = getZonedMonthRange(now, ACADEMY_TIME_ZONE);
+  const previousMonth = getZonedMonthRange(now, ACADEMY_TIME_ZONE, -1);
+  const currentMonthStart = currentMonth.start;
+  const nextMonthStart = currentMonth.end;
+  const previousMonthStart = previousMonth.start;
   const activeGroups = data.groups.filter((group) => ['open', 'in_progress'].includes(group.status));
   const activeTeachers = data.teachers.filter((teacher) => teacher.status === 'active');
   const activeUsers = users.filter((user) => user.isActive);
@@ -2836,12 +3261,10 @@ const buildAdministrationDashboard = async () => {
     (student) => inRange(student.enrolledAt || student.createdAt, previousMonthStart, currentMonthStart),
   ).length;
 
-  const monthStarts = Array.from({ length: 6 }, (_, index) =>
-    new Date(now.getFullYear(), now.getMonth() - (5 - index), 1));
-  const trends = monthStarts.map((start) => {
-    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+  const monthRanges = getTrailingZonedMonthRanges(now, ACADEMY_TIME_ZONE, 6);
+  const trends = monthRanges.map(({ start, end, key }) => {
     return {
-      month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+      month: key,
       revenue: paidPayments
         .filter((payment) => inRange(payment.paidAt, start, end))
         .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
@@ -2872,9 +3295,8 @@ const buildAdministrationDashboard = async () => {
     .sort((left, right) => right.students - left.students)
     .slice(0, 6);
 
-  const todayStart = startOfDay(now);
-  const tomorrowStart = addDays(todayStart, 1);
-  const dayAfterTomorrowStart = addDays(todayStart, 2);
+  const today = getZonedDayRange(now, ACADEMY_TIME_ZONE);
+  const tomorrow = getZonedDayRange(now, ACADEMY_TIME_ZONE, 1);
   const nonCancelledLessons = data.lessons.filter((lesson) =>
     lesson.status !== 'cancelled' && getValidDate(lesson.scheduledAt));
   const scheduledLessons = nonCancelledLessons.filter((lesson) =>
@@ -2966,9 +3388,9 @@ const buildAdministrationDashboard = async () => {
         ? Math.min(100, Math.round((occupiedActiveSeats / totalActiveCapacity) * 100))
         : 0,
       lessonsToday: nonCancelledLessons.filter((lesson) =>
-        inRange(lesson.scheduledAt, todayStart, tomorrowStart)).length,
+        inRange(lesson.scheduledAt, today.start, today.end)).length,
       lessonsTomorrow: nonCancelledLessons.filter((lesson) =>
-        inRange(lesson.scheduledAt, tomorrowStart, dayAfterTomorrowStart)).length,
+        inRange(lesson.scheduledAt, tomorrow.start, tomorrow.end)).length,
       revenueChangePercent: percentageChange(currentMonthRevenue, previousMonthRevenue),
       leadsChangePercent: percentageChange(currentMonthLeads, previousMonthLeads),
       studentsChangePercent: percentageChange(currentMonthStudents, previousMonthStudents),
@@ -2995,7 +3417,7 @@ const buildAdministrationDashboard = async () => {
 };
 
 const getMarketingWorkspaceDataset = async () => {
-  const [sources, leads, students, expenses, referrals] = await Promise.all([
+  const [sources, leads, students, expenses, referrals, referralBenefits] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name
       FROM academy_leads l
@@ -3009,9 +3431,10 @@ const getMarketingWorkspaceDataset = async () => {
       ORDER BY created_at DESC`),
     query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
     query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
+    query(`SELECT * FROM academy_referral_benefits ORDER BY created_at DESC`),
   ]);
 
-  return { sources, leads, students, expenses, referrals };
+  return { sources, leads, students, expenses, referrals, referralBenefits };
 };
 
 const buildMarketingAnalyticsPayload = (analytics: Row) => ({
@@ -3077,6 +3500,7 @@ router.get('/workspaces/sales', async (req, res) => {
       tasks: dataset.tasks,
       projects: dataset.projects,
       referrals: dataset.referrals,
+      referralBenefits: dataset.referralBenefits,
       constants: { ...academyConstants(), targets: toAnalyticsTargets(companySettings) },
     });
   } catch (error) {
@@ -3093,7 +3517,7 @@ router.get('/availability/slots', async (req, res) => {
     if (!schoolId || !courseId) {
       return res.status(400).json({ error: 'schoolAndCourseRequired' });
     }
-    const requestedFrom = parseDateOnly(req.query.from) ?? startOfDay(new Date());
+    const requestedFrom = parseDateOnly(req.query.from) ?? startOfAcademyDay(new Date());
     const days = Math.min(21, Math.max(1, Number(req.query.days) || 7));
     const result = await listAvailableSchoolSlots({
       schoolId,
@@ -3293,8 +3717,8 @@ router.get('/schedule/resource', async (req, res) => {
   try {
     const schoolId = parseId(req.query.schoolId);
     if (!schoolId) return res.status(400).json({ error: 'schoolRequired' });
-    const selectedDate = parseDateOnly(req.query.date) ?? startOfDay(new Date());
-    const nextDate = addDays(selectedDate, 1);
+    const selectedDate = parseDateOnly(req.query.date) ?? startOfAcademyDay(new Date());
+    const nextDate = getZonedDayRange(selectedDate, ACADEMY_TIME_ZONE, 1).start;
 
     const [school, rooms, groups, lessons] = await Promise.all([
       queryOne(`SELECT id, name FROM academy_schools WHERE id = $1`, [schoolId]),
@@ -3671,10 +4095,9 @@ router.post('/leads', async (req, res) => {
     const phones = normalizeLeadPhones(req.body.phoneNumbers ?? req.body.phone);
     const primaryPhone = phones[0]?.phone ?? null;
     const messenger = nullableText(req.body.messenger);
-    const sourceId = await resolveSourceId(req.body);
+    const requestedReferrerStudentId = toIdOrNull(req.body.referrerStudentId, 'referrerStudentId');
 
     if (!contactName) return res.status(400).json({ error: 'contactPersonRequired' });
-    if (!sourceId) return res.status(400).json({ error: 'sourceRequired' });
 
     const duplicate = await findDuplicate(phones, messenger);
     if (duplicate) {
@@ -3685,6 +4108,21 @@ router.post('/leads', async (req, res) => {
     }
 
     const lead = await withTransaction<Row>(async () => {
+      await lockLeadContactIdentities(phones, messenger);
+      const lockedDuplicate = await findDuplicate(phones, messenger);
+      if (lockedDuplicate) {
+        throw Object.assign(new Error('clientAlreadyExists'), {
+          statusCode: 409,
+          duplicate: lockedDuplicate,
+        });
+      }
+      const referrer = requestedReferrerStudentId
+        ? await assertValidReferrerStudent(requestedReferrerStudentId)
+        : null;
+      const sourceId = await resolveSourceId(req.body, referrer);
+      if (!sourceId) {
+        throw Object.assign(new Error('sourceRequired'), { statusCode: 400 });
+      }
       const studentAge = toIntegerOrNull(req.body.studentAge) as number | null | undefined;
       let courseId = parseId(req.body.courseId);
       if (!courseId && studentAge) {
@@ -3736,7 +4174,7 @@ router.post('/leads', async (req, res) => {
         comment: nullableText(req.body.comment) ?? null,
         enrolledGroupId,
         referralCode: nullableText(req.body.referralCode) ?? null,
-        referrerStudentId: parseId(req.body.referrerStudentId),
+        referrerStudentId: requestedReferrerStudentId,
         createdBy: req.user!.id,
       });
       await syncLeadPhones(createdLead.id, phones);
@@ -4119,13 +4557,37 @@ router.patch('/leads/:id', async (req, res) => {
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
-    const requestedGroupId = req.body.enrolledGroupId === undefined
-      ? undefined
-      : parseId(req.body.enrolledGroupId);
+    const hasRequestedGroup = req.body.enrolledGroupId !== undefined;
+    const requestedGroupId = hasRequestedGroup
+      ? toIdOrNull(req.body.enrolledGroupId, 'enrolledGroupId')
+      : undefined;
+    const hasRequestedCourse = req.body.courseId !== undefined;
+    const requestedCourseId = hasRequestedCourse
+      ? toIdOrNull(req.body.courseId, 'courseId')
+      : undefined;
+    const hasRequestedOfferCourse = req.body.offerCourseId !== undefined;
+    const requestedOfferCourseId = hasRequestedOfferCourse
+      ? toIdOrNull(req.body.offerCourseId, 'offerCourseId')
+      : undefined;
+    const hasRequestedReferrer = req.body.referrerStudentId !== undefined;
+    const requestedReferrerStudentId = hasRequestedReferrer
+      ? toIdOrNull(req.body.referrerStudentId, 'referrerStudentId')
+      : undefined;
+    const hasRequestedSource = req.body.sourceId !== undefined;
+    const requestedSourceId = hasRequestedSource
+      ? toIdOrNull(req.body.sourceId, 'sourceId')
+      : undefined;
+    if (hasRequestedSource && requestedSourceId === null) {
+      return res.status(400).json({ error: 'sourceRequired' });
+    }
     const requestedGroup = requestedGroupId
       ? await validateEnrollmentGroup(requestedGroupId, id)
       : null;
-    const requestedStatusCode = nullableText(req.body.statusCode);
+    const hasRequestedStatus = req.body.statusCode !== undefined;
+    const requestedStatusCode = hasRequestedStatus ? nullableText(req.body.statusCode) : undefined;
+    if (hasRequestedStatus && !requestedStatusCode) {
+      return res.status(400).json({ error: 'invalidLeadStatus' });
+    }
     if (requestedStatusCode && requestedStatusCode !== oldLead.statusCode) {
       const targetStatus = await getActiveLeadStatus(requestedStatusCode);
       if (!targetStatus) return res.status(400).json({ error: 'invalidLeadStatus' });
@@ -4135,12 +4597,18 @@ router.patch('/leads/:id', async (req, res) => {
     if (transitionError) return res.status(400).json({ error: transitionError });
     const merged = {
       nextStatus,
-      studentName: nullableText(req.body.studentName) ?? oldLead.studentName,
-      studentAge: toIntegerOrNull(req.body.studentAge) ?? oldLead.studentAge,
+      studentName: req.body.studentName === undefined
+        ? oldLead.studentName
+        : nullableText(req.body.studentName),
+      studentAge: req.body.studentAge === undefined
+        ? oldLead.studentAge
+        : toIntegerOrNull(req.body.studentAge),
       courseId: requestedGroup?.courseId
         ? Number(requestedGroup.courseId)
-        : parseId(req.body.courseId) ?? oldLead.courseId,
-      enrolledGroupId: req.body.enrolledGroupId === undefined
+        : hasRequestedCourse
+          ? requestedCourseId
+          : oldLead.courseId,
+      enrolledGroupId: !hasRequestedGroup
         ? oldLead.enrolledGroupId
         : requestedGroupId,
     };
@@ -4182,18 +4650,18 @@ router.patch('/leads/:id', async (req, res) => {
       courseId: req.body.enrolledGroupId !== undefined
         ? requestedGroup?.courseId
           ? Number(requestedGroup.courseId)
-          : req.body.courseId !== undefined
-            ? parseId(req.body.courseId)
-            : oldLead.courseId
-        : req.body.courseId !== undefined
-          ? parseId(req.body.courseId)
+          : hasRequestedCourse
+            ? requestedCourseId
+            : undefined
+        : hasRequestedCourse
+          ? requestedCourseId
           : undefined,
       schoolId: req.body.enrolledGroupId === undefined
         ? undefined
         : requestedGroup?.schoolId
           ? Number(requestedGroup.schoolId)
           : null,
-      sourceId: parseId(req.body.sourceId) ?? oldLead.sourceId,
+      sourceId: hasRequestedSource ? requestedSourceId : undefined,
       advertisingCampaign: nullableText(req.body.advertisingCampaign),
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
       statusCode: nullableText(req.body.statusCode),
@@ -4205,7 +4673,7 @@ router.patch('/leads/:id', async (req, res) => {
       firstContactResult: nullableText(req.body.firstContactResult),
       demoAttended: toBoolean(req.body.demoAttended),
       demoResult: nullableText(req.body.demoResult),
-      offerCourseId: parseId(req.body.offerCourseId),
+      offerCourseId: hasRequestedOfferCourse ? requestedOfferCourseId : undefined,
       offerPriceUzs: toIntegerOrNull(req.body.offerPriceUzs),
       offerDiscount: nullableText(req.body.offerDiscount),
       offerAt: nullableDate(req.body.offerAt),
@@ -4216,7 +4684,7 @@ router.patch('/leads/:id', async (req, res) => {
       warmMovedAt: nullableDate(req.body.warmMovedAt),
       noMailing: toBoolean(req.body.noMailing),
       referralCode: nullableText(req.body.referralCode),
-      referrerStudentId: parseId(req.body.referrerStudentId) };
+      referrerStudentId: hasRequestedReferrer ? requestedReferrerStudentId : undefined };
 
     const manager = managerId ? await getActiveSalesManager(managerId) : null;
     const managerChanged = Boolean(manager && Number(oldLead.managerId) !== Number(manager.id));
@@ -4249,6 +4717,74 @@ router.patch('/leads/:id', async (req, res) => {
         && previousVersion !== lockedVersion
       ) {
         throw Object.assign(new Error('leadChangedConcurrently'), { statusCode: 409 });
+      }
+      if (requestedPhones !== undefined || requestedMessenger !== undefined) {
+        await lockLeadContactIdentities(requestedPhones ?? [], requestedMessenger ?? null);
+        const lockedDuplicate = await findDuplicate(
+          requestedPhones ?? [],
+          requestedMessenger === undefined ? null : requestedMessenger,
+          { excludeLeadId: id },
+        );
+        if (lockedDuplicate) {
+          throw Object.assign(new Error('clientAlreadyExists'), {
+            statusCode: 409,
+            duplicate: lockedDuplicate,
+          });
+        }
+      }
+      if (requestedSourceId) {
+        const activeSource = await queryOne(
+          `SELECT id
+           FROM academy_lead_sources
+           WHERE id = $1 AND is_active = true
+           FOR SHARE`,
+          [requestedSourceId],
+        );
+        if (!activeSource) {
+          throw Object.assign(new Error('invalidLeadSource'), { statusCode: 400 });
+        }
+      }
+      if (requestedCourseId && !requestedGroup) {
+        const activeCourse = await queryOne(
+          `SELECT id FROM academy_courses WHERE id = $1 AND is_active = true FOR SHARE`,
+          [requestedCourseId],
+        );
+        if (!activeCourse) {
+          throw Object.assign(new Error('courseNotFound'), { statusCode: 400 });
+        }
+      }
+      if (requestedOfferCourseId) {
+        const activeOfferCourse = await queryOne(
+          `SELECT id FROM academy_courses WHERE id = $1 AND is_active = true FOR SHARE`,
+          [requestedOfferCourseId],
+        );
+        if (!activeOfferCourse) {
+          throw Object.assign(new Error('courseNotFound'), { statusCode: 400 });
+        }
+      }
+      if (hasRequestedReferrer) {
+        const oldReferrerId = lockedLead.referrerStudentId == null
+          ? null
+          : Number(lockedLead.referrerStudentId);
+        const nextReferrerId = requestedReferrerStudentId == null
+          ? null
+          : Number(requestedReferrerStudentId);
+        if (oldReferrerId !== nextReferrerId) {
+          const existingReward = await queryOne(
+            `SELECT id
+             FROM academy_referral_rewards
+             WHERE referred_lead_id = $1
+             LIMIT 1
+             FOR UPDATE`,
+            [id],
+          );
+          if (existingReward) {
+            throw Object.assign(new Error('referralAlreadyRewarded'), { statusCode: 409 });
+          }
+        }
+        if (requestedReferrerStudentId) {
+          await assertValidReferrerStudent(requestedReferrerStudentId, id);
+        }
       }
       const groupToReserve = Number(merged.enrolledGroupId || 0);
       const mustValidateCapacity = Boolean(requestedGroupId)
@@ -4651,6 +5187,115 @@ const prepareGroupMutation = async (options: {
       excludeGroupId: options.excludeGroupId,
     });
     options.values.teacherId = teacherId;
+  }
+};
+
+const normalizedGroupScheduleForComparison = (value: unknown) =>
+  normalizeScheduleItems(value)
+    .map((item) => ({
+      dayOfWeek: item.dayOfWeek,
+      startMinutes: item.startMinutes,
+      endMinutes: item.endMinutes,
+      schoolId: item.schoolId,
+    }))
+    .sort((left, right) =>
+      left.dayOfWeek - right.dayOfWeek
+      || left.startMinutes - right.startMinutes
+      || left.endMinutes - right.endMinutes
+      || Number(left.schoolId ?? 0) - Number(right.schoolId ?? 0));
+
+const groupLessonBackedFieldChanged = (field: string, nextValue: unknown, previousValue: unknown) => {
+  if (field === 'schedule') {
+    return JSON.stringify(normalizedGroupScheduleForComparison(nextValue))
+      !== JSON.stringify(normalizedGroupScheduleForComparison(previousValue));
+  }
+  if (field === 'startDate' || field === 'endDate') {
+    const timestamp = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null;
+      const parsed = new Date(value as string | number | Date).getTime();
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+    return timestamp(nextValue) !== timestamp(previousValue);
+  }
+  if (field === 'frequency') {
+    return nullableText(nextValue) !== nullableText(previousValue);
+  }
+  if (field === 'roomId' || field === 'teacherId') {
+    const id = (value: unknown) => Number(value) || null;
+    return id(nextValue) !== id(previousValue);
+  }
+  return Number(nextValue) !== Number(previousValue);
+};
+
+const assertGroupLifecycleUpdateAllowed = async (options: {
+  id: number;
+  values: Row;
+  row: Row;
+  autoAssignRequested: boolean;
+}) => {
+  const lessonBackedFields = [
+    'roomId',
+    'teacherId',
+    'schedule',
+    'startDate',
+    'endDate',
+    'lessonCount',
+    'lessonDurationMinutes',
+    'durationDays',
+    'frequency',
+  ];
+  const changesLessonBackedField = lessonBackedFields.some((field) =>
+    Object.prototype.hasOwnProperty.call(options.values, field)
+    && groupLessonBackedFieldChanged(field, options.values[field], options.row[field]));
+  const completesGroup = options.row.status !== 'completed' && options.values.status === 'completed';
+  if (!changesLessonBackedField && !completesGroup && !options.autoAssignRequested) return;
+
+  const lifecycle = await queryOne<{
+    hasLessons: boolean;
+    hasScheduledLessons: boolean;
+    hasStudyingStudents: boolean;
+    hasReservedLeads: boolean;
+  }>(
+    `SELECT
+       EXISTS (
+         SELECT 1 FROM academy_lessons lesson
+         WHERE lesson.group_id = $1
+       ) AS has_lessons,
+       EXISTS (
+         SELECT 1 FROM academy_lessons lesson
+         WHERE lesson.group_id = $1 AND lesson.status = 'scheduled'
+       ) AS has_scheduled_lessons,
+       EXISTS (
+         SELECT 1 FROM academy_students student
+         WHERE student.group_id = $1 AND student.status = 'studying'
+       ) AS has_studying_students,
+       EXISTS (
+         SELECT 1
+         FROM academy_leads reserved
+         WHERE reserved.enrolled_group_id = $1
+           AND reserved.status_code <> 'not_now'
+           AND COALESCE(reserved.is_archived, false) = false
+           AND NOT EXISTS (
+             SELECT 1
+             FROM academy_students existing_student
+             WHERE existing_student.lead_id = reserved.id
+           )
+       ) AS has_reserved_leads`,
+    [options.id],
+  );
+
+  if (lifecycle?.hasLessons && (changesLessonBackedField || options.autoAssignRequested)) {
+    throw Object.assign(new Error('groupLessonsLockSchedule'), { statusCode: 409 });
+  }
+  if (!completesGroup) return;
+  if (lifecycle?.hasScheduledLessons) {
+    throw Object.assign(new Error('groupHasScheduledLessons'), { statusCode: 409 });
+  }
+  if (lifecycle?.hasStudyingStudents) {
+    throw Object.assign(new Error('groupHasStudyingStudents'), { statusCode: 409 });
+  }
+  if (lifecycle?.hasReservedLeads) {
+    throw Object.assign(new Error('groupHasReservedLeads'), { statusCode: 409 });
   }
 };
 
@@ -5151,6 +5796,238 @@ const getLeadCountForStatusCode = async (statusCode: string) => {
   return Number(usage?.leadCount ?? 0);
 };
 
+const getLessonRoster = async (groupId: number, scheduledAt: Date | string, lock = false) => query(
+  `SELECT student.*
+   FROM academy_students student
+   WHERE COALESCE(student.enrolled_at, student.created_at) <= $2
+     AND COALESCE(
+       (
+         SELECT transfer.to_group_id
+         FROM academy_student_transfers transfer
+         WHERE transfer.student_id = student.id
+           AND transfer.created_at <= $2
+         ORDER BY transfer.created_at DESC, transfer.id DESC
+         LIMIT 1
+       ),
+       (
+         SELECT first_transfer.from_group_id
+         FROM academy_student_transfers first_transfer
+         WHERE first_transfer.student_id = student.id
+         ORDER BY first_transfer.created_at, first_transfer.id
+         LIMIT 1
+       ),
+       student.group_id
+     ) = $1
+     AND COALESCE(
+       (
+         SELECT history.to_status
+         FROM academy_student_status_history history
+         WHERE history.student_id = student.id
+           AND history.created_at <= $2
+         ORDER BY history.created_at DESC, history.id DESC
+         LIMIT 1
+       ),
+       'studying'
+     ) = 'studying'
+   ORDER BY student.id
+   ${lock ? 'FOR UPDATE OF student' : ''}`,
+  [groupId, scheduledAt],
+);
+
+router.get('/lessons/:id/attendance-roster', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
+  try {
+    const lessonId = parseId(req.params.id);
+    if (!lessonId) return res.status(400).json({ error: 'Invalid lesson id' });
+    const lesson = await queryOne(
+      `SELECT lesson.*, teacher.user_id AS teacher_user_id
+       FROM academy_lessons lesson
+       LEFT JOIN academy_teachers teacher
+         ON teacher.id = lesson.teacher_id AND teacher.status = 'active'
+       WHERE lesson.id = $1`,
+      [lessonId],
+    );
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+    if (
+      getAssignedWorkspaces(req.user).includes('teacher')
+      && !hasLeadershipAccess(req.user)
+      && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== Number(req.user!.id))
+    ) {
+      return res.status(403).json({ error: 'teacherOwnLessonRosterOnly' });
+    }
+    const [students, attendance] = await Promise.all([
+      getLessonRoster(Number(lesson.groupId), lesson.scheduledAt),
+      query(`SELECT * FROM academy_attendance WHERE lesson_id = $1 ORDER BY student_id`, [lessonId]),
+    ]);
+    res.json({ lesson, students, attendance });
+  } catch (error: any) {
+    logger.error('Failed to load lesson attendance roster', { error, lessonId: req.params.id });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load attendance roster' });
+  }
+});
+
+router.post('/lessons/:id/reschedule', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
+  try {
+    const lessonId = parseId(req.params.id);
+    if (!lessonId) return res.status(400).json({ error: 'Invalid lesson id' });
+    const nextScheduledAt = parseOptionalDate(req.body.scheduledAt, 'scheduledAt');
+    if (!(nextScheduledAt instanceof Date)) {
+      return res.status(400).json({ error: 'rescheduleDateRequired' });
+    }
+    if (nextScheduledAt.getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'rescheduleDateMustBeFuture' });
+    }
+    const reason = nullableText(req.body.reason);
+    if (!reason || reason.length > 500) {
+      return res.status(400).json({ error: 'rescheduleReasonRequired' });
+    }
+    if (req.body.shiftFollowing !== undefined && typeof req.body.shiftFollowing !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid shiftFollowing' });
+    }
+    const shiftFollowing = req.body.shiftFollowing !== false;
+
+    const result = await withTransaction(async () => {
+      await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+      const lesson = await queryOne(
+        `SELECT lesson.*, teacher.user_id AS teacher_user_id
+         FROM academy_lessons lesson
+         LEFT JOIN academy_teachers teacher
+           ON teacher.id = lesson.teacher_id AND teacher.status = 'active'
+         WHERE lesson.id = $1
+         FOR UPDATE OF lesson`,
+        [lessonId],
+      );
+      if (!lesson) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
+      if (lesson.status !== 'scheduled') {
+        throw Object.assign(new Error('onlyScheduledLessonCanBeRescheduled'), { statusCode: 409 });
+      }
+      if (
+        getAssignedWorkspaces(req.user).includes('teacher')
+        && !hasLeadershipAccess(req.user)
+        && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== Number(req.user!.id))
+      ) {
+        throw Object.assign(new Error('teacherOwnLessonRescheduleOnly'), { statusCode: 403 });
+      }
+      const previousScheduledAt = new Date(lesson.scheduledAt);
+      if (nextScheduledAt.getTime() === previousScheduledAt.getTime()) {
+        throw Object.assign(new Error('rescheduleDateMustChange'), { statusCode: 400 });
+      }
+      const deltaMs = nextScheduledAt.getTime() - previousScheduledAt.getTime();
+      if (shiftFollowing) {
+        const previousSlot = getAcademySlotPosition(previousScheduledAt);
+        const nextSlot = getAcademySlotPosition(nextScheduledAt);
+        if (
+          previousSlot.dayOfWeek !== nextSlot.dayOfWeek
+          || previousSlot.startMinutes !== nextSlot.startMinutes
+        ) {
+          throw Object.assign(new Error('rescheduleChainMustPreserveSchedule'), { statusCode: 409 });
+        }
+      }
+      const affected = shiftFollowing
+        ? await query(
+          `SELECT affected_lesson.*, affected_teacher.user_id AS teacher_user_id
+           FROM academy_lessons affected_lesson
+           LEFT JOIN academy_teachers affected_teacher
+             ON affected_teacher.id = affected_lesson.teacher_id
+           WHERE affected_lesson.group_id = $1
+             AND affected_lesson.status = 'scheduled'
+             AND affected_lesson.scheduled_at >= $2
+           ORDER BY affected_lesson.scheduled_at, affected_lesson.id
+           FOR UPDATE OF affected_lesson`,
+          [lesson.groupId, previousScheduledAt],
+        )
+        : [lesson];
+      if (!affected.some((item) => Number(item.id) === lessonId)) {
+        throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
+      }
+      if (
+        getAssignedWorkspaces(req.user).includes('teacher')
+        && !hasLeadershipAccess(req.user)
+        && affected.some((item) => Number(item.teacherUserId) !== Number(req.user!.id))
+      ) {
+        throw Object.assign(new Error('teacherOwnLessonRescheduleOnly'), { statusCode: 403 });
+      }
+      const affectedLessonIds = affected.map((item) => Number(item.id));
+      const lessonWithAttendance = await queryOne(
+        `SELECT lesson_id
+         FROM academy_attendance
+         WHERE lesson_id = ANY($1::int[])
+         LIMIT 1`,
+        [affectedLessonIds],
+      );
+      if (lessonWithAttendance) {
+        throw Object.assign(new Error('lessonWithAttendanceCannotBeRescheduled'), { statusCode: 409 });
+      }
+
+      const updateOrder = deltaMs > 0 ? [...affected].reverse() : affected;
+      const updatedLessons: Row[] = [];
+      for (const affectedLesson of updateOrder) {
+        const oldDate = new Date(affectedLesson.scheduledAt);
+        const newDate = new Date(oldDate.getTime() + deltaMs);
+        if (newDate.getTime() <= Date.now()) {
+          throw Object.assign(new Error('rescheduleDateMustBeFuture'), { statusCode: 400 });
+        }
+        const values: Row = { scheduledAt: newDate };
+        await prepareLessonMutation({
+          values,
+          oldRow: affectedLesson,
+          excludeLessonId: Number(affectedLesson.id),
+          forceAutoAssign: false,
+        });
+        const updated = await updateRow('academy_lessons', Number(affectedLesson.id), values);
+        if (!updated) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
+        await insertRow('academy_lesson_reschedules', {
+          lessonId: Number(affectedLesson.id),
+          previousScheduledAt: oldDate,
+          nextScheduledAt: newDate,
+          reason,
+          changedBy: req.user!.id,
+        });
+        updatedLessons.push(updated);
+      }
+
+      await query(
+        `UPDATE academy_groups academy_group
+         SET end_date = (
+               SELECT MAX(group_lesson.scheduled_at)
+               FROM academy_lessons group_lesson
+               WHERE group_lesson.group_id = academy_group.id
+                 AND group_lesson.status <> 'cancelled'
+             ),
+             updated_at = NOW()
+         WHERE academy_group.id = $1`,
+        [lesson.groupId],
+      );
+      updatedLessons.sort((left, right) => (
+        new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
+      ));
+      return {
+        previousLesson: lesson,
+        lesson: updatedLessons.find((item) => Number(item.id) === lessonId),
+        lessons: updatedLessons,
+      };
+    });
+
+    await createAudit(
+      req,
+      'RESCHEDULE_ACADEMY_LESSON',
+      'academy_lesson',
+      lessonId,
+      { lesson: result.lesson, shiftedLessonIds: result.lessons.map((lesson) => lesson.id), reason },
+      result.previousLesson,
+    );
+    res.json({
+      lesson: result.lesson,
+      lessons: result.lessons,
+      shiftedCount: result.lessons.length,
+    });
+  } catch (error: any) {
+    logger.error('Failed to reschedule lesson', { error, lessonId: req.params.id });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to reschedule lesson' });
+  }
+});
+
 router.post('/lessons/:id/attendance', async (req, res) => {
   if (!ensureOperationsAccess(req, res)) return;
   try {
@@ -5164,7 +6041,12 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       return res.status(400).json({ error: 'Invalid lesson status' });
     }
 
-    const normalizedItems: Array<Row & { studentId: number; status: 'present' | 'absent' }> = [];
+    const normalizedItems: Array<Row & {
+      studentId: number;
+      status: 'present' | 'absent';
+      hasProjectUrl: boolean;
+      hasNote: boolean;
+    }> = [];
     const seenStudentIds = new Set<number>();
     for (const item of req.body.attendance) {
       const studentId = parseId(item?.studentId);
@@ -5175,7 +6057,13 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         return res.status(400).json({ error: 'Duplicate attendance student' });
       }
       seenStudentIds.add(studentId);
-      normalizedItems.push({ ...item, studentId, status: item.status });
+      normalizedItems.push({
+        ...item,
+        studentId,
+        status: item.status,
+        hasProjectUrl: Object.prototype.hasOwnProperty.call(item, 'projectUrl'),
+        hasNote: Object.prototype.hasOwnProperty.call(item, 'note'),
+      });
     }
 
     const result = await withTransaction(async () => {
@@ -5196,45 +6084,26 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         && !hasLeadershipAccess(req.user)
         && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)
       ) {
-        throw Object.assign(new Error('Teacher can mark only own lessons'), { statusCode: 403 });
+        throw Object.assign(new Error('teacherOwnLessonAttendanceOnly'), { statusCode: 403 });
+      }
+      if (lesson.status === 'conducted' && requestedLessonStatus === 'scheduled') {
+        throw Object.assign(new Error('conductedLessonCannotBeReopened'), { statusCode: 409 });
+      }
+      if (requestedLessonStatus === 'scheduled') {
+        throw Object.assign(new Error('attendanceDraftNotSupported'), { statusCode: 400 });
+      }
+      if (
+        requestedLessonStatus === 'conducted'
+        && lesson.status !== 'conducted'
+        && new Date(lesson.scheduledAt).getTime() > Date.now()
+      ) {
+        throw Object.assign(new Error('lessonNotStarted'), { statusCode: 409 });
       }
 
-      const groupStudents = await query(
-        `SELECT student.*
-         FROM academy_students student
-         WHERE COALESCE(student.enrolled_at, student.created_at) <= $2
-           AND COALESCE(
-             (
-               SELECT transfer.to_group_id
-               FROM academy_student_transfers transfer
-               WHERE transfer.student_id = student.id
-                 AND transfer.created_at <= $2
-               ORDER BY transfer.created_at DESC, transfer.id DESC
-               LIMIT 1
-             ),
-             (
-               SELECT first_transfer.from_group_id
-               FROM academy_student_transfers first_transfer
-               WHERE first_transfer.student_id = student.id
-               ORDER BY first_transfer.created_at, first_transfer.id
-               LIMIT 1
-             ),
-             student.group_id
-           ) = $1
-           AND COALESCE(
-             (
-               SELECT history.to_status
-               FROM academy_student_status_history history
-               WHERE history.student_id = student.id
-                 AND history.created_at <= $2
-               ORDER BY history.created_at DESC, history.id DESC
-               LIMIT 1
-             ),
-             'studying'
-           ) = 'studying'
-         ORDER BY student.id
-         FOR UPDATE OF student`,
-        [lesson.groupId, lesson.scheduledAt],
+      const groupStudents = await getLessonRoster(
+        Number(lesson.groupId),
+        lesson.scheduledAt,
+        true,
       );
       if (groupStudents.length > 0 && normalizedItems.length === 0) {
         throw Object.assign(new Error('attendanceRequired'), { statusCode: 400 });
@@ -5242,7 +6111,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       const studentsById = new Map(groupStudents.map((student) => [Number(student.id), student]));
       if (normalizedItems.some((item) => !studentsById.has(item.studentId))) {
         throw Object.assign(
-          new Error('Attendance can include only active students from this lesson group'),
+          new Error('attendanceStudentsOutsideLesson'),
           { statusCode: 403 },
         );
       }
@@ -5261,8 +6130,14 @@ router.post('/lessons/:id/attendance', async (req, res) => {
            ON CONFLICT (lesson_id, student_id)
            DO UPDATE SET
              status = EXCLUDED.status,
-             project_url = EXCLUDED.project_url,
-             note = EXCLUDED.note,
+             project_url = CASE
+               WHEN $7::boolean THEN EXCLUDED.project_url
+               ELSE academy_attendance.project_url
+             END,
+             note = CASE
+               WHEN $8::boolean THEN EXCLUDED.note
+               ELSE academy_attendance.note
+             END,
              marked_by = EXCLUDED.marked_by,
              updated_at = NOW()
            RETURNING *`,
@@ -5273,6 +6148,8 @@ router.post('/lessons/:id/attendance', async (req, res) => {
             nullableText(item.projectUrl) ?? null,
             nullableText(item.note) ?? null,
             req.user!.id,
+            item.hasProjectUrl,
+            item.hasNote,
           ],
         );
         saved.push(rows[0]);
@@ -5293,8 +6170,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       const absenceAlerts: Row[] = [];
       if (requestedLessonStatus === 'conducted') {
         for (const item of normalizedItems) {
-          if (item.status !== 'absent') continue;
-          const recentAbsences = await query<{ status: string }>(
+          const recentAttendance = await query<{ status: string }>(
             `SELECT a.status
              FROM academy_lessons l
              JOIN academy_attendance a ON a.lesson_id = l.id AND a.student_id = $2
@@ -5316,7 +6192,6 @@ router.post('/lessons/:id/attendance', async (req, res) => {
              LIMIT 3`,
             [lesson.groupId, item.studentId],
           );
-          if (recentAbsences.length !== 3 || recentAbsences.some((row) => row.status !== 'absent')) continue;
           const existingTask = await queryOne(
             `SELECT id
              FROM academy_tasks
@@ -5327,6 +6202,21 @@ router.post('/lessons/:id/attendance', async (req, res) => {
              LIMIT 1`,
             [item.studentId],
           );
+          const hasConsecutiveAbsenceRisk = recentAttendance.length === 3
+            && recentAttendance.every((row) => row.status === 'absent');
+          if (!hasConsecutiveAbsenceRisk) {
+            if (existingTask) {
+              await query(
+                `UPDATE academy_tasks
+                 SET status = 'done',
+                     completed_at = COALESCE(completed_at, NOW()),
+                     updated_at = NOW()
+                 WHERE id = $1 AND status <> 'done'`,
+                [existingTask.id],
+              );
+            }
+            continue;
+          }
           if (existingTask) continue;
           const student = studentsById.get(item.studentId)!;
           await createTask('3 пропуска подряд: позвонить родителю', {
@@ -5344,10 +6234,16 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       }
 
       if (lesson.status !== 'conducted' && updatedLesson?.status === 'conducted') {
+        const presentStudentIds = new Set(
+          normalizedItems
+            .filter((item) => item.status === 'present')
+            .map((item) => item.studentId),
+        );
         for (const student of groupStudents) {
+          if (!presentStudentIds.has(Number(student.id))) continue;
           await createOutbox(
-            Number(student.studentAge || 0) <= 10 ? 'whatsapp' : 'telegram',
-            student.messenger || student.phone,
+            'whatsapp',
+            student.phone,
             'Оцените сегодняшний урок 01 Academy: /survey',
             {
               scheduledAt: addMinutes(
@@ -5503,6 +6399,7 @@ router.patch('/students/:id/status', async (req, res) => {
           changedBy: req.user!.id,
           comment: nullableText(req.body.comment) ?? null,
         });
+        await recalculateStudentMetrics(id);
       }
       return { current: lockedStudent, student: updatedStudent };
     });
@@ -5640,6 +6537,83 @@ router.post('/payments', async (req, res) => {
         }
       }
 
+      const referralLead = lead ?? (paymentLeadId
+        ? await queryOne(
+          `SELECT id, referrer_student_id
+           FROM academy_leads
+           WHERE id = $1`,
+          [paymentLeadId],
+        )
+        : null);
+      let effectivePaymentDiscount = req.body.discount === undefined && pendingPayment?.discount
+        ? String(pendingPayment.discount)
+        : paymentDiscount;
+      if (!PAYMENT_DISCOUNTS.includes(effectivePaymentDiscount as typeof PAYMENT_DISCOUNTS[number])) {
+        throw Object.assign(new Error('Invalid payment discount'), { statusCode: 400 });
+      }
+
+      let firstReferralPaymentEligible = false;
+      let pendingDiscountBenefit: Row | undefined;
+      if (status === 'paid') {
+        const referrerId = referralLead?.referrerStudentId
+          ? Number(referralLead.referrerStudentId)
+          : null;
+        if (referrerId && referrerId !== Number(resolvedStudentId)) {
+          const validReferrer = await queryOne(
+            `SELECT id FROM academy_students WHERE id = $1 FOR SHARE`,
+            [referrerId],
+          );
+          if (validReferrer) {
+            const previousPaidPayment = await queryOne(
+              `SELECT id
+               FROM academy_payments
+               WHERE status = 'paid'
+                 AND ($3::int IS NULL OR id <> $3)
+                 AND (
+                   ($1::int IS NOT NULL AND lead_id = $1)
+                   OR ($2::int IS NOT NULL AND student_id = $2)
+                 )
+               LIMIT 1`,
+              [paymentLeadId, resolvedStudentId, pendingPayment?.id ?? null],
+            );
+            firstReferralPaymentEligible = !previousPaidPayment;
+          }
+        }
+
+        if (firstReferralPaymentEligible) {
+          if (effectivePaymentDiscount === 'none') {
+            effectivePaymentDiscount = 'referral_15';
+          }
+        } else if (
+          resolvedStudentId
+          && (effectivePaymentDiscount === 'none' || effectivePaymentDiscount === 'referral_15')
+        ) {
+          pendingDiscountBenefit = await queryOne(
+            `SELECT *
+             FROM academy_referral_benefits
+             WHERE student_id = $1
+               AND benefit_type = 'next_payment_discount_15'
+               AND status = 'pending'
+             LIMIT 1
+             FOR UPDATE`,
+            [resolvedStudentId],
+          );
+          if (pendingDiscountBenefit && effectivePaymentDiscount === 'none') {
+            effectivePaymentDiscount = 'referral_15';
+          }
+        }
+
+        if (
+          effectivePaymentDiscount === 'referral_15'
+          && !firstReferralPaymentEligible
+          && !pendingDiscountBenefit
+        ) {
+          throw Object.assign(new Error('referralDiscountNotAvailable'), { statusCode: 409 });
+        }
+      } else if (effectivePaymentDiscount === 'referral_15') {
+        throw Object.assign(new Error('referralDiscountRequiresPaidPayment'), { statusCode: 409 });
+      }
+
       const paymentValues = {
         leadId: paymentLeadId,
         studentId: resolvedStudentId,
@@ -5649,7 +6623,7 @@ router.post('/payments', async (req, res) => {
         method: paymentMethod,
         paidAt,
         period: paymentPeriod,
-        discount: paymentDiscount,
+        discount: effectivePaymentDiscount,
         status,
         dueAt: requestedDueAt,
         paidUntil,
@@ -5661,6 +6635,10 @@ router.post('/payments', async (req, res) => {
         ? await updateRow('academy_payments', Number(pendingPayment.id), paymentValues)
         : await insertRow('academy_payments', paymentValues);
       if (!payment) throw Object.assign(new Error('Failed to save payment'), { statusCode: 500 });
+
+      if (pendingDiscountBenefit) {
+        await consumeReferralBenefit(Number(pendingDiscountBenefit.id), Number(payment.id));
+      }
 
       if (pendingPayment) {
         await query(
@@ -5679,6 +6657,16 @@ router.post('/payments', async (req, res) => {
       }
       const paidStudentId = student?.id ?? studentId;
       if (status === 'paid' && paidStudentId) {
+        if (firstReferralPaymentEligible) {
+          await ensureReferralBenefit({
+            studentId: Number(paidStudentId),
+            benefitType: 'referred_first_payment_discount_15',
+            status: effectivePaymentDiscount === 'referral_15' ? 'consumed' : 'superseded',
+            sourcePaymentId: Number(payment.id),
+            consumedByPaymentId: Number(payment.id),
+            consumedAt: new Date(),
+          });
+        }
         await advanceStudentNextPaymentAt(
           Number(paidStudentId),
           payment.paidUntil ?? paidUntil,
@@ -6132,6 +7120,28 @@ const readTeacherCourseIds = (value: unknown): number[] => {
 };
 
 const syncCourseTeacherAssignments = async (courseId: number, selectedTeacherIds: number[]) => {
+  // Keep course capabilities in sync with live teaching obligations. The same
+  // scheduling lock is used by group/lesson mutations, so a new obligation
+  // cannot appear between this dependency check and the teacher updates.
+  await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+  const requiredAssignments = await query<{ teacherId: number }>(
+    `SELECT DISTINCT assignment.teacher_id
+     FROM (
+       SELECT teacher_id
+       FROM academy_groups
+       WHERE course_id = $1
+         AND status IN ('open', 'in_progress')
+         AND teacher_id IS NOT NULL
+       UNION
+       SELECT teacher_id
+       FROM academy_lessons
+       WHERE course_id = $1
+         AND status = 'scheduled'
+         AND teacher_id IS NOT NULL
+     ) assignment
+     ORDER BY assignment.teacher_id`,
+    [courseId],
+  );
   const teachers = await query(
     `SELECT * FROM academy_teachers ORDER BY id FOR UPDATE`,
   );
@@ -6140,10 +7150,11 @@ const syncCourseTeacherAssignments = async (courseId: number, selectedTeacherIds
     throw Object.assign(new Error('One or more teachers were not found'), { statusCode: 400 });
   }
   const selected = new Set(selectedTeacherIds);
+  const required = new Set(requiredAssignments.map((assignment) => Number(assignment.teacherId)));
   for (const teacher of teachers) {
     const previousIds = readTeacherCourseIds(teacher.courseIds);
     const nextIds = previousIds.filter((id) => id !== courseId);
-    if (selected.has(Number(teacher.id))) nextIds.push(courseId);
+    if (selected.has(Number(teacher.id)) || required.has(Number(teacher.id))) nextIds.push(courseId);
     nextIds.sort((left, right) => left - right);
     if (
       previousIds.length !== nextIds.length
@@ -6585,6 +7596,14 @@ registerSimpleCrud('groups', 'academy_groups', [
 ], {
   orderBy: 'created_at DESC',
   requireAdministration: true,
+  beforeUpdate: async ({ id, values, row, req }) => {
+    await assertGroupLifecycleUpdateAllowed({
+      id,
+      values,
+      row,
+      autoAssignRequested: req.body.autoAssign === true,
+    });
+  },
   beforeDelete: async ({ id }) => {
     const usage = await queryOne<{ inUse: boolean }>(
       `SELECT (
@@ -6610,6 +7629,69 @@ registerSimpleCrud('sources', 'academy_lead_sources', [
   orderBy: 'name',
   listWhere: 'is_active = true',
   allowedWorkspaces: SOURCE_MANAGEMENT_WORKSPACES,
+  beforeCreate: async ({ values }) => {
+    const code = nullableText(values.code)?.toLowerCase();
+    const name = nullableText(values.name);
+    const channel = nullableText(values.channel)?.toLowerCase();
+    if (
+      !code
+      || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(code)
+      || !name
+      || name.length > 255
+      || !channel
+      || channel.length > 120
+      || Number(values.costPerLeadUzs ?? 0) < 0
+    ) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    values.code = code;
+    values.name = name;
+    values.channel = channel;
+    values.isSystem = false;
+    values.isActive = values.isActive ?? true;
+  },
+  beforeUpdate: async ({ values, row }) => {
+    if (
+      values.isSystem !== undefined
+      && Boolean(values.isSystem) !== Boolean(row.isSystem)
+    ) {
+      throw Object.assign(new Error('systemLeadSourceProtected'), { statusCode: 409 });
+    }
+    if (
+      row.isSystem === true
+      && (
+        (values.code !== undefined && nullableText(values.code)?.toLowerCase() !== String(row.code).toLowerCase())
+        || (values.channel !== undefined && nullableText(values.channel)?.toLowerCase() !== String(row.channel).toLowerCase())
+        || values.isActive === false
+      )
+    ) {
+      throw Object.assign(new Error('systemLeadSourceProtected'), { statusCode: 409 });
+    }
+    const code = nullableText(values.code ?? row.code)?.toLowerCase();
+    const name = nullableText(values.name ?? row.name);
+    const channel = nullableText(values.channel ?? row.channel)?.toLowerCase();
+    const cost = Number(values.costPerLeadUzs ?? row.costPerLeadUzs ?? 0);
+    if (
+      !code
+      || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(code)
+      || !name
+      || name.length > 255
+      || !channel
+      || channel.length > 120
+      || !Number.isSafeInteger(cost)
+      || cost < 0
+    ) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    if (values.code !== undefined) values.code = code;
+    if (values.name !== undefined) values.name = name;
+    if (values.channel !== undefined) values.channel = channel;
+  },
+  beforeDelete: async ({ row }) => {
+    if (row.isSystem === true) {
+      throw Object.assign(new Error('systemLeadSourceProtected'), { statusCode: 409 });
+    }
+  },
 });
 
 registerSimpleCrud('lessons', 'academy_lessons', [
@@ -6626,6 +7708,7 @@ registerSimpleCrud('lessons', 'academy_lessons', [
          EXISTS (SELECT 1 FROM academy_attendance WHERE lesson_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lesson_surveys WHERE lesson_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lesson_status_history WHERE lesson_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lesson_reschedules WHERE lesson_id = $1)
          OR EXISTS (SELECT 1 FROM academy_portfolio_projects WHERE lesson_id = $1)
        ) AS in_use`,
       [id],

@@ -45,6 +45,7 @@ describe('user route validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorage.getUser.mockResolvedValue(administrationUser);
+    mockStorage.createAuditLog.mockResolvedValue(undefined);
   });
 
   const createApp = async () => {

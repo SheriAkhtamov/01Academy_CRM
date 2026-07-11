@@ -638,7 +638,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-2 px-4 pb-4 pt-0">
             {selectedFunnel.map((item, index) => {
-              const width = Math.max(28, Math.round((item.count / maxFunnelValue) * 100));
+              const width = Math.max(0, Math.min(100, Math.round((item.count / maxFunnelValue) * 100)));
               return (
                 <div key={item.code} className="flex flex-col gap-1">
                   <div className="flex items-center justify-between gap-2">
@@ -808,8 +808,8 @@ export default function AdminDashboardPage() {
                     <p className="truncate text-sm font-medium">{activityLabel(item.type)}</p>
                     <p className="truncate text-xs text-slate-500">
                       {item.subject || t('noData')}
-                      {item.amountUzs ? ` · ${fullMoney(item.amountUzs)}` : ''}
-                      {!item.amountUzs && item.meta ? ` · ${item.meta}` : ''}
+                      {item.amountUzs != null ? ` · ${fullMoney(item.amountUzs)}` : ''}
+                      {item.amountUzs == null && item.meta ? ` · ${item.meta}` : ''}
                     </p>
                   </div>
                   <time className="shrink-0 text-[11px] text-slate-400" dateTime={item.occurredAt}>

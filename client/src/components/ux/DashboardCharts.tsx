@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from '@/hooks/useTranslation';
+import { buildMonthlyRevenueData } from '@/lib/dashboardCharts';
 
 interface DashboardChartsProps {
   payments?: any[];
@@ -24,20 +25,13 @@ interface DashboardChartsProps {
 }
 
 export function DashboardCharts({ payments = [], funnel = [], leadStatusName, statusColor, money }: DashboardChartsProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
 
-  const revenueData = useMemo(() => {
-    const byMonth: Record<string, number> = {};
-    payments.forEach((payment) => {
-      const date = payment.paidAt || payment.createdAt;
-      if (!date) return;
-      const month = new Date(date).toLocaleString('ru-RU', { month: 'short', year: '2-digit' });
-      byMonth[month] = (byMonth[month] || 0) + Number(payment.amountUzs || 0);
-    });
-    return Object.entries(byMonth)
-      .map(([month, amount]) => ({ month, amount }))
-      .slice(-6);
-  }, [payments]);
+  const revenueData = useMemo(
+    () => buildMonthlyRevenueData(payments, locale),
+    [locale, payments],
+  );
 
   const funnelData = useMemo(
     () =>

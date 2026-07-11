@@ -256,10 +256,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
             user: authService.sanitizeUser(updatedUser),
             loginChanged: oldEmail.toLowerCase() !== updatedUser.email.toLowerCase(),
             passwordChanged,
-        }).catch((error) => logger.error('Failed to audit own credential update', {
-            error,
-            userId: currentUser.id,
-        }));
+        });
     } catch (error: any) {
         logger.error('Failed to update own settings', { error, userId: req.user?.id });
         if (error?.code === '23505' && String(error?.constraint ?? '').includes('users_email_unique')) {

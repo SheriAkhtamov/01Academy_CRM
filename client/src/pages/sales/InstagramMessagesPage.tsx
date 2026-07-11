@@ -1257,7 +1257,7 @@ function LeadPanel({
             variant="outline"
             className="flex-1"
             onClick={() => {
-              editingDraft.current = false;
+              dirtyDraftFields.current.clear();
               setDraft(baselineDraft);
               hydratedKey.current = leadSnapshotKey;
             }}

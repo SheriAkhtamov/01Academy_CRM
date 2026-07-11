@@ -75,6 +75,22 @@ describe("outbox worker", () => {
     expect(failureParams[3]).toBe(5);
   });
 
+  it("fails a permanently invalid recipient immediately without retrying it", async () => {
+    mocks.sendTelegramMessage.mockResolvedValue({
+      ok: false,
+      retryable: false,
+      error: "invalid chat id",
+    });
+
+    await processOutbox();
+
+    const failureParams = mocks.poolQuery.mock.calls[1][1];
+    expect(failureParams[0]).toBe("failed");
+    expect(failureParams[1]).toBe("invalid chat id");
+    expect(failureParams[2]).toBeNull();
+    expect(failureParams[3]).toBe(1);
+  });
+
   it("marks a successfully dispatched claimed row as sent", async () => {
     mocks.sendTelegramMessage.mockResolvedValue({ ok: true, messageId: 99 });
 

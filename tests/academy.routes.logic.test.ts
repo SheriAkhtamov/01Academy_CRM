@@ -149,6 +149,54 @@ describe('academy route logic boundaries', () => {
     expect(response.body.students).toEqual([]);
   });
 
+  it('scopes a leadership account to its own teacher profile inside the teacher workspace', async () => {
+    mocks.actor = {
+      id: 1,
+      workspace: 'administration',
+      workspaces: ['administration', 'teacher'],
+      position: 'Глобальный администратор',
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) {
+        return { rows: [{ id: 4 }] };
+      }
+      if (sql.includes('SELECT * FROM academy_teachers WHERE id = $1')) {
+        return { rows: [{ id: 4, user_id: 1, full_name: 'Шерзод Ахтамов' }] };
+      }
+      if (sql.includes('FROM academy_groups g')) {
+        return sql.includes('WHERE g.teacher_id = $1')
+          ? { rows: [{ id: 20, name: 'My group', teacher_id: 4 }] }
+          : { rows: [{ id: 999, name: 'Another teacher group', teacher_id: 8 }] };
+      }
+      if (sql.includes('SELECT st.*')) {
+        return sql.includes('st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)')
+          ? { rows: [{ id: 30, student_name: 'My student', group_id: 20 }] }
+          : { rows: [{ id: 999, student_name: 'Another teacher student', group_id: 99 }] };
+      }
+      if (sql.includes('SELECT l.*, g.name AS group_name')) {
+        return sql.includes('AND l.teacher_id = $1')
+          ? { rows: [{ id: 40, group_id: 20, teacher_id: 4, topic: 'My lesson' }] }
+          : { rows: [{ id: 999, group_id: 99, teacher_id: 8, topic: 'Another lesson' }] };
+      }
+      if (sql.includes('SELECT a.*') && sql.includes('FROM academy_attendance')) {
+        expect(values).toEqual([4]);
+        return emptyResult();
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/workspaces/teacher');
+
+    expect(response.status).toBe(200);
+    expect(response.body.teacher).toMatchObject({ id: 4, fullName: 'Шерзод Ахтамов' });
+    expect(response.body.groups).toEqual([expect.objectContaining({ id: 20, teacherId: 4 })]);
+    expect(response.body.students).toEqual([expect.objectContaining({ id: 30, groupId: 20 })]);
+    expect(response.body.lessons).toEqual([expect.objectContaining({ id: 40, teacherId: 4 })]);
+    expect(mocks.poolQuery.mock.calls.some(([sql, values]) => (
+      String(sql).includes('AND l.teacher_id = $1') && Number(values?.[0]) === 4
+    ))).toBe(true);
+  });
+
   it('does not let a sales-only user mark lesson attendance', async () => {
     mocks.actor = { id: 8, workspace: 'sales', workspaces: ['sales'] };
 

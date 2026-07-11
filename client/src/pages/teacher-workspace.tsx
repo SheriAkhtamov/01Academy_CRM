@@ -11,10 +11,10 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import {
   WeekScheduleEditor,
   type WeekScheduleItem,
@@ -1123,46 +1123,26 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
         {/* Attendance Tab */}
         <TabsContent value="attendance" className="mt-6 space-y-4">
+          <AttendanceCalendar
+            lessons={attendanceLessons}
+            selectedLessonId={selectedLessonId}
+            now={now}
+            disabled={lessonMutationPending}
+            onSelectLesson={(lessonId) => {
+              if (lessonMutationPending) return;
+              attendanceDraftDirty.current = false;
+              attendanceNoteDirty.current = false;
+              setSelectedLessonId(lessonId);
+              setAttendanceDraft({});
+              setAttendanceNote('');
+            }}
+          />
+
           <Card className="border-border/70">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">{t('attendanceChecklist')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Select lesson */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-500">{t('selectLesson')}</Label>
-                <Select
-                  value={selectedLessonId}
-                  disabled={lessonMutationPending}
-                  onValueChange={(val) => {
-                    if (lessonMutationPending) return;
-                    attendanceDraftDirty.current = false;
-                    attendanceNoteDirty.current = false;
-                    setSelectedLessonId(val);
-                    setAttendanceDraft({});
-                    setAttendanceNote('');
-                  }}
-                >
-                  <SelectTrigger className="w-full md:w-[400px]">
-                    <SelectValue placeholder={t('selectLessonPlaceholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {attendanceLessons.map((lesson) => (
-                        <SelectItem key={lesson.id} value={String(lesson.id)}>
-                          {formatDate(lesson.scheduledAt)} {formatTime(lesson.scheduledAt)} —{' '}
-                          {lesson.groupName || t('noGroup')} — {lesson.topic} ({
-                            lesson.status === 'conducted'
-                              ? t('lessonStatusConducted')
-                              : new Date(lesson.scheduledAt).getTime() <= now
-                                ? t('attendancePending')
-                              : t('lessonStatusScheduled')
-                          })
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {selectedLessonDetails && (
                 <div className="rounded-lg border border-border/70 bg-muted/50 p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">

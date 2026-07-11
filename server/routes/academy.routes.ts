@@ -2562,9 +2562,10 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   // Workspace scoping: teachers see only their own groups; sales employees see only
   // their own leads/students; marketing receives its workspace dataset.
   const actorWorkspaces = getAssignedWorkspaces(actor);
-  const shouldScopeToTeacher = actor?.scopeWorkspace === 'teacher'
-    && actorWorkspaces.includes('teacher')
-    && !hasLeadershipAccess(actor);
+  // Entering the teacher workspace is an explicit context switch. It must
+  // always resolve to the actor's teacher profile, even when that user also
+  // has administration/leadership permissions.
+  const shouldScopeToTeacher = actor?.scopeWorkspace === 'teacher';
   const teacherId = shouldScopeToTeacher
     ? await resolveTeacherId(actor.userId)
     : null;
@@ -3549,14 +3550,11 @@ router.get('/workspaces/teacher', async (req, res) => {
       scopeWorkspace: 'teacher',
     };
     const dataset = await getAcademyDataset(actor);
-    const teacherId = getAssignedWorkspaces(req.user).includes('teacher')
-      ? await resolveTeacherId(req.user!.id)
-      : null;
     res.json({
       schools: dataset.schools,
       rooms: dataset.rooms,
       courses: dataset.courses,
-      teacher: teacherId ? dataset.teachers[0] ?? null : null,
+      teacher: dataset.teachers[0] ?? null,
       groups: dataset.groups,
       students: dataset.students,
       lessons: dataset.lessons,

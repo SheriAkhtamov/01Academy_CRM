@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sortAttendanceLessons } from '@/lib/attendance';
+import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { getAssignedWorkspaces } from '@shared/academy';
 
 type Lesson = {
@@ -476,28 +477,22 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     return (sum / surveys.length).toFixed(1);
   }, [surveys]);
 
-  // Schedule: group lessons by day of week
+  // Schedule: show today first, followed by the next six academy days.
   const scheduleByDay = useMemo(() => {
-    const currentParts = academyDateTimeParts(new Date());
-    const currentDay = new Date(Date.UTC(currentParts.year, currentParts.month - 1, currentParts.day));
-    const mondayIndex = (currentDay.getUTCDay() + 6) % 7;
-    const startOfWeek = new Date(currentDay.getTime() - mondayIndex * 24 * 60 * 60 * 1000);
-
-    const days: { date: Date; dateKey: string; lessons: Lesson[] }[] = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek.getTime() + i * 24 * 60 * 60 * 1000);
-      const dateKey = [
-        date.getUTCFullYear(),
-        String(date.getUTCMonth() + 1).padStart(2, '0'),
-        String(date.getUTCDate()).padStart(2, '0'),
-      ].join('-');
-      const dayLessons = lessons.filter((lesson) => localDateKey(lesson.scheduledAt) === dateKey);
-      dayLessons.sort(
-        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-      );
-      days.push({ date, dateKey, lessons: dayLessons });
+    const lessonsByDate = new Map<string, Lesson[]>();
+    for (const lesson of lessons) {
+      const dateKey = localDateKey(lesson.scheduledAt);
+      const dayLessons = lessonsByDate.get(dateKey) ?? [];
+      dayLessons.push(lesson);
+      lessonsByDate.set(dateKey, dayLessons);
     }
-    return days;
+
+    return buildTeacherScheduleDays(new Date(), ACADEMY_TIME_ZONE).map((day) => ({
+      ...day,
+      lessons: [...(lessonsByDate.get(day.dateKey) ?? [])].sort(
+        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+      ),
+    }));
   }, [lessons]);
 
   // Attendance
@@ -842,11 +837,11 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         {/* Schedule Tab */}
         <TabsContent value="schedule" className="mt-6 space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
-            {scheduleByDay.map((day, idx) => {
+            {scheduleByDay.map((day) => {
               const isTodayFlag = day.dateKey === localDateKey(new Date().toISOString());
               return (
                 <Card
-                  key={idx}
+                  key={day.dateKey}
                   className={cn(
                     'border-border/70',
                     isTodayFlag && 'ring-2 ring-primary-500/30 border-primary-300'
@@ -855,7 +850,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <CardHeader className="pb-3 pt-4 px-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
-                        {dayNames[idx]}
+                        {dayNames[day.weekdayIndex]}
                       </CardTitle>
                       {isTodayFlag && (
                         <Badge className="bg-primary-100 text-primary-700 text-[10px]">

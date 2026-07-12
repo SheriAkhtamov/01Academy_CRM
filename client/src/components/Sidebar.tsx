@@ -31,7 +31,6 @@ import {
   Megaphone,
   ChevronDown,
   ListChecks,
-  UserCircle,
   UserCheck,
   SlidersHorizontal,
   KanbanSquare,
@@ -109,7 +108,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
         { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
         { name: t('taskBoard'), href: '/teacher-workspace/tasks', icon: KanbanSquare },
-        { name: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
       ],
     };
 

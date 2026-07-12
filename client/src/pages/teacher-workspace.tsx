@@ -22,21 +22,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
-import {
-  WeekScheduleEditor,
-  type WeekScheduleItem,
-} from '@/components/ux/WeekScheduleEditor';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Calendar,
   Users,
-  BookOpen,
   ClipboardCheck,
   Star,
-  UserCircle,
-  Clock,
   GraduationCap,
   ClipboardList,
   CheckCircle2,
@@ -47,7 +40,6 @@ import {
 import { cn } from '@/lib/utils';
 import { sortAttendanceLessons } from '@/lib/attendance';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
-import { getAssignedWorkspaces } from '@shared/academy';
 
 type Lesson = {
   id: number;
@@ -66,7 +58,7 @@ type Lesson = {
   status: string;
 };
 
-type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings' | 'profile';
+type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings';
 
 type Group = {
   id: number;
@@ -112,12 +104,6 @@ type LessonSurvey = {
   createdAt: string;
 };
 
-type TeacherProfile = {
-  id: number;
-  schoolIds?: number[];
-  availability?: WeekScheduleItem[];
-};
-
 type AttendanceRecord = {
   lessonId: number;
   studentId: number;
@@ -139,7 +125,6 @@ type RescheduleLessonVariables = {
   payload: {
     scheduledAt: string;
     reason: string;
-    shiftFollowing: boolean;
   };
 };
 
@@ -375,7 +360,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const [attendanceNote, setAttendanceNote] = useState('');
   const [rescheduleAt, setRescheduleAt] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
-  const [shiftFollowingLessons, setShiftFollowingLessons] = useState(false);
   const [isAttendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const attendanceDraftDirty = useRef(false);
@@ -391,38 +375,11 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   // Group detail dialog
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [availabilityDraft, setAvailabilityDraft] = useState<WeekScheduleItem[]>([]);
-  const [availabilitySchoolIds, setAvailabilitySchoolIds] = useState<number[]>([]);
-
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/teacher'],
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
-
-  const teacherProfile: TeacherProfile | null = data?.teacher ?? null;
-
-  useEffect(() => {
-    if (!teacherProfile) return;
-    setAvailabilityDraft(Array.isArray(teacherProfile.availability) ? teacherProfile.availability : []);
-    setAvailabilitySchoolIds(Array.isArray(teacherProfile.schoolIds) ? teacherProfile.schoolIds.map(Number) : []);
-  }, [teacherProfile?.id]);
-
-  const saveAvailability = useMutation({
-    mutationFn: () => apiRequest('PATCH', '/api/academy/teachers/me/availability', {
-      availability: availabilityDraft,
-      schoolIds: availabilitySchoolIds,
-    }),
-    onSuccess: () => {
-      toast({ title: t('availabilitySaved'), description: t('availabilitySavedDescription') });
-      invalidate();
-    },
-    onError: (error: Error) => toast({
-      title: t('error'),
-      description: error.message,
-      variant: 'destructive',
-    }),
-  });
 
   const saveAttendance = useMutation<unknown, Error, SaveAttendanceVariables>({
     mutationFn: ({ lessonId, roster, draft, note }) =>
@@ -451,7 +408,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const groups: Group[] = useMemo(() => data?.groups ?? [], [data]);
   const lessons: Lesson[] = useMemo(() => data?.lessons ?? [], [data]);
   const students: Student[] = useMemo(() => data?.students ?? [], [data]);
-  const schools: Array<{ id: number; name: string }> = useMemo(() => data?.schools ?? [], [data]);
   const surveys: LessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
   const attendanceRecords: AttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
 
@@ -571,7 +527,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     ));
     setRescheduleAt(toDateTimeLocal(suggestedDate));
     setRescheduleReason('');
-    setShiftFollowingLessons(false);
   }, [selectedLessonDetails?.id, selectedLessonDetails?.scheduledAt]);
 
   const selectedLessonStudents = useMemo(() => {
@@ -632,7 +587,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const parsedRescheduleAt = rescheduleAt ? academyWallClockToDate(rescheduleAt) : null;
   const rescheduleTimestamp = parsedRescheduleAt?.getTime() ?? Number.NaN;
   const canRescheduleLesson = Boolean(
-    selectedLessonDetails?.status === 'scheduled'
+    ['scheduled', 'conducted'].includes(selectedLessonDetails?.status ?? '')
     && Number.isFinite(rescheduleTimestamp)
     && rescheduleTimestamp > now
     && rescheduleReason.trim(),
@@ -720,7 +675,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     groups: t('myGroups'),
     attendance: t('attendanceLabel'),
     ratings: t('lessonRatings'),
-    profile: t('myProfile'),
   };
 
   const getLessonStatusBadge = (status: string) => {
@@ -774,7 +728,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
       payload: {
         scheduledAt: parsedRescheduleAt.toISOString(),
         reason: rescheduleReason.trim(),
-        shiftFollowing: shiftFollowingLessons,
       },
     });
   };
@@ -1180,7 +1133,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 </div>
               )}
 
-              {selectedLessonDetails?.status === 'scheduled' && (
+              {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
                   <div>
                     <div className="font-medium text-sm text-slate-900">{t('rescheduleLesson')}</div>
@@ -1214,21 +1167,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       />
                     </div>
                   </div>
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <Checkbox
-                      checked={shiftFollowingLessons}
-                      disabled={lessonMutationPending}
-                      onCheckedChange={(checked) => setShiftFollowingLessons(checked === true)}
-                    />
-                    <span>
-                      <span className="block text-sm font-medium text-slate-800">
-                        {t('shiftFollowingLessons')}
-                      </span>
-                      <span className="block text-xs text-slate-500">
-                        {t('shiftFollowingLessonsHint')}
-                      </span>
-                    </span>
-                  </label>
                   <div className="flex justify-end">
                     <Button
                       type="button"
@@ -1614,181 +1552,6 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           </Card>
         </TabsContent>
 
-        {/* Profile Tab */}
-        <TabsContent value="profile" className="mt-6 space-y-4">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            {/* Main info */}
-            <Card className="border-border/70 xl:col-span-2">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <UserCircle className="h-4 w-4 text-slate-500" />
-                  {t('fullNameWithInitials')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">{t('fullNameWithInitials')}</Label>
-                    <Input value={fullName} readOnly className="bg-slate-50" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">{t('position')}</Label>
-                    <Input value={user?.position || '—'} readOnly className="bg-slate-50" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">{t('email')}</Label>
-                    <Input value={user?.email || '—'} readOnly className="bg-slate-50" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">{t('status')}</Label>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-emerald-100 text-emerald-700">{t('active')}</Badge>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Stats */}
-            <Card className="border-border/70">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-slate-500" />
-                  {t('statistics')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">{t('navGroups')}</span>
-                  <span className="font-semibold text-slate-900">{groups.length}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">{t('students')}</span>
-                  <span className="font-semibold text-slate-900">{totalStudents}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">{t('navLessons')}</span>
-                  <span className="font-semibold text-slate-900">{lessons.length}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">{t('averageAttendance')}</span>
-                  <span className="font-semibold text-slate-900">{avgAttendance}%</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Courses */}
-          <Card className="border-border/70">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-slate-500" />
-                {t('teacherCoursesTitle')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {teacherCourses.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {teacherCourses.map((course: any) => (
-                    <Badge
-                      key={course.id}
-                      variant="outline"
-                      className="text-sm px-3 py-1.5"
-                    >
-                      {course.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">{t('noData')}</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {getAssignedWorkspaces(user).includes('teacher') ? (
-            <Card className="border-border/70">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-slate-500" />
-                  {t('teacherAvailability')}
-                </CardTitle>
-                <p className="text-sm text-slate-500">{t('teacherAvailabilityWorkspaceDescription')}</p>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label className="text-xs text-slate-500">{t('availableSchools')}</Label>
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    {schools.map((school) => (
-                      <label key={school.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/70 p-3">
-                        <Checkbox
-                          checked={availabilitySchoolIds.includes(school.id)}
-                          onCheckedChange={(checked) => setAvailabilitySchoolIds((current) => (
-                            checked === true
-                              ? [...new Set([...current, school.id])]
-                              : current.filter((id) => id !== school.id)
-                          ))}
-                        />
-                        <span className="text-sm font-medium text-slate-900">{school.name}</span>
-                      </label>
-                    ))}
-                    {schools.length === 0 ? <p className="text-sm text-slate-500">{t('noSchools')}</p> : null}
-                  </div>
-                </div>
-                <WeekScheduleEditor
-                  value={availabilityDraft}
-                  onChange={setAvailabilityDraft}
-                  dayNames={dayNamesFull}
-                  schools={schools}
-                  showSchool
-                  allSchoolsLabel={t('allSchools')}
-                  startLabel={t('start')}
-                  endLabel={t('end')}
-                />
-                <div className="flex justify-end">
-                  <Button onClick={() => saveAvailability.mutate()} disabled={saveAvailability.isPending}>
-                    {saveAvailability.isPending ? t('saving') : t('saveAvailability')}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {/* Schedule summary */}
-          <Card className="border-border/70">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Clock className="h-4 w-4 text-slate-500" />
-                {t('groupScheduleTitle')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {groups.map((group) => (
-                <div key={group.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{group.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {group.courseName || t('noCourse')} · {group.schoolName || t('schoolNotSelected')}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.schedule && group.schedule.length > 0 ? (
-                      group.schedule.map((s, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          {dayNamesFull[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-400">{t('noData')}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {groups.length === 0 && (
-                <p className="text-sm text-slate-500">{t('noData')}</p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
       ) : null}
     </div>

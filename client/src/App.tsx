@@ -178,12 +178,8 @@ function Router() {
             <AdminTasksPage />
           </WorkspaceGuard>
         )} />
-        <Route path="/teacher-workspace/ratings" component={() => <Redirect to="/teacher-workspace/profile" />} />
-        <Route path="/teacher-workspace/profile" component={() => (
-          <WorkspaceGuard workspace="teacher">
-            <TeacherWorkspace section="profile" />
-          </WorkspaceGuard>
-        )} />
+        <Route path="/teacher-workspace/ratings" component={() => <Redirect to="/teacher-workspace" />} />
+        <Route path="/teacher-workspace/profile" component={() => <Redirect to="/teacher-workspace" />} />
         <Route path="/teacher-workspace" component={() => (
           <WorkspaceGuard workspace="teacher">
             <TeacherWorkspace section="overview" />

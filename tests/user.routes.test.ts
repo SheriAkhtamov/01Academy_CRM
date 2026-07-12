@@ -109,6 +109,45 @@ describe('user route validation', () => {
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
 
+  it('rejects malformed teacher availability before opening a transaction', async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+
+    const response = await agent.put('/api/users/7').send({
+      teacherAvailability: [{
+        dayOfWeek: 1,
+        startTime: '25:00',
+        endTime: '18:00',
+      }],
+    });
+
+    expect(response.status).toBe(400);
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
+  it('keeps teacher availability under administration control', async () => {
+    const teacherUser = {
+      ...administrationUser,
+      workspace: 'teacher',
+      workspaces: ['teacher'],
+      hasReportAccess: false,
+    };
+    mockStorage.getUser.mockResolvedValue(teacherUser);
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+
+    const response = await agent.put('/api/users/7').send({
+      teacherSchoolIds: [1],
+      teacherAvailability: [],
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('adminAccessRequired');
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
   it('commits lead transfer and access removal through the same database client', async () => {
     const currentUser = { ...administrationUser, workspaces: ['administration', 'sales'] };
     const updatedUser = { ...administrationUser, workspaces: ['administration'] };

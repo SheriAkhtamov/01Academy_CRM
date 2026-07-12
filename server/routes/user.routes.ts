@@ -18,6 +18,7 @@ import {
     decryptCredentialPassword,
     encryptCredentialPassword,
 } from '../services/credential-password';
+import type { AcademyScheduleItem } from '@shared/schema';
 
 const router = Router();
 const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
@@ -120,6 +121,86 @@ const normalizeRequestedWorkspaces = (value: unknown, primaryWorkspace: AcademyW
     return [...new Set([primaryWorkspace, ...requested])];
 };
 
+type TeacherSettings = {
+    schoolIds?: number[];
+    availability?: AcademyScheduleItem[];
+};
+
+const normalizeTeacherSchoolIds = (value: unknown): number[] | undefined => {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    const schoolIds = value.map(parsePositiveId);
+    if (schoolIds.some((id) => id === null)) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    return [...new Set(schoolIds as number[])];
+};
+
+const normalizeTeacherAvailability = (value: unknown): AcademyScheduleItem[] | undefined => {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value) || value.length > 7) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+
+    const seenDays = new Set<number>();
+    return value.map((item) => {
+        if (!item || typeof item !== 'object') {
+            throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+        }
+        const candidate = item as Record<string, unknown>;
+        const dayOfWeek = Number(candidate.dayOfWeek);
+        const startTime = typeof candidate.startTime === 'string' ? candidate.startTime.trim() : '';
+        const endTime = typeof candidate.endTime === 'string' ? candidate.endTime.trim() : '';
+        const schoolId = candidate.schoolId === undefined || candidate.schoolId === null
+            ? null
+            : parsePositiveId(candidate.schoolId);
+        if (
+            !Number.isInteger(dayOfWeek)
+            || dayOfWeek < 1
+            || dayOfWeek > 7
+            || seenDays.has(dayOfWeek)
+            || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startTime)
+            || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(endTime)
+            || startTime >= endTime
+            || (
+                schoolId === null
+                && candidate.schoolId !== undefined
+                && candidate.schoolId !== null
+            )
+        ) {
+            throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+        }
+        seenDays.add(dayOfWeek);
+        return { dayOfWeek, startTime, endTime, schoolId };
+    });
+};
+
+const readTeacherSettings = (body: Record<string, unknown>): TeacherSettings => ({
+    schoolIds: normalizeTeacherSchoolIds(body.teacherSchoolIds),
+    availability: normalizeTeacherAvailability(body.teacherAvailability),
+});
+
+const ensureTeacherSettingSchoolsExist = async (
+    executor: QueryExecutor,
+    settings: TeacherSettings,
+) => {
+    const referencedIds = [...new Set([
+        ...(settings.schoolIds ?? []),
+        ...(settings.availability ?? []).flatMap((item) => item.schoolId ? [item.schoolId] : []),
+    ])];
+    if (referencedIds.length === 0) return;
+
+    const result = await executor.query<{ id: number }>(
+        'SELECT id FROM academy_schools WHERE id = ANY($1::int[])',
+        [referencedIds],
+    );
+    if (result.rows.length !== referencedIds.length) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+};
+
 const parseDateOfBirth = (value: unknown) => {
     if (value === undefined) return undefined;
     if (value === null || value === '') return null;
@@ -174,7 +255,7 @@ const syncAcademyTeacherForUser = async (user: {
     workspace: string;
     workspaces?: string[] | null;
     isActive?: boolean | null;
-}, executor: QueryExecutor = pool) => {
+}, executor: QueryExecutor = pool, settings: TeacherSettings = {}) => {
     const existing = await executor.query<{ id: number }>(
         'SELECT id FROM academy_teachers WHERE user_id = $1 LIMIT 1',
         [user.id],
@@ -183,19 +264,41 @@ const syncAcademyTeacherForUser = async (user: {
 
     if (getAssignedWorkspaces(user).includes('teacher')) {
         const status = user.isActive === false ? 'dismissed' : 'active';
+        await ensureTeacherSettingSchoolsExist(executor, settings);
 
         if (teacherRecord) {
             await executor.query(
-                'UPDATE academy_teachers SET full_name = $1, status = $2, updated_at = NOW() WHERE id = $3',
-                [user.fullName, status, teacherRecord.id],
+                `UPDATE academy_teachers
+                 SET full_name = $1,
+                     status = $2,
+                     school_ids = CASE WHEN $4::boolean THEN $5::jsonb ELSE school_ids END,
+                     availability = CASE WHEN $6::boolean THEN $7::jsonb ELSE availability END,
+                     updated_at = NOW()
+                 WHERE id = $3`,
+                [
+                    user.fullName,
+                    status,
+                    teacherRecord.id,
+                    settings.schoolIds !== undefined,
+                    JSON.stringify(settings.schoolIds ?? []),
+                    settings.availability !== undefined,
+                    JSON.stringify(settings.availability ?? []),
+                ],
             );
             return;
         }
 
         await executor.query(
-            `INSERT INTO academy_teachers (user_id, full_name, course_ids, schedule, status)
-             VALUES ($1, $2, '[]'::jsonb, '[]'::jsonb, $3)`,
-            [user.id, user.fullName, status],
+            `INSERT INTO academy_teachers
+               (user_id, full_name, course_ids, school_ids, availability, schedule, status)
+             VALUES ($1, $2, '[]'::jsonb, $3::jsonb, $4::jsonb, '[]'::jsonb, $5)`,
+            [
+                user.id,
+                user.fullName,
+                JSON.stringify(settings.schoolIds ?? []),
+                JSON.stringify(settings.availability ?? []),
+                status,
+            ],
         );
         return;
     }
@@ -388,11 +491,36 @@ const replaceUserWorkspaces = async (
     );
 };
 
-router.get('/', requireAuth, async (_req, res) => {
+router.get('/', requireAuth, async (req, res) => {
     try {
         const users = await storage.getUsers();
         const sanitizedUsers = users.map(u => authService.sanitizeUser(u));
-        res.json(sanitizedUsers);
+        if (!getAssignedWorkspaces(req.user).includes('administration') || users.length === 0) {
+            return res.json(sanitizedUsers);
+        }
+        const teacherRows = await pool.query<{
+            userId: number;
+            schoolIds: number[];
+            availability: AcademyScheduleItem[];
+        }>(
+            `SELECT user_id AS "userId",
+                    school_ids AS "schoolIds",
+                    availability
+             FROM academy_teachers
+             WHERE user_id = ANY($1::int[])`,
+            [users.map((user) => user.id)],
+        );
+        const teacherSettingsByUserId = new Map(
+            teacherRows.rows.map((teacher) => [Number(teacher.userId), teacher]),
+        );
+        res.json(sanitizedUsers.map((user) => {
+            const teacher = teacherSettingsByUserId.get(Number(user.id));
+            return {
+                ...user,
+                teacherSchoolIds: teacher?.schoolIds ?? [],
+                teacherAvailability: teacher?.availability ?? [],
+            };
+        }));
     } catch (error) {
         logger.error('Error fetching users', { error });
         res.status(500).json({ error: 'Failed to fetch users' });
@@ -459,6 +587,7 @@ router.post('/', requireAdministration, async (req, res) => {
         }
         const workspace = req.body.workspace as AcademyWorkspace;
         const workspaces = normalizeRequestedWorkspaces(req.body.workspaces, workspace);
+        const teacherSettings = readTeacherSettings(req.body);
         const dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
 
         const existingUsers = await storage.getUsers();
@@ -515,7 +644,7 @@ router.post('/', requireAdministration, async (req, res) => {
                     ...newUser,
                     workspaces,
                 };
-                await syncAcademyTeacherForUser(newUser, client);
+                await syncAcademyTeacherForUser(newUser, client, teacherSettings);
                 await client.query(
                     `INSERT INTO audit_logs
                        (user_id, action, entity_type, entity_id, new_values)
@@ -822,6 +951,15 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         let requestedWorkspaces: AcademyWorkspace[] | null = null;
+        const teacherSettings = readTeacherSettings(req.body);
+        const teacherSettingsRequested = teacherSettings.schoolIds !== undefined
+            || teacherSettings.availability !== undefined;
+        if (
+            teacherSettingsRequested
+            && !getAssignedWorkspaces(currentUser).includes('administration')
+        ) {
+            return res.status(403).json({ error: 'adminAccessRequired' });
+        }
 
         if (hasLeadershipAccess(currentUser)) {
             if (req.body.workspace !== undefined) {
@@ -850,7 +988,11 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
         }
 
-        if (Object.values(updateData).every((value) => value === undefined) && requestedWorkspaces === null) {
+        if (
+            Object.values(updateData).every((value) => value === undefined)
+            && requestedWorkspaces === null
+            && !teacherSettingsRequested
+        ) {
             return res.status(400).json({ error: 'invalidData' });
         }
 
@@ -964,7 +1106,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                 workspace: nextPrimaryWorkspace,
                 workspaces: nextWorkspaces,
                 isActive: nextIsActive,
-            }, client);
+            }, client, teacherSettings);
             await client.query('COMMIT');
         } catch (error) {
             await client.query('ROLLBACK');

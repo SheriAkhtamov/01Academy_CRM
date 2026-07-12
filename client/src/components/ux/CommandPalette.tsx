@@ -30,7 +30,6 @@ import {
   UserRoundCheck,
   ListChecks,
   Wallet,
-  UserCircle,
   KanbanSquare,
   ShieldCheck,
   SlidersHorizontal,
@@ -105,7 +104,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
         { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
         { id: 'nav-teacher-task-board', type: t('teacherWorkspace'), title: t('taskBoard'), href: '/teacher-workspace/tasks', icon: KanbanSquare },
-        { id: 'nav-teacher-profile', type: t('myProfile'), title: t('myProfile'), href: '/teacher-workspace/profile', icon: UserCircle },
       ];
       const marketingItems: SearchItem[] = [
         { id: 'nav-marketing', type: t('marketingTab'), title: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },

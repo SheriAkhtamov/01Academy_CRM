@@ -3766,23 +3766,8 @@ router.get('/schedule/resource', async (req, res) => {
   }
 });
 
-router.patch('/teachers/me/availability', async (req, res) => {
-  if (!ensureTeacherWorkspaceAccess(req, res)) return;
-  try {
-    const teacherId = await resolveTeacherId(req.user!.id);
-    if (!teacherId) return res.status(404).json({ error: 'Teacher profile not found' });
-    const oldTeacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [teacherId]);
-    const teacher = await updateRow('academy_teachers', teacherId, {
-      availability: safeJson(req.body.availability, []),
-      schoolIds: safeJson(req.body.schoolIds, []),
-    });
-    await reconcileAutomaticTeacherAssignments(teacherId);
-    await createAudit(req, 'UPDATE_TEACHER_AVAILABILITY', 'academy_teacher', teacherId, teacher, oldTeacher);
-    res.json(teacher);
-  } catch (error: any) {
-    logger.error('Failed to update teacher availability', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update availability' });
-  }
+router.patch('/teachers/me/availability', (_req, res) => {
+  res.status(403).json({ error: 'adminAccessRequired' });
 });
 
 router.get('/workspaces/marketing', async (req, res) => {
@@ -6008,11 +5993,6 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
     if (!reason || reason.length > 500) {
       return res.status(400).json({ error: 'rescheduleReasonRequired' });
     }
-    if (req.body.shiftFollowing !== undefined && typeof req.body.shiftFollowing !== 'boolean') {
-      return res.status(400).json({ error: 'Invalid shiftFollowing' });
-    }
-    const shiftFollowing = req.body.shiftFollowing === true;
-
     const result = await withTransaction(async () => {
       await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
       const lesson = await queryOne(
@@ -6025,8 +6005,8 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         [lessonId],
       );
       if (!lesson) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
-      if (lesson.status !== 'scheduled') {
-        throw Object.assign(new Error('onlyScheduledLessonCanBeRescheduled'), { statusCode: 409 });
+      if (!['scheduled', 'conducted'].includes(String(lesson.status))) {
+        throw Object.assign(new Error('onlyReschedulableLessonCanBeRescheduled'), { statusCode: 409 });
       }
       if (
         getAssignedWorkspaces(req.user).includes('teacher')
@@ -6040,20 +6020,23 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         throw Object.assign(new Error('rescheduleDateMustChange'), { statusCode: 400 });
       }
       const deltaMs = nextScheduledAt.getTime() - previousScheduledAt.getTime();
-      const affected = shiftFollowing
-        ? await query(
-          `SELECT affected_lesson.*, affected_teacher.user_id AS teacher_user_id
-           FROM academy_lessons affected_lesson
-           LEFT JOIN academy_teachers affected_teacher
-             ON affected_teacher.id = affected_lesson.teacher_id
-           WHERE affected_lesson.group_id = $1
-             AND affected_lesson.status = 'scheduled'
-             AND affected_lesson.scheduled_at >= $2
-           ORDER BY affected_lesson.scheduled_at, affected_lesson.id
-           FOR UPDATE OF affected_lesson`,
-          [lesson.groupId, previousScheduledAt],
-        )
-        : [lesson];
+      const affected = await query(
+        `SELECT affected_lesson.*, affected_teacher.user_id AS teacher_user_id
+         FROM academy_lessons affected_lesson
+         LEFT JOIN academy_teachers affected_teacher
+           ON affected_teacher.id = affected_lesson.teacher_id
+         WHERE affected_lesson.group_id = $1
+           AND (
+             affected_lesson.id = $3
+             OR (
+               affected_lesson.status = 'scheduled'
+               AND affected_lesson.scheduled_at > $2
+             )
+           )
+         ORDER BY affected_lesson.scheduled_at, affected_lesson.id
+         FOR UPDATE OF affected_lesson`,
+        [lesson.groupId, previousScheduledAt, lessonId],
+      );
       if (!affected.some((item) => Number(item.id) === lessonId)) {
         throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
       }
@@ -6069,12 +6052,22 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         `SELECT lesson_id
          FROM academy_attendance
          WHERE lesson_id = ANY($1::int[])
+           AND ($2::integer IS NULL OR lesson_id <> $2)
          LIMIT 1`,
-        [affectedLessonIds],
+        [affectedLessonIds, lesson.status === 'conducted' ? lessonId : null],
       );
       if (lessonWithAttendance) {
         throw Object.assign(new Error('lessonWithAttendanceCannotBeRescheduled'), { statusCode: 409 });
       }
+
+      const reopenedStudentRows = lesson.status === 'conducted'
+        ? await query<{ studentId: number }>(
+          `DELETE FROM academy_attendance
+           WHERE lesson_id = $1
+           RETURNING student_id`,
+          [lessonId],
+        )
+        : [];
 
       const updateOrder = deltaMs > 0 ? [...affected].reverse() : affected;
       const updatedLessons: Row[] = [];
@@ -6084,7 +6077,11 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         if (newDate.getTime() <= Date.now()) {
           throw Object.assign(new Error('rescheduleDateMustBeFuture'), { statusCode: 400 });
         }
-        const values: Row = { scheduledAt: newDate };
+        const reopensConductedLesson = Number(affectedLesson.id) === lessonId && lesson.status === 'conducted';
+        const values: Row = {
+          scheduledAt: newDate,
+          ...(reopensConductedLesson ? { status: 'scheduled' } : {}),
+        };
         await prepareLessonMutation({
           values,
           oldRow: affectedLesson,
@@ -6100,7 +6097,20 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
           reason,
           changedBy: req.user!.id,
         });
+        if (reopensConductedLesson) {
+          await insertRow('academy_lesson_status_history', {
+            lessonId,
+            fromStatus: 'conducted',
+            toStatus: 'scheduled',
+            changedBy: req.user!.id,
+            comment: reason,
+          });
+        }
         updatedLessons.push(updated);
+      }
+
+      for (const studentId of new Set(reopenedStudentRows.map((row) => Number(row.studentId)))) {
+        await recalculateStudentMetrics(studentId);
       }
 
       await query(

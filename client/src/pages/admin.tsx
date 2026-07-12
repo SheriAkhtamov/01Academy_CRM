@@ -19,6 +19,10 @@ import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
+  WeekScheduleEditor,
+  type WeekScheduleItem,
+} from '@/components/ux/WeekScheduleEditor';
+import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
@@ -80,6 +84,13 @@ const createUserSchema = (t: any) => z.object({
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),
   workspaces: z.array(z.enum(ACADEMY_WORKSPACES)).min(1, t('selectAtLeastOneWorkspace')),
+  teacherSchoolIds: z.array(z.number().int().positive()).default([]),
+  teacherAvailability: z.array(z.object({
+    dayOfWeek: z.number().int().min(1).max(7),
+    startTime: z.string(),
+    endTime: z.string(),
+    schoolId: z.number().int().positive().nullable().optional(),
+  })).default([]),
   isActive: z.boolean().default(true),
 });
 
@@ -117,6 +128,19 @@ const createCredentialsSchema = (t: any) => z.object({
 
 type UserFormValues = z.infer<ReturnType<typeof createUserSchema>>;
 type UserUpdatePayload = Partial<UserFormValues> & { leadTransferManagerId?: number };
+
+const defaultUserFormValues: UserFormValues = {
+  email: '',
+  fullName: '',
+  phone: '',
+  dateOfBirth: '',
+  position: '',
+  workspace: 'sales',
+  workspaces: ['sales'],
+  teacherSchoolIds: [],
+  teacherAvailability: [],
+  isActive: true,
+};
 
 const formatDateInputValue = (value: unknown) => {
   if (!value) return '';
@@ -157,16 +181,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const credentialsSchema = useMemo(() => createCredentialsSchema(t), [t]);
   const userForm = useForm<z.infer<typeof userSchema>>({
     resolver: zodResolver(userSchema),
-    defaultValues: {
-      email: '',
-      fullName: '',
-      phone: '',
-      dateOfBirth: '',
-      position: '',
-      workspace: 'sales',
-      workspaces: ['sales'],
-      isActive: true,
-    },
+    defaultValues: defaultUserFormValues,
   });
   const credentialsForm = useForm<z.infer<typeof credentialsSchema>>({
     resolver: zodResolver(credentialsSchema),
@@ -192,7 +207,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       setSelectedUser(null);
       setSalesModuleTransfer(null);
       setSalesLeadTransferManagerId('');
-      userForm.reset();
+      userForm.reset(defaultUserFormValues);
     }
   };
   const userDialogGuard = useUnsavedChangesGuard({
@@ -203,6 +218,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const { data: users = [], isLoading: usersLoading } = useQuery<any[]>({
     queryKey: ['/api/users'],
+  });
+  const { data: schools = [] } = useQuery<Array<{
+    id: number;
+    name: string;
+    isActive?: boolean;
+  }>>({
+    queryKey: ['/api/academy/schools'],
+    enabled: isEmployeesPage,
   });
 
   const activeUserCount = users.filter((user: any) => user.isActive).length;
@@ -221,7 +244,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         title: t('userCreatedSuccessfullyTitle'),
         description: t('newUserAddedDescription'),
       });
-      userForm.reset();
+      userForm.reset(defaultUserFormValues);
       setShowCreateUserModal(false);
       setSelectedUser(null);
     },
@@ -446,6 +469,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       position: user.position || '',
       workspace: user.workspace,
       workspaces: getAssignedWorkspaces(user),
+      teacherSchoolIds: Array.isArray(user.teacherSchoolIds)
+        ? user.teacherSchoolIds.map(Number).filter(Number.isSafeInteger)
+        : [],
+      teacherAvailability: Array.isArray(user.teacherAvailability)
+        ? user.teacherAvailability
+        : [],
       isActive: user.isActive,
     });
     setShowCreateUserModal(true);
@@ -490,6 +519,21 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
   ] as const;
   const primaryWorkspaceValue = userForm.watch('workspace');
+  const assignedWorkspaceValues = userForm.watch('workspaces');
+  const teacherModuleEnabled = assignedWorkspaceValues.includes('teacher');
+  const selectedTeacherSchoolIds = userForm.watch('teacherSchoolIds');
+  const teacherScheduleSchools = schools.filter((school) => (
+    school.isActive !== false || selectedTeacherSchoolIds.includes(school.id)
+  ));
+  const teacherScheduleDayNames = [
+    t('monday'),
+    t('tuesday'),
+    t('wednesday'),
+    t('thursday'),
+    t('friday'),
+    t('saturday'),
+    t('sunday'),
+  ];
 
   const administrationSections = [
     {
@@ -865,6 +909,87 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             </FormItem>
                           )}
                         />
+
+                        {teacherModuleEnabled ? (
+                          <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                            <div>
+                              <h3 className="text-sm font-semibold text-slate-900">{t('teacherAvailability')}</h3>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {t('teacherAvailabilityAdminDescription')}
+                              </p>
+                            </div>
+
+                            <FormField
+                              control={userForm.control}
+                              name="teacherSchoolIds"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('availableSchools')}</FormLabel>
+                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {teacherScheduleSchools.map((school) => {
+                                      const checked = field.value.includes(school.id);
+                                      return (
+                                        <label
+                                          key={school.id}
+                                          className="flex items-center gap-3 rounded-lg border border-border/70 bg-background p-3 text-sm"
+                                        >
+                                          <Checkbox
+                                            checked={checked}
+                                            onCheckedChange={(nextChecked) => {
+                                              if (nextChecked === true) {
+                                                field.onChange([...new Set([...field.value, school.id])]);
+                                                return;
+                                              }
+                                              field.onChange(field.value.filter((id) => id !== school.id));
+                                              const availability = userForm.getValues('teacherAvailability');
+                                              userForm.setValue(
+                                                'teacherAvailability',
+                                                availability.map((item) => (
+                                                  item.schoolId === school.id ? { ...item, schoolId: null } : item
+                                                )),
+                                                { shouldDirty: true, shouldValidate: true },
+                                              );
+                                            }}
+                                          />
+                                          <span className="font-medium text-slate-900">{school.name}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                  {teacherScheduleSchools.length === 0 ? (
+                                    <p className="text-sm text-slate-500">{t('noSchools')}</p>
+                                  ) : null}
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={userForm.control}
+                              name="teacherAvailability"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('workSchedule')}</FormLabel>
+                                  <FormControl>
+                                    <WeekScheduleEditor
+                                      value={field.value as WeekScheduleItem[]}
+                                      onChange={field.onChange}
+                                      dayNames={teacherScheduleDayNames}
+                                      schools={teacherScheduleSchools.filter((school) => (
+                                        selectedTeacherSchoolIds.includes(school.id)
+                                      ))}
+                                      showSchool
+                                      allSchoolsLabel={t('allSchools')}
+                                      startLabel={t('start')}
+                                      endLabel={t('end')}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        ) : null}
 
                         <FormField
                           control={userForm.control}

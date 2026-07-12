@@ -208,6 +208,18 @@ describe('academy route logic boundaries', () => {
     expect(mocks.poolQuery).not.toHaveBeenCalled();
   });
 
+  it('does not let a teacher change availability outside Administration', async () => {
+    mocks.actor = { id: 8, workspace: 'teacher', workspaces: ['teacher'] };
+
+    const response = await request(await createApp())
+      .patch('/api/academy/teachers/me/availability')
+      .send({ schoolIds: [2], availability: [] });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('adminAccessRequired');
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed attendance instead of silently turning it into an absence', async () => {
     const response = await request(await createApp())
       .post('/api/academy/lessons/10/attendance')
@@ -529,17 +541,22 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(2);
   });
 
-  it('does not shift following lessons unless it was explicitly requested', async () => {
+  it('always shifts following lessons even when the client omits the legacy flag', async () => {
     const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     originalAt.setSeconds(0, 0);
     const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
     const lesson = lessonFixture({ scheduled_at: originalAt });
+    const following = lessonFixture({
+      id: 11,
+      lesson_number: 2,
+      scheduled_at: new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000),
+    });
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
       if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [lesson] };
       if (sql.includes('FROM academy_lessons affected_lesson')) {
-        throw new Error('following lessons must not be loaded without shiftFollowing=true');
+        return { rows: [lesson, following] };
       }
       if (sql.includes('FROM academy_attendance WHERE lesson_id')) return emptyResult();
       if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
@@ -564,7 +581,8 @@ describe('academy route logic boundaries', () => {
       }
       if (sql.includes('SELECT id FROM academy_lessons') || sql.includes('FROM academy_groups\n')) return emptyResult();
       if (sql.includes('UPDATE "academy_lessons"')) {
-        return { rows: [{ ...lesson, scheduled_at: values[1] }] };
+        const source = Number(values[0]) === 11 ? following : lesson;
+        return { rows: [{ ...source, scheduled_at: values[1] }] };
       }
       if (sql.includes('INSERT INTO "academy_lesson_reschedules"')) return { rows: [{ id: 100 }] };
       if (sql.includes('UPDATE academy_groups')) return emptyResult();
@@ -579,7 +597,65 @@ describe('academy route logic boundaries', () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.shiftedCount).toBe(1);
+    expect(response.body.shiftedCount).toBe(2);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('reopens a conducted lesson, clears its attendance, and records both histories', async () => {
+    const originalAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    originalAt.setSeconds(0, 0);
+    const nextAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    nextAt.setSeconds(0, 0);
+    const conducted = lessonFixture({ status: 'conducted', scheduled_at: originalAt });
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [conducted] };
+      if (sql.includes('FROM academy_lessons affected_lesson')) return { rows: [conducted] };
+      if (sql.includes('SELECT lesson_id') && sql.includes('FROM academy_attendance')) return emptyResult();
+      if (sql.includes('DELETE FROM academy_attendance')) return { rows: [{ student_id: 5 }] };
+      if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+        return { rows: [{ id: 20, course_id: 1, school_id: 2, room_id: 3, teacher_id: 4, lesson_duration_minutes: 60 }] };
+      }
+      if (sql.includes('FROM academy_rooms room')) return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+      if (sql.includes('FROM academy_teachers WHERE id = $1')) {
+        return {
+          rows: [{
+            id: 4,
+            status: 'active',
+            course_ids: [1],
+            school_ids: [2],
+            availability: Array.from({ length: 7 }, (_, index) => ({
+              dayOfWeek: index + 1,
+              startTime: '00:00',
+              endTime: '23:59',
+              schoolId: 2,
+            })),
+          }],
+        };
+      }
+      if (sql.includes('SELECT id FROM academy_lessons') || sql.includes('FROM academy_groups\n')) return emptyResult();
+      if (sql.includes('UPDATE "academy_lessons"')) {
+        return { rows: [{ ...conducted, scheduled_at: values[1], status: 'scheduled' }] };
+      }
+      if (sql.includes('INSERT INTO "academy_lesson_reschedules"')) return { rows: [{ id: 100 }] };
+      if (sql.includes('INSERT INTO "academy_lesson_status_history"')) return { rows: [{ id: 101 }] };
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) return emptyResult();
+      if (sql.includes('UPDATE academy_groups')) return emptyResult();
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/reschedule')
+      .send({
+        scheduledAt: nextAt.toISOString(),
+        reason: 'Урок был отмечен проведённым случайно',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.lesson.status).toBe('scheduled');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM academy_attendance'))).toBe(true);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_status_history"'))).toBe(true);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 

@@ -6011,7 +6011,7 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
     if (req.body.shiftFollowing !== undefined && typeof req.body.shiftFollowing !== 'boolean') {
       return res.status(400).json({ error: 'Invalid shiftFollowing' });
     }
-    const shiftFollowing = req.body.shiftFollowing !== false;
+    const shiftFollowing = req.body.shiftFollowing === true;
 
     const result = await withTransaction(async () => {
       await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
@@ -6040,16 +6040,6 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         throw Object.assign(new Error('rescheduleDateMustChange'), { statusCode: 400 });
       }
       const deltaMs = nextScheduledAt.getTime() - previousScheduledAt.getTime();
-      if (shiftFollowing) {
-        const previousSlot = getAcademySlotPosition(previousScheduledAt);
-        const nextSlot = getAcademySlotPosition(nextScheduledAt);
-        if (
-          previousSlot.dayOfWeek !== nextSlot.dayOfWeek
-          || previousSlot.startMinutes !== nextSlot.startMinutes
-        ) {
-          throw Object.assign(new Error('rescheduleChainMustPreserveSchedule'), { statusCode: 409 });
-        }
-      }
       const affected = shiftFollowing
         ? await query(
           `SELECT affected_lesson.*, affected_teacher.user_id AS teacher_user_id
@@ -6193,6 +6183,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     }
 
     const result = await withTransaction(async () => {
+      await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
       const lesson = await queryOne(
         `SELECT l.*, t.user_id AS teacher_user_id
          FROM academy_lessons l
@@ -6224,6 +6215,22 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         && new Date(lesson.scheduledAt).getTime() > Date.now()
       ) {
         throw Object.assign(new Error('lessonNotStarted'), { statusCode: 409 });
+      }
+      if (requestedLessonStatus === 'conducted' && lesson.status !== 'conducted') {
+        const previousIncompleteLesson = await queryOne(
+          `SELECT previous_lesson.id
+           FROM academy_lessons previous_lesson
+           WHERE previous_lesson.group_id = $1
+             AND previous_lesson.status = 'scheduled'
+             AND previous_lesson.scheduled_at < $2
+           ORDER BY previous_lesson.scheduled_at, previous_lesson.id
+           LIMIT 1
+           FOR UPDATE`,
+          [lesson.groupId, lesson.scheduledAt],
+        );
+        if (previousIncompleteLesson) {
+          throw Object.assign(new Error('previousLessonMustBeCompleted'), { statusCode: 409 });
+        }
       }
 
       const groupStudents = await getLessonRoster(

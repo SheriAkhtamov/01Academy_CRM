@@ -271,6 +271,36 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_attendance'))).toBe(false);
   });
 
+  it('requires earlier scheduled lessons in the same group to be completed first', async () => {
+    const scheduledAt = new Date(Date.now() - 60 * 60 * 1000);
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('FOR UPDATE OF l')) {
+        return {
+          rows: [{
+            id: 11,
+            group_id: 20,
+            status: 'scheduled',
+            scheduled_at: scheduledAt,
+          }],
+        };
+      }
+      if (sql.includes('FROM academy_lessons previous_lesson')) {
+        return { rows: [{ id: 10 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/11/attendance')
+      .send({ lessonStatus: 'conducted', attendance: [] });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('previousLessonMustBeCompleted');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_attendance'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
   it('does not reopen a conducted lesson through the attendance endpoint', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
@@ -410,8 +440,8 @@ describe('academy route logic boundaries', () => {
   it('reschedules a lesson chain atomically and preserves the lesson intervals', async () => {
     const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     originalAt.setSeconds(17, 321);
-    const followingAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const nextAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const followingAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
     nextAt.setSeconds(0, 0);
     const lessonRow = (id: number, scheduledAt: Date) => ({
       id,
@@ -497,6 +527,60 @@ describe('academy route logic boundaries', () => {
     ]);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(2);
+  });
+
+  it('does not shift following lessons unless it was explicitly requested', async () => {
+    const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    originalAt.setSeconds(0, 0);
+    const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const lesson = lessonFixture({ scheduled_at: originalAt });
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [lesson] };
+      if (sql.includes('FROM academy_lessons affected_lesson')) {
+        throw new Error('following lessons must not be loaded without shiftFollowing=true');
+      }
+      if (sql.includes('FROM academy_attendance WHERE lesson_id')) return emptyResult();
+      if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+        return { rows: [{ id: 20, course_id: 1, school_id: 2, room_id: 3, teacher_id: 4, lesson_duration_minutes: 60 }] };
+      }
+      if (sql.includes('FROM academy_rooms room')) return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+      if (sql.includes('FROM academy_teachers WHERE id = $1')) {
+        return {
+          rows: [{
+            id: 4,
+            status: 'active',
+            course_ids: [1],
+            school_ids: [2],
+            availability: Array.from({ length: 7 }, (_, index) => ({
+              dayOfWeek: index + 1,
+              startTime: '00:00',
+              endTime: '23:59',
+              schoolId: 2,
+            })),
+          }],
+        };
+      }
+      if (sql.includes('SELECT id FROM academy_lessons') || sql.includes('FROM academy_groups\n')) return emptyResult();
+      if (sql.includes('UPDATE "academy_lessons"')) {
+        return { rows: [{ ...lesson, scheduled_at: values[1] }] };
+      }
+      if (sql.includes('INSERT INTO "academy_lesson_reschedules"')) return { rows: [{ id: 100 }] };
+      if (sql.includes('UPDATE academy_groups')) return emptyResult();
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/lessons/10/reschedule')
+      .send({
+        scheduledAt: nextAt.toISOString(),
+        reason: 'Перенос только одного занятия',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.shiftedCount).toBe(1);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('rolls back a chain reschedule when any following lesson already has attendance', async () => {

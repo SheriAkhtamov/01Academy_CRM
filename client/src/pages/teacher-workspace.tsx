@@ -8,6 +8,13 @@ import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -367,7 +374,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const [attendanceNote, setAttendanceNote] = useState('');
   const [rescheduleAt, setRescheduleAt] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
-  const [shiftFollowingLessons, setShiftFollowingLessons] = useState(true);
+  const [shiftFollowingLessons, setShiftFollowingLessons] = useState(false);
+  const [isAttendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const attendanceDraftDirty = useRef(false);
   const attendanceNoteDirty = useRef(false);
@@ -503,6 +511,19 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     [lessons, now],
   );
 
+  const previousIncompleteLesson = useMemo(() => {
+    if (!selectedLesson || selectedLesson.status === 'conducted') return null;
+    return lessons
+      .filter((lesson) => (
+        lesson.groupId === selectedLesson.groupId
+        && lesson.status === 'scheduled'
+        && new Date(lesson.scheduledAt).getTime() < new Date(selectedLesson.scheduledAt).getTime()
+      ))
+      .sort((left, right) => (
+        new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
+      ))[0] ?? null;
+  }, [lessons, selectedLesson]);
+
   const attendanceRosterQuery = useQuery<{
     lesson: Lesson;
     students: Student[];
@@ -555,7 +576,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     ));
     setRescheduleAt(toDateTimeLocal(suggestedDate));
     setRescheduleReason('');
-    setShiftFollowingLessons(true);
+    setShiftFollowingLessons(false);
   }, [selectedLessonDetails?.id, selectedLessonDetails?.scheduledAt]);
 
   const selectedLessonStudents = useMemo(() => {
@@ -610,6 +631,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     && allAttendanceMarked
     && !attendanceRosterQuery.isPending
     && !attendanceRosterQuery.isError
+    && !previousIncompleteLesson
     && (selectedLessonDetails.status === 'conducted' || selectedLessonHasStarted),
   );
   const parsedRescheduleAt = rescheduleAt ? academyWallClockToDate(rescheduleAt) : null;
@@ -1135,14 +1157,17 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               setSelectedLessonId(lessonId);
               setAttendanceDraft({});
               setAttendanceNote('');
+              setAttendanceDialogOpen(true);
             }}
           />
 
-          <Card className="border-border/70">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">{t('attendanceChecklist')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <Dialog open={isAttendanceDialogOpen} onOpenChange={setAttendanceDialogOpen}>
+            <DialogContent className="max-h-[90vh] max-w-4xl gap-0 overflow-y-auto p-0">
+              <DialogHeader className="border-b border-border/70 px-6 py-5 pr-12">
+                <DialogTitle>{t('attendanceChecklist')}</DialogTitle>
+                <DialogDescription>{t('attendanceCalendarHint')}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 p-6">
               {selectedLessonDetails && (
                 <div className="rounded-lg border border-border/70 bg-muted/50 p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1358,6 +1383,9 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
                         <p className="text-xs text-amber-700">{t('attendanceAvailableAfterLessonStart')}</p>
                       )}
+                      {previousIncompleteLesson && (
+                        <p className="text-xs text-amber-700">{t('previousLessonMustBeCompleted')}</p>
+                      )}
                       <Button
                         onClick={handleSaveAttendance}
                         disabled={lessonMutationPending || !canSaveAttendance}
@@ -1385,12 +1413,17 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   />
                   {selectedLessonDetails?.status === 'scheduled' && (
                     <div className="flex justify-end">
-                      <Button
-                        onClick={handleSaveAttendance}
-                        disabled={!canSaveAttendance || lessonMutationPending}
-                      >
-                        {saveAttendance.isPending ? t('saving') : t('finishLessonAndSaveAttendance')}
-                      </Button>
+                      <div className="space-y-1 text-right">
+                        {previousIncompleteLesson && (
+                          <p className="text-xs text-amber-700">{t('previousLessonMustBeCompleted')}</p>
+                        )}
+                        <Button
+                          onClick={handleSaveAttendance}
+                          disabled={!canSaveAttendance || lessonMutationPending}
+                        >
+                          {saveAttendance.isPending ? t('saving') : t('finishLessonAndSaveAttendance')}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1403,8 +1436,9 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   icon={ClipboardList}
                 />
               )}
-            </CardContent>
-          </Card>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Ratings Tab */}

@@ -5214,28 +5214,93 @@ const groupLessonBackedFieldChanged = (field: string, nextValue: unknown, previo
   return Number(nextValue) !== Number(previousValue);
 };
 
+const GROUP_LESSON_BACKED_FIELDS = [
+  'roomId',
+  'teacherId',
+  'schedule',
+  'startDate',
+  'endDate',
+  'lessonCount',
+  'lessonDurationMinutes',
+  'durationDays',
+  'frequency',
+] as const;
+
+const GROUP_SCHEDULE_PREPARATION_FIELDS = [
+  'courseId',
+  'schoolId',
+  ...GROUP_LESSON_BACKED_FIELDS,
+] as const;
+
+const groupFieldsChanged = (
+  fields: readonly string[],
+  values: Row,
+  row: Row,
+) => fields.some((field) =>
+  Object.prototype.hasOwnProperty.call(values, field)
+  && groupLessonBackedFieldChanged(field, values[field], row[field]));
+
+const groupSchedulePreparationRequired = (values: Row, row: Row) =>
+  groupFieldsChanged(GROUP_SCHEDULE_PREPARATION_FIELDS, values, row);
+
+const prepareGroupMetadataMutation = async (values: Row, row: Row) => {
+  const status = String(values.status ?? row.status ?? 'open');
+  if (!GROUP_STATUSES.some((item) => item.code === status)) {
+    throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(values, 'maxStudents')) return;
+  const maxStudents = Number(values.maxStudents);
+  if (maxStudents === Number(row.maxStudents)) return;
+  if (maxStudents < 1 || maxStudents > 12) {
+    throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
+  }
+
+  const occupancy = await queryOne<{ currentStudents: number; reservedStudents: number }>(
+    `SELECT
+       COUNT(DISTINCT s.id)::int AS current_students,
+       COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students
+     FROM academy_groups g
+     LEFT JOIN academy_students s
+       ON s.group_id = g.id AND s.status = 'studying'
+     LEFT JOIN academy_leads reserved
+       ON reserved.enrolled_group_id = g.id
+      AND reserved.status_code <> 'not_now'
+      AND COALESCE(reserved.is_archived, false) = false
+      AND NOT EXISTS (
+        SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
+      )
+     WHERE g.id = $1
+     GROUP BY g.id`,
+    [row.id],
+  );
+  if (
+    Number(occupancy?.currentStudents ?? 0)
+    + Number(occupancy?.reservedStudents ?? 0)
+    > maxStudents
+  ) {
+    throw Object.assign(new Error('groupCapacityBelowOccupancy'), { statusCode: 409 });
+  }
+
+  const room = await assertActiveRoomInSchool(Number(row.roomId), Number(row.schoolId));
+  if (maxStudents > Number(room.capacity)) {
+    throw Object.assign(new Error('groupExceedsRoomCapacity'), { statusCode: 400 });
+  }
+  values.maxStudents = maxStudents;
+};
+
 const assertGroupLifecycleUpdateAllowed = async (options: {
   id: number;
   values: Row;
   row: Row;
-  autoAssignRequested: boolean;
 }) => {
-  const lessonBackedFields = [
-    'roomId',
-    'teacherId',
-    'schedule',
-    'startDate',
-    'endDate',
-    'lessonCount',
-    'lessonDurationMinutes',
-    'durationDays',
-    'frequency',
-  ];
-  const changesLessonBackedField = lessonBackedFields.some((field) =>
-    Object.prototype.hasOwnProperty.call(options.values, field)
-    && groupLessonBackedFieldChanged(field, options.values[field], options.row[field]));
+  const changesLessonBackedField = groupFieldsChanged(
+    GROUP_LESSON_BACKED_FIELDS,
+    options.values,
+    options.row,
+  );
   const completesGroup = options.row.status !== 'completed' && options.values.status === 'completed';
-  if (!changesLessonBackedField && !completesGroup && !options.autoAssignRequested) return;
+  if (!changesLessonBackedField && !completesGroup) return;
 
   const lifecycle = await queryOne<{
     hasLessons: boolean;
@@ -5271,7 +5336,7 @@ const assertGroupLifecycleUpdateAllowed = async (options: {
     [options.id],
   );
 
-  if (lifecycle?.hasLessons && (changesLessonBackedField || options.autoAssignRequested)) {
+  if (lifecycle?.hasLessons && changesLessonBackedField) {
     throw Object.assign(new Error('groupLessonsLockSchedule'), { statusCode: 409 });
   }
   if (!completesGroup) return;
@@ -5744,12 +5809,17 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           if (options.beforeUpdate) {
             await options.beforeUpdate({ id, values, row: lockedRow, req });
           }
-          await prepareGroupMutation({
-            values,
-            oldRow: lockedRow,
-            excludeGroupId: id,
-            forceAutoAssign: req.body.autoAssign === true,
-          });
+          const prepareSchedule = groupSchedulePreparationRequired(values, lockedRow);
+          if (prepareSchedule) {
+            await prepareGroupMutation({
+              values,
+              oldRow: lockedRow,
+              excludeGroupId: id,
+              forceAutoAssign: req.body.autoAssign === true,
+            });
+          } else {
+            await prepareGroupMetadataMutation(values, lockedRow);
+          }
           const updatedGroup = await updateRow(table, id, values);
           await materializeGroupLessons(id);
           return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [id]) ?? updatedGroup;
@@ -7739,12 +7809,11 @@ registerSimpleCrud('groups', 'academy_groups', [
 ], {
   orderBy: 'created_at DESC',
   requireAdministration: true,
-  beforeUpdate: async ({ id, values, row, req }) => {
+  beforeUpdate: async ({ id, values, row }) => {
     await assertGroupLifecycleUpdateAllowed({
       id,
       values,
       row,
-      autoAssignRequested: req.body.autoAssign === true,
     });
   },
   beforeDelete: async ({ id }) => {

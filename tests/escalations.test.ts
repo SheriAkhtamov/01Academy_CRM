@@ -32,7 +32,7 @@ describe("escalation monitor", () => {
     });
   });
 
-  it("atomically writes the ledger, notifications, outbox row, and task marker", async () => {
+  it("notifies only the task owner in CRM while keeping the leadership outbox", async () => {
     await expect(runEscalations()).resolves.toEqual(["task-sla:7"]);
 
     const sql = mocks.clientQuery.mock.calls.map(([query]) => sqlText(query));
@@ -42,6 +42,12 @@ describe("escalation monitor", () => {
     expect(sql.some((query) => query.startsWith("INSERT INTO notifications"))).toBe(true);
     expect(sql.some((query) => query.startsWith("INSERT INTO academy_notification_outbox"))).toBe(true);
     expect(sql.some((query) => query.startsWith("UPDATE academy_tasks SET escalated_at = NOW()"))).toBe(true);
+    const notificationCall = mocks.clientQuery.mock.calls.find(([query]) =>
+      sqlText(query).startsWith("INSERT INTO notifications")
+    );
+    expect(sqlText(notificationCall?.[0])).toContain("WHERE task_owner.id = $1");
+    expect(sqlText(notificationCall?.[0])).not.toContain("user_workspaces");
+    expect(notificationCall?.[1]?.[0]).toBe(3);
     expect(sql.at(-1)).toBe("COMMIT");
     expect(mocks.release).toHaveBeenCalledOnce();
   });

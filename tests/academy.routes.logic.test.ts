@@ -1389,6 +1389,37 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
+  it('moves lead-owned notifications when leads are assigned to another manager', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [{ id: 9, full_name: 'New manager' }] };
+      }
+      if (sql.includes('FROM academy_leads') && sql.includes('FOR UPDATE')) {
+        return { rows: [leadFixture({ id: 42, manager_id: 3 })] };
+      }
+      if (sql.includes('INSERT INTO "academy_lead_assignment_history"')) {
+        return { rows: [{ id: 100 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/bulk-assign')
+      .send({ leadIds: [42], managerId: 9 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.updatedCount).toBe(1);
+    const notificationSync = mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE notifications notification')
+    );
+    expect(notificationSync).toBeDefined();
+    expect(notificationSync?.[1]).toEqual([9, [42]]);
+    expect(String(notificationSync?.[0])).toContain("notification.related_entity_type = 'lead'");
+    expect(String(notificationSync?.[0])).toContain("notification.related_entity_type = 'academy_task'");
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it.each([
     {
       dependency: 'scheduled lessons',

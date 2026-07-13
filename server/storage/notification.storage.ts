@@ -17,16 +17,11 @@ class NotificationStorage {
         return result[0];
     }
 
-    async markNotificationAsRead(id: number, userId?: number): Promise<Notification | undefined> {
-        const conditions = [eq(notifications.id, id)];
-        if (userId) {
-            conditions.push(eq(notifications.userId, userId));
-        }
-
+    async markNotificationAsRead(id: number, userId: number): Promise<Notification | undefined> {
         const result = await db
             .update(notifications)
             .set({ isRead: true })
-            .where(and(...conditions))
+            .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
             .returning();
         return result[0];
     }
@@ -38,12 +33,11 @@ class NotificationStorage {
             .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
     }
 
-    async deleteNotification(id: number, userId?: number): Promise<boolean> {
-        const conditions = [eq(notifications.id, id)];
-        if (userId) {
-            conditions.push(eq(notifications.userId, userId));
-        }
-        const deleted = await db.delete(notifications).where(and(...conditions)).returning({ id: notifications.id });
+    async deleteNotification(id: number, userId: number): Promise<boolean> {
+        const deleted = await db
+            .delete(notifications)
+            .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+            .returning({ id: notifications.id });
         return deleted.length > 0;
     }
 }

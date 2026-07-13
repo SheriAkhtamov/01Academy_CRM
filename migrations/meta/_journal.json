@@ -316,6 +316,13 @@
       "when": 1784822400000,
       "tag": "0044_materialize_group_lessons",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784908800000,
+      "tag": "0045_isolate_owned_notifications",
+      "breakpoints": true
     }
   ]
 }

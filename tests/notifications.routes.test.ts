@@ -3,13 +3,14 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  getNotificationsByUser: vi.fn(),
   markNotificationAsRead: vi.fn(),
   deleteNotification: vi.fn(),
 }));
 
 vi.mock('../server/storage', () => ({
   storage: {
-    getNotificationsByUser: vi.fn(async () => []),
+    getNotificationsByUser: mocks.getNotificationsByUser,
     markAllNotificationsAsRead: vi.fn(async () => undefined),
     markNotificationAsRead: mocks.markNotificationAsRead,
     deleteNotification: mocks.deleteNotification,
@@ -38,6 +39,17 @@ const createApp = async () => {
 describe('notification route boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getNotificationsByUser.mockResolvedValue([]);
+  });
+
+  it('lists notifications only for the authenticated user', async () => {
+    mocks.getNotificationsByUser.mockResolvedValue([{ id: 9, userId: 7 }]);
+
+    const response = await request(await createApp()).get('/api/notifications');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([{ id: 9, userId: 7 }]);
+    expect(mocks.getNotificationsByUser).toHaveBeenCalledWith(7);
   });
 
   it('rejects partially numeric IDs instead of targeting another notification', async () => {

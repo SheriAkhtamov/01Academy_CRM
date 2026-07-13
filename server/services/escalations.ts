@@ -2,17 +2,6 @@ import type { PoolClient } from "pg";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
 
-const leadershipUserAccessSql = `
-  (
-    u.workspace = 'administration'
-    OR EXISTS (
-      SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
-    )
-  )
-`;
-
 type EscalationKind = "task_sla" | "feedback_sla";
 
 interface EscalationTask {
@@ -41,8 +30,9 @@ const notificationFor = (kind: EscalationKind, task: EscalationTask) => kind ===
       message: `Задача «${task.title}» не закрыта за 12 часов. Ответственный: ${task.responsible_name ?? "не назначен"}.`,
     };
 
-const notifyLeadership = async (
+const queueEscalationNotifications = async (
   client: PoolClient,
+  responsibleId: number | null,
   title: string,
   message: string,
   entityType: string,
@@ -54,19 +44,19 @@ const notifyLeadership = async (
   await client.query(
     `INSERT INTO notifications
        (user_id, type, title, message, related_entity_type, related_entity_id)
-     SELECT u.id, 'academy_escalation', $1, $2, $3, $4
-     FROM users u
-     WHERE ${leadershipUserAccessSql}
-       AND u.is_active = true
+     SELECT task_owner.id, 'academy_escalation', $2, $3, $4, $5
+     FROM users task_owner
+     WHERE task_owner.id = $1
+       AND task_owner.is_active = true
        AND NOT EXISTS (
          SELECT 1
          FROM notifications existing
-         WHERE existing.user_id = u.id
+         WHERE existing.user_id = task_owner.id
            AND existing.type = 'academy_escalation'
-           AND existing.related_entity_type = $3
-           AND existing.related_entity_id = $4
+           AND existing.related_entity_type = $4
+           AND existing.related_entity_id = $5
        )`,
-    [title, message, entityType, entityId],
+    [responsibleId, title, message, entityType, entityId],
   );
   await client.query(
     `INSERT INTO academy_notification_outbox
@@ -119,7 +109,14 @@ const escalateTask = async (taskId: number, kind: EscalationKind): Promise<boole
       // are themselves idempotent, so missing delivery records are restored
       // without duplicating records that were already queued.
       const notification = notificationFor(kind, task);
-      await notifyLeadership(client, notification.title, notification.message, "academy_task", task.id);
+      await queueEscalationNotifications(
+        client,
+        task.responsible_id,
+        notification.title,
+        notification.message,
+        "academy_task",
+        task.id,
+      );
       await client.query(
         "UPDATE academy_tasks SET escalated_at = COALESCE(escalated_at, NOW()), updated_at = NOW() WHERE id = $1",
         [task.id],
@@ -129,7 +126,14 @@ const escalateTask = async (taskId: number, kind: EscalationKind): Promise<boole
     }
 
     const notification = notificationFor(kind, task);
-    await notifyLeadership(client, notification.title, notification.message, "academy_task", task.id);
+    await queueEscalationNotifications(
+      client,
+      task.responsible_id,
+      notification.title,
+      notification.message,
+      "academy_task",
+      task.id,
+    );
     await client.query(
       "UPDATE academy_tasks SET escalated_at = NOW(), updated_at = NOW() WHERE id = $1",
       [task.id],

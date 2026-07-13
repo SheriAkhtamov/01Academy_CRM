@@ -1815,6 +1815,49 @@ const getActiveSalesManager = async (managerId: number, lockForAssignment = fals
   return manager;
 };
 
+const syncLeadOwnedNotifications = async (managerId: number, leadIds: number[]) => {
+  if (leadIds.length === 0) return;
+  await query(
+    `UPDATE notifications notification
+     SET user_id = $1, is_read = false
+     WHERE notification.user_id IS DISTINCT FROM $1
+       AND (
+         (
+           notification.related_entity_type = 'lead'
+           AND notification.related_entity_id = ANY($2::int[])
+         )
+         OR (
+           notification.related_entity_type = 'student'
+           AND notification.related_entity_id IN (
+             SELECT student.id
+             FROM academy_students student
+             WHERE student.lead_id = ANY($2::int[])
+           )
+         )
+         OR (
+           notification.related_entity_type = 'academy_task'
+           AND notification.related_entity_id IN (
+             SELECT task.id
+             FROM academy_tasks task
+             WHERE task.status <> 'done'
+               AND (
+                 (task.entity_type = 'lead' AND task.entity_id = ANY($2::int[]))
+                 OR (
+                   task.entity_type = 'student'
+                   AND task.entity_id IN (
+                     SELECT student.id
+                     FROM academy_students student
+                     WHERE student.lead_id = ANY($2::int[])
+                   )
+                 )
+               )
+           )
+         )
+       )`,
+    [managerId, leadIds],
+  );
+};
+
 const syncLeadManagerAssignment = async (
   req: any,
   lead: Row,
@@ -1840,6 +1883,7 @@ const syncLeadManagerAssignment = async (
        )`,
     [manager.id, lead.id],
   );
+  await syncLeadOwnedNotifications(manager.id, [Number(lead.id)]);
   await insertRow('academy_lead_assignment_history', {
     leadId: lead.id,
     fromManagerId: lead.managerId ?? null,
@@ -4250,6 +4294,7 @@ router.post('/leads/bulk-assign', async (req, res) => {
            )`,
         [lockedManager.id, changedIds],
       );
+      await syncLeadOwnedNotifications(lockedManager.id, changedIds);
       for (const lead of changed) {
         await insertRow('academy_lead_assignment_history', {
           leadId: lead.id,

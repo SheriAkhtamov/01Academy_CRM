@@ -25,7 +25,10 @@ try {
     max: appConfig.database.pool?.max ?? 20,
     idleTimeoutMillis: appConfig.database.pool?.idleTimeoutMillis ?? 30000,
     connectionTimeoutMillis: appConfig.database.pool?.connectionTimeoutMillis ?? 2000,
-    options: '-c timezone=UTC',
+    // Transactions in the CRM are expected to be short. These server-side
+    // guards prevent a future lock-order bug from holding a request and its
+    // row locks indefinitely even if application-level protection regresses.
+    options: '-c timezone=UTC -c lock_timeout=15000 -c idle_in_transaction_session_timeout=60000',
   });
 
   db = drizzle(pool, { schema });

@@ -81,6 +81,8 @@ type DbValue = string | number | boolean | Date | null | unknown[] | Record<stri
 type Row = Record<string, any>;
 type ReferralBenefitType = (typeof REFERRAL_BENEFIT_TYPES)[number];
 const transactionContext = new AsyncLocalStorage<PoolClient>();
+type AfterCommitTask = () => Promise<void>;
+const afterCommitContext = new AsyncLocalStorage<AfterCommitTask[]>();
 
 const ADMINISTRATION_WORKSPACES = new Set(['administration']);
 const OPERATIONS_WORKSPACES = new Set(['administration']);
@@ -330,17 +332,40 @@ const withTransaction = async <T>(callback: () => Promise<T>): Promise<T> => {
   }
 
   const client = await pool.connect();
+  const afterCommitTasks: AfterCommitTask[] = [];
+  let result!: T;
   try {
     await client.query('BEGIN');
-    const result = await transactionContext.run(client, callback);
+    result = await transactionContext.run(
+      client,
+      () => afterCommitContext.run(afterCommitTasks, callback),
+    );
     await client.query('COMMIT');
-    return result;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  // Storage services use the shared pool rather than this transaction's
+  // connection. Running them while row locks are still held can create an
+  // application-level deadlock (the transaction waits for the service while
+  // the service waits for the transaction). Flush side effects only after the
+  // transaction has committed and released its connection.
+  for (const task of afterCommitTasks) {
+    await task();
+  }
+  return result;
+};
+
+const runAfterTransactionCommit = async (task: AfterCommitTask) => {
+  const pendingTasks = afterCommitContext.getStore();
+  if (pendingTasks) {
+    pendingTasks.push(task);
+    return;
+  }
+  await task();
 };
 
 const queryOne = async <T = Row>(sql: string, values: DbValue[] = []) => {
@@ -654,24 +679,30 @@ const toAnalyticsTargets = (settings: Row) => ({
 });
 
 const createAudit = async (req: any, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
-  await storage.createAuditLog({
-    userId: req.user!.id,
-    action,
-    entityType,
-    entityId,
-    oldValues: oldValues ? [oldValues] : undefined,
-    newValues: newValues ? [newValues] : undefined }).catch((error) => logger.error('Failed to write academy audit log', { error, action, entityType, entityId }));
+  await runAfterTransactionCommit(async () => {
+    await storage.createAuditLog({
+      userId: req.user!.id,
+      action,
+      entityType,
+      entityId,
+      oldValues: oldValues ? [oldValues] : undefined,
+      newValues: newValues ? [newValues] : undefined,
+    }).catch((error) => logger.error('Failed to write academy audit log', { error, action, entityType, entityId }));
+  });
 };
 
 const createNotification = async (userId: number | null | undefined, title: string, message: string, entityType?: string, entityId?: number) => {
   if (!userId) return;
-  await storage.createNotification({
-    userId,
-    type: 'academy_task',
-    title,
-    message,
-    relatedEntityType: entityType,
-    relatedEntityId: entityId }).catch((error) => logger.error('Failed to create notification', { error, userId }));
+  await runAfterTransactionCommit(async () => {
+    await storage.createNotification({
+      userId,
+      type: 'academy_task',
+      title,
+      message,
+      relatedEntityType: entityType,
+      relatedEntityId: entityId,
+    }).catch((error) => logger.error('Failed to create notification', { error, userId }));
+  });
 };
 
 const createTask = async (title: string, options: {

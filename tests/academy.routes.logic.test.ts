@@ -224,6 +224,134 @@ describe('academy route logic boundaries', () => {
     expect(response.body.error).toBe('Lead access required');
   });
 
+  it('defers assignment notifications and audits until the archive transaction commits', async () => {
+    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    const events: string[] = [];
+    const unassignedLead = leadFixture({
+      id: 1679,
+      contact_name: '100k 💪',
+      manager_id: null,
+      is_archived: false,
+    });
+    const assignedLead = {
+      ...unassignedLead,
+      manager_id: 7,
+      manager_name: 'Абдурахманова Хонзода',
+    };
+    const archivedLead = {
+      ...assignedLead,
+      is_archived: true,
+      archive_reason: 'no_answer',
+      archived_by: 7,
+    };
+    let leadFetchCount = 0;
+
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('WHERE l.id = $1')) {
+        leadFetchCount += 1;
+        return { rows: [leadFetchCount === 1 ? unassignedLead : archivedLead] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+        events.push(sql);
+        return emptyResult();
+      }
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [{ id: 7, full_name: 'Абдурахманова Хонзода' }] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [unassignedLead] };
+      }
+      if (sql.includes('UPDATE "academy_leads"') && sql.includes('"manager_id" = $2')) {
+        return { rows: [assignedLead] };
+      }
+      if (sql.includes('UPDATE "academy_leads"') && sql.includes('"is_archived" = $2')) {
+        return { rows: [archivedLead] };
+      }
+      if (sql.includes('INSERT INTO "academy_lead_assignment_history"')) {
+        return { rows: [{ id: 1, lead_id: 1679, to_manager_id: 7 }] };
+      }
+      return emptyResult();
+    });
+    mocks.createNotification.mockImplementation(async () => {
+      events.push('NOTIFICATION');
+      return undefined;
+    });
+    mocks.createAuditLog.mockImplementation(async (entry: { action: string }) => {
+      events.push(`AUDIT:${entry.action}`);
+      return undefined;
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/1679/archive')
+      .send({ reason: 'no_answer', assignToSelf: true });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toMatchObject({
+      id: 1679,
+      managerId: 7,
+      isArchived: true,
+      archiveReason: 'no_answer',
+    });
+    expect(events).toEqual([
+      'BEGIN',
+      'COMMIT',
+      'NOTIFICATION',
+      'AUDIT:ASSIGN_ACADEMY_LEAD',
+      'AUDIT:ARCHIVE_ACADEMY_LEAD',
+    ]);
+  });
+
+  it('discards deferred side effects when an archive transaction rolls back', async () => {
+    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    const events: string[] = [];
+    const unassignedLead = leadFixture({
+      id: 1679,
+      contact_name: '100k 💪',
+      manager_id: null,
+      is_archived: false,
+    });
+    const assignedLead = { ...unassignedLead, manager_id: 7 };
+
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('WHERE l.id = $1') ? { rows: [unassignedLead] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+        events.push(sql);
+        return emptyResult();
+      }
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [{ id: 7, full_name: 'Абдурахманова Хонзода' }] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [unassignedLead] };
+      }
+      if (sql.includes('UPDATE "academy_leads"') && sql.includes('"manager_id" = $2')) {
+        return { rows: [assignedLead] };
+      }
+      if (sql.includes('UPDATE "academy_leads"') && sql.includes('"is_archived" = $2')) {
+        return emptyResult();
+      }
+      if (sql.includes('INSERT INTO "academy_lead_assignment_history"')) {
+        return { rows: [{ id: 1, lead_id: 1679, to_manager_id: 7 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/1679/archive')
+      .send({ reason: 'no_answer', assignToSelf: true });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe('Lead not found');
+    expect(events).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(mocks.createNotification).not.toHaveBeenCalled();
+    expect(mocks.createAuditLog).not.toHaveBeenCalled();
+  });
+
   it('fails closed when a teacher workspace has no teacher profile mapping', async () => {
     mocks.actor = { id: 7, workspace: 'teacher', workspaces: ['teacher'] };
     mocks.poolQuery.mockImplementation(async (sql: string) => {

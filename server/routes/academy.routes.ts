@@ -536,7 +536,6 @@ const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
 const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
   if (hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing')) return true;
-  if (lead.isArchived && canAccessAcademyWorkspace(req.user, 'sales')) return true;
   return canAccessAcademyWorkspace(req.user, 'sales')
     && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id));
 };
@@ -565,17 +564,23 @@ const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) => {
   return false;
 };
 
-const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
+const applyLeadVisibilityForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
   const actorWorkspaces = getAssignedWorkspaces(actor);
   if (!actor || !actorWorkspaces.includes('sales') || actorWorkspaces.includes('marketing') || hasLeadershipAccess(actor)) {
     return leads;
   }
+
+  // A sales employee may work with their own leads and with unassigned leads.
+  // Cards assigned to another manager are excluded completely instead of
+  // exposing a partially redacted card.
+  const visibleLeads = leads.filter((lead) => (
+    !lead.managerId || Number(lead.managerId) === Number(actor.userId)
+  ));
   const policy = await getWorkforcePolicy();
-  return leads.map((lead) => {
-    const ownsLead = Number(lead.managerId) === Number(actor.userId);
-    const shouldMask = policy.salesPhoneVisibility === 'own_leads'
-      ? !ownsLead
-      : !lead.managerId || !ownsLead;
+  if (policy.salesPhoneVisibility === 'own_leads') return visibleLeads;
+
+  return visibleLeads.map((lead) => {
+    const shouldMask = !lead.managerId;
     return shouldMask
       ? {
         ...lead,
@@ -588,8 +593,8 @@ const redactLeadPhonesForActor = async (actor: DatasetActor | undefined, leads: 
   });
 };
 
-const redactLeadForRequest = async (req: any, lead: Row) => (
-  await redactLeadPhonesForActor({
+const applyLeadVisibilityForRequest = async (req: any, lead: Row) => (
+  await applyLeadVisibilityForActor({
     userId: req.user!.id,
     workspace: String(req.user!.workspace),
     workspaces: getAssignedWorkspaces(req.user),
@@ -2705,8 +2710,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         LEFT JOIN users u ON u.id = l.manager_id
         LEFT JOIN academy_schools sc ON sc.id = l.school_id
         LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
-        WHERE COALESCE(l.is_archived, false) = true
-        ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`),
+        WHERE COALESCE(l.is_archived, false) = true ${isManagerScoped ? 'AND (l.manager_id = $1 OR l.manager_id IS NULL)' : ''}
+        ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`, managerParams),
     query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
         sc.name AS school_name,
         (
@@ -2821,8 +2826,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
   ]);
 
   const [visibleLeads, visibleArchivedLeads] = await Promise.all([
-    redactLeadPhonesForActor(actor, leads),
-    redactLeadPhonesForActor(actor, archivedLeads),
+    applyLeadVisibilityForActor(actor, leads),
+    applyLeadVisibilityForActor(actor, archivedLeads),
   ]);
   return {
     schools,
@@ -3871,7 +3876,7 @@ router.get('/search', async (req, res) => {
          LIMIT $${params.length + 2}`,
         [...params, like, remaining()],
       );
-      const visibleRows = await redactLeadPhonesForActor({
+      const visibleRows = await applyLeadVisibilityForActor({
         userId: req.user!.id,
         workspace: String(req.user!.workspace),
         workspaces: assignedWorkspaces,
@@ -4049,7 +4054,7 @@ router.get('/leads', async (req, res) => {
 
     conditions.push(`COALESCE(l.is_archived, false) = ${wantsArchived ? 'true' : 'false'}`);
 
-    if (assignedWorkspaces.includes('sales') && !canSeeAllLeads && !wantsArchived) {
+    if (assignedWorkspaces.includes('sales') && !canSeeAllLeads) {
       params.push(req.user!.id);
       conditions.push(`(l.manager_id = $${params.length} OR l.manager_id IS NULL)`);
     }
@@ -4104,7 +4109,7 @@ router.get('/leads', async (req, res) => {
        ORDER BY l.created_at DESC`,
       params,
     );
-    res.json(await redactLeadPhonesForActor(
+    res.json(await applyLeadVisibilityForActor(
       {
         userId: req.user!.id,
         workspace: String(req.user!.workspace),
@@ -4356,7 +4361,7 @@ router.get('/leads/:id', async (req, res) => {
       query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
       query(`SELECT * FROM academy_payments WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
     ]);
-    const [visibleLead] = await redactLeadPhonesForActor({
+    const [visibleLead] = await applyLeadVisibilityForActor({
       userId: req.user!.id,
       workspace: String(req.user!.workspace),
       workspaces: getAssignedWorkspaces(req.user),
@@ -4397,7 +4402,7 @@ router.post('/leads/:id/assign', async (req, res) => {
     const manager = await getActiveSalesManager(managerId);
     const lead = await reassignLead(req, oldLead, manager, nullableText(req.body.comment));
     await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
-    res.json(await redactLeadForRequest(req, lead));
+    res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to assign lead', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign lead' });
@@ -4884,7 +4889,7 @@ router.patch('/leads/:id', async (req, res) => {
     }
 
     await createAudit(req, 'UPDATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
-    res.json(await redactLeadForRequest(req, lead));
+    res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to update lead', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update lead' });
@@ -4929,7 +4934,7 @@ router.post('/leads/:id/contact', async (req, res) => {
         entityId: id });
     }
 
-    res.status(201).json({ communication, lead: await redactLeadForRequest(req, updatedLead) });
+    res.status(201).json({ communication, lead: await applyLeadVisibilityForRequest(req, updatedLead) });
   } catch (error) {
     logger.error('Failed to add lead contact', { error });
     res.status(500).json({ error: 'Failed to add lead contact' });
@@ -4963,7 +4968,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
       await createStageHistory(id, oldLead.statusCode, nextStatus, req.user!.id, 'Отмечено посещение демо');
       await handleLeadAutomation(req, lead, oldLead.statusCode);
     }
-    res.json(await redactLeadForRequest(req, lead));
+    res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error) {
     logger.error('Failed to mark demo attendance', { error });
     res.status(500).json({ error: 'Failed to mark demo attendance' });

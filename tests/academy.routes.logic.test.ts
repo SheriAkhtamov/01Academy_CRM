@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   createAuditLog: vi.fn(),
   createNotification: vi.fn(),
   runAutomations: vi.fn(),
+  getWorkforcePolicy: vi.fn(),
+  loggerError: vi.fn(),
 }));
 
 vi.mock('../server/db', () => ({
@@ -36,10 +38,10 @@ vi.mock('../server/storage', () => ({
 
 vi.mock('../server/config', () => ({ appConfig: { integrations: {} } }));
 vi.mock('../server/lib/logger', () => ({
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  logger: { error: mocks.loggerError, warn: vi.fn(), info: vi.fn() },
 }));
 vi.mock('../server/services/workforce-policy', () => ({
-  getWorkforcePolicy: vi.fn(async () => ({ salesPhoneVisibility: 'own_leads' })),
+  getWorkforcePolicy: mocks.getWorkforcePolicy,
   maskPhone: (value: string) => value,
 }));
 vi.mock('../server/services/automations', () => ({
@@ -126,6 +128,100 @@ describe('academy route logic boundaries', () => {
     mocks.createAuditLog.mockResolvedValue(undefined);
     mocks.createNotification.mockResolvedValue(undefined);
     mocks.runAutomations.mockResolvedValue([]);
+    mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'own_leads' });
+  });
+
+  it('shows full own and unassigned lead cards to sales while excluding other managers', async () => {
+    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('FROM academy_company_settings')) return { rows: [{ id: 1 }] };
+      if (sql.includes('SELECT l.*') && sql.includes('COALESCE(l.is_archived, false) = false')) {
+        expect(sql).toContain('AND (l.manager_id = $1 OR l.manager_id IS NULL)');
+        expect(values).toEqual([7]);
+        return {
+          rows: [
+            { id: 1, contact_name: 'Own lead', manager_id: 7, phone: '+998901111111', phone_numbers: ['+998901111111'] },
+            { id: 2, contact_name: 'Unassigned lead', manager_id: null, phone: '+998902222222', phone_numbers: ['+998902222222'] },
+            { id: 3, contact_name: 'Other lead', manager_id: 8, phone: '+998903333333', phone_numbers: ['+998903333333'] },
+          ],
+        };
+      }
+      if (sql.includes('SELECT l.*') && sql.includes('COALESCE(l.is_archived, false) = true')) {
+        expect(sql).toContain('AND (l.manager_id = $1 OR l.manager_id IS NULL)');
+        expect(values).toEqual([7]);
+        return {
+          rows: [
+            { id: 4, contact_name: 'Own archived lead', manager_id: 7, phone: '+998904444444', phone_numbers: ['+998904444444'] },
+            { id: 5, contact_name: 'Other archived lead', manager_id: 8, phone: '+998905555555', phone_numbers: ['+998905555555'] },
+          ],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/workspaces/sales');
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.leads).toEqual([
+      expect.objectContaining({ id: 1, phone: '+998901111111' }),
+      expect.objectContaining({ id: 2, phone: '+998902222222' }),
+    ]);
+    expect(response.body.archivedLeads).toEqual([
+      expect.objectContaining({ id: 4, phone: '+998904444444' }),
+    ]);
+  });
+
+  it('shows every manager lead with full data to an administration user', async () => {
+    mocks.actor = {
+      id: 1,
+      workspace: 'administration',
+      workspaces: ['administration', 'sales'],
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_company_settings')) return { rows: [{ id: 1 }] };
+      if (sql.includes('SELECT l.*') && sql.includes('COALESCE(l.is_archived, false) = false')) {
+        expect(sql).not.toContain('AND (l.manager_id = $1 OR l.manager_id IS NULL)');
+        return {
+          rows: [
+            { id: 1, contact_name: 'First manager lead', manager_id: 7, phone: '+998901111111' },
+            { id: 2, contact_name: 'Second manager lead', manager_id: 8, phone: '+998902222222' },
+          ],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/workspaces/sales');
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.leads).toEqual([
+      expect.objectContaining({ id: 1, managerId: 7, phone: '+998901111111' }),
+      expect.objectContaining({ id: 2, managerId: 8, phone: '+998902222222' }),
+    ]);
+    expect(mocks.getWorkforcePolicy).not.toHaveBeenCalled();
+  });
+
+  it('denies a sales employee direct access to another manager archived lead', async () => {
+    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('WHERE l.id = $1')) {
+        return {
+          rows: [{
+            id: 42,
+            contact_name: 'Other archived lead',
+            manager_id: 8,
+            phone: '+998903333333',
+            is_archived: true,
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/leads/42');
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('Lead access required');
   });
 
   it('fails closed when a teacher workspace has no teacher profile mapping', async () => {

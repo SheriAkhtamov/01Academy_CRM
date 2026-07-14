@@ -36,6 +36,10 @@ export const getWorkforcePolicy = async (): Promise<WorkforcePolicy> => {
 export const maskPhone = (phone: string | null | undefined) => {
   const value = String(phone ?? '').trim();
   if (!value) return value;
+  // Instagram lead identifiers used to be passed through the generic phone
+  // masker and turned into phone-looking values. Keep synthetic identifiers
+  // intact so clients can recognize them as non-phone contacts and hide them.
+  if (value.toLowerCase().startsWith('instagram:')) return value;
   const digits = value.replace(/\D/g, '');
   if (digits.length < 4) return '***';
   const country = digits.slice(0, Math.min(3, digits.length - 4));

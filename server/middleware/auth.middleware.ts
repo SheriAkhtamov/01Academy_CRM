@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
-import { hasLeadershipAccess } from '@shared/academy';
+import { hasFinanceAccess, hasLeadershipAccess } from '@shared/academy';
 
 // Authentication middleware
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
@@ -28,6 +28,16 @@ export const requireAdministration = async (req: Request, res: Response, next: N
     await requireAuth(req, res, () => {
         if (!hasLeadershipAccess(req.user)) {
             return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        next();
+    });
+};
+
+export const requireFinanceAccess = async (req: Request, res: Response, next: NextFunction) => {
+    await requireAuth(req, res, () => {
+        if (!hasFinanceAccess(req.user)) {
+            return res.status(403).json({ error: 'Finance access required' });
         }
 
         next();

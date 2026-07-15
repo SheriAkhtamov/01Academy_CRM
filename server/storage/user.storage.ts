@@ -7,21 +7,21 @@ import {
     type InsertUser,
     type SavedAccount,
 } from '@shared/schema';
-import { ACADEMY_WORKSPACES, type AcademyWorkspace } from '@shared/academy';
+import { ACADEMY_ACCESS_MODULES, type AcademyAccessModule } from '@shared/academy';
 import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
 
-export type UserWithWorkspaces = User & { workspaces: AcademyWorkspace[] };
+export type UserWithWorkspaces = User & { workspaces: AcademyAccessModule[] };
 type SavedAccountWithUser = SavedAccount & { accountUser: UserWithWorkspaces };
 
-const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const workspaceSet = new Set<string>(ACADEMY_ACCESS_MODULES);
 
 const normalizeWorkspaceList = (
     primaryWorkspace: string,
     assignedWorkspaces: readonly string[] = [],
-): AcademyWorkspace[] => {
+): AcademyAccessModule[] => {
     const normalized = [primaryWorkspace, ...assignedWorkspaces]
         .map((workspace) => String(workspace))
-        .filter((workspace): workspace is AcademyWorkspace => workspaceSet.has(workspace));
+        .filter((workspace): workspace is AcademyAccessModule => workspaceSet.has(workspace));
 
     return [...new Set(normalized)];
 };
@@ -108,12 +108,12 @@ class UserStorage {
         await db.delete(users).where(eq(users.id, id));
     }
 
-    async getUserWorkspaces(userId: number): Promise<AcademyWorkspace[]> {
+    async getUserWorkspaces(userId: number): Promise<AcademyAccessModule[]> {
         const user = await this.getUser(userId);
         return user?.workspaces ?? [];
     }
 
-    async setUserWorkspaces(userId: number, workspaces: readonly string[]): Promise<AcademyWorkspace[]> {
+    async setUserWorkspaces(userId: number, workspaces: readonly string[]): Promise<AcademyAccessModule[]> {
         const normalized = normalizeWorkspaceList('', workspaces);
         if (normalized.length === 0) {
             throw new Error('At least one workspace is required');

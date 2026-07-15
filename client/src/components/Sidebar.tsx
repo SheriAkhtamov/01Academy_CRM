@@ -6,7 +6,7 @@ import {
   formatUserWorkspace,
   canAccessReports,
 } from '@/lib/auth';
-import { canAccessAcademyWorkspace, getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, getAssignedWorkspaces, hasFinanceAccess, type AcademyWorkspace } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import {
@@ -168,7 +168,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       hasWorkspace('sales') ? salesSection : null,
       hasWorkspace('teacher') ? teacherSection : null,
       hasWorkspace('marketing') ? marketingSection : null,
-      hasWorkspace('administration') ? financeSection : null,
+      hasFinanceAccess(user) ? financeSection : null,
       hasWorkspace('administration') ? systemSection : null,
     ].filter((section): section is NavSection => Boolean(section));
   };

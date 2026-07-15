@@ -1,8 +1,8 @@
 import type { User } from "./schema";
-import type { AcademyWorkspace } from "./academy";
+import type { AcademyAccessModule } from "./academy";
 
 export type SanitizedUser = Omit<User, "password" | "credentialPasswordCiphertext"> & {
-  workspaces?: AcademyWorkspace[];
+  workspaces?: AcademyAccessModule[];
 };
 
 export type AnonymousSession = {

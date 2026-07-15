@@ -70,7 +70,13 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ACADEMY_WORKSPACES, getAssignedWorkspaces, type AcademyWorkspace } from '@shared/academy';
+import {
+  ACADEMY_ACCESS_MODULES,
+  ACADEMY_WORKSPACES,
+  getAssignedWorkspaces,
+  type AcademyAccessModule,
+  type AcademyWorkspace,
+} from '@shared/academy';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -83,7 +89,7 @@ const createUserSchema = (t: any) => z.object({
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),
-  workspaces: z.array(z.enum(ACADEMY_WORKSPACES)).min(1, t('selectAtLeastOneWorkspace')),
+  workspaces: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneWorkspace')),
   teacherSchoolIds: z.array(z.number().int().positive()).default([]),
   teacherAvailability: z.array(z.object({
     dayOfWeek: z.number().int().min(1).max(7),
@@ -484,7 +490,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesWorkspace = workspaceFilter === 'all' ||
-      getAssignedWorkspaces(user).includes(workspaceFilter as AcademyWorkspace);
+      getAssignedWorkspaces(user).includes(workspaceFilter as AcademyAccessModule);
     return matchesSearch && matchesWorkspace;
   });
 
@@ -498,6 +504,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         return 'bg-amber-100 text-amber-800';
       case 'marketing':
         return 'bg-pink-100 text-pink-800';
+      case 'finance':
+        return 'bg-emerald-100 text-emerald-800';
       default:
         return 'bg-slate-100 text-slate-800';
     }
@@ -512,11 +520,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       : 'bg-red-100 text-red-800';
   };
 
-  const workspaceOptions = [
+  const primaryWorkspaceOptions = [
     { value: 'administration', label: t('administrationWorkspace') },
     { value: 'sales', label: t('salesDepartmentWorkspace') },
     { value: 'teacher', label: t('teacherDepartmentWorkspace') },
     { value: 'marketing', label: t('marketingDepartmentWorkspace') },
+  ] as const;
+  const accessModuleOptions = [
+    ...primaryWorkspaceOptions,
+    { value: 'finance', label: t('financeCenterModule') },
   ] as const;
   const primaryWorkspaceValue = userForm.watch('workspace');
   const assignedWorkspaceValues = userForm.watch('workspaces');
@@ -838,7 +850,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   </FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      {workspaceOptions.map((option) => (
+                                      {primaryWorkspaceOptions.map((option) => (
                                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                                       ))}
                                     </SelectGroup>
@@ -873,7 +885,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             <FormItem>
                               <FormLabel>{t('workspaceModules')}</FormLabel>
                               <div className="grid grid-cols-1 gap-2 rounded-lg border border-border p-3 sm:grid-cols-2">
-                                {workspaceOptions.map((option) => {
+                                {accessModuleOptions.map((option) => {
                                   const value = option.value;
                                   const checked = (field.value ?? []).includes(value);
                                   const isPrimary = primaryWorkspaceValue === value;
@@ -1103,7 +1115,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="all">{t('allWorkspaces')}</SelectItem>
-                      {workspaceOptions.map((option) => (
+                      {accessModuleOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                       ))}
                     </SelectGroup>

@@ -64,7 +64,7 @@ export const userWorkspaces = pgTable("user_workspaces", {
   userIdx: index("user_workspaces_user_idx").on(table.userId),
   workspaceIdx: index("user_workspaces_workspace_idx").on(table.workspace),
   userWorkspaceUnique: uniqueIndex("user_workspaces_user_workspace_unique").on(table.userId, table.workspace),
-  workspaceCheck: check("user_workspaces_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
+  workspaceCheck: check("user_workspaces_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing', 'finance')`),
 }));
 
 export const auditLogs = pgTable("audit_logs", {

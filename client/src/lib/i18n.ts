@@ -923,6 +923,10 @@ export const translations = {
     en: 'This operational workspace is assigned to another employee account. Use Administration to configure the system.',
     ru: 'Эта операционная рабочая область назначена другой учётной записи сотрудника. Для настройки системы используйте раздел «Администрирование».',
   },
+  financeCenterAccessRequired: {
+    en: 'Financial Center access must be assigned separately in System Administration → Employees.',
+    ru: 'Доступ к «Финансовому центру» назначается отдельно в разделе «Администрирование системы» → «Сотрудники».',
+  },
 
   // UX improvements — sales lesson calendar
   clearAll: { en: 'Clear all', ru: 'Снять все' },

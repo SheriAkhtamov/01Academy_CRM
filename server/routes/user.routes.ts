@@ -8,10 +8,12 @@ import { requireAuth, requireAdministration } from '../middleware/auth.middlewar
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
 import {
+    ACADEMY_ACCESS_MODULES,
     ACADEMY_WORKSPACES,
     getAssignedWorkspaces,
     hasLeadershipAccess,
     isLeadershipWorkspace,
+    type AcademyAccessModule,
     type AcademyWorkspace,
 } from '@shared/academy';
 import {
@@ -21,7 +23,8 @@ import {
 import type { AcademyScheduleItem } from '@shared/schema';
 
 const router = Router();
-const workspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const primaryWorkspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const accessModuleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
 const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
     administration: 'admin',
     sales: 'sales',
@@ -112,11 +115,11 @@ const normalizeRequestedWorkspaces = (value: unknown, primaryWorkspace: AcademyW
     }
     const rawWorkspaces = value ?? [];
     if ((rawWorkspaces as unknown[]).some((workspace) => (
-        typeof workspace !== 'string' || !workspaceSet.has(workspace)
+        typeof workspace !== 'string' || !accessModuleSet.has(workspace)
     ))) {
         throw Object.assign(new Error('invalidData'), { statusCode: 400 });
     }
-    const requested = rawWorkspaces as AcademyWorkspace[];
+    const requested = rawWorkspaces as AcademyAccessModule[];
 
     return [...new Set([primaryWorkspace, ...requested])];
 };
@@ -480,7 +483,7 @@ const updateUserWithExecutor = async (
 const replaceUserWorkspaces = async (
     executor: QueryExecutor,
     userId: number,
-    workspaces: AcademyWorkspace[],
+    workspaces: AcademyAccessModule[],
 ) => {
     await executor.query('DELETE FROM user_workspaces WHERE user_id = $1', [userId]);
     await executor.query(
@@ -582,7 +585,7 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(400).json({ error: 'invalidData' });
         }
 
-        if (!workspaceSet.has(req.body.workspace)) {
+        if (!primaryWorkspaceSet.has(req.body.workspace)) {
             return res.status(400).json({ error: 'A valid workspace is required' });
         }
         const workspace = req.body.workspace as AcademyWorkspace;
@@ -950,7 +953,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             updateData.dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
         }
 
-        let requestedWorkspaces: AcademyWorkspace[] | null = null;
+        let requestedWorkspaces: AcademyAccessModule[] | null = null;
         const teacherSettings = readTeacherSettings(req.body);
         const teacherSettingsRequested = teacherSettings.schoolIds !== undefined
             || teacherSettings.availability !== undefined;
@@ -963,7 +966,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
         if (hasLeadershipAccess(currentUser)) {
             if (req.body.workspace !== undefined) {
-                if (!workspaceSet.has(req.body.workspace)) {
+                if (!primaryWorkspaceSet.has(req.body.workspace)) {
                     return res.status(400).json({ error: 'A valid workspace is required' });
                 }
                 updateData.workspace = req.body.workspace;
@@ -1020,7 +1023,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                 throw Object.assign(new Error('User not found'), { statusCode: 404 });
             }
 
-            const assignedRows = await client.query<{ workspace: AcademyWorkspace }>(
+            const assignedRows = await client.query<{ workspace: AcademyAccessModule }>(
                 'SELECT workspace FROM user_workspaces WHERE user_id = $1',
                 [id],
             );

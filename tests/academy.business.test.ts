@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACADEMY_ACCESS_MODULES,
   ACADEMY_WORKSPACES,
   buildReferralCode,
   calculateAttendancePercent,
@@ -11,6 +12,7 @@ import {
   canAccessAcademyWorkspace,
   getAssignedWorkspaces,
   getComputedPaymentStatus,
+  hasFinanceAccess,
   hasLeadershipAccess,
   normalizeMoney,
   resolveReferralMilestone,
@@ -29,6 +31,25 @@ describe("01 Academy business rules", () => {
       "teacher",
       "marketing",
     ]);
+  });
+
+  it("exposes finance as a separately assigned access module", () => {
+    expect(ACADEMY_ACCESS_MODULES).toEqual([
+      "administration",
+      "sales",
+      "teacher",
+      "marketing",
+      "finance",
+    ]);
+    expect(hasFinanceAccess("administration")).toBe(false);
+    expect(hasFinanceAccess({
+      workspace: "administration",
+      workspaces: ["administration"],
+    })).toBe(false);
+    expect(hasFinanceAccess({
+      workspace: "sales",
+      workspaces: ["sales", "finance"],
+    })).toBe(true);
   });
 
   it("gives administration global workspace access", () => {

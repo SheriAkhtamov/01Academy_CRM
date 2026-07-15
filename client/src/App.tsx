@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { canAccessAcademyWorkspace, hasLeadershipAccess, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, hasFinanceAccess, hasLeadershipAccess, type AcademyWorkspace } from '@shared/academy';
 import Layout from '@/components/Layout';
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/login';
@@ -51,15 +51,23 @@ function TaskBoardHomeRedirect() {
   }
 }
 
-function AccessDenied({ titleKey = 'accessDeniedWorkspace' }: { titleKey?: 'accessDeniedWorkspace' | 'noWorkspaceAssigned' }) {
+function AccessDenied({
+  titleKey = 'accessDeniedWorkspace',
+  descriptionKey,
+}: {
+  titleKey?: 'accessDeniedWorkspace' | 'noWorkspaceAssigned';
+  descriptionKey?: 'financeCenterAccessRequired';
+}) {
   const { user } = useAuth();
   const { t } = useTranslation();
   const title = titleKey === 'noWorkspaceAssigned'
     ? t('noWorkspaceAssigned')
     : t('accessDeniedWorkspace');
-  const description = hasLeadershipAccess(user)
-    ? t('adminWorkspaceBoundaryDescription')
-    : t('contactAdministratorForAccess');
+  const description = descriptionKey === 'financeCenterAccessRequired'
+    ? t('financeCenterAccessRequired')
+    : hasLeadershipAccess(user)
+      ? t('adminWorkspaceBoundaryDescription')
+      : t('contactAdministratorForAccess');
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
@@ -81,6 +89,14 @@ function WorkspaceGuard({
   const { user } = useAuth();
   if (!user || !canAccessAcademyWorkspace(user, workspace)) {
     return <AccessDenied />;
+  }
+  return <>{children}</>;
+}
+
+function FinanceGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user || !hasFinanceAccess(user)) {
+    return <AccessDenied descriptionKey="financeCenterAccessRequired" />;
   }
   return <>{children}</>;
 }
@@ -227,29 +243,29 @@ function Router() {
           </WorkspaceGuard>
         )} />
         <Route path="/finance/income" component={() => (
-          <WorkspaceGuard workspace="administration">
+          <FinanceGuard>
             <FinanceCenter section="income" />
-          </WorkspaceGuard>
+          </FinanceGuard>
         )} />
         <Route path="/finance/expenses" component={() => (
-          <WorkspaceGuard workspace="administration">
+          <FinanceGuard>
             <FinanceCenter section="expenses" />
-          </WorkspaceGuard>
+          </FinanceGuard>
         )} />
         <Route path="/finance/payroll" component={() => (
-          <WorkspaceGuard workspace="administration">
+          <FinanceGuard>
             <FinanceCenter section="payroll" />
-          </WorkspaceGuard>
+          </FinanceGuard>
         )} />
         <Route path="/finance/transactions" component={() => (
-          <WorkspaceGuard workspace="administration">
+          <FinanceGuard>
             <FinanceCenter section="transactions" />
-          </WorkspaceGuard>
+          </FinanceGuard>
         )} />
         <Route path="/finance" component={() => (
-          <WorkspaceGuard workspace="administration">
+          <FinanceGuard>
             <FinanceCenter section="overview" />
-          </WorkspaceGuard>
+          </FinanceGuard>
         )} />
         <Route path="/employees" component={() => (
           <WorkspaceGuard workspace="administration">

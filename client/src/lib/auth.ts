@@ -2,7 +2,7 @@ import type { SanitizedUser } from '@shared/auth';
 import {
   canAccessAcademyWorkspace,
   hasLeadershipAccess,
-  type AcademyWorkspace,
+  type AcademyAccessModule,
 } from '@shared/academy';
 import type { TranslationKey } from '@/lib/i18n';
 
@@ -11,7 +11,8 @@ const workspaceTranslationKeys = {
   sales: 'salesDepartmentWorkspace',
   teacher: 'teacherDepartmentWorkspace',
   marketing: 'marketingDepartmentWorkspace',
-} as const satisfies Record<AcademyWorkspace, TranslationKey>;
+  finance: 'financeCenterModule',
+} as const satisfies Record<AcademyAccessModule, TranslationKey>;
 
 export function getInitials(fullName: string): string {
   return fullName
@@ -25,7 +26,7 @@ export function formatUserWorkspace(
   workspace: string,
   t: (key: TranslationKey) => string,
 ): string {
-  const key = workspaceTranslationKeys[workspace as AcademyWorkspace];
+  const key = workspaceTranslationKeys[workspace as AcademyAccessModule];
   return key ? t(key) : workspace;
 }
 

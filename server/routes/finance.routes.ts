@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Pool, PoolClient } from 'pg';
 import { pool } from '../db';
-import { requireAdministration } from '../middleware/auth.middleware';
+import { requireFinanceAccess } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import {
   getTrailingZonedMonthRanges,
@@ -29,7 +29,7 @@ const MAX_MONEY_UZS = 2_147_483_647;
 type Executor = Pool | PoolClient;
 type Row = Record<string, any>;
 
-router.use(requireAdministration);
+router.use(requireFinanceAccess);
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 const camelize = (row: Row) => Object.fromEntries(

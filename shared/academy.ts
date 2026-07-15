@@ -8,6 +8,11 @@ export const ACADEMY_WORKSPACES = [
 ] as const;
 
 export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];
+export const ACADEMY_ACCESS_MODULES = [
+  ...ACADEMY_WORKSPACES,
+  "finance",
+] as const;
+export type AcademyAccessModule = (typeof ACADEMY_ACCESS_MODULES)[number];
 export type WorkspaceAccessSource =
   | string
   | readonly string[]
@@ -18,7 +23,7 @@ export type WorkspaceAccessSource =
   | null
   | undefined;
 
-const academyWorkspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const academyAccessModuleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
 const isWorkspaceArray = (source: WorkspaceAccessSource): source is readonly string[] =>
   Array.isArray(source);
 
@@ -34,7 +39,7 @@ export function isLeadershipWorkspace(
 
 export function getAssignedWorkspaces(
   source: WorkspaceAccessSource,
-): AcademyWorkspace[] {
+): AcademyAccessModule[] {
   let rawWorkspaces: readonly string[];
   if (!source) {
     rawWorkspaces = [];
@@ -51,9 +56,15 @@ export function getAssignedWorkspaces(
 
   const normalized = rawWorkspaces
     .map((workspace) => String(workspace))
-    .filter((workspace): workspace is AcademyWorkspace => academyWorkspaceSet.has(workspace));
+    .filter((workspace): workspace is AcademyAccessModule => academyAccessModuleSet.has(workspace));
 
   return [...new Set(normalized)];
+}
+
+export function hasFinanceAccess(source: WorkspaceAccessSource): boolean {
+  // Finance is deliberately direct-only: the administration module must not
+  // silently grant access to salaries, expenses, or profit data.
+  return getAssignedWorkspaces(source).includes("finance");
 }
 
 export function hasLeadershipAccess(source: WorkspaceAccessSource): boolean {

@@ -4,6 +4,7 @@ import {
   Megaphone,
   ShieldCheck,
   TrendingUp,
+  Landmark,
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,7 +14,8 @@ type WorkspaceType =
   | 'sales'
   | 'administration'
   | 'teacher'
-  | 'marketing';
+  | 'marketing'
+  | 'finance';
 
 interface WorkspaceDefinition {
   title: string;
@@ -32,6 +34,10 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
 
   if (location === '/marketing-workspace' || location.startsWith('/marketing-workspace/')) {
     return 'marketing';
+  }
+
+  if (location === '/finance' || location.startsWith('/finance/')) {
+    return 'finance';
   }
 
   if (
@@ -83,6 +89,11 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
       title: t('marketingDepartmentWorkspace'),
       description: t('marketingDepartmentWorkspaceDescription'),
       icon: Megaphone,
+    },
+    finance: {
+      title: t('financeCenterModule'),
+      description: t('financeCenterSubtitle'),
+      icon: Landmark,
     },
   };
   const workspace = workspaceDefinitions[resolveWorkspaceType(location, user?.workspace)];

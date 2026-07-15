@@ -1,9 +1,9 @@
 import 'express-session';
 import type { User } from '@shared/schema';
-import type { AcademyWorkspace } from '@shared/academy';
+import type { AcademyAccessModule } from '@shared/academy';
 
 type AuthenticatedUser = User & {
-  workspaces?: AcademyWorkspace[];
+  workspaces?: AcademyAccessModule[];
 };
 
 declare module 'express-session' {

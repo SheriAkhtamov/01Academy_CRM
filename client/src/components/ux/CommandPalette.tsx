@@ -40,7 +40,7 @@ import {
   Landmark,
   ReceiptText,
 } from 'lucide-react';
-import { canAccessAcademyWorkspace, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyWorkspace, hasFinanceAccess, type AcademyWorkspace } from '@shared/academy';
 import { financeCopy } from '@/lib/financeCenter';
 
 interface SearchItem {
@@ -93,6 +93,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { id: 'nav-sales-settings', type: t('systemAdministration'), title: t('salesSettings'), href: '/admin/sales-settings', icon: UserRoundCheck },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
+      ];
+      const financeItems: SearchItem[] = [
         { id: 'nav-finance', type: finance.module, title: finance.overview, href: '/finance', icon: Landmark },
         { id: 'nav-finance-income', type: finance.module, title: finance.income, href: '/finance/income', icon: ArrowDownToLine },
         { id: 'nav-finance-expenses', type: finance.module, title: finance.expenses, href: '/finance/expenses', icon: ArrowUpFromLine },
@@ -130,6 +132,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
       return [
         ...(hasWorkspace('administration') ? administrationItems : []),
+        ...(hasFinanceAccess(user) ? financeItems : []),
         ...(hasWorkspace('sales') ? salesItems : []),
         ...(hasWorkspace('teacher') ? teacherItems : []),
         ...(hasWorkspace('marketing') ? marketingItems : []),

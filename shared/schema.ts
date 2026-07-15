@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { ACADEMY_WORKSPACES } from "./academy";
@@ -576,6 +576,81 @@ export const academyMarketingExpenses = pgTable("academy_marketing_expenses", {
   sourceIdx: index("academy_marketing_expenses_source_idx").on(table.sourceId),
 }));
 
+/** Day-to-day company costs entered by the finance team. */
+export const academyOperatingExpenses = pgTable("academy_operating_expenses", {
+  id: serial("id").primaryKey(),
+  category: varchar("category", { length: 50 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  vendor: varchar("vendor", { length: 255 }),
+  description: text("description"),
+  amountUzs: integer("amount_uzs").notNull(),
+  expenseDate: timestamp("expense_date").notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("paid"),
+  method: varchar("method", { length: 30 }).notNull().default("transfer"),
+  paidAt: timestamp("paid_at"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  cancelledBy: integer("cancelled_by").references(() => users.id, { onDelete: "set null" }),
+  cancelledAt: timestamp("cancelled_at"),
+  cancellationReason: text("cancellation_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dateIdx: index("academy_operating_expenses_date_idx").on(table.expenseDate),
+  statusIdx: index("academy_operating_expenses_status_idx").on(table.status),
+  categoryIdx: index("academy_operating_expenses_category_idx").on(table.category),
+  amountCheck: check("academy_operating_expenses_amount_check", sql`${table.amountUzs} > 0`),
+  statusCheck: check("academy_operating_expenses_status_check", sql`${table.status} IN ('planned', 'paid', 'cancelled')`),
+  methodCheck: check("academy_operating_expenses_method_check", sql`${table.method} IN ('cash', 'transfer', 'card')`),
+  categoryCheck: check("academy_operating_expenses_category_check", sql`${table.category} IN ('rent', 'equipment', 'supplies', 'utilities', 'software', 'taxes', 'marketing', 'transport', 'maintenance', 'other')`),
+}));
+
+/** Versioned salary rates. A new rate closes the previous interval. */
+export const academySalaryRates = pgTable("academy_salary_rates", {
+  id: serial("id").primaryKey(),
+  employeeUserId: integer("employee_user_id").references(() => users.id, { onDelete: "set null" }),
+  employeeName: varchar("employee_name", { length: 255 }).notNull(),
+  amountUzs: integer("amount_uzs").notNull(),
+  effectiveFrom: date("effective_from").notNull(),
+  effectiveTo: date("effective_to"),
+  note: text("note"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  employeeIdx: index("academy_salary_rates_employee_idx").on(table.employeeUserId, table.effectiveFrom),
+  employeeDateUnique: uniqueIndex("academy_salary_rates_employee_date_unique").on(table.employeeUserId, table.effectiveFrom),
+  amountCheck: check("academy_salary_rates_amount_check", sql`${table.amountUzs} > 0`),
+  dateCheck: check("academy_salary_rates_date_check", sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} >= ${table.effectiveFrom}`),
+}));
+
+/** Immutable salary payout snapshots for a single employee and month. */
+export const academyPayrollPayouts = pgTable("academy_payroll_payouts", {
+  id: serial("id").primaryKey(),
+  period: varchar("period", { length: 7 }).notNull(),
+  employeeUserId: integer("employee_user_id").references(() => users.id, { onDelete: "set null" }),
+  employeeName: varchar("employee_name", { length: 255 }).notNull(),
+  position: varchar("position", { length: 255 }),
+  salaryRateId: integer("salary_rate_id").references(() => academySalaryRates.id, { onDelete: "set null" }),
+  baseSalaryUzs: integer("base_salary_uzs").notNull(),
+  bonusUzs: integer("bonus_uzs").notNull().default(0),
+  deductionUzs: integer("deduction_uzs").notNull().default(0),
+  amountUzs: integer("amount_uzs").notNull(),
+  method: varchar("method", { length: 30 }).notNull().default("transfer"),
+  note: text("note"),
+  status: varchar("status", { length: 30 }).notNull().default("paid"),
+  paidBy: integer("paid_by").references(() => users.id, { onDelete: "set null" }),
+  paidAt: timestamp("paid_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  periodIdx: index("academy_payroll_payouts_period_idx").on(table.period),
+  employeeIdx: index("academy_payroll_payouts_employee_idx").on(table.employeeUserId),
+  employeePeriodUnique: uniqueIndex("academy_payroll_payouts_employee_period_unique").on(table.employeeUserId, table.period),
+  amountCheck: check("academy_payroll_payouts_amount_check", sql`${table.baseSalaryUzs} >= 0 AND ${table.bonusUzs} >= 0 AND ${table.deductionUzs} >= 0 AND ${table.amountUzs} >= 0 AND ${table.amountUzs} = ${table.baseSalaryUzs} + ${table.bonusUzs} - ${table.deductionUzs}`),
+  methodCheck: check("academy_payroll_payouts_method_check", sql`${table.method} IN ('cash', 'transfer', 'card')`),
+  statusCheck: check("academy_payroll_payouts_status_check", sql`${table.status} = 'paid'`),
+}));
+
 /** Deduplication ledger for CEO escalations. */
 export const academyEscalationEvents = pgTable("academy_escalation_events", {
   id: serial("id").primaryKey(),
@@ -989,6 +1064,24 @@ export const insertAcademyMarketingExpenseSchema = createInsertSchema(academyMar
   updatedAt: true,
 });
 
+export const insertAcademyOperatingExpenseSchema = createInsertSchema(academyOperatingExpenses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademySalaryRateSchema = createInsertSchema(academySalaryRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyPayrollPayoutSchema = createInsertSchema(academyPayrollPayouts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyEscalationEventSchema = createInsertSchema(academyEscalationEvents).omit({
   id: true,
   createdAt: true,
@@ -1109,6 +1202,12 @@ export type AcademyPortfolioProject = typeof academyPortfolioProjects.$inferSele
 export type InsertAcademyPortfolioProject = z.infer<typeof insertAcademyPortfolioProjectSchema>;
 export type AcademyMarketingExpense = typeof academyMarketingExpenses.$inferSelect;
 export type InsertAcademyMarketingExpense = z.infer<typeof insertAcademyMarketingExpenseSchema>;
+export type AcademyOperatingExpense = typeof academyOperatingExpenses.$inferSelect;
+export type InsertAcademyOperatingExpense = z.infer<typeof insertAcademyOperatingExpenseSchema>;
+export type AcademySalaryRate = typeof academySalaryRates.$inferSelect;
+export type InsertAcademySalaryRate = z.infer<typeof insertAcademySalaryRateSchema>;
+export type AcademyPayrollPayout = typeof academyPayrollPayouts.$inferSelect;
+export type InsertAcademyPayrollPayout = z.infer<typeof insertAcademyPayrollPayoutSchema>;
 export type AcademyReferralReward = typeof academyReferralRewards.$inferSelect;
 export type InsertAcademyReferralReward = z.infer<typeof insertAcademyReferralRewardSchema>;
 export type AcademyReferralBenefit = typeof academyReferralBenefits.$inferSelect;

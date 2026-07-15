@@ -36,10 +36,16 @@ import {
   KanbanSquare,
   MessagesSquare,
   Archive,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Landmark,
+  ReceiptText,
+  WalletCards,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ceoCopy } from '@/components/ui/ceo-copy';
+import { financeCopy } from '@/lib/financeCenter';
 
 interface NavItem {
   name: string;
@@ -56,7 +62,17 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { t } = useTranslation();
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const finance = financeCopy(t);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => (
+    location.startsWith('/finance')
+      ? {
+          [t('salesPipeline')]: true,
+          [t('teacherDepartmentWorkspace')]: true,
+          [t('marketingTab')]: true,
+          [t('systemAdministration')]: true,
+        }
+      : {}
+  ));
 
   if (!user) return null;
 
@@ -137,10 +153,22 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ],
     };
 
+    const financeSection: NavSection = {
+      label: finance.module,
+      items: [
+        { name: finance.overview, href: '/finance', icon: Landmark },
+        { name: finance.income, href: '/finance/income', icon: ArrowDownToLine },
+        { name: finance.expenses, href: '/finance/expenses', icon: ArrowUpFromLine },
+        { name: finance.payroll, href: '/finance/payroll', icon: WalletCards },
+        { name: finance.transactions, href: '/finance/transactions', icon: ReceiptText },
+      ],
+    };
+
     return [
       hasWorkspace('sales') ? salesSection : null,
       hasWorkspace('teacher') ? teacherSection : null,
       hasWorkspace('marketing') ? marketingSection : null,
+      hasWorkspace('administration') ? financeSection : null,
       hasWorkspace('administration') ? systemSection : null,
     ].filter((section): section is NavSection => Boolean(section));
   };

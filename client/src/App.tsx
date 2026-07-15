@@ -19,6 +19,7 @@ import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AcademySettings from '@/pages/academy-settings';
 import AdminTasksPage from '@/pages/admin/tasks';
 import AuditPage from '@/pages/admin/audit';
+import FinanceCenter from '@/pages/finance-center';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 
@@ -223,6 +224,31 @@ function Router() {
         <Route path="/admin" component={() => (
           <WorkspaceGuard workspace="administration">
             <AdminDashboardPage />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/finance/income" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <FinanceCenter section="income" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/finance/expenses" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <FinanceCenter section="expenses" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/finance/payroll" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <FinanceCenter section="payroll" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/finance/transactions" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <FinanceCenter section="transactions" />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/finance" component={() => (
+          <WorkspaceGuard workspace="administration">
+            <FinanceCenter section="overview" />
           </WorkspaceGuard>
         )} />
         <Route path="/employees" component={() => (

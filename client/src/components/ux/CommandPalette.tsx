@@ -35,8 +35,13 @@ import {
   SlidersHorizontal,
   MessagesSquare,
   Archive,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Landmark,
+  ReceiptText,
 } from 'lucide-react';
 import { canAccessAcademyWorkspace, type AcademyWorkspace } from '@shared/academy';
+import { financeCopy } from '@/lib/financeCenter';
 
 interface SearchItem {
   id: string;
@@ -63,6 +68,7 @@ interface CommandPaletteProps {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useTranslation();
+  const finance = useMemo(() => financeCopy(t), [t]);
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState('');
@@ -87,6 +93,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { id: 'nav-sales-settings', type: t('systemAdministration'), title: t('salesSettings'), href: '/admin/sales-settings', icon: UserRoundCheck },
         { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
+        { id: 'nav-finance', type: finance.module, title: finance.overview, href: '/finance', icon: Landmark },
+        { id: 'nav-finance-income', type: finance.module, title: finance.income, href: '/finance/income', icon: ArrowDownToLine },
+        { id: 'nav-finance-expenses', type: finance.module, title: finance.expenses, href: '/finance/expenses', icon: ArrowUpFromLine },
+        { id: 'nav-finance-payroll', type: finance.module, title: finance.payroll, href: '/finance/payroll', icon: Wallet },
+        { id: 'nav-finance-transactions', type: finance.module, title: finance.transactions, href: '/finance/transactions', icon: ReceiptText },
       ];
       const salesItems: SearchItem[] = [
         { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
@@ -124,7 +135,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         ...(hasWorkspace('marketing') ? marketingItems : []),
       ];
     },
-    [t, user]
+    [finance, t, user]
   );
 
   const normalizedSearch = search.trim().toLowerCase();

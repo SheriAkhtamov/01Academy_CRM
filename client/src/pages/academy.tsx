@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +17,7 @@ import {
   ExternalLink,
   Globe2,
   Plug,
+  Unplug,
 } from 'lucide-react';
 
 type AcademySection = 'integrations';
@@ -28,6 +30,8 @@ interface IntegrationStatus {
   provider: string;
   mode: string;
   connected: boolean;
+  accountId?: number | null;
+  accountUsername?: string | null;
   message: string;
   lastLog?: {
     provider: string;
@@ -59,6 +63,10 @@ const formatLogTime = (value: string | null | undefined, language: string) => {
 
 export default function AcademyPage({ section }: AcademyPageProps) {
   const { t, language } = useTranslation();
+  const [instagramDisconnectTarget, setInstagramDisconnectTarget] = useState<{
+    id: number;
+    username?: string | null;
+  } | null>(null);
 
   const integrations = useQuery<IntegrationStatus[]>({
     queryKey: ['/api/academy/integrations/status'],
@@ -93,6 +101,22 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       toast({
         title: isNotConfigured ? t('instagramSetupRequired') : t('instagramConnectionFailed'),
         description: isNotConfigured ? t('instagramSetupRequiredDesc') : error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const disconnectInstagram = useMutation({
+    mutationFn: (accountId: number) => apiRequest('DELETE', `/api/instagram/accounts/${accountId}`),
+    onSuccess: async () => {
+      setInstagramDisconnectTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
+      toast({ title: t('instagramAccountDisconnected') });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('instagramDisconnectFailed'),
+        description: error.message,
         variant: 'destructive',
       });
     },
@@ -155,13 +179,31 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   </div>
                   <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
                     {integration.provider === 'instagram' ? (
-                      <Button
-                        onClick={() => startInstagramConnection.mutate()}
-                        disabled={startInstagramConnection.isPending}
-                      >
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        {t('loginWithInstagram')}
-                      </Button>
+                      integration.connected ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (integration.accountId) {
+                              setInstagramDisconnectTarget({
+                                id: integration.accountId,
+                                username: integration.accountUsername,
+                              });
+                            }
+                          }}
+                          disabled={!integration.accountId || disconnectInstagram.isPending}
+                        >
+                          <Unplug data-icon="inline-start" />
+                          {t('disconnectInstagram')}
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => startInstagramConnection.mutate()}
+                          disabled={startInstagramConnection.isPending}
+                        >
+                          <ExternalLink data-icon="inline-start" />
+                          {t('loginWithInstagram')}
+                        </Button>
+                      )
                     ) : null}
                     <Badge variant={integration.connected ? 'success' : 'warning'}>
                       {integration.connected ? (
@@ -178,6 +220,23 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={Boolean(instagramDisconnectTarget)}
+        onOpenChange={(open) => !open && setInstagramDisconnectTarget(null)}
+        title={t('disconnectInstagramTitle')}
+        description={instagramDisconnectTarget?.username
+          ? `${t('disconnectInstagramDescription')} @${instagramDisconnectTarget.username}`
+          : t('disconnectInstagramDescription')}
+        confirmLabel={t('disconnectInstagram')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          if (instagramDisconnectTarget) {
+            disconnectInstagram.mutate(instagramDisconnectTarget.id);
+          }
+        }}
+        variant="destructive"
+      />
     </div>
   );
 }

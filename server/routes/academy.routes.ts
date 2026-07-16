@@ -7237,11 +7237,14 @@ router.get('/integrations/status', async (req, res) => {
        ORDER BY provider, created_at DESC`,
       [],
     );
-    const instagramAccounts = await query<{ connectedCount: number }>(
-      `SELECT COUNT(*)::int AS connected_count
+    const instagramAccounts = await query<{ id: number; username: string | null }>(
+      `SELECT id, username
        FROM instagram_accounts
-       WHERE status = 'connected'`,
+       WHERE status = 'connected'
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
     );
+    const instagramAccount = instagramAccounts[0] ?? null;
     const integ = appConfig.integrations ?? {};
     const hasSuccessfulInboundLog = (provider: string) =>
       logs.some((log) =>
@@ -7252,15 +7255,25 @@ router.get('/integrations/status', async (req, res) => {
     const providers = [
       {
         provider: 'instagram',
-        connected: Number(instagramAccounts[0]?.connectedCount ?? 0) > 0,
+        connected: Boolean(instagramAccount),
+        accountId: instagramAccount?.id ?? null,
+        accountUsername: instagramAccount?.username ?? null,
         note: 'Instagram Login, Direct messages and automatic lead creation',
       },
-      { provider: 'website', connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'), note: 'Website lead inbound webhook' },
+      {
+        provider: 'website',
+        connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'),
+        accountId: null,
+        accountUsername: null,
+        note: 'Website lead inbound webhook',
+      },
     ];
     res.json(providers.map((entry) => ({
       provider: entry.provider,
       mode: entry.connected ? 'live' : 'stub',
       connected: entry.connected,
+      accountId: entry.accountId,
+      accountUsername: entry.accountUsername,
       lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
       message: entry.connected
         ? `${entry.note}: подключено.`

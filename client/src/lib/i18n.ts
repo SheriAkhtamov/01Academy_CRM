@@ -1092,6 +1092,10 @@ export const translations = {
     en: 'Check the Meta app settings, redirect URL, permissions, and account role.',
     ru: 'Проверьте настройки приложения Meta, Redirect URL, разрешения и роль аккаунта.',
   },
+  instagramDisconnectFailed: {
+    en: 'Instagram account could not be disconnected',
+    ru: 'Не удалось отвязать Instagram-аккаунт',
+  },
   instagramIntegration: { en: 'Instagram', ru: 'Instagram-интеграция' },
   instagramIntegrationDesc: {
     en: 'Connect a professional account. New Direct conversations become leads and are assigned to sales managers.',
@@ -1216,6 +1220,18 @@ export const translations = {
   loginWithInstagram: {
     en: 'Log in with Instagram',
     ru: 'Войти через Instagram',
+  },
+  disconnectInstagram: {
+    en: 'Disconnect',
+    ru: 'Отвязать',
+  },
+  disconnectInstagramTitle: {
+    en: 'Disconnect Instagram account?',
+    ru: 'Отвязать Instagram-аккаунт?',
+  },
+  disconnectInstagramDescription: {
+    en: 'New Direct messages will no longer arrive in the CRM from this account.',
+    ru: 'Новые сообщения Direct из этого аккаунта больше не будут поступать в CRM.',
   },
   noConversations: {
     en: 'No conversations yet',

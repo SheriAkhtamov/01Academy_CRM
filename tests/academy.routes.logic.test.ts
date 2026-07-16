@@ -131,6 +131,29 @@ describe('academy route logic boundaries', () => {
     mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'own_leads' });
   });
 
+  it('returns the connected Instagram account identity needed by the disconnect action', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_integration_logs')) return emptyResult();
+      if (sql.includes('FROM instagram_accounts')) {
+        expect(sql).toContain("WHERE status = 'connected'");
+        expect(sql).toContain('ORDER BY updated_at DESC, id DESC');
+        expect(sql).toContain('LIMIT 1');
+        return { rows: [{ id: 17, username: '01academy_uz' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/integrations/status');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toContainEqual(expect.objectContaining({
+      provider: 'instagram',
+      connected: true,
+      accountId: 17,
+      accountUsername: '01academy_uz',
+    }));
+  });
+
   it('shows full own and unassigned lead cards to sales while excluding other managers', async () => {
     mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {

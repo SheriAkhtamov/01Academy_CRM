@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
-import { resolveInstagramLeadContactName } from '../lib/instagram-lead';
+import {
+  isGeneratedInstagramLeadName,
+  resolveInstagramLeadContactName,
+} from '../lib/instagram-lead';
 import { logger } from '../lib/logger';
 import { hasLeadershipAccess } from '@shared/academy';
 
@@ -30,6 +33,7 @@ type InstagramProfile = {
   name?: string;
   profile_pic?: string;
   profile_picture_url?: string;
+  profile_lookup_error_code?: number;
 };
 
 type InstagramGraphListResponse<T> = {
@@ -111,6 +115,7 @@ const INSTAGRAM_WEBHOOK_FIELDS = [
 ];
 const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const INSTAGRAM_FETCH_TIMEOUT_MS = 30_000;
+const INSTAGRAM_REAUTHORIZATION_REQUIRED = 'instagramReauthorizationRequired';
 const INSTAGRAM_MESSAGE_ATTACHMENT_FIELDS = 'file_url,generic_template,id,image_data,name,video_data';
 const INSTAGRAM_MESSAGE_SHARE_FIELDS = 'link,template';
 const INSTAGRAM_MESSAGE_FIELDS = [
@@ -569,7 +574,18 @@ export const exchangeInstagramAuthorizationCode = async (
       igUserId,
       username,
     });
-    return camelize(account.rows[0]);
+    const connectedAccount = camelize(account.rows[0]);
+    setImmediate(() => {
+      try {
+        startInstagramConversationHistorySync(connectedBy);
+      } catch (error) {
+        logger.error('Failed to start Instagram identity repair after reconnect', {
+          accountId: connectedAccount.id,
+          error,
+        });
+      }
+    });
+    return connectedAccount;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -1121,16 +1137,35 @@ const extractMessageContent = (message: any) => {
 const getParticipantProfile = async (
   participantIgsid: string,
   accessToken: string,
+  accountId?: number,
 ): Promise<InstagramProfile> => {
   const config = instagramConfig();
   const url = new URL(`${config.graphApiUrl}/${config.apiVersion}/${participantIgsid}`);
   url.searchParams.set('fields', 'name,username,profile_pic');
   url.searchParams.set('access_token', accessToken);
   try {
-    return await fetchInstagramJson<InstagramProfile>(url.toString());
-  } catch (error) {
+    const profile = await fetchInstagramJson<InstagramProfile>(url.toString());
+    if (accountId && (profile.username?.trim() || profile.name?.trim())) {
+      await pool.query(
+        `UPDATE instagram_accounts
+         SET last_error = NULL, updated_at = NOW()
+         WHERE id = $1 AND last_error = $2`,
+        [accountId, INSTAGRAM_REAUTHORIZATION_REQUIRED],
+      );
+    }
+    return profile;
+  } catch (error: any) {
+    const errorCode = Number(error?.instagramResponse?.error?.code);
+    if (accountId && errorCode === 190) {
+      await pool.query(
+        `UPDATE instagram_accounts SET last_error = $1, updated_at = NOW() WHERE id = $2`,
+        [INSTAGRAM_REAUTHORIZATION_REQUIRED, accountId],
+      );
+    }
     logger.warn('Failed to fetch Instagram participant profile', { participantIgsid, error });
-    return {};
+    return {
+      profile_lookup_error_code: Number.isFinite(errorCode) ? errorCode : undefined,
+    };
   }
 };
 
@@ -1154,17 +1189,47 @@ const ensureLeadForConversation = async (
   profile: InstagramProfile,
   options: EnsureLeadOptions = {},
 ) => {
+  const username = String(profile.username ?? conversation.participant_username ?? '').trim() || null;
+  const contactName = resolveInstagramLeadContactName({
+    name: profile.name ?? conversation.participant_name,
+    username,
+  });
+  const stableMessenger = `instagram:${participantIgsid}`.slice(0, 120);
+  const messenger = username ? `@${username.replace(/^@+/, '')}`.slice(0, 120) : stableMessenger;
+
+  const enrichExistingLead = async (lead: any) => {
+    if (!contactName) return lead;
+    const shouldUpdateName = isGeneratedInstagramLeadName(lead.contact_name);
+    const shouldUpdateMessenger = String(lead.messenger ?? '').toLowerCase().startsWith('instagram:') && Boolean(username);
+    if (!shouldUpdateName && !shouldUpdateMessenger) return lead;
+
+    const { rows } = await client.query(
+      `UPDATE academy_leads
+       SET contact_name = $2,
+           messenger = $3,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, manager_id, contact_name, messenger, false AS created_lead`,
+      [
+        lead.id,
+        shouldUpdateName ? contactName : lead.contact_name,
+        shouldUpdateMessenger ? messenger : lead.messenger,
+      ],
+    );
+    return rows[0] ?? lead;
+  };
+
   if (conversation.lead_id) {
     const existing = await client.query(
-      `SELECT id, manager_id, false AS created_lead FROM academy_leads WHERE id = $1`,
+      `SELECT id, manager_id, contact_name, messenger, false AS created_lead
+       FROM academy_leads WHERE id = $1`,
       [conversation.lead_id],
     );
-    if (existing.rows[0]) return existing.rows[0];
+    if (existing.rows[0]) return enrichExistingLead(existing.rows[0]);
   }
 
-  const stableMessenger = `instagram:${participantIgsid}`.slice(0, 120);
   const existing = await client.query(
-    `SELECT id, manager_id, false AS created_lead
+    `SELECT id, manager_id, contact_name, messenger, false AS created_lead
      FROM academy_leads
      WHERE phone = $1
         OR LOWER(BTRIM(messenger)) = LOWER(BTRIM($2))
@@ -1176,23 +1241,26 @@ const ensureLeadForConversation = async (
       `UPDATE instagram_conversations SET lead_id = $1, updated_at = NOW() WHERE id = $2`,
       [existing.rows[0].id, conversation.id],
     );
-    return existing.rows[0];
+    return enrichExistingLead(existing.rows[0]);
+  }
+
+  if (!contactName) {
+    logger.warn('Instagram lead creation deferred until profile identity is available', {
+      accountId: account.id,
+      conversationId: conversation.id,
+      participantIgsid,
+      profileLookupErrorCode: profile.profile_lookup_error_code ?? null,
+    });
+    return null;
   }
 
   const systemUserId = await getSystemUserId(client);
-  const username = profile.username?.trim();
-  const contactName = resolveInstagramLeadContactName({
-    name: profile.name,
-    username,
-    participantId: participantIgsid,
-  });
-  const messenger = username ? `@${username}`.slice(0, 120) : stableMessenger;
 
   const inserted = await client.query(
     `INSERT INTO academy_leads
       (contact_name, phone, messenger, source_id, status_code, manager_id, language, comment, created_by)
      VALUES ($1,NULL,$2,$3,'new_request',NULL,'ru',$4,$5)
-     RETURNING id, manager_id, true AS created_lead`,
+     RETURNING id, manager_id, contact_name, messenger, true AS created_lead`,
     [
       contactName,
       messenger,
@@ -1336,7 +1404,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     ? decryptInstagramToken(account.access_token_encrypted)
     : null;
   const profile = !outbound && accessToken
-    ? await getParticipantProfile(participantIgsid, accessToken)
+    ? await getParticipantProfile(participantIgsid, accessToken, account.id)
     : {};
   const { content, messageType, attachments } = extractMessageContent(message);
   const eventDate = Number.isFinite(Number(event.timestamp))
@@ -1587,14 +1655,20 @@ const fetchInstagramConversationSummaries = async (
 type ExistingInstagramConversationImportState = {
   id: number;
   participant_igsid: string;
+  participant_username: string | null;
+  participant_name: string | null;
+  contact_name: string | null;
   last_message_at: Date | string | null;
 };
 
 const loadExistingInstagramConversationImportState = async (accountId: number) => {
   const { rows } = await pool.query<ExistingInstagramConversationImportState>(
-    `SELECT id, participant_igsid, last_message_at
-     FROM instagram_conversations
-     WHERE account_id = $1`,
+    `SELECT conversation.id, conversation.participant_igsid,
+            conversation.participant_username, conversation.participant_name,
+            lead.contact_name, conversation.last_message_at
+     FROM instagram_conversations conversation
+     LEFT JOIN academy_leads lead ON lead.id = conversation.lead_id
+     WHERE conversation.account_id = $1`,
     [accountId],
   );
   return new Map(rows.map((row) => [String(row.participant_igsid), row]));
@@ -1606,11 +1680,18 @@ const findConversationSummaryParticipant = (
 ) => getGraphParticipantList(conversation.participants)
   .find((participant) => participant.id && !isAccountParticipant(participant, account));
 
-const shouldSkipImportedConversation = (
+export const shouldSkipImportedConversation = (
   existing: ExistingInstagramConversationImportState | undefined,
   summary: InstagramGraphConversation,
 ) => {
   if (!existing) return false;
+  if (
+    (!existing.participant_username && !existing.participant_name)
+    || !existing.contact_name
+    || isGeneratedInstagramLeadName(existing.contact_name)
+  ) {
+    return false;
+  }
   const summaryUpdatedAt = parseInstagramDate(summary.updated_time);
   const localLastMessageAt = parseInstagramDate(existing.last_message_at);
 
@@ -1911,7 +1992,7 @@ const importInstagramAccountHistory = async (
 
       const profileNeedsFetch = !participant?.username || !participant?.name;
       const fetchedProfile = profileNeedsFetch
-        ? await getParticipantProfile(participantIgsid, accessToken)
+        ? await getParticipantProfile(participantIgsid, accessToken, account.id)
         : {};
       const profile: InstagramProfile = {
         ...fetchedProfile,
@@ -1934,6 +2015,12 @@ const importInstagramAccountHistory = async (
       existingConversations.set(participantIgsid, {
         id: existingConversation?.id ?? 0,
         participant_igsid: participantIgsid,
+        participant_username: profile.username ?? existingConversation?.participant_username ?? null,
+        participant_name: profile.name ?? existingConversation?.participant_name ?? null,
+        contact_name: resolveInstagramLeadContactName({
+          name: profile.name,
+          username: profile.username,
+        }) ?? existingConversation?.contact_name ?? null,
         last_message_at: parseInstagramDate(conversation.updated_time) ?? null,
       });
       onProgress?.(stats);

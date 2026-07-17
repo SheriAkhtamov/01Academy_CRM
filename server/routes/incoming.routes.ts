@@ -284,10 +284,12 @@ router.post('/chatplace', async (req, res) => {
       name: body.contactName ?? body.name,
       username: body.instagramUsername,
       messenger,
-      phone: storedPhone,
     });
     if (!phone && !messenger) {
       return res.status(400).json({ error: 'phone or messenger is required' });
+    }
+    if (!contactName) {
+      return res.status(422).json({ error: 'instagramIdentityRequired' });
     }
 
     const result = await withIncomingTransaction(async (client) => {

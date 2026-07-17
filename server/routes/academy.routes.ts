@@ -7237,14 +7237,15 @@ router.get('/integrations/status', async (req, res) => {
        ORDER BY provider, created_at DESC`,
       [],
     );
-    const instagramAccounts = await query<{ id: number; username: string | null }>(
-      `SELECT id, username
+    const instagramAccounts = await query<{ id: number; username: string | null; lastError: string | null }>(
+      `SELECT id, username, last_error
        FROM instagram_accounts
        WHERE status = 'connected'
        ORDER BY updated_at DESC, id DESC
        LIMIT 1`,
     );
     const instagramAccount = instagramAccounts[0] ?? null;
+    const instagramRequiresReconnect = instagramAccount?.lastError === 'instagramReauthorizationRequired';
     const integ = appConfig.integrations ?? {};
     const hasSuccessfulInboundLog = (provider: string) =>
       logs.some((log) =>
@@ -7255,7 +7256,8 @@ router.get('/integrations/status', async (req, res) => {
     const providers = [
       {
         provider: 'instagram',
-        connected: Boolean(instagramAccount),
+        connected: Boolean(instagramAccount) && !instagramRequiresReconnect,
+        requiresReconnect: instagramRequiresReconnect,
         accountId: instagramAccount?.id ?? null,
         accountUsername: instagramAccount?.username ?? null,
         note: 'Instagram Login, Direct messages and automatic lead creation',
@@ -7263,6 +7265,7 @@ router.get('/integrations/status', async (req, res) => {
       {
         provider: 'website',
         connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'),
+        requiresReconnect: false,
         accountId: null,
         accountUsername: null,
         note: 'Website lead inbound webhook',
@@ -7275,7 +7278,9 @@ router.get('/integrations/status', async (req, res) => {
       accountId: entry.accountId,
       accountUsername: entry.accountUsername,
       lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
-      message: entry.connected
+      message: entry.requiresReconnect
+        ? 'Токен Instagram недействителен. Подключите аккаунт заново — после этого CRM автоматически восстановит имена и username лидов.'
+        : entry.connected
         ? `${entry.note}: подключено.`
         : `${entry.note}: режим-заглушка. Заполните ключи в config/app.config.json.`,
     })));

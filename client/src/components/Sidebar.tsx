@@ -224,6 +224,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               <button
                 onClick={onClose}
                 className="md:hidden ml-2 p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                aria-label={t('close')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -243,6 +244,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                 <button
                   onClick={() => toggleSection(section.label)}
                   className="w-full flex items-center justify-between px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-500 transition-colors"
+                  aria-expanded={!isCollapsed}
                 >
                   <span>{section.label}</span>
                   <ChevronDown

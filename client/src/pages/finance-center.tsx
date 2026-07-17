@@ -45,6 +45,7 @@ import {
   type FinanceSection,
 } from '@/lib/financeCenter';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -403,9 +404,10 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     : 0;
 
   const activeQuery = section === 'overview' ? dashboard : section === 'income' ? income : section === 'expenses' ? expenses : section === 'payroll' ? payroll : transactions;
+  const contained = section !== 'overview';
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-4 sm:p-6 lg:p-8">
+    <WorkspacePage contained={contained} className="flex flex-col gap-5">
       <PageHeader
         title={sectionTitle}
         subtitle={sectionSubtitle}
@@ -422,6 +424,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           </>
         )}
       />
+
+      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle} className="flex flex-col gap-5">
 
       {activeQuery.isLoading ? <FinanceLoading /> : null}
       {activeQuery.isError ? <FinanceError copy={copy} onRetry={() => activeQuery.refetch()} /> : null}
@@ -655,6 +659,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    </div>
+      </WorkspacePageBody>
+    </WorkspacePage>
   );
 }

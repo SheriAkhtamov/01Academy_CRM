@@ -256,9 +256,9 @@ export function SalesScheduleCalendar({
     .join(', ');
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <Card className="h-fit lg:sticky lg:top-4">
-        <CardHeader className="gap-3 pb-3">
+    <div className="grid h-full min-h-0 min-w-0 grid-cols-1 gap-4 overflow-y-auto overscroll-y-contain lg:grid-cols-[18rem_minmax(0,1fr)] lg:overflow-hidden">
+      <Card className="flex min-h-64 max-h-80 flex-col lg:h-full lg:min-h-0 lg:max-h-none">
+        <CardHeader className="shrink-0 gap-3 pb-3">
           <div>
             <CardTitle>{t('scheduleFilters')}</CardTitle>
             <CardDescription>
@@ -286,9 +286,9 @@ export function SalesScheduleCalendar({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
+        <CardContent className="min-h-0 flex-1 overflow-hidden pt-0">
           {scheduleGroups.length > 0 ? (
-            <ScrollArea className="h-auto max-h-80 lg:max-h-[calc(100vh-17rem)]">
+            <ScrollArea className="h-auto max-h-80 lg:h-full lg:max-h-none">
               <div className="flex flex-col gap-2 pr-3">
                 {filterTree.map((school) => {
                   const schoolGroupIds = school.courses.flatMap((course) => (
@@ -406,8 +406,8 @@ export function SalesScheduleCalendar({
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="flex flex-col gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
+      <Card className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden lg:h-full lg:min-h-0">
+        <CardHeader className="shrink-0 flex flex-col gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>{t('weeklySchedule')}</CardTitle>
             <CardDescription>
@@ -444,8 +444,8 @@ export function SalesScheduleCalendar({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="max-h-[calc(100vh-14rem)] overflow-auto">
+        <CardContent className="min-h-0 flex-1 p-0">
+          <div className="h-full overflow-auto overscroll-contain [scrollbar-gutter:stable]">
             <div className="min-w-[820px]">
               <div className="sticky top-0 z-20 grid grid-cols-[4rem_repeat(7,minmax(6.75rem,1fr))] border-b border-border bg-card">
                 <div className="border-r border-border" />

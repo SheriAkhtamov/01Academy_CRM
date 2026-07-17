@@ -121,7 +121,12 @@ export default function Header({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative rounded-full">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative rounded-full"
+                  aria-label={t('notifications')}
+                >
                   <Bell className="h-5 w-5" />
                   {unreadCount > 0 && (
                     <Badge
@@ -174,6 +179,7 @@ export default function Header({
                             onClick={(e) => handleMarkRead(notification.id, e)}
                             disabled={markReadMutation.isPending}
                             title={t('markAsRead')}
+                            aria-label={t('markAsRead')}
                           >
                             <CheckCheck className="h-3 w-3 text-slate-400 hover:text-slate-600" />
                           </Button>
@@ -184,6 +190,7 @@ export default function Header({
                           className="h-6 w-6 p-0 hover:bg-slate-200 rounded-full shrink-0"
                           onClick={(e) => handleDeleteNotification(notification.id, e)}
                           disabled={deleteNotificationMutation.isPending}
+                          aria-label={t('delete')}
                         >
                           <X className="h-3 w-3 text-slate-400 hover:text-slate-600" />
                         </Button>
@@ -201,7 +208,12 @@ export default function Header({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  aria-label={t('currentAccount')}
+                >
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold"
                        style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))', boxShadow: 'var(--shadow-primary)' }}>
                     {getInitials(user?.fullName || '')}
@@ -270,6 +282,7 @@ export default function Header({
                                 }
                               }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                              aria-label={t('removeAccount')}
                             >
                               <X className="h-3 w-3" />
                             </button>

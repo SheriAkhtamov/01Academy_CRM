@@ -25,8 +25,8 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
     : [{ label: t('dashboard'), href: '/' }, { label: title }];
 
   return (
-    <div className="mb-6 flex shrink-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
-      <div className="space-y-1">
+    <div data-page-header className="mb-6 flex min-w-0 shrink-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="min-w-0 space-y-1">
         <Breadcrumb>
           <BreadcrumbList>
             {items.map((item, index) => (
@@ -45,10 +45,14 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+        <h1 className="break-words text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
+        {subtitle && <p className="max-w-3xl text-sm text-slate-500">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      {actions && (
+        <div className="flex w-full max-w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0 md:justify-end">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

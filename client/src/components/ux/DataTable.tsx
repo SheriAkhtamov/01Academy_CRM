@@ -105,7 +105,7 @@ export function DataTable<T extends Record<string, any>>({
 
   return (
     <div className={cn('overflow-x-auto', className)}>
-      <Table>
+      <Table containerClassName="overflow-visible">
         <TableHeader className="sticky top-0 z-10 bg-muted/70">
           <TableRow className="border-b border-border/70 hover:bg-transparent">
             {columns.map((column) => (

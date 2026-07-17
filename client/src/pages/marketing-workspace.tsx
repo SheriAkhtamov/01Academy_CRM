@@ -14,6 +14,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import {
   UnsavedChangesDialog,
@@ -278,28 +279,38 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
       .sort((a: any, b: any) => b.referred - a.referred);
   }, [referrals, students, t]);
 
+  const contained = section !== 'overview';
+
   /* ─── loading state ─── */
   if (isError) {
     return (
-      <div className="mx-auto max-w-xl space-y-4 p-8 text-center">
-        <p className="font-medium text-destructive">{t('error')}</p>
-        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
-        <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
-      </div>
+      <WorkspacePage contained={contained}>
+        <WorkspacePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+          <div className="mx-auto max-w-xl space-y-4 text-center">
+            <p className="font-medium text-destructive">{t('error')}</p>
+            <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
+            <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
+          </div>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
   if (isLoading || !data) {
     return (
-      <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
-          {Array.from({ length: 9 }).map((_, i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-        <Skeleton className="h-96" />
-      </div>
+      <WorkspacePage contained={contained}>
+        <WorkspacePageBody contained={contained} ariaLabel={t('loading')}>
+          <div className="space-y-6">
+            <Skeleton className="h-10 w-64" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <Skeleton key={i} className="h-28" />
+              ))}
+            </div>
+            <Skeleton className="h-96" />
+          </div>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
@@ -411,7 +422,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+    <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-6'}>
       <PageHeader
         title={sectionTitle[section]}
         subtitle={t('channelsAndEfficiency')}
@@ -478,6 +489,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         </div>
       ) : null}
 
+      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle[section]}>
       {section !== 'overview' ? (
       <Tabs value={section} className="space-y-4">
         {/* ─── Tab: Sources ─── */}
@@ -740,6 +752,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
 
       </Tabs>
       ) : null}
+      </WorkspacePageBody>
 
       {/* ─── Expense Dialog ─── */}
       {canManageExpenses && (
@@ -799,6 +812,6 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         onOpenChange={expenseDialogGuard.setConfirmationOpen}
         onDiscard={expenseDialogGuard.discardChanges}
       />
-    </div>
+    </WorkspacePage>
   );
 }

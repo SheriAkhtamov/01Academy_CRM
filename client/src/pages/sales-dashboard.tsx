@@ -45,6 +45,7 @@ import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
@@ -946,34 +947,42 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     });
   }, [activePipelineStatuses, myLeads]);
 
+  const contained = section !== 'overview';
+
   if (isLoading) {
     return (
-      <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-        <Skeleton className="h-96" />
-      </div>
+      <WorkspacePage contained={contained}>
+        <WorkspacePageBody contained={contained} ariaLabel={t('loading')}>
+          <div className="space-y-6">
+            <Skeleton className="h-10 w-64" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-28" />
+              ))}
+            </div>
+            <Skeleton className="h-96" />
+          </div>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
   if (isError || !data) {
     return (
-      <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-          <AlertDescription className="flex flex-col items-start gap-3">
-            <span>{error instanceof Error ? error.message : t('errorOccurred')}</span>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-              {t('retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      </div>
+      <WorkspacePage contained={contained}>
+        <WorkspacePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+            <AlertDescription className="flex flex-col items-start gap-3">
+              <span>{error instanceof Error ? error.message : t('errorOccurred')}</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                {t('retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
@@ -995,8 +1004,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     : section === 'archive'
       ? t('leadArchiveDescription')
       : salesWorkspaceDescription;
+  const ownsContentScroll = ['pipeline', 'archive', 'schedule', 'students'].includes(section);
   return (
-    <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
+    <WorkspacePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>
       <PageHeader
         title={sectionTitle[section]}
         subtitle={sectionSubtitle}
@@ -1014,6 +1024,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           ) : undefined
         }
       />
+
+      <WorkspacePageBody
+        contained={contained}
+        scroll={ownsContentScroll ? 'hidden' : 'auto'}
+        ariaLabel={sectionTitle[section]}
+      >
 
       {section === 'overview' ? (
         <div className="space-y-6">
@@ -1126,6 +1142,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           showResponsible={isAdministrationWorkspace}
         />
       ) : null}
+      </WorkspacePageBody>
 
       <ArchiveLeadDialog
         lead={archiveDialogLead}
@@ -1235,7 +1252,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           replaceSalesParams({ lead: String(retainedLeadId) });
         }}
       />
-    </div>
+    </WorkspacePage>
   );
 }
 // ---- Sub-components for tabs ----
@@ -1347,7 +1364,7 @@ function PipelineTab({
   showManager: boolean;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <KanbanBoard
         statuses={activePipelineStatuses.map((status) => ({
           code: status.code,
@@ -1481,12 +1498,13 @@ function ArchiveTab({
   ];
 
   return (
-    <Card className="hover-lift">
-      <CardHeader className="pb-4">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+      <CardHeader className="shrink-0 pb-4">
         <CardTitle>{t('leadArchive')}</CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="min-h-0 flex-1 p-0">
         <DataTable
+          className="h-full overflow-auto overscroll-contain"
           columns={columns}
           data={leads}
           keyExtractor={(lead: Lead) => `archived-lead-${lead.id}`}
@@ -1611,13 +1629,14 @@ function StudentsTab({
   ];
 
   return (
-    <div className="space-y-5">
-      <Card className="hover-lift">
-        <CardHeader className="pb-4">
+    <div className="h-full min-h-0">
+      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+        <CardHeader className="shrink-0 pb-4">
           <CardTitle>{title}</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="min-h-0 flex-1 p-0">
           <DataTable
+            className="h-full overflow-auto overscroll-contain"
             columns={columns}
             data={myStudents}
             keyExtractor={(student: Student) => `student-${student.id}`}

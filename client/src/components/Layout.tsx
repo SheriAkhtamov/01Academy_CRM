@@ -35,7 +35,7 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-dvh overflow-hidden">
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 md:hidden animate-fadeIn"

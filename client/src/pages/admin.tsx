@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
   WeekScheduleEditor,
@@ -692,7 +693,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
+    <WorkspacePage contained={isEmployeesPage}>
       <PageHeader
         title={isEmployeesPage ? t('employees') : t('administration')}
         subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminControlCenterSubtitle')}
@@ -712,6 +713,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         ) : undefined}
       />
 
+      <WorkspacePageBody contained={isEmployeesPage} ariaLabel={isEmployeesPage ? t('employees') : t('administration')}>
       <Tabs value={isEmployeesPage ? 'users' : 'reports'} className="space-y-6">
         {/* Users Tab */}
         {isEmployeesPage && (
@@ -1229,6 +1231,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           </Card>
         </TabsContent>
       </Tabs>
+      </WorkspacePageBody>
 
       <Dialog
         open={Boolean(salesModuleTransfer)}
@@ -1525,6 +1528,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         }}
         variant="destructive"
       />
-    </div>
+    </WorkspacePage>
   );
 }

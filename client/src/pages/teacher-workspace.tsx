@@ -21,6 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -643,28 +644,38 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
       }));
   }, [surveys]);
 
+  const contained = section !== 'overview';
+
   if (isError) {
     return (
-      <div className="mx-auto max-w-xl space-y-4 p-8 text-center">
-        <p className="font-medium text-destructive">{t('error')}</p>
-        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
-        <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
-      </div>
+      <WorkspacePage contained={contained}>
+        <WorkspacePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+          <div className="mx-auto max-w-xl space-y-4 text-center">
+            <p className="font-medium text-destructive">{t('error')}</p>
+            <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
+            <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
+          </div>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
   if (isLoading || !data) {
     return (
-      <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-6 w-48" />
+      <WorkspacePage contained={contained}>
+        <WorkspacePageBody contained={contained} ariaLabel={t('loading')}>
+          <div className="space-y-6">
+            <Skeleton className="h-10 w-64" />
+            <Skeleton className="h-6 w-48" />
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-        <Skeleton className="h-96" />
-      </div>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-28" />
+              ))}
+            </div>
+            <Skeleton className="h-96" />
+          </div>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
@@ -733,7 +744,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+    <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-6'}>
       <PageHeader
         title={sectionTitle[section]}
         subtitle={t('teacherWorkspace')}
@@ -785,6 +796,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         </div>
       ) : null}
 
+      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle[section]}>
       {section !== 'overview' ? (
       <Tabs value={section}>
         {/* Schedule Tab */}
@@ -1554,6 +1566,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
       </Tabs>
       ) : null}
-    </div>
+      </WorkspacePageBody>
+    </WorkspacePage>
   );
 }

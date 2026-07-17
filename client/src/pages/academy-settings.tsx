@@ -45,6 +45,7 @@ import { Textarea } from '@/components/ui/textarea';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { ceoCopy } from '@/components/ui/ceo-copy';
@@ -1173,32 +1174,38 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   if (configuration.isLoading) {
     return (
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6 lg:p-8">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-10 w-96" />
-        <Skeleton className="h-[520px] w-full" />
-      </div>
+      <WorkspacePage contained>
+        <WorkspacePageBody contained ariaLabel={t('loading')}>
+          <div className="flex flex-col gap-6">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-10 w-96 max-w-full" />
+            <Skeleton className="h-[520px] w-full" />
+          </div>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
   if (configuration.isError || !configuration.data) {
     return (
-      <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('failedToLoadData')}</CardTitle>
-            <CardDescription>{t('retry')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => configuration.refetch()}>{t('retry')}</Button>
-          </CardContent>
-        </Card>
-      </div>
+      <WorkspacePage contained>
+        <WorkspacePageBody contained ariaLabel={t('failedToLoadData')}>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('failedToLoadData')}</CardTitle>
+              <CardDescription>{t('retry')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => configuration.refetch()}>{t('retry')}</Button>
+            </CardContent>
+          </Card>
+        </WorkspacePageBody>
+      </WorkspacePage>
     );
   }
 
   return (
-    <div className="mx-auto min-w-0 max-w-[1600px] p-6 lg:p-8">
+    <WorkspacePage contained>
       <PageHeader
         title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
         subtitle={isSalesSettingsMode ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
@@ -1208,6 +1215,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         ]}
       />
 
+      <WorkspacePageBody contained ariaLabel={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList ref={tabsListRef} className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
           {isSalesSettingsMode ? (
@@ -1478,6 +1486,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
       </Tabs>
+      </WorkspacePageBody>
 
       <Dialog open={schoolDialogOpen} onOpenChange={setSchoolDialogOpen}>
         <DialogContent className="max-w-2xl">
@@ -2047,6 +2056,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           if (deleteTarget) deleteResource.mutate(deleteTarget);
         }}
       />
-    </div>
+    </WorkspacePage>
   );
 }

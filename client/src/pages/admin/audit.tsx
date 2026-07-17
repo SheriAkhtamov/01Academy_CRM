@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { ceoCopy } from '@/components/ui/ceo-copy';
@@ -106,7 +107,7 @@ export default function AuditPage() {
   const changedFields = selected ? [...new Set([...Object.keys(oldValues), ...Object.keys(newValues)])] : [];
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6 lg:p-8">
+    <WorkspacePage contained>
       <PageHeader
         title={ceoCopy.audit.title}
         subtitle={ceoCopy.audit.subtitle}
@@ -114,6 +115,7 @@ export default function AuditPage() {
         actions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
       />
 
+      <WorkspacePageBody contained ariaLabel={ceoCopy.audit.title}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="audit">{ceoCopy.audit.history}</TabsTrigger>
@@ -155,6 +157,7 @@ export default function AuditPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      </WorkspacePageBody>
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
@@ -162,6 +165,6 @@ export default function AuditPage() {
           {selected ? <div className="mt-6 overflow-hidden rounded-lg border border-border/70"><div className="grid grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="grid grid-cols-[140px_1fr_1fr] border-b border-border/60 last:border-0 text-sm"><div className="break-words p-3 font-medium">{field}</div><div className="break-words border-l border-border/60 p-3 text-muted-foreground">{presentValue(oldValues[field])}</div><div className="break-words border-l border-border/60 p-3">{presentValue(newValues[field])}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div> : null}
         </SheetContent>
       </Sheet>
-    </div>
+    </WorkspacePage>
   );
 }

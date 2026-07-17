@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import {
   AlertCircle,
   Camera,
@@ -123,14 +124,14 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   });
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
+    <WorkspacePage contained>
       <PageHeader
         title={section === 'integrations' ? t('navIntegrations') : t('navIntegrations')}
         subtitle={t('academyDescription')}
         breadcrumbs={[{ label: t('navIntegrations') }]}
       />
 
-      <div className="mt-6 space-y-3">
+      <WorkspacePageBody contained ariaLabel={t('navIntegrations')} className="space-y-3">
         {integrations.isLoading ? (
           Array.from({ length: 2 }).map((_, index) => (
             <Card key={index}>
@@ -219,7 +220,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Card>
           );
         })}
-      </div>
+      </WorkspacePageBody>
 
       <ConfirmDialog
         open={Boolean(instagramDisconnectTarget)}
@@ -237,6 +238,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         }}
         variant="destructive"
       />
-    </div>
+    </WorkspacePage>
   );
 }

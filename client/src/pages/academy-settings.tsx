@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -46,6 +46,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
+import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import {
   WeekScheduleEditor,
@@ -322,7 +323,7 @@ function EmptyTableState({ title, description }: { title: string; description: s
 }
 
 const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'schedule'];
-const salesSettingsTabs = ['lead-assignment', 'pipeline', 'kpi'];
+const salesSettingsTabs = ['lead-assignment', 'pipeline', 'lead-merge', 'kpi'];
 
 interface AcademySettingsProps {
   mode?: 'academy' | 'sales';
@@ -349,6 +350,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     [t],
   );
   const [activeTab, setActiveTab] = useState(requestedTabValue);
+  const tabsListRef = useRef<HTMLDivElement | null>(null);
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
@@ -387,6 +389,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   useEffect(() => {
     setActiveTab(requestedTabValue);
   }, [requestedTabValue]);
+
+  useEffect(() => {
+    const tabsList = tabsListRef.current;
+    const activeTrigger = tabsListRef.current?.querySelector<HTMLElement>('[data-state="active"]');
+    if (!tabsList || !activeTrigger) return;
+    tabsList.scrollLeft = activeTrigger.offsetLeft
+      - (tabsList.clientWidth - activeTrigger.clientWidth) / 2;
+  }, [activeTab, configuration.isLoading]);
 
   const invalidate = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['/api/academy/configuration'] }),
@@ -1199,7 +1209,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
+        <TabsList ref={tabsListRef} className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
           {isSalesSettingsMode ? (
             <>
               <TabsTrigger value="lead-assignment" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
@@ -1207,6 +1217,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </TabsTrigger>
               <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
                 <GitBranch />{t('pipelineStages')}
+              </TabsTrigger>
+              <TabsTrigger value="lead-merge" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+                <ArrowRightLeft />{t('leadMergeTab')}
               </TabsTrigger>
               <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
                 <Target />{ceoCopy.settings.title}
@@ -1399,6 +1412,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               ) : null}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="lead-merge" className="mt-0">
+          <LeadMergePanel />
         </TabsContent>
 
         <TabsContent value="kpi" className="mt-0">

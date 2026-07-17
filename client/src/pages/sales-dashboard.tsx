@@ -42,6 +42,7 @@ import {
 import { DataTable } from '@/components/ux/DataTable';
 import { KanbanBoard } from '@/components/ux/KanbanBoard';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
+import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
@@ -49,6 +50,7 @@ import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import { isInstagramLead, leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -118,6 +120,8 @@ interface DuplicateClientHint {
   messenger?: string | null;
   statusCode?: string | null;
   managerName?: string | null;
+  isArchived?: boolean;
+  canMerge?: boolean;
 }
 
 interface Student {
@@ -208,6 +212,16 @@ const compactPhoneNumbers = (values: string[]) => {
     return [trimmed];
   });
 };
+
+const createLeadPayload = (values: CreateLeadFormValues) => ({
+  ...values,
+  phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
+  studentAge: values.studentAge ? Number(values.studentAge) : undefined,
+  courseId: values.courseId ? Number(values.courseId) : undefined,
+  enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
+  sourceId: Number(values.sourceId),
+  managerId: values.managerId ? Number(values.managerId) : undefined,
+});
 const uniquePhoneNumbers = (values: string[]) => {
   const keys = values.map(phoneKey).filter(Boolean);
   return new Set(keys).size === keys.length;
@@ -674,15 +688,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }, [activePipelineCodes, myLeads, myStudents, myTasks]);
 
   const createLead = useMutation({
-    mutationFn: (values: CreateLeadFormValues) => apiRequest('POST', '/api/academy/leads', {
-      ...values,
-      phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
-      studentAge: values.studentAge ? Number(values.studentAge) : undefined,
-      courseId: values.courseId ? Number(values.courseId) : undefined,
-      enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
-      sourceId: Number(values.sourceId),
-      managerId: values.managerId ? Number(values.managerId) : undefined,
-    }),
+    mutationFn: (values: CreateLeadFormValues) => apiRequest(
+      'POST',
+      '/api/academy/leads',
+      createLeadPayload(values),
+    ),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
       leadForm.reset(leadFormDefaults);
@@ -699,6 +709,27 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       toast({ title: t('leadCreateFailed'), description: error.message, variant: 'destructive' });
     },
+  });
+
+  const mergeLeadDraft = useMutation({
+    mutationFn: ({ retainedLeadId, values }: { retainedLeadId: number; values: CreateLeadFormValues }) =>
+      apiRequest('POST', '/api/academy/leads/merge-draft', {
+        retainedLeadId,
+        draft: createLeadPayload(values),
+      }),
+    onSuccess: (retainedLead: Lead) => {
+      toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
+      leadForm.reset(leadFormDefaults);
+      setDuplicateHint(null);
+      setLeadDialogOpen(false);
+      invalidate();
+      openLead(retainedLead.id);
+    },
+    onError: (error: any) => toast({
+      title: t('leadMergeFailed'),
+      description: leadMergeErrorMessage(t, error?.data?.error),
+      variant: 'destructive',
+    }),
   });
 
   const updateLead = useMutation({
@@ -1143,18 +1174,39 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             data={data}
             managers={leadManagerOptions}
             managerSelectDisabled={hasSalesModule && !isAdministrationWorkspace}
-            duplicateHint={duplicateHint}
-            onOpenDuplicate={(duplicate) => {
-              const targetLeadId = duplicate.entityType === 'lead' ? duplicate.id : duplicate.leadId;
-              if (!targetLeadId) return;
-              setLeadDialogOpen(false);
-              setDuplicateHint(null);
-              leadForm.reset(leadFormDefaults);
-              openLead(targetLeadId);
-            }}
           />
         </DialogContent>
       </Dialog>
+      <LeadMergeConflictDialog
+        open={Boolean(duplicateHint)}
+        mode="draft"
+        currentLead={{
+          name: leadForm.getValues('contactName'),
+          phoneNumbers: compactPhoneNumbers(leadForm.getValues('phoneNumbers')),
+        }}
+        existingLead={duplicateHint ? {
+          ...duplicateHint,
+          id: duplicateHint.entityType === 'lead' ? duplicateHint.id : duplicateHint.leadId,
+          statusName: duplicateHint.statusCode ? leadStatusName(duplicateHint.statusCode) : undefined,
+        } : null}
+        isPending={mergeLeadDraft.isPending}
+        onCancel={() => setDuplicateHint(null)}
+        onOpenExisting={() => {
+          if (!duplicateHint) return;
+          const targetLeadId = duplicateHint.entityType === 'lead' ? duplicateHint.id : duplicateHint.leadId;
+          if (!targetLeadId) return;
+          leadForm.reset(leadFormDefaults);
+          setDuplicateHint(null);
+          setLeadDialogOpen(false);
+          openLead(targetLeadId);
+        }}
+        onMergeIntoExisting={() => {
+          if (!duplicateHint) return;
+          const targetLeadId = duplicateHint.entityType === 'lead' ? duplicateHint.id : duplicateHint.leadId;
+          if (!targetLeadId) return;
+          mergeLeadDraft.mutate({ retainedLeadId: targetLeadId, values: leadForm.getValues() });
+        }}
+      />
       <UnsavedChangesDialog
         open={leadDialogGuard.confirmationOpen}
         onOpenChange={leadDialogGuard.setConfirmationOpen}
@@ -1177,6 +1229,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         dateTime={dateTime}
         money={money}
         onChanged={invalidate}
+        onMerged={(retainedLeadId) => {
+          setSelectedLeadId(retainedLeadId);
+          setLeadSheetOpen(true);
+          replaceSalesParams({ lead: String(retainedLeadId) });
+        }}
       />
     </div>
   );
@@ -1712,8 +1769,6 @@ function LeadForm({
   data,
   managers,
   managerSelectDisabled,
-  duplicateHint,
-  onOpenDuplicate,
 }: {
   t: (key: TranslationKey) => string;
   form: UseFormReturn<CreateLeadFormValues>;
@@ -1721,8 +1776,6 @@ function LeadForm({
   data: any;
   managers: Array<{ id: number; fullName: string }>;
   managerSelectDisabled: boolean;
-  duplicateHint: DuplicateClientHint | null;
-  onOpenDuplicate: (duplicate: DuplicateClientHint) => void;
 }) {
   const selectedCourseId = Number(form.watch('courseId')) || null;
   const selectedGroupId = form.watch('enrolledGroupId');
@@ -1835,27 +1888,6 @@ function LeadForm({
             </FormItem>
           )}
         />
-        {duplicateHint ? (
-          <Alert variant="destructive" className="md:col-span-2">
-            <AlertCircle />
-            <AlertTitle>{t('clientAlreadyExists')}</AlertTitle>
-            <AlertDescription className="flex flex-col items-start gap-3">
-              <span>
-                {[
-                  duplicateHint.name,
-                  duplicateHint.phoneNumbers?.[0] ?? duplicateHint.phone,
-                  duplicateHint.managerName,
-                ].filter(Boolean).join(' • ')}
-              </span>
-              {duplicateHint.entityType === 'lead' || duplicateHint.leadId ? (
-                <Button type="button" size="sm" variant="outline" onClick={() => onOpenDuplicate(duplicateHint)}>
-                  {t('openLead')}
-                  <ExternalLink data-icon="inline-end" />
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
         <FormField
           control={form.control}
           name="studentName"

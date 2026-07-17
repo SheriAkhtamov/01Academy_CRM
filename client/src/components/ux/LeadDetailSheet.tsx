@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
+import {
+  LeadMergeConflictDialog,
+  type LeadMergeDialogLead,
+} from '@/components/ux/LeadMergeConflictDialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -178,6 +183,13 @@ interface LeadDetailSheetProps {
   dateTime: (value: string | null | undefined) => string;
   money: (value: number | string | null | undefined) => string;
   onChanged: () => void;
+  onMerged?: (retainedLeadId: number) => void;
+}
+
+interface DuplicateLeadHint extends LeadMergeDialogLead {
+  entityType?: 'lead' | 'student';
+  leadId?: number | null;
+  statusCode?: string | null;
 }
 
 const optionalNumberString = z.string().refine(
@@ -325,10 +337,13 @@ export function LeadDetailSheet({
   dateTime,
   money,
   onChanged,
+  onMerged,
 }: LeadDetailSheetProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
+  const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
 
   const leadQuery = useQuery<LeadDetails>({
     queryKey: ['/api/academy/leads', leadId],
@@ -457,6 +472,7 @@ export function LeadDetailSheet({
       hydratedLeadId.current = null;
       hydratedTransientKey.current = null;
       setPendingManagerId(null);
+      setDuplicateHint(null);
     }
   }, [open]);
 
@@ -498,7 +514,41 @@ export function LeadDetailSheet({
       hydratedLeadId.current = updatedLead.id;
       await finishMutation(t('leadSaved'));
     },
-    onError: (error: Error) => toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' }),
+    onError: (error: any) => {
+      const duplicate = error?.data?.duplicate as DuplicateLeadHint | undefined;
+      if (error?.status === 409 && duplicate) {
+        setDuplicateHint({
+          ...duplicate,
+          id: duplicate.entityType === 'lead' ? duplicate.id : duplicate.leadId,
+          statusName: duplicate.statusCode ? leadStatusName(duplicate.statusCode) : undefined,
+        });
+        return;
+      }
+      toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const mergeLeads = useMutation({
+    mutationFn: ({ retainedLeadId, duplicateLeadId }: { retainedLeadId: number; duplicateLeadId: number }) =>
+      apiRequest('POST', '/api/academy/leads/merge', { retainedLeadId, duplicateLeadId }),
+    onSuccess: async (result: { retainedLead: LeadDetails }) => {
+      const retainedLeadId = Number(result.retainedLead.id);
+      setDuplicateHint(null);
+      await queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] });
+      onChanged();
+      toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
+      if (retainedLeadId === leadId) {
+        hydratedLeadKey.current = null;
+        await leadQuery.refetch();
+      } else {
+        onMerged?.(retainedLeadId);
+      }
+    },
+    onError: (error: any) => toast({
+      title: t('leadMergeFailed'),
+      description: leadMergeErrorMessage(t, error?.data?.error),
+      variant: 'destructive',
+    }),
   });
 
   const assignLead = useMutation({
@@ -1409,6 +1459,34 @@ export function LeadDetailSheet({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <LeadMergeConflictDialog
+        open={Boolean(duplicateHint && lead)}
+        mode="persisted"
+        currentLead={lead ? {
+          id: lead.id,
+          contactName: lead.contactName,
+          phone: lead.phone,
+          phoneNumbers: visibleLeadPhones(lead),
+          managerName: lead.managerName,
+          statusName: leadStatusName(lead.statusCode),
+        } : {}}
+        existingLead={duplicateHint}
+        isPending={mergeLeads.isPending}
+        onCancel={() => setDuplicateHint(null)}
+        onOpenExisting={() => {
+          if (!duplicateHint?.id) return;
+          setDuplicateHint(null);
+          onMerged?.(Number(duplicateHint.id));
+        }}
+        onKeepCurrent={() => {
+          if (!lead?.id || !duplicateHint?.id) return;
+          mergeLeads.mutate({ retainedLeadId: lead.id, duplicateLeadId: Number(duplicateHint.id) });
+        }}
+        onMergeIntoExisting={() => {
+          if (!lead?.id || !duplicateHint?.id) return;
+          mergeLeads.mutate({ retainedLeadId: Number(duplicateHint.id), duplicateLeadId: lead.id });
+        }}
+      />
     </Sheet>
   );
 }

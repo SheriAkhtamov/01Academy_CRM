@@ -698,7 +698,7 @@ describe('academy route logic boundaries', () => {
 
   it('reschedules a lesson chain atomically and preserves the lesson intervals', async () => {
     const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    originalAt.setSeconds(17, 321);
+    originalAt.setHours(10, 0, 17, 321);
     const followingAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
     const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
     nextAt.setSeconds(0, 0);
@@ -790,7 +790,7 @@ describe('academy route logic boundaries', () => {
 
   it('always shifts following lessons even when the client omits the legacy flag', async () => {
     const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    originalAt.setSeconds(0, 0);
+    originalAt.setHours(10, 0, 0, 0);
     const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
     const lesson = lessonFixture({ scheduled_at: originalAt });
     const following = lessonFixture({
@@ -850,9 +850,9 @@ describe('academy route logic boundaries', () => {
 
   it('reopens a conducted lesson, clears its attendance, and records both histories', async () => {
     const originalAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    originalAt.setSeconds(0, 0);
+    originalAt.setHours(10, 0, 0, 0);
     const nextAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    nextAt.setSeconds(0, 0);
+    nextAt.setHours(10, 0, 0, 0);
     const conducted = lessonFixture({ status: 'conducted', scheduled_at: originalAt });
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -2035,6 +2035,145 @@ describe('academy route logic boundaries', () => {
     expect(duplicateSql.some((sql) => sql.includes('lead_id IS DISTINCT FROM $3'))).toBe(true);
     const studentDuplicateCall = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('lead_id IS DISTINCT FROM $3'));
     expect(studentDuplicateCall?.[1]).toEqual([null, '@Student', 42]);
+  });
+
+  it('offers an assigned sales manager a merge when a new lead has an existing phone', async () => {
+    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("SELECT 'lead' AS entity_type")) {
+        return {
+          rows: [{
+            entity_type: 'lead',
+            id: 55,
+            contact_name: 'Existing parent',
+            phone: '+998901112233',
+            phone_numbers: ['+998901112233'],
+            manager_id: 7,
+            manager_name: 'Sales manager',
+            is_archived: false,
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads')
+      .send({
+        contactName: 'Duplicate parent',
+        phoneNumbers: ['+998 90 111 22 33'],
+        sourceId: 1,
+        managerId: 7,
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual(expect.objectContaining({
+      error: 'clientAlreadyExists',
+      duplicate: expect.objectContaining({
+        id: 55,
+        entityType: 'lead',
+        canMerge: true,
+      }),
+    }));
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it('merges lead relationships into the retained card and archives the duplicate atomically', async () => {
+    const retained = leadFixture({
+      id: 101,
+      contact_name: 'Retained parent',
+      phone: '+998901010101',
+      manager_id: null,
+      is_archived: false,
+      referral_code: null,
+    });
+    const duplicate = leadFixture({
+      id: 202,
+      contact_name: 'Duplicate parent',
+      phone: '+998902020202',
+      manager_id: null,
+      is_archived: false,
+      referral_code: 'REF-202',
+    });
+    const merged = { ...retained, phone: '+998901010101', referral_code: 'REF-202' };
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('FROM academy_leads') && sql.includes('id = ANY($1::int[])') && sql.includes('FOR UPDATE')) {
+        return { rows: [retained, duplicate] };
+      }
+      if (sql.includes('retained_students') && sql.includes('duplicate_students')) {
+        return { rows: [{ retained_students: 0, duplicate_students: 0 }] };
+      }
+      if (sql.includes('AS instagram_conversations') && sql.includes('AS notifications')) {
+        return { rows: [{ instagram_conversations: 1, tasks: 2, notifications: 1, phones: 1 }] };
+      }
+      if (sql.includes('FROM academy_lead_phones') && sql.includes('lead_id = ANY')) {
+        return {
+          rows: [
+            { id: 1, lead_id: 101, phone: '+998901010101', normalized_phone: '998901010101', is_primary: true },
+            { id: 2, lead_id: 202, phone: '+998902020202', normalized_phone: '998902020202', is_primary: true },
+          ],
+        };
+      }
+      if (sql.includes('FROM academy_lead_phones') && sql.includes('lead_id = $1') && sql.includes('FOR UPDATE')) {
+        return {
+          rows: [
+            { id: 1, lead_id: 101, phone: '+998901010101', normalized_phone: '998901010101', is_primary: true },
+            { id: 2, lead_id: 101, phone: '+998902020202', normalized_phone: '998902020202', is_primary: false },
+          ],
+        };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) {
+        return { rows: [Number(values[0]) === 101 ? merged : { ...duplicate, is_archived: true }] };
+      }
+      if (sql.includes('INSERT INTO "audit_logs"')) return { rows: [{ id: 900 }] };
+      if (sql.includes(')::int AS total')) return { rows: [{ total: 0 }] };
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) return { rows: [merged] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/merge')
+      .send({ retainedLeadId: 101, duplicateLeadId: 202 });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.retainedLead).toEqual(expect.objectContaining({ id: 101 }));
+    const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+    expect(statements.some((sql) => sql.includes('UPDATE instagram_conversations'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('UPDATE academy_tasks'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('INSERT INTO "audit_logs"'))).toBe(true);
+    const archiveUpdate = mocks.clientQuery.mock.calls.find(([sql, values]) => (
+      String(sql).includes('UPDATE "academy_leads"') && Number(values?.[0]) === 202
+    ));
+    expect(String(archiveUpdate?.[0])).toContain('"archive_reason"');
+    expect(String(archiveUpdate?.[0])).toContain('"phone"');
+    expect(archiveUpdate?.[1]).toContain('duplicate_or_invalid');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('rolls back a lead merge when both cards already own student records', async () => {
+    const retained = leadFixture({ id: 101, manager_id: null, is_archived: false });
+    const duplicate = leadFixture({ id: 202, manager_id: null, is_archived: false });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
+      if (sql.includes('FROM academy_leads') && sql.includes('id = ANY($1::int[])') && sql.includes('FOR UPDATE')) {
+        return { rows: [retained, duplicate] };
+      }
+      if (sql.includes('retained_students') && sql.includes('duplicate_students')) {
+        return { rows: [{ retained_students: 1, duplicate_students: 1 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/merge')
+      .send({ retainedLeadId: 101, duplicateLeadId: 202 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('leadMergeStudentConflict');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE instagram_conversations'))).toBe(false);
   });
 
   it('rejects an unknown explicit source and creates source codes only inside the lead transaction', async () => {

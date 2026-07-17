@@ -6,6 +6,7 @@ import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
+import { isGeneratedInstagramLeadName } from '../lib/instagram-lead';
 import {
   getTrailingZonedMonthRanges,
   getZonedDateTimeParts,
@@ -1766,7 +1767,7 @@ const findDuplicate = async (
 
   const duplicateLead = await queryOne(
     `SELECT 'lead' AS entity_type, l.id, l.contact_name AS name, l.phone, l.messenger,
-        l.status_code, l.manager_id, u.full_name AS manager_name,
+        l.status_code, l.manager_id, l.is_archived, u.full_name AS manager_name,
         ${leadPhoneNumbersSelect('l')}
      FROM academy_leads l
      LEFT JOIN users u ON u.id = l.manager_id
@@ -1789,6 +1790,7 @@ const findDuplicate = async (
            AND LOWER(BTRIM(l.messenger)) = LOWER(BTRIM($2))
          )
        )
+     ORDER BY COALESCE(l.is_archived, false), l.updated_at DESC NULLS LAST, l.id DESC
      LIMIT 1`,
     [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
   );
@@ -1809,6 +1811,553 @@ const findDuplicate = async (
     [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
   );
 };
+
+const duplicateHintForRequest = (req: any, duplicate: Row | null | undefined) => {
+  if (!duplicate) return duplicate;
+  return {
+    ...duplicate,
+    canMerge: duplicate.entityType === 'lead'
+      && duplicate.isArchived !== true
+      && canMutateLeadRow(req, duplicate),
+  };
+};
+
+const usefulLeadValue = <T>(value: T | null | undefined): value is T => (
+  value !== null && value !== undefined && value !== ''
+);
+
+const preferLeadValue = <T>(retained: T | null | undefined, duplicate: T | null | undefined) => (
+  usefulLeadValue(retained) ? retained : usefulLeadValue(duplicate) ? duplicate : null
+);
+
+const isSyntheticInstagramIdentity = (value: unknown) => /^instagram:/i.test(String(value ?? '').trim());
+
+const preferLeadIdentity = (
+  retained: string | null | undefined,
+  duplicate: string | null | undefined,
+) => {
+  const retainedText = nullableText(retained);
+  const duplicateText = nullableText(duplicate);
+  if (!retainedText) return duplicateText ?? null;
+  if (isSyntheticInstagramIdentity(retainedText) && duplicateText && !isSyntheticInstagramIdentity(duplicateText)) {
+    return duplicateText;
+  }
+  return retainedText;
+};
+
+const combineLeadComments = (
+  retained: string | null | undefined,
+  duplicate: string | null | undefined,
+) => {
+  const values = [nullableText(retained), nullableText(duplicate)].filter(
+    (value): value is string => Boolean(value),
+  );
+  return [...new Set(values)].join('\n\n') || null;
+};
+
+const earliestLeadDate = (
+  retained: Date | string | null | undefined,
+  duplicate: Date | string | null | undefined,
+) => {
+  const dates = [retained, duplicate]
+    .filter(usefulLeadValue)
+    .map((value) => new Date(value as Date | string))
+    .filter((value) => !Number.isNaN(value.getTime()));
+  if (dates.length === 0) return null;
+  return new Date(Math.min(...dates.map((value) => value.getTime())));
+};
+
+const leadMergeCandidateSelect = (whereSql: string) => `
+  SELECT l.id, l.contact_name, l.phone, l.messenger, l.student_name, l.student_age,
+      l.status_code, status.name AS status_name, l.manager_id,
+      manager.full_name AS manager_name, source.name AS source_name,
+      l.created_at, l.updated_at, l.is_archived,
+      ${leadPhoneNumbersSelect('l')},
+      (SELECT COUNT(*)::int FROM instagram_conversations conversation WHERE conversation.lead_id = l.id)
+        AS instagram_conversation_count,
+      (SELECT COUNT(*)::int FROM academy_students student WHERE student.lead_id = l.id)
+        AS student_count,
+      (SELECT COUNT(*)::int FROM academy_payments payment WHERE payment.lead_id = l.id)
+        AS payment_count,
+      (SELECT COUNT(*)::int FROM academy_communications communication WHERE communication.lead_id = l.id)
+        AS communication_count,
+      (SELECT COUNT(*)::int FROM academy_tasks task WHERE task.entity_type = 'lead' AND task.entity_id = l.id)
+        AS task_count
+   FROM academy_leads l
+   LEFT JOIN users manager ON manager.id = l.manager_id
+   LEFT JOIN academy_lead_sources source ON source.id = l.source_id
+   LEFT JOIN academy_lead_statuses status ON status.code = l.status_code
+   WHERE ${whereSql}`;
+
+const getLeadMergeCandidates = (leadIds: number[]) => {
+  if (leadIds.length === 0) return Promise.resolve([]);
+  return query(
+    `${leadMergeCandidateSelect('l.id = ANY($1::int[])')}
+     ORDER BY l.id`,
+    [leadIds],
+  );
+};
+
+type LeadMergeResult = {
+  retainedLead: Row;
+  duplicateLeadId: number;
+  moved: Row;
+};
+
+const mergeLeadRecords = async (
+  req: any,
+  retainedLeadId: number,
+  duplicateLeadId: number,
+): Promise<LeadMergeResult> => withTransaction(async () => {
+  if (retainedLeadId === duplicateLeadId) {
+    throw Object.assign(new Error('leadMergeRequiresDifferentLeads'), { statusCode: 400 });
+  }
+
+  const orderedIds = [retainedLeadId, duplicateLeadId].sort((left, right) => left - right);
+  for (const leadId of orderedIds) {
+    await query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `academy-lead-merge:${leadId}`,
+    ]);
+  }
+
+  const lockedLeads = await query(
+    `SELECT *
+     FROM academy_leads
+     WHERE id = ANY($1::int[])
+     ORDER BY id
+     FOR UPDATE`,
+    [orderedIds],
+  );
+  const retainedLead = lockedLeads.find((lead) => Number(lead.id) === retainedLeadId);
+  const duplicateLead = lockedLeads.find((lead) => Number(lead.id) === duplicateLeadId);
+  if (!retainedLead || !duplicateLead) {
+    throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
+  }
+  if (retainedLead.isArchived || duplicateLead.isArchived) {
+    throw Object.assign(new Error('leadMergeActiveLeadsOnly'), { statusCode: 409 });
+  }
+  if (!canMutateLeadRow(req, retainedLead) || !canMutateLeadRow(req, duplicateLead)) {
+    throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
+  }
+
+  const studentCounts = await queryOne<{ retainedStudents: number; duplicateStudents: number }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE lead_id = $1)::int AS retained_students,
+       COUNT(*) FILTER (WHERE lead_id = $2)::int AS duplicate_students
+     FROM academy_students
+     WHERE lead_id IN ($1, $2)`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  if (Number(studentCounts?.retainedStudents ?? 0) > 0 && Number(studentCounts?.duplicateStudents ?? 0) > 0) {
+    throw Object.assign(new Error('leadMergeStudentConflict'), { statusCode: 409 });
+  }
+  const duplicateOwnsOnlyStudent = Number(studentCounts?.retainedStudents ?? 0) === 0
+    && Number(studentCounts?.duplicateStudents ?? 0) > 0;
+  const preferEnrollmentValue = <T>(retained: T | null | undefined, duplicate: T | null | undefined) => (
+    duplicateOwnsOnlyStudent
+      ? preferLeadValue(duplicate, retained)
+      : preferLeadValue(retained, duplicate)
+  );
+
+  const moved = await queryOne(
+    `SELECT
+       (SELECT COUNT(*)::int FROM instagram_conversations WHERE lead_id = $1) AS instagram_conversations,
+       (SELECT COUNT(*)::int FROM academy_communications WHERE lead_id = $1) AS communications,
+       (SELECT COUNT(*)::int FROM academy_lead_assignment_history WHERE lead_id = $1) AS assignment_history,
+       (SELECT COUNT(*)::int FROM academy_lead_stage_history WHERE lead_id = $1) AS stage_history,
+       (SELECT COUNT(*)::int FROM academy_payments WHERE lead_id = $1) AS payments,
+       (SELECT COUNT(*)::int FROM academy_referral_rewards WHERE referred_lead_id = $1) AS referral_rewards,
+       (SELECT COUNT(*)::int FROM academy_students WHERE lead_id = $1) AS students,
+       (SELECT COUNT(*)::int FROM academy_lead_phones WHERE lead_id = $1) AS phones,
+       (SELECT COUNT(*)::int FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1) AS tasks,
+       (SELECT COUNT(*)::int FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
+         AS notification_outbox,
+       (SELECT COUNT(*)::int FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
+         AS escalation_events,
+       (SELECT COUNT(*)::int FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1) AS notifications`,
+    [duplicateLeadId],
+  ) ?? {};
+
+  const phoneRows = await query(
+    `SELECT *
+     FROM academy_lead_phones
+     WHERE lead_id = ANY($1::int[])
+     ORDER BY lead_id, is_primary DESC, id
+     FOR UPDATE`,
+    [orderedIds],
+  );
+  const contactPhones = phoneRows.map((phone) => ({
+    phone: String(phone.phone),
+    normalizedPhone: String(phone.normalizedPhone),
+  }));
+  await lockLeadContactIdentities(contactPhones, retainedLead.messenger);
+  await lockLeadContactIdentities([], duplicateLead.messenger);
+
+  await query(
+    `UPDATE instagram_conversations
+     SET lead_id = $1, updated_at = NOW()
+     WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(`UPDATE academy_communications SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
+  await query(`UPDATE academy_lead_assignment_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
+  await query(`UPDATE academy_lead_stage_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
+  await query(
+    `UPDATE academy_payments SET lead_id = $1, updated_at = NOW() WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE academy_referral_rewards SET referred_lead_id = $1 WHERE referred_lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE academy_students SET lead_id = $1, updated_at = NOW() WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+
+  await query(
+    `DELETE FROM academy_lead_phones source_phone
+     USING academy_lead_phones retained_phone
+     WHERE source_phone.lead_id = $2
+       AND retained_phone.lead_id = $1
+       AND retained_phone.normalized_phone = source_phone.normalized_phone`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE academy_lead_phones
+     SET lead_id = $1, updated_at = NOW()
+     WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+
+  const legacyPhones = [retainedLead.phone, duplicateLead.phone]
+    .filter((value) => usefulLeadValue(value) && !isSyntheticInstagramIdentity(value))
+    .flatMap((value) => normalizeLeadPhones(value));
+  for (const phone of legacyPhones) {
+    await query(
+      `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary)
+       VALUES ($1, $2, $3, false)
+       ON CONFLICT (normalized_phone) DO NOTHING`,
+      [retainedLeadId, phone.phone, phone.normalizedPhone],
+    );
+  }
+
+  const mergedPhoneRows = await query(
+    `SELECT * FROM academy_lead_phones WHERE lead_id = $1 ORDER BY is_primary DESC, id FOR UPDATE`,
+    [retainedLeadId],
+  );
+  const retainedPhoneIds = new Set(
+    phoneRows.filter((phone) => Number(phone.leadId) === retainedLeadId).map((phone) => Number(phone.id)),
+  );
+  const primaryPhoneRow = mergedPhoneRows.find((phone) => retainedPhoneIds.has(Number(phone.id)) && phone.isPrimary)
+    ?? mergedPhoneRows.find((phone) => retainedPhoneIds.has(Number(phone.id)))
+    ?? mergedPhoneRows.find((phone) => phone.isPrimary)
+    ?? mergedPhoneRows[0];
+  if (primaryPhoneRow) {
+    await query(
+      `UPDATE academy_lead_phones SET is_primary = (id = $2), updated_at = NOW() WHERE lead_id = $1`,
+      [retainedLeadId, primaryPhoneRow.id],
+    );
+  }
+
+  await query(
+    `UPDATE academy_tasks
+     SET entity_id = $1, updated_at = NOW()
+     WHERE entity_type = 'lead' AND entity_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE academy_notification_outbox
+     SET entity_id = $1, updated_at = NOW()
+     WHERE entity_type = 'lead' AND entity_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE academy_escalation_events
+     SET entity_id = $1
+     WHERE entity_type = 'lead' AND entity_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE notifications
+     SET related_entity_id = $1
+     WHERE related_entity_type = 'lead' AND related_entity_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+
+  const retainedContactName = isGeneratedInstagramLeadName(retainedLead.contactName)
+    && !isGeneratedInstagramLeadName(duplicateLead.contactName)
+    ? duplicateLead.contactName
+    : retainedLead.contactName;
+  const updatedRetainedLead = await updateRow('academy_leads', retainedLeadId, {
+    contactName: retainedContactName,
+    phone: primaryPhoneRow?.phone
+      ?? preferLeadIdentity(retainedLead.phone, duplicateLead.phone),
+    messenger: preferLeadIdentity(retainedLead.messenger, duplicateLead.messenger),
+    studentName: preferEnrollmentValue(retainedLead.studentName, duplicateLead.studentName),
+    studentAge: preferEnrollmentValue(retainedLead.studentAge, duplicateLead.studentAge),
+    courseId: preferEnrollmentValue(retainedLead.courseId, duplicateLead.courseId),
+    schoolId: preferEnrollmentValue(retainedLead.schoolId, duplicateLead.schoolId),
+    advertisingCampaign: preferLeadValue(retainedLead.advertisingCampaign, duplicateLead.advertisingCampaign),
+    acquisitionCostUzs: Number(retainedLead.acquisitionCostUzs || 0) > 0
+      ? retainedLead.acquisitionCostUzs
+      : duplicateLead.acquisitionCostUzs,
+    managerId: preferLeadValue(retainedLead.managerId, duplicateLead.managerId),
+    language: preferLeadValue(retainedLead.language, duplicateLead.language),
+    comment: combineLeadComments(retainedLead.comment, duplicateLead.comment),
+    firstContactAt: earliestLeadDate(retainedLead.firstContactAt, duplicateLead.firstContactAt),
+    firstContactChannel: preferLeadValue(retainedLead.firstContactChannel, duplicateLead.firstContactChannel),
+    firstContactResult: preferLeadValue(retainedLead.firstContactResult, duplicateLead.firstContactResult),
+    demoAt: earliestLeadDate(retainedLead.demoAt, duplicateLead.demoAt),
+    demoCourseId: preferLeadValue(retainedLead.demoCourseId, duplicateLead.demoCourseId),
+    demoFormat: preferLeadValue(retainedLead.demoFormat, duplicateLead.demoFormat),
+    demoLocation: preferLeadValue(retainedLead.demoLocation, duplicateLead.demoLocation),
+    demoAttended: Boolean(retainedLead.demoAttended || duplicateLead.demoAttended),
+    demoResult: preferLeadValue(retainedLead.demoResult, duplicateLead.demoResult),
+    offerCourseId: preferLeadValue(retainedLead.offerCourseId, duplicateLead.offerCourseId),
+    offerPriceUzs: preferLeadValue(retainedLead.offerPriceUzs, duplicateLead.offerPriceUzs),
+    offerDiscount: preferLeadValue(retainedLead.offerDiscount, duplicateLead.offerDiscount),
+    offerAt: earliestLeadDate(retainedLead.offerAt, duplicateLead.offerAt),
+    enrolledGroupId: preferEnrollmentValue(retainedLead.enrolledGroupId, duplicateLead.enrolledGroupId),
+    expectedPaymentUzs: preferLeadValue(retainedLead.expectedPaymentUzs, duplicateLead.expectedPaymentUzs),
+    paymentMethod: preferLeadValue(retainedLead.paymentMethod, duplicateLead.paymentMethod),
+    warmReason: preferLeadValue(retainedLead.warmReason, duplicateLead.warmReason),
+    warmMovedAt: earliestLeadDate(retainedLead.warmMovedAt, duplicateLead.warmMovedAt),
+    noMailing: Boolean(retainedLead.noMailing || duplicateLead.noMailing),
+    referralCode: preferLeadValue(retainedLead.referralCode, duplicateLead.referralCode),
+    referrerStudentId: preferLeadValue(retainedLead.referrerStudentId, duplicateLead.referrerStudentId),
+  });
+  if (!updatedRetainedLead) {
+    throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
+  }
+
+  if (updatedRetainedLead?.managerId) {
+    await query(
+      `UPDATE academy_students
+       SET manager_id = $1, updated_at = NOW()
+       WHERE lead_id = $2`,
+      [updatedRetainedLead.managerId, retainedLeadId],
+    );
+    await query(
+      `UPDATE academy_tasks
+       SET responsible_id = $1, updated_at = NOW()
+       WHERE entity_type = 'lead'
+         AND entity_id = $2
+         AND status <> 'done'`,
+      [updatedRetainedLead.managerId, retainedLeadId],
+    );
+    await syncLeadOwnedNotifications(Number(updatedRetainedLead.managerId), [retainedLeadId]);
+  }
+
+  await updateRow('academy_leads', duplicateLeadId, {
+    phone: null,
+    messenger: null,
+    referralCode: null,
+    referrerStudentId: null,
+    enrolledGroupId: null,
+    isArchived: true,
+    archiveReason: 'duplicate_or_invalid',
+    archivedAt: new Date(),
+    archivedBy: req.user!.id,
+  });
+
+  await insertRow('audit_logs', {
+    userId: req.user!.id,
+    action: 'MERGE_ACADEMY_LEADS',
+    entityType: 'academy_lead',
+    entityId: retainedLeadId,
+    oldValues: {
+      retainedLeadId,
+      duplicateLeadId,
+      retainedContactName: retainedLead.contactName,
+      duplicateContactName: duplicateLead.contactName,
+    },
+    newValues: {
+      retainedLeadId,
+      duplicateLeadId,
+      moved,
+      duplicateArchived: true,
+    },
+  });
+
+  const remainingLinks = await queryOne<{ total: number }>(
+    `SELECT (
+       (SELECT COUNT(*) FROM instagram_conversations WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_communications WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_assignment_history WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_stage_history WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_payments WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_referral_rewards WHERE referred_lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_students WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_phones WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1)
+       + (SELECT COUNT(*) FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
+       + (SELECT COUNT(*) FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
+       + (SELECT COUNT(*) FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1)
+     )::int AS total`,
+    [duplicateLeadId],
+  );
+  if (Number(remainingLinks?.total ?? 0) !== 0) {
+    throw Object.assign(new Error('leadMergeIncomplete'), { statusCode: 409 });
+  }
+
+  return {
+    retainedLead: await getLead(retainedLeadId) ?? updatedRetainedLead,
+    duplicateLeadId,
+    moved,
+  };
+});
+
+type LeadDraftMergeResult = {
+  retainedLead: Row;
+  assignedManager: { id: number; fullName: string } | null;
+};
+
+const mergeLeadDraftIntoExisting = async (
+  req: any,
+  retainedLeadId: number,
+  draft: Row,
+): Promise<LeadDraftMergeResult> => withTransaction(async () => {
+  await query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+    `academy-lead-merge:${retainedLeadId}`,
+  ]);
+  const retainedLead = await queryOne(
+    `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+    [retainedLeadId],
+  );
+  if (!retainedLead) {
+    throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
+  }
+  if (retainedLead.isArchived) {
+    throw Object.assign(new Error('leadMergeActiveLeadsOnly'), { statusCode: 409 });
+  }
+  if (!canMutateLeadRow(req, retainedLead)) {
+    throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
+  }
+
+  const draftPhones = normalizeLeadPhones(draft.phoneNumbers ?? draft.phone);
+  const draftMessenger = nullableText(draft.messenger);
+  await lockLeadContactIdentities(draftPhones, draftMessenger);
+  const otherDuplicate = await findDuplicate(draftPhones, draftMessenger, { excludeLeadId: retainedLeadId });
+  if (otherDuplicate) {
+    throw Object.assign(new Error('clientAlreadyExists'), {
+      statusCode: 409,
+      duplicate: otherDuplicate,
+    });
+  }
+
+  const existingPhoneRows = await query(
+    `SELECT *
+     FROM academy_lead_phones
+     WHERE lead_id = $1
+     ORDER BY is_primary DESC, id
+     FOR UPDATE`,
+    [retainedLeadId],
+  );
+  const mergedPhones = new Map<string, NormalizedLeadPhone>();
+  for (const phone of existingPhoneRows) {
+    mergedPhones.set(String(phone.normalizedPhone), {
+      phone: String(phone.phone),
+      normalizedPhone: String(phone.normalizedPhone),
+    });
+  }
+  if (usefulLeadValue(retainedLead.phone) && !isSyntheticInstagramIdentity(retainedLead.phone)) {
+    for (const phone of normalizeLeadPhones(retainedLead.phone)) {
+      mergedPhones.set(phone.normalizedPhone, phone);
+    }
+  }
+  for (const phone of draftPhones) {
+    mergedPhones.set(phone.normalizedPhone, phone);
+  }
+  const phoneValuesToSave = [...mergedPhones.values()];
+
+  const requestedGroupId = retainedLead.enrolledGroupId
+    ? null
+    : parseId(draft.enrolledGroupId);
+  let requestedGroup: Row | null = null;
+  if (requestedGroupId) {
+    await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [requestedGroupId]);
+    requestedGroup = await validateEnrollmentGroup(requestedGroupId, retainedLeadId);
+  }
+
+  const requestedManagerId = retainedLead.managerId
+    ? null
+    : await resolveLeadManagerId(req, draft.managerId);
+  const assignedManager = requestedManagerId
+    ? await getActiveSalesManager(requestedManagerId, true)
+    : null;
+  const nextStudentName = preferLeadValue(retainedLead.studentName, nullableText(draft.studentName));
+  const nextStudentAge = preferLeadValue(retainedLead.studentAge, toIntegerOrNull(draft.studentAge));
+  const nextCourseId = requestedGroup?.courseId
+    ? Number(requestedGroup.courseId)
+    : preferLeadValue(retainedLead.courseId, toIdOrNull(draft.courseId, 'courseId'));
+  const nextEnrolledGroupId = preferLeadValue(retainedLead.enrolledGroupId, requestedGroupId);
+  const validationError = validateLeadForStatusChange({
+    nextStatus: retainedLead.statusCode,
+    studentName: nextStudentName,
+    studentAge: nextStudentAge,
+    courseId: nextCourseId,
+    enrolledGroupId: nextEnrolledGroupId,
+  });
+  if (validationError) {
+    throw Object.assign(new Error(validationError), { statusCode: 409 });
+  }
+
+  const retainedContactName = isGeneratedInstagramLeadName(retainedLead.contactName)
+    && nullableText(draft.contactName)
+    ? nullableText(draft.contactName)
+    : retainedLead.contactName;
+  const updatedLead = await updateRow('academy_leads', retainedLeadId, {
+    contactName: retainedContactName,
+    phone: phoneValuesToSave[0]?.phone ?? retainedLead.phone,
+    messenger: preferLeadIdentity(retainedLead.messenger, draftMessenger),
+    studentName: nextStudentName,
+    studentAge: nextStudentAge,
+    courseId: nextCourseId,
+    schoolId: requestedGroup?.schoolId
+      ? Number(requestedGroup.schoolId)
+      : preferLeadValue(retainedLead.schoolId, toIdOrNull(draft.schoolId, 'schoolId')),
+    managerId: assignedManager?.id ?? retainedLead.managerId,
+    comment: combineLeadComments(retainedLead.comment, nullableText(draft.comment)),
+    language: preferLeadValue(retainedLead.language, nullableText(draft.language)),
+    enrolledGroupId: nextEnrolledGroupId,
+  });
+  if (!updatedLead) {
+    throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
+  }
+  await syncLeadPhones(retainedLeadId, phoneValuesToSave);
+
+  if (assignedManager) {
+    await syncLeadManagerAssignment(
+      req,
+      retainedLead,
+      assignedManager,
+      'Ответственный назначен при объединении новой заявки с существующим лидом',
+    );
+  }
+
+  await insertRow('audit_logs', {
+    userId: req.user!.id,
+    action: 'MERGE_ACADEMY_LEAD_DRAFT',
+    entityType: 'academy_lead',
+    entityId: retainedLeadId,
+    oldValues: {
+      retainedLeadId,
+      contactName: retainedLead.contactName,
+      phone: retainedLead.phone,
+    },
+    newValues: {
+      retainedLeadId,
+      draftContactName: nullableText(draft.contactName),
+      mergedPhoneCount: phoneValuesToSave.length,
+    },
+  });
+
+  return {
+    retainedLead: await getLead(retainedLeadId) ?? updatedLead,
+    assignedManager,
+  };
+});
 
 const getLead = (id: number) =>
   queryOne(
@@ -4168,7 +4717,10 @@ router.post('/leads', async (req, res) => {
 
     const duplicate = await findDuplicate(phones, messenger);
     if (duplicate) {
-      return res.status(409).json({ error: 'clientAlreadyExists', duplicate });
+      return res.status(409).json({
+        error: 'clientAlreadyExists',
+        duplicate: duplicateHintForRequest(req, duplicate),
+      });
     }
     if (req.body.demoAt) {
       return res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
@@ -4260,7 +4812,10 @@ router.post('/leads', async (req, res) => {
     res.status(201).json(lead);
   } catch (error: any) {
     logger.error('Failed to create lead', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create lead' });
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to create lead',
+      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
+    });
   }
 });
 
@@ -4363,6 +4918,105 @@ router.post('/leads/bulk-assign', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to bulk assign leads', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign leads' });
+  }
+});
+
+router.get('/leads/merge-candidates', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const term = String(req.query.q ?? '').trim();
+    if (term.length < 2) return res.json([]);
+    const like = `%${term.toLowerCase()}%`;
+    const candidates = await query(
+      `${leadMergeCandidateSelect(`
+        COALESCE(l.is_archived, false) = false
+        AND (
+          LOWER(l.contact_name) LIKE $1
+          OR LOWER(COALESCE(l.student_name, '')) LIKE $1
+          OR LOWER(COALESCE(l.phone, '')) LIKE $1
+          OR LOWER(COALESCE(l.messenger, '')) LIKE $1
+          OR EXISTS (
+            SELECT 1
+            FROM academy_lead_phones phone
+            WHERE phone.lead_id = l.id AND LOWER(phone.phone) LIKE $1
+          )
+        )
+      `)}
+       ORDER BY l.updated_at DESC NULLS LAST, l.id DESC
+       LIMIT 10`,
+      [like],
+    );
+    res.json(candidates);
+  } catch (error) {
+    logger.error('Failed to search lead merge candidates', { error });
+    res.status(500).json({ error: 'leadMergeSearchFailed' });
+  }
+});
+
+router.get('/leads/merge-preview', async (req, res) => {
+  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  try {
+    const firstLeadId = parseId(req.query.firstLeadId);
+    const secondLeadId = parseId(req.query.secondLeadId);
+    if (!firstLeadId || !secondLeadId || firstLeadId === secondLeadId) {
+      return res.status(400).json({ error: 'leadMergeRequiresDifferentLeads' });
+    }
+    const leads = await getLeadMergeCandidates([firstLeadId, secondLeadId]);
+    if (leads.length !== 2) return res.status(404).json({ error: 'leadMergeLeadNotFound' });
+    res.json({ leads });
+  } catch (error: any) {
+    logger.error('Failed to preview lead merge', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'leadMergePreviewFailed' });
+  }
+});
+
+router.post('/leads/merge', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  try {
+    const retainedLeadId = parseId(req.body.retainedLeadId);
+    const duplicateLeadId = parseId(req.body.duplicateLeadId);
+    if (!retainedLeadId || !duplicateLeadId || retainedLeadId === duplicateLeadId) {
+      return res.status(400).json({ error: 'leadMergeRequiresDifferentLeads' });
+    }
+    const result = await mergeLeadRecords(req, retainedLeadId, duplicateLeadId);
+    const [visibleLead] = await applyLeadVisibilityForActor({
+      userId: req.user!.id,
+      workspace: String(req.user!.workspace),
+      workspaces: getAssignedWorkspaces(req.user),
+      scopeWorkspace: 'sales',
+    }, [result.retainedLead]);
+    res.json({ ...result, retainedLead: visibleLead });
+  } catch (error: any) {
+    logger.error('Failed to merge leads', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'leadMergeFailed' });
+  }
+});
+
+router.post('/leads/merge-draft', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  try {
+    const retainedLeadId = parseId(req.body.retainedLeadId);
+    const draft = req.body.draft && typeof req.body.draft === 'object' ? req.body.draft : null;
+    if (!retainedLeadId || !draft) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    const result = await mergeLeadDraftIntoExisting(req, retainedLeadId, draft);
+    if (result.assignedManager) {
+      await createNotification(
+        result.assignedManager.id,
+        'Вам назначен лид',
+        leadContactSummary(result.retainedLead),
+        'lead',
+        retainedLeadId,
+      );
+    }
+    res.json(await applyLeadVisibilityForRequest(req, result.retainedLead));
+  } catch (error: any) {
+    logger.error('Failed to merge lead draft', { error });
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'leadMergeFailed',
+      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
+    });
   }
 });
 
@@ -4707,7 +5361,10 @@ router.patch('/leads/:id', async (req, res) => {
       { excludeLeadId: id },
     );
     if (duplicate) {
-      return res.status(409).json({ error: 'clientAlreadyExists', duplicate });
+      return res.status(409).json({
+        error: 'clientAlreadyExists',
+        duplicate: duplicateHintForRequest(req, duplicate),
+      });
     }
     const updates: Row = {
       contactName: nullableText(req.body.contactName) ?? oldLead.contactName,
@@ -4923,7 +5580,10 @@ router.patch('/leads/:id', async (req, res) => {
     res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to update lead', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update lead' });
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to update lead',
+      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
+    });
   }
 });
 

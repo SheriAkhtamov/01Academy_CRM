@@ -5,6 +5,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useLocation } from 'wouter';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { isContainedWorkspaceRoute } from '@/lib/containedWorkspaceRoutes';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const containsOwnScrollArea = isContainedWorkspaceRoute(location);
   useWebSocket();
 
   if (isLoading) {
@@ -48,10 +50,13 @@ export default function Layout({ children }: LayoutProps) {
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-auto">
-          <div key={location} className="page-enter min-w-0 max-w-full">
+        <main className={`min-h-0 flex-1 ${containsOwnScrollArea ? 'overflow-hidden' : 'overflow-auto'}`}>
+          <div
+            key={location}
+            className={`page-enter min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full min-h-0 overflow-hidden' : ''}`}
+          >
             {children}
           </div>
         </main>

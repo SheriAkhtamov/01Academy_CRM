@@ -309,7 +309,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-[calc(100dvh-15rem)] min-h-[26rem] max-h-[72rem] w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
+        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
         isOver && 'border-primary bg-primary/5 shadow-md',
       )}
     >
@@ -326,7 +326,7 @@ function KanbanColumn({
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3">
         {leads.map((lead) => (
           <DraggableLeadCard
             key={lead.id}
@@ -450,7 +450,7 @@ export function KanbanBoard({
   }, [moveLead]);
 
   return (
-    <div className="flex min-w-0 max-w-full flex-1 flex-col gap-2">
+    <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -458,8 +458,8 @@ export function KanbanBoard({
         onDragCancel={() => setActiveLeadId(null)}
         onDragEnd={handleDragEnd}
       >
-        <div className="-mx-2 min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain pb-2">
-          <div className="flex min-h-full min-w-max items-stretch gap-4 px-2">
+        <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2">
+          <div className="flex h-full min-w-max items-stretch gap-4 px-2">
             {statuses.map((status) => (
               <KanbanColumn
                 key={status.code}

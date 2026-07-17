@@ -85,7 +85,7 @@ function TaskColumn({
         <div
             ref={setNodeRef}
             className={cn(
-                'flex h-[calc(100dvh-13rem)] min-h-[24rem] w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
+                'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
                 isOver && 'border-primary bg-primary/5 shadow-md',
             )}
         >
@@ -96,7 +96,7 @@ function TaskColumn({
                 </span>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3">
+            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3">
                 {tasks.map((task) => (
                     <DraggableTaskCard key={task.id} task={task} onClick={() => onTaskClick(task.id)} />
                 ))}
@@ -196,41 +196,43 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
     );
 
     return (
-        <DndContext
-            sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragStart={handleDragStart}
-            onDragCancel={() => setActiveTaskId(null)}
-            onDragEnd={handleDragEnd}
-            accessibility={{
-                announcements: {
-                    onDragStart: () => t('dragTaskHint'),
-                    onDragOver: () => t('dragTaskHint'),
-                    onDragEnd: () => t('dragTaskHint'),
-                    onDragCancel: () => t('dragTaskHint'),
-                },
-            }}
-        >
-            <div className="-mx-1 min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain pb-2">
-                <div className="flex min-h-full min-w-max items-stretch gap-4 px-1">
-                    {columns.map((col) => (
-                        <TaskColumn
-                            key={col.status}
-                            status={col.status}
-                            label={t(col.labelKey)}
-                            tasks={col.tasks}
-                            onTaskClick={onTaskClick}
-                        />
-                    ))}
-                </div>
-            </div>
-            <DragOverlay>
-                {activeTask ? (
-                    <div className="w-72 rotate-2">
-                        <TaskCard task={activeTask} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDragStart}
+                onDragCancel={() => setActiveTaskId(null)}
+                onDragEnd={handleDragEnd}
+                accessibility={{
+                    announcements: {
+                        onDragStart: () => t('dragTaskHint'),
+                        onDragOver: () => t('dragTaskHint'),
+                        onDragEnd: () => t('dragTaskHint'),
+                        onDragCancel: () => t('dragTaskHint'),
+                    },
+                }}
+            >
+                <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2">
+                    <div className="flex h-full min-w-max items-stretch gap-4 px-1">
+                        {columns.map((col) => (
+                            <TaskColumn
+                                key={col.status}
+                                status={col.status}
+                                label={t(col.labelKey)}
+                                tasks={col.tasks}
+                                onTaskClick={onTaskClick}
+                            />
+                        ))}
                     </div>
-                ) : null}
-            </DragOverlay>
-        </DndContext>
+                </div>
+                <DragOverlay>
+                    {activeTask ? (
+                        <div className="w-72 rotate-2">
+                            <TaskCard task={activeTask} />
+                        </div>
+                    ) : null}
+                </DragOverlay>
+            </DndContext>
+        </div>
     );
 }

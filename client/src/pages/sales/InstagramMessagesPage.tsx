@@ -1803,7 +1803,7 @@ export default function MessagesPage() {
     : 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
 
   return (
-    <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
+    <div className="mx-auto flex h-full min-h-0 max-w-[1600px] flex-col overflow-hidden p-6 lg:p-8">
       <PageHeader
         title={t('messages')}
         subtitle={t('messagesDesc')}
@@ -1853,7 +1853,7 @@ export default function MessagesPage() {
 
       <Card
         ref={inboxCardRef}
-        className="mt-5 flex h-[calc(100dvh-11.5rem)] min-h-[30rem] flex-col overflow-hidden rounded-lg border-border bg-background shadow-none sm:h-[calc(100dvh-10.5rem)] lg:mt-6 lg:h-[calc(100dvh-10rem)] lg:min-h-[620px]"
+        className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-border bg-background shadow-none lg:mt-6"
       >
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">

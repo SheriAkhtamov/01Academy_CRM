@@ -382,7 +382,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('FROM academy_groups g') && !sql.includes('WHERE g.teacher_id = $1')) {
         return { rows: [{ id: 999, name: 'Other teacher group' }] };
       }
-      if (sql.includes('SELECT st.*') && !sql.includes('st.group_id IN')) {
+      if (sql.includes('SELECT st.*') && !sql.includes('teacher_membership')) {
         return { rows: [{ id: 999, student_name: 'Other teacher student' }] };
       }
       return emptyResult();
@@ -416,7 +416,7 @@ describe('academy route logic boundaries', () => {
           : { rows: [{ id: 999, name: 'Another teacher group', teacher_id: 8 }] };
       }
       if (sql.includes('SELECT st.*')) {
-        return sql.includes('st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)')
+        return sql.includes('teacher_membership') && sql.includes('teacher_group.teacher_id = $1')
           ? { rows: [{ id: 30, student_name: 'My student', group_id: 20 }] }
           : { rows: [{ id: 999, student_name: 'Another teacher student', group_id: 99 }] };
       }
@@ -1086,6 +1086,80 @@ describe('academy route logic boundaries', () => {
       expect.stringContaining('UPDATE "academy_leads"'),
       [42, 20, 9, 4],
     ]);
+  });
+
+  it('adds a secondary group without replacing the student primary group', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 10, status: 'studying' }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 10, status: 'studying' }] };
+      }
+      if (sql.includes('SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 20 }] };
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) {
+        return { rows: [{ id: 20, status: 'open', max_students: 12, course_id: 9, school_id: 4 }] };
+      }
+      if (sql.includes('AS resources_active')) return { rows: [{ resources_active: true }] };
+      if (sql.includes('COUNT(DISTINCT s.id)::int AS current_students')) {
+        return { rows: [{ current_students: 0, reserved_students: 0, max_students: 12 }] };
+      }
+      if (sql.includes('INSERT INTO academy_student_group_enrollments')) {
+        return { rows: [{ id: 1, student_id: 5, group_id: 20, is_primary: false }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/students/5/groups')
+      .send({ groupId: 20 });
+
+    expect(response.status).toBe(201);
+    const enrollmentInsert = mocks.clientQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('INSERT INTO academy_student_group_enrollments')
+      && String(sql).includes("'active', $3")
+    ));
+    expect(enrollmentInsert?.[1]?.slice(0, 3)).toEqual([5, 20, false]);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_students"') && String(sql).includes('"group_id"')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('keeps a studying student in at least one active group', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 20, status: 'studying' }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: null, group_id: 20, status: 'studying' }] };
+      }
+      if (sql.includes('FROM academy_student_group_enrollments') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 1, student_id: 5, group_id: 20, status: 'active', is_primary: true }] };
+      }
+      if (sql.includes('COUNT(*)::int AS count')) return { rows: [{ count: 1 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .delete('/api/academy/students/5/groups/20');
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('studentRequiresAtLeastOneGroup');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE academy_student_group_enrollments')
+    ))).toBe(false);
   });
 
   it('does not resume a paused student into a full group', async () => {
@@ -2034,7 +2108,7 @@ describe('academy route logic boundaries', () => {
     expect(duplicateSql.some((sql) => sql.includes('LOWER(BTRIM(l.messenger)) = LOWER(BTRIM($2))'))).toBe(true);
     expect(duplicateSql.some((sql) => sql.includes('lead_id IS DISTINCT FROM $3'))).toBe(true);
     const studentDuplicateCall = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('lead_id IS DISTINCT FROM $3'));
-    expect(studentDuplicateCall?.[1]).toEqual([null, '@Student', 42]);
+    expect(studentDuplicateCall?.[1]).toEqual([null, '@Student', 42, 'student']);
   });
 
   it('offers an assigned sales manager a merge when a new lead has an existing phone', async () => {
@@ -2076,6 +2150,33 @@ describe('academy route logic boundaries', () => {
       }),
     }));
     expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it('includes the student identity when checking a shared family phone', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads')
+      .send({
+        contactName: 'Shared parent',
+        studentName: 'Younger Child',
+        phoneNumbers: ['+998 90 111 22 33'],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('sourceRequired');
+    const duplicateCalls = [
+      ...mocks.poolQuery.mock.calls,
+      ...mocks.clientQuery.mock.calls,
+    ].filter(([sql]) => String(sql).includes("SELECT 'lead' AS entity_type"));
+    expect(duplicateCalls.length).toBeGreaterThanOrEqual(2);
+    for (const [sql, values] of duplicateCalls) {
+      expect(String(sql)).toContain('REGEXP_REPLACE(BTRIM(l.student_name)');
+      expect(values?.[3]).toBe('younger child');
+    }
   });
 
   it('merges lead relationships into the retained card and archives the duplicate atomically', async () => {

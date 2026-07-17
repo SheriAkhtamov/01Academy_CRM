@@ -130,6 +130,17 @@ interface Student {
   leadId?: number;
   groupId?: number;
   groupName?: string;
+  groupIds?: number[];
+  groupNames?: string[];
+  groups?: Array<{
+    groupId: number;
+    groupName: string;
+    courseId?: number;
+    courseName?: string;
+    schoolId?: number;
+    isPrimary?: boolean;
+    enrolledAt?: string;
+  }>;
   courseId?: number;
   courseName?: string;
   contactName: string;
@@ -807,6 +818,36 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     onError: (error: Error) => toast({ title: ceoCopy.student.updateFailed, description: error.message, variant: 'destructive' }),
   });
 
+  const addStudentGroup = useMutation({
+    mutationFn: ({ id, groupId, isPrimary }: { id: number; groupId: number; isPrimary?: boolean }) =>
+      apiRequest('POST', `/api/academy/students/${id}/groups`, { groupId, isPrimary }),
+    onSuccess: () => {
+      toast({ title: t('studentGroupAdded') });
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: t('studentGroupUpdateFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const removeStudentGroup = useMutation({
+    mutationFn: ({ id, groupId }: { id: number; groupId: number }) =>
+      apiRequest('DELETE', `/api/academy/students/${id}/groups/${groupId}`),
+    onSuccess: () => {
+      toast({ title: t('studentGroupRemoved') });
+      invalidate();
+    },
+    onError: (error: any) => toast({
+      title: t('studentGroupUpdateFailed'),
+      description: error?.data?.error === 'studentRequiresAtLeastOneGroup'
+        ? t('studentRequiresAtLeastOneGroup')
+        : error.message,
+      variant: 'destructive',
+    }),
+  });
+
   const openLead = useCallback((leadId: number, tab: LeadSheetTab = 'deal') => {
     setSelectedLeadId(leadId);
     setLeadSheetTab(tab);
@@ -1120,6 +1161,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           onStudentSheetOpenChange={handleStudentSheetState}
           onUpdateStudentStatus={isAdministrationWorkspace
             ? (id, status, exitReason) => updateStudentStatus.mutateAsync({ id, status, exitReason })
+            : undefined}
+          onAddStudentGroup={isAdministrationWorkspace
+            ? (id, groupId, isPrimary) => addStudentGroup.mutateAsync({ id, groupId, isPrimary })
+            : undefined}
+          onRemoveStudentGroup={isAdministrationWorkspace
+            ? (id, groupId) => removeStudentGroup.mutateAsync({ id, groupId })
             : undefined}
           title={riskFilter === 'overdue'
             ? ceoCopy.student.overdueStudents
@@ -1532,6 +1579,8 @@ function StudentsTab({
   openLead,
   onStudentSheetOpenChange,
   onUpdateStudentStatus,
+  onAddStudentGroup,
+  onRemoveStudentGroup,
   title,
   showManager,
 }: {
@@ -1546,6 +1595,8 @@ function StudentsTab({
   openLead: (leadId: number, tab?: LeadSheetTab) => void;
   onStudentSheetOpenChange: (open: boolean) => void;
   onUpdateStudentStatus?: (id: number, status: string, exitReason?: string) => Promise<unknown>;
+  onAddStudentGroup?: (id: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
+  onRemoveStudentGroup?: (id: number, groupId: number) => Promise<unknown>;
   title: string;
   showManager: boolean;
 }) {
@@ -1566,8 +1617,12 @@ function StudentsTab({
       key: 'groupId',
       header: t('group'),
       sortable: true,
-      accessor: (student: Student) => student.groupName,
-      render: (student: Student) => <span className="text-slate-600">{student.groupName || t('noGroup')}</span>,
+      accessor: (student: Student) => student.groupNames?.join(', ') || student.groupName,
+      render: (student: Student) => (
+        <span className="line-clamp-2 text-slate-600">
+          {student.groupNames?.join(', ') || student.groupName || t('noGroup')}
+        </span>
+      ),
     },
     {
       key: 'courseId',
@@ -1655,7 +1710,9 @@ function StudentsTab({
         onOpenChange={onStudentSheetOpenChange}
         onRecordPayment={(leadId) => openLead(leadId, 'payment')}
         onUpdateStatus={onUpdateStudentStatus}
-        data={{ projects: data.projects, payments: data.payments, referrals: data.referrals }}
+        onAddGroup={onAddStudentGroup}
+        onRemoveGroup={onRemoveStudentGroup}
+        data={{ projects: data.projects, payments: data.payments, referrals: data.referrals, groups: data.groups }}
         dateTime={dateTime}
       />
     </div>

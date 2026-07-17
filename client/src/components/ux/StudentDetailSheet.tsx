@@ -34,10 +34,13 @@ interface StudentDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   onRecordPayment?: (leadId: number) => void;
   onUpdateStatus?: (studentId: number, status: string, exitReason?: string) => Promise<unknown>;
+  onAddGroup?: (studentId: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
+  onRemoveGroup?: (studentId: number, groupId: number) => Promise<unknown>;
   data?: {
     projects?: any[];
     payments?: any[];
     referrals?: any[];
+    groups?: any[];
   };
   dateTime: (value: string | null | undefined) => string;
 }
@@ -48,6 +51,8 @@ export function StudentDetailSheet({
   onOpenChange,
   onRecordPayment,
   onUpdateStatus,
+  onAddGroup,
+  onRemoveGroup,
   data,
   dateTime,
 }: StudentDetailSheetProps) {
@@ -56,6 +61,8 @@ export function StudentDetailSheet({
   const [statusDraft, setStatusDraft] = useState(String(student?.status ?? 'studying'));
   const [exitReason, setExitReason] = useState(String(student?.exitReason ?? ''));
   const [savingStatus, setSavingStatus] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [groupMutation, setGroupMutation] = useState<string | null>(null);
   // Hold onto the last non-null student so the sheet can animate out on close
   // instead of unmounting the instant the parent clears the selection.
   const [heldStudent, setHeldStudent] = useState(student);
@@ -65,6 +72,7 @@ export function StudentDetailSheet({
 
   useEffect(() => {
     if (open) setActiveTab('info');
+    setSelectedGroupId('');
   }, [open, student?.id]);
 
   useEffect(() => {
@@ -76,6 +84,24 @@ export function StudentDetailSheet({
 
   if (!heldStudent) return null;
   const currentStudent = heldStudent;
+  const studentGroups = Array.isArray(currentStudent.groups) && currentStudent.groups.length > 0
+    ? currentStudent.groups
+    : currentStudent.groupId && currentStudent.groupName
+      ? [{
+        groupId: currentStudent.groupId,
+        groupName: currentStudent.groupName,
+        courseId: currentStudent.courseId,
+        courseName: currentStudent.courseName,
+        schoolId: currentStudent.schoolId,
+        isPrimary: true,
+      }]
+      : [];
+  const enrolledGroupIds = new Set(studentGroups.map((group: any) => Number(group.groupId)));
+  const availableGroups = (data?.groups ?? []).filter((group: any) => (
+    !enrolledGroupIds.has(Number(group.id))
+    && ['open', 'in_progress'].includes(String(group.status))
+  ));
+  const studentGroupNames = studentGroups.map((group: any) => group.groupName).filter(Boolean);
 
   const projects = data?.projects?.filter((project: any) => project.studentId === currentStudent.id) ?? [];
   const payments = data?.payments?.filter((payment: any) => payment.studentId === currentStudent.id) ?? [];
@@ -164,7 +190,11 @@ export function StudentDetailSheet({
                 <Badge variant="secondary">
                   {studentStatusLabel(currentStudent.status)}
                 </Badge>
-                {currentStudent.groupName && <Badge variant="outline">{currentStudent.groupName}</Badge>}
+                {studentGroups.map((group: any) => (
+                  <Badge key={group.groupId} variant="outline">
+                    {group.groupName}{group.isPrimary ? ` · ${t('primaryGroup')}` : ''}
+                  </Badge>
+                ))}
                 {currentStudent.courseName && <Badge variant="outline">{currentStudent.courseName}</Badge>}
                 {currentStudent.schoolName && <Badge variant="outline">{currentStudent.schoolName}</Badge>}
                 {Array.isArray(currentStudent.riskFlags) &&
@@ -263,8 +293,95 @@ export function StudentDetailSheet({
 
           <TabsContent value="schedule" className="space-y-3">
             <InfoRow label={t('courseLabel')} value={currentStudent.courseName || t('noCourse')} />
-            <InfoRow label={t('groupLabel')} value={currentStudent.groupName || t('noGroup')} />
+            <InfoRow label={t('groupLabel')} value={studentGroupNames.join(', ') || t('noGroup')} />
             <InfoRow label={t('school')} value={currentStudent.schoolName || t('schoolNotSelected')} />
+            {onAddGroup || onRemoveGroup ? (
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                <p className="text-sm font-medium text-foreground">{t('studentGroups')}</p>
+                {onAddGroup && availableGroups.length > 0 ? (
+                  <div className="mt-3 flex gap-2">
+                    <select
+                      className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                      value={selectedGroupId}
+                      onChange={(event) => setSelectedGroupId(event.target.value)}
+                    >
+                      <option value="">{t('chooseGroup')}</option>
+                      {availableGroups.map((group: any) => (
+                        <option key={group.id} value={group.id}>{group.name}</option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      className="h-10"
+                      disabled={!selectedGroupId || groupMutation !== null}
+                      onClick={async () => {
+                        if (!selectedGroupId) return;
+                        setGroupMutation(`add-${selectedGroupId}`);
+                        try {
+                          await onAddGroup(currentStudent.id, Number(selectedGroupId));
+                          setSelectedGroupId('');
+                        } catch {
+                          // The parent mutation owns the user-facing error toast.
+                        } finally {
+                          setGroupMutation(null);
+                        }
+                      }}
+                    >
+                      {t('addStudentToGroup')}
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="mt-3 space-y-2">
+                  {studentGroups.map((group: any) => (
+                    <div key={group.groupId} className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{group.groupName}</p>
+                        {group.courseName ? <p className="truncate text-xs text-muted-foreground">{group.courseName}</p> : null}
+                      </div>
+                      {group.isPrimary ? <Badge variant="secondary">{t('primaryGroup')}</Badge> : null}
+                      {!group.isPrimary && onAddGroup ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={groupMutation !== null}
+                          onClick={async () => {
+                            setGroupMutation(`primary-${group.groupId}`);
+                            try {
+                              await onAddGroup(currentStudent.id, Number(group.groupId), true);
+                            } catch {
+                              // The parent mutation owns the user-facing error toast.
+                            } finally {
+                              setGroupMutation(null);
+                            }
+                          }}
+                        >
+                          {t('makePrimaryGroup')}
+                        </Button>
+                      ) : null}
+                      {onRemoveGroup ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={groupMutation !== null || (currentStudent.status === 'studying' && studentGroups.length <= 1)}
+                          onClick={async () => {
+                            setGroupMutation(`remove-${group.groupId}`);
+                            try {
+                              await onRemoveGroup(currentStudent.id, Number(group.groupId));
+                            } catch {
+                              // The parent mutation owns the user-facing error toast.
+                            } finally {
+                              setGroupMutation(null);
+                            }
+                          }}
+                        >
+                          {t('removeFromGroup')}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="attendance">

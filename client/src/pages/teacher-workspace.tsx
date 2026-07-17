@@ -81,6 +81,8 @@ type Student = {
   id: number;
   groupId?: number;
   groupName?: string;
+  groupIds?: number[];
+  groupNames?: string[];
   courseName?: string;
   studentName?: string;
   contactName: string;
@@ -597,7 +599,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   const groupStudents = useMemo(() => {
     if (!selectedGroup) return [];
-    return students.filter((s) => s.groupId === selectedGroup.id);
+    return students.filter((student) => (
+      student.groupIds?.some((groupId) => Number(groupId) === Number(selectedGroup.id))
+      || Number(student.groupId) === Number(selectedGroup.id)
+    ));
   }, [students, selectedGroup]);
 
   // Survey data grouped by group

@@ -287,7 +287,9 @@ export const academyLeadPhones = pgTable("academy_lead_phones", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   leadIdx: index("academy_lead_phones_lead_idx").on(table.leadId),
-  normalizedUnique: uniqueIndex("academy_lead_phones_normalized_unique").on(table.normalizedPhone),
+  leadNormalizedUnique: uniqueIndex("academy_lead_phones_lead_normalized_unique")
+    .on(table.leadId, table.normalizedPhone),
+  normalizedIdx: index("academy_lead_phones_normalized_idx").on(table.normalizedPhone),
 }));
 
 export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
@@ -352,6 +354,38 @@ export const academyStudents = pgTable("academy_students", {
   managerIdx: index("academy_students_manager_idx").on(table.managerId),
   schoolIdx: index("academy_students_school_idx").on(table.schoolId),
   statusIdx: index("academy_students_status_idx").on(table.status),
+}));
+
+export const academyStudentGroupEnrollments = pgTable("academy_student_group_enrollments", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("active"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  studentStatusIdx: index("academy_student_group_enrollments_student_status_idx")
+    .on(table.studentId, table.status),
+  groupStatusIdx: index("academy_student_group_enrollments_group_status_idx")
+    .on(table.groupId, table.status),
+  activeUnique: uniqueIndex("academy_student_group_enrollments_active_unique")
+    .on(table.studentId, table.groupId)
+    .where(sql`${table.status} = 'active'`),
+  activePrimaryUnique: uniqueIndex("academy_student_group_enrollments_active_primary_unique")
+    .on(table.studentId)
+    .where(sql`${table.status} = 'active' AND ${table.isPrimary} = true`),
+  statusCheck: check(
+    "academy_student_group_enrollments_status_check",
+    sql`${table.status} IN ('active', 'withdrawn', 'completed')`,
+  ),
+  dateCheck: check(
+    "academy_student_group_enrollments_dates_check",
+    sql`${table.endedAt} IS NULL OR ${table.endedAt} >= ${table.enrolledAt}`,
+  ),
 }));
 
 export const academyStudentStatusHistory = pgTable("academy_student_status_history", {
@@ -998,6 +1032,12 @@ export const insertAcademyStudentSchema = createInsertSchema(academyStudents).om
   updatedAt: true,
 });
 
+export const insertAcademyStudentGroupEnrollmentSchema = createInsertSchema(academyStudentGroupEnrollments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyStudentStatusHistorySchema = createInsertSchema(academyStudentStatusHistory).omit({
   id: true,
   createdAt: true,
@@ -1176,6 +1216,8 @@ export type AcademyLeadAssignmentHistory = typeof academyLeadAssignmentHistory.$
 export type InsertAcademyLeadAssignmentHistory = z.infer<typeof insertAcademyLeadAssignmentHistorySchema>;
 export type AcademyStudent = typeof academyStudents.$inferSelect;
 export type InsertAcademyStudent = z.infer<typeof insertAcademyStudentSchema>;
+export type AcademyStudentGroupEnrollment = typeof academyStudentGroupEnrollments.$inferSelect;
+export type InsertAcademyStudentGroupEnrollment = z.infer<typeof insertAcademyStudentGroupEnrollmentSchema>;
 export type AcademyStudentStatusHistory = typeof academyStudentStatusHistory.$inferSelect;
 export type InsertAcademyStudentStatusHistory = z.infer<typeof insertAcademyStudentStatusHistorySchema>;
 export type AcademyLesson = typeof academyLessons.$inferSelect;

@@ -209,9 +209,9 @@ const lockIncomingContact = async (
 ) => {
   const normalizedPhone = normalizePhoneForStorage(phone)?.normalizedPhone ?? '';
   const normalizedMessenger = String(messenger ?? '').trim().toLowerCase();
-  // The phone table is unique, but the lead itself is created first. Serializing
-  // every supplied identifier independently prevents the same phone paired
-  // with two different messenger values (or vice versa) from using two locks.
+  // The lead itself is created first. Serializing every supplied identifier
+  // independently prevents the same phone paired with two different messenger
+  // values (or vice versa) from using two locks.
   const contactKeys = [
     normalizedPhone ? `phone:${normalizedPhone}` : null,
     normalizedMessenger ? `messenger:${normalizedMessenger}` : null,
@@ -230,7 +230,7 @@ const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, ph
   await executor.query(
     `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary)
      VALUES ($1, $2, $3, true)
-     ON CONFLICT (normalized_phone) DO NOTHING`,
+     ON CONFLICT (lead_id, normalized_phone) DO NOTHING`,
     [leadId, normalized.phone, normalized.normalizedPhone],
   );
 };

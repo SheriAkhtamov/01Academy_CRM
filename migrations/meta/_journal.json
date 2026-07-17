@@ -344,6 +344,13 @@
       "when": 1785168000000,
       "tag": "0048_clean_instagram_lead_names",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1785254400000,
+      "tag": "0049_add_student_group_enrollments",
+      "breakpoints": true
     }
   ]
 }

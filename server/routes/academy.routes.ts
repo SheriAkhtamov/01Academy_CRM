@@ -212,6 +212,50 @@ const leadPhoneNumbersSelect = (leadAlias = 'l') => `
     END
   ) AS phone_numbers`;
 
+const studentGroupMembershipsSelect = (studentAlias = 'st') => `
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'groupId', membership.group_id,
+          'groupName', membership_group.name,
+          'courseId', membership_group.course_id,
+          'courseName', membership_course.name,
+          'schoolId', membership_group.school_id,
+          'isPrimary', membership.is_primary,
+          'enrolledAt', membership.enrolled_at
+        )
+        ORDER BY membership.is_primary DESC, membership_group.name, membership.group_id
+      )
+      FROM academy_student_group_enrollments membership
+      JOIN academy_groups membership_group ON membership_group.id = membership.group_id
+      LEFT JOIN academy_courses membership_course ON membership_course.id = membership_group.course_id
+      WHERE membership.student_id = ${studentAlias}.id
+        AND membership.status = 'active'
+    ),
+    '[]'::json
+  ) AS groups,
+  COALESCE(
+    (
+      SELECT array_agg(membership.group_id ORDER BY membership.is_primary DESC, membership_group.name)
+      FROM academy_student_group_enrollments membership
+      JOIN academy_groups membership_group ON membership_group.id = membership.group_id
+      WHERE membership.student_id = ${studentAlias}.id
+        AND membership.status = 'active'
+    ),
+    ARRAY[]::integer[]
+  ) AS group_ids,
+  COALESCE(
+    (
+      SELECT array_agg(membership_group.name ORDER BY membership.is_primary DESC, membership_group.name)
+      FROM academy_student_group_enrollments membership
+      JOIN academy_groups membership_group ON membership_group.id = membership.group_id
+      WHERE membership.student_id = ${studentAlias}.id
+        AND membership.status = 'active'
+    ),
+    ARRAY[]::text[]
+  ) AS group_names`;
+
 const phoneValues = (phones: NormalizedLeadPhone[]) =>
   phones.map((phone) => phone.normalizedPhone);
 
@@ -1756,22 +1800,33 @@ const resolveCourseByAge = async (age?: number | null) => {
   return course ?? null;
 };
 
+const normalizeStudentIdentity = (value: unknown) => nullableText(value)
+  ?.normalize('NFKC')
+  .replace(/\s+/g, ' ')
+  .toLocaleLowerCase('ru-RU') ?? null;
+
 const findDuplicate = async (
   phones: NormalizedLeadPhone[] = [],
   messenger?: string | null,
-  options: { excludeLeadId?: number | null } = {},
+  options: { excludeLeadId?: number | null; studentName?: string | null } = {},
 ) => {
   const normalizedPhones = phoneValues(phones);
   if (normalizedPhones.length === 0 && !messenger) return null;
   const excludeLeadId = options.excludeLeadId ?? null;
+  const studentName = normalizeStudentIdentity(options.studentName);
 
   const duplicateLead = await queryOne(
     `SELECT 'lead' AS entity_type, l.id, l.contact_name AS name, l.phone, l.messenger,
-        l.status_code, l.manager_id, l.is_archived, u.full_name AS manager_name,
+        l.student_name, l.status_code, l.manager_id, l.is_archived, u.full_name AS manager_name,
         ${leadPhoneNumbersSelect('l')}
      FROM academy_leads l
      LEFT JOIN users u ON u.id = l.manager_id
      WHERE ($3::int IS NULL OR l.id <> $3)
+       AND (
+         $4::text IS NULL
+         OR l.student_name IS NULL
+         OR LOWER(REGEXP_REPLACE(BTRIM(l.student_name), '\\s+', ' ', 'g')) = $4
+       )
        AND (
          (
            $1::text[] IS NOT NULL
@@ -1792,7 +1847,7 @@ const findDuplicate = async (
        )
      ORDER BY COALESCE(l.is_archived, false), l.updated_at DESC NULLS LAST, l.id DESC
      LIMIT 1`,
-    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
+    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId, studentName],
   );
   if (duplicateLead) return duplicateLead;
 
@@ -1801,6 +1856,11 @@ const findDuplicate = async (
      FROM academy_students
      WHERE ($3::int IS NULL OR lead_id IS DISTINCT FROM $3)
        AND (
+         $4::text IS NULL
+         OR student_name IS NULL
+         OR LOWER(REGEXP_REPLACE(BTRIM(student_name), '\\s+', ' ', 'g')) = $4
+       )
+       AND (
          ($1::text[] IS NOT NULL AND phone = ANY($1::text[]))
          OR (
            $2::text IS NOT NULL
@@ -1808,7 +1868,7 @@ const findDuplicate = async (
          )
        )
      LIMIT 1`,
-    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId],
+    [normalizedPhones.length > 0 ? normalizedPhones : null, messenger ?? null, excludeLeadId, studentName],
   );
 };
 
@@ -2037,7 +2097,7 @@ const mergeLeadRecords = async (
     await query(
       `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary)
        VALUES ($1, $2, $3, false)
-       ON CONFLICT (normalized_phone) DO NOTHING`,
+       ON CONFLICT (lead_id, normalized_phone) DO NOTHING`,
       [retainedLeadId, phone.phone, phone.normalizedPhone],
     );
   }
@@ -2238,7 +2298,10 @@ const mergeLeadDraftIntoExisting = async (
   const draftPhones = normalizeLeadPhones(draft.phoneNumbers ?? draft.phone);
   const draftMessenger = nullableText(draft.messenger);
   await lockLeadContactIdentities(draftPhones, draftMessenger);
-  const otherDuplicate = await findDuplicate(draftPhones, draftMessenger, { excludeLeadId: retainedLeadId });
+  const otherDuplicate = await findDuplicate(draftPhones, draftMessenger, {
+    excludeLeadId: retainedLeadId,
+    studentName: nullableText(draft.studentName),
+  });
   if (otherDuplicate) {
     throw Object.assign(new Error('clientAlreadyExists'), {
       statusCode: 409,
@@ -2543,7 +2606,11 @@ const buildLeadStageDurations = (history: Row[]) => {
   });
 };
 
-const ensureGroupCapacity = async (groupId?: number | null, excludeLeadId?: number | null) => {
+const ensureGroupCapacity = async (
+  groupId?: number | null,
+  excludeLeadId?: number | null,
+  excludeStudentId?: number | null,
+) => {
   if (!groupId) return;
   const capacity = await queryOne<{
     currentStudents: number;
@@ -2555,7 +2622,13 @@ const ensureGroupCapacity = async (groupId?: number | null, excludeLeadId?: numb
        COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students,
        g.max_students
      FROM academy_groups g
-     LEFT JOIN academy_students s ON s.group_id = g.id AND s.status = 'studying'
+     LEFT JOIN academy_student_group_enrollments enrollment
+       ON enrollment.group_id = g.id
+      AND enrollment.status = 'active'
+      AND ($3::int IS NULL OR enrollment.student_id <> $3)
+     LEFT JOIN academy_students s
+       ON s.id = enrollment.student_id
+      AND s.status = 'studying'
      LEFT JOIN academy_leads reserved
       ON reserved.enrolled_group_id = g.id
       AND reserved.status_code <> 'not_now'
@@ -2566,7 +2639,7 @@ const ensureGroupCapacity = async (groupId?: number | null, excludeLeadId?: numb
       )
      WHERE g.id = $1
      GROUP BY g.id`,
-    [groupId, excludeLeadId ?? null],
+    [groupId, excludeLeadId ?? null, excludeStudentId ?? null],
   );
 
   if (!capacity) {
@@ -2583,6 +2656,7 @@ const ensureGroupCapacity = async (groupId?: number | null, excludeLeadId?: numb
 const validateEnrollmentGroup = async (
   groupId?: number | null,
   excludeLeadId?: number | null,
+  excludeStudentId?: number | null,
 ) => {
   if (!groupId) return null;
   const group = await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId]);
@@ -2607,7 +2681,7 @@ const validateEnrollmentGroup = async (
   if (resources && resources.resourcesActive !== true) {
     throw Object.assign(new Error('groupHasInactiveResources'), { statusCode: 409 });
   }
-  await ensureGroupCapacity(groupId, excludeLeadId);
+  await ensureGroupCapacity(groupId, excludeLeadId, excludeStudentId);
   return group;
 };
 
@@ -2616,10 +2690,10 @@ const recalculateStudentMetrics = async (studentId: number) => {
   if (!student?.groupId) return;
 
   const latestGroupEntry = await queryOne<{ createdAt: Date }>(
-    `SELECT created_at
-     FROM academy_student_transfers
-     WHERE student_id = $1 AND to_group_id = $2
-     ORDER BY created_at DESC
+    `SELECT enrolled_at AS created_at
+     FROM academy_student_group_enrollments
+     WHERE student_id = $1 AND group_id = $2 AND status = 'active'
+     ORDER BY enrolled_at DESC, id DESC
      LIMIT 1`,
     [studentId, student.groupId],
   );
@@ -2838,6 +2912,15 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
     nextPaymentAt,
     referralCode,
     riskFlags: [] });
+
+  await query(
+    `INSERT INTO academy_student_group_enrollments
+       (student_id, group_id, status, is_primary, enrolled_at, created_by)
+     VALUES ($1, $2, 'active', true, COALESCE($3, NOW()), $4)
+     ON CONFLICT (student_id, group_id) WHERE status = 'active'
+     DO UPDATE SET is_primary = true, ended_at = NULL, updated_at = NOW()`,
+    [student.id, student.groupId, student.enrolledAt ?? new Date(), req.user!.id],
+  );
 
   if (paymentId) {
     await updateRow('academy_payments', paymentId, {
@@ -3241,7 +3324,12 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
     isTeacherScoped
       ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
           sc.name AS school_name, r.name AS room_name,
-          (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students,
+          (SELECT COUNT(*)::int
+           FROM academy_student_group_enrollments enrollment
+           JOIN academy_students s ON s.id = enrollment.student_id
+           WHERE enrollment.group_id = g.id
+             AND enrollment.status = 'active'
+             AND s.status = 'studying') AS current_students,
           (SELECT COUNT(*)::int FROM academy_leads l
            WHERE l.enrolled_group_id = g.id
              AND l.status_code <> 'not_now'
@@ -3256,7 +3344,12 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
           sc.name AS school_name, r.name AS room_name,
-          (SELECT COUNT(*)::int FROM academy_students s WHERE s.group_id = g.id AND s.status = 'studying') AS current_students,
+          (SELECT COUNT(*)::int
+           FROM academy_student_group_enrollments enrollment
+           JOIN academy_students s ON s.id = enrollment.student_id
+           WHERE enrollment.group_id = g.id
+             AND enrollment.status = 'active'
+             AND s.status = 'studying') AS current_students,
           (SELECT COUNT(*)::int FROM academy_leads l
            WHERE l.enrolled_group_id = g.id
              AND l.status_code <> 'not_now'
@@ -3294,6 +3387,7 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
         ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`, managerParams),
     query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
         sc.name AS school_name,
+        ${studentGroupMembershipsSelect('st')},
         (
           SELECT CASE
             WHEN p.status = 'pending' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
@@ -3309,7 +3403,14 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_groups g ON g.id = st.group_id
       LEFT JOIN users u ON u.id = st.manager_id
       LEFT JOIN academy_schools sc ON sc.id = st.school_id
-      WHERE 1=1 ${isManagerScoped ? 'AND st.manager_id = $1' : ''} ${isTeacherScoped ? 'AND st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)' : ''}
+      WHERE 1=1 ${isManagerScoped ? 'AND st.manager_id = $1' : ''} ${isTeacherScoped ? `AND EXISTS (
+        SELECT 1
+        FROM academy_student_group_enrollments teacher_membership
+        JOIN academy_groups teacher_group ON teacher_group.id = teacher_membership.group_id
+        WHERE teacher_membership.student_id = st.id
+          AND teacher_membership.status = 'active'
+          AND teacher_group.teacher_id = $1
+      )` : ''}
       ORDER BY st.created_at DESC`, isTeacherScoped ? [teacherId] : managerParams),
     query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
         sc.name AS school_name
@@ -3358,8 +3459,14 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       ? query(`SELECT ps.*
         FROM academy_parent_surveys ps
         JOIN academy_students st ON st.id = ps.student_id
-        JOIN academy_groups g ON g.id = st.group_id
-        WHERE g.teacher_id = $1
+        WHERE EXISTS (
+          SELECT 1
+          FROM academy_student_group_enrollments teacher_membership
+          JOIN academy_groups teacher_group ON teacher_group.id = teacher_membership.group_id
+          WHERE teacher_membership.student_id = st.id
+            AND teacher_membership.status = 'active'
+            AND teacher_group.teacher_id = $1
+        )
         ORDER BY ps.created_at DESC`, [teacherId])
       : isManagerScoped
         ? query(`SELECT ps.*
@@ -3473,6 +3580,20 @@ const hasStudentRiskFlag = (student: Row, flag: string) => {
   } catch {
     return false;
   }
+};
+
+const studentBelongsToGroup = (student: Row, groupId: number) => {
+  if (Array.isArray(student.groupIds)) {
+    return student.groupIds.some((candidate: unknown) => Number(candidate) === Number(groupId));
+  }
+  return Number(student.groupId) === Number(groupId);
+};
+
+const studentBelongsToCourse = (student: Row, courseId: number) => {
+  if (Array.isArray(student.groups) && student.groups.length > 0) {
+    return student.groups.some((group: Row) => Number(group.courseId) === Number(courseId));
+  }
+  return Number(student.courseId) === Number(courseId);
 };
 
 const buildAnalytics = async () => {
@@ -3653,7 +3774,7 @@ const buildAnalytics = async () => {
     const teacherSurveys = data.lessonSurveys.filter((survey) => Number(survey.teacherId) === Number(teacher.id));
     const teacherStudents = activeStudentsWithAttendance.filter((student) =>
       data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id))
-        .some((group) => Number(group.id) === Number(student.groupId)));
+        .some((group) => studentBelongsToGroup(student, Number(group.id))));
     const scoresByDate = [...teacherSurveys]
       .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
       .map((survey) => Number(survey.score))
@@ -3682,7 +3803,7 @@ const buildAnalytics = async () => {
       avgLessonScore: calculateAverage(scores) ?? 0,
       trend: calculateTrend(scores),
       progressAvg: calculateAverage(
-        data.students.filter((student) => Number(student.courseId) === Number(course.id) && student.status === 'studying')
+        data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying')
           .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
       ) ?? 0,
     };
@@ -3694,13 +3815,13 @@ const buildAnalytics = async () => {
     maxCapacity: Number(group.maxStudents || 12),
     attendanceAvg: calculateAverage(
       activeStudentsWithAttendance.filter((student) => (
-        Number(student.groupId) === Number(group.id)
+        studentBelongsToGroup(student, Number(group.id))
       ))
         .map((student) => Number(student.attendancePercent || 0)).filter(Number.isFinite),
     ) ?? 0,
     progressAvg: calculateAverage(
       data.students.filter((student) => (
-        Number(student.groupId) === Number(group.id) && student.status === 'studying'
+        studentBelongsToGroup(student, Number(group.id)) && student.status === 'studying'
       ))
         .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
     ) ?? 0,
@@ -3709,7 +3830,7 @@ const buildAnalytics = async () => {
   // --- Retention by course: completed students are successful outcomes, while
   // paused/expelled students represent churn from the enrolled cohort. ---
   const retentionByCourse = data.courses.map((course) => {
-    const courseStudents = data.students.filter((student) => Number(student.courseId) === Number(course.id));
+    const courseStudents = data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)));
     const retainedStudents = courseStudents.filter((student) => (
       student.status === 'studying' || student.status === 'completed'
     ));
@@ -3785,7 +3906,7 @@ const buildAnalytics = async () => {
         courseId: course.id,
         courseName: course.name,
         leads: data.leads.filter((lead) => Number(lead.courseId) === Number(course.id)).length,
-        students: data.students.filter((student) => Number(student.courseId) === Number(course.id) && student.status === 'studying').length,
+        students: data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying').length,
         revenue: paidPayments
           .filter((payment) => {
             const studentCourseId = studentById.get(Number(payment.studentId))?.courseId;
@@ -3914,7 +4035,7 @@ const buildAdministrationDashboard = async () => {
       const courseGroups = activeGroups.filter((group) => Number(group.courseId) === Number(course.id));
       const capacity = courseGroups.reduce((sum, group) => sum + Number(group.maxStudents || 0), 0);
       const students = data.students.filter(
-        (student) => Number(student.courseId) === Number(course.id) && student.status === 'studying',
+        (student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying',
       ).length;
       return {
         courseId: course.id,
@@ -4474,7 +4595,16 @@ router.get('/search', async (req, res) => {
     const pushStudents = async (whereSql: string, params: DbValue[], href: string) => {
       if (remaining() <= 0) return;
       const rows = await query(
-        `SELECT st.id, st.student_name, st.contact_name, st.phone, g.name AS group_name
+        `SELECT st.id, st.student_name, st.contact_name, st.phone, g.name AS group_name,
+            COALESCE(
+              (
+                SELECT array_agg(membership_group.name ORDER BY membership.is_primary DESC, membership_group.name)
+                FROM academy_student_group_enrollments membership
+                JOIN academy_groups membership_group ON membership_group.id = membership.group_id
+                WHERE membership.student_id = st.id AND membership.status = 'active'
+              ),
+              ARRAY[]::text[]
+            ) AS group_names
          FROM academy_students st
          LEFT JOIN academy_groups g ON g.id = st.group_id
          WHERE ${whereSql}
@@ -4492,7 +4622,13 @@ router.get('/search', async (req, res) => {
         id: `student-${student.id}`,
         entityType: 'student',
         title: student.studentName || student.contactName,
-        subtitle: [student.contactName, student.phone, student.groupName].filter(Boolean).join(' • '),
+        subtitle: [
+          student.contactName,
+          student.phone,
+          Array.isArray(student.groupNames) && student.groupNames.length > 0
+            ? student.groupNames.join(', ')
+            : student.groupName,
+        ].filter(Boolean).join(' • '),
         href: `${href}&student=${student.id}`,
       })));
     };
@@ -4590,7 +4726,14 @@ router.get('/search', async (req, res) => {
         const teacherId = await resolveTeacherId(req.user!.id);
         if (teacherId) {
           await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
-          await pushStudents(`st.group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $1)`, [teacherId], '/teacher-workspace/groups');
+          await pushStudents(`EXISTS (
+            SELECT 1
+            FROM academy_student_group_enrollments teacher_membership
+            JOIN academy_groups teacher_group ON teacher_group.id = teacher_membership.group_id
+            WHERE teacher_membership.student_id = st.id
+              AND teacher_membership.status = 'active'
+              AND teacher_group.teacher_id = $1
+          )`, [teacherId], '/teacher-workspace/groups');
           await pushCourses('/teacher-workspace/groups');
         }
       }
@@ -4715,7 +4858,9 @@ router.post('/leads', async (req, res) => {
 
     if (!contactName) return res.status(400).json({ error: 'contactPersonRequired' });
 
-    const duplicate = await findDuplicate(phones, messenger);
+    const duplicate = await findDuplicate(phones, messenger, {
+      studentName: nullableText(req.body.studentName),
+    });
     if (duplicate) {
       return res.status(409).json({
         error: 'clientAlreadyExists',
@@ -4728,7 +4873,9 @@ router.post('/leads', async (req, res) => {
 
     const lead = await withTransaction<Row>(async () => {
       await lockLeadContactIdentities(phones, messenger);
-      const lockedDuplicate = await findDuplicate(phones, messenger);
+      const lockedDuplicate = await findDuplicate(phones, messenger, {
+        studentName: nullableText(req.body.studentName),
+      });
       if (lockedDuplicate) {
         throw Object.assign(new Error('clientAlreadyExists'), {
           statusCode: 409,
@@ -5358,7 +5505,7 @@ router.patch('/leads/:id', async (req, res) => {
     const duplicate = await findDuplicate(
       requestedPhones ?? [],
       requestedMessenger === undefined ? null : requestedMessenger,
-      { excludeLeadId: id },
+      { excludeLeadId: id, studentName: merged.studentName },
     );
     if (duplicate) {
       return res.status(409).json({
@@ -5448,7 +5595,7 @@ router.patch('/leads/:id', async (req, res) => {
         const lockedDuplicate = await findDuplicate(
           requestedPhones ?? [],
           requestedMessenger === undefined ? null : requestedMessenger,
-          { excludeLeadId: id },
+          { excludeLeadId: id, studentName: merged.studentName },
         );
         if (lockedDuplicate) {
           throw Object.assign(new Error('clientAlreadyExists'), {
@@ -5765,7 +5912,10 @@ const prepareGroupMutation = async (options: {
   ) {
     const usage = await queryOne<{ hasEnrollments: boolean }>(
       `SELECT (
-         EXISTS (SELECT 1 FROM academy_students WHERE group_id = $1)
+         EXISTS (
+           SELECT 1 FROM academy_student_group_enrollments
+           WHERE group_id = $1
+         )
          OR EXISTS (SELECT 1 FROM academy_leads WHERE enrolled_group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
        ) AS has_enrollments`,
@@ -5834,8 +5984,10 @@ const prepareGroupMutation = async (options: {
          COUNT(DISTINCT s.id)::int AS current_students,
          COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students
        FROM academy_groups g
+       LEFT JOIN academy_student_group_enrollments enrollment
+         ON enrollment.group_id = g.id AND enrollment.status = 'active'
        LEFT JOIN academy_students s
-         ON s.group_id = g.id AND s.status = 'studying'
+         ON s.id = enrollment.student_id AND s.status = 'studying'
        LEFT JOIN academy_leads reserved
          ON reserved.enrolled_group_id = g.id
         AND reserved.status_code <> 'not_now'
@@ -6002,8 +6154,10 @@ const prepareGroupMetadataMutation = async (values: Row, row: Row) => {
        COUNT(DISTINCT s.id)::int AS current_students,
        COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students
      FROM academy_groups g
+     LEFT JOIN academy_student_group_enrollments enrollment
+       ON enrollment.group_id = g.id AND enrollment.status = 'active'
      LEFT JOIN academy_students s
-       ON s.group_id = g.id AND s.status = 'studying'
+       ON s.id = enrollment.student_id AND s.status = 'studying'
      LEFT JOIN academy_leads reserved
        ON reserved.enrolled_group_id = g.id
       AND reserved.status_code <> 'not_now'
@@ -6059,8 +6213,12 @@ const assertGroupLifecycleUpdateAllowed = async (options: {
          WHERE lesson.group_id = $1 AND lesson.status = 'scheduled'
        ) AS has_scheduled_lessons,
        EXISTS (
-         SELECT 1 FROM academy_students student
-         WHERE student.group_id = $1 AND student.status = 'studying'
+         SELECT 1
+         FROM academy_student_group_enrollments enrollment
+         JOIN academy_students student ON student.id = enrollment.student_id
+         WHERE enrollment.group_id = $1
+           AND enrollment.status = 'active'
+           AND student.status = 'studying'
        ) AS has_studying_students,
        EXISTS (
          SELECT 1
@@ -6722,24 +6880,43 @@ const getLessonRoster = async (groupId: number, scheduledAt: Date | string, lock
   `SELECT student.*
    FROM academy_students student
    WHERE COALESCE(student.enrolled_at, student.created_at) <= $2
-     AND COALESCE(
-       (
-         SELECT transfer.to_group_id
-         FROM academy_student_transfers transfer
-         WHERE transfer.student_id = student.id
-           AND transfer.created_at <= $2
-         ORDER BY transfer.created_at DESC, transfer.id DESC
-         LIMIT 1
-       ),
-       (
-         SELECT first_transfer.from_group_id
-         FROM academy_student_transfers first_transfer
-         WHERE first_transfer.student_id = student.id
-         ORDER BY first_transfer.created_at, first_transfer.id
-         LIMIT 1
-       ),
-       student.group_id
-     ) = $1
+     AND (
+       EXISTS (
+         SELECT 1
+         FROM academy_student_group_enrollments membership
+         WHERE membership.student_id = student.id
+           AND membership.group_id = $1
+           AND membership.enrolled_at <= $2
+           AND (membership.ended_at IS NULL OR membership.ended_at > $2)
+       )
+       OR (
+         NOT EXISTS (
+           SELECT 1
+           FROM academy_student_group_enrollments dated_membership
+           WHERE dated_membership.student_id = student.id
+             AND dated_membership.enrolled_at <= $2
+             AND (dated_membership.ended_at IS NULL OR dated_membership.ended_at > $2)
+         )
+         AND COALESCE(
+           (
+             SELECT transfer.to_group_id
+             FROM academy_student_transfers transfer
+             WHERE transfer.student_id = student.id
+               AND transfer.created_at <= $2
+             ORDER BY transfer.created_at DESC, transfer.id DESC
+             LIMIT 1
+           ),
+           (
+             SELECT first_transfer.from_group_id
+             FROM academy_student_transfers first_transfer
+             WHERE first_transfer.student_id = student.id
+             ORDER BY first_transfer.created_at, first_transfer.id
+             LIMIT 1
+           ),
+           student.group_id
+         ) = $1
+       )
+     )
      AND COALESCE(
        (
          SELECT history.to_status
@@ -7132,6 +7309,13 @@ router.post('/lessons/:id/attendance', async (req, res) => {
                AND l.status = 'conducted'
                AND l.scheduled_at >= COALESCE(
                  (
+                   SELECT MAX(membership.enrolled_at)
+                   FROM academy_student_group_enrollments membership
+                   WHERE membership.student_id = $2
+                     AND membership.group_id = $1
+                     AND membership.enrolled_at <= l.scheduled_at
+                 ),
+                 (
                    SELECT MAX(transfer.created_at)
                    FROM academy_student_transfers transfer
                    WHERE transfer.student_id = $2 AND transfer.to_group_id = $1
@@ -7254,10 +7438,47 @@ router.post('/students/:id/transfer', async (req, res) => {
       if (Number(lockedStudent.groupId) === Number(toGroupId)) return lockedStudent;
 
       await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [toGroupId]);
-      const targetGroup = await validateEnrollmentGroup(toGroupId);
+      const targetGroup = await validateEnrollmentGroup(toGroupId, null, studentId);
       if (!targetGroup) {
         throw Object.assign(new Error('Group not found'), { statusCode: 404 });
       }
+
+      if (lockedStudent.groupId) {
+        await query(
+          `INSERT INTO academy_student_group_enrollments
+             (student_id, group_id, status, is_primary, enrolled_at, created_by)
+           VALUES ($1, $2, 'active', false, COALESCE($3, NOW()), $4)
+           ON CONFLICT (student_id, group_id) WHERE status = 'active' DO NOTHING`,
+          [
+            studentId,
+            Number(lockedStudent.groupId),
+            lockedStudent.enrolledAt ?? lockedStudent.enrollmentDate ?? lockedStudent.createdAt ?? new Date(),
+            req.user!.id,
+          ],
+        );
+      }
+      await query(
+        `UPDATE academy_student_group_enrollments
+         SET is_primary = false, updated_at = NOW()
+         WHERE student_id = $1 AND status = 'active' AND is_primary = true`,
+        [studentId],
+      );
+      if (lockedStudent.groupId) {
+        await query(
+          `UPDATE academy_student_group_enrollments
+           SET status = 'withdrawn', is_primary = false, ended_at = NOW(), updated_at = NOW()
+           WHERE student_id = $1 AND group_id = $2 AND status = 'active'`,
+          [studentId, Number(lockedStudent.groupId)],
+        );
+      }
+      await query(
+        `INSERT INTO academy_student_group_enrollments
+           (student_id, group_id, status, is_primary, enrolled_at, created_by)
+         VALUES ($1, $2, 'active', true, NOW(), $3)
+         ON CONFLICT (student_id, group_id) WHERE status = 'active'
+         DO UPDATE SET is_primary = true, ended_at = NULL, updated_at = NOW()`,
+        [studentId, toGroupId, req.user!.id],
+      );
 
       const updatedStudent = await updateRow('academy_students', studentId, {
         groupId: toGroupId,
@@ -7292,6 +7513,187 @@ router.post('/students/:id/transfer', async (req, res) => {
   }
 });
 
+router.post('/students/:id/groups', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
+  try {
+    const studentId = parseId(req.params.id);
+    const groupId = parseId(req.body.groupId);
+    const makePrimary = req.body.isPrimary === true;
+    const enrolledAt = parseOptionalDate(req.body.enrolledAt, 'enrolledAt') ?? new Date();
+    if (!studentId || !groupId) {
+      return res.status(400).json({ error: 'Student and group are required' });
+    }
+    const initialStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
+    if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+
+    const student = await withTransaction(async () => {
+      if (initialStudent.leadId) {
+        await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId]);
+      }
+      const lockedStudent = await queryOne(
+        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+        [studentId],
+      );
+      if (!lockedStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+      const group = await validateEnrollmentGroup(groupId, null, studentId);
+      if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+
+      const shouldMakePrimary = makePrimary || !lockedStudent.groupId;
+      if (shouldMakePrimary) {
+        await query(
+          `UPDATE academy_student_group_enrollments
+           SET is_primary = false, updated_at = NOW()
+           WHERE student_id = $1 AND status = 'active' AND is_primary = true`,
+          [studentId],
+        );
+      }
+      await query(
+        `INSERT INTO academy_student_group_enrollments
+           (student_id, group_id, status, is_primary, enrolled_at, created_by)
+         VALUES ($1, $2, 'active', $3, $4, $5)
+         ON CONFLICT (student_id, group_id) WHERE status = 'active'
+         DO UPDATE SET
+           is_primary = CASE WHEN EXCLUDED.is_primary THEN true ELSE academy_student_group_enrollments.is_primary END,
+           ended_at = NULL,
+           updated_at = NOW()`,
+        [studentId, groupId, shouldMakePrimary, enrolledAt, req.user!.id],
+      );
+
+      if (shouldMakePrimary) {
+        const previousGroupId = lockedStudent.groupId ? Number(lockedStudent.groupId) : null;
+        const updated = await updateRow('academy_students', studentId, {
+          groupId,
+          courseId: Number(group.courseId),
+          schoolId: Number(group.schoolId),
+        });
+        if (lockedStudent.leadId) {
+          await updateRow('academy_leads', Number(lockedStudent.leadId), {
+            enrolledGroupId: groupId,
+            courseId: Number(group.courseId),
+            schoolId: Number(group.schoolId),
+          });
+        }
+        if (previousGroupId !== groupId) {
+          await insertRow('academy_student_transfers', {
+            studentId,
+            fromGroupId: previousGroupId,
+            toGroupId: groupId,
+            reason: nullableText(req.body.reason) ?? 'Изменена основная группа',
+            createdBy: req.user!.id,
+          });
+        }
+        await recalculateStudentMetrics(studentId);
+        return updated;
+      }
+      return lockedStudent;
+    });
+    res.status(201).json(student);
+  } catch (error: any) {
+    logger.error('Failed to add student group', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to add student group' });
+  }
+});
+
+router.delete('/students/:id/groups/:groupId', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
+  try {
+    const studentId = parseId(req.params.id);
+    const groupId = parseId(req.params.groupId);
+    if (!studentId || !groupId) {
+      return res.status(400).json({ error: 'Student and group are required' });
+    }
+    const initialStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
+    if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+
+    const student = await withTransaction(async () => {
+      if (initialStudent.leadId) {
+        await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId]);
+      }
+      const lockedStudent = await queryOne(
+        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+        [studentId],
+      );
+      if (!lockedStudent) {
+        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      const membership = await queryOne(
+        `SELECT *
+         FROM academy_student_group_enrollments
+         WHERE student_id = $1 AND group_id = $2 AND status = 'active'
+         FOR UPDATE`,
+        [studentId, groupId],
+      );
+      if (!membership) {
+        throw Object.assign(new Error('Student group membership not found'), { statusCode: 404 });
+      }
+      const activeCount = await queryOne<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+         FROM academy_student_group_enrollments
+         WHERE student_id = $1 AND status = 'active'`,
+        [studentId],
+      );
+      if (lockedStudent.status === 'studying' && Number(activeCount?.count ?? 0) <= 1) {
+        throw Object.assign(new Error('studentRequiresAtLeastOneGroup'), { statusCode: 409 });
+      }
+
+      await query(
+        `UPDATE academy_student_group_enrollments
+         SET status = 'withdrawn', is_primary = false, ended_at = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [membership.id],
+      );
+      if (!membership.isPrimary) return lockedStudent;
+
+      const replacement = await queryOne(
+        `SELECT enrollment.*, academy_group.course_id, academy_group.school_id
+         FROM academy_student_group_enrollments enrollment
+         JOIN academy_groups academy_group ON academy_group.id = enrollment.group_id
+         WHERE enrollment.student_id = $1 AND enrollment.status = 'active'
+         ORDER BY enrollment.enrolled_at, enrollment.id
+         LIMIT 1
+         FOR UPDATE OF enrollment`,
+        [studentId],
+      );
+      if (replacement) {
+        await query(
+          `UPDATE academy_student_group_enrollments
+           SET is_primary = true, updated_at = NOW()
+           WHERE id = $1`,
+          [replacement.id],
+        );
+      }
+      const updated = await updateRow('academy_students', studentId, {
+        groupId: replacement?.groupId ?? null,
+        courseId: replacement?.courseId ? Number(replacement.courseId) : null,
+        schoolId: replacement?.schoolId ? Number(replacement.schoolId) : null,
+      });
+      if (lockedStudent.leadId) {
+        await updateRow('academy_leads', Number(lockedStudent.leadId), {
+          enrolledGroupId: replacement?.groupId ?? null,
+          courseId: replacement?.courseId ? Number(replacement.courseId) : null,
+          schoolId: replacement?.schoolId ? Number(replacement.schoolId) : null,
+        });
+      }
+      await insertRow('academy_student_transfers', {
+        studentId,
+        fromGroupId: groupId,
+        toGroupId: replacement?.groupId ?? null,
+        reason: nullableText(req.body.reason) ?? 'Удалено зачисление в основную группу',
+        createdBy: req.user!.id,
+      });
+      await recalculateStudentMetrics(studentId);
+      return updated;
+    });
+    res.json(student);
+  } catch (error: any) {
+    logger.error('Failed to remove student group', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to remove student group' });
+  }
+});
+
 router.patch('/students/:id/status', async (req, res) => {
   if (!ensureOperationsAccess(req, res)) return;
   try {
@@ -7315,10 +7717,16 @@ router.patch('/students/:id/status', async (req, res) => {
       }
       if (getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
         const teacherId = await resolveTeacherId(req.user!.id);
-        const ownsStudent = teacherId && lockedStudent.groupId
+        const ownsStudent = teacherId
           ? await queryOne(
-            `SELECT id FROM academy_groups WHERE id = $1 AND teacher_id = $2`,
-            [lockedStudent.groupId, teacherId],
+            `SELECT enrollment.id
+             FROM academy_student_group_enrollments enrollment
+             JOIN academy_groups academy_group ON academy_group.id = enrollment.group_id
+             WHERE enrollment.student_id = $1
+               AND enrollment.status = 'active'
+               AND academy_group.teacher_id = $2
+             LIMIT 1`,
+            [id, teacherId],
           )
           : null;
         if (!ownsStudent) {
@@ -7671,24 +8079,43 @@ router.post('/surveys/lesson', async (req, res) => {
       );
       if (!student) throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       const membership = await queryOne<{ belongsToGroup: boolean }>(
-        `SELECT COALESCE(
-           (
-             SELECT transfer.to_group_id
-             FROM academy_student_transfers transfer
-             WHERE transfer.student_id = $1
-               AND transfer.created_at <= $3
-             ORDER BY transfer.created_at DESC, transfer.id DESC
-             LIMIT 1
-           ),
-           (
-             SELECT first_transfer.from_group_id
-             FROM academy_student_transfers first_transfer
-             WHERE first_transfer.student_id = $1
-             ORDER BY first_transfer.created_at, first_transfer.id
-             LIMIT 1
-           ),
-           (SELECT group_id FROM academy_students WHERE id = $1)
-         ) = $2 AS belongs_to_group`,
+        `SELECT (
+           EXISTS (
+             SELECT 1
+             FROM academy_student_group_enrollments enrollment
+             WHERE enrollment.student_id = $1
+               AND enrollment.group_id = $2
+               AND enrollment.enrolled_at <= $3
+               AND (enrollment.ended_at IS NULL OR enrollment.ended_at > $3)
+           )
+           OR (
+             NOT EXISTS (
+               SELECT 1
+               FROM academy_student_group_enrollments dated_enrollment
+               WHERE dated_enrollment.student_id = $1
+                 AND dated_enrollment.enrolled_at <= $3
+                 AND (dated_enrollment.ended_at IS NULL OR dated_enrollment.ended_at > $3)
+             )
+             AND COALESCE(
+               (
+                 SELECT transfer.to_group_id
+                 FROM academy_student_transfers transfer
+                 WHERE transfer.student_id = $1
+                   AND transfer.created_at <= $3
+                 ORDER BY transfer.created_at DESC, transfer.id DESC
+                 LIMIT 1
+               ),
+               (
+                 SELECT first_transfer.from_group_id
+                 FROM academy_student_transfers first_transfer
+                 WHERE first_transfer.student_id = $1
+                 ORDER BY first_transfer.created_at, first_transfer.id
+                 LIMIT 1
+               ),
+               (SELECT group_id FROM academy_students WHERE id = $1)
+             ) = $2
+           )
+         ) AS belongs_to_group`,
         [studentId, lesson.groupId, lesson.scheduledAt],
       );
       if (membership && membership.belongsToGroup !== true) {
@@ -8578,7 +9005,10 @@ registerSimpleCrud('groups', 'academy_groups', [
   beforeDelete: async ({ id }) => {
     const usage = await queryOne<{ inUse: boolean }>(
       `SELECT (
-         EXISTS (SELECT 1 FROM academy_students WHERE group_id = $1)
+         EXISTS (
+           SELECT 1 FROM academy_student_group_enrollments
+           WHERE group_id = $1
+         )
          OR EXISTS (SELECT 1 FROM academy_leads WHERE enrolled_group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_payments WHERE group_id = $1)

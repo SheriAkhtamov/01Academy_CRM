@@ -130,7 +130,6 @@ const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace' | 'websi
 type QueryExecutor = {
   query: (text: string, values?: any[]) => Promise<{ rows: any[] }>;
 };
-const USER_ACCESS_ADVISORY_LOCK = 10_100_001;
 
 const leadershipUserAccessSql = `
   (
@@ -139,16 +138,6 @@ const leadershipUserAccessSql = `
       SELECT 1
       FROM user_workspaces uw
       WHERE uw.user_id = u.id AND uw.workspace = 'administration'
-    )
-  )
-`;
-const salesUserAccessSql = `
-  (
-    u.workspace = 'sales'
-    OR EXISTS (
-      SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
     )
   )
 `;
@@ -174,24 +163,6 @@ const getSystemUserId = async (executor: QueryExecutor = pool): Promise<number> 
   );
   if (!rows[0]?.id) throw new Error('No active leadership workspace user to attribute webhook actions');
   return Number(rows[0].id);
-};
-
-const getLeadAssigneeId = async (executor: QueryExecutor = pool): Promise<number> => {
-  // Share the same transaction lock as user offboarding so a webhook cannot
-  // assign fresh work between the workload check and access removal.
-  await executor.query('SELECT pg_advisory_xact_lock($1)', [USER_ACCESS_ADVISORY_LOCK]);
-  const { rows } = await executor.query(
-    `SELECT u.id
-     FROM users u
-     LEFT JOIN academy_leads l
-       ON l.manager_id = u.id
-      AND l.status_code NOT IN ('paid', 'not_now')
-     WHERE ${salesUserAccessSql} AND u.is_active = true
-     GROUP BY u.id
-     ORDER BY COUNT(l.id), u.id
-     LIMIT 1`,
-  );
-  return rows[0]?.id ? Number(rows[0].id) : getSystemUserId(executor);
 };
 
 const toSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -387,7 +358,6 @@ router.post('/google-forms', async (req, res) => {
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
-      const managerId = await getLeadAssigneeId(client);
       await lockIncomingContact(client, phone);
       const duplicate = await findIncomingDuplicate(client, phone);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
@@ -401,8 +371,8 @@ router.post('/google-forms', async (req, res) => {
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
           (contact_name, phone, student_name, course_id, source_id, status_code, manager_id, demo_at, language, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ru',$9) RETURNING *`,
-        [contactName, storedPhone, body.studentName ?? null, courseId, sourceId, statusCode, managerId, demoAt, systemUserId],
+         VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,'ru',$8) RETURNING *`,
+        [contactName, storedPhone, body.studentName ?? null, courseId, sourceId, statusCode, demoAt, systemUserId],
       );
       const lead = camelize(inserted[0]);
       await syncIncomingLeadPhone(client, lead.id, storedPhone);
@@ -414,11 +384,10 @@ router.post('/google-forms', async (req, res) => {
       await client.query(
         `INSERT INTO academy_tasks
           (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-         VALUES ($1,$2,$3,NOW() + INTERVAL '15 minutes','lead',$4,'new')`,
+         VALUES ($1,$2,NULL,NOW() + INTERVAL '15 minutes','lead',$3,'new')`,
         [
           statusCode === 'demo_invited' ? 'Подтвердить запись на демо' : 'Первый контакт по новой заявке',
           statusCode === 'demo_invited' ? 'Связаться с клиентом и подтвердить детали демо.' : 'Связаться с лидом в течение 15 минут.',
-          managerId,
           lead.id,
         ],
       );

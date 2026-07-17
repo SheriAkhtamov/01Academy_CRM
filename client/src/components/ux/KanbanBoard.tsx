@@ -309,7 +309,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
+        'flex h-[calc(100dvh-15rem)] min-h-[26rem] max-h-[72rem] w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
         isOver && 'border-primary bg-primary/5 shadow-md',
       )}
     >
@@ -450,7 +450,10 @@ export function KanbanBoard({
   }, [moveLead]);
 
   return (
-    <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden">
+    <div
+      className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden"
+      style={{ contain: 'layout paint' }}
+    >
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}

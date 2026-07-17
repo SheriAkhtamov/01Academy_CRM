@@ -965,13 +965,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       ? t('leadArchiveDescription')
       : salesWorkspaceDescription;
   return (
-    <div
-      className={`mx-auto min-w-0 max-w-[1600px] p-6 lg:p-8 ${
-        section === 'pipeline'
-          ? 'flex h-full min-h-0 flex-col overflow-hidden'
-          : 'overflow-x-clip'
-      }`}
-    >
+    <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-clip p-6 lg:p-8">
       <PageHeader
         title={sectionTitle[section]}
         subtitle={sectionSubtitle}

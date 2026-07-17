@@ -3,8 +3,6 @@ import { isContainedWorkspaceRoute } from '../client/src/lib/containedWorkspaceR
 
 describe('isContainedWorkspaceRoute', () => {
   it.each([
-    '/sales/pipeline',
-    '/sales/pipeline?lead=42',
     '/sales/messages',
     '/sales/task-board',
     '/teacher-workspace/tasks',
@@ -16,6 +14,8 @@ describe('isContainedWorkspaceRoute', () => {
 
   it.each([
     '/sales',
+    '/sales/pipeline',
+    '/sales/pipeline?lead=42',
     '/sales/tasks',
     '/sales/archive',
     '/marketing-workspace/funnel',

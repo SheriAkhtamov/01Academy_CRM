@@ -1,5 +1,4 @@
 const CONTAINED_WORKSPACE_ROUTES = new Set([
-  '/sales/pipeline',
   '/sales/messages',
   '/sales/task-board',
   '/teacher-workspace/tasks',

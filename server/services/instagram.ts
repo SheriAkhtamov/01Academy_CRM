@@ -1500,7 +1500,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     }
 
     await client.query(
-      `UPDATE instagram_accounts SET last_webhook_at = NOW(), last_error = NULL, updated_at = NOW() WHERE id = $1`,
+      `UPDATE instagram_accounts SET last_webhook_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [account.id],
     );
     await client.query('COMMIT');

@@ -1098,8 +1098,8 @@ export const translations = {
   },
   instagramIntegration: { en: 'Instagram', ru: 'Instagram-интеграция' },
   instagramIntegrationDesc: {
-    en: 'Connect a professional account. New Direct conversations become leads and are assigned to sales managers.',
-    ru: 'Подключите профессиональный аккаунт. Новые диалоги Direct станут лидами и распределятся между менеджерами продаж.',
+    en: 'Connect a professional account. New Direct conversations become unassigned leads that sales managers can claim.',
+    ru: 'Подключите профессиональный аккаунт. Новые диалоги Direct станут лидами без ответственного — менеджер сам возьмёт лид в работу.',
   },
   instagramIntegrationNotConfigured: {
     en: 'Instagram integration is not configured.',

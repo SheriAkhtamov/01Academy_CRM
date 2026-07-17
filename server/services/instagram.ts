@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
+import { resolveInstagramLeadContactName } from '../lib/instagram-lead';
 import { logger } from '../lib/logger';
 import { hasLeadershipAccess } from '@shared/academy';
 
@@ -148,7 +149,6 @@ const salesUserAccessSql = `
     )
   )
 `;
-const USER_ACCESS_ADVISORY_LOCK = 10_100_001;
 export const setInstagramBroadcastFunction = (broadcast: InstagramBroadcast) => {
   broadcastToClients = broadcast;
 };
@@ -1146,23 +1146,6 @@ const getSystemUserId = async (client: PoolClient) => {
   return Number(rows[0].id);
 };
 
-const getLeadAssigneeId = async (client: PoolClient) => {
-  await client.query('SELECT pg_advisory_xact_lock($1)', [USER_ACCESS_ADVISORY_LOCK]);
-  const { rows } = await client.query(
-    `SELECT u.id
-     FROM users u
-     LEFT JOIN academy_leads lead
-       ON lead.manager_id = u.id
-      AND lead.status_code NOT IN ('paid', 'not_now')
-      AND COALESCE(lead.is_archived, false) = false
-     WHERE ${salesUserAccessSql} AND u.is_active = true
-     GROUP BY u.id
-     ORDER BY COUNT(lead.id), u.id
-     LIMIT 1`,
-  );
-  return rows[0]?.id ? Number(rows[0].id) : getSystemUserId(client);
-};
-
 const ensureLeadForConversation = async (
   client: PoolClient,
   account: InstagramAccountRow,
@@ -1197,21 +1180,23 @@ const ensureLeadForConversation = async (
   }
 
   const systemUserId = await getSystemUserId(client);
-  const managerId = await getLeadAssigneeId(client);
   const username = profile.username?.trim();
-  const contactName = String(profile.name || (username ? `@${username}` : 'Instagram lead')).slice(0, 255);
+  const contactName = resolveInstagramLeadContactName({
+    name: profile.name,
+    username,
+    participantId: participantIgsid,
+  });
   const messenger = username ? `@${username}`.slice(0, 120) : stableMessenger;
 
   const inserted = await client.query(
     `INSERT INTO academy_leads
       (contact_name, phone, messenger, source_id, status_code, manager_id, language, comment, created_by)
-     VALUES ($1,NULL,$2,$3,'new_request',$4,'ru',$5,$6)
+     VALUES ($1,NULL,$2,$3,'new_request',NULL,'ru',$4,$5)
      RETURNING id, manager_id, true AS created_lead`,
     [
       contactName,
       messenger,
       account.source_id,
-      managerId,
       options.leadComment ?? 'Создан автоматически из нового диалога Instagram.',
       systemUserId,
     ],
@@ -1234,19 +1219,13 @@ const ensureLeadForConversation = async (
      VALUES (
        'Первый контакт по новой заявке',
        'Ответить на новый диалог Instagram в течение 15 минут.',
-       $1,
+       NULL,
        NOW() + INTERVAL '15 minutes',
        'lead',
-       $2,
+       $1,
        'new'
      )`,
-    [managerId, lead.id],
-  );
-  await client.query(
-    `INSERT INTO notifications
-       (user_id, type, title, message, related_entity_type, related_entity_id)
-     VALUES ($1, 'academy_task', 'Новая заявка Instagram', $2, 'lead', $3)`,
-    [managerId, contactName, lead.id],
+    [lead.id],
   );
 
   return lead;

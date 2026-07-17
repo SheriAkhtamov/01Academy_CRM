@@ -337,6 +337,13 @@
       "when": 1785081600000,
       "tag": "0047_add_finance_access_module",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785168000000,
+      "tag": "0048_clean_instagram_lead_names",
+      "breakpoints": true
     }
   ]
 }

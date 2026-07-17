@@ -3,6 +3,7 @@ import { Router } from 'express';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
+import { resolveInstagramLeadContactName } from '../lib/instagram-lead';
 import { logger } from '../lib/logger';
 import {
   processInstagramWebhook,
@@ -305,17 +306,21 @@ router.post('/chatplace', async (req, res) => {
   if (!verifyWebhookSecret(req, res, 'chatplace')) return;
   try {
     const body = req.body ?? {};
-    const contactName = String(body.contactName ?? body.name ?? 'Instagram lead').slice(0, 255);
     const messenger = nullableText(body.messenger ?? body.instagramUsername, 120);
     const phone = nullableText(body.phone, 50);
     const storedPhone = phone ? normalizePhoneForStorage(phone)?.phone ?? phone : null;
+    const contactName = resolveInstagramLeadContactName({
+      name: body.contactName ?? body.name,
+      username: body.instagramUsername,
+      messenger,
+      phone: storedPhone,
+    });
     if (!phone && !messenger) {
       return res.status(400).json({ error: 'phone or messenger is required' });
     }
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
-      const managerId = await getLeadAssigneeId(client);
       await lockIncomingContact(client, phone, messenger);
       const duplicate = await findIncomingDuplicate(client, phone, messenger);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
@@ -329,8 +334,8 @@ router.post('/chatplace', async (req, res) => {
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
           (contact_name, phone, messenger, source_id, advertising_campaign, status_code, manager_id, language, created_by)
-         VALUES ($1,$2,$3,$4,$5,'new_request',$6,'ru',$7) RETURNING *`,
-        [contactName, storedPhone, messenger, sourceId, body.campaign ?? null, managerId, systemUserId],
+         VALUES ($1,$2,$3,$4,$5,'new_request',NULL,'ru',$6) RETURNING *`,
+        [contactName, storedPhone, messenger, sourceId, body.campaign ?? null, systemUserId],
       );
       const lead = camelize(inserted[0]);
       if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);
@@ -342,8 +347,8 @@ router.post('/chatplace', async (req, res) => {
       await client.query(
         `INSERT INTO academy_tasks
           (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-         VALUES ('Первый контакт по новой заявке','Связаться с лидом в течение 15 минут.',$1,NOW() + INTERVAL '15 minutes','lead',$2,'new')`,
-        [managerId, lead.id],
+         VALUES ('Первый контакт по новой заявке','Связаться с лидом в течение 15 минут.',NULL,NOW() + INTERVAL '15 minutes','lead',$1,'new')`,
+        [lead.id],
       );
       return { duplicate: null, lead };
     });

@@ -10,10 +10,12 @@ const journalPath = path.join(repositoryRoot, "migrations/meta/_journal.json");
 describe("finance access module migration", () => {
   it("registers the migration after the Financial Center schema", () => {
     const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
-    const tags = journal.entries.map((entry: { tag: string }) => entry.tag);
 
-    expect(tags.at(-2)).toBe("0046_add_financial_center");
-    expect(tags.at(-1)).toBe("0047_add_finance_access_module");
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 46)?.tag)
+      .toBe("0046_add_financial_center");
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 47)?.tag)
+      .toBe("0047_add_finance_access_module");
+    expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 47)).toHaveLength(1);
   });
 
   it("allows finance only in additional employee module assignments", () => {

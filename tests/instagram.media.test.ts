@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeInstagramMessageAttachments } from '../server/services/instagram';
+import {
+  getInstagramIntegrationConfig,
+  normalizeInstagramMessageAttachments,
+} from '../server/services/instagram';
+
+describe('Instagram webhook configuration', () => {
+  it('subscribes only to fields accepted by the current Instagram API', () => {
+    const { webhookFields } = getInstagramIntegrationConfig();
+
+    expect(webhookFields).toContain('messages');
+    expect(webhookFields).toContain('messaging_seen');
+    expect(webhookFields).toContain('message_reactions');
+    expect(webhookFields).not.toContain('message_deliveries');
+  });
+});
 
 describe('Instagram media normalization', () => {
   it('keeps a Reel with a direct video URL playable inline', () => {

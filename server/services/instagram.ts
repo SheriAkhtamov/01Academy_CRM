@@ -109,7 +109,6 @@ const INSTAGRAM_SCOPES = [
 const INSTAGRAM_WEBHOOK_FIELDS = [
   'messages',
   'messaging_postbacks',
-  'message_deliveries',
   'messaging_seen',
   'message_reactions',
 ];

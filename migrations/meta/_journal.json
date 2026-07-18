@@ -351,6 +351,13 @@
       "when": 1785254400000,
       "tag": "0049_add_student_group_enrollments",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785340800000,
+      "tag": "0050_add_lead_group_reservations",
+      "breakpoints": true
     }
   ]
 }

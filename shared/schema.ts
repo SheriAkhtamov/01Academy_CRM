@@ -292,6 +292,20 @@ export const academyLeadPhones = pgTable("academy_lead_phones", {
   normalizedIdx: index("academy_lead_phones_normalized_idx").on(table.normalizedPhone),
 }));
 
+export const academyLeadGroupReservations = pgTable("academy_lead_group_reservations", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  leadIdx: index("academy_lead_group_reservations_lead_idx").on(table.leadId),
+  groupIdx: index("academy_lead_group_reservations_group_idx").on(table.groupId),
+  leadGroupUnique: uniqueIndex("academy_lead_group_reservations_lead_group_unique")
+    .on(table.leadId, table.groupId),
+}));
+
 export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),

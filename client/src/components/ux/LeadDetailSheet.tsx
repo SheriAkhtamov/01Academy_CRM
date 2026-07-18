@@ -540,23 +540,54 @@ export function LeadDetailSheet({
     },
   });
 
-  const addStudentGroup = useMutation({
-    mutationFn: ({ studentId, groupId, isPrimary = false }: { studentId: number; groupId: number; isPrimary?: boolean }) =>
-      apiRequest('POST', `/api/academy/students/${studentId}/groups`, { groupId, isPrimary }),
-    onSuccess: async () => finishMutation(t('studentGroupAdded')),
+  const addLeadGroup = useMutation({
+    mutationFn: ({
+      leadId: targetLeadId,
+      studentId,
+      groupId,
+      isPrimary = false,
+    }: {
+      leadId: number;
+      studentId?: number | null;
+      groupId: number;
+      isPrimary?: boolean;
+    }) => apiRequest(
+      'POST',
+      studentId
+        ? `/api/academy/students/${studentId}/groups`
+        : `/api/academy/leads/${targetLeadId}/groups`,
+      { groupId, isPrimary },
+    ),
+    onSuccess: async (_result, variables) => finishMutation(
+      variables.studentId ? t('studentGroupAdded') : t('leadGroupAdded'),
+    ),
     onError: (error: Error) => toast({
-      title: t('studentGroupAddFailed'),
+      title: t('groupAddFailed'),
       description: error.message,
       variant: 'destructive',
     }),
   });
 
-  const removeStudentGroup = useMutation({
-    mutationFn: ({ studentId, groupId }: { studentId: number; groupId: number }) =>
-      apiRequest('DELETE', `/api/academy/students/${studentId}/groups/${groupId}`),
-    onSuccess: async () => finishMutation(t('studentGroupRemoved')),
+  const removeLeadGroup = useMutation({
+    mutationFn: ({
+      leadId: targetLeadId,
+      studentId,
+      groupId,
+    }: {
+      leadId: number;
+      studentId?: number | null;
+      groupId: number;
+    }) => apiRequest(
+      'DELETE',
+      studentId
+        ? `/api/academy/students/${studentId}/groups/${groupId}`
+        : `/api/academy/leads/${targetLeadId}/groups/${groupId}`,
+    ),
+    onSuccess: async (_result, variables) => finishMutation(
+      variables.studentId ? t('studentGroupRemoved') : t('leadGroupRemoved'),
+    ),
     onError: (error: Error) => toast({
-      title: t('studentGroupRemoveFailed'),
+      title: t('groupRemoveFailed'),
       description: error.message,
       variant: 'destructive',
     }),
@@ -1085,7 +1116,7 @@ export function LeadDetailSheet({
                             name="enrolledGroupId"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{lead.studentId ? t('primaryGroup') : t('group')}</FormLabel>
+                                <FormLabel>{studentGroups.length > 0 ? t('primaryGroup') : t('group')}</FormLabel>
                                 <Select value={field.value || 'none'} onValueChange={(value) => {
                                   const nextValue = value === 'none' ? '' : value;
                                   field.onChange(nextValue);
@@ -1115,27 +1146,27 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
-                          {lead.studentId ? (
-                            <FormItem className="md:col-span-2">
-                              <FormLabel>{t('studentGroups')}</FormLabel>
+                          <FormItem className="md:col-span-2">
+                              <FormLabel>{lead.studentId ? t('studentGroups') : t('leadGroups')}</FormLabel>
                               <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
                                 <Select
                                   value="none"
                                   onValueChange={(value) => {
                                     if (value === 'none') return;
-                                    addStudentGroup.mutate({
-                                      studentId: Number(lead.studentId),
+                                    addLeadGroup.mutate({
+                                      leadId: lead.id,
+                                      studentId: lead.studentId,
                                       groupId: Number(value),
                                     });
                                   }}
-                                  disabled={addStudentGroup.isPending || removeStudentGroup.isPending || additionalGroupOptions.length === 0}
+                                  disabled={addLeadGroup.isPending || removeLeadGroup.isPending || additionalGroupOptions.length === 0}
                                 >
                                   <SelectTrigger>
-                                    <SelectValue placeholder={t('addStudentToGroup')} />
+                                    <SelectValue placeholder={t('addGroup')} />
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectGroup>
-                                      <SelectItem value="none">{t('addStudentToGroup')}</SelectItem>
+                                      <SelectItem value="none">{t('addGroup')}</SelectItem>
                                       {additionalGroupOptions.map((group) => {
                                         const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
                                         return (
@@ -1149,6 +1180,9 @@ export function LeadDetailSheet({
                                 </Select>
 
                                 <div className="space-y-2">
+                                  {studentGroups.length === 0 ? (
+                                    <p className="py-1 text-sm text-muted-foreground">{t('noGroupsSelected')}</p>
+                                  ) : null}
                                   {studentGroups.map((group) => (
                                     <div key={group.groupId} className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
                                       <div className="min-w-0 flex-1">
@@ -1161,9 +1195,10 @@ export function LeadDetailSheet({
                                           type="button"
                                           size="sm"
                                           variant="ghost"
-                                          disabled={addStudentGroup.isPending || removeStudentGroup.isPending}
-                                          onClick={() => addStudentGroup.mutate({
-                                            studentId: Number(lead.studentId),
+                                          disabled={addLeadGroup.isPending || removeLeadGroup.isPending}
+                                          onClick={() => addLeadGroup.mutate({
+                                            leadId: lead.id,
+                                            studentId: lead.studentId,
                                             groupId: Number(group.groupId),
                                             isPrimary: true,
                                           })}
@@ -1175,9 +1210,14 @@ export function LeadDetailSheet({
                                         type="button"
                                         size="sm"
                                         variant="ghost"
-                                        disabled={addStudentGroup.isPending || removeStudentGroup.isPending || studentGroups.length <= 1}
-                                        onClick={() => removeStudentGroup.mutate({
-                                          studentId: Number(lead.studentId),
+                                        disabled={
+                                          addLeadGroup.isPending
+                                          || removeLeadGroup.isPending
+                                          || (Boolean(lead.studentId) && studentGroups.length <= 1)
+                                        }
+                                        onClick={() => removeLeadGroup.mutate({
+                                          leadId: lead.id,
+                                          studentId: lead.studentId,
                                           groupId: Number(group.groupId),
                                         })}
                                       >
@@ -1188,7 +1228,6 @@ export function LeadDetailSheet({
                                 </div>
                               </div>
                             </FormItem>
-                          ) : null}
                           <FormField
                             control={leadForm.control}
                             name="expectedPaymentUzs"

@@ -212,6 +212,44 @@ const leadPhoneNumbersSelect = (leadAlias = 'l') => `
     END
   ) AS phone_numbers`;
 
+const leadGroupReservationsSelect = (leadAlias = 'l') => `
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'groupId', reservation.group_id,
+          'groupName', reserved_group.name,
+          'courseId', reserved_group.course_id,
+          'courseName', reserved_course.name,
+          'schoolId', reserved_group.school_id,
+          'isPrimary', reservation.group_id = ${leadAlias}.enrolled_group_id,
+          'enrolledAt', reservation.created_at
+        )
+        ORDER BY (reservation.group_id = ${leadAlias}.enrolled_group_id) DESC,
+                 reserved_group.name,
+                 reservation.group_id
+      )
+      FROM academy_lead_group_reservations reservation
+      JOIN academy_groups reserved_group ON reserved_group.id = reservation.group_id
+      LEFT JOIN academy_courses reserved_course ON reserved_course.id = reserved_group.course_id
+      WHERE reservation.lead_id = ${leadAlias}.id
+    ),
+    '[]'::json
+  ) AS lead_groups,
+  COALESCE(
+    (
+      SELECT array_agg(
+        reservation.group_id
+        ORDER BY (reservation.group_id = ${leadAlias}.enrolled_group_id) DESC,
+                 reserved_group.name
+      )
+      FROM academy_lead_group_reservations reservation
+      JOIN academy_groups reserved_group ON reserved_group.id = reservation.group_id
+      WHERE reservation.lead_id = ${leadAlias}.id
+    ),
+    ARRAY[]::integer[]
+  ) AS lead_group_ids`;
+
 const studentGroupMembershipsSelect = (studentAlias = 'st') => `
   COALESCE(
     (
@@ -2029,6 +2067,7 @@ const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM academy_referral_rewards WHERE referred_lead_id = $1) AS referral_rewards,
        (SELECT COUNT(*)::int FROM academy_students WHERE lead_id = $1) AS students,
        (SELECT COUNT(*)::int FROM academy_lead_phones WHERE lead_id = $1) AS phones,
+       (SELECT COUNT(*)::int FROM academy_lead_group_reservations WHERE lead_id = $1) AS group_reservations,
        (SELECT COUNT(*)::int FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1) AS tasks,
        (SELECT COUNT(*)::int FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
          AS notification_outbox,
@@ -2074,6 +2113,39 @@ const mergeLeadRecords = async (
     `UPDATE academy_students SET lead_id = $1, updated_at = NOW() WHERE lead_id = $2`,
     [retainedLeadId, duplicateLeadId],
   );
+  await query(
+    `INSERT INTO academy_lead_group_reservations
+       (lead_id, group_id, created_by, created_at, updated_at)
+     SELECT $1, group_id, created_by, created_at, NOW()
+     FROM academy_lead_group_reservations
+     WHERE lead_id = $2
+     ON CONFLICT (lead_id, group_id) DO NOTHING`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [duplicateLeadId]);
+
+  const mergedStudent = await queryOne(
+    `SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
+    [retainedLeadId],
+  );
+  if (mergedStudent) {
+    await query(
+      `INSERT INTO academy_student_group_enrollments
+         (student_id, group_id, status, is_primary, enrolled_at, created_by)
+       SELECT $1,
+              reservation.group_id,
+              'active',
+              reservation.group_id = $2,
+              COALESCE($3, reservation.created_at, NOW()),
+              reservation.created_by
+       FROM academy_lead_group_reservations reservation
+       WHERE reservation.lead_id = $4
+       ON CONFLICT (student_id, group_id) WHERE status = 'active'
+       DO UPDATE SET ended_at = NULL, updated_at = NOW()`,
+      [mergedStudent.id, mergedStudent.groupId, mergedStudent.enrolledAt, retainedLeadId],
+    );
+    await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [retainedLeadId]);
+  }
 
   await query(
     `DELETE FROM academy_lead_phones source_phone
@@ -2250,6 +2322,7 @@ const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM academy_referral_rewards WHERE referred_lead_id = $1)
        + (SELECT COUNT(*) FROM academy_students WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_phones WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_group_reservations WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
@@ -2388,6 +2461,15 @@ const mergeLeadDraftIntoExisting = async (
   if (!updatedLead) {
     throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
   }
+  if (nextEnrolledGroupId) {
+    await query(
+      `INSERT INTO academy_lead_group_reservations
+         (lead_id, group_id, created_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (lead_id, group_id) DO NOTHING`,
+      [retainedLeadId, nextEnrolledGroupId, req.user!.id],
+    );
+  }
   await syncLeadPhones(retainedLeadId, phoneValuesToSave);
 
   if (assignedManager) {
@@ -2427,7 +2509,8 @@ const getLead = (id: number) =>
     `SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, sc.name AS school_name,
         u.full_name AS manager_name,
         archived_by_user.full_name AS archived_by_name,
-        ${leadPhoneNumbersSelect('l')}
+        ${leadPhoneNumbersSelect('l')},
+        ${leadGroupReservationsSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -2629,8 +2712,10 @@ const ensureGroupCapacity = async (
      LEFT JOIN academy_students s
        ON s.id = enrollment.student_id
       AND s.status = 'studying'
+     LEFT JOIN academy_lead_group_reservations reserved_membership
+      ON reserved_membership.group_id = g.id
      LEFT JOIN academy_leads reserved
-      ON reserved.enrolled_group_id = g.id
+      ON reserved.id = reserved_membership.lead_id
       AND reserved.status_code <> 'not_now'
       AND COALESCE(reserved.is_archived, false) = false
       AND ($2::int IS NULL OR reserved.id <> $2)
@@ -2683,6 +2768,32 @@ const validateEnrollmentGroup = async (
   }
   await ensureGroupCapacity(groupId, excludeLeadId, excludeStudentId);
   return group;
+};
+
+const validateLeadSelectedGroups = async (
+  leadId: number,
+  primaryGroupId?: number | null,
+  excludeStudentId?: number | null,
+) => {
+  const reservations = await query(
+    `SELECT *
+     FROM academy_lead_group_reservations
+     WHERE lead_id = $1
+     ORDER BY group_id
+     FOR UPDATE`,
+    [leadId],
+  );
+  const groupIds = [...new Set([
+    ...(primaryGroupId ? [Number(primaryGroupId)] : []),
+    ...reservations.map((reservation) => Number(reservation.groupId)),
+  ])].filter((groupId) => Number.isInteger(groupId) && groupId > 0);
+  let primaryGroup: Row | null = null;
+  for (const groupId of [...groupIds].sort((left, right) => left - right)) {
+    await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+    const group = await validateEnrollmentGroup(groupId, leadId, excludeStudentId);
+    if (groupId === Number(primaryGroupId)) primaryGroup = group;
+  }
+  return { groupIds, primaryGroup };
 };
 
 const recalculateStudentMetrics = async (studentId: number) => {
@@ -2888,8 +2999,13 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
     throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
   }
 
-  await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [lead.enrolledGroupId]);
-  const enrolledGroup = await validateEnrollmentGroup(Number(lead.enrolledGroupId), lead.id);
+  const { groupIds: reservedGroupIds, primaryGroup: enrolledGroup } = await validateLeadSelectedGroups(
+    leadId,
+    Number(lead.enrolledGroupId),
+  );
+  if (!enrolledGroup) {
+    throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+  }
 
   const course = lead.courseId
     ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1`, [lead.courseId])
@@ -2916,11 +3032,27 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
   await query(
     `INSERT INTO academy_student_group_enrollments
        (student_id, group_id, status, is_primary, enrolled_at, created_by)
-     VALUES ($1, $2, 'active', true, COALESCE($3, NOW()), $4)
+     SELECT $1,
+            selected_group_id,
+            'active',
+            selected_group_id = $2,
+            COALESCE($3, NOW()),
+            $4
+     FROM UNNEST($5::int[]) AS selected_group_id
      ON CONFLICT (student_id, group_id) WHERE status = 'active'
-     DO UPDATE SET is_primary = true, ended_at = NULL, updated_at = NOW()`,
-    [student.id, student.groupId, student.enrolledAt ?? new Date(), req.user!.id],
+     DO UPDATE SET
+       is_primary = EXCLUDED.is_primary,
+       ended_at = NULL,
+       updated_at = NOW()`,
+    [
+      student.id,
+      student.groupId,
+      student.enrolledAt ?? new Date(),
+      req.user!.id,
+      reservedGroupIds,
+    ],
   );
+  await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
 
   if (paymentId) {
     await updateRow('academy_payments', paymentId, {
@@ -3330,8 +3462,10 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
            WHERE enrollment.group_id = g.id
              AND enrollment.status = 'active'
              AND s.status = 'studying') AS current_students,
-          (SELECT COUNT(*)::int FROM academy_leads l
-           WHERE l.enrolled_group_id = g.id
+          (SELECT COUNT(DISTINCT l.id)::int
+           FROM academy_lead_group_reservations reservation
+           JOIN academy_leads l ON l.id = reservation.lead_id
+           WHERE reservation.group_id = g.id
              AND l.status_code <> 'not_now'
              AND COALESCE(l.is_archived, false) = false
              AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
@@ -3350,8 +3484,10 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
            WHERE enrollment.group_id = g.id
              AND enrollment.status = 'active'
              AND s.status = 'studying') AS current_students,
-          (SELECT COUNT(*)::int FROM academy_leads l
-           WHERE l.enrolled_group_id = g.id
+          (SELECT COUNT(DISTINCT l.id)::int
+           FROM academy_lead_group_reservations reservation
+           JOIN academy_leads l ON l.id = reservation.lead_id
+           WHERE reservation.group_id = g.id
              AND l.status_code <> 'not_now'
              AND COALESCE(l.is_archived, false) = false
              AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
@@ -4943,6 +5079,15 @@ router.post('/leads', async (req, res) => {
         referrerStudentId: requestedReferrerStudentId,
         createdBy: req.user!.id,
       });
+      if (enrolledGroupId) {
+        await query(
+          `INSERT INTO academy_lead_group_reservations
+             (lead_id, group_id, created_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (lead_id, group_id) DO NOTHING`,
+          [createdLead.id, enrolledGroupId, req.user!.id],
+        );
+      }
       await syncLeadPhones(createdLead.id, phones);
       await createStageHistory(
         createdLead.id,
@@ -5218,8 +5363,8 @@ router.get('/leads/:id', async (req, res) => {
       payments,
       studentId: student?.id ?? null,
       primaryGroupId: student?.primaryGroupId ?? null,
-      groups: student?.groups ?? [],
-      groupIds: student?.groupIds ?? [],
+      groups: student?.groups ?? lead.leadGroups ?? [],
+      groupIds: student?.groupIds ?? lead.leadGroupIds ?? [],
     });
   } catch (error) {
     logger.error('Failed to fetch lead', { error });
@@ -5292,6 +5437,153 @@ router.delete('/leads/:id', async (req, res) => {
     res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
       error: isForeignKeyConflict ? 'resourceInUse' : error.message || 'Failed to delete lead',
     });
+  }
+});
+
+router.post('/leads/:id/groups', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
+  try {
+    const leadId = parseId(req.params.id);
+    const groupId = parseId(req.body.groupId);
+    const makePrimary = req.body.isPrimary === true;
+    if (!leadId || !groupId) {
+      return res.status(400).json({ error: 'Lead and group are required' });
+    }
+    const initialLead = await getLead(leadId);
+    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
+
+    const lead = await withTransaction(async () => {
+      const lockedLead = await queryOne(
+        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+        [leadId],
+      );
+      if (!lockedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (!canMutateLeadRow(req, lockedLead)) {
+        throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
+      }
+      const student = await queryOne(
+        `SELECT id FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
+        [leadId],
+      );
+      if (student) {
+        throw Object.assign(new Error('leadAlreadyConvertedToStudent'), { statusCode: 409 });
+      }
+
+      await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+      const group = await validateEnrollmentGroup(groupId, leadId);
+      await query(
+        `INSERT INTO academy_lead_group_reservations
+           (lead_id, group_id, created_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (lead_id, group_id) DO NOTHING`,
+        [leadId, groupId, req.user!.id],
+      );
+
+      if (makePrimary || !lockedLead.enrolledGroupId) {
+        return updateRow('academy_leads', leadId, {
+          enrolledGroupId: groupId,
+          courseId: Number(group?.courseId),
+          schoolId: Number(group?.schoolId),
+        });
+      }
+      return lockedLead;
+    });
+
+    await createAudit(req, 'ADD_ACADEMY_LEAD_GROUP', 'academy_lead', leadId, {
+      groupId,
+      isPrimary: makePrimary || !initialLead.enrolledGroupId,
+    });
+    res.status(201).json(lead);
+  } catch (error: any) {
+    logger.error('Failed to add lead group', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to add lead group' });
+  }
+});
+
+router.delete('/leads/:id/groups/:groupId', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
+  try {
+    const leadId = parseId(req.params.id);
+    const groupId = parseId(req.params.groupId);
+    if (!leadId || !groupId) {
+      return res.status(400).json({ error: 'Lead and group are required' });
+    }
+    const initialLead = await getLead(leadId);
+    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
+
+    const lead = await withTransaction(async () => {
+      const lockedLead = await queryOne(
+        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+        [leadId],
+      );
+      if (!lockedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (!canMutateLeadRow(req, lockedLead)) {
+        throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
+      }
+      const student = await queryOne(
+        `SELECT id FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
+        [leadId],
+      );
+      if (student) {
+        throw Object.assign(new Error('leadAlreadyConvertedToStudent'), { statusCode: 409 });
+      }
+      const reservation = await queryOne(
+        `SELECT *
+         FROM academy_lead_group_reservations
+         WHERE lead_id = $1 AND group_id = $2
+         FOR UPDATE`,
+        [leadId, groupId],
+      );
+      if (!reservation) {
+        throw Object.assign(new Error('Lead group reservation not found'), { statusCode: 404 });
+      }
+      const reservationCount = await queryOne<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+         FROM academy_lead_group_reservations
+         WHERE lead_id = $1`,
+        [leadId],
+      );
+      if (
+        ['enrolled', 'paid'].includes(String(lockedLead.statusCode))
+        && Number(reservationCount?.count ?? 0) <= 1
+      ) {
+        throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
+      }
+
+      await query(
+        `DELETE FROM academy_lead_group_reservations WHERE id = $1`,
+        [reservation.id],
+      );
+      if (Number(lockedLead.enrolledGroupId) !== groupId) return lockedLead;
+
+      const replacement = await queryOne(
+        `SELECT reservation.group_id, academy_group.course_id, academy_group.school_id
+         FROM academy_lead_group_reservations reservation
+         JOIN academy_groups academy_group ON academy_group.id = reservation.group_id
+         WHERE reservation.lead_id = $1
+         ORDER BY reservation.created_at, reservation.id
+         LIMIT 1
+         FOR UPDATE OF reservation`,
+        [leadId],
+      );
+      return updateRow('academy_leads', leadId, {
+        enrolledGroupId: replacement?.groupId ?? null,
+        courseId: replacement?.courseId ? Number(replacement.courseId) : null,
+        schoolId: replacement?.schoolId ? Number(replacement.schoolId) : null,
+      });
+    });
+
+    await createAudit(req, 'REMOVE_ACADEMY_LEAD_GROUP', 'academy_lead', leadId, { groupId });
+    res.json(lead);
+  } catch (error: any) {
+    logger.error('Failed to remove lead group', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to remove lead group' });
   }
 });
 
@@ -5398,9 +5690,8 @@ router.post('/leads/:id/restore', async (req, res) => {
     if (validationError) return res.status(400).json({ error: validationError });
 
     const restored = await withTransaction(async () => {
-      if (['enrolled', 'paid'].includes(targetStatusCode) && oldLead.enrolledGroupId) {
-        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [oldLead.enrolledGroupId]);
-        await validateEnrollmentGroup(Number(oldLead.enrolledGroupId), id);
+      if (targetStatusCode !== 'not_now' && oldLead.enrolledGroupId) {
+        await validateLeadSelectedGroups(id, Number(oldLead.enrolledGroupId));
       }
       return updateRow('academy_leads', id, {
         statusCode: targetStatusCode,
@@ -5697,11 +5988,18 @@ router.patch('/leads/:id', async (req, res) => {
         }
       }
       const groupToReserve = Number(merged.enrolledGroupId || 0);
+      const activatesReservations = oldLead.statusCode === 'not_now' && nextStatus !== 'not_now';
       const mustValidateCapacity = Boolean(requestedGroupId)
+        || activatesReservations
         || ['enrolled', 'paid'].includes(nextStatus);
       if (mustValidateCapacity && groupToReserve) {
-        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupToReserve]);
-        const lockedGroup = await validateEnrollmentGroup(groupToReserve, id, lockedStudent?.id);
+        let lockedGroup: Row | null;
+        if (lockedStudent) {
+          await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupToReserve]);
+          lockedGroup = await validateEnrollmentGroup(groupToReserve, id, lockedStudent.id);
+        } else {
+          lockedGroup = (await validateLeadSelectedGroups(id, groupToReserve)).primaryGroup;
+        }
         if (req.body.enrolledGroupId !== undefined && lockedGroup) {
           updates.courseId = Number(lockedGroup.courseId);
           updates.schoolId = Number(lockedGroup.schoolId);
@@ -5729,6 +6027,18 @@ router.patch('/leads/:id', async (req, res) => {
           schoolId: Number(updates.schoolId ?? requestedGroup?.schoolId),
         });
         await recalculateStudentMetrics(Number(lockedStudent.id));
+      } else if (updated && hasRequestedGroup && !lockedStudent) {
+        if (requestedGroupId) {
+          await query(
+            `INSERT INTO academy_lead_group_reservations
+               (lead_id, group_id, created_by)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (lead_id, group_id) DO NOTHING`,
+            [id, requestedGroupId, req.user!.id],
+          );
+        } else {
+          await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [id]);
+        }
       }
       const actualManagerChanged = Boolean(
         updated
@@ -5976,7 +6286,7 @@ const prepareGroupMutation = async (options: {
            SELECT 1 FROM academy_student_group_enrollments
            WHERE group_id = $1
          )
-         OR EXISTS (SELECT 1 FROM academy_leads WHERE enrolled_group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lead_group_reservations WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
        ) AS has_enrollments`,
       [options.oldRow.id],
@@ -6048,8 +6358,10 @@ const prepareGroupMutation = async (options: {
          ON enrollment.group_id = g.id AND enrollment.status = 'active'
        LEFT JOIN academy_students s
          ON s.id = enrollment.student_id AND s.status = 'studying'
+       LEFT JOIN academy_lead_group_reservations reserved_membership
+         ON reserved_membership.group_id = g.id
        LEFT JOIN academy_leads reserved
-         ON reserved.enrolled_group_id = g.id
+         ON reserved.id = reserved_membership.lead_id
         AND reserved.status_code <> 'not_now'
         AND COALESCE(reserved.is_archived, false) = false
         AND NOT EXISTS (
@@ -6218,8 +6530,10 @@ const prepareGroupMetadataMutation = async (values: Row, row: Row) => {
        ON enrollment.group_id = g.id AND enrollment.status = 'active'
      LEFT JOIN academy_students s
        ON s.id = enrollment.student_id AND s.status = 'studying'
+     LEFT JOIN academy_lead_group_reservations reserved_membership
+       ON reserved_membership.group_id = g.id
      LEFT JOIN academy_leads reserved
-       ON reserved.enrolled_group_id = g.id
+       ON reserved.id = reserved_membership.lead_id
       AND reserved.status_code <> 'not_now'
       AND COALESCE(reserved.is_archived, false) = false
       AND NOT EXISTS (
@@ -6282,8 +6596,9 @@ const assertGroupLifecycleUpdateAllowed = async (options: {
        ) AS has_studying_students,
        EXISTS (
          SELECT 1
-         FROM academy_leads reserved
-         WHERE reserved.enrolled_group_id = $1
+         FROM academy_lead_group_reservations reservation
+         JOIN academy_leads reserved ON reserved.id = reservation.lead_id
+         WHERE reservation.group_id = $1
            AND reserved.status_code <> 'not_now'
            AND COALESCE(reserved.is_archived, false) = false
            AND NOT EXISTS (
@@ -7923,10 +8238,6 @@ router.post('/payments', async (req, res) => {
         }
       }
 
-      if (lead?.enrolledGroupId) {
-        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [lead.enrolledGroupId]);
-      }
-
       const paymentLeadId = leadId ?? (existingStudent?.leadId ? Number(existingStudent.leadId) : null);
       const resolvedStudentId = existingStudent?.id ?? studentId ?? null;
       let pendingPayment: Row | undefined;
@@ -9077,7 +9388,7 @@ registerSimpleCrud('groups', 'academy_groups', [
            SELECT 1 FROM academy_student_group_enrollments
            WHERE group_id = $1
          )
-         OR EXISTS (SELECT 1 FROM academy_leads WHERE enrolled_group_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lead_group_reservations WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_payments WHERE group_id = $1)
          OR EXISTS (

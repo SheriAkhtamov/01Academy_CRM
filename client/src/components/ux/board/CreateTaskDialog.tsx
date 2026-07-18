@@ -37,7 +37,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
     const { t } = useTranslation();
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const defaultAssigneeId = canAssignUsers ? UNASSIGNED : currentUser ? String(currentUser.id) : UNASSIGNED;
+    const defaultAssigneeId = currentUser ? String(currentUser.id) : UNASSIGNED;
     const assignableUsers = useMemo(() => (
         canAssignUsers
             ? users

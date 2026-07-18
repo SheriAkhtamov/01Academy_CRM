@@ -108,6 +108,18 @@ interface LeadDetails {
   comment?: string | null;
   language?: string | null;
   enrolledGroupId?: number | null;
+  studentId?: number | null;
+  primaryGroupId?: number | null;
+  groupIds?: number[];
+  groups?: Array<{
+    groupId: number;
+    groupName: string;
+    courseId?: number | null;
+    courseName?: string | null;
+    schoolId?: number | null;
+    isPrimary?: boolean;
+    enrolledAt?: string | null;
+  }>;
   expectedPaymentUzs?: number | null;
   offerPriceUzs?: number | null;
   firstContactAt?: string | null;
@@ -528,6 +540,28 @@ export function LeadDetailSheet({
     },
   });
 
+  const addStudentGroup = useMutation({
+    mutationFn: ({ studentId, groupId, isPrimary = false }: { studentId: number; groupId: number; isPrimary?: boolean }) =>
+      apiRequest('POST', `/api/academy/students/${studentId}/groups`, { groupId, isPrimary }),
+    onSuccess: async () => finishMutation(t('studentGroupAdded')),
+    onError: (error: Error) => toast({
+      title: t('studentGroupAddFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const removeStudentGroup = useMutation({
+    mutationFn: ({ studentId, groupId }: { studentId: number; groupId: number }) =>
+      apiRequest('DELETE', `/api/academy/students/${studentId}/groups/${groupId}`),
+    onSuccess: async () => finishMutation(t('studentGroupRemoved')),
+    onError: (error: Error) => toast({
+      title: t('studentGroupRemoveFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
   const mergeLeads = useMutation({
     mutationFn: ({ retainedLeadId, duplicateLeadId }: { retainedLeadId: number; duplicateLeadId: number }) =>
       apiRequest('POST', '/api/academy/leads/merge', { retainedLeadId, duplicateLeadId }),
@@ -651,6 +685,16 @@ export function LeadDetailSheet({
   }, [groups, selectedCourseId, selectedGroupId]);
 
   const lead = leadQuery.data;
+  const studentGroups = lead?.groups ?? [];
+  const additionalGroupOptions = useMemo(() => {
+    const enrolledGroupIds = new Set((lead?.groups ?? []).map((group) => Number(group.groupId)));
+    return groups.filter((group) => {
+      const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+      return !enrolledGroupIds.has(Number(group.id))
+        && occupied < Number(group.maxStudents || 12)
+        && ['open', 'in_progress'].includes(String(group.status));
+    });
+  }, [groups, lead?.groups]);
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const phoneHref = primaryPhone ? `tel:${primaryPhone.replace(/[^\d+]/g, '')}` : undefined;
@@ -1041,7 +1085,7 @@ export function LeadDetailSheet({
                             name="enrolledGroupId"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('group')}</FormLabel>
+                                <FormLabel>{lead.studentId ? t('primaryGroup') : t('group')}</FormLabel>
                                 <Select value={field.value || 'none'} onValueChange={(value) => {
                                   const nextValue = value === 'none' ? '' : value;
                                   field.onChange(nextValue);
@@ -1055,7 +1099,7 @@ export function LeadDetailSheet({
                                   </FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      <SelectItem value="none">{t('noGroup')}</SelectItem>
+                                      {!lead.studentId ? <SelectItem value="none">{t('noGroup')}</SelectItem> : null}
                                       {availableGroups.map((group) => {
                                         const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
                                         return (
@@ -1071,6 +1115,80 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
+                          {lead.studentId ? (
+                            <FormItem className="md:col-span-2">
+                              <FormLabel>{t('studentGroups')}</FormLabel>
+                              <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+                                <Select
+                                  value="none"
+                                  onValueChange={(value) => {
+                                    if (value === 'none') return;
+                                    addStudentGroup.mutate({
+                                      studentId: Number(lead.studentId),
+                                      groupId: Number(value),
+                                    });
+                                  }}
+                                  disabled={addStudentGroup.isPending || removeStudentGroup.isPending || additionalGroupOptions.length === 0}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={t('addStudentToGroup')} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectGroup>
+                                      <SelectItem value="none">{t('addStudentToGroup')}</SelectItem>
+                                      {additionalGroupOptions.map((group) => {
+                                        const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+                                        return (
+                                          <SelectItem key={group.id} value={String(group.id)}>
+                                            {group.name} · {occupied}/{group.maxStudents || 12}
+                                          </SelectItem>
+                                        );
+                                      })}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+
+                                <div className="space-y-2">
+                                  {studentGroups.map((group) => (
+                                    <div key={group.groupId} className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium">{group.groupName}</p>
+                                        {group.courseName ? <p className="truncate text-xs text-muted-foreground">{group.courseName}</p> : null}
+                                      </div>
+                                      {group.isPrimary ? <Badge variant="secondary">{t('primaryGroup')}</Badge> : null}
+                                      {!group.isPrimary ? (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          disabled={addStudentGroup.isPending || removeStudentGroup.isPending}
+                                          onClick={() => addStudentGroup.mutate({
+                                            studentId: Number(lead.studentId),
+                                            groupId: Number(group.groupId),
+                                            isPrimary: true,
+                                          })}
+                                        >
+                                          {t('makePrimaryGroup')}
+                                        </Button>
+                                      ) : null}
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        disabled={addStudentGroup.isPending || removeStudentGroup.isPending || studentGroups.length <= 1}
+                                        onClick={() => removeStudentGroup.mutate({
+                                          studentId: Number(lead.studentId),
+                                          groupId: Number(group.groupId),
+                                        })}
+                                      >
+                                        {t('removeFromGroup')}
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </FormItem>
+                          ) : null}
                           <FormField
                             control={leadForm.control}
                             name="expectedPaymentUzs"

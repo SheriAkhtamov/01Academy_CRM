@@ -39,7 +39,7 @@ export default function AdminTasksPage() {
 
     const { data: usersData } = useQuery<ApiUser[]>({
         queryKey: ['/api/users'],
-        enabled: isTaskSupervisor,
+        enabled: Boolean(user),
     });
 
     const currentUser: UserMini | null = useMemo(() => (
@@ -49,16 +49,15 @@ export default function AdminTasksPage() {
     ), [user]);
 
     const users: UserMini[] = useMemo(
-        () => {
-            if (!isTaskSupervisor) {
-                return currentUser ? [currentUser] : [];
-            }
-
-            return (usersData ?? [])
-                    .filter((u) => u.isActive !== false)
-                    .map((u) => ({ id: u.id, fullName: u.fullName, position: u.position, workspace: u.workspace }));
-        },
-        [currentUser, isTaskSupervisor, usersData],
+        () => (usersData ?? [])
+            .filter((employee) => employee.isActive !== false)
+            .map((employee) => ({
+                id: employee.id,
+                fullName: employee.fullName,
+                position: employee.position,
+                workspace: employee.workspace,
+            })),
+        [usersData],
     );
 
     const handleStatusChange = async (taskId: number, status: BoardStatus): Promise<boolean> => {
@@ -131,7 +130,7 @@ export default function AdminTasksPage() {
                 onOpenChange={setCreateOpen}
                 users={users}
                 currentUser={currentUser}
-                canAssignUsers={isTaskSupervisor}
+                canAssignUsers
             />
             <TaskDetailSheet taskId={selectedTaskId} open={detailOpen} onOpenChange={setDetailOpen} users={users} />
         </div>

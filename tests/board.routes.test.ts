@@ -180,7 +180,7 @@ describe("board routes", () => {
     }));
   });
 
-  it("blocks non-administrators from assigning tasks to another employee", async () => {
+  it("allows every employee to assign a task to another active employee", async () => {
     const app = await createApp();
     const agent = request.agent(app);
 
@@ -190,9 +190,11 @@ describe("board routes", () => {
       assigneeId: assigneeUser.id,
     });
 
-    expect(response.status).toBe(403);
-    expect(response.body).toEqual({ error: "taskAssignOtherEmployeesAdminOnly" });
-    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mockStorage.board.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      creatorId: staffUser.id,
+      assigneeId: assigneeUser.id,
+    }));
   });
 
   it("allows administrators to assign tasks to another active employee", async () => {

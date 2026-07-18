@@ -327,6 +327,49 @@ describe('academy route logic boundaries', () => {
     ]);
   });
 
+  it('requires and stores a handwritten reason when archiving with the other option', async () => {
+    const lead = leadFixture({ id: 1679, manager_id: 1, is_archived: false });
+    const archivedLead = {
+      ...lead,
+      is_archived: true,
+      archive_reason: 'Родитель попросил связаться осенью',
+      archived_by: 1,
+    };
+    let archivedPersisted = false;
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('WHERE l.id = $1')) {
+        return { rows: [archivedPersisted ? archivedLead : lead] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('UPDATE "academy_leads"') && sql.includes('"is_archived" = $2')) {
+        archivedPersisted = true;
+        return { rows: [archivedLead] };
+      }
+      return emptyResult();
+    });
+    const app = await createApp();
+
+    const missingReason = await request(app)
+      .post('/api/academy/leads/1679/archive')
+      .send({ reason: 'other' });
+    expect(missingReason.status).toBe(400);
+    expect(missingReason.body.error).toBe('archiveCustomReasonRequired');
+
+    const response = await request(app)
+      .post('/api/academy/leads/1679/archive')
+      .send({ reason: 'other', customReason: '  Родитель попросил связаться осенью  ' });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.archiveReason).toBe('Родитель попросил связаться осенью');
+    const archiveUpdate = mocks.clientQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"') && String(sql).includes('"archive_reason"')
+    ));
+    expect(archiveUpdate?.[1]).toContain('Родитель попросил связаться осенью');
+  });
+
   it('discards deferred side effects when an archive transaction rolls back', async () => {
     mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
     const events: string[] = [];

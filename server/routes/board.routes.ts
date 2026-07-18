@@ -90,17 +90,7 @@ const resolveAssignee = async (
     actor: User,
     options: { forceSelfForStaff: boolean },
 ): Promise<AssigneeResolution> => {
-    if (!isTaskSupervisor(actor)) {
-        if (!hasAssigneeValue(rawAssigneeId) && options.forceSelfForStaff) {
-            return { assigneeId: actor.id };
-        }
-        const requestedAssigneeId = parseAssigneeId(rawAssigneeId);
-        if (hasAssigneeValue(rawAssigneeId) && requestedAssigneeId === null) {
-            return { error: { code: 400, message: 'Invalid assignee' } };
-        }
-        if (requestedAssigneeId !== actor.id) {
-            return { error: { code: 403, message: 'taskAssignOtherEmployeesAdminOnly' } };
-        }
+    if (!hasAssigneeValue(rawAssigneeId) && options.forceSelfForStaff) {
         return { assigneeId: actor.id };
     }
 

@@ -335,7 +335,9 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
 function ArchiveLeadDialog({
   lead,
   reason,
+  customReason,
   onReasonChange,
+  onCustomReasonChange,
   onClose,
   onConfirm,
   isPending,
@@ -343,7 +345,9 @@ function ArchiveLeadDialog({
 }: {
   lead: Lead | null;
   reason: string;
+  customReason: string;
   onReasonChange: (reason: string) => void;
+  onCustomReasonChange: (reason: string) => void;
   onClose: () => void;
   onConfirm: (lead: Lead, assignToSelf: boolean) => void;
   isPending: boolean;
@@ -409,6 +413,23 @@ function ArchiveLeadDialog({
             </select>
           </div>
 
+          {reason === 'other' ? (
+            <div className="space-y-2">
+              <label htmlFor="archive-custom-reason" className="text-sm font-medium leading-none">
+                {t('archiveCustomReason')}
+              </label>
+              <Input
+                id="archive-custom-reason"
+                value={customReason}
+                onChange={(event) => onCustomReasonChange(event.target.value)}
+                placeholder={t('archiveCustomReasonPlaceholder')}
+                maxLength={80}
+                disabled={isPending}
+                autoFocus
+              />
+            </div>
+          ) : null}
+
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
               {t('cancel')}
@@ -417,10 +438,10 @@ function ArchiveLeadDialog({
               type="button"
               variant="destructive"
               onClick={() => {
-                if (!reason) return;
+                if (!reason || (reason === 'other' && !customReason.trim())) return;
                 onConfirm(lead, needsManager);
               }}
-              disabled={!reason || isPending}
+              disabled={!reason || (reason === 'other' && !customReason.trim()) || isPending}
             >
               {needsManager ? <UserCheck data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
               {isPending ? t('saving') : needsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
@@ -553,6 +574,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
   const [archiveDialogLead, setArchiveDialogLead] = useState<Lead | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
+  const [archiveCustomReason, setArchiveCustomReason] = useState('');
   const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
   const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
 
@@ -771,12 +793,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const archiveLead = useMutation({
-    mutationFn: ({ id, reason, assignToSelf }: { id: number; reason: string; assignToSelf?: boolean }) =>
-      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, assignToSelf }),
+    mutationFn: ({ id, reason, customReason, assignToSelf }: { id: number; reason: string; customReason?: string; assignToSelf?: boolean }) =>
+      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, customReason, assignToSelf }),
     onSuccess: (_lead, variables) => {
       toast({ title: variables.assignToSelf ? t('leadAssignedAndArchived') : t('leadArchived') });
       setArchiveDialogLead(null);
       setArchiveReason('');
+      setArchiveCustomReason('');
       if (selectedLeadId === variables.id) {
         setLeadSheetOpen(false);
         setSelectedLeadId(null);
@@ -950,12 +973,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
     setArchiveReason('');
+    setArchiveCustomReason('');
   }, []);
 
   const handleArchiveDialogState = useCallback((open: boolean) => {
     if (!open) {
       setArchiveDialogLead(null);
       setArchiveReason('');
+      setArchiveCustomReason('');
     }
   }, []);
 
@@ -1194,9 +1219,16 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       <ArchiveLeadDialog
         lead={archiveDialogLead}
         reason={archiveReason}
+        customReason={archiveCustomReason}
         onReasonChange={setArchiveReason}
+        onCustomReasonChange={setArchiveCustomReason}
         onClose={() => handleArchiveDialogState(false)}
-        onConfirm={(lead, assignToSelf) => archiveLead.mutate({ id: lead.id, reason: archiveReason, assignToSelf })}
+        onConfirm={(lead, assignToSelf) => archiveLead.mutate({
+          id: lead.id,
+          reason: archiveReason,
+          customReason: archiveReason === 'other' ? archiveCustomReason.trim() : undefined,
+          assignToSelf,
+        })}
         isPending={archiveLead.isPending}
         t={t}
       />

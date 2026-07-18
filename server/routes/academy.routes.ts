@@ -5174,7 +5174,7 @@ router.get('/leads/:id', async (req, res) => {
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, lead)) return;
-    const [history, assignmentHistory, communications, tasks, payments] = await Promise.all([
+    const [history, assignmentHistory, communications, tasks, payments, student] = await Promise.all([
       query(`SELECT * FROM academy_lead_stage_history WHERE lead_id = $1 ORDER BY entered_at DESC`, [id]),
       query(
         `SELECT h.*,
@@ -5192,6 +5192,15 @@ router.get('/leads/:id', async (req, res) => {
       query(`SELECT * FROM academy_communications WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
       query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
       query(`SELECT * FROM academy_payments WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
+      queryOne(
+        `SELECT student.id,
+                student.group_id AS primary_group_id,
+                ${studentGroupMembershipsSelect('student')}
+         FROM academy_students student
+         WHERE student.lead_id = $1
+         LIMIT 1`,
+        [id],
+      ),
     ]);
     const [visibleLead] = await applyLeadVisibilityForActor({
       userId: req.user!.id,
@@ -5207,6 +5216,10 @@ router.get('/leads/:id', async (req, res) => {
       communications,
       tasks,
       payments,
+      studentId: student?.id ?? null,
+      primaryGroupId: student?.primaryGroupId ?? null,
+      groups: student?.groups ?? [],
+      groupIds: student?.groupIds ?? [],
     });
   } catch (error) {
     logger.error('Failed to fetch lead', { error });
@@ -5295,10 +5308,20 @@ router.post('/leads/:id/archive', async (req, res) => {
     if (oldLead.isArchived) return res.json(oldLead);
     if (oldLead.statusCode === 'paid') return res.status(400).json({ error: 'paidLeadCannotArchive' });
 
-    const archiveReason = nullableText(req.body.reason);
-    if (!isValidLeadArchiveReason(archiveReason)) {
+    const archiveReasonCode = nullableText(req.body.reason);
+    if (!isValidLeadArchiveReason(archiveReasonCode)) {
       return res.status(400).json({ error: 'archiveReasonRequired' });
     }
+    const customArchiveReason = nullableText(req.body.customReason);
+    if (archiveReasonCode === 'other' && !customArchiveReason) {
+      return res.status(400).json({ error: 'archiveCustomReasonRequired' });
+    }
+    if (customArchiveReason && customArchiveReason.length > 80) {
+      return res.status(400).json({ error: 'archiveCustomReasonTooLong' });
+    }
+    const archiveReason = archiveReasonCode === 'other'
+      ? customArchiveReason!
+      : archiveReasonCode;
 
     const assignToSelf = toBoolean(req.body.assignToSelf, false) === true;
     let archived: Row | undefined;
@@ -5430,6 +5453,15 @@ router.patch('/leads/:id', async (req, res) => {
     const requestedGroupId = hasRequestedGroup
       ? toIdOrNull(req.body.enrolledGroupId, 'enrolledGroupId')
       : undefined;
+    const existingStudent = hasRequestedGroup
+      ? await queryOne<{ id: number; status: string }>(
+          `SELECT id, status FROM academy_students WHERE lead_id = $1 LIMIT 1`,
+          [id],
+        )
+      : null;
+    if (existingStudent?.status === 'studying' && requestedGroupId === null) {
+      return res.status(409).json({ error: 'studentRequiresAtLeastOneGroup' });
+    }
     const hasRequestedCourse = req.body.courseId !== undefined;
     const requestedCourseId = hasRequestedCourse
       ? toIdOrNull(req.body.courseId, 'courseId')
@@ -5450,7 +5482,7 @@ router.patch('/leads/:id', async (req, res) => {
       return res.status(400).json({ error: 'sourceRequired' });
     }
     const requestedGroup = requestedGroupId
-      ? await validateEnrollmentGroup(requestedGroupId, id)
+      ? await validateEnrollmentGroup(requestedGroupId, id, existingStudent?.id)
       : null;
     const hasRequestedStatus = req.body.statusCode !== undefined;
     const requestedStatusCode = hasRequestedStatus ? nullableText(req.body.statusCode) : undefined;
@@ -5581,6 +5613,12 @@ router.patch('/leads/:id', async (req, res) => {
       if (!canMutateLeadRow(req, lockedLead)) {
         throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
       }
+      const lockedStudent = hasRequestedGroup
+        ? await queryOne(
+            `SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
+            [id],
+          )
+        : null;
       const previousVersion = new Date(expectedUpdatedAt ?? oldLead.updatedAt).getTime();
       const lockedVersion = new Date(lockedLead.updatedAt).getTime();
       if (
@@ -5663,13 +5701,35 @@ router.patch('/leads/:id', async (req, res) => {
         || ['enrolled', 'paid'].includes(nextStatus);
       if (mustValidateCapacity && groupToReserve) {
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupToReserve]);
-        const lockedGroup = await validateEnrollmentGroup(groupToReserve, id);
+        const lockedGroup = await validateEnrollmentGroup(groupToReserve, id, lockedStudent?.id);
         if (req.body.enrolledGroupId !== undefined && lockedGroup) {
           updates.courseId = Number(lockedGroup.courseId);
           updates.schoolId = Number(lockedGroup.schoolId);
         }
       }
       const updated = await updateRow('academy_leads', id, updates);
+      if (updated && requestedGroupId && lockedStudent) {
+        await query(
+          `UPDATE academy_student_group_enrollments
+           SET is_primary = false, updated_at = NOW()
+           WHERE student_id = $1 AND status = 'active' AND is_primary = true`,
+          [lockedStudent.id],
+        );
+        await query(
+          `INSERT INTO academy_student_group_enrollments
+             (student_id, group_id, status, is_primary, enrolled_at, created_by)
+           VALUES ($1, $2, 'active', true, COALESCE($3, NOW()), $4)
+           ON CONFLICT (student_id, group_id) WHERE status = 'active'
+           DO UPDATE SET is_primary = true, ended_at = NULL, updated_at = NOW()`,
+          [lockedStudent.id, requestedGroupId, lockedStudent.enrolledAt, req.user!.id],
+        );
+        await updateRow('academy_students', Number(lockedStudent.id), {
+          groupId: requestedGroupId,
+          courseId: Number(updates.courseId ?? requestedGroup?.courseId),
+          schoolId: Number(updates.schoolId ?? requestedGroup?.schoolId),
+        });
+        await recalculateStudentMetrics(Number(lockedStudent.id));
+      }
       const actualManagerChanged = Boolean(
         updated
         && lockedManager
@@ -7514,7 +7574,7 @@ router.post('/students/:id/transfer', async (req, res) => {
 });
 
 router.post('/students/:id/groups', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const groupId = parseId(req.body.groupId);
@@ -7525,6 +7585,10 @@ router.post('/students/:id/groups', async (req, res) => {
     }
     const initialStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
     if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+    if (!hasLeadershipAccess(req.user)) {
+      const lead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
+      if (!lead || !ensureLeadMutationAccess(req, res, lead)) return;
+    }
 
     const student = await withTransaction(async () => {
       if (initialStudent.leadId) {
@@ -7598,7 +7662,7 @@ router.post('/students/:id/groups', async (req, res) => {
 });
 
 router.delete('/students/:id/groups/:groupId', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const groupId = parseId(req.params.groupId);
@@ -7607,6 +7671,10 @@ router.delete('/students/:id/groups/:groupId', async (req, res) => {
     }
     const initialStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
     if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+    if (!hasLeadershipAccess(req.user)) {
+      const lead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
+      if (!lead || !ensureLeadMutationAccess(req, res, lead)) return;
+    }
 
     const student = await withTransaction(async () => {
       if (initialStudent.leadId) {

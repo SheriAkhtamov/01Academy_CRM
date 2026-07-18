@@ -29,6 +29,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Form,
   FormControl,
   FormField,
@@ -70,8 +80,10 @@ import {
   Clock3,
   CreditCard,
   CalendarClock,
+  ChevronsUpDown,
   ExternalLink,
   History,
+  Loader2,
   MessageSquare,
   Phone,
   Plus,
@@ -494,6 +506,12 @@ export function LeadDetailSheet({
     onChanged();
   };
 
+  const refreshLeadGroups = async () => {
+    const refetch = leadQuery.refetch();
+    onChanged();
+    await refetch;
+  };
+
   const updateLead = useMutation({
     mutationFn: (values: LeadFormValues) => {
       const { phoneNumbers, ...rest } = values;
@@ -558,9 +576,7 @@ export function LeadDetailSheet({
         : `/api/academy/leads/${targetLeadId}/groups`,
       { groupId, isPrimary },
     ),
-    onSuccess: async (_result, variables) => finishMutation(
-      variables.studentId ? t('studentGroupAdded') : t('leadGroupAdded'),
-    ),
+    onSuccess: refreshLeadGroups,
     onError: (error: Error) => toast({
       title: t('groupAddFailed'),
       description: error.message,
@@ -583,9 +599,7 @@ export function LeadDetailSheet({
         ? `/api/academy/students/${studentId}/groups/${groupId}`
         : `/api/academy/leads/${targetLeadId}/groups/${groupId}`,
     ),
-    onSuccess: async (_result, variables) => finishMutation(
-      variables.studentId ? t('studentGroupRemoved') : t('leadGroupRemoved'),
-    ),
+    onSuccess: refreshLeadGroups,
     onError: (error: Error) => toast({
       title: t('groupRemoveFailed'),
       description: error.message,
@@ -699,33 +713,30 @@ export function LeadDetailSheet({
     onError: (error: Error) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
-  const selectedCourseId = leadForm.watch('courseId');
-  const selectedGroupId = leadForm.watch('enrolledGroupId');
   const phoneNumbers = leadForm.watch('phoneNumbers') ?? [''];
   const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
   const phoneNumbersMessage = typeof leadForm.formState.errors.phoneNumbers?.message === 'string'
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
-  const availableGroups = useMemo(() => {
-    return groups.filter((group) => {
-      const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-      return (!selectedCourseId || !group.courseId || Number(group.courseId) === Number(selectedCourseId))
-        && (occupied < Number(group.maxStudents || 12) || String(group.id) === selectedGroupId)
-        && ['open', 'in_progress'].includes(String(group.status));
-    });
-  }, [groups, selectedCourseId, selectedGroupId]);
-
   const lead = leadQuery.data;
   const studentGroups = lead?.groups ?? [];
-  const additionalGroupOptions = useMemo(() => {
-    const enrolledGroupIds = new Set((lead?.groups ?? []).map((group) => Number(group.groupId)));
+  const selectedGroupIds = useMemo(
+    () => new Set((lead?.groups ?? []).map((group) => Number(group.groupId))),
+    [lead?.groups],
+  );
+  const selectableGroups = useMemo(() => {
     return groups.filter((group) => {
-      const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-      return !enrolledGroupIds.has(Number(group.id))
-        && occupied < Number(group.maxStudents || 12)
-        && ['open', 'in_progress'].includes(String(group.status));
+      const isSelected = selectedGroupIds.has(Number(group.id));
+      return isSelected || ['open', 'in_progress'].includes(String(group.status));
     });
-  }, [groups, lead?.groups]);
+  }, [groups, selectedGroupIds]);
+  const primaryGroupId = Number(
+    studentGroups.find((group) => group.isPrimary)?.groupId
+    ?? lead?.primaryGroupId
+    ?? lead?.enrolledGroupId
+    ?? 0,
+  ) || null;
+  const groupMutationPending = addLeadGroup.isPending || removeLeadGroup.isPending;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const phoneHref = primaryPhone ? `tel:${primaryPhone.replace(/[^\d+]/g, '')}` : undefined;
@@ -1091,11 +1102,6 @@ export function LeadDetailSheet({
                                 <Select value={field.value || 'none'} onValueChange={(value) => {
                                   const nextCourseId = value === 'none' ? '' : value;
                                   field.onChange(nextCourseId);
-                                  const currentGroupId = leadForm.getValues('enrolledGroupId');
-                                  const currentGroup = groups.find((group) => String(group.id) === currentGroupId);
-                                  if (currentGroupId && (!nextCourseId || (currentGroup?.courseId && Number(currentGroup.courseId) !== Number(nextCourseId)))) {
-                                    leadForm.setValue('enrolledGroupId', '', { shouldDirty: true, shouldValidate: true });
-                                  }
                                 }}>
                                   <FormControl><SelectTrigger><SelectValue placeholder={t('courseNotSelected')} /></SelectTrigger></FormControl>
                                   <SelectContent>
@@ -1111,123 +1117,119 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
-                          <FormField
-                            control={leadForm.control}
-                            name="enrolledGroupId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{studentGroups.length > 0 ? t('primaryGroup') : t('group')}</FormLabel>
-                                <Select value={field.value || 'none'} onValueChange={(value) => {
-                                  const nextValue = value === 'none' ? '' : value;
-                                  field.onChange(nextValue);
-                                  const group = groups.find((item) => String(item.id) === nextValue);
-                                  if (group?.courseId) leadForm.setValue('courseId', String(group.courseId), { shouldDirty: true });
-                                }}>
-                                  <FormControl>
-                                    <SelectTrigger title={t('leadGroupAssignmentHint')}>
-                                      <SelectValue placeholder={t('noGroup')} />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      {!lead.studentId ? <SelectItem value="none">{t('noGroup')}</SelectItem> : null}
-                                      {availableGroups.map((group) => {
-                                        const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-                                        return (
-                                          <SelectItem key={group.id} value={String(group.id)}>
-                                            {group.name} · {occupied}/{group.maxStudents || 12}
-                                          </SelectItem>
-                                        );
-                                      })}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormItem className="md:col-span-2">
-                              <FormLabel>{lead.studentId ? t('studentGroups') : t('leadGroups')}</FormLabel>
-                              <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-                                <Select
-                                  value="none"
-                                  onValueChange={(value) => {
-                                    if (value === 'none') return;
-                                    addLeadGroup.mutate({
-                                      leadId: lead.id,
-                                      studentId: lead.studentId,
-                                      groupId: Number(value),
-                                    });
-                                  }}
-                                  disabled={addLeadGroup.isPending || removeLeadGroup.isPending || additionalGroupOptions.length === 0}
+                          <FormItem>
+                            <FormLabel htmlFor="lead-groups-trigger">{t('navGroups')}</FormLabel>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  id="lead-groups-trigger"
+                                  type="button"
+                                  variant="outline"
+                                  className="h-auto min-h-10 w-full justify-between gap-2 px-3 py-2 font-normal"
                                 >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder={t('addGroup')} />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      <SelectItem value="none">{t('addGroup')}</SelectItem>
-                                      {additionalGroupOptions.map((group) => {
-                                        const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-                                        return (
-                                          <SelectItem key={group.id} value={String(group.id)}>
-                                            {group.name} · {occupied}/{group.maxStudents || 12}
-                                          </SelectItem>
-                                        );
-                                      })}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-
-                                <div className="space-y-2">
-                                  {studentGroups.length === 0 ? (
-                                    <p className="py-1 text-sm text-muted-foreground">{t('noGroupsSelected')}</p>
-                                  ) : null}
-                                  {studentGroups.map((group) => (
-                                    <div key={group.groupId} className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm font-medium">{group.groupName}</p>
-                                        {group.courseName ? <p className="truncate text-xs text-muted-foreground">{group.courseName}</p> : null}
-                                      </div>
-                                      {group.isPrimary ? <Badge variant="secondary">{t('primaryGroup')}</Badge> : null}
-                                      {!group.isPrimary ? (
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="ghost"
-                                          disabled={addLeadGroup.isPending || removeLeadGroup.isPending}
-                                          onClick={() => addLeadGroup.mutate({
+                                  <span className="flex min-w-0 flex-1 flex-wrap gap-1.5 text-left">
+                                    {studentGroups.length === 0 ? (
+                                      <span className="text-muted-foreground">{t('noGroup')}</span>
+                                    ) : (
+                                      <>
+                                        {studentGroups.slice(0, 2).map((group) => (
+                                          <Badge
+                                            key={group.groupId}
+                                            variant="secondary"
+                                            className={group.isPrimary ? 'border border-primary/30 bg-primary/10' : undefined}
+                                          >
+                                            <span className="max-w-56 truncate">{group.groupName}</span>
+                                          </Badge>
+                                        ))}
+                                        {studentGroups.length > 2 ? (
+                                          <Badge variant="outline">+{studentGroups.length - 2}</Badge>
+                                        ) : null}
+                                      </>
+                                    )}
+                                  </span>
+                                  {groupMutationPending ? (
+                                    <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                                  ) : (
+                                    <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+                                  )}
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="start"
+                                className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 max-w-[calc(100vw-2rem)]"
+                              >
+                                <DropdownMenuLabel>{t('chooseGroups')}</DropdownMenuLabel>
+                                {selectableGroups.map((group) => {
+                                  const groupId = Number(group.id);
+                                  const isSelected = selectedGroupIds.has(groupId);
+                                  const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+                                  const isFull = occupied >= Number(group.maxStudents || 12);
+                                  const cannotRemoveLastStudentGroup = Boolean(lead.studentId)
+                                    && isSelected
+                                    && studentGroups.length <= 1;
+                                  return (
+                                    <DropdownMenuCheckboxItem
+                                      key={group.id}
+                                      checked={isSelected}
+                                      disabled={groupMutationPending || (!isSelected && isFull) || cannotRemoveLastStudentGroup}
+                                      onSelect={(event) => event.preventDefault()}
+                                      onCheckedChange={() => {
+                                        if (isSelected) {
+                                          removeLeadGroup.mutate({
                                             leadId: lead.id,
                                             studentId: lead.studentId,
-                                            groupId: Number(group.groupId),
-                                            isPrimary: true,
-                                          })}
-                                        >
-                                          {t('makePrimaryGroup')}
-                                        </Button>
-                                      ) : null}
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="ghost"
-                                        disabled={
-                                          addLeadGroup.isPending
-                                          || removeLeadGroup.isPending
-                                          || (Boolean(lead.studentId) && studentGroups.length <= 1)
+                                            groupId,
+                                          });
+                                        } else {
+                                          addLeadGroup.mutate({
+                                            leadId: lead.id,
+                                            studentId: lead.studentId,
+                                            groupId,
+                                          });
                                         }
-                                        onClick={() => removeLeadGroup.mutate({
+                                      }}
+                                    >
+                                      <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                        {occupied}/{group.maxStudents || 12}
+                                      </span>
+                                    </DropdownMenuCheckboxItem>
+                                  );
+                                })}
+
+                                {studentGroups.length > 1 ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel>{t('primaryGroup')}</DropdownMenuLabel>
+                                    <DropdownMenuRadioGroup
+                                      value={primaryGroupId ? String(primaryGroupId) : undefined}
+                                      onValueChange={(value) => {
+                                        const groupId = Number(value);
+                                        if (!groupId || groupId === primaryGroupId) return;
+                                        addLeadGroup.mutate({
                                           leadId: lead.id,
                                           studentId: lead.studentId,
-                                          groupId: Number(group.groupId),
-                                        })}
-                                      >
-                                        {t('removeFromGroup')}
-                                      </Button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </FormItem>
+                                          groupId,
+                                          isPrimary: true,
+                                        });
+                                      }}
+                                    >
+                                      {studentGroups.map((group) => (
+                                        <DropdownMenuRadioItem
+                                          key={group.groupId}
+                                          value={String(group.groupId)}
+                                          disabled={groupMutationPending}
+                                          onSelect={(event) => event.preventDefault()}
+                                        >
+                                          <span className="truncate">{group.groupName}</span>
+                                        </DropdownMenuRadioItem>
+                                      ))}
+                                    </DropdownMenuRadioGroup>
+                                  </>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </FormItem>
                           <FormField
                             control={leadForm.control}
                             name="expectedPaymentUzs"

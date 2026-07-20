@@ -62,4 +62,54 @@ describe('OnlinePbxClient', () => {
     await expect(client.initiateCall('101', '+998901234567')).resolves.toEqual({ uuid: 'retried-call' });
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
+
+  it('loads WebRTC credentials for the employee extension', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
+      .mockResolvedValueOnce(jsonResponse({
+        status: '1',
+        data: [{
+          num: '107',
+          webrtc: {
+            host: 'pbx38153.onpbx.ru:8082',
+            user: '107',
+            password: 'browser-sip-password',
+          },
+        }],
+      }));
+    const client = new OnlinePbxClient({
+      domain: 'pbx38153.onpbx.ru',
+      authKey: 'permanent-token',
+    }, fetchMock as unknown as typeof fetch);
+
+    await expect(client.getWebRtcCredentials('107')).resolves.toEqual({
+      extension: '107',
+      username: '107',
+      password: 'browser-sip-password',
+      sipDomain: 'pbx38153.onpbx.ru',
+      websocketUrl: 'wss://pbx38153.onpbx.ru:8082',
+      aor: 'sip:107@pbx38153.onpbx.ru',
+    });
+    expect(String(fetchMock.mock.calls[1][1]?.body)).toContain('fields=num%2Cname%2Cenabled%2Cwebrtc');
+  });
+
+  it('keeps provider diagnostics when a call request is rejected', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
+      .mockResolvedValueOnce(jsonResponse({
+        status: '0',
+        errorCode: 'USER_NOT_REGISTERED',
+        comment: 'Extension is offline',
+      }));
+    const client = new OnlinePbxClient({
+      domain: 'pbx38153.onpbx.ru',
+      authKey: 'permanent-token',
+    }, fetchMock as unknown as typeof fetch);
+
+    await expect(client.initiateCall('107', '+998901234567')).rejects.toMatchObject({
+      clientCode: 'onlinePbxRequestFailed',
+      providerCode: 'USER_NOT_REGISTERED',
+      providerComment: 'Extension is offline',
+    });
+  });
 });

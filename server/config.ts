@@ -77,6 +77,7 @@ interface AppConfig {
       domain?: string;
       authKey?: string;
       apiUrl?: string;
+      webhookSecret?: string;
     };
   };
 }

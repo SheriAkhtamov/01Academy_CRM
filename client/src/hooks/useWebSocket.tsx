@@ -109,6 +109,9 @@ export function useWebSocket() {
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${message.data.id}`] });
           }
           break;
+        case 'TELEPHONY_CALL_UPDATED':
+          queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls'] });
+          break;
         default:
           devLog('Unhandled WebSocket message type:', message.type);
       }

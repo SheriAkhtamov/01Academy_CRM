@@ -23,6 +23,7 @@ import { appConfig } from '../config';
 import { setBroadcastFunction as setMessageBroadcast } from './message.routes';
 import { setBroadcastFunction as setBoardBroadcast } from './board.routes';
 import { setInstagramBroadcastFunction } from '../services/instagram';
+import { setTelephonyBroadcastFunction } from './telephony.routes';
 
 const PgStore = pgSession(session);
 const WS_OPEN_STATE = 1;
@@ -210,6 +211,7 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     setMessageBroadcast(broadcastToClients);
     setBoardBroadcast(broadcastToClients);
     setInstagramBroadcastFunction(broadcastToClients);
+    setTelephonyBroadcastFunction(broadcastToClients);
 
     return httpServer;
 }

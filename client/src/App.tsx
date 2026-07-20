@@ -22,6 +22,7 @@ import AuditPage from '@/pages/admin/audit';
 import FinanceCenter from '@/pages/finance-center';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
+import { TelephonyProvider } from '@/contexts/TelephonyContext';
 
 function WorkspaceBasedHome() {
   const { user } = useAuth();
@@ -272,12 +273,14 @@ function App() {
     <ThemeProvider defaultTheme="system" storageKey="academy-crm-theme">
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <AppErrorBoundary>
-              <Router />
-            </AppErrorBoundary>
-          </TooltipProvider>
+          <TelephonyProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AppErrorBoundary>
+                <Router />
+              </AppErrorBoundary>
+            </TooltipProvider>
+          </TelephonyProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>

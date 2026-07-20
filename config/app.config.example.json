@@ -81,10 +81,11 @@
       "spreadsheetId": ""
     },
     "onlinePbx": {
-      "_comment": "Domain is the PBX hostname, for example pbx12345.onpbx.ru. Keep authKey only in app.config.json and never commit it.",
+      "_comment": "Domain is the PBX hostname, for example pbx12345.onpbx.ru. Keep authKey and webhookSecret only in app.config.json and never commit them.",
       "domain": "",
       "authKey": "",
-      "apiUrl": "https://api2.onlinepbx.ru"
+      "apiUrl": "https://api2.onlinepbx.ru",
+      "webhookSecret": "CHANGE-ME-use-a-long-random-string-here"
     }
   }
 }

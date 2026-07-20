@@ -87,7 +87,7 @@ morgan.token('response-time-ms', (req, res) => {
 
 app.use(morgan(':method :url :status :response-time ms', {
   stream: { write: (message: string) => logger.info(message.trim()) },
-  skip: (req) => !req.path.startsWith('/api'),
+  skip: (req) => !req.path.startsWith('/api') || req.path === '/api/telephony/webhook',
 }));
 
 (async () => {

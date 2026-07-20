@@ -800,6 +800,39 @@ export const academyIntegrationLogs = pgTable("academy_integration_logs", {
   providerIdx: index("academy_integration_logs_provider_idx").on(table.provider),
 }));
 
+export const telephonyCalls = pgTable("telephony_calls", {
+  id: serial("id").primaryKey(),
+  clientCallId: varchar("client_call_id", { length: 255 }),
+  providerCallId: varchar("provider_call_id", { length: 120 }),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  extension: varchar("extension", { length: 20 }),
+  direction: varchar("direction", { length: 20 }).notNull(),
+  status: varchar("status", { length: 40 }).notNull(),
+  phone: varchar("phone", { length: 50 }).notNull(),
+  contactType: varchar("contact_type", { length: 30 }),
+  contactId: integer("contact_id"),
+  contactName: varchar("contact_name", { length: 255 }),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  answeredAt: timestamp("answered_at"),
+  endedAt: timestamp("ended_at"),
+  durationSeconds: integer("duration_seconds").notNull().default(0),
+  talkSeconds: integer("talk_seconds").notNull().default(0),
+  hangupCause: varchar("hangup_cause", { length: 120 }),
+  recordingUrl: text("recording_url"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  clientCallUnique: uniqueIndex("telephony_calls_client_call_unique")
+    .on(table.clientCallId)
+    .where(sql`${table.clientCallId} IS NOT NULL`),
+  providerCallUnique: uniqueIndex("telephony_calls_provider_call_unique")
+    .on(table.providerCallId)
+    .where(sql`${table.providerCallId} IS NOT NULL`),
+  userStartedIdx: index("telephony_calls_user_started_idx").on(table.userId, table.startedAt),
+  phoneStartedIdx: index("telephony_calls_phone_started_idx").on(table.phone, table.startedAt),
+}));
+
 export const instagramAccounts = pgTable("instagram_accounts", {
   id: serial("id").primaryKey(),
   igUserId: varchar("ig_user_id", { length: 80 }).notNull(),

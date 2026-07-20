@@ -1,30 +1,30 @@
-import { useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { useCallback } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { translations, type TranslationKey } from '@/lib/i18n';
+import { useTelephony } from '@/contexts/TelephonyContext';
 
 export const useOnlinePbxCall = () => {
   const { t } = useTranslation();
-  const mutation = useMutation({
-    mutationFn: (phone: string) => apiRequest('POST', '/api/telephony/calls', { phone }),
-    onSuccess: () => {
-      toast({
-        title: t('onlinePbxCallStarted'),
-        description: t('onlinePbxCallStartedDescription'),
-      });
-    },
-    onError: (error: Error) => {
+  const telephony = useTelephony();
+
+  const startCall = useCallback((phone: string) => {
+    void telephony.startCall(phone).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'onlinePbxCallFailed';
+      const description = message in translations
+        ? t(message as TranslationKey)
+        : t('onlinePbxCallFailed');
       toast({
         title: t('onlinePbxCallFailed'),
-        description: error.message,
+        description,
         variant: 'destructive',
       });
-    },
-  });
+    });
+  }, [t, telephony]);
 
   return {
-    startCall: mutation.mutate,
-    isPending: mutation.isPending,
-    pendingPhone: mutation.variables,
+    startCall,
+    isPending: telephony.isPending,
+    pendingPhone: telephony.pendingPhone,
   };
 };

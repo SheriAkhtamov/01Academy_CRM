@@ -814,4 +814,8 @@
     background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
     box-shadow: var(--shadow-primary);
   }
+
+  .telephony-control {
+    @apply flex w-20 flex-col items-center justify-center gap-1.5 rounded-2xl bg-slate-100 px-2 py-3 text-xs font-medium text-slate-700 transition hover:bg-slate-200;
+  }
 }

@@ -25,6 +25,7 @@ const localizeApiErrorMessage = (message: string, status: number) => {
     onlinePbxInvalidPhone: i18n.t("onlinePbxInvalidPhone"),
     onlinePbxCallerNumberMissing: i18n.t("onlinePbxCallerNumberMissing"),
     onlinePbxInvalidExtension: i18n.t("onlinePbxInvalidExtension"),
+    onlinePbxWebRtcUnavailable: i18n.t("onlinePbxWebRtcUnavailable"),
   } as const;
   if (normalized in onlinePbxErrors) {
     return onlinePbxErrors[normalized as keyof typeof onlinePbxErrors];

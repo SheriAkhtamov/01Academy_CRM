@@ -11,6 +11,7 @@ type OnlinePbxResponse<T> = {
   data?: T;
   comment?: string;
   error?: string;
+  errorCode?: string;
   isNotAuth?: boolean;
 };
 
@@ -28,18 +29,55 @@ type OnlinePbxUser = {
   num?: string | number;
   name?: string;
   enabled?: string | number | boolean;
+  device?: {
+    agent?: string;
+    exp?: number;
+    ip?: string;
+    port?: string;
+  } | null;
+  webrtc?: {
+    host?: string;
+    user?: string | number;
+    password?: string;
+  } | null;
 };
 
 export type OnlinePbxExtension = {
   extension: string;
   name: string | null;
   enabled: boolean;
+  registered: boolean;
+};
+
+export type OnlinePbxWebRtcCredentials = {
+  extension: string;
+  username: string;
+  password: string;
+  sipDomain: string;
+  websocketUrl: string;
+  aor: string;
+};
+
+export type OnlinePbxCallHistoryItem = {
+  uuid: string;
+  callerIdNumber: string;
+  destinationNumber: string;
+  startStamp: number;
+  endStamp: number;
+  duration: number;
+  talkTime: number;
+  hangupCause: string;
+  direction: string;
+  gateway: string;
+  events: Array<Record<string, unknown>>;
 };
 
 export class OnlinePbxError extends Error {
   constructor(
     public readonly clientCode: string,
     public readonly statusCode = 502,
+    public readonly providerCode?: string,
+    public readonly providerComment?: string,
   ) {
     super(clientCode);
     this.name = 'OnlinePbxError';
@@ -166,22 +204,126 @@ export class OnlinePbxClient {
       return this.request<T>(path, body, false);
     }
 
-    if (!response.ok || String(payload.status) !== '1' || payload.data === undefined) {
-      throw new OnlinePbxError('onlinePbxRequestFailed');
+    if (!response.ok || String(payload.status) !== '1') {
+      throw new OnlinePbxError(
+        'onlinePbxRequestFailed',
+        502,
+        payload.errorCode,
+        payload.comment || payload.error,
+      );
     }
-    return payload.data;
+    return payload.data as T;
   }
 
   async listExtensions(): Promise<OnlinePbxExtension[]> {
-    const data = await this.request<OnlinePbxUser[]>('user/get', new URLSearchParams());
+    const data = await this.request<OnlinePbxUser[]>(
+      'user/get',
+      new URLSearchParams({ fields: 'num,name,enabled,device' }),
+    );
     if (!Array.isArray(data)) throw new OnlinePbxError('onlinePbxInvalidResponse');
     return data
       .map((user) => ({
         extension: String(user.num ?? '').trim(),
         name: user.name?.trim() || null,
         enabled: !['0', 'false'].includes(String(user.enabled).toLowerCase()),
+        registered: Boolean(user.device?.ip),
       }))
       .filter((user) => /^\d{2,10}$/.test(user.extension));
+  }
+
+  async getWebRtcCredentials(extension: string): Promise<OnlinePbxWebRtcCredentials> {
+    if (!/^\d{2,10}$/.test(extension)) {
+      throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
+    }
+
+    const data = await this.request<OnlinePbxUser[]>(
+      'user/get',
+      new URLSearchParams({
+        num: extension,
+        fields: 'num,name,enabled,webrtc',
+      }),
+    );
+    const user = Array.isArray(data) ? data[0] : null;
+    const username = String(user?.webrtc?.user ?? '').trim();
+    const password = user?.webrtc?.password?.trim() ?? '';
+    const rawHost = user?.webrtc?.host?.trim() ?? '';
+    const sipDomain = rawHost.replace(/:\d+$/, '') || this.getDomain();
+    const websocketHost = rawHost || `${this.getDomain()}:8082`;
+
+    if (!username || !password || !sipDomain || !websocketHost) {
+      throw new OnlinePbxError('onlinePbxWebRtcUnavailable', 503);
+    }
+
+    return {
+      extension,
+      username,
+      password,
+      sipDomain,
+      websocketUrl: `wss://${websocketHost}`,
+      aor: `sip:${username}@${sipDomain}`,
+    };
+  }
+
+  async createExtension(input: { extension: string; password: string; name: string }) {
+    await this.request<unknown>(
+      'user/add',
+      new URLSearchParams({
+        num: input.extension,
+        pass: input.password,
+        name: input.name,
+      }),
+    );
+  }
+
+  async updateExtension(input: { extension: string; name?: string; password?: string }) {
+    const body = new URLSearchParams({ num: input.extension });
+    if (input.name) body.set('name', input.name);
+    if (input.password) body.set('pass', input.password);
+    await this.request<unknown>('user/edit', body);
+  }
+
+  async getCallHistory(filters: {
+    uuid?: string;
+    phoneNumbers?: string;
+    startStampFrom?: number;
+    startStampTo?: number;
+  }): Promise<OnlinePbxCallHistoryItem[]> {
+    const body = new URLSearchParams();
+    if (filters.uuid) body.set('uuid', filters.uuid);
+    if (filters.phoneNumbers) body.set('phone_numbers', filters.phoneNumbers);
+    if (filters.startStampFrom) body.set('start_stamp_from', String(filters.startStampFrom));
+    if (filters.startStampTo) body.set('start_stamp_to', String(filters.startStampTo));
+    if ([...body.keys()].length === 0) {
+      body.set('start_stamp_from', String(Math.floor(Date.now() / 1000) - 24 * 60 * 60));
+    }
+
+    const data = await this.request<Array<Record<string, unknown>>>(
+      'mongo_history/search',
+      body,
+    );
+    if (!Array.isArray(data)) throw new OnlinePbxError('onlinePbxInvalidResponse');
+
+    return data.map((item) => ({
+      uuid: String(item.uuid ?? ''),
+      callerIdNumber: String(item.caller_id_number ?? ''),
+      destinationNumber: String(item.destination_number ?? ''),
+      startStamp: Number(item.start_stamp ?? 0),
+      endStamp: Number(item.end_stamp ?? 0),
+      duration: Number(item.duration ?? 0),
+      talkTime: Number(item.user_talk_time ?? 0),
+      hangupCause: String(item.hangup_cause ?? ''),
+      direction: String(item.accountcode ?? ''),
+      gateway: String(item.gateway ?? ''),
+      events: Array.isArray(item.events) ? item.events as Array<Record<string, unknown>> : [],
+    })).filter((item) => item.uuid);
+  }
+
+  async getCallRecordingUrl(uuid: string): Promise<string | null> {
+    const data = await this.request<string | Array<Record<string, unknown>>>(
+      'mongo_history/search',
+      new URLSearchParams({ uuid, download: '1' }),
+    );
+    return typeof data === 'string' && /^https:\/\//.test(data) ? data : null;
   }
 
   async initiateCall(from: string, to: string): Promise<{ uuid: string }> {

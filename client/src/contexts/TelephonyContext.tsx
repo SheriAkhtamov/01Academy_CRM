@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Session } from 'sip.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -49,21 +48,29 @@ type Credentials = {
   aor: string;
 };
 
-type SessionManagerLike = {
-  delegate?: Record<string, (...args: any[]) => void>;
-  connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
-  register: (options?: unknown) => Promise<void>;
-  unregister: () => Promise<void>;
-  call: (destination: string, inviterOptions?: unknown, inviteOptions?: unknown) => Promise<Session>;
-  answer: (session: Session) => Promise<void>;
-  decline: (session: Session) => Promise<void>;
-  hangup: (session: Session) => Promise<void>;
-  hold: (session: Session) => Promise<void>;
-  unhold: (session: Session) => Promise<void>;
-  mute: (session: Session) => void;
-  unmute: (session: Session) => void;
-  sendDTMF: (session: Session, tone: string) => Promise<void>;
+type VertoDialogLike = {
+  callID: string;
+  cause?: string;
+  direction?: { name?: string };
+  state?: { name?: string };
+  params?: Record<string, unknown>;
+  answer: (options?: Record<string, unknown>) => void;
+  hangup: (options?: Record<string, unknown>) => void;
+  setMute: (mode: 'toggle' | 'on' | 'off') => boolean;
+  getMute: () => boolean;
+  toggleHold: (options?: Record<string, unknown>) => void;
+  dtmf: (tone: string) => void;
+};
+
+type VertoClientLike = {
+  socketReady: () => boolean;
+  closeSocket: (code?: number) => void;
+  newCall: (
+    options: Record<string, unknown>,
+    callbacks?: Record<string, (...args: any[]) => void>,
+    onSuccess?: () => void,
+    onError?: (error?: unknown) => void,
+  ) => VertoDialogLike | undefined;
 };
 
 type TelephonyContextValue = {
@@ -92,9 +99,16 @@ const formatPhone = (value: unknown) => {
   return String(value ?? '').trim();
 };
 
-const sessionPhone = (session: Session) => {
-  const user = session.remoteIdentity?.uri?.user;
-  return formatPhone(user ?? session.remoteIdentity?.friendlyName ?? '');
+const dialogPhone = (dialog: VertoDialogLike) => {
+  const params = dialog.params ?? {};
+  const values = [
+    params.caller_id_number,
+    params.remote_caller_id_number,
+    params.destination_number,
+    params.callee_id_number,
+  ];
+  const external = values.find((value) => String(value ?? '').replace(/\D/g, '').length >= 7);
+  return formatPhone(external ?? values.find(Boolean) ?? '');
 };
 
 const durationFrom = (start: string | null, end = Date.now()) => {
@@ -110,8 +124,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const [extension, setExtension] = useState<string | null>(null);
   const [activeCall, setActiveCallState] = useState<ActiveTelephonyCall | null>(null);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
-  const managerRef = useRef<SessionManagerLike | null>(null);
-  const sessionRef = useRef<Session | null>(null);
+  const managerRef = useRef<VertoClientLike | null>(null);
+  const sessionRef = useRef<VertoDialogLike | null>(null);
   const credentialsRef = useRef<Credentials | null>(null);
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -195,7 +209,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     }
 
     let disposed = false;
-    let manager: SessionManagerLike | null = null;
+    let manager: VertoClientLike | null = null;
 
     const connect = async () => {
       setConnectionState('connecting');
@@ -207,85 +221,93 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         ringtoneRef.current = new Audio(`https://${credentials.sipDomain}/assets/audio/ring.mp3`);
         ringtoneRef.current.loop = true;
 
-        const sip = await import('sip.js');
+        const vertoModule = await import('@xswitch/rtc');
         if (disposed || !remoteAudioRef.current) return;
-        manager = new sip.Web.SessionManager(credentials.websocketUrl, {
-          aor: credentials.aor,
-          userAgentOptions: {
-            authorizationUsername: credentials.username,
-            authorizationPassword: credentials.password,
-            logBuiltinEnabled: false,
-            logConfiguration: false,
-            contactParams: { transport: 'wss' },
-            noAnswerTimeout: 120,
-          },
-          registererOptions: { expires: 1800, refreshFrequency: 90 },
-          maxSimultaneousSessions: 1,
-          reconnectionAttempts: 8,
-          reconnectionDelay: 3,
-          registrationRetry: true,
-          registrationRetryInterval: 4,
-          media: {
-            constraints: { audio: true, video: false },
-            remote: { audio: remoteAudioRef.current },
-          },
-        }) as unknown as SessionManagerLike;
-        managerRef.current = manager;
+        const Verto = vertoModule.Verto;
 
-        manager.delegate = {
-          onServerConnect: () => setConnectionState('connecting'),
-          onServerDisconnect: () => setConnectionState('offline'),
-          onRegistered: () => setConnectionState('ready'),
-          onUnregistered: () => {
-            if (!disposed) setConnectionState('offline');
-          },
-          onCallReceived: (session: Session) => {
-            if (sessionRef.current) {
-              void manager?.decline(session);
+        const onDialogState = (dialog: VertoDialogLike) => {
+          if (disposed) return;
+          const state = dialog.state?.name ?? 'unknown';
+          const direction = dialog.direction?.name === 'inbound' ? 'incoming' : 'outgoing';
+          const callId = String(dialog.callID || `call-${Date.now()}`);
+          sessionRef.current = dialog;
+
+          if (direction === 'incoming' && ['new', 'requesting', 'trying', 'ringing'].includes(state)) {
+            const existing = activeCallRef.current;
+            if (existing && existing.clientCallId !== callId && !terminalStatuses.includes(existing.status)) {
+              dialog.hangup({ cause: 'USER_BUSY' });
               return;
             }
-            sessionRef.current = session;
-            const phone = sessionPhone(session);
-            const incoming: ActiveTelephonyCall = {
-              clientCallId: session.id,
-              direction: 'incoming',
-              status: 'ringing',
-              phone,
-              contact: null,
-              startedAt: new Date().toISOString(),
-              answeredAt: null,
-              endedAt: null,
-              muted: false,
-              held: false,
-              errorCode: null,
-            };
-            setActiveCall(incoming);
-            void reportCall(incoming);
-            void ringtoneRef.current?.play().catch(() => undefined);
-            void lookupContact(phone).then((contact) => {
-              if (activeCallRef.current?.clientCallId === session.id) patchActiveCall({ contact });
-            });
-          },
-          onCallAnswered: (session: Session) => {
-            sessionRef.current = session;
+            if (!existing || existing.clientCallId !== callId) {
+              const phone = dialogPhone(dialog);
+              const incoming: ActiveTelephonyCall = {
+                clientCallId: callId,
+                direction: 'incoming',
+                status: 'ringing',
+                phone,
+                contact: null,
+                startedAt: new Date().toISOString(),
+                answeredAt: null,
+                endedAt: null,
+                muted: false,
+                held: false,
+                errorCode: null,
+              };
+              setActiveCall(incoming);
+              void reportCall(incoming);
+              void ringtoneRef.current?.play().catch(() => undefined);
+              void lookupContact(phone).then((contact) => {
+                if (activeCallRef.current?.clientCallId === callId) patchActiveCall({ contact });
+              });
+            }
+            return;
+          }
+
+          if (['requesting', 'trying'].includes(state)) {
+            patchActiveCall({ status: 'dialing' });
+          } else if (state === 'early' || state === 'ringing') {
+            patchActiveCall({ status: 'ringing' });
+          } else if (state === 'active') {
             stopRingtone();
-            const answeredAt = new Date().toISOString();
-            const connected = patchActiveCall({ status: 'connected', answeredAt, errorCode: null });
+            const answeredAt = activeCallRef.current?.answeredAt ?? new Date().toISOString();
+            const connected = patchActiveCall({ status: 'connected', answeredAt, held: false, errorCode: null });
             if (connected) void reportCall(connected);
-          },
-          onCallHangup: (_session: Session) => finishSession(),
-          onCallHold: (_session: Session, held: boolean) => patchActiveCall({ held }),
+          } else if (state === 'held') {
+            patchActiveCall({ status: 'connected', held: true });
+          } else if (['hangup', 'destroy', 'purge'].includes(state)) {
+            finishSession(dialog.cause || null);
+          }
         };
 
-        await manager.connect();
-        if (disposed) return;
-        await manager.register({
-          requestDelegate: {
-            onReject: () => {
-              if (!disposed) setConnectionState('error');
-            },
+        manager = new Verto({
+          login: `${credentials.username}@${credentials.sipDomain}`,
+          passwd: credentials.password,
+          socketUrl: credentials.websocketUrl,
+          autoReconnect: true,
+          keepAlive: { interval: 10_000, maxFailed: 3 },
+          tag: () => remoteAudioRef.current,
+          ringer_tag: null,
+          useVideo: false,
+          useStereo: false,
+          audioParams: {
+            autoGainControl: true,
+            echoCancellation: true,
+            noiseSuppression: true,
+            highpassFilter: true,
           },
-        });
+          videoParams: {},
+          deviceParams: { useCamera: false, useMic: 'any', useSpeak: 'any' },
+          userVariables: { extension: credentials.extension },
+        }, {
+          onWSLogin: (_client: VertoClientLike, success: boolean) => {
+            if (!disposed) setConnectionState(success ? 'ready' : 'error');
+          },
+          onWSClose: () => {
+            if (!disposed) setConnectionState('offline');
+          },
+          onDialogState,
+        }) as unknown as VertoClientLike;
+        managerRef.current = manager;
       } catch (error) {
         if (disposed) return;
         const apiError = error as Error & { status?: number; rawMessage?: string };
@@ -303,10 +325,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       credentialsRef.current = null;
       managerRef.current = null;
       sessionRef.current = null;
-      if (manager) {
-        void manager.unregister().catch(() => undefined);
-        void manager.disconnect().catch(() => undefined);
-      }
+      manager?.closeSocket(1000);
     };
   }, [finishSession, isAuthenticated, lookupContact, patchActiveCall, reportCall, setActiveCall, stopRingtone, user?.id]);
 
@@ -341,25 +360,26 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     setActiveCall(started);
 
     try {
-      const session = await manager.call(
-        `sip:${digits}@${credentials.sipDomain}`,
-        { earlyMedia: true },
-        {
-          requestDelegate: {
-            onProgress: () => patchActiveCall({ status: 'ringing' }),
-            onReject: (response: { message?: { statusCode?: number; reasonPhrase?: string } }) => {
-              const code = response?.message?.statusCode;
-              finishSession(code ? `SIP_${code}` : 'CALL_REJECTED');
-            },
-          },
-        },
-      );
+      const session = manager.newCall({
+        destination_number: digits,
+        caller_id_name: user?.fullName || credentials.extension,
+        caller_id_number: credentials.extension,
+        useVideo: false,
+        useStereo: false,
+        useMic: 'any',
+        useSpeak: 'any',
+        tag: () => remoteAudioRef.current,
+      }, undefined, undefined, (error) => {
+        const cause = error instanceof Error ? error.name : 'CALL_SETUP_FAILED';
+        finishSession(cause);
+      });
+      if (!session) throw new Error('onlinePbxWebPhoneOffline');
       sessionRef.current = session;
-      const withSessionId = { ...activeCallRef.current!, clientCallId: session.id };
+      const withSessionId = { ...activeCallRef.current!, clientCallId: session.callID };
       setActiveCall(withSessionId);
       void reportCall(withSessionId);
       void contactPromise.then((contact) => {
-        if (activeCallRef.current?.clientCallId === session.id) patchActiveCall({ contact });
+        if (activeCallRef.current?.clientCallId === session.callID) patchActiveCall({ contact });
       });
     } catch (error) {
       const failed = {
@@ -376,30 +396,28 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     } finally {
       setPendingPhone(null);
     }
-  }, [connectionState, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall]);
+  }, [connectionState, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, user?.fullName]);
 
   const answerCall = useCallback(async () => {
-    const manager = managerRef.current;
     const session = sessionRef.current;
-    if (!manager || !session || activeCallRef.current?.direction !== 'incoming') return;
+    if (!session || activeCallRef.current?.direction !== 'incoming') return;
     stopRingtone();
-    await manager.answer(session);
+    session.answer({ useVideo: false, useStereo: false });
   }, [stopRingtone]);
 
   const hangupCall = useCallback(async () => {
-    const manager = managerRef.current;
     const session = sessionRef.current;
     const current = activeCallRef.current;
-    if (!manager || !session || !current) return;
+    if (!session || !current) return;
     stopRingtone();
     try {
       if (current.direction === 'incoming' && current.status === 'ringing') {
-        await manager.decline(session);
+        session.hangup({ cause: 'CALL_REJECTED' });
         const declined = { ...current, status: 'declined' as const, endedAt: new Date().toISOString() };
         setActiveCall(declined);
         void reportCall(declined);
       } else {
-        await manager.hangup(session);
+        session.hangup({ cause: 'NORMAL_CLEARING' });
       }
     } finally {
       sessionRef.current = null;
@@ -407,29 +425,25 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, [reportCall, setActiveCall, stopRingtone]);
 
   const toggleMute = useCallback(() => {
-    const manager = managerRef.current;
     const session = sessionRef.current;
     const current = activeCallRef.current;
-    if (!manager || !session || !current || current.status !== 'connected') return;
-    if (current.muted) manager.unmute(session);
-    else manager.mute(session);
-    patchActiveCall({ muted: !current.muted });
+    if (!session || !current || current.status !== 'connected') return;
+    const muted = session.setMute('toggle');
+    patchActiveCall({ muted: typeof muted === 'boolean' ? muted : !current.muted });
   }, [patchActiveCall]);
 
   const toggleHold = useCallback(async () => {
-    const manager = managerRef.current;
     const session = sessionRef.current;
     const current = activeCallRef.current;
-    if (!manager || !session || !current || current.status !== 'connected') return;
-    if (current.held) await manager.unhold(session);
-    else await manager.hold(session);
-  }, []);
+    if (!session || !current || current.status !== 'connected') return;
+    session.toggleHold({});
+    patchActiveCall({ held: !current.held });
+  }, [patchActiveCall]);
 
   const sendDtmf = useCallback(async (tone: string) => {
-    const manager = managerRef.current;
     const session = sessionRef.current;
-    if (!manager || !session || !/^[0-9*#]$/.test(tone)) return;
-    await manager.sendDTMF(session, tone);
+    if (!session || !/^[0-9*#]$/.test(tone)) return;
+    session.dtmf(tone);
   }, []);
 
   const clearFinishedCall = useCallback(() => {

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto';
 import { Router, type RequestHandler } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { WebSocketEvent } from '@shared/websocket';
 import { appConfig } from '../config';
 import { pool } from '../db';
@@ -54,7 +54,9 @@ const callLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'onlinePbxTooManyCalls' },
-  keyGenerator: (req) => String(req.user?.id ?? req.ip ?? 'anonymous'),
+  keyGenerator: (req) => req.user?.id
+    ? `user:${req.user.id}`
+    : ipKeyGenerator(req.ip ?? 'anonymous'),
 });
 
 const digitsOnly = (value: unknown) => String(value ?? '').replace(/\D/g, '');

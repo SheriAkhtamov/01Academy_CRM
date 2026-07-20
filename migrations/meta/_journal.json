@@ -400,6 +400,13 @@
       "when": 1785859200000,
       "tag": "0056_cleanup_duplicate_instagram_channels",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1785945600000,
+      "tag": "0057_automate_onlinepbx_extensions",
+      "breakpoints": true
     }
   ]
 }

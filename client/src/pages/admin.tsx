@@ -78,6 +78,7 @@ import {
   type AcademyAccessModule,
   type AcademyWorkspace,
 } from '@shared/academy';
+import { isOnlinePbxExtension } from '@shared/telephony';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -88,7 +89,7 @@ const createUserSchema = (t: any) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
   phone: z.string().optional(),
   onlinePbxExtension: z.string()
-    .refine((value) => value === '' || /^\d{2,10}$/.test(value), t('onlinePbxInvalidExtension'))
+    .refine((value) => value === '' || isOnlinePbxExtension(value), t('onlinePbxInvalidExtension'))
     .optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
@@ -839,7 +840,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                 <Input
                                   inputMode="numeric"
                                   autoComplete="off"
-                                  maxLength={10}
+                                  maxLength={4}
                                   placeholder={t('onlinePbxExtensionPlaceholder')}
                                   {...field}
                                   onChange={(event) => field.onChange(event.target.value.replace(/\D/g, ''))}

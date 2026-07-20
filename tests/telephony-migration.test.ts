@@ -7,6 +7,7 @@ const migrationPath = path.join(repositoryRoot, 'migrations/0052_add_telephony_c
 const reconciliationPath = path.join(repositoryRoot, 'migrations/0053_reconcile_telephony_calls.sql');
 const journalMigrationPath = path.join(repositoryRoot, 'migrations/0054_add_call_journal_and_lead_channels.sql');
 const historicalBackfillPath = path.join(repositoryRoot, 'migrations/0055_backfill_unknown_call_leads.sql');
+const extensionAutomationPath = path.join(repositoryRoot, 'migrations/0057_automate_onlinepbx_extensions.sql');
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -26,6 +27,16 @@ describe('telephony calls migration', () => {
     expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 54)).toHaveLength(1);
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 55)?.tag)
       .toBe('0055_backfill_unknown_call_leads');
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 57)?.tag)
+      .toBe('0057_automate_onlinepbx_extensions');
+  });
+
+  it('registers managed extensions and prevents duplicate employee assignments', () => {
+    const migration = fs.readFileSync(extensionAutomationPath, 'utf8');
+
+    expect(migration).toContain('users_online_pbx_extension_unique');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "telephony_managed_extensions"');
+    expect(migration).toContain("VALUES ('109', 'onlinepbx')");
   });
 
   it('creates one lead for every previously unknown call number', () => {

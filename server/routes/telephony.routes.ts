@@ -3,6 +3,7 @@ import { Router, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
+import { isOnlinePbxExtension } from '@shared/telephony';
 import { canAccessAcademyWorkspace, hasLeadershipAccess } from '@shared/academy';
 import { appConfig } from '../config';
 import { pool } from '../db';
@@ -482,7 +483,7 @@ router.post('/webhook', asyncRoute(async (req, res) => {
 
 router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   const extension = String(req.user?.onlinePbxExtension ?? '').trim();
-  if (!/^\d{2,10}$/.test(extension)) {
+  if (!isOnlinePbxExtension(extension)) {
     return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
   }
 
@@ -528,7 +529,7 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
     return res.status(400).json({ error: 'onlinePbxInvalidCallEvent' });
   }
   const extension = String(req.user?.onlinePbxExtension ?? '').trim();
-  if (!/^\d{2,10}$/.test(extension)) {
+  if (!isOnlinePbxExtension(extension)) {
     return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
   }
 

@@ -21,6 +21,8 @@ import {
     encryptCredentialPassword,
 } from '../services/credential-password';
 import type { AcademyScheduleItem } from '@shared/schema';
+import { isOnlinePbxExtension } from '@shared/telephony';
+import { ensureSalesTelephonyExtension } from '../services/telephony-provisioning';
 
 const router = Router();
 const primaryWorkspaceSet = new Set<string>(ACADEMY_WORKSPACES);
@@ -93,6 +95,12 @@ const isUsersEmailUniqueViolation = (error: unknown) => {
         (constraint.includes('users') && constraint.includes('email')) ||
         detail.includes('email') ||
         message.includes('users_email_unique');
+};
+
+const isOnlinePbxExtensionUniqueViolation = (error: unknown) => {
+    const pgError = error as { code?: string; constraint?: string };
+    return pgError?.code === '23505'
+        && pgError.constraint === 'users_online_pbx_extension_unique';
 };
 
 const normalizeLogin = (value: unknown) =>
@@ -585,7 +593,7 @@ router.post('/', requireAdministration, async (req, res) => {
             && onlinePbxExtension !== null
             && (
                 typeof onlinePbxExtension !== 'string'
-                || (onlinePbxExtension.trim() !== '' && !/^\d{2,10}$/.test(onlinePbxExtension.trim()))
+                || (onlinePbxExtension.trim() !== '' && !isOnlinePbxExtension(onlinePbxExtension))
             )
         ) {
             return res.status(400).json({ error: 'onlinePbxInvalidExtension' });
@@ -627,6 +635,14 @@ router.post('/', requireAdministration, async (req, res) => {
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
+                const requestedExtension = typeof onlinePbxExtension === 'string'
+                    ? onlinePbxExtension.trim() || null
+                    : null;
+                const resolvedExtension = !requestedExtension
+                    && (isActive ?? true)
+                    && workspaces.includes('sales')
+                    ? await ensureSalesTelephonyExtension(client, { fullName })
+                    : requestedExtension;
                 const inserted = await client.query(
                     `INSERT INTO users
                        (email, password, credential_password_ciphertext, full_name, phone,
@@ -647,7 +663,7 @@ router.post('/', requireAdministration, async (req, res) => {
                         credentialPasswordCiphertext,
                         fullName,
                         typeof phone === 'string' ? phone.trim() || null : null,
-                        typeof onlinePbxExtension === 'string' ? onlinePbxExtension.trim() || null : null,
+                        resolvedExtension,
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
                         workspace,
@@ -677,6 +693,9 @@ router.post('/', requireAdministration, async (req, res) => {
             } catch (error) {
                 await client.query('ROLLBACK').catch(() => undefined);
                 newUser = null;
+                if (isOnlinePbxExtensionUniqueViolation(error)) {
+                    return res.status(409).json({ error: 'onlinePbxExtensionAlreadyAssigned' });
+                }
                 if (!isUsersEmailUniqueViolation(error)) {
                     throw error;
                 }
@@ -710,6 +729,9 @@ router.post('/', requireAdministration, async (req, res) => {
         logger.error('Error creating user', { error });
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
+        }
+        if (isOnlinePbxExtensionUniqueViolation(error)) {
+            return res.status(409).json({ error: 'onlinePbxExtensionAlreadyAssigned' });
         }
         res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create user' });
     }
@@ -952,7 +974,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             const extension = typeof req.body.onlinePbxExtension === 'string'
                 ? req.body.onlinePbxExtension.trim()
                 : '';
-            if (extension && !/^\d{2,10}$/.test(extension)) {
+            if (extension && !isOnlinePbxExtension(extension)) {
                 return res.status(400).json({ error: 'onlinePbxInvalidExtension' });
             }
             updateData.onlinePbxExtension = extension || null;
@@ -1041,8 +1063,9 @@ router.put('/:id', requireAuth, async (req, res) => {
                 full_name: string;
                 workspace: AcademyWorkspace;
                 is_active: boolean;
+                online_pbx_extension: string | null;
             }>(
-                `SELECT id, full_name, workspace, is_active
+                `SELECT id, full_name, workspace, is_active, online_pbx_extension
                  FROM users
                  WHERE id = $1
                  FOR UPDATE`,
@@ -1066,6 +1089,15 @@ router.put('/:id', requireAuth, async (req, res) => {
                 ? [...new Set([nextPrimaryWorkspace, ...requestedWorkspaces])]
                 : [...new Set([nextPrimaryWorkspace, ...currentWorkspaces])];
             const nextIsActive = updateData.isActive ?? lockedUser.is_active;
+            const nextExtension = updateData.onlinePbxExtension !== undefined
+                ? updateData.onlinePbxExtension
+                : lockedUser.online_pbx_extension;
+
+            if (nextIsActive && nextWorkspaces.includes('sales') && !nextExtension) {
+                updateData.onlinePbxExtension = await ensureSalesTelephonyExtension(client, {
+                    fullName: updateData.fullName ?? lockedUser.full_name,
+                });
+            }
 
             const isRemovingActiveLeadershipAccess =
                 lockedUser.is_active
@@ -1169,6 +1201,9 @@ router.put('/:id', requireAuth, async (req, res) => {
         logger.error('Error updating user', { error, userId: req.params.id });
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
+        }
+        if (isOnlinePbxExtensionUniqueViolation(error)) {
+            return res.status(409).json({ error: 'onlinePbxExtensionAlreadyAssigned' });
         }
         const typedError = error as { statusCode?: number; message?: string; leadCount?: number };
         res.status(typedError.statusCode || 500).json({

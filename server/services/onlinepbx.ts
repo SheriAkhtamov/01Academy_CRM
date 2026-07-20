@@ -1,4 +1,5 @@
 import { appConfig } from '../config';
+import { isOnlinePbxExtension } from '@shared/telephony';
 
 type OnlinePbxConfig = {
   domain?: string;
@@ -232,7 +233,7 @@ export class OnlinePbxClient {
   }
 
   async getWebRtcCredentials(extension: string): Promise<OnlinePbxWebRtcCredentials> {
-    if (!/^\d{2,10}$/.test(extension)) {
+    if (!isOnlinePbxExtension(extension)) {
       throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
     }
 
@@ -265,6 +266,9 @@ export class OnlinePbxClient {
   }
 
   async createExtension(input: { extension: string; password: string; name: string }) {
+    if (!isOnlinePbxExtension(input.extension)) {
+      throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
+    }
     await this.request<unknown>(
       'user/add',
       new URLSearchParams({
@@ -275,10 +279,19 @@ export class OnlinePbxClient {
     );
   }
 
-  async updateExtension(input: { extension: string; name?: string; password?: string }) {
+  async updateExtension(input: {
+    extension: string;
+    name?: string;
+    password?: string;
+    enabled?: boolean;
+  }) {
+    if (!isOnlinePbxExtension(input.extension)) {
+      throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
+    }
     const body = new URLSearchParams({ num: input.extension });
     if (input.name) body.set('name', input.name);
     if (input.password) body.set('pass', input.password);
+    if (input.enabled !== undefined) body.set('enabled', input.enabled ? '1' : '0');
     await this.request<unknown>('user/edit', body);
   }
 

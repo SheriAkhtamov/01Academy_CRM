@@ -475,14 +475,22 @@ export const translations = {
     ru: 'Укажите телефон или внутренний номер OnlinePBX в профиле сотрудника.',
   },
   onlinePbxInvalidExtension: {
-    en: 'The OnlinePBX extension must contain 2–10 digits.',
-    ru: 'Внутренний номер OnlinePBX должен содержать от 2 до 10 цифр.',
+    en: 'The OnlinePBX extension must be between 100 and 4999.',
+    ru: 'Внутренний номер OnlinePBX должен быть в диапазоне от 100 до 4999.',
+  },
+  onlinePbxExtensionAlreadyAssigned: {
+    en: 'This OnlinePBX extension is already assigned to another employee.',
+    ru: 'Этот внутренний номер OnlinePBX уже назначен другому сотруднику.',
+  },
+  onlinePbxExtensionPoolExhausted: {
+    en: 'No free OnlinePBX extension is available.',
+    ru: 'В OnlinePBX не осталось свободных внутренних номеров.',
   },
   onlinePbxExtension: { en: 'OnlinePBX extension', ru: 'Внутренний номер OnlinePBX' },
   onlinePbxExtensionPlaceholder: { en: 'For example, 100', ru: 'Например, 100' },
   onlinePbxExtensionHint: {
-    en: 'Required for the built-in browser phone and incoming calls.',
-    ru: 'Нужен для встроенной телефонии в браузере и входящих звонков.',
+    en: 'Assigned automatically with Sales access. You can override it manually.',
+    ru: 'Назначается автоматически вместе с модулем «Продажи». При необходимости номер можно указать вручную.',
   },
   onlinePbxWebRtcUnavailable: { en: 'The browser phone is unavailable', ru: 'Браузерная телефония недоступна' },
   onlinePbxExtensionMissing: { en: 'No phone extension is assigned to this employee', ru: 'Сотруднику не назначен внутренний номер телефонии' },

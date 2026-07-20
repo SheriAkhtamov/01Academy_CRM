@@ -23,6 +23,7 @@ const mockPool = {
   query: vi.fn(),
   connect: vi.fn(),
 };
+const mockEnsureSalesTelephonyExtension = vi.fn();
 
 vi.mock('../server/storage', () => ({ storage: mockStorage }));
 vi.mock('../server/db', () => ({ pool: mockPool }));
@@ -40,12 +41,16 @@ vi.mock('../server/services/credential-password', () => ({
   decryptCredentialPassword: vi.fn(),
   encryptCredentialPassword: vi.fn(),
 }));
+vi.mock('../server/services/telephony-provisioning', () => ({
+  ensureSalesTelephonyExtension: mockEnsureSalesTelephonyExtension,
+}));
 
 describe('user route validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorage.getUser.mockResolvedValue(administrationUser);
     mockStorage.createAuditLog.mockResolvedValue(undefined);
+    mockEnsureSalesTelephonyExtension.mockResolvedValue('109');
   });
 
   const createApp = async () => {
@@ -205,5 +210,93 @@ describe('user route validation', () => {
     expect(accessUpdateIndex).toBeGreaterThan(transferIndex);
     expect(commitIndex).toBeGreaterThan(accessUpdateIndex);
     expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('automatically provisions an extension when Sales access is added', async () => {
+    const currentUser = { ...administrationUser, onlinePbxExtension: null };
+    const updatedUser = {
+      ...administrationUser,
+      workspaces: ['administration', 'sales'],
+      onlinePbxExtension: '109',
+    };
+    mockStorage.getUser
+      .mockResolvedValueOnce(currentUser)
+      .mockResolvedValueOnce(currentUser)
+      .mockResolvedValueOnce(updatedUser);
+
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        if (statement.includes('SELECT id, full_name, workspace, is_active')) {
+          return {
+            rows: [{
+              id: 7,
+              full_name: 'Admin User',
+              workspace: 'administration',
+              is_active: true,
+              online_pbx_extension: null,
+            }],
+          };
+        }
+        if (statement.includes('SELECT workspace FROM user_workspaces')) {
+          return { rows: [{ workspace: 'administration' }] };
+        }
+        if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.put('/api/users/7').send({
+      workspace: 'administration',
+      workspaces: ['administration', 'sales'],
+      isActive: true,
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockEnsureSalesTelephonyExtension).toHaveBeenCalledWith(client, {
+      fullName: 'Admin User',
+    });
+  });
+
+  it('automatically provisions an extension when a new Sales employee is created', async () => {
+    mockStorage.getUsers.mockResolvedValue([]);
+    const createdUser = {
+      id: 20,
+      email: 'sales.new.user@01academy.local',
+      fullName: 'New Sales User',
+      workspace: 'sales',
+      workspaces: ['sales'],
+      onlinePbxExtension: '109',
+      isActive: true,
+    };
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        if (statement.includes('INSERT INTO users')) return { rows: [createdUser], rowCount: 1 };
+        if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users').send({
+      fullName: 'New Sales User',
+      workspace: 'sales',
+      workspaces: ['sales'],
+      onlinePbxExtension: '',
+      isActive: true,
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockEnsureSalesTelephonyExtension).toHaveBeenCalledWith(client, {
+      fullName: 'New Sales User',
+    });
   });
 });

@@ -93,6 +93,25 @@ describe('OnlinePbxClient', () => {
     expect(String(fetchMock.mock.calls[1][1]?.body)).toContain('fields=num%2Cname%2Cenabled%2Cwebrtc');
   });
 
+  it('creates and activates a new employee extension through the provider API', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
+      .mockResolvedValueOnce(jsonResponse({ status: '1' }))
+      .mockResolvedValueOnce(jsonResponse({ status: '1' }));
+    const client = new OnlinePbxClient({
+      domain: 'pbx38153.onpbx.ru',
+      authKey: 'permanent-token',
+    }, fetchMock as unknown as typeof fetch);
+
+    await client.createExtension({ extension: '109', password: 'safe123456', name: 'CRM Reserve 109' });
+    await client.updateExtension({ extension: '109', name: 'CRM Sales User', enabled: true });
+
+    expect(String(fetchMock.mock.calls[1][1]?.body))
+      .toBe('num=109&pass=safe123456&name=CRM+Reserve+109');
+    expect(String(fetchMock.mock.calls[2][1]?.body))
+      .toBe('num=109&name=CRM+Sales+User&enabled=1');
+  });
+
   it('keeps provider diagnostics when a call request is rejected', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))

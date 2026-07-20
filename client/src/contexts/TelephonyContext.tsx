@@ -74,6 +74,20 @@ type VertoClientLike = {
   ) => VertoDialogLike | undefined;
 };
 
+export const waitForTelephonySocket = async (
+  client: Pick<VertoClientLike, 'socketReady'>,
+  timeoutMs = 8_000,
+  intervalMs = 150,
+) => {
+  if (client.socketReady()) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, intervalMs));
+    if (client.socketReady()) return true;
+  }
+  return client.socketReady();
+};
+
 type TelephonyContextValue = {
   connectionState: TelephonyConnectionState;
   extension: string | null;
@@ -197,7 +211,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const reportCall = useCallback(async (call: ActiveTelephonyCall, hangupCause?: string | null) => {
     const end = call.endedAt ? new Date(call.endedAt).getTime() : Date.now();
     try {
-      await apiRequest('POST', '/api/telephony/calls/events', {
+      const storedCall = await apiRequest('POST', '/api/telephony/calls/events', {
         clientCallId: call.clientCallId,
         direction: call.direction,
         status: call.status,
@@ -208,12 +222,36 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         durationSeconds: durationFrom(call.startedAt, end),
         talkSeconds: durationFrom(call.answeredAt, end),
         hangupCause: hangupCause ?? call.errorCode,
-      });
+      }) as {
+        clientCallId: string;
+        contactType?: 'lead' | 'student' | null;
+        contactId?: number | null;
+        contactName?: string | null;
+        phone?: string | null;
+      };
+      if (
+        activeCallRef.current?.clientCallId === call.clientCallId
+        && storedCall.contactType
+        && storedCall.contactId
+        && storedCall.contactName
+      ) {
+        patchActiveCall({
+          contact: {
+            type: storedCall.contactType,
+            id: storedCall.contactId,
+            name: storedCall.contactName,
+            secondaryName: null,
+            phone: storedCall.phone || call.phone,
+          },
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls'] });
+      return storedCall;
     } catch (error) {
       devLog('Failed to save telephony call state', error);
+      return null;
     }
-  }, [queryClient]);
+  }, [patchActiveCall, queryClient]);
 
   const stopRingtone = useCallback(() => {
     const ringtone = ringtoneRef.current;
@@ -308,7 +346,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
               void reportCall(incoming);
               void ringtoneRef.current?.play().catch(() => undefined);
               void lookupContact(phone).then((contact) => {
-                if (activeCallRef.current?.clientCallId === callId) patchActiveCall({ contact });
+                if (contact && activeCallRef.current?.clientCallId === callId) patchActiveCall({ contact });
               });
             }
             return;
@@ -388,7 +426,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const startCall = useCallback(async (rawPhone: string) => {
     const manager = managerRef.current;
     const credentials = credentialsRef.current;
-    if (!manager || !credentials || connectionState !== 'ready') {
+    if (!manager || !credentials) {
       throw new Error('onlinePbxWebPhoneOffline');
     }
     const phone = formatPhone(rawPhone);
@@ -398,10 +436,19 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     if (current && !terminalStatuses.includes(current.status)) throw new Error('onlinePbxCallAlreadyActive');
 
     setPendingPhone(phone);
-    let microphone: MediaStream;
+    let microphone: MediaStream | null = null;
     try {
+      if (!await waitForTelephonySocket(manager)) {
+        setConnectionState('offline');
+        throw new Error('onlinePbxWebPhoneOffline');
+      }
       microphone = await requestMicrophone();
+      if (managerRef.current !== manager || !await waitForTelephonySocket(manager)) {
+        setConnectionState('offline');
+        throw new Error('onlinePbxWebPhoneOffline');
+      }
     } catch (error) {
+      microphone?.getTracks().forEach((track) => track.stop());
       setPendingPhone(null);
       throw error;
     }
@@ -437,6 +484,10 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         useStream: microphone,
         tag: () => remoteAudioRef.current,
       }, undefined, undefined, (error) => {
+        if (!error && !manager.socketReady()) {
+          setConnectionState('offline');
+          return;
+        }
         const cause = error instanceof Error ? error.name : 'CALL_SETUP_FAILED';
         finishSession(cause);
       });
@@ -453,11 +504,16 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         finishSession('NO_RESPONSE');
       }, 45_000);
       void contactPromise.then((contact) => {
-        if (activeCallRef.current?.clientCallId === session.callID) patchActiveCall({ contact });
+        if (contact && activeCallRef.current?.clientCallId === session.callID) patchActiveCall({ contact });
       });
     } catch (error) {
       clearCallSetupTimer();
       stopLocalMedia();
+      if (error instanceof Error && error.message === 'onlinePbxWebPhoneOffline') {
+        setConnectionState('offline');
+        setActiveCall(null);
+        throw error;
+      }
       const failed = {
         ...started,
         status: 'failed' as const,
@@ -472,7 +528,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     } finally {
       setPendingPhone(null);
     }
-  }, [clearCallSetupTimer, connectionState, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
+  }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
 
   const answerCall = useCallback(async () => {
     const session = sessionRef.current;

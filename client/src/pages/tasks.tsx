@@ -22,7 +22,7 @@ interface ApiUser {
     isActive?: boolean;
 }
 
-export default function AdminTasksPage() {
+export default function TasksPage() {
     const { t } = useTranslation();
     const { user } = useAuth();
     const { toast } = useToast();

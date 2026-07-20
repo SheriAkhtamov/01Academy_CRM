@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Landmark,
+  KanbanSquare,
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
@@ -15,7 +16,8 @@ type WorkspaceType =
   | 'administration'
   | 'teacher'
   | 'marketing'
-  | 'finance';
+  | 'finance'
+  | 'tasks';
 
 interface WorkspaceDefinition {
   title: string;
@@ -24,6 +26,10 @@ interface WorkspaceDefinition {
 }
 
 function resolveWorkspaceType(location: string, assignedWorkspace?: string): WorkspaceType {
+  if (location === '/tasks') {
+    return 'tasks';
+  }
+
   if (location === '/sales' || location.startsWith('/sales/')) {
     return 'sales';
   }
@@ -94,6 +100,11 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
       title: t('financeCenterModule'),
       description: t('financeCenterSubtitle'),
       icon: Landmark,
+    },
+    tasks: {
+      title: t('taskBoard'),
+      description: t('taskBoardSubtitle'),
+      icon: KanbanSquare,
     },
   };
   const workspace = workspaceDefinitions[resolveWorkspaceType(location, user?.workspace)];

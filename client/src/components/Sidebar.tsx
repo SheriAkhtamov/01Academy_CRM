@@ -108,7 +108,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
         { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
         { name: t('leadArchive'), href: '/sales/archive', icon: Archive },
-        { name: t('taskBoard'), href: '/sales/task-board', icon: KanbanSquare },
         { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
         { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
@@ -123,7 +122,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
         { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
         { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
-        { name: t('taskBoard'), href: '/teacher-workspace/tasks', icon: KanbanSquare },
       ],
     };
 
@@ -135,7 +133,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
         { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
         { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
-        { name: t('taskBoard'), href: '/marketing-workspace/tasks', icon: KanbanSquare },
         { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
       ],
     };
@@ -145,7 +142,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       items: [
         { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
         { name: t('employees'), href: '/employees', icon: Users },
-        { name: t('taskBoard'), href: '/admin/tasks', icon: KanbanSquare },
         { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { name: t('salesSettings'), href: '/admin/sales-settings', icon: UserCheck },
         { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
@@ -174,6 +170,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const sections = buildSections();
+  const taskBoardItem: NavItem = {
+    name: t('taskBoard'),
+    href: '/tasks',
+    icon: KanbanSquare,
+  };
 
   const toggleSection = (label: string) => {
     setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -265,6 +266,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               </div>
             );
           })}
+          <div className="mt-3 border-t border-border/70 pt-3">
+            {renderNavItem(taskBoardItem)}
+          </div>
         </nav>
 
         {/* Language Switcher */}

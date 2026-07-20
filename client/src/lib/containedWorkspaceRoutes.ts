@@ -26,6 +26,7 @@ const CONTAINED_WORKSPACE_ROUTES = new Set([
   '/admin/tasks',
   '/admin/academy-settings',
   '/admin/audit',
+  '/tasks',
 ]);
 
 export function isContainedWorkspaceRoute(location: string) {

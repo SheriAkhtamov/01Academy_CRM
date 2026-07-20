@@ -2,6 +2,7 @@ import { Instagram, MessageCircle, MessageSquare, Send } from 'lucide-react';
 import type { LeadChannelView } from '@shared/lead-channels';
 import {
   buildLeadChannelProfileUrl,
+  dedupeLeadChannelsForDisplay,
   safeLeadChannelProfileUrl,
 } from '@shared/lead-channels';
 import { Button } from '@/components/ui/button';
@@ -38,10 +39,7 @@ export function LeadChannelLinks({
   showLabels?: boolean;
   className?: string;
 }) {
-  const uniqueChannels = [...new Map((channels ?? []).map((channel) => [
-    `${channel.channel}:${channel.providerAccountId ?? ''}:${channel.externalId ?? channel.handle ?? channel.id}`,
-    channel,
-  ])).values()];
+  const uniqueChannels = dedupeLeadChannelsForDisplay(channels);
 
   if (uniqueChannels.length === 0) return null;
 

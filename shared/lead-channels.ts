@@ -25,6 +25,32 @@ export const normalizeLeadChannelHandle = (value: unknown) => {
   return handle || null;
 };
 
+export const leadChannelDisplayKey = (channel: LeadChannelView) => {
+  const normalizedChannel = channel.channel.trim().toLowerCase();
+  const normalizedHandle = normalizeLeadChannelHandle(channel.handle)?.toLowerCase();
+  if (normalizedHandle) return `${normalizedChannel}:handle:${normalizedHandle}`;
+
+  const externalId = String(channel.externalId ?? '').trim().toLowerCase();
+  if (externalId) return `${normalizedChannel}:external:${externalId}`;
+
+  const profileUrl = safeLeadChannelProfileUrl(normalizedChannel, channel.profileUrl)?.toLowerCase();
+  if (profileUrl) return `${normalizedChannel}:profile:${profileUrl}`;
+
+  return `${normalizedChannel}:id:${channel.id}`;
+};
+
+export const dedupeLeadChannelsForDisplay = (channels?: LeadChannelView[] | null) => {
+  const uniqueChannels = new Map<string, LeadChannelView>();
+  for (const channel of channels ?? []) {
+    const key = leadChannelDisplayKey(channel);
+    const current = uniqueChannels.get(key);
+    const currentPriority = Number(Boolean(current?.providerAccountId)) + Number(Boolean(current?.externalId));
+    const nextPriority = Number(Boolean(channel.providerAccountId)) + Number(Boolean(channel.externalId));
+    if (!current || nextPriority > currentPriority) uniqueChannels.set(key, channel);
+  }
+  return [...uniqueChannels.values()];
+};
+
 export const buildLeadChannelProfileUrl = (
   channel: string,
   handle?: unknown,

@@ -63,7 +63,38 @@ export const upsertLeadChannel = async (client: Queryable, input: LeadChannelInp
         JSON.stringify(input.metadata ?? {}),
       ],
     );
-    return result.rows[0] ?? null;
+    const channelRow = result.rows[0] ?? null;
+    if (channelRow && channel === 'instagram' && providerAccountId) {
+      const cleanup = await client.query(
+        `WITH legacy_channel AS (
+           DELETE FROM academy_lead_channels
+           WHERE lead_id = $1
+             AND channel = 'instagram'
+             AND id <> $2
+             AND provider_account_id = ''
+             AND (
+               ($3::text IS NOT NULL AND external_id = $3)
+               OR (
+                 $4::text IS NOT NULL
+                 AND handle IS NOT NULL
+                 AND LOWER(REGEXP_REPLACE(handle, '^@+', '')) = LOWER($4)
+               )
+             )
+           RETURNING display_name, profile_url, metadata
+         )
+         UPDATE academy_lead_channels provider_channel
+         SET display_name = COALESCE(provider_channel.display_name, legacy_channel.display_name),
+             profile_url = COALESCE(provider_channel.profile_url, legacy_channel.profile_url),
+             metadata = legacy_channel.metadata || provider_channel.metadata,
+             updated_at = NOW()
+         FROM legacy_channel
+         WHERE provider_channel.id = $2
+         RETURNING provider_channel.*`,
+        [input.leadId, channelRow.id, externalId, handle],
+      );
+      return cleanup.rows[0] ?? channelRow;
+    }
+    return channelRow;
   }
 
   const result = await client.query(
@@ -117,8 +148,30 @@ export const syncLeadSourceChannel = async (
       ? String(input.phone ?? '').replace(/\D/g, '') || null
       : null;
   const handle = messenger && !messenger.toLowerCase().startsWith('instagram:')
-    ? messenger
+    ? normalizeLeadChannelHandle(messenger)
     : null;
+
+  if (channel === 'instagram' && (externalId || handle)) {
+    const existing = await client.query(
+      `SELECT *
+       FROM academy_lead_channels
+       WHERE lead_id = $1
+         AND channel = 'instagram'
+         AND provider_account_id <> ''
+         AND (
+           ($2::text IS NOT NULL AND external_id = $2)
+           OR (
+             $3::text IS NOT NULL
+             AND handle IS NOT NULL
+             AND LOWER(REGEXP_REPLACE(handle, '^@+', '')) = LOWER(REGEXP_REPLACE($3, '^@+', ''))
+           )
+         )
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
+      [input.leadId, externalId, handle],
+    );
+    if (existing.rows[0]) return existing.rows[0];
+  }
 
   return upsertLeadChannel(client, {
     leadId: input.leadId,

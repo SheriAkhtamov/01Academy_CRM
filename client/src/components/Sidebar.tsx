@@ -41,6 +41,7 @@ import {
   Landmark,
   ReceiptText,
   WalletCards,
+  PhoneCall,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -112,6 +113,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
         { name: t('myTasks'), href: '/sales/tasks', icon: ListChecks },
         { name: t('messages'), href: '/sales/messages', icon: MessagesSquare },
+        { name: t('callJournal'), href: '/sales/calls', icon: PhoneCall },
       ],
     };
 

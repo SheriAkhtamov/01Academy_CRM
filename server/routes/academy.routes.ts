@@ -22,6 +22,7 @@ import {
 import { runAutomations } from '../services/automations';
 import { normalizeOutboxRecipient } from '../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../services/onlinepbx';
+import { syncLeadSourceChannel } from '../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -212,6 +213,27 @@ const leadPhoneNumbersSelect = (leadAlias = 'l') => `
       ELSE json_build_array(${leadAlias}.phone)
     END
   ) AS phone_numbers`;
+
+const leadChannelsSelect = (leadAlias = 'l') => `
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'id', channel.id,
+          'channel', channel.channel,
+          'providerAccountId', channel.provider_account_id,
+          'externalId', channel.external_id,
+          'handle', channel.handle,
+          'displayName', channel.display_name,
+          'profileUrl', channel.profile_url
+        )
+        ORDER BY channel.channel, channel.created_at, channel.id
+      )
+      FROM academy_lead_channels channel
+      WHERE channel.lead_id = ${leadAlias}.id
+    ),
+    '[]'::json
+  ) AS channels`;
 
 const leadGroupReservationsSelect = (leadAlias = 'l') => `
   COALESCE(
@@ -442,6 +464,10 @@ const withTransaction = async <T>(callback: () => Promise<T>): Promise<T> => {
   }
   return result;
 };
+
+const syncLeadChannelInCurrentTransaction = (input: Parameters<typeof syncLeadSourceChannel>[1]) => (
+  syncLeadSourceChannel(transactionContext.getStore() ?? pool, input)
+);
 
 const runAfterTransactionCommit = async (task: AfterCommitTask) => {
   const pendingTasks = afterCommitContext.getStore();
@@ -2068,6 +2094,8 @@ const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM academy_referral_rewards WHERE referred_lead_id = $1) AS referral_rewards,
        (SELECT COUNT(*)::int FROM academy_students WHERE lead_id = $1) AS students,
        (SELECT COUNT(*)::int FROM academy_lead_phones WHERE lead_id = $1) AS phones,
+       (SELECT COUNT(*)::int FROM academy_lead_channels WHERE lead_id = $1) AS channels,
+       (SELECT COUNT(*)::int FROM telephony_calls WHERE lead_id = $1) AS calls,
        (SELECT COUNT(*)::int FROM academy_lead_group_reservations WHERE lead_id = $1) AS group_reservations,
        (SELECT COUNT(*)::int FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1) AS tasks,
        (SELECT COUNT(*)::int FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
@@ -2097,6 +2125,44 @@ const mergeLeadRecords = async (
     `UPDATE instagram_conversations
      SET lead_id = $1, updated_at = NOW()
      WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `DELETE FROM academy_lead_channels duplicate_channel
+     USING academy_lead_channels retained_channel
+     WHERE duplicate_channel.lead_id = $2
+       AND retained_channel.lead_id = $1
+       AND retained_channel.channel = duplicate_channel.channel
+       AND retained_channel.provider_account_id = duplicate_channel.provider_account_id
+       AND (
+         (
+           retained_channel.external_id IS NOT NULL
+           AND duplicate_channel.external_id IS NOT NULL
+           AND retained_channel.external_id = duplicate_channel.external_id
+         )
+         OR (
+           retained_channel.handle IS NOT NULL
+           AND duplicate_channel.handle IS NOT NULL
+           AND LOWER(retained_channel.handle) = LOWER(duplicate_channel.handle)
+         )
+       )`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE academy_lead_channels
+     SET lead_id = $1, updated_at = NOW()
+     WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `UPDATE telephony_calls
+     SET lead_id = $1,
+         contact_id = CASE
+           WHEN contact_type = 'lead' AND contact_id = $2 THEN $1
+           ELSE contact_id
+         END,
+         updated_at = NOW()
+     WHERE lead_id = $2 OR (contact_type = 'lead' AND contact_id = $2)`,
     [retainedLeadId, duplicateLeadId],
   );
   await query(`UPDATE academy_communications SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
@@ -2323,6 +2389,8 @@ const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM academy_referral_rewards WHERE referred_lead_id = $1)
        + (SELECT COUNT(*) FROM academy_students WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_phones WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_channels WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM telephony_calls WHERE lead_id = $1 OR (contact_type = 'lead' AND contact_id = $1))
        + (SELECT COUNT(*) FROM academy_lead_group_reservations WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
@@ -2472,6 +2540,12 @@ const mergeLeadDraftIntoExisting = async (
     );
   }
   await syncLeadPhones(retainedLeadId, phoneValuesToSave);
+  await syncLeadChannelInCurrentTransaction({
+    leadId: retainedLeadId,
+    sourceId: parseId(draft.sourceId) ?? Number(retainedLead.sourceId),
+    messenger: draftMessenger ?? retainedLead.messenger,
+    phone: draftPhones[0]?.phone ?? retainedLead.phone,
+  });
 
   if (assignedManager) {
     await syncLeadManagerAssignment(
@@ -2511,6 +2585,7 @@ const getLead = (id: number) =>
         u.full_name AS manager_name,
         archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')},
+        ${leadChannelsSelect('l')},
         ${leadGroupReservationsSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
@@ -5090,6 +5165,12 @@ router.post('/leads', async (req, res) => {
         );
       }
       await syncLeadPhones(createdLead.id, phones);
+      await syncLeadChannelInCurrentTransaction({
+        leadId: Number(createdLead.id),
+        sourceId: Number(sourceId),
+        messenger: messenger ?? null,
+        phone: primaryPhone,
+      });
       await createStageHistory(
         createdLead.id,
         null,
@@ -5320,7 +5401,7 @@ router.get('/leads/:id', async (req, res) => {
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, lead)) return;
-    const [history, assignmentHistory, communications, tasks, payments, student] = await Promise.all([
+    const [history, assignmentHistory, communications, calls, tasks, payments, student] = await Promise.all([
       query(`SELECT * FROM academy_lead_stage_history WHERE lead_id = $1 ORDER BY entered_at DESC`, [id]),
       query(
         `SELECT h.*,
@@ -5336,6 +5417,19 @@ router.get('/leads/:id', async (req, res) => {
         [id],
       ),
       query(`SELECT * FROM academy_communications WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
+      query(
+        `SELECT call.id, call.direction, call.status, call.phone,
+                call.started_at, call.answered_at, call.ended_at,
+                call.duration_seconds, call.talk_seconds, call.hangup_cause,
+                call.user_id, employee.full_name AS user_name,
+                (call.recording_url IS NOT NULL OR call.talk_seconds > 0) AS has_recording
+         FROM telephony_calls call
+         LEFT JOIN users employee ON employee.id = call.user_id
+         WHERE call.lead_id = $1
+            OR (call.contact_type = 'lead' AND call.contact_id = $1)
+         ORDER BY call.started_at DESC`,
+        [id],
+      ),
       query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
       query(`SELECT * FROM academy_payments WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
       queryOne(
@@ -5360,6 +5454,7 @@ router.get('/leads/:id', async (req, res) => {
       assignmentHistory,
       stageDurations: buildLeadStageDurations(history),
       communications,
+      calls,
       tasks,
       payments,
       studentId: student?.id ?? null,
@@ -6007,6 +6102,14 @@ router.patch('/leads/:id', async (req, res) => {
         }
       }
       const updated = await updateRow('academy_leads', id, updates);
+      if (updated) {
+        await syncLeadChannelInCurrentTransaction({
+          leadId: Number(updated.id),
+          sourceId: Number(updated.sourceId),
+          messenger: updated.messenger,
+          phone: updated.phone,
+        });
+      }
       if (updated && requestedGroupId && lockedStudent) {
         await query(
           `UPDATE academy_student_group_enrollments

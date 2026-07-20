@@ -111,6 +111,8 @@ export function useWebSocket() {
           break;
         case 'TELEPHONY_CALL_UPDATED':
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls/journal'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] });
           break;
         default:
           devLog('Unhandled WebSocket message type:', message.type);

@@ -8,6 +8,7 @@ import {
 } from '../lib/instagram-lead';
 import { logger } from '../lib/logger';
 import { hasLeadershipAccess } from '@shared/academy';
+import { upsertLeadChannel } from './lead-channels';
 
 type InstagramBroadcast = (data: any) => void;
 type InstagramUser = {
@@ -1196,6 +1197,20 @@ const ensureLeadForConversation = async (
   const stableMessenger = `instagram:${participantIgsid}`.slice(0, 120);
   const messenger = username ? `@${username.replace(/^@+/, '')}`.slice(0, 120) : stableMessenger;
 
+  const attachInstagramChannel = async (lead: any) => {
+    if (!lead?.id) return lead;
+    await upsertLeadChannel(client, {
+      leadId: Number(lead.id),
+      channel: 'instagram',
+      providerAccountId: account.ig_user_id,
+      externalId: participantIgsid,
+      handle: username,
+      displayName: profile.name ?? conversation.participant_name ?? null,
+      metadata: { conversationId: conversation.id, accountId: account.id },
+    });
+    return lead;
+  };
+
   const enrichExistingLead = async (lead: any) => {
     if (!contactName) return lead;
     const shouldUpdateName = isGeneratedInstagramLeadName(lead.contact_name);
@@ -1224,7 +1239,7 @@ const ensureLeadForConversation = async (
        FROM academy_leads WHERE id = $1`,
       [conversation.lead_id],
     );
-    if (existing.rows[0]) return enrichExistingLead(existing.rows[0]);
+    if (existing.rows[0]) return attachInstagramChannel(await enrichExistingLead(existing.rows[0]));
   }
 
   const existing = await client.query(
@@ -1240,7 +1255,7 @@ const ensureLeadForConversation = async (
       `UPDATE instagram_conversations SET lead_id = $1, updated_at = NOW() WHERE id = $2`,
       [existing.rows[0].id, conversation.id],
     );
-    return enrichExistingLead(existing.rows[0]);
+    return attachInstagramChannel(await enrichExistingLead(existing.rows[0]));
   }
 
   if (!contactName) {
@@ -1295,7 +1310,7 @@ const ensureLeadForConversation = async (
     [lead.id],
   );
 
-  return lead;
+  return attachInstagramChannel(lead);
 };
 
 const processReceiptEvent = async (account: InstagramAccountRow, event: any) => {

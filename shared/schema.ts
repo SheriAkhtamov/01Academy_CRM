@@ -293,6 +293,29 @@ export const academyLeadPhones = pgTable("academy_lead_phones", {
   normalizedIdx: index("academy_lead_phones_normalized_idx").on(table.normalizedPhone),
 }));
 
+export const academyLeadChannels = pgTable("academy_lead_channels", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  channel: varchar("channel", { length: 40 }).notNull(),
+  providerAccountId: varchar("provider_account_id", { length: 120 }).notNull().default(""),
+  externalId: varchar("external_id", { length: 255 }),
+  handle: varchar("handle", { length: 255 }),
+  displayName: varchar("display_name", { length: 255 }),
+  profileUrl: text("profile_url"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  leadIdx: index("academy_lead_channels_lead_idx").on(table.leadId, table.channel),
+  externalUnique: uniqueIndex("academy_lead_channels_external_unique")
+    .on(table.channel, table.providerAccountId, table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL AND BTRIM(${table.externalId}) <> ''`),
+  handleUnique: uniqueIndex("academy_lead_channels_handle_unique")
+    .on(table.leadId, table.channel, table.providerAccountId, sql`LOWER(${table.handle})`)
+    .where(sql`${table.handle} IS NOT NULL AND BTRIM(${table.handle}) <> ''`),
+  channelCheck: check("academy_lead_channels_channel_check", sql`${table.channel} ~ '^[a-z][a-z0-9_-]{1,39}$'`),
+}));
+
 export const academyLeadGroupReservations = pgTable("academy_lead_group_reservations", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
@@ -812,6 +835,7 @@ export const telephonyCalls = pgTable("telephony_calls", {
   contactType: varchar("contact_type", { length: 30 }),
   contactId: integer("contact_id"),
   contactName: varchar("contact_name", { length: 255 }),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
   startedAt: timestamp("started_at").notNull().defaultNow(),
   answeredAt: timestamp("answered_at"),
   endedAt: timestamp("ended_at"),
@@ -831,6 +855,7 @@ export const telephonyCalls = pgTable("telephony_calls", {
     .where(sql`${table.providerCallId} IS NOT NULL`),
   userStartedIdx: index("telephony_calls_user_started_idx").on(table.userId, table.startedAt),
   phoneStartedIdx: index("telephony_calls_phone_started_idx").on(table.phone, table.startedAt),
+  leadStartedIdx: index("telephony_calls_lead_started_idx").on(table.leadId, table.startedAt),
 }));
 
 export const instagramAccounts = pgTable("instagram_accounts", {
@@ -1066,6 +1091,12 @@ export const insertAcademyLeadPhoneSchema = createInsertSchema(academyLeadPhones
   updatedAt: true,
 });
 
+export const insertAcademyLeadChannelSchema = createInsertSchema(academyLeadChannels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademyLeadStageHistorySchema = createInsertSchema(academyLeadStageHistory).omit({
   id: true,
 });
@@ -1259,6 +1290,8 @@ export type AcademyLead = typeof academyLeads.$inferSelect;
 export type InsertAcademyLead = z.infer<typeof insertAcademyLeadSchema>;
 export type AcademyLeadPhone = typeof academyLeadPhones.$inferSelect;
 export type InsertAcademyLeadPhone = z.infer<typeof insertAcademyLeadPhoneSchema>;
+export type AcademyLeadChannel = typeof academyLeadChannels.$inferSelect;
+export type InsertAcademyLeadChannel = z.infer<typeof insertAcademyLeadChannelSchema>;
 export type AcademyLeadStageHistory = typeof academyLeadStageHistory.$inferSelect;
 export type InsertAcademyLeadStageHistory = z.infer<typeof insertAcademyLeadStageHistorySchema>;
 export type AcademyLeadAssignmentHistory = typeof academyLeadAssignmentHistory.$inferSelect;

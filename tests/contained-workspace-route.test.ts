@@ -11,6 +11,7 @@ describe('isContainedWorkspaceRoute', () => {
     '/sales/clients',
     '/sales/tasks',
     '/sales/messages',
+    '/sales/calls',
     '/sales/task-board',
     '/teacher-workspace/schedule',
     '/teacher-workspace/groups',

@@ -12,6 +12,7 @@ import Login from '@/pages/login';
 import AcademyPage from '@/pages/academy';
 import SalesDashboard from '@/pages/sales-dashboard';
 import MessagesPage from '@/pages/sales/InstagramMessagesPage';
+import CallJournalPage from '@/pages/sales/CallJournalPage';
 import TeacherWorkspace from '@/pages/teacher-workspace';
 import MarketingWorkspace from '@/pages/marketing-workspace';
 import Admin from '@/pages/admin';
@@ -148,6 +149,11 @@ function Router() {
         <Route path="/sales/messages" component={() => (
           <WorkspaceGuard workspace="sales">
             <MessagesPage />
+          </WorkspaceGuard>
+        )} />
+        <Route path="/sales/calls" component={() => (
+          <WorkspaceGuard workspace="sales">
+            <CallJournalPage />
           </WorkspaceGuard>
         )} />
         <Route path="/tasks" component={TasksPage} />

@@ -10,6 +10,8 @@ import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
+import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
+import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import {
   LeadMergeConflictDialog,
   type LeadMergeDialogLead,
@@ -97,6 +99,8 @@ import {
   Users,
 } from 'lucide-react';
 import { LEAD_STATUSES, PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
+import type { LeadChannelView } from '@shared/lead-channels';
+import { formatCallDuration, telephonyStatusTranslationKey, type TelephonyCallStatus } from '@/lib/telephony';
 
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 
@@ -138,6 +142,7 @@ interface LeadDetails {
   firstContactAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
+  channels?: LeadChannelView[];
   history?: Array<{
     id: number;
     fromStatusCode?: string | null;
@@ -162,6 +167,21 @@ interface LeadDetails {
     result?: string | null;
     comment?: string | null;
     createdAt?: string | null;
+  }>;
+  calls?: Array<{
+    id: number;
+    direction: 'incoming' | 'outgoing';
+    status: TelephonyCallStatus;
+    phone: string;
+    startedAt: string;
+    answeredAt?: string | null;
+    endedAt?: string | null;
+    durationSeconds: number;
+    talkSeconds: number;
+    hangupCause?: string | null;
+    userId?: number | null;
+    userName?: string | null;
+    hasRecording: boolean;
   }>;
   tasks?: Array<{
     id: number;
@@ -845,6 +865,7 @@ export function LeadDetailSheet({
 
                   {/* Quick actions — single prominent CTA + secondary outline buttons */}
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <LeadChannelLinks channels={lead.channels} leadId={lead.id} />
                     {primaryPhone ? (
                       <Button
                         type="button"
@@ -900,6 +921,12 @@ export function LeadDetailSheet({
                       <Card>
                         <CardHeader><CardTitle>{t('clientAndStudent')}</CardTitle></CardHeader>
                         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          {(lead.channels ?? []).length > 0 ? (
+                            <FormItem className="md:col-span-2">
+                              <FormLabel>{t('contactChannels')}</FormLabel>
+                              <LeadChannelLinks channels={lead.channels} leadId={lead.id} showLabels />
+                            </FormItem>
+                          ) : null}
                           <FormField
                             control={leadForm.control}
                             name="contactName"
@@ -1678,6 +1705,8 @@ function ActivityTimeline({
       title: leadStatusName(item.toStatusCode),
       text: item.comment,
       icon: History,
+      callId: null,
+      hasRecording: false,
     })),
     ...(lead.communications ?? []).map((item) => ({
       id: `communication-${item.id}`,
@@ -1685,6 +1714,21 @@ function ActivityTimeline({
       title: `${t('contact')}: ${item.channel}`,
       text: [item.result, item.comment].filter(Boolean).join(' — '),
       icon: MessageSquare,
+      callId: null,
+      hasRecording: false,
+    })),
+    ...(lead.calls ?? []).map((item) => ({
+      id: `call-${item.id}`,
+      at: item.startedAt,
+      title: `${item.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}: ${t(telephonyStatusTranslationKey(item.status))}`,
+      text: [
+        item.userName ? `${t('callEmployee')}: ${item.userName}` : null,
+        `${t('talkTime')}: ${formatCallDuration(item.talkSeconds)}`,
+        item.hangupCause,
+      ].filter(Boolean).join(' • '),
+      icon: Phone,
+      callId: item.id,
+      hasRecording: item.hasRecording,
     })),
     ...(lead.assignmentHistory ?? []).map((item) => ({
       id: `assignment-${item.id}`,
@@ -1696,6 +1740,8 @@ function ActivityTimeline({
         item.comment,
       ].filter(Boolean).join(' • '),
       icon: UserRoundCog,
+      callId: null,
+      hasRecording: false,
     })),
     ...(lead.payments ?? []).map((item) => ({
       id: `payment-${item.id}`,
@@ -1703,6 +1749,8 @@ function ActivityTimeline({
       title: `${t('payment')}: ${money(item.amountUzs)}`,
       text: item.method,
       icon: CreditCard,
+      callId: null,
+      hasRecording: false,
     })),
   ].sort((a, b) => new Date(b.at ?? 0).getTime() - new Date(a.at ?? 0).getTime());
 
@@ -1738,6 +1786,9 @@ function ActivityTimeline({
                       </span>
                     </div>
                     {item.text ? <p className="mt-1 text-sm text-muted-foreground">{item.text}</p> : null}
+                    {item.callId && item.hasRecording ? (
+                      <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />
+                    ) : null}
                   </div>
                 </li>
               );

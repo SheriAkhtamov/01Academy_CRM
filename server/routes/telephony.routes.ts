@@ -1,7 +1,9 @@
 import { timingSafeEqual } from 'crypto';
 import { Router, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
+import { canAccessAcademyWorkspace, hasLeadershipAccess } from '@shared/academy';
 import { appConfig } from '../config';
 import { pool } from '../db';
 import { logger } from '../lib/logger';
@@ -21,10 +23,14 @@ const asyncRoute = (handler: RequestHandler): RequestHandler => (req, res, next)
 type TelephonyContact = {
   type: 'lead' | 'student';
   id: number;
+  leadId: number | null;
   name: string;
   secondaryName: string | null;
   phone: string;
+  created?: boolean;
 };
+
+type Queryable = Pick<Pool | PoolClient, 'query'>;
 
 type CallStatus = 'dialing' | 'ringing' | 'connected' | 'ended' | 'failed' | 'declined' | 'missed';
 
@@ -72,15 +78,19 @@ const safeInteger = (value: unknown) => {
   return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
 };
 
-const findContactByPhone = async (phone: string): Promise<TelephonyContact | null> => {
+const findContactByPhone = async (
+  phone: string,
+  client: Queryable = pool,
+): Promise<TelephonyContact | null> => {
   const normalized = normalizeOnlinePbxPhone(phone);
   if (!normalized) return null;
   const digits = digitsOnly(normalized);
 
-  const result = await pool.query<TelephonyContact>(
+  const result = await client.query<TelephonyContact>(
     `WITH matched_contacts AS (
        SELECT 'student'::text AS type,
               student.id,
+              student.lead_id AS "leadId",
               COALESCE(NULLIF(student.student_name, ''), student.contact_name) AS name,
               NULLIF(student.contact_name, '') AS "secondaryName",
               student.phone,
@@ -93,6 +103,7 @@ const findContactByPhone = async (phone: string): Promise<TelephonyContact | nul
 
        SELECT 'lead'::text AS type,
               lead.id,
+              lead.id AS "leadId",
               COALESCE(NULLIF(lead.student_name, ''), lead.contact_name) AS name,
               NULLIF(lead.contact_name, '') AS "secondaryName",
               phone.phone,
@@ -102,7 +113,7 @@ const findContactByPhone = async (phone: string): Promise<TelephonyContact | nul
        JOIN academy_leads lead ON lead.id = phone.lead_id
        WHERE regexp_replace(phone.normalized_phone, '\\D', '', 'g') = $1
      )
-     SELECT type, id, name, "secondaryName", phone
+     SELECT type, id, "leadId", name, "secondaryName", phone
      FROM matched_contacts
      ORDER BY priority, updated_at DESC
      LIMIT 1`,
@@ -110,6 +121,101 @@ const findContactByPhone = async (phone: string): Promise<TelephonyContact | nul
   );
 
   return result.rows[0] ?? null;
+};
+
+const ensureContactByPhone = async (
+  phone: string,
+  context: { userId?: number | null; direction: 'incoming' | 'outgoing' },
+): Promise<TelephonyContact> => {
+  const normalized = normalizeOnlinePbxPhone(phone)!;
+  const digits = digitsOnly(normalized);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`telephony-lead:${digits}`]);
+    const existing = await findContactByPhone(normalized, client);
+    if (existing) {
+      await client.query('COMMIT');
+      return existing;
+    }
+
+    const sourceResult = await client.query<{ id: number }>(
+      `INSERT INTO academy_lead_sources
+         (code, name, channel, is_system, is_active, updated_at)
+       VALUES ('telephony', 'Телефония', 'call', true, true, NOW())
+       ON CONFLICT (code) DO UPDATE
+       SET name = EXCLUDED.name,
+           channel = EXCLUDED.channel,
+           is_system = true,
+           is_active = true,
+           updated_at = NOW()
+       RETURNING id`,
+    );
+    const actorId = Number(context.userId) > 0 ? Number(context.userId) : null;
+    const managerResult = actorId
+      ? await client.query<{ id: number }>(
+          `SELECT user_account.id
+           FROM users user_account
+           WHERE user_account.id = $1
+             AND user_account.is_active = true
+             AND (
+               user_account.workspace = 'sales'
+               OR EXISTS (
+                 SELECT 1 FROM user_workspaces workspace
+                 WHERE workspace.user_id = user_account.id AND workspace.workspace = 'sales'
+               )
+             )`,
+          [actorId],
+        )
+      : { rows: [] as Array<{ id: number }> };
+    const directionLabel = context.direction === 'incoming' ? 'входящего' : 'исходящего';
+    const contactName = `Новый контакт ${normalized}`;
+    const leadResult = await client.query<{ id: number; contactName: string }>(
+      `INSERT INTO academy_leads (
+         contact_name, phone, source_id, status_code, manager_id, language,
+         comment, first_contact_channel, created_by
+       )
+       VALUES ($1,$2,$3,'new_request',$4,'ru',$5,'call',$6)
+       RETURNING id, contact_name AS "contactName"`,
+      [
+        contactName,
+        normalized,
+        sourceResult.rows[0].id,
+        managerResult.rows[0]?.id ?? null,
+        `Создан автоматически из ${directionLabel} звонка.`,
+        actorId,
+      ],
+    );
+    const lead = leadResult.rows[0];
+    await client.query(
+      `INSERT INTO academy_lead_phones
+         (lead_id, phone, normalized_phone, is_primary)
+       VALUES ($1,$2,$2,true)
+       ON CONFLICT (lead_id, normalized_phone) DO NOTHING`,
+      [lead.id, normalized],
+    );
+    await client.query(
+      `INSERT INTO academy_lead_stage_history
+         (lead_id, from_status_code, to_status_code, changed_by, comment)
+       VALUES ($1,NULL,'new_request',$2,$3)`,
+      [lead.id, actorId, `Автоматически из ${directionLabel} звонка`],
+    );
+    await client.query('COMMIT');
+    return {
+      type: 'lead',
+      id: lead.id,
+      leadId: lead.id,
+      name: lead.contactName,
+      secondaryName: null,
+      phone: normalized,
+      created: true,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 const isCallEventInput = (value: unknown): value is CallEventInput => {
@@ -127,7 +233,10 @@ const isCallEventInput = (value: unknown): value is CallEventInput => {
 
 const upsertClientCall = async (userId: number, extension: string, input: CallEventInput) => {
   const phone = normalizeOnlinePbxPhone(input.phone)!;
-  const contact = await findContactByPhone(phone);
+  const contact = await ensureContactByPhone(phone, { userId, direction: input.direction });
+  if (contact.created) {
+    broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
+  }
   const startedAt = safeDate(input.startedAt) ?? new Date();
   const answeredAt = safeDate(input.answeredAt);
   const endedAt = safeDate(input.endedAt);
@@ -141,6 +250,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
     contact?.type ?? null,
     contact?.id ?? null,
     contact?.name ?? null,
+    contact?.leadId ?? null,
     startedAt,
     answeredAt,
     endedAt,
@@ -152,7 +262,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
     id, client_call_id AS "clientCallId", provider_call_id AS "providerCallId",
     user_id AS "userId", extension, direction, status, phone,
     contact_type AS "contactType", contact_id AS "contactId",
-    contact_name AS "contactName", started_at AS "startedAt",
+    contact_name AS "contactName", lead_id AS "leadId", started_at AS "startedAt",
     answered_at AS "answeredAt", ended_at AS "endedAt",
     duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
     hangup_cause AS "hangupCause", recording_url AS "recordingUrl"`;
@@ -176,12 +286,13 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            contact_type = COALESCE(contact_type, $7),
            contact_id = COALESCE(contact_id, $8),
            contact_name = COALESCE(contact_name, $9),
-           started_at = LEAST(started_at, $10),
-           answered_at = COALESCE(answered_at, $11),
-           ended_at = COALESCE($12, ended_at),
-           duration_seconds = GREATEST(duration_seconds, $13),
-           talk_seconds = GREATEST(talk_seconds, $14),
-           hangup_cause = COALESCE($15, hangup_cause),
+           lead_id = COALESCE(lead_id, $10),
+           started_at = LEAST(started_at, $11),
+           answered_at = COALESCE(answered_at, $12),
+           ended_at = COALESCE($13, ended_at),
+           duration_seconds = GREATEST(duration_seconds, $14),
+           talk_seconds = GREATEST(talk_seconds, $15),
+           hangup_cause = COALESCE($16, hangup_cause),
            updated_at = NOW()
        WHERE client_call_id = $1 OR provider_call_id = $1
        RETURNING ${returning}`,
@@ -192,10 +303,10 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
       result = await client.query(
         `INSERT INTO telephony_calls (
            client_call_id, user_id, extension, direction, status, phone,
-           contact_type, contact_id, contact_name, started_at, answered_at,
+           contact_type, contact_id, contact_name, lead_id, started_at, answered_at,
            ended_at, duration_seconds, talk_seconds, hangup_cause
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING ${returning}`,
         values,
       );
@@ -259,14 +370,22 @@ router.post('/webhook', asyncRoute(async (req, res) => {
   const phone = normalizeOnlinePbxPhone(phoneDigits);
   if (!phone) return res.status(200).json({ ok: true, ignored: true });
 
-  const contact = await findContactByPhone(phone);
   const direction = String(payload.direction ?? '').toLowerCase().includes('out') ? 'outgoing' : 'incoming';
+  const contact = await ensureContactByPhone(phone, { userId: employee?.id, direction });
+  if (contact.created) {
+    broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
+  }
   const durationSeconds = safeInteger(payload.call_duration);
   const talkSeconds = safeInteger(payload.dialog_duration);
   const status = providerEventStatus(event, talkSeconds);
   const startedAtSeconds = safeInteger(payload.date);
   const startedAt = startedAtSeconds > 0 ? new Date(startedAtSeconds * 1000) : new Date();
   const endedAt = ['ended', 'failed', 'declined', 'missed'].includes(status) ? new Date() : null;
+  const answeredAt = status === 'connected'
+    ? new Date()
+    : talkSeconds > 0 && endedAt
+      ? new Date(endedAt.getTime() - talkSeconds * 1000)
+      : null;
 
   const values = [
     providerCallId,
@@ -278,7 +397,9 @@ router.post('/webhook', asyncRoute(async (req, res) => {
     contact?.type ?? null,
     contact?.id ?? null,
     contact?.name ?? null,
+    contact?.leadId ?? null,
     startedAt,
+    answeredAt,
     endedAt,
     durationSeconds,
     talkSeconds,
@@ -288,6 +409,7 @@ router.post('/webhook', asyncRoute(async (req, res) => {
   ];
   const returning = `id, status, direction, phone,
     contact_type AS "contactType", contact_id AS "contactId", contact_name AS "contactName",
+    lead_id AS "leadId",
     duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds"`;
   const client = await pool.connect();
   let call: Record<string, unknown> | undefined;
@@ -310,13 +432,15 @@ router.post('/webhook', asyncRoute(async (req, res) => {
            contact_type = COALESCE(contact_type, $7),
            contact_id = COALESCE(contact_id, $8),
            contact_name = COALESCE(contact_name, $9),
-           started_at = LEAST(started_at, $10),
-           ended_at = COALESCE($11, ended_at),
-           duration_seconds = GREATEST(duration_seconds, $12),
-           talk_seconds = GREATEST(talk_seconds, $13),
-           hangup_cause = COALESCE($14, hangup_cause),
-           recording_url = COALESCE($15, recording_url),
-           metadata = metadata || $16::jsonb,
+           lead_id = COALESCE(lead_id, $10),
+           started_at = LEAST(started_at, $11),
+           answered_at = COALESCE(answered_at, $12),
+           ended_at = COALESCE($13, ended_at),
+           duration_seconds = GREATEST(duration_seconds, $14),
+           talk_seconds = GREATEST(talk_seconds, $15),
+           hangup_cause = COALESCE($16, hangup_cause),
+           recording_url = COALESCE($17, recording_url),
+           metadata = metadata || $18::jsonb,
            updated_at = NOW()
        WHERE provider_call_id = $1 OR client_call_id = $1
        RETURNING ${returning}`,
@@ -327,10 +451,10 @@ router.post('/webhook', asyncRoute(async (req, res) => {
       result = await client.query(
         `INSERT INTO telephony_calls (
            provider_call_id, user_id, extension, direction, status, phone,
-           contact_type, contact_id, contact_name, started_at, ended_at,
+           contact_type, contact_id, contact_name, lead_id, started_at, answered_at, ended_at,
            duration_seconds, talk_seconds, hangup_cause, recording_url, metadata
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
          RETURNING ${returning}`,
         values,
       );
@@ -423,11 +547,11 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
     `SELECT id, client_call_id AS "clientCallId", provider_call_id AS "providerCallId",
             user_id AS "userId", extension, direction, status, phone,
             contact_type AS "contactType", contact_id AS "contactId",
-            contact_name AS "contactName", started_at AS "startedAt",
+            contact_name AS "contactName", lead_id AS "leadId", started_at AS "startedAt",
             answered_at AS "answeredAt", ended_at AS "endedAt",
             duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
             hangup_cause AS "hangupCause",
-            recording_url IS NOT NULL AS "hasRecording"
+            (recording_url IS NOT NULL OR talk_seconds > 0) AS "hasRecording"
      FROM telephony_calls
      WHERE user_id = $1
      ORDER BY started_at DESC
@@ -435,6 +559,114 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
     [req.user!.id, limit],
   );
   res.json(result.rows);
+}));
+
+router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  const addParam = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  if (!hasLeadershipAccess(req.user)) {
+    const actor = addParam(req.user!.id);
+    conditions.push(`(
+      call.user_id = ${actor}
+      OR lead.manager_id = ${actor}
+      OR (lead.id IS NOT NULL AND lead.manager_id IS NULL)
+    )`);
+  }
+
+  const direction = String(req.query.direction ?? '').trim();
+  if (['incoming', 'outgoing'].includes(direction)) {
+    conditions.push(`call.direction = ${addParam(direction)}`);
+  }
+  const status = String(req.query.status ?? '').trim();
+  if (['dialing', 'ringing', 'connected', 'ended', 'failed', 'declined', 'missed'].includes(status)) {
+    conditions.push(`call.status = ${addParam(status)}`);
+  }
+  const search = String(req.query.q ?? '').trim().toLowerCase();
+  if (search) {
+    const like = addParam(`%${search}%`);
+    conditions.push(`(
+      LOWER(call.phone) LIKE ${like}
+      OR LOWER(COALESCE(call.contact_name, '')) LIKE ${like}
+      OR LOWER(COALESCE(lead.contact_name, '')) LIKE ${like}
+      OR LOWER(COALESCE(lead.student_name, '')) LIKE ${like}
+      OR LOWER(COALESCE(employee.full_name, '')) LIKE ${like}
+    )`);
+  }
+  const from = String(req.query.from ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    conditions.push(`call.started_at >= ${addParam(`${from}T00:00:00`)}::timestamp`);
+  }
+  const to = String(req.query.to ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    conditions.push(`call.started_at < (${addParam(`${to}T00:00:00`)}::timestamp + INTERVAL '1 day')`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limitParam = addParam(limit);
+  const offsetParam = addParam((page - 1) * limit);
+
+  const result = await pool.query(
+    `SELECT call.id,
+            call.client_call_id AS "clientCallId",
+            call.provider_call_id AS "providerCallId",
+            call.user_id AS "userId",
+            employee.full_name AS "userName",
+            call.extension,
+            call.direction,
+            call.status,
+            call.phone,
+            call.lead_id AS "leadId",
+            COALESCE(NULLIF(lead.student_name, ''), NULLIF(lead.contact_name, ''), call.contact_name)
+              AS "leadName",
+            lead.contact_name AS "contactName",
+            lead.manager_id AS "managerId",
+            manager.full_name AS "managerName",
+            call.started_at AS "startedAt",
+            call.answered_at AS "answeredAt",
+            call.ended_at AS "endedAt",
+            call.duration_seconds AS "durationSeconds",
+            call.talk_seconds AS "talkSeconds",
+            call.hangup_cause AS "hangupCause",
+            (call.recording_url IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording",
+            COUNT(*) OVER()::int AS "totalCount",
+            COUNT(*) FILTER (WHERE call.status = 'missed') OVER()::int AS "missedCount",
+            COUNT(*) FILTER (WHERE call.talk_seconds > 0) OVER()::int AS "answeredCount",
+            COALESCE(SUM(call.talk_seconds) OVER(), 0)::int AS "totalTalkSeconds"
+     FROM telephony_calls call
+     LEFT JOIN users employee ON employee.id = call.user_id
+     LEFT JOIN academy_leads lead ON lead.id = call.lead_id
+     LEFT JOIN users manager ON manager.id = lead.manager_id
+     ${where}
+     ORDER BY call.started_at DESC, call.id DESC
+     LIMIT ${limitParam} OFFSET ${offsetParam}`,
+    params,
+  );
+
+  const first = result.rows[0];
+  res.json({
+    items: result.rows.map((row) => {
+      const { totalCount: _total, missedCount: _missed, answeredCount: _answered, totalTalkSeconds: _talk, ...item } = row;
+      return item;
+    }),
+    page,
+    limit,
+    total: Number(first?.totalCount ?? 0),
+    summary: {
+      missed: Number(first?.missedCount ?? 0),
+      answered: Number(first?.answeredCount ?? 0),
+      talkSeconds: Number(first?.totalTalkSeconds ?? 0),
+    },
+  });
 }));
 
 const historyMatchesPhone = (item: OnlinePbxCallHistoryItem, phone: string) => {
@@ -449,13 +681,25 @@ router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
     return res.status(400).json({ error: 'onlinePbxInvalidCallId' });
   }
   const result = await pool.query(
-    `SELECT id, user_id AS "userId", provider_call_id AS "providerCallId",
-            phone, started_at AS "startedAt", recording_url AS "recordingUrl"
-     FROM telephony_calls WHERE id = $1`,
+    `SELECT call.id, call.user_id AS "userId", call.provider_call_id AS "providerCallId",
+            call.phone, call.started_at AS "startedAt", call.recording_url AS "recordingUrl",
+            lead_id AS "leadId", lead.manager_id AS "leadManagerId"
+     FROM telephony_calls call
+     LEFT JOIN academy_leads lead ON lead.id = call.lead_id
+     WHERE call.id = $1`,
     [callId],
   );
   const call = result.rows[0];
-  if (!call || (Number(call.userId) !== req.user!.id && req.user?.workspace !== 'administration')) {
+  const canReadRecording = Boolean(call) && (
+    Number(call.userId) === req.user!.id
+    || hasLeadershipAccess(req.user)
+    || (
+      canAccessAcademyWorkspace(req.user, 'sales')
+      && call.leadId
+      && (call.leadManagerId == null || Number(call.leadManagerId) === req.user!.id)
+    )
+  );
+  if (!call || !canReadRecording) {
     return res.status(404).json({ error: 'onlinePbxCallNotFound' });
   }
   if (call.recordingUrl) return res.json({ url: call.recordingUrl });

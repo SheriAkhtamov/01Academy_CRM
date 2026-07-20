@@ -379,6 +379,13 @@
       "when": 1785600000000,
       "tag": "0053_reconcile_telephony_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1785686400000,
+      "tag": "0054_add_call_journal_and_lead_channels",
+      "breakpoints": true
     }
   ]
 }

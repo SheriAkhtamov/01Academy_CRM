@@ -131,55 +131,84 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
   const startedAt = safeDate(input.startedAt) ?? new Date();
   const answeredAt = safeDate(input.answeredAt);
   const endedAt = safeDate(input.endedAt);
+  const values = [
+    input.clientCallId,
+    userId,
+    extension,
+    input.direction,
+    input.status,
+    phone,
+    contact?.type ?? null,
+    contact?.id ?? null,
+    contact?.name ?? null,
+    startedAt,
+    answeredAt,
+    endedAt,
+    safeInteger(input.durationSeconds),
+    safeInteger(input.talkSeconds),
+    input.hangupCause?.slice(0, 120) || null,
+  ];
+  const returning = `
+    id, client_call_id AS "clientCallId", provider_call_id AS "providerCallId",
+    user_id AS "userId", extension, direction, status, phone,
+    contact_type AS "contactType", contact_id AS "contactId",
+    contact_name AS "contactName", started_at AS "startedAt",
+    answered_at AS "answeredAt", ended_at AS "endedAt",
+    duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
+    hangup_cause AS "hangupCause", recording_url AS "recordingUrl"`;
+  const client = await pool.connect();
 
-  const result = await pool.query(
-    `INSERT INTO telephony_calls (
-       client_call_id, user_id, extension, direction, status, phone,
-       contact_type, contact_id, contact_name, started_at, answered_at,
-       ended_at, duration_seconds, talk_seconds, hangup_cause
-     )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-     ON CONFLICT (client_call_id) WHERE client_call_id IS NOT NULL
-     DO UPDATE SET
-       status = EXCLUDED.status,
-       phone = EXCLUDED.phone,
-       contact_type = COALESCE(telephony_calls.contact_type, EXCLUDED.contact_type),
-       contact_id = COALESCE(telephony_calls.contact_id, EXCLUDED.contact_id),
-       contact_name = COALESCE(telephony_calls.contact_name, EXCLUDED.contact_name),
-       answered_at = COALESCE(telephony_calls.answered_at, EXCLUDED.answered_at),
-       ended_at = COALESCE(EXCLUDED.ended_at, telephony_calls.ended_at),
-       duration_seconds = GREATEST(telephony_calls.duration_seconds, EXCLUDED.duration_seconds),
-       talk_seconds = GREATEST(telephony_calls.talk_seconds, EXCLUDED.talk_seconds),
-       hangup_cause = COALESCE(EXCLUDED.hangup_cause, telephony_calls.hangup_cause),
-       updated_at = NOW()
-     RETURNING
-       id, client_call_id AS "clientCallId", provider_call_id AS "providerCallId",
-       user_id AS "userId", extension, direction, status, phone,
-       contact_type AS "contactType", contact_id AS "contactId",
-       contact_name AS "contactName", started_at AS "startedAt",
-       answered_at AS "answeredAt", ended_at AS "endedAt",
-       duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
-       hangup_cause AS "hangupCause", recording_url AS "recordingUrl"`,
-    [
-      input.clientCallId,
-      userId,
-      extension,
-      input.direction,
-      input.status,
-      phone,
-      contact?.type ?? null,
-      contact?.id ?? null,
-      contact?.name ?? null,
-      startedAt,
-      answeredAt,
-      endedAt,
-      safeInteger(input.durationSeconds),
-      safeInteger(input.talkSeconds),
-      input.hangupCause?.slice(0, 120) || null,
-    ],
-  );
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [input.clientCallId]);
+    let result = await client.query(
+      `UPDATE telephony_calls
+       SET client_call_id = COALESCE(client_call_id, $1),
+           user_id = $2,
+           extension = $3,
+           direction = $4,
+           status = CASE
+             WHEN status IN ('ended', 'failed', 'declined', 'missed')
+              AND $5 NOT IN ('ended', 'failed', 'declined', 'missed') THEN status
+             ELSE $5
+           END,
+           phone = $6,
+           contact_type = COALESCE(contact_type, $7),
+           contact_id = COALESCE(contact_id, $8),
+           contact_name = COALESCE(contact_name, $9),
+           started_at = LEAST(started_at, $10),
+           answered_at = COALESCE(answered_at, $11),
+           ended_at = COALESCE($12, ended_at),
+           duration_seconds = GREATEST(duration_seconds, $13),
+           talk_seconds = GREATEST(talk_seconds, $14),
+           hangup_cause = COALESCE($15, hangup_cause),
+           updated_at = NOW()
+       WHERE client_call_id = $1 OR provider_call_id = $1
+       RETURNING ${returning}`,
+      values,
+    );
 
-  return result.rows[0];
+    if (!result.rowCount) {
+      result = await client.query(
+        `INSERT INTO telephony_calls (
+           client_call_id, user_id, extension, direction, status, phone,
+           contact_type, contact_id, contact_name, started_at, answered_at,
+           ended_at, duration_seconds, talk_seconds, hangup_cause
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         RETURNING ${returning}`,
+        values,
+      );
+    }
+
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 const providerEventStatus = (event: string, talkSeconds: number): CallStatus => {
@@ -239,52 +268,87 @@ router.post('/webhook', asyncRoute(async (req, res) => {
   const startedAt = startedAtSeconds > 0 ? new Date(startedAtSeconds * 1000) : new Date();
   const endedAt = ['ended', 'failed', 'declined', 'missed'].includes(status) ? new Date() : null;
 
-  const result = await pool.query(
-    `INSERT INTO telephony_calls (
-       provider_call_id, user_id, extension, direction, status, phone,
-       contact_type, contact_id, contact_name, started_at, ended_at,
-       duration_seconds, talk_seconds, hangup_cause, recording_url, metadata
-     )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)
-     ON CONFLICT (provider_call_id) WHERE provider_call_id IS NOT NULL
-     DO UPDATE SET
-       user_id = COALESCE(telephony_calls.user_id, EXCLUDED.user_id),
-       extension = COALESCE(telephony_calls.extension, EXCLUDED.extension),
-       status = EXCLUDED.status,
-       ended_at = COALESCE(EXCLUDED.ended_at, telephony_calls.ended_at),
-       duration_seconds = GREATEST(telephony_calls.duration_seconds, EXCLUDED.duration_seconds),
-       talk_seconds = GREATEST(telephony_calls.talk_seconds, EXCLUDED.talk_seconds),
-       hangup_cause = COALESCE(EXCLUDED.hangup_cause, telephony_calls.hangup_cause),
-       recording_url = COALESCE(EXCLUDED.recording_url, telephony_calls.recording_url),
-       metadata = telephony_calls.metadata || EXCLUDED.metadata,
-       updated_at = NOW()
-     RETURNING id, status, direction, phone,
-       contact_type AS "contactType", contact_id AS "contactId", contact_name AS "contactName",
-       duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds"`,
-    [
-      providerCallId,
-      employee?.id ?? null,
-      employee?.extension ?? null,
-      direction,
-      status,
-      phone,
-      contact?.type ?? null,
-      contact?.id ?? null,
-      contact?.name ?? null,
-      startedAt,
-      endedAt,
-      durationSeconds,
-      talkSeconds,
-      String(payload.hangup_cause ?? '').slice(0, 120) || null,
-      String(payload.download_url ?? '').startsWith('https://') ? String(payload.download_url) : null,
-      JSON.stringify({ event, hangupBy: payload.hangup_by ?? null }),
-    ],
-  );
+  const values = [
+    providerCallId,
+    employee?.id ?? null,
+    employee?.extension ?? null,
+    direction,
+    status,
+    phone,
+    contact?.type ?? null,
+    contact?.id ?? null,
+    contact?.name ?? null,
+    startedAt,
+    endedAt,
+    durationSeconds,
+    talkSeconds,
+    String(payload.hangup_cause ?? '').slice(0, 120) || null,
+    String(payload.download_url ?? '').startsWith('https://') ? String(payload.download_url) : null,
+    JSON.stringify({ event, hangupBy: payload.hangup_by ?? null }),
+  ];
+  const returning = `id, status, direction, phone,
+    contact_type AS "contactType", contact_id AS "contactId", contact_name AS "contactName",
+    duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds"`;
+  const client = await pool.connect();
+  let call: Record<string, unknown> | undefined;
+
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [providerCallId]);
+    let result = await client.query(
+      `UPDATE telephony_calls
+       SET provider_call_id = COALESCE(provider_call_id, $1),
+           user_id = COALESCE(user_id, $2),
+           extension = COALESCE(extension, $3),
+           direction = $4,
+           status = CASE
+             WHEN status IN ('ended', 'failed', 'declined', 'missed')
+              AND $5 NOT IN ('ended', 'failed', 'declined', 'missed') THEN status
+             ELSE $5
+           END,
+           phone = $6,
+           contact_type = COALESCE(contact_type, $7),
+           contact_id = COALESCE(contact_id, $8),
+           contact_name = COALESCE(contact_name, $9),
+           started_at = LEAST(started_at, $10),
+           ended_at = COALESCE($11, ended_at),
+           duration_seconds = GREATEST(duration_seconds, $12),
+           talk_seconds = GREATEST(talk_seconds, $13),
+           hangup_cause = COALESCE($14, hangup_cause),
+           recording_url = COALESCE($15, recording_url),
+           metadata = metadata || $16::jsonb,
+           updated_at = NOW()
+       WHERE provider_call_id = $1 OR client_call_id = $1
+       RETURNING ${returning}`,
+      values,
+    );
+
+    if (!result.rowCount) {
+      result = await client.query(
+        `INSERT INTO telephony_calls (
+           provider_call_id, user_id, extension, direction, status, phone,
+           contact_type, contact_id, contact_name, started_at, ended_at,
+           duration_seconds, talk_seconds, hangup_cause, recording_url, metadata
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)
+         RETURNING ${returning}`,
+        values,
+      );
+    }
+
+    call = result.rows[0];
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 
   if (employee) {
     broadcastFunction({
       type: 'TELEPHONY_CALL_UPDATED',
-      data: result.rows[0] ?? {},
+      data: call ?? {},
       audienceUserIds: [employee.id],
     });
   }

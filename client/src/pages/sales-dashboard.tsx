@@ -8,6 +8,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
+import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { toast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -541,6 +542,7 @@ function AssignLeadBeforeMoveDialog({
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { startCall: startOnlinePbxCall } = useOnlinePbxCall();
   const isAdministrationWorkspace = hasLeadershipAccess(user);
   const hasSalesModule = getAssignedWorkspaces(user).includes('sales');
   const queryClient = useQueryClient();
@@ -943,7 +945,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         toast({ title: t('phoneNotProvided'), variant: 'destructive' });
         return;
       }
-      window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
+      startOnlinePbxCall(phone);
       return;
     }
     if (action === 'message') {
@@ -968,7 +970,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       void requestLeadStatusChange(lead.id, 'qualified');
       return;
     }
-  }, [openLead, requestLeadStatusChange, setLocation, t, toast]);
+  }, [openLead, requestLeadStatusChange, setLocation, startOnlinePbxCall, t, toast]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);

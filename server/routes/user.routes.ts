@@ -444,6 +444,7 @@ type UserUpdateData = {
     fullName?: string;
     position?: string | null;
     phone?: string | null;
+    onlinePbxExtension?: string | null;
     email?: string;
     dateOfBirth?: Date | null;
     workspace?: AcademyWorkspace;
@@ -455,6 +456,7 @@ const userUpdateColumns: Record<keyof UserUpdateData, string> = {
     fullName: 'full_name',
     position: 'position',
     phone: 'phone',
+    onlinePbxExtension: 'online_pbx_extension',
     email: 'email',
     dateOfBirth: 'date_of_birth',
     workspace: 'workspace',
@@ -560,7 +562,7 @@ router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
 
 router.post('/', requireAdministration, async (req, res) => {
     try {
-        const { phone, position, hasReportAccess, isActive } = req.body;
+        const { phone, position, onlinePbxExtension, hasReportAccess, isActive } = req.body;
         if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim()) {
             return res.status(400).json({ error: 'Full name is required' });
         }
@@ -577,6 +579,16 @@ router.post('/', requireAdministration, async (req, res) => {
         }
         if (typeof position === 'string' && position.trim().length > 255) {
             return res.status(400).json({ error: 'invalidData' });
+        }
+        if (
+            onlinePbxExtension !== undefined
+            && onlinePbxExtension !== null
+            && (
+                typeof onlinePbxExtension !== 'string'
+                || (onlinePbxExtension.trim() !== '' && !/^\d{2,10}$/.test(onlinePbxExtension.trim()))
+            )
+        ) {
+            return res.status(400).json({ error: 'onlinePbxInvalidExtension' });
         }
         if (hasReportAccess !== undefined && typeof hasReportAccess !== 'boolean') {
             return res.status(400).json({ error: 'invalidData' });
@@ -618,12 +630,13 @@ router.post('/', requireAdministration, async (req, res) => {
                 const inserted = await client.query(
                     `INSERT INTO users
                        (email, password, credential_password_ciphertext, full_name, phone,
-                        date_of_birth, position, workspace, has_report_access, is_active)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                        online_pbx_extension, date_of_birth, position, workspace, has_report_access, is_active)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                      RETURNING
                        id, email, password,
                        credential_password_ciphertext AS "credentialPasswordCiphertext",
-                       full_name AS "fullName", phone, date_of_birth AS "dateOfBirth",
+                       full_name AS "fullName", phone,
+                       online_pbx_extension AS "onlinePbxExtension", date_of_birth AS "dateOfBirth",
                        position, workspace, has_report_access AS "hasReportAccess",
                        is_active AS "isActive", is_online AS "isOnline",
                        last_seen_at AS "lastSeenAt", created_at AS "createdAt",
@@ -634,6 +647,7 @@ router.post('/', requireAdministration, async (req, res) => {
                         credentialPasswordCiphertext,
                         fullName,
                         typeof phone === 'string' ? phone.trim() || null : null,
+                        typeof onlinePbxExtension === 'string' ? onlinePbxExtension.trim() || null : null,
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
                         workspace,
@@ -926,6 +940,22 @@ router.put('/:id', requireAuth, async (req, res) => {
             const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
             if (phone.length > 50) return res.status(400).json({ error: 'invalidData' });
             updateData.phone = phone || null;
+        }
+
+        if (req.body.onlinePbxExtension !== undefined) {
+            if (!hasLeadershipAccess(currentUser)) {
+                return res.status(403).json({ error: 'adminAccessRequired' });
+            }
+            if (req.body.onlinePbxExtension !== null && typeof req.body.onlinePbxExtension !== 'string') {
+                return res.status(400).json({ error: 'onlinePbxInvalidExtension' });
+            }
+            const extension = typeof req.body.onlinePbxExtension === 'string'
+                ? req.body.onlinePbxExtension.trim()
+                : '';
+            if (extension && !/^\d{2,10}$/.test(extension)) {
+                return res.status(400).json({ error: 'onlinePbxInvalidExtension' });
+            }
+            updateData.onlinePbxExtension = extension || null;
         }
 
         if (req.body.email !== undefined) {

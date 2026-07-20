@@ -13,6 +13,23 @@ const localizeApiErrorMessage = (message: string, status: number) => {
     return i18n.t("taskAssignOtherEmployeesAdminOnly");
   }
 
+  const onlinePbxErrors = {
+    onlinePbxNotConfigured: i18n.t("onlinePbxNotConfigured"),
+    onlinePbxAuthenticationFailed: i18n.t("onlinePbxAuthenticationFailed"),
+    onlinePbxInvalidResponse: i18n.t("onlinePbxInvalidResponse"),
+    onlinePbxTimeout: i18n.t("onlinePbxTimeout"),
+    onlinePbxUnavailable: i18n.t("onlinePbxUnavailable"),
+    onlinePbxRequestFailed: i18n.t("onlinePbxRequestFailed"),
+    onlinePbxCallFailed: i18n.t("onlinePbxCallFailed"),
+    onlinePbxTooManyCalls: i18n.t("onlinePbxTooManyCalls"),
+    onlinePbxInvalidPhone: i18n.t("onlinePbxInvalidPhone"),
+    onlinePbxCallerNumberMissing: i18n.t("onlinePbxCallerNumberMissing"),
+    onlinePbxInvalidExtension: i18n.t("onlinePbxInvalidExtension"),
+  } as const;
+  if (normalized in onlinePbxErrors) {
+    return onlinePbxErrors[normalized as keyof typeof onlinePbxErrors];
+  }
+
   if (normalized in translations) {
     return i18n.t(normalized as keyof typeof translations);
   }

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
@@ -364,6 +365,7 @@ export function LeadDetailSheet({
   onMerged,
 }: LeadDetailSheetProps) {
   const { t } = useTranslation();
+  const onlinePbxCall = useOnlinePbxCall();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
@@ -739,7 +741,6 @@ export function LeadDetailSheet({
   const groupMutationPending = addLeadGroup.isPending || removeLeadGroup.isPending;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
-  const phoneHref = primaryPhone ? `tel:${primaryPhone.replace(/[^\d+]/g, '')}` : undefined;
   const messageTarget = leadMessageTarget(lead);
 
   return (
@@ -844,12 +845,20 @@ export function LeadDetailSheet({
 
                   {/* Quick actions — single prominent CTA + secondary outline buttons */}
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {phoneHref ? (
-                      <Button asChild size="sm" variant="outline">
-                        <a href={phoneHref}>
+                    {primaryPhone ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={onlinePbxCall.isPending}
+                        onClick={() => onlinePbxCall.startCall(primaryPhone)}
+                      >
+                        {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
+                          <Loader2 className="animate-spin" data-icon="inline-start" />
+                        ) : (
                           <Phone data-icon="inline-start" />
-                          {t('callShort')}
-                        </a>
+                        )}
+                        {t('callShort')}
                       </Button>
                     ) : null}
                     {messageTarget ? (

@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { getInitials } from '@/lib/auth';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import {
@@ -21,6 +22,7 @@ import {
   CreditCard,
   FolderOpen,
   History,
+  Loader2,
   MessageSquare,
   Phone,
   Star,
@@ -57,6 +59,7 @@ export function StudentDetailSheet({
   dateTime,
 }: StudentDetailSheetProps) {
   const { t } = useTranslation();
+  const onlinePbxCall = useOnlinePbxCall();
   const [activeTab, setActiveTab] = useState('info');
   const [statusDraft, setStatusDraft] = useState(String(student?.status ?? 'studying'));
   const [exitReason, setExitReason] = useState(String(student?.exitReason ?? ''));
@@ -107,7 +110,6 @@ export function StudentDetailSheet({
   const payments = data?.payments?.filter((payment: any) => payment.studentId === currentStudent.id) ?? [];
   const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === currentStudent.id) ?? [];
   const displayName = currentStudent.studentName || currentStudent.contactName;
-  const phoneHref = currentStudent.phone ? `tel:${String(currentStudent.phone).replace(/[^\d+]/g, '')}` : undefined;
   const messageHref = currentStudent.phone || currentStudent.messenger
     ? currentStudent.messenger?.startsWith('@')
       ? `https://t.me/${currentStudent.messenger.slice(1)}`
@@ -157,12 +159,20 @@ export function StudentDetailSheet({
                 {currentStudent.contactName} • {currentStudent.phone}
               </SheetDescription>
               <div className="mt-3 flex flex-wrap gap-2">
-                {phoneHref ? (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={phoneHref}>
+                {currentStudent.phone ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={onlinePbxCall.isPending}
+                    onClick={() => onlinePbxCall.startCall(String(currentStudent.phone))}
+                  >
+                    {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === String(currentStudent.phone) ? (
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ) : (
                       <Phone data-icon="inline-start" />
-                      {t('call')}
-                    </a>
+                    )}
+                    {t('call')}
                   </Button>
                 ) : null}
                 {messageHref ? (

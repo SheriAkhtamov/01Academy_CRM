@@ -73,6 +73,11 @@ interface AppConfig {
       credentialsPath?: string;
       spreadsheetId?: string;
     };
+    onlinePbx?: {
+      domain?: string;
+      authKey?: string;
+      apiUrl?: string;
+    };
   };
 }
 

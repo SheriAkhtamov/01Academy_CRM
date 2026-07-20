@@ -21,6 +21,7 @@ import {
 } from '../lib/lesson-schedule';
 import { runAutomations } from '../services/automations';
 import { normalizeOutboxRecipient } from '../services/message-recipients';
+import { onlinePbxClient, OnlinePbxError } from '../services/onlinepbx';
 import { getWorkforcePolicy, maskPhone } from '../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -8736,6 +8737,14 @@ router.get('/integrations/status', async (req, res) => {
         accountUsername: null,
         note: 'Website lead inbound webhook',
       },
+      {
+        provider: 'onlinepbx',
+        connected: onlinePbxClient.isConfigured(),
+        requiresReconnect: false,
+        accountId: null,
+        accountUsername: onlinePbxClient.getDomain() || null,
+        note: 'OnlinePBX click-to-call',
+      },
     ];
     res.json(providers.map((entry) => ({
       provider: entry.provider,
@@ -8775,10 +8784,27 @@ router.post('/integrations/:provider/test', async (req, res) => {
       const log = await logIntegration('whatsapp', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', { result }, result.error ?? null);
       return res.json({ ok: result.ok, simulated: result.simulated, error: result.error, log });
     }
+    if (provider === 'onlinepbx') {
+      const extensions = await onlinePbxClient.listExtensions();
+      const log = await logIntegration('onlinepbx', 'outbound', 'connected', {
+        domain: onlinePbxClient.getDomain(),
+        extensionCount: extensions.length,
+      });
+      return res.json({
+        ok: true,
+        domain: onlinePbxClient.getDomain(),
+        extensions,
+        log,
+      });
+    }
     const log = await logIntegration(provider, 'outbound', 'stub_sent', req.body ?? {});
     res.json({ ok: true, mode: 'safe_stub', log });
   } catch (error) {
     logger.error('Failed to test integration', { error });
+    if (error instanceof OnlinePbxError) {
+      await logIntegration('onlinepbx', 'outbound', 'failed', {}, error.clientCode).catch(() => undefined);
+      return res.status(error.statusCode).json({ error: error.clientCode });
+    }
     res.status(500).json({ error: 'Failed to test integration' });
   }
 });

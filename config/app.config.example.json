@@ -79,6 +79,12 @@
     "googleSheets": {
       "credentialsPath": "",
       "spreadsheetId": ""
+    },
+    "onlinePbx": {
+      "_comment": "Domain is the PBX hostname, for example pbx12345.onpbx.ru. Keep authKey only in app.config.json and never commit it.",
+      "domain": "",
+      "authKey": "",
+      "apiUrl": "https://api2.onlinepbx.ru"
     }
   }
 }

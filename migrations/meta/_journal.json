@@ -358,6 +358,13 @@
       "when": 1785340800000,
       "tag": "0050_add_lead_group_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1785427200000,
+      "tag": "0051_add_onlinepbx_extension",
+      "breakpoints": true
     }
   ]
 }

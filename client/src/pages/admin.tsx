@@ -87,6 +87,9 @@ const createUserSchema = (t: any) => z.object({
   ),
   fullName: z.string().min(1, t('fullNameRequired')),
   phone: z.string().optional(),
+  onlinePbxExtension: z.string()
+    .refine((value) => value === '' || /^\d{2,10}$/.test(value), t('onlinePbxInvalidExtension'))
+    .optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),
@@ -140,6 +143,7 @@ const defaultUserFormValues: UserFormValues = {
   email: '',
   fullName: '',
   phone: '',
+  onlinePbxExtension: '',
   dateOfBirth: '',
   position: '',
   workspace: 'sales',
@@ -472,6 +476,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       email: user.email,
       fullName: user.fullName,
       phone: user.phone || '',
+      onlinePbxExtension: user.onlinePbxExtension || '',
       dateOfBirth: formatDateInputValue(user.dateOfBirth),
       position: user.position || '',
       workspace: user.workspace,
@@ -823,6 +828,28 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             )}
                           />
                         </div>
+
+                        <FormField
+                          control={userForm.control}
+                          name="onlinePbxExtension"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('onlinePbxExtension')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  inputMode="numeric"
+                                  autoComplete="off"
+                                  maxLength={10}
+                                  placeholder={t('onlinePbxExtensionPlaceholder')}
+                                  {...field}
+                                  onChange={(event) => field.onChange(event.target.value.replace(/\D/g, ''))}
+                                />
+                              </FormControl>
+                              <p className="text-xs text-slate-500">{t('onlinePbxExtensionHint')}</p>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField

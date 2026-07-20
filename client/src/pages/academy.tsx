@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   ExternalLink,
   Globe2,
+  Loader2,
+  PhoneCall,
   Plug,
   Unplug,
 } from 'lucide-react';
@@ -50,6 +52,8 @@ const integrationCopy = (provider: string, t: (key: TranslationKey) => string) =
       return { title: t('instagramIntegration'), description: t('instagramIntegrationDesc') };
     case 'website':
       return { title: t('integrationProviderWebsite'), description: t('integrationProviderWebsiteDesc') };
+    case 'onlinepbx':
+      return { title: t('onlinePbxIntegration'), description: t('onlinePbxIntegrationDesc') };
     default:
       return { title: t('navIntegrations'), description: t('adminIntegrationsDescription') };
   }
@@ -123,6 +127,24 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     },
   });
 
+  const testOnlinePbx = useMutation({
+    mutationFn: () => apiRequest('POST', '/api/academy/integrations/onlinepbx/test'),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
+      toast({
+        title: t('onlinePbxConnectionVerified'),
+        description: t('onlinePbxConnectionVerifiedDescription'),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('onlinePbxConnectionFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   return (
     <WorkspacePage contained>
       <PageHeader
@@ -152,7 +174,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         ) : (integrations.data ?? []).map((integration) => {
           const copy = integrationCopy(integration.provider, t);
           const lastLogTime = formatLogTime(integration.lastLog?.createdAt ?? integration.lastLog?.updatedAt, language);
-          const Icon = integration.provider === 'website' ? Globe2 : integration.provider === 'instagram' ? Camera : Plug;
+          const Icon = integration.provider === 'website'
+            ? Globe2
+            : integration.provider === 'instagram'
+              ? Camera
+              : integration.provider === 'onlinepbx'
+                ? PhoneCall
+                : Plug;
 
           return (
             <Card
@@ -205,6 +233,19 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           {t('loginWithInstagram')}
                         </Button>
                       )
+                    ) : integration.provider === 'onlinepbx' ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => testOnlinePbx.mutate()}
+                        disabled={!integration.connected || testOnlinePbx.isPending}
+                      >
+                        {testOnlinePbx.isPending ? (
+                          <Loader2 className="animate-spin" data-icon="inline-start" />
+                        ) : (
+                          <PhoneCall data-icon="inline-start" />
+                        )}
+                        {t('onlinePbxTestConnection')}
+                      </Button>
                     ) : null}
                     <Badge variant={integration.connected ? 'success' : 'warning'}>
                       {integration.connected ? (

@@ -15,6 +15,7 @@ import incomingRoutes from './incoming.routes';
 import instagramRoutes from './instagram.routes';
 import boardRoutes from './board.routes';
 import financeRoutes from './finance.routes';
+import telephonyRoutes from './telephony.routes';
 import { logger } from '../lib/logger';
 import { createPresenceTracker } from '../lib/presence';
 import { appConfig } from '../config';
@@ -81,6 +82,7 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     app.use('/api/academy', academyRoutes);
     app.use('/api/finance', financeRoutes);
     app.use('/api/board', boardRoutes);
+    app.use('/api/telephony', telephonyRoutes);
     app.use('/api/instagram', instagramRoutes);
     // Public inbound webhooks (verified by per-provider secrets, NOT session auth).
     app.use('/api/incoming', incomingRoutes);

@@ -6,6 +6,7 @@ const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const migrationPath = path.join(repositoryRoot, 'migrations/0052_add_telephony_calls.sql');
 const reconciliationPath = path.join(repositoryRoot, 'migrations/0053_reconcile_telephony_calls.sql');
 const journalMigrationPath = path.join(repositoryRoot, 'migrations/0054_add_call_journal_and_lead_channels.sql');
+const historicalBackfillPath = path.join(repositoryRoot, 'migrations/0055_backfill_unknown_call_leads.sql');
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -23,6 +24,18 @@ describe('telephony calls migration', () => {
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 54)?.tag)
       .toBe('0054_add_call_journal_and_lead_channels');
     expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 54)).toHaveLength(1);
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 55)?.tag)
+      .toBe('0055_backfill_unknown_call_leads');
+  });
+
+  it('creates one lead for every previously unknown call number', () => {
+    const migration = fs.readFileSync(historicalBackfillPath, 'utf8');
+
+    expect(migration).toContain('FOR unknown_call IN');
+    expect(migration).toContain('INSERT INTO academy_leads');
+    expect(migration).toContain('INSERT INTO academy_lead_phones');
+    expect(migration).toContain('UPDATE telephony_calls call');
+    expect(migration).toContain('call.lead_id IS NULL');
   });
 
   it('links calls to leads and adds the durable multi-channel identity model', () => {

@@ -79,7 +79,7 @@ const safeInteger = (value: unknown) => {
   return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
 };
 
-const findContactByPhone = async (
+export const findContactByPhone = async (
   phone: string,
   client: Queryable = pool,
 ): Promise<TelephonyContact | null> => {
@@ -96,6 +96,7 @@ const findContactByPhone = async (
               NULLIF(student.contact_name, '') AS "secondaryName",
               student.phone,
               1 AS priority,
+              false AS is_archived,
               student.updated_at
        FROM academy_students student
        WHERE regexp_replace(COALESCE(student.phone, ''), '\\D', '', 'g') = $1
@@ -109,14 +110,42 @@ const findContactByPhone = async (
               NULLIF(lead.contact_name, '') AS "secondaryName",
               phone.phone,
               2 AS priority,
+              COALESCE(lead.is_archived, false) AS is_archived,
               lead.updated_at
        FROM academy_lead_phones phone
        JOIN academy_leads lead ON lead.id = phone.lead_id
        WHERE regexp_replace(phone.normalized_phone, '\\D', '', 'g') = $1
+
+       UNION ALL
+
+       SELECT 'lead'::text AS type,
+              lead.id,
+              lead.id AS "leadId",
+              COALESCE(NULLIF(lead.student_name, ''), lead.contact_name) AS name,
+              NULLIF(lead.contact_name, '') AS "secondaryName",
+              lead.phone,
+              2 AS priority,
+              COALESCE(lead.is_archived, false) AS is_archived,
+              lead.updated_at
+       FROM academy_leads lead
+       WHERE COALESCE(lead.phone, '') ~ '^[+()0-9[:space:].-]+$'
+         AND CASE
+           WHEN left(regexp_replace(COALESCE(lead.phone, ''), '\\D', '', 'g'), 2) = '00'
+             THEN substring(regexp_replace(lead.phone, '\\D', '', 'g') FROM 3)
+           WHEN length(regexp_replace(COALESCE(lead.phone, ''), '\\D', '', 'g')) = 9
+             THEN '998' || regexp_replace(lead.phone, '\\D', '', 'g')
+           ELSE regexp_replace(COALESCE(lead.phone, ''), '\\D', '', 'g')
+         END = $1
+         AND NOT EXISTS (
+           SELECT 1
+           FROM academy_lead_phones indexed_phone
+           WHERE indexed_phone.lead_id = lead.id
+             AND regexp_replace(indexed_phone.normalized_phone, '\\D', '', 'g') = $1
+         )
      )
      SELECT type, id, "leadId", name, "secondaryName", phone
      FROM matched_contacts
-     ORDER BY priority, updated_at DESC
+     ORDER BY priority, is_archived, updated_at DESC NULLS LAST, id DESC
      LIMIT 1`,
     [digits],
   );

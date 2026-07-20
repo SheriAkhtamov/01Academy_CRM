@@ -315,6 +315,20 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   }
 }));
 
+router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, full_name AS "name", online_pbx_extension AS "extension"
+     FROM users
+     WHERE is_active = true
+       AND online_pbx_extension IS NOT NULL
+       AND online_pbx_extension <> ''
+       AND id <> $1
+     ORDER BY full_name`,
+    [req.user!.id],
+  );
+  res.json(result.rows);
+}));
+
 router.get('/contacts/lookup', requireAuth, asyncRoute(async (req, res) => {
   const phone = normalizeOnlinePbxPhone(req.query.phone);
   if (!phone) return res.status(400).json({ error: 'onlinePbxInvalidPhone' });

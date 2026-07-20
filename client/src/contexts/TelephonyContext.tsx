@@ -60,6 +60,7 @@ type VertoDialogLike = {
   getMute: () => boolean;
   toggleHold: (options?: Record<string, unknown>) => void;
   dtmf: (tone: string) => void;
+  transfer: (destination: string, options?: Record<string, unknown>) => void;
 };
 
 type VertoClientLike = {
@@ -85,6 +86,7 @@ type TelephonyContextValue = {
   toggleMute: () => void;
   toggleHold: () => Promise<void>;
   sendDtmf: (tone: string) => Promise<void>;
+  transferCall: (extension: string) => Promise<void>;
   clearFinishedCall: () => void;
 };
 
@@ -117,6 +119,40 @@ const durationFrom = (start: string | null, end = Date.now()) => {
   return Number.isFinite(timestamp) ? Math.max(0, Math.floor((end - timestamp) / 1000)) : 0;
 };
 
+const microphoneErrorCode = (error: unknown) => {
+  const name = error instanceof Error ? error.name : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'onlinePbxMicrophonePermissionDenied';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'onlinePbxMicrophoneUnavailable';
+  if (error instanceof Error && error.message === 'onlinePbxMicrophonePermissionTimeout') return error.message;
+  return 'onlinePbxMicrophoneUnavailable';
+};
+
+const requestMicrophone = async () => {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('onlinePbxMicrophoneUnavailable');
+
+  const request = navigator.mediaDevices.getUserMedia({
+    audio: {
+      autoGainControl: true,
+      echoCancellation: true,
+      noiseSuppression: true,
+    },
+    video: false,
+  });
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error('onlinePbxMicrophonePermissionTimeout')), 30_000);
+  });
+
+  try {
+    return await Promise.race([request, timeout]);
+  } catch (error) {
+    void request.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined);
+    throw new Error(microphoneErrorCode(error));
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+};
+
 export function TelephonyProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
@@ -130,6 +166,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+  const localMediaRef = useRef<MediaStream | null>(null);
+  const callSetupTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
 
   const setActiveCall = useCallback((next: ActiveTelephonyCall | null) => {
@@ -184,6 +222,17 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     ringtone.currentTime = 0;
   }, []);
 
+  const stopLocalMedia = useCallback(() => {
+    localMediaRef.current?.getTracks().forEach((track) => track.stop());
+    localMediaRef.current = null;
+  }, []);
+
+  const clearCallSetupTimer = useCallback(() => {
+    if (callSetupTimerRef.current === null) return;
+    window.clearTimeout(callSetupTimerRef.current);
+    callSetupTimerRef.current = null;
+  }, []);
+
   const finishSession = useCallback((cause?: string | null) => {
     const current = activeCallRef.current;
     if (!current || terminalStatuses.includes(current.status)) return;
@@ -196,10 +245,12 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     const finished = { ...current, status, endedAt, errorCode: cause ?? current.errorCode };
     sessionRef.current = null;
     setPendingPhone(null);
+    clearCallSetupTimer();
     stopRingtone();
+    stopLocalMedia();
     setActiveCall(finished);
     void reportCall(finished, cause);
-  }, [reportCall, setActiveCall, stopRingtone]);
+  }, [clearCallSetupTimer, reportCall, setActiveCall, stopLocalMedia, stopRingtone]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -266,8 +317,10 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           if (['requesting', 'trying'].includes(state)) {
             patchActiveCall({ status: 'dialing' });
           } else if (state === 'early' || state === 'ringing') {
+            clearCallSetupTimer();
             patchActiveCall({ status: 'ringing' });
           } else if (state === 'active') {
+            clearCallSetupTimer();
             stopRingtone();
             const answeredAt = activeCallRef.current?.answeredAt ?? new Date().toISOString();
             const connected = patchActiveCall({ status: 'connected', answeredAt, held: false, errorCode: null });
@@ -275,6 +328,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           } else if (state === 'held') {
             patchActiveCall({ status: 'connected', held: true });
           } else if (['hangup', 'destroy', 'purge'].includes(state)) {
+            clearCallSetupTimer();
             finishSession(dialog.cause || null);
           }
         };
@@ -322,12 +376,14 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       disposed = true;
       mountedRef.current = false;
       stopRingtone();
+      clearCallSetupTimer();
+      stopLocalMedia();
       credentialsRef.current = null;
       managerRef.current = null;
       sessionRef.current = null;
       manager?.closeSocket(1000);
     };
-  }, [finishSession, isAuthenticated, lookupContact, patchActiveCall, reportCall, setActiveCall, stopRingtone, user?.id]);
+  }, [clearCallSetupTimer, finishSession, isAuthenticated, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, stopRingtone, user?.id]);
 
   const startCall = useCallback(async (rawPhone: string) => {
     const manager = managerRef.current;
@@ -341,7 +397,17 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     const current = activeCallRef.current;
     if (current && !terminalStatuses.includes(current.status)) throw new Error('onlinePbxCallAlreadyActive');
 
-    setPendingPhone(rawPhone);
+    setPendingPhone(phone);
+    let microphone: MediaStream;
+    try {
+      microphone = await requestMicrophone();
+    } catch (error) {
+      setPendingPhone(null);
+      throw error;
+    }
+    stopLocalMedia();
+    localMediaRef.current = microphone;
+
     const provisionalId = globalThis.crypto?.randomUUID?.() ?? `call-${Date.now()}`;
     const contactPromise = lookupContact(phone);
     const started: ActiveTelephonyCall = {
@@ -368,6 +434,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         useStereo: false,
         useMic: 'any',
         useSpeak: 'any',
+        useStream: microphone,
         tag: () => remoteAudioRef.current,
       }, undefined, undefined, (error) => {
         const cause = error instanceof Error ? error.name : 'CALL_SETUP_FAILED';
@@ -378,10 +445,19 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       const withSessionId = { ...activeCallRef.current!, clientCallId: session.callID };
       setActiveCall(withSessionId);
       void reportCall(withSessionId);
+      clearCallSetupTimer();
+      callSetupTimerRef.current = window.setTimeout(() => {
+        const latest = activeCallRef.current;
+        if (latest?.clientCallId !== session.callID || latest.status !== 'dialing') return;
+        session.hangup({ cause: 'NO_RESPONSE' });
+        finishSession('NO_RESPONSE');
+      }, 45_000);
       void contactPromise.then((contact) => {
         if (activeCallRef.current?.clientCallId === session.callID) patchActiveCall({ contact });
       });
     } catch (error) {
+      clearCallSetupTimer();
+      stopLocalMedia();
       const failed = {
         ...started,
         status: 'failed' as const,
@@ -396,14 +472,32 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     } finally {
       setPendingPhone(null);
     }
-  }, [connectionState, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, user?.fullName]);
+  }, [clearCallSetupTimer, connectionState, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
 
   const answerCall = useCallback(async () => {
     const session = sessionRef.current;
-    if (!session || activeCallRef.current?.direction !== 'incoming') return;
+    const current = activeCallRef.current;
+    if (!session || current?.direction !== 'incoming') return;
     stopRingtone();
-    session.answer({ useVideo: false, useStereo: false });
-  }, [stopRingtone]);
+    setPendingPhone(current.phone);
+    try {
+      const microphone = await requestMicrophone();
+      stopLocalMedia();
+      localMediaRef.current = microphone;
+      session.answer({
+        useVideo: false,
+        useStereo: false,
+        useMic: 'any',
+        useSpeak: 'any',
+        useStream: microphone,
+      });
+    } catch (error) {
+      void ringtoneRef.current?.play().catch(() => undefined);
+      throw error;
+    } finally {
+      setPendingPhone(null);
+    }
+  }, [stopLocalMedia, stopRingtone]);
 
   const hangupCall = useCallback(async () => {
     const session = sessionRef.current;
@@ -446,6 +540,17 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     session.dtmf(tone);
   }, []);
 
+  const transferCall = useCallback(async (destination: string) => {
+    const session = sessionRef.current;
+    const current = activeCallRef.current;
+    const target = destination.trim();
+    if (!session || !current || current.status !== 'connected') return;
+    if (!/^\d{2,10}$/.test(target) || target === extension) {
+      throw new Error('onlinePbxInvalidTransferTarget');
+    }
+    session.transfer(target, {});
+  }, [extension]);
+
   const clearFinishedCall = useCallback(() => {
     if (!activeCallRef.current || terminalStatuses.includes(activeCallRef.current.status)) {
       setActiveCall(null);
@@ -464,6 +569,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     toggleMute,
     toggleHold,
     sendDtmf,
+    transferCall,
     clearFinishedCall,
   }), [
     activeCall,
@@ -475,6 +581,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     pendingPhone,
     sendDtmf,
     startCall,
+    transferCall,
     toggleHold,
     toggleMute,
   ]);

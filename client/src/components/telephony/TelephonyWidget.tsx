@@ -13,6 +13,7 @@ import {
   Phone,
   PhoneCall,
   PhoneIncoming,
+  PhoneForwarded,
   PhoneOff,
   Play,
   UserRound,
@@ -48,6 +49,12 @@ type CallHistoryItem = {
   talkSeconds: number;
   hangupCause: string | null;
   hasRecording: boolean;
+};
+
+type TelephonyExtension = {
+  id: number;
+  name: string;
+  extension: string;
 };
 
 const dialpad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
@@ -89,6 +96,7 @@ export function TelephonyWidget({
   const [tab, setTab] = useState<'dialer' | 'history'>('dialer');
   const [dialedNumber, setDialedNumber] = useState('');
   const [showDtmf, setShowDtmf] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
   const [recordingCallId, setRecordingCallId] = useState<number | null>(null);
   const callDuration = useCallDuration(telephony.activeCall);
@@ -100,10 +108,18 @@ export function TelephonyWidget({
     refetchInterval: isOpen && tab === 'history' ? 15_000 : false,
   });
 
+  const extensionsQuery = useQuery<TelephonyExtension[]>({
+    queryKey: ['/api/telephony/extensions'],
+    enabled: isOpen && telephony.activeCall?.status === 'connected' && showTransfer,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
     if (telephony.activeCall) {
       setIsOpen(true);
       setTab('dialer');
+      setShowDtmf(false);
+      setShowTransfer(false);
     }
   }, [telephony.activeCall?.clientCallId]);
 
@@ -192,7 +208,7 @@ export function TelephonyWidget({
         </div>
 
         {call.status === 'connected' ? (
-          <div className="mt-7 grid grid-cols-3 gap-3">
+          <div className="mx-auto mt-7 grid grid-cols-4 gap-2">
             <button
               type="button"
               className={cn('telephony-control', call.muted && 'bg-amber-100 text-amber-800')}
@@ -214,11 +230,26 @@ export function TelephonyWidget({
             <button
               type="button"
               className={cn('telephony-control', showDtmf && 'bg-primary-50 text-primary-700')}
-              onClick={() => setShowDtmf((value) => !value)}
+              onClick={() => {
+                setShowDtmf((value) => !value);
+                setShowTransfer(false);
+              }}
               aria-label={t('telephonyKeypad')}
             >
               <Grid3X3 className="size-5" />
               <span>{t('telephonyKeypad')}</span>
+            </button>
+            <button
+              type="button"
+              className={cn('telephony-control', showTransfer && 'bg-primary-50 text-primary-700')}
+              onClick={() => {
+                setShowTransfer((value) => !value);
+                setShowDtmf(false);
+              }}
+              aria-label={t('telephonyTransfer')}
+            >
+              <PhoneForwarded className="size-5" />
+              <span>{t('telephonyTransfer')}</span>
             </button>
           </div>
         ) : null}
@@ -238,12 +269,45 @@ export function TelephonyWidget({
           </div>
         ) : null}
 
+        {showTransfer && call.status === 'connected' ? (
+          <div className="mt-5 w-full rounded-2xl bg-slate-50 p-3 text-left">
+            <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t('telephonyTransferTo')}
+            </p>
+            <ScrollArea className="max-h-44">
+              <div className="space-y-1">
+                {extensionsQuery.data?.map((employee) => (
+                  <button
+                    key={employee.id}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-xl bg-white px-3 py-2.5 text-sm shadow-sm hover:bg-primary-50"
+                    onClick={() => runCallAction(async () => {
+                      await telephony.transferCall(employee.extension);
+                      setShowTransfer(false);
+                    })}
+                  >
+                    <span className="truncate font-medium text-slate-900">{employee.name}</span>
+                    <Badge variant="secondary" className="ml-3 font-mono">{employee.extension}</Badge>
+                  </button>
+                ))}
+                {extensionsQuery.isLoading ? (
+                  <p className="px-3 py-4 text-center text-sm text-slate-500">{t('loading')}</p>
+                ) : null}
+                {!extensionsQuery.isLoading && !extensionsQuery.data?.length ? (
+                  <p className="px-3 py-4 text-center text-sm text-slate-500">{t('telephonyNoTransferTargets')}</p>
+                ) : null}
+              </div>
+            </ScrollArea>
+          </div>
+        ) : null}
+
         <div className="mt-auto flex items-center justify-center gap-4 pt-7">
           {call.direction === 'incoming' && call.status === 'ringing' ? (
             <Button
               type="button"
               className="size-14 rounded-full bg-emerald-600 p-0 hover:bg-emerald-700"
               onClick={() => runCallAction(telephony.answerCall)}
+              disabled={telephony.isPending}
               aria-label={t('telephonyAnswer')}
             >
               <PhoneCall className="size-6" />

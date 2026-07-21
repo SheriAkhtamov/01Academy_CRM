@@ -51,7 +51,7 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { ceoCopy } from '@/components/ui/ceo-copy';
-import { isInstagramLead, leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import {
   UnsavedChangesDialog,
@@ -88,12 +88,6 @@ interface Lead {
   phone?: string | null;
   phoneNumbers?: string[];
   messenger?: string | null;
-  studentName?: string;
-  studentAge?: number;
-  courseId?: number;
-  courseName?: string;
-  schoolId?: number;
-  schoolName?: string;
   sourceId?: number;
   sourceName?: string;
   sourceChannel?: string | null;
@@ -229,9 +223,6 @@ const compactPhoneNumbers = (values: string[]) => {
 const createLeadPayload = (values: CreateLeadFormValues) => ({
   ...values,
   phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
-  studentAge: values.studentAge ? Number(values.studentAge) : undefined,
-  courseId: values.courseId ? Number(values.courseId) : undefined,
-  enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : undefined,
   sourceId: Number(values.sourceId),
   managerId: values.managerId ? Number(values.managerId) : undefined,
 });
@@ -243,14 +234,6 @@ const uniquePhoneNumbers = (values: string[]) => {
 const createLeadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
-  messenger: z.string(),
-  studentName: z.string(),
-  studentAge: z.string().refine(
-    (value) => value === '' || (Number.isFinite(Number(value)) && Number(value) > 0),
-    'invalidData',
-  ),
-  courseId: z.string(),
-  enrolledGroupId: z.string(),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   managerId: z.string().min(1, 'fillRequiredFields'),
   comment: z.string(),
@@ -262,11 +245,6 @@ type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
 const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   contactName: '',
   phoneNumbers: [''],
-  messenger: '',
-  studentName: '',
-  studentAge: '',
-  courseId: '',
-  enrolledGroupId: '',
   sourceId: '',
   managerId: '',
   comment: '',
@@ -962,11 +940,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       return;
     }
     if (action === 'qualify') {
-      if (!lead.studentName || !lead.studentAge || !lead.courseId) {
-        openLead(lead.id, 'deal');
-        toast({ title: t('completeQualificationFields') });
-        return;
-      }
       void requestLeadStatusChange(lead.id, 'qualified');
       return;
     }
@@ -1887,21 +1860,9 @@ function LeadForm({
   managers: Array<{ id: number; fullName: string }>;
   managerSelectDisabled: boolean;
 }) {
-  const selectedCourseId = Number(form.watch('courseId')) || null;
-  const selectedGroupId = form.watch('enrolledGroupId');
-  const selectedSourceId = form.watch('sourceId');
   const phoneNumbers = form.watch('phoneNumbers') ?? [''];
   const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
   const activeSources = (data.sources ?? []).filter((source: any) => source.isActive !== false);
-  const selectedSource = activeSources.find((source: any) => String(source.id) === String(selectedSourceId));
-  const availableGroups = (data.groups ?? []).filter((group: any) => {
-    const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-    const matchesCourse = !selectedCourseId || Number(group.courseId) === selectedCourseId;
-    const hasSeat = occupied < Number(group.maxStudents || 12) || String(group.id) === selectedGroupId;
-    return matchesCourse
-      && hasSeat
-      && ['open', 'in_progress'].includes(String(group.status));
-  });
   const phoneNumbersMessage = typeof form.formState.errors.phoneNumbers?.message === 'string'
     ? form.formState.errors.phoneNumbers.message as TranslationKey
     : null;
@@ -1984,107 +1945,6 @@ function LeadForm({
             {t('addPhone')}
           </Button>
         </div>
-        <FormField
-          control={form.control}
-          name="messenger"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{isInstagramLead({
-                sourceName: selectedSource?.name,
-                sourceChannel: selectedSource?.channel,
-              }) ? t('instagramContactChannel') : t('telegramWhatsapp')}</FormLabel>
-              <FormControl><Input {...field} placeholder="@username" /></FormControl>
-              <LocalizedFormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="studentName"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('studentName')}</FormLabel>
-              <FormControl><Input {...field} placeholder={t('studentNamePlaceholder')} /></FormControl>
-              <LocalizedFormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="studentAge"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('age')}</FormLabel>
-              <FormControl><Input {...field} type="number" min="1" /></FormControl>
-              <LocalizedFormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="courseId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('course')}</FormLabel>
-              <Select
-                value={field.value || 'auto'}
-                onValueChange={(value) => {
-                  field.onChange(value === 'auto' ? '' : value);
-                  form.setValue('enrolledGroupId', '');
-                }}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder={t('autoByAgeOrManual')} /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="auto">{t('autoByAgeOrManual')}</SelectItem>
-                    {(data.courses ?? []).map((course: any) => (
-                      <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <LocalizedFormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="enrolledGroupId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('group')}</FormLabel>
-              <Select
-                value={field.value || 'none'}
-                onValueChange={(value) => {
-                  if (value === 'none') {
-                    field.onChange('');
-                    return;
-                  }
-                  field.onChange(value);
-                  const group = (data.groups ?? []).find((item: any) => item.id === Number(value));
-                  if (group?.courseId) form.setValue('courseId', String(group.courseId));
-                }}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder={t('selectGroup')} /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="none">{t('notAssigned')}</SelectItem>
-                    {availableGroups.map((group: any) => {
-                      const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-                      return (
-                        <SelectItem key={group.id} value={String(group.id)}>
-                          {group.name} · {occupied}/{group.maxStudents || 12}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">{t('leadGroupAssignmentHint')}</p>
-              <LocalizedFormMessage />
-            </FormItem>
-          )}
-        />
         <FormField
           control={form.control}
           name="sourceId"

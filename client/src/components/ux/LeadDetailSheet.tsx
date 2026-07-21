@@ -11,6 +11,7 @@ import type { TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
+import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import {
   LeadMergeConflictDialog,
@@ -31,16 +32,6 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Form,
   FormControl,
@@ -70,7 +61,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { getInitials } from '@/lib/auth';
 import {
-  isInstagramLead,
   isSyntheticInstagramPhone,
   leadMessageTarget,
   primaryVisibleLeadPhone,
@@ -83,7 +73,6 @@ import {
   Clock3,
   CreditCard,
   CalendarClock,
-  ChevronsUpDown,
   ExternalLink,
   History,
   Loader2,
@@ -109,13 +98,6 @@ interface LeadDetails {
   contactName: string;
   phone?: string | null;
   phoneNumbers?: string[];
-  messenger?: string | null;
-  studentName?: string | null;
-  studentAge?: number | null;
-  courseId?: number | null;
-  courseName?: string | null;
-  schoolId?: number | null;
-  schoolName?: string | null;
   sourceId?: number | null;
   sourceName?: string | null;
   sourceChannel?: string | null;
@@ -124,18 +106,23 @@ interface LeadDetails {
   managerName?: string | null;
   comment?: string | null;
   language?: string | null;
-  enrolledGroupId?: number | null;
-  studentId?: number | null;
-  primaryGroupId?: number | null;
-  groupIds?: number[];
-  groups?: Array<{
-    groupId: number;
-    groupName: string;
-    courseId?: number | null;
+  students?: Array<{
+    id: number;
+    studentName?: string | null;
+    studentAge?: number | null;
+    phone?: string | null;
+    status: string;
     courseName?: string | null;
-    schoolId?: number | null;
-    isPrimary?: boolean;
-    enrolledAt?: string | null;
+    schoolName?: string | null;
+    groups?: Array<{
+      groupId: number;
+      groupName: string;
+      courseId?: number | null;
+      courseName?: string | null;
+      schoolId?: number | null;
+      isPrimary?: boolean;
+      enrolledAt?: string | null;
+    }>;
   }>;
   expectedPaymentUzs?: number | null;
   offerPriceUzs?: number | null;
@@ -201,6 +188,8 @@ interface LeadDetails {
     status: string;
     paidAt?: string | null;
     createdAt?: string | null;
+    studentId?: number | null;
+    studentName?: string | null;
   }>;
 }
 
@@ -266,12 +255,7 @@ const uniquePhoneNumbers = (values: string[]) => {
 const leadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
-  messenger: z.string(),
-  studentName: z.string(),
-  studentAge: optionalNumberString,
-  courseId: z.string(),
   sourceId: z.string().min(1, 'fillRequiredFields'),
-  enrolledGroupId: z.string(),
   language: z.string(),
   statusCode: z.string(),
   expectedPaymentUzs: optionalNumberString,
@@ -285,6 +269,7 @@ const contactSchema = z.object({
 });
 
 const paymentSchema = z.object({
+  studentId: z.string().min(1, 'studentSelectionRequired'),
   amountUzs: z.string().refine((value) => Number(value) > 0, 'fillRequiredFields'),
   method: z.string().min(1, 'fillRequiredFields'),
   type: z.string().min(1, 'fillRequiredFields'),
@@ -326,12 +311,7 @@ type TaskFormValues = z.infer<typeof taskSchema>;
 const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   contactName: lead.contactName ?? '',
   phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
-  messenger: lead.messenger ?? '',
-  studentName: lead.studentName ?? '',
-  studentAge: lead.studentAge ? String(lead.studentAge) : '',
-  courseId: lead.courseId ? String(lead.courseId) : '',
   sourceId: lead.sourceId ? String(lead.sourceId) : '',
-  enrolledGroupId: lead.enrolledGroupId ? String(lead.enrolledGroupId) : '',
   language: lead.language ?? 'ru',
   statusCode: lead.statusCode,
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
@@ -372,7 +352,6 @@ export function LeadDetailSheet({
   open,
   onOpenChange,
   initialTab = 'deal',
-  courses,
   groups,
   sources,
   statuses,
@@ -390,6 +369,7 @@ export function LeadDetailSheet({
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
+  const [createStudentOpen, setCreateStudentOpen] = useState(false);
 
   const leadQuery = useQuery<LeadDetails>({
     queryKey: ['/api/academy/leads', leadId],
@@ -402,12 +382,7 @@ export function LeadDetailSheet({
     defaultValues: {
       contactName: '',
       phoneNumbers: [''],
-      messenger: '',
-      studentName: '',
-      studentAge: '',
-      courseId: '',
       sourceId: '',
-      enrolledGroupId: '',
       language: 'ru',
       statusCode: 'new_request',
       expectedPaymentUzs: '',
@@ -421,6 +396,7 @@ export function LeadDetailSheet({
   const paymentForm = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
+      studentId: '',
       amountUzs: '',
       method: 'transfer',
       type: 'full',
@@ -453,12 +429,7 @@ export function LeadDetailSheet({
       lead.id,
       lead.contactName,
       (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
-      lead.messenger ?? '',
-      lead.studentName ?? '',
-      lead.studentAge ?? '',
-      lead.courseId ?? '',
       lead.sourceId ?? '',
-      lead.enrolledGroupId ?? '',
       lead.language ?? '',
       lead.statusCode,
       lead.expectedPaymentUzs ?? '',
@@ -473,6 +444,7 @@ export function LeadDetailSheet({
       lead.id,
       lead.expectedPaymentUzs ?? '',
       lead.offerPriceUzs ?? '',
+      (lead.students ?? []).map((student) => student.id).join(','),
       (lead.payments ?? []).map((p) => `${p.id}:${p.paidUntil ?? ''}`).join(','),
     ].join('|');
   }, [leadQuery.data]);
@@ -499,6 +471,7 @@ export function LeadDetailSheet({
       const paymentDirty = paymentForm.formState.isDirty;
       if (!paymentDirty || hydratedTransientKey.current === null) {
         paymentForm.reset({
+          studentId: lead.students?.length === 1 ? String(lead.students[0].id) : '',
           amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
           method: 'transfer',
           type: 'full',
@@ -519,6 +492,7 @@ export function LeadDetailSheet({
       hydratedTransientKey.current = null;
       setPendingManagerId(null);
       setDuplicateHint(null);
+      setCreateStudentOpen(false);
     }
   }, [open]);
 
@@ -526,12 +500,6 @@ export function LeadDetailSheet({
     toast({ title });
     await leadQuery.refetch();
     onChanged();
-  };
-
-  const refreshLeadGroups = async () => {
-    const refetch = leadQuery.refetch();
-    onChanged();
-    await refetch;
   };
 
   const updateLead = useMutation({
@@ -553,10 +521,7 @@ export function LeadDetailSheet({
         ...rest,
         expectedUpdatedAt: currentLead?.updatedAt,
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
-        studentAge: values.studentAge ? Number(values.studentAge) : null,
-        courseId: values.courseId ? Number(values.courseId) : null,
         sourceId: Number(values.sourceId),
-        enrolledGroupId: values.enrolledGroupId ? Number(values.enrolledGroupId) : null,
         expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
       });
     },
@@ -578,55 +543,6 @@ export function LeadDetailSheet({
       }
       toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' });
     },
-  });
-
-  const addLeadGroup = useMutation({
-    mutationFn: ({
-      leadId: targetLeadId,
-      studentId,
-      groupId,
-      isPrimary = false,
-    }: {
-      leadId: number;
-      studentId?: number | null;
-      groupId: number;
-      isPrimary?: boolean;
-    }) => apiRequest(
-      'POST',
-      studentId
-        ? `/api/academy/students/${studentId}/groups`
-        : `/api/academy/leads/${targetLeadId}/groups`,
-      { groupId, isPrimary },
-    ),
-    onSuccess: refreshLeadGroups,
-    onError: (error: Error) => toast({
-      title: t('groupAddFailed'),
-      description: error.message,
-      variant: 'destructive',
-    }),
-  });
-
-  const removeLeadGroup = useMutation({
-    mutationFn: ({
-      leadId: targetLeadId,
-      studentId,
-      groupId,
-    }: {
-      leadId: number;
-      studentId?: number | null;
-      groupId: number;
-    }) => apiRequest(
-      'DELETE',
-      studentId
-        ? `/api/academy/students/${studentId}/groups/${groupId}`
-        : `/api/academy/leads/${targetLeadId}/groups/${groupId}`,
-    ),
-    onSuccess: refreshLeadGroups,
-    onError: (error: Error) => toast({
-      title: t('groupRemoveFailed'),
-      description: error.message,
-      variant: 'destructive',
-    }),
   });
 
   const mergeLeads = useMutation({
@@ -680,6 +596,7 @@ export function LeadDetailSheet({
     mutationFn: (values: PaymentFormValues) =>
       apiRequest('POST', '/api/academy/payments', {
         leadId,
+        studentId: Number(values.studentId),
         amountUzs: Number(values.amountUzs),
         method: values.method,
         type: values.type,
@@ -689,10 +606,10 @@ export function LeadDetailSheet({
         status: 'paid',
       }),
     onSuccess: async () => {
-      const clientExisted = leadQuery.data?.statusCode === 'paid';
       const refreshed = await leadQuery.refetch();
       const refreshedLead = refreshed.data;
       paymentForm.reset({
+        studentId: refreshedLead?.students?.length === 1 ? String(refreshedLead.students[0].id) : '',
         amountUzs: String(refreshedLead?.expectedPaymentUzs ?? refreshedLead?.offerPriceUzs ?? ''),
         method: 'transfer',
         type: 'full',
@@ -703,8 +620,8 @@ export function LeadDetailSheet({
       hydratedTransientKey.current = null;
       onChanged();
       toast({
-        title: clientExisted ? t('paymentSaved') : t('clientCreated'),
-        description: clientExisted ? t('recurringPaymentSavedDesc') : t('paymentSavedDesc'),
+        title: t('paymentSaved'),
+        description: t('paymentSavedDesc'),
       });
     },
     onError: (error: Error) => toast({ title: t('paymentSaveFailed'), description: error.message, variant: 'destructive' }),
@@ -741,24 +658,6 @@ export function LeadDetailSheet({
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
   const lead = leadQuery.data;
-  const studentGroups = lead?.groups ?? [];
-  const selectedGroupIds = useMemo(
-    () => new Set((lead?.groups ?? []).map((group) => Number(group.groupId))),
-    [lead?.groups],
-  );
-  const selectableGroups = useMemo(() => {
-    return groups.filter((group) => {
-      const isSelected = selectedGroupIds.has(Number(group.id));
-      return isSelected || ['open', 'in_progress'].includes(String(group.status));
-    });
-  }, [groups, selectedGroupIds]);
-  const primaryGroupId = Number(
-    studentGroups.find((group) => group.isPrimary)?.groupId
-    ?? lead?.primaryGroupId
-    ?? lead?.enrolledGroupId
-    ?? 0,
-  ) || null;
-  const groupMutationPending = addLeadGroup.isPending || removeLeadGroup.isPending;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
@@ -815,23 +714,10 @@ export function LeadDetailSheet({
                     ) : (
                       <span className="inline-flex items-center gap-1 italic">{t('leadSheetNoContactInfo')}</span>
                     )}
-                    {lead.studentName ? (
-                      <span className="inline-flex items-center gap-1">
-                        <UserRound className="size-3.5" />
-                        {lead.studentName}
-                        {lead.studentAge ? `, ${lead.studentAge}` : ''}
-                      </span>
-                    ) : null}
-                    {lead.courseName ? (
+                    {(lead.students ?? []).length > 0 ? (
                       <span className="inline-flex items-center gap-1">
                         <GraduationCap className="size-3.5" />
-                        {lead.courseName}
-                      </span>
-                    ) : null}
-                    {lead.schoolName ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Users className="size-3.5" />
-                        {lead.schoolName}
+                        {lead.students?.length ?? 0} {t('studentsCount')}
                       </span>
                     ) : null}
                     {lead.sourceName ? (
@@ -919,7 +805,7 @@ export function LeadDetailSheet({
                   <Form {...leadForm}>
                     <form className="flex flex-col gap-5" onSubmit={leadForm.handleSubmit((values) => updateLead.mutate(values))}>
                       <Card>
-                        <CardHeader><CardTitle>{t('clientAndStudent')}</CardTitle></CardHeader>
+                        <CardHeader><CardTitle>{t('contactInformation')}</CardTitle></CardHeader>
                         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                           {(lead.channels ?? []).length > 0 ? (
                             <FormItem className="md:col-span-2">
@@ -995,39 +881,6 @@ export function LeadDetailSheet({
                           </div>
                           <FormField
                             control={leadForm.control}
-                            name="messenger"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{isInstagramLead(lead) ? t('instagramContactChannel') : t('telegramWhatsapp')}</FormLabel>
-                                <FormControl><Input {...field} placeholder="@username" /></FormControl>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={leadForm.control}
-                            name="studentName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('studentName')}</FormLabel>
-                                <FormControl><Input {...field} /></FormControl>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={leadForm.control}
-                            name="studentAge"
-                            render={({ field, fieldState }) => (
-                              <FormItem>
-                                <FormLabel>{t('age')}</FormLabel>
-                                <FormControl><Input {...field} type="number" min="1" aria-invalid={fieldState.invalid} /></FormControl>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={leadForm.control}
                             name="language"
                             render={({ field }) => (
                               <FormItem>
@@ -1045,6 +898,65 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
+                        </CardContent>
+                      </Card>
+
+                      <Card className="overflow-hidden">
+                        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 bg-muted/20">
+                          <div>
+                            <CardTitle className="flex items-center gap-2">
+                              <GraduationCap className="size-5 text-primary" />
+                              {t('students')}
+                              <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
+                            </CardTitle>
+                            <p className="mt-1 text-sm text-muted-foreground">{t('leadStudentsHint')}</p>
+                          </div>
+                          <Button type="button" size="sm" onClick={() => setCreateStudentOpen(true)}>
+                            <Plus data-icon="inline-start" />
+                            {t('createStudent')}
+                          </Button>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                          {(lead.students ?? []).length === 0 ? (
+                            <div className="flex flex-col items-center px-6 py-8 text-center">
+                              <span className="mb-3 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                <Users className="size-5" />
+                              </span>
+                              <p className="font-medium">{t('noStudentsForLead')}</p>
+                              <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('noStudentsForLeadHint')}</p>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-border">
+                              {lead.students?.map((student) => {
+                                const studentGroups = student.groups ?? [];
+                                return (
+                                  <div key={student.id} className="flex items-start gap-3 px-5 py-4">
+                                    <Avatar className="size-10 border border-border bg-primary/5">
+                                      <AvatarFallback className="text-primary">{getInitials(student.studentName || t('student'))}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-medium">{student.studentName || t('student')}</p>
+                                        {student.studentAge ? <Badge variant="outline">{t('ageLabel')} {student.studentAge}</Badge> : null}
+                                      </div>
+                                      <p className="mt-1 text-sm text-muted-foreground">
+                                        {[student.courseName, student.schoolName, student.phone].filter(Boolean).join(' · ') || t('noData')}
+                                      </p>
+                                      {studentGroups.length > 0 ? (
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                          {studentGroups.map((group) => (
+                                            <Badge key={group.groupId} variant={group.isPrimary ? 'secondary' : 'outline'}>
+                                              {group.groupName}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 
@@ -1129,143 +1041,6 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
-                          <FormField
-                            control={leadForm.control}
-                            name="courseId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('course')}</FormLabel>
-                                <Select value={field.value || 'none'} onValueChange={(value) => {
-                                  const nextCourseId = value === 'none' ? '' : value;
-                                  field.onChange(nextCourseId);
-                                }}>
-                                  <FormControl><SelectTrigger><SelectValue placeholder={t('courseNotSelected')} /></SelectTrigger></FormControl>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      <SelectItem value="none">{t('courseNotSelected')}</SelectItem>
-                                      {courses.map((course) => (
-                                        <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormItem>
-                            <FormLabel htmlFor="lead-groups-trigger">{t('navGroups')}</FormLabel>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  id="lead-groups-trigger"
-                                  type="button"
-                                  variant="outline"
-                                  className="h-auto min-h-10 w-full justify-between gap-2 px-3 py-2 font-normal"
-                                >
-                                  <span className="flex min-w-0 flex-1 flex-wrap gap-1.5 text-left">
-                                    {studentGroups.length === 0 ? (
-                                      <span className="text-muted-foreground">{t('noGroup')}</span>
-                                    ) : (
-                                      <>
-                                        {studentGroups.slice(0, 2).map((group) => (
-                                          <Badge
-                                            key={group.groupId}
-                                            variant="secondary"
-                                            className={group.isPrimary ? 'border border-primary/30 bg-primary/10' : undefined}
-                                          >
-                                            <span className="max-w-56 truncate">{group.groupName}</span>
-                                          </Badge>
-                                        ))}
-                                        {studentGroups.length > 2 ? (
-                                          <Badge variant="outline">+{studentGroups.length - 2}</Badge>
-                                        ) : null}
-                                      </>
-                                    )}
-                                  </span>
-                                  {groupMutationPending ? (
-                                    <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                                  ) : (
-                                    <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-                                  )}
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="start"
-                                className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 max-w-[calc(100vw-2rem)]"
-                              >
-                                <DropdownMenuLabel>{t('chooseGroups')}</DropdownMenuLabel>
-                                {selectableGroups.map((group) => {
-                                  const groupId = Number(group.id);
-                                  const isSelected = selectedGroupIds.has(groupId);
-                                  const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-                                  const isFull = occupied >= Number(group.maxStudents || 12);
-                                  const cannotRemoveLastStudentGroup = Boolean(lead.studentId)
-                                    && isSelected
-                                    && studentGroups.length <= 1;
-                                  return (
-                                    <DropdownMenuCheckboxItem
-                                      key={group.id}
-                                      checked={isSelected}
-                                      disabled={groupMutationPending || (!isSelected && isFull) || cannotRemoveLastStudentGroup}
-                                      onSelect={(event) => event.preventDefault()}
-                                      onCheckedChange={() => {
-                                        if (isSelected) {
-                                          removeLeadGroup.mutate({
-                                            leadId: lead.id,
-                                            studentId: lead.studentId,
-                                            groupId,
-                                          });
-                                        } else {
-                                          addLeadGroup.mutate({
-                                            leadId: lead.id,
-                                            studentId: lead.studentId,
-                                            groupId,
-                                          });
-                                        }
-                                      }}
-                                    >
-                                      <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                        {occupied}/{group.maxStudents || 12}
-                                      </span>
-                                    </DropdownMenuCheckboxItem>
-                                  );
-                                })}
-
-                                {studentGroups.length > 1 ? (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuLabel>{t('primaryGroup')}</DropdownMenuLabel>
-                                    <DropdownMenuRadioGroup
-                                      value={primaryGroupId ? String(primaryGroupId) : undefined}
-                                      onValueChange={(value) => {
-                                        const groupId = Number(value);
-                                        if (!groupId || groupId === primaryGroupId) return;
-                                        addLeadGroup.mutate({
-                                          leadId: lead.id,
-                                          studentId: lead.studentId,
-                                          groupId,
-                                          isPrimary: true,
-                                        });
-                                      }}
-                                    >
-                                      {studentGroups.map((group) => (
-                                        <DropdownMenuRadioItem
-                                          key={group.groupId}
-                                          value={String(group.groupId)}
-                                          disabled={groupMutationPending}
-                                          onSelect={(event) => event.preventDefault()}
-                                        >
-                                          <span className="truncate">{group.groupName}</span>
-                                        </DropdownMenuRadioItem>
-                                      ))}
-                                    </DropdownMenuRadioGroup>
-                                  </>
-                                ) : null}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </FormItem>
                           <FormField
                             control={leadForm.control}
                             name="expectedPaymentUzs"
@@ -1387,8 +1162,41 @@ export function LeadDetailSheet({
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <Form {...paymentForm}>
+                        {(lead.students ?? []).length === 0 ? (
+                          <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-8 text-center">
+                            <GraduationCap className="mb-3 size-8 text-muted-foreground" />
+                            <p className="font-medium">{t('studentRequiredForPayment')}</p>
+                            <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('studentRequiredForPaymentHint')}</p>
+                            <Button type="button" className="mt-4" onClick={() => setCreateStudentOpen(true)}>
+                              <Plus data-icon="inline-start" />
+                              {t('createStudent')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Form {...paymentForm}>
                           <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit((values) => createPayment.mutate(values))}>
+                            <FormField
+                              control={paymentForm.control}
+                              name="studentId"
+                              render={({ field, fieldState }) => (
+                                <FormItem className="md:col-span-2">
+                                  <FormLabel>{t('paymentStudent')}</FormLabel>
+                                  <Select value={field.value} onValueChange={field.onChange}>
+                                    <FormControl><SelectTrigger aria-invalid={fieldState.invalid}><SelectValue placeholder={t('selectStudent')} /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                      <SelectGroup>
+                                        {lead.students?.map((student) => (
+                                          <SelectItem key={student.id} value={String(student.id)}>
+                                            {student.studentName || `${t('student')} #${student.id}`}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                    </SelectContent>
+                                  </Select>
+                                  <LocalizedFormMessage />
+                                </FormItem>
+                              )}
+                            />
                             <FormField
                               control={paymentForm.control}
                               name="amountUzs"
@@ -1498,7 +1306,8 @@ export function LeadDetailSheet({
                               </Button>
                             </div>
                           </form>
-                        </Form>
+                          </Form>
+                        )}
                       </CardContent>
                     </Card>
 
@@ -1515,6 +1324,7 @@ export function LeadDetailSheet({
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {[payment.method, payment.type, payment.discount].filter(Boolean).join(' · ')}
                                 </p>
+                                {payment.studentName ? <p className="mt-1 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
                                 {payment.comment ? <p className="mt-1 text-xs text-muted-foreground">{payment.comment}</p> : null}
                               </div>
                               <div className="flex shrink-0 flex-col items-end gap-1 text-right">
@@ -1654,6 +1464,20 @@ export function LeadDetailSheet({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {lead ? (
+        <CreateLeadStudentDialog
+          open={createStudentOpen}
+          onOpenChange={setCreateStudentOpen}
+          leadId={lead.id}
+          contactName={lead.contactName}
+          groups={groups}
+          onCreated={async () => {
+            hydratedTransientKey.current = null;
+            await leadQuery.refetch();
+            onChanged();
+          }}
+        />
+      ) : null}
       <LeadMergeConflictDialog
         open={Boolean(duplicateHint && lead)}
         mode="persisted"

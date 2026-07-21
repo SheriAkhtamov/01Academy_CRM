@@ -397,12 +397,29 @@ export const academyStudents = pgTable("academy_students", {
 }, (table) => ({
   phoneIdx: index("academy_students_phone_idx").on(table.phone),
   groupIdx: index("academy_students_group_idx").on(table.groupId),
-  leadUnique: uniqueIndex("academy_students_lead_unique")
-    .on(table.leadId)
-    .where(sql`${table.leadId} IS NOT NULL`),
+  leadIdx: index("academy_students_lead_idx").on(table.leadId),
   managerIdx: index("academy_students_manager_idx").on(table.managerId),
   schoolIdx: index("academy_students_school_idx").on(table.schoolId),
   statusIdx: index("academy_students_status_idx").on(table.status),
+}));
+
+export const academyLeadImportRecords = pgTable("academy_lead_import_records", {
+  id: serial("id").primaryKey(),
+  provider: varchar("provider", { length: 80 }).notNull(),
+  externalId: varchar("external_id", { length: 255 }).notNull(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
+  sourceSheet: varchar("source_sheet", { length: 255 }),
+  outcome: varchar("outcome", { length: 40 }).notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  importedAt: timestamp("imported_at").notNull().defaultNow(),
+}, (table) => ({
+  providerExternalUnique: uniqueIndex("academy_lead_import_records_provider_external_unique")
+    .on(table.provider, table.externalId),
+  leadIdx: index("academy_lead_import_records_lead_idx").on(table.leadId),
+  outcomeCheck: check(
+    "academy_lead_import_records_outcome_check",
+    sql`${table.outcome} IN ('created', 'merged', 'merged_archived', 'skipped_test', 'skipped_invalid')`,
+  ),
 }));
 
 export const academyStudentGroupEnrollments = pgTable("academy_student_group_enrollments", {

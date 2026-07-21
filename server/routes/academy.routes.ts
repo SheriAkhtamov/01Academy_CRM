@@ -2065,23 +2065,8 @@ const mergeLeadRecords = async (
     throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
   }
 
-  const studentCounts = await queryOne<{ retainedStudents: number; duplicateStudents: number }>(
-    `SELECT
-       COUNT(*) FILTER (WHERE lead_id = $1)::int AS retained_students,
-       COUNT(*) FILTER (WHERE lead_id = $2)::int AS duplicate_students
-     FROM academy_students
-     WHERE lead_id IN ($1, $2)`,
-    [retainedLeadId, duplicateLeadId],
-  );
-  if (Number(studentCounts?.retainedStudents ?? 0) > 0 && Number(studentCounts?.duplicateStudents ?? 0) > 0) {
-    throw Object.assign(new Error('leadMergeStudentConflict'), { statusCode: 409 });
-  }
-  const duplicateOwnsOnlyStudent = Number(studentCounts?.retainedStudents ?? 0) === 0
-    && Number(studentCounts?.duplicateStudents ?? 0) > 0;
   const preferEnrollmentValue = <T>(retained: T | null | undefined, duplicate: T | null | undefined) => (
-    duplicateOwnsOnlyStudent
-      ? preferLeadValue(duplicate, retained)
-      : preferLeadValue(retained, duplicate)
+    preferLeadValue(retained, duplicate)
   );
 
   const moved = await queryOne(
@@ -2191,11 +2176,12 @@ const mergeLeadRecords = async (
   );
   await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [duplicateLeadId]);
 
-  const mergedStudent = await queryOne(
+  const mergedStudents = await query(
     `SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
     [retainedLeadId],
   );
-  if (mergedStudent) {
+  if (mergedStudents.length === 1) {
+    const mergedStudent = mergedStudents[0];
     await query(
       `INSERT INTO academy_student_group_enrollments
          (student_id, group_id, status, is_primary, enrolled_at, created_by)
@@ -3051,7 +3037,22 @@ const createStudentFromLead = async (req: any, leadId: number, paymentId?: numbe
       ? addDays(new Date(sourcePayment.paidAt), 30)
       : addDays(new Date(), 30);
 
-  const existingStudent = await queryOne(`SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`, [leadId]);
+  const existingStudents = sourcePayment?.studentId
+    ? await query(
+        `SELECT * FROM academy_students WHERE id = $1 AND lead_id = $2 FOR UPDATE`,
+        [sourcePayment.studentId, leadId],
+      )
+    : await query(
+        `SELECT * FROM academy_students WHERE lead_id = $1 ORDER BY id FOR UPDATE`,
+        [leadId],
+      );
+  if (sourcePayment?.studentId && existingStudents.length === 0) {
+    throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+  }
+  if (!sourcePayment?.studentId && existingStudents.length > 1) {
+    throw Object.assign(new Error('studentSelectionRequired'), { statusCode: 409 });
+  }
+  const existingStudent = existingStudents[0];
   if (existingStudent) {
     let resolvedStudent = existingStudent;
     if (paymentId) {
@@ -5401,7 +5402,7 @@ router.get('/leads/:id', async (req, res) => {
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, lead)) return;
-    const [history, assignmentHistory, communications, calls, tasks, payments, student] = await Promise.all([
+    const [history, assignmentHistory, communications, calls, tasks, payments, students] = await Promise.all([
       query(`SELECT * FROM academy_lead_stage_history WHERE lead_id = $1 ORDER BY entered_at DESC`, [id]),
       query(
         `SELECT h.*,
@@ -5431,14 +5432,29 @@ router.get('/leads/:id', async (req, res) => {
         [id],
       ),
       query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
-      query(`SELECT * FROM academy_payments WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
-      queryOne(
-        `SELECT student.id,
+      query(
+        `SELECT payment.*,
+                student.student_name,
+                student.contact_name AS student_contact_name
+         FROM academy_payments payment
+         LEFT JOIN academy_students student ON student.id = payment.student_id
+         WHERE payment.lead_id = $1
+         ORDER BY payment.created_at DESC`,
+        [id],
+      ),
+      query(
+        `SELECT student.*,
+                course.name AS course_name,
+                academy_group.name AS group_name,
+                school.name AS school_name,
                 student.group_id AS primary_group_id,
                 ${studentGroupMembershipsSelect('student')}
          FROM academy_students student
+         LEFT JOIN academy_courses course ON course.id = student.course_id
+         LEFT JOIN academy_groups academy_group ON academy_group.id = student.group_id
+         LEFT JOIN academy_schools school ON school.id = student.school_id
          WHERE student.lead_id = $1
-         LIMIT 1`,
+         ORDER BY student.created_at, student.id`,
         [id],
       ),
     ]);
@@ -5457,10 +5473,11 @@ router.get('/leads/:id', async (req, res) => {
       calls,
       tasks,
       payments,
-      studentId: student?.id ?? null,
-      primaryGroupId: student?.primaryGroupId ?? null,
-      groups: student?.groups ?? lead.leadGroups ?? [],
-      groupIds: student?.groupIds ?? lead.leadGroupIds ?? [],
+      students,
+      studentId: students.length === 1 ? students[0].id : null,
+      primaryGroupId: students.length === 1 ? students[0].primaryGroupId : null,
+      groups: students.length === 1 ? students[0].groups : [],
+      groupIds: students.length === 1 ? students[0].groupIds : [],
     });
   } catch (error) {
     logger.error('Failed to fetch lead', { error });
@@ -6085,9 +6102,7 @@ router.patch('/leads/:id', async (req, res) => {
       }
       const groupToReserve = Number(merged.enrolledGroupId || 0);
       const activatesReservations = oldLead.statusCode === 'not_now' && nextStatus !== 'not_now';
-      const mustValidateCapacity = Boolean(requestedGroupId)
-        || activatesReservations
-        || ['enrolled', 'paid'].includes(nextStatus);
+      const mustValidateCapacity = Boolean(requestedGroupId) || activatesReservations;
       if (mustValidateCapacity && groupToReserve) {
         let lockedGroup: Row | null;
         if (lockedStudent) {
@@ -6181,10 +6196,6 @@ router.patch('/leads/:id', async (req, res) => {
 
     if (oldLead.statusCode !== lead.statusCode) {
       await handleLeadAutomation(req, lead, oldLead.statusCode);
-    }
-
-    if (lead.statusCode === 'paid') {
-      await createStudentFromLead(req, lead.id);
     }
 
     if (manager && managerChanged && didChangeManager) {
@@ -6310,6 +6321,141 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to convert lead to student', { error });
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to convert lead to student' });
+  }
+});
+
+router.post('/leads/:id/students', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Student creation access required')) return;
+  try {
+    const leadId = parseId(req.params.id);
+    if (!leadId) return res.status(400).json({ error: 'Invalid lead id' });
+    const initialLead = await getLead(leadId);
+    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
+    if (initialLead.isArchived) {
+      return res.status(409).json({ error: 'archivedLeadMustBeRestoredBeforeStudentCreation' });
+    }
+
+    const studentName = nullableText(req.body.studentName);
+    if (!studentName) return res.status(400).json({ error: 'studentNameRequired' });
+    const parsedStudentAge = req.body.studentAge === undefined || req.body.studentAge === null || req.body.studentAge === ''
+      ? null
+      : toIntegerOrNull(req.body.studentAge);
+    const studentAge = parsedStudentAge ?? null;
+    if (studentAge !== null && (!Number.isInteger(studentAge) || studentAge < 1 || studentAge > 120)) {
+      return res.status(400).json({ error: 'invalidStudentAge' });
+    }
+    const requestedPhone = nullableText(req.body.phone);
+    const studentPhone = requestedPhone ? normalizePhoneForStorage(requestedPhone) : null;
+    if (
+      requestedPhone
+      && (!studentPhone || studentPhone.normalizedPhone.replace(/\D/g, '').length < 7)
+    ) {
+      return res.status(400).json({ error: 'invalidStudentPhone' });
+    }
+    const parsedGroupIds: number[] = (Array.isArray(req.body.groupIds) ? req.body.groupIds : [])
+      .map((value: unknown) => parseId(value))
+      .filter((id: number | null): id is number => id !== null);
+    const groupIds = Array.from(new Set<number>(parsedGroupIds)).sort((left, right) => left - right);
+    if (groupIds.length === 0) {
+      return res.status(400).json({ error: 'studentGroupRequired' });
+    }
+    const requestedPrimaryGroupId = parseId(req.body.primaryGroupId);
+    const primaryGroupId = requestedPrimaryGroupId && groupIds.includes(requestedPrimaryGroupId)
+      ? requestedPrimaryGroupId
+      : groupIds[0];
+    const enrolledAt = parseOptionalDate(req.body.enrolledAt, 'enrolledAt') ?? new Date();
+
+    const student = await withTransaction(async () => {
+      const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId]);
+      if (!lead) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      if (lead.isArchived) {
+        throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeStudentCreation'), { statusCode: 409 });
+      }
+      const selectedGroups: Row[] = [];
+      for (const groupId of groupIds) {
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+        const group = await validateEnrollmentGroup(groupId);
+        if (group) selectedGroups.push(group);
+      }
+      const primaryGroup = selectedGroups.find((group) => Number(group.id) === primaryGroupId);
+      if (!primaryGroup) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      const count = await queryOne<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM academy_students WHERE lead_id = $1`,
+        [leadId],
+      );
+      const createdStudent = await insertRow('academy_students', {
+        leadId,
+        contactName: lead.contactName,
+        phone: studentPhone?.phone ?? null,
+        messenger: null,
+        studentName,
+        studentAge,
+        courseId: Number(primaryGroup.courseId),
+        schoolId: Number(primaryGroup.schoolId),
+        groupId: primaryGroupId,
+        managerId: lead.managerId ?? req.user!.id,
+        status: 'studying',
+        enrolledAt,
+        enrollmentDate: enrolledAt,
+        nextPaymentAt: addDays(enrolledAt, 30),
+        referralCode: buildReferralCode(studentName, `${leadId}-${Number(count?.count ?? 0) + 1}`),
+        marketingConsent: req.body.marketingConsent === true,
+        riskFlags: [],
+      });
+      await query(
+        `INSERT INTO academy_student_group_enrollments
+           (student_id, group_id, status, is_primary, enrolled_at, created_by)
+         SELECT $1, selected_group_id, 'active', selected_group_id = $2, $3, $4
+         FROM UNNEST($5::int[]) AS selected_group_id`,
+        [createdStudent.id, primaryGroupId, enrolledAt, req.user!.id, groupIds],
+      );
+      await insertRow('academy_student_status_history', {
+        studentId: createdStudent.id,
+        fromStatus: null,
+        toStatus: 'studying',
+        changedBy: req.user!.id,
+        comment: 'Ученик создан из карточки лида',
+      });
+      await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
+      if (!['enrolled', 'paid'].includes(String(lead.statusCode))) {
+        const enrolledStatus = await getActiveLeadStatus('enrolled');
+        if (!enrolledStatus) {
+          throw Object.assign(new Error('enrolledLeadStatusUnavailable'), { statusCode: 409 });
+        }
+        await updateRow('academy_leads', leadId, { statusCode: 'enrolled' });
+        await createStageHistory(
+          leadId,
+          String(lead.statusCode),
+          'enrolled',
+          req.user!.id,
+          `Создан ученик: ${studentName}`,
+        );
+      }
+      return createdStudent;
+    });
+    const updatedLead = await getLead(leadId);
+    if (updatedLead && String(updatedLead.statusCode) !== String(initialLead.statusCode)) {
+      await handleLeadAutomation(req, updatedLead, String(initialLead.statusCode));
+    }
+    const enriched = await queryOne(
+      `SELECT student.*,
+              course.name AS course_name,
+              academy_group.name AS group_name,
+              school.name AS school_name,
+              ${studentGroupMembershipsSelect('student')}
+       FROM academy_students student
+       LEFT JOIN academy_courses course ON course.id = student.course_id
+       LEFT JOIN academy_groups academy_group ON academy_group.id = student.group_id
+       LEFT JOIN academy_schools school ON school.id = student.school_id
+       WHERE student.id = $1`,
+      [student.id],
+    );
+    await createAudit(req, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, enriched ?? student);
+    res.status(201).json(enriched ?? student);
+  } catch (error: any) {
+    logger.error('Failed to create student from lead card', { error });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create student' });
   }
 });
 
@@ -8323,11 +8469,15 @@ router.post('/payments', async (req, res) => {
         throw Object.assign(new Error('archivedLeadMustBeRestoredBeforePayment'), { statusCode: 409 });
       }
 
+      const leadStudents = !studentId && leadId
+        ? await query(`SELECT * FROM academy_students WHERE lead_id = $1 ORDER BY id FOR UPDATE`, [leadId])
+        : [];
+      if (!studentId && leadStudents.length > 1) {
+        throw Object.assign(new Error('studentSelectionRequired'), { statusCode: 409 });
+      }
       const existingStudent = studentId
         ? await queryOne(`SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`, [studentId])
-        : leadId
-          ? await queryOne(`SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`, [leadId])
-          : undefined;
+        : leadStudents[0];
       if (studentId && !existingStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       }

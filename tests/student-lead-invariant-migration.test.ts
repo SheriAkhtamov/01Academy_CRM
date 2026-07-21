@@ -5,6 +5,10 @@ const migration = readFileSync(
   new URL('../migrations/0042_enforce_unique_student_leads.sql', import.meta.url),
   'utf8',
 );
+const separationMigration = readFileSync(
+  new URL('../migrations/0058_separate_leads_and_students.sql', import.meta.url),
+  'utf8',
+);
 const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
@@ -38,17 +42,24 @@ describe('0042 unique student lead repair migration', () => {
     expect(compactSql).toContain('SET "status" = \'done\'');
   });
 
-  it('enforces the same partial unique index in SQL, Drizzle schema, and journal order', () => {
+  it('keeps the historical repair and intentionally relaxes the one-student-per-lead index in 0058', () => {
     expect(compactSql).toContain(
       'CREATE UNIQUE INDEX "academy_students_lead_unique" ON "academy_students" USING btree ("lead_id") WHERE "lead_id" IS NOT NULL',
     );
-    expect(schema).toContain('uniqueIndex("academy_students_lead_unique")');
-    expect(schema).toContain('.where(sql`${table.leadId} IS NOT NULL`)');
+    expect(separationMigration).toContain('DROP INDEX IF EXISTS "academy_students_lead_unique"');
+    expect(separationMigration).toContain('CREATE INDEX IF NOT EXISTS "academy_students_lead_idx"');
+    expect(separationMigration).toContain('CREATE TABLE IF NOT EXISTS "academy_lead_import_records"');
+    expect(separationMigration).toContain("lead.\"status_code\" IN ('enrolled', 'paid')");
+    expect(separationMigration).toContain('UPDATE "academy_payments" payment');
+    expect(separationMigration).toContain('DELETE FROM "academy_lead_group_reservations" reservation');
+    expect(schema).not.toContain('uniqueIndex("academy_students_lead_unique")');
+    expect(schema).toContain('index("academy_students_lead_idx")');
 
     const previous = journal.entries.find((entry) => entry.idx === 41);
     const current = journal.entries.find((entry) => entry.idx === 42);
     expect(previous?.tag).toBe('0041_add_referral_benefits');
     expect(current?.tag).toBe('0042_enforce_unique_student_leads');
     expect(journal.entries.filter((entry) => entry.idx === 42)).toHaveLength(1);
+    expect(journal.entries.find((entry) => entry.idx === 58)?.tag).toBe('0058_separate_leads_and_students');
   });
 });

@@ -12,8 +12,6 @@ export function leadMergeErrorMessage(t: Translate, errorCode: unknown) {
       return t('leadMergeActiveLeadsOnly');
     case 'leadMergeAccessDenied':
       return t('leadMergeAccessDenied');
-    case 'leadMergeStudentConflict':
-      return t('leadMergeStudentConflict');
     case 'leadMergeIncomplete':
       return t('leadMergeIncomplete');
     case 'leadMergeSearchFailed':

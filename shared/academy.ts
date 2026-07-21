@@ -267,13 +267,6 @@ export function suggestAgeGroup(age?: number | null): string | null {
   return "15+";
 }
 
-function requiresQualificationFields(status: string): boolean {
-  // Enrollment and payment are later pipeline stages, so qualification data
-  // must remain complete there as well. Otherwise a PATCH could erase the
-  // student/course fields after qualification and leave an unusable student.
-  return ["qualified", "enrolled", "paid"].includes(status);
-}
-
 export function validateLeadForStatusChange(input: {
   nextStatus: string;
   studentName?: string | null;
@@ -281,27 +274,10 @@ export function validateLeadForStatusChange(input: {
   courseId?: number | null;
   enrolledGroupId?: number | null;
 }): string | null {
-  if (
-    ["enrolled", "paid"].includes(input.nextStatus)
-    && (!Number.isInteger(Number(input.enrolledGroupId)) || Number(input.enrolledGroupId) <= 0)
-  ) {
-    return "groupRequiredForEnrollment";
-  }
-
-  if (!requiresQualificationFields(input.nextStatus)) {
-    return null;
-  }
-
-  if (
-    !input.studentName?.trim()
-    || !Number.isInteger(Number(input.studentAge))
-    || Number(input.studentAge) <= 0
-    || !Number.isInteger(Number(input.courseId))
-    || Number(input.courseId) <= 0
-  ) {
-    return "completeQualificationFields";
-  }
-
+  // Student data belongs to academy_students now. A lead can be qualified on
+  // contact/deal data alone; enrollment and payment endpoints validate the
+  // concrete student and group instead of legacy columns on academy_leads.
+  void input;
   return null;
 }
 

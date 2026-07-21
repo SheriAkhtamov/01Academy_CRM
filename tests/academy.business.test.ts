@@ -113,8 +113,8 @@ describe("01 Academy business rules", () => {
     expect(suggestAgeGroup(16)).toBe("15+");
   });
 
-  it("requires qualification fields before moving lead to qualified", () => {
-    expect(validateLeadForStatusChange({ nextStatus: "qualified" })).toBe("completeQualificationFields");
+  it("keeps lead qualification independent from student records", () => {
+    expect(validateLeadForStatusChange({ nextStatus: "qualified" })).toBeNull();
     expect(validateLeadForStatusChange({
       nextStatus: "qualified",
       studentName: "Timur",
@@ -126,16 +126,16 @@ describe("01 Academy business rules", () => {
       studentName: "Timur",
       studentAge: -10,
       courseId: 1,
-    })).toBe("completeQualificationFields");
+    })).toBeNull();
   });
 
-  it("requires a group before enrolling a lead", () => {
+  it("leaves enrollment validation to the concrete student workflow", () => {
     expect(validateLeadForStatusChange({
       nextStatus: "enrolled",
       studentName: "Student",
       studentAge: 12,
       courseId: 1,
-    })).toBe("groupRequiredForEnrollment");
+    })).toBeNull();
     expect(validateLeadForStatusChange({
       nextStatus: "enrolled",
       studentName: "Student",
@@ -148,14 +148,14 @@ describe("01 Academy business rules", () => {
       studentName: "Student",
       studentAge: 12,
       courseId: 1,
-    })).toBe("groupRequiredForEnrollment");
+    })).toBeNull();
     expect(validateLeadForStatusChange({
       nextStatus: "paid",
       studentName: null,
       studentAge: 12,
       courseId: 1,
       enrolledGroupId: 10,
-    })).toBe("completeQualificationFields");
+    })).toBeNull();
   });
 
   it("keeps paid clients terminal and requires a payment to enter paid", () => {

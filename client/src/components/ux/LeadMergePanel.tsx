@@ -145,8 +145,6 @@ export function LeadMergePanel() {
   const freshSecondLead = previewLeads.find((lead) => lead.id === secondLead?.id) ?? secondLead;
   const retainedLead = retainedLeadId === String(freshFirstLead?.id) ? freshFirstLead : freshSecondLead;
   const duplicateLead = retainedLeadId === String(freshFirstLead?.id) ? freshSecondLead : freshFirstLead;
-  const studentConflict = Number(freshFirstLead?.studentCount ?? 0) > 0
-    && Number(freshSecondLead?.studentCount ?? 0) > 0;
 
   const mergeMutation = useMutation({
     mutationFn: () => apiRequest('POST', '/api/academy/leads/merge', {
@@ -239,13 +237,6 @@ export function LeadMergePanel() {
                   <AlertDescription>{t('retry')}</AlertDescription>
                 </Alert>
               ) : null}
-              {studentConflict ? (
-                <Alert variant="destructive">
-                  <AlertTitle>{t('leadMergeStudentConflictTitle')}</AlertTitle>
-                  <AlertDescription>{t('leadMergeStudentConflict')}</AlertDescription>
-                </Alert>
-              ) : null}
-
               {retainedLead && duplicateLead ? (
                 <div className="flex flex-col gap-3 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
@@ -274,7 +265,7 @@ export function LeadMergePanel() {
                 </div>
                 <Button
                   type="button"
-                  disabled={!retainedLeadId || previewQuery.isLoading || previewQuery.isError || studentConflict}
+                  disabled={!retainedLeadId || previewQuery.isLoading || previewQuery.isError}
                   onClick={() => setConfirmOpen(true)}
                 >
                   <ArrowRightLeft data-icon="inline-start" />

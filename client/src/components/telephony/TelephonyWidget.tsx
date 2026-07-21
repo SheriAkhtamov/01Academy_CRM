@@ -338,7 +338,9 @@ export function TelephonyWidget({
 
       {isOpen ? (
         <section
-          className="fixed bottom-5 right-5 z-[100] w-[min(380px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20"
+          className="pointer-events-auto fixed bottom-5 right-5 z-[70] isolate w-[min(380px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20"
+          role="dialog"
+          aria-modal="false"
           aria-label={t('telephonyTitle')}
         >
           <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -494,7 +496,7 @@ export function TelephonyWidget({
         <button
           type="button"
           className={cn(
-            'fixed bottom-5 right-5 z-[100] flex h-14 items-center gap-3 rounded-full px-4 text-white shadow-xl transition hover:-translate-y-0.5',
+            'pointer-events-auto fixed bottom-5 right-5 z-[70] flex h-14 items-center gap-3 rounded-full px-4 text-white shadow-xl transition hover:-translate-y-0.5',
             isActive ? 'bg-emerald-600' : telephony.connectionState === 'ready' ? 'bg-slate-950' : 'bg-slate-600',
           )}
           onClick={() => setIsOpen(true)}
@@ -511,7 +513,7 @@ export function TelephonyWidget({
       )}
 
       {recordingUrl ? (
-        <div className="fixed bottom-5 left-1/2 z-[110] flex w-[min(520px,calc(100vw-24px))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl">
+        <div className="pointer-events-auto fixed bottom-5 left-1/2 z-[80] flex w-[min(520px,calc(100vw-24px))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl">
           <audio src={recordingUrl} controls autoPlay className="h-9 min-w-0 flex-1" onEnded={() => setRecordingCallId(null)} />
           <button
             type="button"

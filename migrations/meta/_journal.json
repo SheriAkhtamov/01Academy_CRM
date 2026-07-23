@@ -421,6 +421,13 @@
       "when": 1786118400000,
       "tag": "0059_use_shared_onlinepbx_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1786204800000,
+      "tag": "0060_restore_automatically_closed_leads",
+      "breakpoints": true
     }
   ]
 }

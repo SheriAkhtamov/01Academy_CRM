@@ -41,6 +41,18 @@ describe("academy automations", () => {
     expect(mocks.release).toHaveBeenCalledOnce();
   });
 
+  it("never changes a lead stage from a background automation", async () => {
+    await expect(runAutomations(1)).resolves.toEqual([]);
+
+    const sql = mocks.clientQuery.mock.calls.map(([query]) => sqlText(query));
+    expect(sql.some((query) => query.includes("updated_at < NOW() - INTERVAL '14 days'"))).toBe(false);
+    expect(sql.some((query) => query.includes("Автоматический перенос: нет ответа 14+ дней"))).toBe(false);
+    expect(sql.some((query) =>
+      query.startsWith("UPDATE academy_leads")
+      && query.includes("status_code = 'not_now'")
+    )).toBe(false);
+  });
+
   it("commits the overdue task and status transition in one transaction", async () => {
     mocks.clientQuery.mockImplementation(async (sql: unknown) => {
       const text = sqlText(sql);

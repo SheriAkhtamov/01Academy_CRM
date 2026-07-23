@@ -48,57 +48,10 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
     const now = new Date();
     const actions: string[] = [];
 
-    // 1. Move stale leads (no answer for 14+ days) to the warm base.
-    const { rows: staleLeadCandidates } = await client.query<{ id: number }>(
-      `SELECT id
-       FROM academy_leads
-       WHERE status_code NOT IN ('not_now', 'paid')
-         AND COALESCE(is_archived, false) = false
-         AND updated_at < NOW() - INTERVAL '14 days'`,
-    );
-    for (const candidate of staleLeadCandidates) {
-      const moved = await withTransaction(client, async () => {
-        const { rows } = await client.query<{
-          id: number;
-          status_code: string;
-          manager_id: number | null;
-        }>(
-          `SELECT id, status_code, manager_id
-           FROM academy_leads
-           WHERE id = $1
-             AND status_code NOT IN ('not_now', 'paid')
-             AND COALESCE(is_archived, false) = false
-             AND updated_at < NOW() - INTERVAL '14 days'
-           FOR UPDATE`,
-          [candidate.id],
-        );
-        const lead = rows[0];
-        if (!lead) return false;
+    // Lead stages are never changed by a background job. A stage change is a
+    // business decision and must be made explicitly by an employee.
 
-        await createTask(client, "Лид автоматически перенесён в тёплую базу", lead.manager_id ?? actorUserId, {
-          entityType: "lead",
-          entityId: lead.id,
-          deadlineAt: addDays(now, 1),
-        });
-        await client.query(
-          `INSERT INTO academy_lead_stage_history
-             (lead_id, from_status_code, to_status_code, changed_by, comment)
-           VALUES ($1,$2,'not_now',$3,'Автоматический перенос: нет ответа 14+ дней')`,
-          [lead.id, lead.status_code, actorUserId],
-        );
-        await client.query(
-          `UPDATE academy_leads
-           SET status_code = 'not_now', warm_moved_at = $1,
-               warm_reason = $2, updated_at = NOW()
-           WHERE id = $3`,
-          [now, "Нет ответа 14+ дней", lead.id],
-        );
-        return true;
-      });
-      if (moved) actions.push(`lead:${candidate.id}:not_now`);
-    }
-
-    // 2. Renewal reminders follow the student's effective coverage end, not an
+    // 1. Renewal reminders follow the student's effective coverage end, not an
     // arbitrary older payment row. Only active students need a renewal task.
     const { rows: renewalCandidates } = await client.query<{ id: number }>(
       `SELECT id
@@ -150,7 +103,7 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       if (created) actions.push(`student:${candidate.id}:renewal_reminder`);
     }
 
-    // 3. Only pending payments become overdue. The task and status transition
+    // 2. Only pending payments become overdue. The task and status transition
     // commit together, so a retry cannot strand either half of the action.
     const { rows: overdueCandidates } = await client.query<{ id: number }>(
       `SELECT id
@@ -188,7 +141,7 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       if (transitioned) actions.push(`payment:${candidate.id}:overdue`);
     }
 
-    // 4. Warm-base mailings (only leads that did not decline mailings).
+    // 3. Warm-base mailings (only leads that did not decline mailings).
     const { rows: warmCandidates } = await client.query<{ id: number }>(
       `SELECT id
        FROM academy_leads
@@ -256,7 +209,7 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       if (created) actions.push(`lead:${candidate.id}:warm_mailings`);
     }
 
-    // 5. Recompute attendance/progress/risk flags for all active students.
+    // 4. Recompute attendance/progress/risk flags for all active students.
     const { rows: activeStudents } = await client.query<{ id: number }>(
       "SELECT id FROM academy_students WHERE status = 'studying'",
     );
@@ -269,7 +222,7 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       }
     }
 
-    // 6. Monthly parent survey. Both the period and the monthly dedupe boundary
+    // 5. Monthly parent survey. Both the period and the monthly dedupe boundary
     // use the academy timezone rather than the host process/database timezone.
     const { rows: periodRows } = await client.query<{ period: string }>(
       "SELECT to_char(NOW() AT TIME ZONE $1, 'YYYY-MM') AS period",
@@ -342,26 +295,6 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
     }
     client.release();
   }
-};
-
-const createTask = async (
-  executor: QueryExecutor,
-  title: string,
-  responsibleId: number,
-  options: { description?: string; entityType?: string; entityId?: number; deadlineAt?: Date | null },
-) => {
-  await executor.query(
-    `INSERT INTO academy_tasks (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-     VALUES ($1,$2,$3,$4,$5,$6,'new')`,
-    [
-      title,
-      options.description ?? null,
-      responsibleId,
-      options.deadlineAt ?? null,
-      options.entityType ?? null,
-      options.entityId ?? null,
-    ],
-  );
 };
 
 const createTaskOnce = async (

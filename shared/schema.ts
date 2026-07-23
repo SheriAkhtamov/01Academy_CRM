@@ -3,7 +3,7 @@ import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, dat
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { ACADEMY_WORKSPACES } from "./academy";
-import { isOnlinePbxExtension } from "./telephony";
+import { ONLINE_PBX_SHARED_EXTENSION } from "./telephony";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
@@ -27,7 +27,9 @@ export const users = pgTable("users", {
   credentialPasswordCiphertext: text("credential_password_ciphertext"),
   fullName: varchar("full_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 50 }),
-  onlinePbxExtension: varchar("online_pbx_extension", { length: 20 }),
+  onlinePbxExtension: varchar("online_pbx_extension", { length: 20 })
+    .notNull()
+    .default(ONLINE_PBX_SHARED_EXTENSION),
   dateOfBirth: timestamp("date_of_birth"),
   position: varchar("position", { length: 255 }),
   workspace: varchar("workspace", { length: 50 }).notNull(),
@@ -40,9 +42,7 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   emailUnique: uniqueIndex("users_email_unique").on(sql`lower(${table.email})`),
-  onlinePbxExtensionUnique: uniqueIndex("users_online_pbx_extension_unique")
-    .on(table.onlinePbxExtension)
-    .where(sql`${table.onlinePbxExtension} IS NOT NULL AND BTRIM(${table.onlinePbxExtension}) <> ''`),
+  onlinePbxExtensionIdx: index("users_online_pbx_extension_idx").on(table.onlinePbxExtension),
   workspaceIdx: index("users_workspace_idx").on(table.workspace),
   workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
@@ -1033,7 +1033,7 @@ export const insertUserSchema = z.object({
   credentialPasswordCiphertext: z.string().optional().nullable(),
   fullName: z.string().min(1),
   phone: z.string().optional(),
-  onlinePbxExtension: z.string().refine(isOnlinePbxExtension).optional().nullable(),
+  onlinePbxExtension: z.literal(ONLINE_PBX_SHARED_EXTENSION).default(ONLINE_PBX_SHARED_EXTENSION),
   dateOfBirth: z.coerce.date().optional().nullable(),
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),

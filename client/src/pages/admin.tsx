@@ -67,6 +67,7 @@ import {
   Plug,
   SlidersHorizontal,
   KanbanSquare,
+  PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
@@ -78,7 +79,7 @@ import {
   type AcademyAccessModule,
   type AcademyWorkspace,
 } from '@shared/academy';
-import { isOnlinePbxExtension } from '@shared/telephony';
+import { ONLINE_PBX_SHARED_EXTENSION } from '@shared/telephony';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -88,9 +89,6 @@ const createUserSchema = (t: any) => z.object({
   ),
   fullName: z.string().min(1, t('fullNameRequired')),
   phone: z.string().optional(),
-  onlinePbxExtension: z.string()
-    .refine((value) => value === '' || isOnlinePbxExtension(value), t('onlinePbxInvalidExtension'))
-    .optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   workspace: z.enum(ACADEMY_WORKSPACES),
@@ -144,7 +142,6 @@ const defaultUserFormValues: UserFormValues = {
   email: '',
   fullName: '',
   phone: '',
-  onlinePbxExtension: '',
   dateOfBirth: '',
   position: '',
   workspace: 'sales',
@@ -477,7 +474,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       email: user.email,
       fullName: user.fullName,
       phone: user.phone || '',
-      onlinePbxExtension: user.onlinePbxExtension || '',
       dateOfBirth: formatDateInputValue(user.dateOfBirth),
       position: user.position || '',
       workspace: user.workspace,
@@ -830,27 +826,22 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           />
                         </div>
 
-                        <FormField
-                          control={userForm.control}
-                          name="onlinePbxExtension"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>{t('onlinePbxExtension')}</FormLabel>
-                              <FormControl>
-                                <Input
-                                  inputMode="numeric"
-                                  autoComplete="off"
-                                  maxLength={4}
-                                  placeholder={t('onlinePbxExtensionPlaceholder')}
-                                  {...field}
-                                  onChange={(event) => field.onChange(event.target.value.replace(/\D/g, ''))}
-                                />
-                              </FormControl>
-                              <p className="text-xs text-slate-500">{t('onlinePbxExtensionHint')}</p>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                        <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                            <PhoneCall className="size-4" aria-hidden="true" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-slate-900">{t('sharedTelephonyAccount')}</p>
+                              <Badge variant="secondary" className="font-mono">
+                                {ONLINE_PBX_SHARED_EXTENSION}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">
+                              {t('sharedTelephonyAccountHint')}
+                            </p>
+                          </div>
+                        </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField

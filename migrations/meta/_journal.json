@@ -414,6 +414,13 @@
       "when": 1786032000000,
       "tag": "0058_separate_leads_and_students",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1786118400000,
+      "tag": "0059_use_shared_onlinepbx_extension",
+      "breakpoints": true
     }
   ]
 }

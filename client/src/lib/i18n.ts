@@ -515,22 +515,12 @@ export const translations = {
     en: 'The OnlinePBX extension must be between 100 and 4999.',
     ru: 'Внутренний номер OnlinePBX должен быть в диапазоне от 100 до 4999.',
   },
-  onlinePbxExtensionAlreadyAssigned: {
-    en: 'This OnlinePBX extension is already assigned to another employee.',
-    ru: 'Этот внутренний номер OnlinePBX уже назначен другому сотруднику.',
-  },
-  onlinePbxExtensionPoolExhausted: {
-    en: 'No free OnlinePBX extension is available.',
-    ru: 'В OnlinePBX не осталось свободных внутренних номеров.',
-  },
-  onlinePbxExtension: { en: 'OnlinePBX extension', ru: 'Внутренний номер OnlinePBX' },
-  onlinePbxExtensionPlaceholder: { en: 'For example, 100', ru: 'Например, 100' },
-  onlinePbxExtensionHint: {
-    en: 'Assigned automatically with Sales access. You can override it manually.',
-    ru: 'Назначается автоматически вместе с модулем «Продажи». При необходимости номер можно указать вручную.',
+  sharedTelephonyAccount: { en: 'Shared telephony account', ru: 'Единый аккаунт телефонии' },
+  sharedTelephonyAccountHint: {
+    en: 'All employees make and receive calls through the shared OnlinePBX extension 100.',
+    ru: 'Все сотрудники звонят и принимают звонки через общий внутренний номер OnlinePBX 100.',
   },
   onlinePbxWebRtcUnavailable: { en: 'The browser phone is unavailable', ru: 'Браузерная телефония недоступна' },
-  onlinePbxExtensionMissing: { en: 'No phone extension is assigned to this employee', ru: 'Сотруднику не назначен внутренний номер телефонии' },
   onlinePbxWebPhoneOffline: { en: 'The browser phone is not connected yet', ru: 'Телефония в браузере ещё не подключена' },
   onlinePbxCallAlreadyActive: { en: 'Finish the current call first', ru: 'Сначала завершите текущий звонок' },
   onlinePbxMicrophonePermissionDenied: { en: 'Allow microphone access in the browser to make calls', ru: 'Разрешите доступ к микрофону в браузере, чтобы звонить' },

@@ -23,8 +23,6 @@ const mockPool = {
   query: vi.fn(),
   connect: vi.fn(),
 };
-const mockEnsureSalesTelephonyExtension = vi.fn();
-
 vi.mock('../server/storage', () => ({ storage: mockStorage }));
 vi.mock('../server/db', () => ({ pool: mockPool }));
 vi.mock('../server/services/auth', () => ({
@@ -41,16 +39,11 @@ vi.mock('../server/services/credential-password', () => ({
   decryptCredentialPassword: vi.fn(),
   encryptCredentialPassword: vi.fn(),
 }));
-vi.mock('../server/services/telephony-provisioning', () => ({
-  ensureSalesTelephonyExtension: mockEnsureSalesTelephonyExtension,
-}));
-
 describe('user route validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorage.getUser.mockResolvedValue(administrationUser);
     mockStorage.createAuditLog.mockResolvedValue(undefined);
-    mockEnsureSalesTelephonyExtension.mockResolvedValue('109');
   });
 
   const createApp = async () => {
@@ -164,7 +157,7 @@ describe('user route validation', () => {
     const statements: string[] = [];
     const client = {
       release: vi.fn(),
-      query: vi.fn(async (statement: string) => {
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
         statements.push(statement.trim());
         if (statement.includes('SELECT id, full_name, workspace, is_active')) {
           return { rows: [{ id: 7, full_name: 'Admin User', workspace: 'administration', is_active: true }] };
@@ -212,12 +205,11 @@ describe('user route validation', () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
-  it('automatically provisions an extension when Sales access is added', async () => {
+  it('normalizes an existing employee to the shared extension on update', async () => {
     const currentUser = { ...administrationUser, onlinePbxExtension: null };
     const updatedUser = {
       ...administrationUser,
-      workspaces: ['administration', 'sales'],
-      onlinePbxExtension: '109',
+      onlinePbxExtension: '100',
     };
     mockStorage.getUser
       .mockResolvedValueOnce(currentUser)
@@ -226,7 +218,7 @@ describe('user route validation', () => {
 
     const client = {
       release: vi.fn(),
-      query: vi.fn(async (statement: string) => {
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
         if (statement.includes('SELECT id, full_name, workspace, is_active')) {
           return {
             rows: [{
@@ -234,7 +226,6 @@ describe('user route validation', () => {
               full_name: 'Admin User',
               workspace: 'administration',
               is_active: true,
-              online_pbx_extension: null,
             }],
           };
         }
@@ -251,18 +242,17 @@ describe('user route validation', () => {
     const agent = request.agent(app);
     await agent.post('/test/session');
     const response = await agent.put('/api/users/7').send({
-      workspace: 'administration',
-      workspaces: ['administration', 'sales'],
-      isActive: true,
+      position: 'CEO',
     });
 
     expect(response.status).toBe(200);
-    expect(mockEnsureSalesTelephonyExtension).toHaveBeenCalledWith(client, {
-      fullName: 'Admin User',
-    });
+    const updateCall = client.query.mock.calls.find(([statement]) =>
+      String(statement).includes('UPDATE users')
+    );
+    expect(updateCall?.[1]).toEqual(expect.arrayContaining(['100']));
   });
 
-  it('automatically provisions an extension when a new Sales employee is created', async () => {
+  it('assigns extension 100 to every new employee and ignores per-user overrides', async () => {
     mockStorage.getUsers.mockResolvedValue([]);
     const createdUser = {
       id: 20,
@@ -270,12 +260,12 @@ describe('user route validation', () => {
       fullName: 'New Sales User',
       workspace: 'sales',
       workspaces: ['sales'],
-      onlinePbxExtension: '109',
+      onlinePbxExtension: '100',
       isActive: true,
     };
     const client = {
       release: vi.fn(),
-      query: vi.fn(async (statement: string) => {
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
         if (statement.includes('INSERT INTO users')) return { rows: [createdUser], rowCount: 1 };
         if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
         return { rows: [], rowCount: 1 };
@@ -290,13 +280,14 @@ describe('user route validation', () => {
       fullName: 'New Sales User',
       workspace: 'sales',
       workspaces: ['sales'],
-      onlinePbxExtension: '',
+      onlinePbxExtension: '109',
       isActive: true,
     });
 
     expect(response.status).toBe(200);
-    expect(mockEnsureSalesTelephonyExtension).toHaveBeenCalledWith(client, {
-      fullName: 'New Sales User',
-    });
+    const insertCall = client.query.mock.calls.find(([statement]) =>
+      String(statement).includes('INSERT INTO users')
+    );
+    expect(insertCall?.[1]?.[5]).toBe('100');
   });
 });

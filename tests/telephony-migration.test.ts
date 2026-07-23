@@ -8,6 +8,7 @@ const reconciliationPath = path.join(repositoryRoot, 'migrations/0053_reconcile_
 const journalMigrationPath = path.join(repositoryRoot, 'migrations/0054_add_call_journal_and_lead_channels.sql');
 const historicalBackfillPath = path.join(repositoryRoot, 'migrations/0055_backfill_unknown_call_leads.sql');
 const extensionAutomationPath = path.join(repositoryRoot, 'migrations/0057_automate_onlinepbx_extensions.sql');
+const sharedExtensionPath = path.join(repositoryRoot, 'migrations/0059_use_shared_onlinepbx_extension.sql');
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -29,6 +30,8 @@ describe('telephony calls migration', () => {
       .toBe('0055_backfill_unknown_call_leads');
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 57)?.tag)
       .toBe('0057_automate_onlinepbx_extensions');
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 59)?.tag)
+      .toBe('0059_use_shared_onlinepbx_extension');
   });
 
   it('registers managed extensions and prevents duplicate employee assignments', () => {
@@ -37,6 +40,16 @@ describe('telephony calls migration', () => {
     expect(migration).toContain('users_online_pbx_extension_unique');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "telephony_managed_extensions"');
     expect(migration).toContain("VALUES ('109', 'onlinepbx')");
+  });
+
+  it('replaces per-user extensions with the shared extension 100', () => {
+    const migration = fs.readFileSync(sharedExtensionPath, 'utf8');
+
+    expect(migration).toContain('DROP INDEX IF EXISTS "users_online_pbx_extension_unique"');
+    expect(migration).toContain('SET "online_pbx_extension" = \'100\'');
+    expect(migration).toContain('ALTER COLUMN "online_pbx_extension" SET NOT NULL');
+    expect(migration).toContain('"users_online_pbx_extension_shared_check"');
+    expect(migration).toContain('"extension" <> \'100\'');
   });
 
   it('creates one lead for every previously unknown call number', () => {

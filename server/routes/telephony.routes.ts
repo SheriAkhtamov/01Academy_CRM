@@ -3,7 +3,10 @@ import { Router, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
-import { isOnlinePbxExtension } from '@shared/telephony';
+import {
+  ONLINE_PBX_SHARED_EXTENSION,
+  sharedCallEventClaimsOwnership,
+} from '@shared/telephony';
 import { canAccessAcademyWorkspace, hasLeadershipAccess } from '@shared/academy';
 import { appConfig } from '../config';
 import { pool } from '../db';
@@ -248,6 +251,41 @@ const ensureContactByPhone = async (
   }
 };
 
+const claimUnassignedLeadForAnsweredCall = async (leadId: number | null, userId: number) => {
+  if (!leadId) return;
+  await pool.query(
+    `WITH eligible_manager AS (
+       SELECT user_account.id
+       FROM users user_account
+       WHERE user_account.id = $2
+         AND user_account.is_active = true
+         AND (
+           user_account.workspace = 'sales'
+           OR EXISTS (
+             SELECT 1
+             FROM user_workspaces workspace
+             WHERE workspace.user_id = user_account.id
+               AND workspace.workspace = 'sales'
+           )
+         )
+     ),
+     claimed AS (
+       UPDATE academy_leads lead
+       SET manager_id = eligible_manager.id,
+           updated_at = NOW()
+       FROM eligible_manager
+       WHERE lead.id = $1
+         AND lead.manager_id IS NULL
+       RETURNING lead.id
+     )
+     INSERT INTO academy_lead_assignment_history
+       (lead_id, from_manager_id, to_manager_id, changed_by, comment)
+     SELECT claimed.id, NULL, $2, $2, 'Назначено сотруднику, ответившему через общую телефонию'
+     FROM claimed`,
+    [leadId, userId],
+  );
+};
+
 const isCallEventInput = (value: unknown): value is CallEventInput => {
   if (!value || typeof value !== 'object') return false;
   const event = value as Partial<CallEventInput>;
@@ -263,7 +301,15 @@ const isCallEventInput = (value: unknown): value is CallEventInput => {
 
 const upsertClientCall = async (userId: number, extension: string, input: CallEventInput) => {
   const phone = normalizeOnlinePbxPhone(input.phone)!;
-  const contact = await ensureContactByPhone(phone, { userId, direction: input.direction });
+  const talkSeconds = safeInteger(input.talkSeconds);
+  const claimsOwnership = sharedCallEventClaimsOwnership(input);
+  const contact = await ensureContactByPhone(phone, {
+    userId: claimsOwnership ? userId : null,
+    direction: input.direction,
+  });
+  if (input.direction === 'incoming' && claimsOwnership) {
+    await claimUnassignedLeadForAnsweredCall(contact.leadId, userId);
+  }
   if (contact.created) {
     broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
   }
@@ -285,8 +331,9 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
     answeredAt,
     endedAt,
     safeInteger(input.durationSeconds),
-    safeInteger(input.talkSeconds),
+    talkSeconds,
     input.hangupCause?.slice(0, 120) || null,
+    claimsOwnership,
   ];
   const returning = `
     id, client_call_id AS "clientCallId", provider_call_id AS "providerCallId",
@@ -304,10 +351,14 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
     let result = await client.query(
       `UPDATE telephony_calls
        SET client_call_id = COALESCE(client_call_id, $1),
-           user_id = $2,
+           user_id = CASE WHEN $17 THEN $2 ELSE user_id END,
            extension = $3,
            direction = $4,
            status = CASE
+             WHEN $4 = 'incoming'
+              AND NOT $17
+              AND $5 IN ('ended', 'failed', 'declined', 'missed')
+              AND (user_id IS NULL OR user_id <> $2) THEN status
              WHEN status IN ('ended', 'failed', 'declined', 'missed')
               AND $5 NOT IN ('ended', 'failed', 'declined', 'missed') THEN status
              ELSE $5
@@ -319,7 +370,13 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            lead_id = COALESCE(lead_id, $10),
            started_at = LEAST(started_at, $11),
            answered_at = COALESCE(answered_at, $12),
-           ended_at = COALESCE($13, ended_at),
+           ended_at = CASE
+             WHEN $4 = 'incoming'
+              AND NOT $17
+              AND $5 IN ('ended', 'failed', 'declined', 'missed')
+              AND (user_id IS NULL OR user_id <> $2) THEN ended_at
+             ELSE COALESCE($13, ended_at)
+           END,
            duration_seconds = GREATEST(duration_seconds, $14),
            talk_seconds = GREATEST(talk_seconds, $15),
            hangup_cause = COALESCE($16, hangup_cause),
@@ -336,7 +393,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            contact_type, contact_id, contact_name, lead_id, started_at, answered_at,
            ended_at, duration_seconds, talk_seconds, hangup_cause
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         VALUES ($1,CASE WHEN $17 THEN $2 ELSE NULL END,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING ${returning}`,
         values,
       );
@@ -390,11 +447,23 @@ router.post('/webhook', asyncRoute(async (req, res) => {
   const extensionResult = await pool.query<{ id: number; extension: string }>(
     `SELECT id, online_pbx_extension AS extension
      FROM users
-     WHERE is_active = true AND online_pbx_extension = ANY($1::text[])
-     LIMIT 1`,
-    [candidates],
+     WHERE is_active = true
+       AND online_pbx_extension = $1
+     ORDER BY id`,
+    [ONLINE_PBX_SHARED_EXTENSION],
   );
-  const employee = extensionResult.rows[0] ?? null;
+  const ownerResult = await pool.query<{ id: number; extension: string }>(
+    `SELECT employee.id,
+            COALESCE(call.extension, employee.online_pbx_extension) AS extension
+     FROM telephony_calls call
+     JOIN users employee ON employee.id = call.user_id
+     WHERE (call.provider_call_id = $1 OR call.client_call_id = $1)
+       AND employee.is_active = true
+     ORDER BY call.updated_at DESC
+     LIMIT 1`,
+    [providerCallId],
+  );
+  const employee = ownerResult.rows[0] ?? null;
   const trunk = '998787070171';
   const phoneDigits = candidates.find((value) => value.length >= 7 && value !== trunk) ?? '';
   const phone = normalizeOnlinePbxPhone(phoneDigits);
@@ -420,7 +489,7 @@ router.post('/webhook', asyncRoute(async (req, res) => {
   const values = [
     providerCallId,
     employee?.id ?? null,
-    employee?.extension ?? null,
+    ONLINE_PBX_SHARED_EXTENSION,
     direction,
     status,
     phone,
@@ -499,11 +568,14 @@ router.post('/webhook', asyncRoute(async (req, res) => {
     client.release();
   }
 
-  if (employee) {
+  const audienceUserIds = direction === 'incoming' || !employee
+    ? extensionResult.rows.map((user) => user.id)
+    : [employee.id];
+  if (audienceUserIds.length > 0) {
     broadcastFunction({
       type: 'TELEPHONY_CALL_UPDATED',
       data: call ?? {},
-      audienceUserIds: [employee.id],
+      audienceUserIds,
     });
   }
 
@@ -511,10 +583,7 @@ router.post('/webhook', asyncRoute(async (req, res) => {
 }));
 
 router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
-  const extension = String(req.user?.onlinePbxExtension ?? '').trim();
-  if (!isOnlinePbxExtension(extension)) {
-    return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
-  }
+  const extension = ONLINE_PBX_SHARED_EXTENSION;
 
   try {
     const credentials = await onlinePbxClient.getWebRtcCredentials(extension);
@@ -534,17 +603,7 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {
-  const result = await pool.query(
-    `SELECT id, full_name AS "name", online_pbx_extension AS "extension"
-     FROM users
-     WHERE is_active = true
-       AND online_pbx_extension IS NOT NULL
-       AND online_pbx_extension <> ''
-       AND id <> $1
-     ORDER BY full_name`,
-    [req.user!.id],
-  );
-  res.json(result.rows);
+  res.json([]);
 }));
 
 router.get('/contacts/lookup', requireAuth, asyncRoute(async (req, res) => {
@@ -557,10 +616,7 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
   if (!isCallEventInput(req.body)) {
     return res.status(400).json({ error: 'onlinePbxInvalidCallEvent' });
   }
-  const extension = String(req.user?.onlinePbxExtension ?? '').trim();
-  if (!isOnlinePbxExtension(extension)) {
-    return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
-  }
+  const extension = ONLINE_PBX_SHARED_EXTENSION;
 
   const call = await upsertClientCall(req.user!.id, extension, req.body);
   broadcastFunction({

@@ -7,6 +7,10 @@ const migrationPath = path.join(
   repositoryRoot,
   'migrations/0060_restore_automatically_closed_leads.sql',
 );
+const cleanupMigrationPath = path.join(
+  repositoryRoot,
+  'migrations/0061_cleanup_unsafe_automation_artifacts.sql',
+);
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('automatic lead stage repair migration', () => {
@@ -16,6 +20,8 @@ describe('automatic lead stage repair migration', () => {
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.tag).toBe('0060_restore_automatically_closed_leads');
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 61)?.tag)
+      .toBe('0061_cleanup_unsafe_automation_artifacts');
   });
 
   it('restores only leads whose latest transition is the unsafe automation', () => {
@@ -32,10 +38,13 @@ describe('automatic lead stage repair migration', () => {
 
   it('keeps an audit trail and closes artifacts created by the bad transition', () => {
     const migration = fs.readFileSync(migrationPath, 'utf8');
+    const cleanupMigration = fs.readFileSync(cleanupMigrationPath, 'utf8');
 
     expect(migration).toContain("'Автоматическое восстановление: отменён ошибочный перенос по неактивности'");
     expect(migration).toContain("task.\"title\" = 'Лид автоматически перенесён в тёплую базу'");
     expect(migration).toContain('outbox."status" IN (\'pending\', \'processing\')');
     expect(migration).toContain("'restoredLeadCount', COUNT(*)");
+    expect(cleanupMigration).toContain("task.\"status\" <> 'done'");
+    expect(cleanupMigration).toContain('automatic_history."comment" = \'Автоматический перенос: нет ответа 14+ дней\'');
   });
 });

@@ -428,6 +428,13 @@
       "when": 1786204800000,
       "tag": "0060_restore_automatically_closed_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1786291200000,
+      "tag": "0061_cleanup_unsafe_automation_artifacts",
+      "breakpoints": true
     }
   ]
 }

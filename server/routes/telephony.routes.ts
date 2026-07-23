@@ -4,9 +4,11 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
 import {
-  ONLINE_PBX_FORWARDING_NUMBER,
+  ONLINE_PBX_DEFAULT_FORWARDING_NUMBER,
   ONLINE_PBX_RING_GROUP,
   ONLINE_PBX_SHARED_EXTENSION,
+  ONLINE_PBX_TRUNK_NUMBER,
+  findOnlinePbxForwardingMember,
   setOnlinePbxForwardingMember,
   sharedCallEventClaimsOwnership,
 } from '@shared/telephony';
@@ -467,7 +469,7 @@ router.post('/webhook', asyncRoute(async (req, res) => {
     [providerCallId],
   );
   const employee = ownerResult.rows[0] ?? null;
-  const trunk = '998787070171';
+  const trunk = ONLINE_PBX_TRUNK_NUMBER;
   const phoneDigits = candidates.find((value) => value.length >= 7 && value !== trunk) ?? '';
   const phone = normalizeOnlinePbxPhone(phoneDigits);
   if (!phone) return res.status(200).json({ ok: true, ignored: true });
@@ -605,42 +607,110 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   }
 }));
 
-const forwardingResponse = (members: string[]) => ({
-  enabled: members.some(
-    (member) => digitsOnly(member) === ONLINE_PBX_FORWARDING_NUMBER,
-  ),
-  phone: `+${ONLINE_PBX_FORWARDING_NUMBER}`,
-});
+type StoredForwardingSettings = {
+  id: number;
+  phone: string;
+  enabled: boolean;
+};
+
+const getStoredForwardingSettings = async (): Promise<StoredForwardingSettings> => {
+  const existing = await pool.query<StoredForwardingSettings>(
+    `SELECT id,
+            online_pbx_forwarding_phone AS phone,
+            online_pbx_forwarding_enabled AS enabled
+     FROM academy_company_settings
+     ORDER BY id
+     LIMIT 1`,
+  );
+  if (existing.rows[0]) return existing.rows[0];
+
+  const inserted = await pool.query<StoredForwardingSettings>(
+    `INSERT INTO academy_company_settings (
+       online_pbx_forwarding_phone,
+       online_pbx_forwarding_enabled
+     )
+     VALUES ($1, true)
+     RETURNING id,
+               online_pbx_forwarding_phone AS phone,
+               online_pbx_forwarding_enabled AS enabled`,
+    [ONLINE_PBX_DEFAULT_FORWARDING_NUMBER],
+  );
+  return inserted.rows[0];
+};
+
+const forwardingResponse = (
+  members: string[],
+  stored: StoredForwardingSettings,
+) => {
+  const member = findOnlinePbxForwardingMember(members, stored.phone);
+  return {
+    enabled: Boolean(member),
+    phone: member
+      ? normalizeOnlinePbxPhone(member) ?? stored.phone
+      : stored.phone,
+  };
+};
 
 router.get('/forwarding', requireAuth, asyncRoute(async (req, res) => {
   if (!hasLeadershipAccess(req.user)) {
     return res.status(403).json({ error: 'adminAccessRequired' });
   }
-  const group = await onlinePbxClient.getGroup(ONLINE_PBX_RING_GROUP);
+  const [group, stored] = await Promise.all([
+    onlinePbxClient.getGroup(ONLINE_PBX_RING_GROUP),
+    getStoredForwardingSettings(),
+  ]);
   res.setHeader('Cache-Control', 'no-store, private');
-  res.json(forwardingResponse(group.users));
+  res.json(forwardingResponse(group.users, stored));
 }));
 
 router.put('/forwarding', requireAuth, asyncRoute(async (req, res) => {
   if (!hasLeadershipAccess(req.user)) {
     return res.status(403).json({ error: 'adminAccessRequired' });
   }
-  if (typeof req.body?.enabled !== 'boolean') {
-    return res.status(400).json({ error: 'invalidData' });
+  const phone = normalizeOnlinePbxPhone(req.body?.phone);
+  if (typeof req.body?.enabled !== 'boolean' || !phone) {
+    return res.status(400).json({ error: 'onlinePbxInvalidForwardingPhone' });
+  }
+  if (digitsOnly(phone) === ONLINE_PBX_TRUNK_NUMBER) {
+    return res.status(400).json({ error: 'onlinePbxForwardingLoop' });
   }
 
-  const group = await onlinePbxClient.getGroup(ONLINE_PBX_RING_GROUP);
-  const current = forwardingResponse(group.users);
-  const nextUsers = setOnlinePbxForwardingMember(group.users, req.body.enabled);
-  if (current.enabled !== req.body.enabled) {
+  const [group, stored] = await Promise.all([
+    onlinePbxClient.getGroup(ONLINE_PBX_RING_GROUP),
+    getStoredForwardingSettings(),
+  ]);
+  const current = forwardingResponse(group.users, stored);
+  const currentMember = findOnlinePbxForwardingMember(group.users, stored.phone);
+  const nextUsers = setOnlinePbxForwardingMember(group.users, {
+    enabled: req.body.enabled,
+    phone,
+    previousPhone: currentMember ?? stored.phone,
+  });
+  if (JSON.stringify(group.users) !== JSON.stringify(nextUsers)) {
     await onlinePbxClient.updateGroup({ ...group, users: nextUsers });
+  }
+
+  const changed = current.enabled !== req.body.enabled || current.phone !== phone;
+  if (stored.enabled !== req.body.enabled || stored.phone !== phone) {
+    await pool.query(
+      `UPDATE academy_company_settings
+       SET online_pbx_forwarding_phone = $1,
+           online_pbx_forwarding_enabled = $2,
+           updated_by = $3,
+           updated_at = NOW()
+       WHERE id = $4`,
+      [phone, req.body.enabled, req.user!.id, stored.id],
+    );
+  }
+
+  if (changed) {
     await pool.query(
       `INSERT INTO audit_logs (user_id, action, entity_type, old_values, new_values)
        VALUES ($1, 'UPDATE_TELEPHONY_FORWARDING', 'telephony', $2::jsonb, $3::jsonb)`,
       [
         req.user!.id,
         JSON.stringify({ enabled: current.enabled, phone: current.phone }),
-        JSON.stringify({ enabled: req.body.enabled, phone: current.phone }),
+        JSON.stringify({ enabled: req.body.enabled, phone }),
       ],
     ).catch((error) => {
       logger.error('Failed to audit OnlinePBX forwarding update', {
@@ -650,7 +720,7 @@ router.put('/forwarding', requireAuth, asyncRoute(async (req, res) => {
     });
   }
 
-  res.json(forwardingResponse(nextUsers));
+  res.json({ enabled: req.body.enabled, phone });
 }));
 
 router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {

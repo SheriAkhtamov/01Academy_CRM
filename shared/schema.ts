@@ -104,6 +104,8 @@ export const academyCompanySettings = pgTable("academy_company_settings", {
   workdayStartHour: integer("workday_start_hour").notNull().default(8),
   workdayEndHour: integer("workday_end_hour").notNull().default(20),
   workdays: jsonb("workdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5]),
+  onlinePbxForwardingPhone: varchar("online_pbx_forwarding_phone", { length: 32 }).notNull().default("+998978576040"),
+  onlinePbxForwardingEnabled: boolean("online_pbx_forwarding_enabled").notNull().default(true),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

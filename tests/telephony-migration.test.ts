@@ -9,6 +9,7 @@ const journalMigrationPath = path.join(repositoryRoot, 'migrations/0054_add_call
 const historicalBackfillPath = path.join(repositoryRoot, 'migrations/0055_backfill_unknown_call_leads.sql');
 const extensionAutomationPath = path.join(repositoryRoot, 'migrations/0057_automate_onlinepbx_extensions.sql');
 const sharedExtensionPath = path.join(repositoryRoot, 'migrations/0059_use_shared_onlinepbx_extension.sql');
+const configurableForwardingPath = path.join(repositoryRoot, 'migrations/0062_configurable_onlinepbx_forwarding.sql');
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -32,6 +33,17 @@ describe('telephony calls migration', () => {
       .toBe('0057_automate_onlinepbx_extensions');
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 59)?.tag)
       .toBe('0059_use_shared_onlinepbx_extension');
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 62)?.tag)
+      .toBe('0062_configurable_onlinepbx_forwarding');
+    expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 62)).toHaveLength(1);
+  });
+
+  it('persists the forwarding phone and enabled state in company settings', () => {
+    const migration = fs.readFileSync(configurableForwardingPath, 'utf8');
+
+    expect(migration).toContain('"online_pbx_forwarding_phone"');
+    expect(migration).toContain("DEFAULT '+998978576040'");
+    expect(migration).toContain('"online_pbx_forwarding_enabled"');
   });
 
   it('registers managed extensions and prevents duplicate employee assignments', () => {

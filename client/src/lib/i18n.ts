@@ -1176,6 +1176,18 @@ export const translations = {
     en: 'When enabled, incoming calls also ring the specified mobile number. Extension 100 is not changed.',
     ru: 'Когда включено, входящий звонок также поступает на указанный мобильный номер. Внутренний номер 100 не изменяется.',
   },
+  onlinePbxForwardingPhone: {
+    en: 'Forwarding phone number',
+    ru: 'Номер для переадресации',
+  },
+  onlinePbxForwardingPhoneHint: {
+    en: 'This is the mobile number that will receive incoming company calls.',
+    ru: 'На этот мобильный номер будут поступать входящие звонки компании.',
+  },
+  onlinePbxForwardingSaved: {
+    en: 'Forwarding settings saved',
+    ru: 'Настройки переадресации сохранены',
+  },
   onlinePbxForwardingEnabled: {
     en: 'Mobile forwarding is enabled',
     ru: 'Переадресация на мобильный включена',
@@ -1191,6 +1203,14 @@ export const translations = {
   onlinePbxForwardingLoadFailed: {
     en: 'Could not load the current forwarding state.',
     ru: 'Не удалось получить текущее состояние переадресации.',
+  },
+  onlinePbxInvalidForwardingPhone: {
+    en: 'Enter a valid forwarding phone number.',
+    ru: 'Укажите корректный номер для переадресации.',
+  },
+  onlinePbxForwardingLoop: {
+    en: 'The company phone number cannot forward calls to itself.',
+    ru: 'Нельзя переадресовать звонки с номера компании на него же.',
   },
   onlinePbxTestConnection: { en: 'Test connection', ru: 'Проверить подключение' },
   onlinePbxConnectionVerified: { en: 'OnlinePBX is connected', ru: 'OnlinePBX подключён' },

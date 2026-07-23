@@ -8,7 +8,16 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import {
@@ -19,7 +28,9 @@ import {
   Globe2,
   Loader2,
   PhoneCall,
+  PhoneForwarded,
   Plug,
+  Settings2,
   Unplug,
 } from 'lucide-react';
 
@@ -44,6 +55,11 @@ interface IntegrationStatus {
     createdAt?: string | null;
     updatedAt?: string | null;
   } | null;
+}
+
+interface OnlinePbxForwardingSettings {
+  enabled: boolean;
+  phone: string;
 }
 
 const integrationCopy = (provider: string, t: (key: TranslationKey) => string) => {
@@ -72,9 +88,15 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     id: number;
     username?: string | null;
   } | null>(null);
+  const [onlinePbxSettingsOpen, setOnlinePbxSettingsOpen] = useState(false);
 
   const integrations = useQuery<IntegrationStatus[]>({
     queryKey: ['/api/academy/integrations/status'],
+  });
+  const onlinePbxForwarding = useQuery<OnlinePbxForwardingSettings>({
+    queryKey: ['/api/telephony/forwarding'],
+    enabled: onlinePbxSettingsOpen,
+    staleTime: 10_000,
   });
 
   useEffect(() => {
@@ -144,6 +166,29 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       });
     },
   });
+
+  const updateOnlinePbxForwarding = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiRequest('PUT', '/api/telephony/forwarding', { enabled }) as Promise<OnlinePbxForwardingSettings>,
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['/api/telephony/forwarding'], settings);
+      toast({
+        title: settings.enabled
+          ? t('onlinePbxForwardingEnabled')
+          : t('onlinePbxForwardingDisabled'),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('onlinePbxForwardingUpdateFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+  const onlinePbxIntegration = integrations.data?.find(
+    (integration) => integration.provider === 'onlinepbx',
+  );
 
   return (
     <WorkspacePage contained>
@@ -236,15 +281,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                     ) : integration.provider === 'onlinepbx' ? (
                       <Button
                         variant="outline"
-                        onClick={() => testOnlinePbx.mutate()}
-                        disabled={!integration.connected || testOnlinePbx.isPending}
+                        onClick={() => setOnlinePbxSettingsOpen(true)}
+                        disabled={!integration.connected}
                       >
-                        {testOnlinePbx.isPending ? (
-                          <Loader2 className="animate-spin" data-icon="inline-start" />
-                        ) : (
-                          <PhoneCall data-icon="inline-start" />
-                        )}
-                        {t('onlinePbxTestConnection')}
+                        <Settings2 data-icon="inline-start" />
+                        {t('settings')}
                       </Button>
                     ) : null}
                     <Badge variant={integration.connected ? 'success' : 'warning'}>
@@ -262,6 +303,74 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           );
         })}
       </WorkspacePageBody>
+
+      <Dialog open={onlinePbxSettingsOpen} onOpenChange={setOnlinePbxSettingsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('onlinePbxSettingsTitle')}</DialogTitle>
+            <DialogDescription>{t('onlinePbxSettingsDescription')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/30 p-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <PhoneForwarded className="size-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">{t('onlinePbxForwarding')}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {onlinePbxForwarding.data?.phone ?? t('loading')}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {t('onlinePbxForwardingDescription')}
+                  </p>
+                </div>
+              </div>
+              {onlinePbxForwarding.isLoading ? (
+                <Loader2 className="size-5 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                <Switch
+                  checked={onlinePbxForwarding.data?.enabled ?? false}
+                  onCheckedChange={(enabled) => updateOnlinePbxForwarding.mutate(enabled)}
+                  disabled={
+                    onlinePbxForwarding.isError
+                    || updateOnlinePbxForwarding.isPending
+                    || !onlinePbxIntegration?.connected
+                  }
+                  aria-label={t('onlinePbxForwarding')}
+                />
+              )}
+            </div>
+
+            {onlinePbxForwarding.isError ? (
+              <div className="flex items-start gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <span>{t('onlinePbxForwardingLoadFailed')}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => testOnlinePbx.mutate()}
+              disabled={!onlinePbxIntegration?.connected || testOnlinePbx.isPending}
+            >
+              {testOnlinePbx.isPending ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : (
+                <PhoneCall data-icon="inline-start" />
+              )}
+              {t('onlinePbxTestConnection')}
+            </Button>
+            <Button type="button" onClick={() => setOnlinePbxSettingsOpen(false)}>
+              {t('close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={Boolean(instagramDisconnectTarget)}

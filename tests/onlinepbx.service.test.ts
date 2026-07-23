@@ -112,6 +112,42 @@ describe('OnlinePbxClient', () => {
       .toBe('num=109&name=CRM+Sales+User&enabled=1');
   });
 
+  it('reads and updates the existing incoming group without changing its other settings', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
+      .mockResolvedValueOnce(jsonResponse({
+        status: '1',
+        data: {
+          num: '10',
+          name: 'Sales Department',
+          users: '100;998978576040',
+          delay: '20',
+          default: '',
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ status: '1' }));
+    const client = new OnlinePbxClient({
+      domain: 'pbx38153.onpbx.ru',
+      authKey: 'permanent-token',
+    }, fetchMock as unknown as typeof fetch);
+
+    const group = await client.getGroup('10');
+    await client.updateGroup({
+      ...group,
+      users: ['100'],
+    });
+
+    expect(group).toEqual({
+      extension: '10',
+      name: 'Sales Department',
+      users: ['100', '998978576040'],
+      delay: 20,
+      defaultDestination: null,
+    });
+    expect(String(fetchMock.mock.calls[2][1]?.body))
+      .toBe('num=10&users=100&delay=20&name=Sales+Department');
+  });
+
   it('keeps provider diagnostics when a call request is rejected', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))

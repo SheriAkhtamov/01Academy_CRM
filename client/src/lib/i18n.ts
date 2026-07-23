@@ -1166,6 +1166,32 @@ export const translations = {
     en: 'Start calls to leads and students directly from CRM cards.',
     ru: 'Запускайте звонки лидам и ученикам прямо из карточек CRM.',
   },
+  onlinePbxSettingsTitle: { en: 'OnlinePBX settings', ru: 'Настройки OnlinePBX' },
+  onlinePbxSettingsDescription: {
+    en: 'Manage the company mobile forwarding and verify the PBX connection.',
+    ru: 'Управляйте переадресацией на мобильный номер компании и проверяйте подключение АТС.',
+  },
+  onlinePbxForwarding: { en: 'Mobile forwarding', ru: 'Переадресация на мобильный' },
+  onlinePbxForwardingDescription: {
+    en: 'When enabled, incoming calls also ring the specified mobile number. Extension 100 is not changed.',
+    ru: 'Когда включено, входящий звонок также поступает на указанный мобильный номер. Внутренний номер 100 не изменяется.',
+  },
+  onlinePbxForwardingEnabled: {
+    en: 'Mobile forwarding is enabled',
+    ru: 'Переадресация на мобильный включена',
+  },
+  onlinePbxForwardingDisabled: {
+    en: 'Mobile forwarding is disabled',
+    ru: 'Переадресация на мобильный выключена',
+  },
+  onlinePbxForwardingUpdateFailed: {
+    en: 'Could not update mobile forwarding',
+    ru: 'Не удалось изменить переадресацию',
+  },
+  onlinePbxForwardingLoadFailed: {
+    en: 'Could not load the current forwarding state.',
+    ru: 'Не удалось получить текущее состояние переадресации.',
+  },
   onlinePbxTestConnection: { en: 'Test connection', ru: 'Проверить подключение' },
   onlinePbxConnectionVerified: { en: 'OnlinePBX is connected', ru: 'OnlinePBX подключён' },
   onlinePbxConnectionVerifiedDescription: {

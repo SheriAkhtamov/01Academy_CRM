@@ -1,6 +1,21 @@
 export const ONLINE_PBX_EXTENSION_MIN = 100;
 export const ONLINE_PBX_EXTENSION_MAX = 4999;
 export const ONLINE_PBX_SHARED_EXTENSION = '100' as const;
+export const ONLINE_PBX_RING_GROUP = '10' as const;
+export const ONLINE_PBX_FORWARDING_NUMBER = '998978576040' as const;
+
+export const setOnlinePbxForwardingMember = (
+  members: string[],
+  enabled: boolean,
+): string[] => {
+  const normalized = members.map((member) => member.trim()).filter(Boolean);
+  const withoutForwarding = normalized.filter(
+    (member) => member.replace(/\D/g, '') !== ONLINE_PBX_FORWARDING_NUMBER,
+  );
+  return enabled
+    ? [...new Set([...withoutForwarding, ONLINE_PBX_FORWARDING_NUMBER])]
+    : [...new Set(withoutForwarding)];
+};
 
 export const sharedCallEventClaimsOwnership = (input: {
   direction: 'incoming' | 'outgoing';

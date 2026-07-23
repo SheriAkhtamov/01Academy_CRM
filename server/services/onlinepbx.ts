@@ -50,6 +50,14 @@ export type OnlinePbxExtension = {
   registered: boolean;
 };
 
+export type OnlinePbxGroup = {
+  extension: string;
+  name: string | null;
+  users: string[];
+  delay: number;
+  defaultDestination: string | null;
+};
+
 export type OnlinePbxWebRtcCredentials = {
   extension: string;
   username: string;
@@ -293,6 +301,34 @@ export class OnlinePbxClient {
     if (input.password) body.set('pass', input.password);
     if (input.enabled !== undefined) body.set('enabled', input.enabled ? '1' : '0');
     await this.request<unknown>('user/edit', body);
+  }
+
+  async getGroup(extension: string): Promise<OnlinePbxGroup> {
+    const data = await this.request<Record<string, unknown>>(
+      'group/get',
+      new URLSearchParams({ num: extension }),
+    );
+    if (!data || String(data.num ?? '').trim() !== extension) {
+      throw new OnlinePbxError('onlinePbxRingGroupUnavailable', 502);
+    }
+    return {
+      extension,
+      name: String(data.name ?? '').trim() || null,
+      users: String(data.users ?? '').split(';').map((user) => user.trim()).filter(Boolean),
+      delay: Math.max(1, Number(data.delay) || 20),
+      defaultDestination: String(data.default ?? '').trim() || null,
+    };
+  }
+
+  async updateGroup(input: OnlinePbxGroup): Promise<void> {
+    const body = new URLSearchParams({
+      num: input.extension,
+      users: input.users.join(';'),
+      delay: String(input.delay),
+    });
+    if (input.name) body.set('name', input.name);
+    if (input.defaultDestination) body.set('default', input.defaultDestination);
+    await this.request<unknown>('group/edit', body);
   }
 
   async getCallHistory(filters: {

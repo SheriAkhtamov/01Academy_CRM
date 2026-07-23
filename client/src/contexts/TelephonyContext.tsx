@@ -12,6 +12,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
+import {
+  IncomingCallRingtone,
+  shouldPlayIncomingRingtone,
+} from '@/lib/incomingCallRingtone';
 import { TelephonyWidget } from '@/components/telephony/TelephonyWidget';
 
 export type TelephonyConnectionState = 'disabled' | 'connecting' | 'ready' | 'offline' | 'error';
@@ -179,7 +183,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const credentialsRef = useRef<Credentials | null>(null);
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+  const ringtoneRef = useRef<IncomingCallRingtone | null>(null);
   const localMediaRef = useRef<MediaStream | null>(null);
   const callSetupTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
@@ -254,10 +258,11 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, [patchActiveCall, queryClient]);
 
   const stopRingtone = useCallback(() => {
-    const ringtone = ringtoneRef.current;
-    if (!ringtone) return;
-    ringtone.pause();
-    ringtone.currentTime = 0;
+    ringtoneRef.current?.stop();
+  }, []);
+
+  const startRingtone = useCallback(() => {
+    void ringtoneRef.current?.start();
   }, []);
 
   const stopLocalMedia = useCallback(() => {
@@ -291,6 +296,35 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, [clearCallSetupTimer, reportCall, setActiveCall, stopLocalMedia, stopRingtone]);
 
   useEffect(() => {
+    const ringtone = new IncomingCallRingtone();
+    ringtoneRef.current = ringtone;
+    const unlockAudio = () => {
+      void ringtone.unlock().then((unlocked) => {
+        if (!unlocked) return;
+        window.removeEventListener('pointerdown', unlockAudio, true);
+        window.removeEventListener('keydown', unlockAudio, true);
+      });
+    };
+    window.addEventListener('pointerdown', unlockAudio, true);
+    window.addEventListener('keydown', unlockAudio, true);
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio, true);
+      window.removeEventListener('keydown', unlockAudio, true);
+      ringtone.destroy();
+      if (ringtoneRef.current === ringtone) ringtoneRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (shouldPlayIncomingRingtone(activeCall?.direction, activeCall?.status)) {
+      startRingtone();
+    } else {
+      stopRingtone();
+    }
+  }, [activeCall?.direction, activeCall?.status, startRingtone, stopRingtone]);
+
+  useEffect(() => {
     mountedRef.current = true;
     if (!isAuthenticated || !user?.id) {
       setConnectionState('disabled');
@@ -307,8 +341,6 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         if (disposed) return;
         credentialsRef.current = credentials;
         setExtension(credentials.extension);
-        ringtoneRef.current = new Audio(`https://${credentials.sipDomain}/assets/audio/ring.mp3`);
-        ringtoneRef.current.loop = true;
 
         const vertoModule = await import('@xswitch/rtc');
         if (disposed || !remoteAudioRef.current) return;
@@ -344,7 +376,6 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
               };
               setActiveCall(incoming);
               void reportCall(incoming);
-              void ringtoneRef.current?.play().catch(() => undefined);
               void lookupContact(phone).then((contact) => {
                 if (contact && activeCallRef.current?.clientCallId === callId) patchActiveCall({ contact });
               });
@@ -548,12 +579,12 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         useStream: microphone,
       });
     } catch (error) {
-      void ringtoneRef.current?.play().catch(() => undefined);
+      startRingtone();
       throw error;
     } finally {
       setPendingPhone(null);
     }
-  }, [stopLocalMedia, stopRingtone]);
+  }, [startRingtone, stopLocalMedia, stopRingtone]);
 
   const hangupCall = useCallback(async () => {
     const session = sessionRef.current;

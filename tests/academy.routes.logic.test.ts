@@ -2045,11 +2045,6 @@ describe('academy route logic boundaries', () => {
       error: 'groupHasScheduledLessons',
     },
     {
-      dependency: 'studying students',
-      lifecycle: { has_studying_students: true },
-      error: 'groupHasStudyingStudents',
-    },
-    {
       dependency: 'reserved leads',
       lifecycle: { has_reserved_leads: true },
       error: 'groupHasReservedLeads',
@@ -2103,6 +2098,45 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
   });
 
+  it('completes a group when all lessons are finished even if enrolled students remain active', async () => {
+    const group = groupFixture();
+    const completedGroup = { ...group, status: 'completed' };
+    let groupLockCount = 0;
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        groupLockCount += 1;
+        return { rows: [groupLockCount === 1 ? group : completedGroup] };
+      }
+      if (sql.includes('AS has_lessons')) {
+        return {
+          rows: [{
+            has_lessons: true,
+            has_scheduled_lessons: false,
+            has_reserved_leads: false,
+          }],
+        };
+      }
+      if (sql.includes('UPDATE "academy_groups"')) return { rows: [completedGroup] };
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) return { rows: [completedGroup] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/groups/20')
+      .send({ status: 'completed' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('completed');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('saves a course and every teacher assignment in one transaction', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
@@ -2143,6 +2177,34 @@ describe('academy route logic boundaries', () => {
       expect.stringContaining('UPDATE "academy_teachers"'),
       [2, JSON.stringify([])],
     ]);
+  });
+
+  it('saves course basics without changing teacher qualifications', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('INSERT INTO "academy_courses"')) {
+        return { rows: [{ id: 10, name: 'Design', slug: 'design' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/courses/with-teachers')
+      .send({
+        name: 'Design',
+        slug: 'design',
+        ageCategory: '12-16',
+        description: '',
+        basePriceUzs: 1_200_000,
+        isActive: true,
+      });
+
+    expect(response.status).toBe(201);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('FROM academy_teachers')
+      || String(sql).includes('UPDATE "academy_teachers"')
+    ))).toBe(false);
   });
 
   it('preserves a course assignment required by an active group or scheduled lesson', async () => {

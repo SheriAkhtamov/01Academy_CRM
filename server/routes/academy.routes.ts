@@ -69,6 +69,7 @@ import {
   validateLeadStatusTransition } from '@shared/academy';
 import {
   getGroupScheduleValidationError,
+  getMinimumGroupEndDate,
   normalizeWeeklySchedule,
   parseScheduleTimeToMinutes,
   scheduleIntervalsOverlap,
@@ -1123,9 +1124,7 @@ const findTeacherForGroupSchedule = async (options: {
          WHERE g.teacher_id = t.id AND g.status IN ('open', 'in_progress')) AS active_groups
      FROM academy_teachers t
      WHERE t.status = 'active'
-       AND t.course_ids @> $1::jsonb
      ORDER BY active_groups, t.id`,
-    [JSON.stringify([options.courseId])],
   );
 
   const teacherIds = candidates.map((teacher) => Number(teacher.id));
@@ -6639,6 +6638,21 @@ const prepareGroupMutation = async (options: {
   if (startDate && endDate && new Date(endDate).getTime() < new Date(startDate).getTime()) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
+  if (startDate && endDate) {
+    const startDateKey = new Date(startDate).toISOString().slice(0, 10);
+    const endDateKey = new Date(endDate).toISOString().slice(0, 10);
+    const minimumEndDate = getMinimumGroupEndDate({
+      startDate: startDateKey,
+      lessonCount: Math.round(lessonCount),
+      schedule,
+    });
+    if (minimumEndDate && endDateKey < minimumEndDate) {
+      throw Object.assign(new Error('groupDateRangeTooShort'), {
+        statusCode: 400,
+        minimumEndDate,
+      });
+    }
+  }
 
   await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
   if (status === 'completed') {
@@ -6676,6 +6690,7 @@ const prepareGroupMutation = async (options: {
     if (!teacher && !options.allowUnassigned) {
       throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
     }
+    if (teacher) await ensureTeacherCourseAssignment(teacher, courseId);
     options.values.teacherId = teacher ? Number(teacher.id) : null;
   } else {
     await query(`SELECT pg_advisory_xact_lock($1)`, [1_000_000 + teacherId]);
@@ -6824,7 +6839,6 @@ const assertGroupLifecycleUpdateAllowed = async (options: {
   const lifecycle = await queryOne<{
     hasLessons: boolean;
     hasScheduledLessons: boolean;
-    hasStudyingStudents: boolean;
     hasReservedLeads: boolean;
   }>(
     `SELECT
@@ -6836,14 +6850,6 @@ const assertGroupLifecycleUpdateAllowed = async (options: {
          SELECT 1 FROM academy_lessons lesson
          WHERE lesson.group_id = $1 AND lesson.status = 'scheduled'
        ) AS has_scheduled_lessons,
-       EXISTS (
-         SELECT 1
-         FROM academy_student_group_enrollments enrollment
-         JOIN academy_students student ON student.id = enrollment.student_id
-         WHERE enrollment.group_id = $1
-           AND enrollment.status = 'active'
-           AND student.status = 'studying'
-       ) AS has_studying_students,
        EXISTS (
          SELECT 1
          FROM academy_lead_group_reservations reservation
@@ -6866,9 +6872,6 @@ const assertGroupLifecycleUpdateAllowed = async (options: {
   if (!completesGroup) return;
   if (lifecycle?.hasScheduledLessons) {
     throw Object.assign(new Error('groupHasScheduledLessons'), { statusCode: 409 });
-  }
-  if (lifecycle?.hasStudyingStudents) {
-    throw Object.assign(new Error('groupHasStudyingStudents'), { statusCode: 409 });
   }
   if (lifecycle?.hasReservedLeads) {
     throw Object.assign(new Error('groupHasReservedLeads'), { statusCode: 409 });
@@ -7267,7 +7270,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       res.status(201).json(row);
     } catch (error: any) {
       logger.error(`Failed to create ${path}`, { error });
-      res.status(error.statusCode || 500).json({ error: error.message || `Failed to create ${path}` });
+      res.status(error.statusCode || 500).json({
+        error: error.message || `Failed to create ${path}`,
+        ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
+      });
     }
   });
 
@@ -7415,7 +7421,10 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       res.json(row);
     } catch (error: any) {
       logger.error(`Failed to update ${path}`, { error });
-      res.status(error.statusCode || 500).json({ error: error.message || `Failed to update ${path}` });
+      res.status(error.statusCode || 500).json({
+        error: error.message || `Failed to update ${path}`,
+        ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
+      });
     }
   });
 
@@ -9146,17 +9155,17 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   if (typeof body.isActive !== 'boolean') {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
-  if (!Array.isArray(body.teacherIds) || body.teacherIds.length > 1_000) {
+  if (body.teacherIds !== undefined && (!Array.isArray(body.teacherIds) || body.teacherIds.length > 1_000)) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
-  const parsedTeacherIds = body.teacherIds.map(parseId);
+  const parsedTeacherIds = Array.isArray(body.teacherIds) ? body.teacherIds.map(parseId) : [];
   if (parsedTeacherIds.some((id) => !id)) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
   const teacherIds = [...new Set(parsedTeacherIds as number[])].sort((left, right) => left - right);
   return {
     courseValues: { name, slug, ageCategory, description, basePriceUzs, isActive: body.isActive },
-    teacherIds,
+    teacherIds: body.teacherIds === undefined ? null : teacherIds,
   };
 };
 
@@ -9248,7 +9257,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
       ? await updateRow('academy_courses', courseId, courseValues)
       : await insertRow('academy_courses', courseValues);
     if (!course) throw Object.assign(new Error('Failed to save courses'), { statusCode: 500 });
-    await syncCourseTeacherAssignments(Number(course.id), teacherIds);
+    if (teacherIds) await syncCourseTeacherAssignments(Number(course.id), teacherIds);
     return { course, oldCourse };
   });
 };

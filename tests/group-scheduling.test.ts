@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getGroupScheduleValidationError,
+  getMinimumGroupEndDate,
   normalizeWeeklySchedule,
   scheduleDateRangesOverlap,
   isDateInsideInclusiveDayRange,
@@ -42,6 +43,36 @@ describe('group scheduling', () => {
 
     expect(weeklySchedulesOverlap(existing, conflicting)).toBe(true);
     expect(weeklySchedulesOverlap(existing, adjacent)).toBe(false);
+  });
+
+  it('calculates the earliest end date for all recurring lessons', () => {
+    expect(getMinimumGroupEndDate({
+      startDate: '2026-07-01',
+      lessonCount: 10,
+      schedule: [{ dayOfWeek: 3, startTime: '10:00', endTime: '12:00' }],
+    })).toBe('2026-09-02');
+
+    expect(getMinimumGroupEndDate({
+      startDate: '2026-07-01',
+      lessonCount: 5,
+      schedule: [
+        { dayOfWeek: 1, startTime: '10:00', endTime: '12:00' },
+        { dayOfWeek: 3, startTime: '10:00', endTime: '12:00' },
+      ],
+    })).toBe('2026-07-15');
+  });
+
+  it('does not calculate an end date from incomplete scheduling data', () => {
+    expect(getMinimumGroupEndDate({
+      startDate: '',
+      lessonCount: 10,
+      schedule: [{ dayOfWeek: 3, startTime: '10:00', endTime: '12:00' }],
+    })).toBeNull();
+    expect(getMinimumGroupEndDate({
+      startDate: '2026-07-01',
+      lessonCount: 10,
+      schedule: [],
+    })).toBeNull();
   });
 
   it('allows identical weekly times when group date ranges do not overlap', () => {

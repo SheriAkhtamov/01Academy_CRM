@@ -70,6 +70,7 @@ type Group = {
   teacherName?: string;
   schoolId?: number;
   schoolName?: string;
+  lessonCount: number;
   maxStudents: number;
   currentStudents?: number;
   capacityLabel?: string;
@@ -413,6 +414,25 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const students: Student[] = useMemo(() => data?.students ?? [], [data]);
   const surveys: LessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
   const attendanceRecords: AttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
+  const groupLessonProgressById = useMemo(() => {
+    const lessonCounts = new Map<number, { conducted: number; materialized: number }>();
+    for (const lesson of lessons) {
+      const groupId = Number(lesson.groupId);
+      const counts = lessonCounts.get(groupId) ?? { conducted: 0, materialized: 0 };
+      counts.materialized += 1;
+      if (lesson.status === 'conducted') counts.conducted += 1;
+      lessonCounts.set(groupId, counts);
+    }
+    const progress = new Map<number, { conducted: number; total: number }>();
+    for (const group of groups) {
+      const counts = lessonCounts.get(Number(group.id)) ?? { conducted: 0, materialized: 0 };
+      progress.set(group.id, {
+        conducted: counts.conducted,
+        total: Number(group.lessonCount) || counts.materialized,
+      });
+    }
+    return progress;
+  }, [groups, lessons]);
 
   const totalStudents = useMemo(
     () => groups.reduce((sum, g) => sum + (g.currentStudents || 0), 0),
@@ -604,6 +624,26 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
       || Number(student.groupId) === Number(selectedGroup.id)
     ));
   }, [students, selectedGroup]);
+  const selectedGroupAttendanceByStudentId = useMemo(() => {
+    if (!selectedGroup) return new Map<number, { attended: number; missed: number }>();
+    const conductedLessonIds = new Set(
+      lessons
+        .filter((lesson) => (
+          Number(lesson.groupId) === Number(selectedGroup.id)
+          && lesson.status === 'conducted'
+        ))
+        .map((lesson) => Number(lesson.id)),
+    );
+    const counts = new Map<number, { attended: number; missed: number }>();
+    for (const record of attendanceRecords) {
+      if (!conductedLessonIds.has(Number(record.lessonId))) continue;
+      const current = counts.get(Number(record.studentId)) ?? { attended: 0, missed: 0 };
+      if (record.status === 'present') current.attended += 1;
+      if (record.status === 'absent') current.missed += 1;
+      counts.set(Number(record.studentId), current);
+    }
+    return counts;
+  }, [attendanceRecords, lessons, selectedGroup]);
 
   // Survey data grouped by group
   const surveyGroups = useMemo(() => {
@@ -707,6 +747,24 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         {status === 'cancelled' && t('lessonStatusCancelled')}
         {status === 'postponed' && t('lessonStatusPostponed')}
         {!['scheduled', 'conducted', 'cancelled', 'postponed'].includes(status) && status}
+      </Badge>
+    );
+  };
+
+  const getGroupStatusBadge = (status: string) => {
+    const labels: Record<string, string> = {
+      open: t('groupStatusOpen'),
+      in_progress: t('groupStatusInProgress'),
+      completed: t('groupStatusCompleted'),
+    };
+    const classes: Record<string, string> = {
+      open: 'bg-blue-100 text-blue-700 border-blue-200',
+      in_progress: 'bg-amber-100 text-amber-700 border-amber-200',
+      completed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    };
+    return (
+      <Badge className={cn('text-xs font-medium', classes[status] || 'bg-slate-100 text-slate-700')}>
+        {labels[status] ?? status}
       </Badge>
     );
   };
@@ -949,35 +1007,24 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                         {selectedGroup.courseName || t('noCourse')} • {t('teacher')}: {user?.fullName}
                       </p>
                     </div>
-                    <Badge
-                      className={
-                        selectedGroup.status === 'open'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : selectedGroup.status === 'full'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-slate-100 text-slate-700'
-                      }
-                    >
-                      {selectedGroup.status === 'open' && t('groupStatusOpen')}
-                      {selectedGroup.status === 'full' && t('groupStatusFull')}
-                      {selectedGroup.status === 'closed' && t('groupStatusClosed')}
-                      {selectedGroup.status === 'archived' && t('groupStatusArchived')}
-                    </Badge>
+                    {getGroupStatusBadge(selectedGroup.status)}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-slate-600">{t('groupOccupancy')}</span>
+                      <span className="text-slate-600">{t('lessonProgress')}</span>
                       <span className="font-medium text-slate-900">
-                        {selectedGroup.currentStudents || 0} / {selectedGroup.maxStudents}
+                        {t('lessonsConductedCount')
+                          .replace('{conducted}', String(groupLessonProgressById.get(selectedGroup.id)?.conducted ?? 0))
+                          .replace('{total}', String(groupLessonProgressById.get(selectedGroup.id)?.total ?? 0))}
                       </span>
                     </div>
                     <Progress
                       value={
-                        ((selectedGroup.currentStudents || 0) /
-                          (selectedGroup.maxStudents || 1)) *
-                        100
+                        ((groupLessonProgressById.get(selectedGroup.id)?.conducted ?? 0)
+                          / Math.max(groupLessonProgressById.get(selectedGroup.id)?.total ?? 0, 1))
+                        * 100
                       }
                     />
                   </div>
@@ -1004,14 +1051,30 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                           accessor: (row) => row.studentName || row.contactName,
                         },
                         {
-                          key: 'attendance',
-                          header: t('attendanceLabel'),
-                          accessor: (row) => `${row.attendancePercent || 0}%`,
+                          key: 'attendedLessons',
+                          header: t('attendedLessons'),
+                          accessor: (row) => selectedGroupAttendanceByStudentId.get(row.id)?.attended ?? 0,
+                          sortable: true,
+                          className: 'text-center',
+                          cellClassName: 'text-center',
+                          render: (row) => (
+                            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 tabular-nums">
+                              {selectedGroupAttendanceByStudentId.get(row.id)?.attended ?? 0}
+                            </Badge>
+                          ),
                         },
                         {
-                          key: 'progress',
-                          header: t('progressLabel'),
-                          accessor: (row) => `${row.progressPercent || 0}%`,
+                          key: 'missedLessons',
+                          header: t('missedLessons'),
+                          accessor: (row) => selectedGroupAttendanceByStudentId.get(row.id)?.missed ?? 0,
+                          sortable: true,
+                          className: 'text-center',
+                          cellClassName: 'text-center',
+                          render: (row) => (
+                            <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 tabular-nums">
+                              {selectedGroupAttendanceByStudentId.get(row.id)?.missed ?? 0}
+                            </Badge>
+                          ),
                         },
                       ]}
                       data={groupStudents}
@@ -1033,8 +1096,15 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               {groups.map((group) => (
                 <Card
                   key={group.id}
-                  className="border-border/70 hover-lift cursor-pointer group"
+                  className="border-border/70 hover-lift cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   onClick={() => setSelectedGroup(group)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    setSelectedGroup(group);
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <CardContent className="p-5 space-y-3">
                     <div className="flex items-start justify-between gap-2">
@@ -1046,32 +1116,23 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                           {group.courseName || t('noCourse')} · {group.schoolName || t('schoolNotSelected')}
                         </p>
                       </div>
-                      <Badge
-                        className={
-                          group.status === 'open'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : group.status === 'full'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-slate-100 text-slate-700'
-                        }
-                      >
-                        {group.status === 'open' && t('enrollmentShort')}
-                        {group.status === 'full' && t('groupStatusFull')}
-                        {group.status === 'closed' && t('groupStatusClosed')}
-                        {group.status === 'archived' && t('groupStatusArchived')}
-                      </Badge>
+                      {getGroupStatusBadge(group.status)}
                     </div>
 
                     <div>
                       <div className="flex justify-between text-xs mb-1.5">
-                        <span className="text-slate-500">{t('occupancyColumn')}</span>
+                        <span className="text-slate-500">{t('lessonProgress')}</span>
                         <span className="text-slate-700 font-medium">
-                          {group.currentStudents || 0} / {group.maxStudents}
+                          {t('lessonsConductedCount')
+                            .replace('{conducted}', String(groupLessonProgressById.get(group.id)?.conducted ?? 0))
+                            .replace('{total}', String(groupLessonProgressById.get(group.id)?.total ?? 0))}
                         </span>
                       </div>
                       <Progress
                         value={
-                          ((group.currentStudents || 0) / (group.maxStudents || 1)) * 100
+                          ((groupLessonProgressById.get(group.id)?.conducted ?? 0)
+                            / Math.max(groupLessonProgressById.get(group.id)?.total ?? 0, 1))
+                          * 100
                         }
                         className="h-2"
                       />

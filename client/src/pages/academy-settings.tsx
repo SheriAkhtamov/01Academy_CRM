@@ -12,7 +12,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -54,7 +53,10 @@ import {
   type WeekScheduleItem,
 } from '@/components/ux/WeekScheduleEditor';
 import { validateLeadStatusTransition } from '@shared/academy';
-import { getGroupScheduleValidationError } from '@shared/scheduling';
+import {
+  getGroupScheduleValidationError,
+  getMinimumGroupEndDate,
+} from '@shared/scheduling';
 import {
   AlertCircle,
   ArrowDown,
@@ -363,7 +365,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [editingStatus, setEditingStatus] = useState<PipelineStatus | null>(null);
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
-  const [courseTeacherIds, setCourseTeacherIds] = useState<number[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
     resource: 'schools' | 'rooms' | 'courses' | 'groups' | 'pipeline-statuses';
     id: number;
@@ -537,7 +538,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           configuration.data?.courses ?? [],
           editingCourse?.id,
         ),
-        teacherIds: courseTeacherIds,
       };
       return editingCourse
         ? apiRequest('PATCH', `/api/academy/courses/${editingCourse.id}/with-teachers`, payload)
@@ -547,7 +547,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       toast({ title: editingCourse ? t('courseUpdated') : t('courseCreated') });
       setCourseDialogOpen(false);
       setEditingCourse(null);
-      setCourseTeacherIds([]);
       courseForm.reset();
       invalidate();
     },
@@ -600,15 +599,25 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
     },
-    onError: (error: Error) => {
-      const description = error.message === 'groupLessonsLockSchedule'
+    onError: (error: Error & { rawMessage?: string; data?: { minimumEndDate?: string } }) => {
+      const errorCode = error.rawMessage ?? error.message;
+      const backendMinimumEndDate = error.data?.minimumEndDate;
+      const formattedBackendMinimumEndDate = backendMinimumEndDate
+        ? new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(`${backendMinimumEndDate}T00:00:00Z`))
+        : '';
+      const description = errorCode === 'groupLessonsLockSchedule'
         ? t('groupLessonsLockSchedule')
-        : error.message === 'groupHasScheduledLessons'
+        : errorCode === 'groupHasScheduledLessons'
           ? t('groupHasScheduledLessons')
-          : error.message === 'groupHasStudyingStudents'
-            ? t('groupHasStudyingStudents')
-            : error.message === 'groupHasReservedLeads'
-              ? t('groupHasReservedLeads')
+          : errorCode === 'groupHasReservedLeads'
+            ? t('groupHasReservedLeads')
+            : errorCode === 'groupDateRangeTooShort' && formattedBackendMinimumEndDate
+              ? t('groupDateRangeTooShort').replace('{date}', formattedBackendMinimumEndDate)
               : error.message;
       toast({ title: t('error'), description, variant: 'destructive' });
     },
@@ -807,9 +816,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       basePriceUzs: 0,
       isActive: true,
     });
-    setCourseTeacherIds((configuration.data?.teachers ?? [])
-      .filter((teacher) => course?.id && (teacher.courseIds ?? []).map(Number).includes(course.id))
-      .map((teacher) => teacher.id));
     setCourseDialogOpen(true);
   };
 
@@ -889,7 +895,48 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const selectedGroupTeacherId = groupForm.watch('teacherId');
   const selectedGroupRoomId = groupForm.watch('roomId');
+  const selectedGroupLessonCount = groupForm.watch('lessonCount');
+  const selectedGroupStartDate = groupForm.watch('startDate');
+  const selectedGroupEndDate = groupForm.watch('endDate');
   const selectedGroupRoomCapacity = rooms.find((room) => String(room.id) === selectedGroupRoomId)?.capacity;
+  const minimumGroupEndDate = useMemo(() => getMinimumGroupEndDate({
+    startDate: selectedGroupStartDate,
+    lessonCount: Number(selectedGroupLessonCount),
+    schedule: groupSchedule,
+  }), [groupSchedule, selectedGroupLessonCount, selectedGroupStartDate]);
+  const formattedMinimumGroupEndDate = useMemo(() => {
+    if (!minimumGroupEndDate) return '';
+    return new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(`${minimumGroupEndDate}T00:00:00Z`));
+  }, [language, minimumGroupEndDate]);
+  const isGroupEndDateTooEarly = Boolean(
+    minimumGroupEndDate
+    && selectedGroupEndDate
+    && selectedGroupEndDate < minimumGroupEndDate,
+  );
+
+  useEffect(() => {
+    if (isGroupEndDateTooEarly) {
+      groupForm.setError('endDate', {
+        type: 'scheduleRange',
+        message: t('groupDateRangeTooShort').replace('{date}', formattedMinimumGroupEndDate),
+      });
+      return;
+    }
+    if (groupForm.getFieldState('endDate').error?.type === 'scheduleRange') {
+      groupForm.clearErrors('endDate');
+    }
+  }, [
+    formattedMinimumGroupEndDate,
+    groupForm,
+    isGroupEndDateTooEarly,
+    selectedGroupEndDate,
+    t,
+  ]);
 
   useEffect(() => {
     if (!pipelineDeleteTarget) return;
@@ -1596,7 +1643,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
-        <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingCourse ? t('editCourse') : t('addCourse')}</DialogTitle>
             <DialogDescription>{t('courseFormDescription')}</DialogDescription>
@@ -1632,29 +1679,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <FormMessage />
                   </FormItem>
                 )} />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{t('eligibleTeachers')}</p>
-                  <p className="text-xs text-muted-foreground">{t('eligibleTeachersDescription')}</p>
-                </div>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {teachers.map((teacher) => (
-                    <label key={teacher.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3">
-                      <Checkbox
-                        checked={courseTeacherIds.includes(teacher.id)}
-                        onCheckedChange={(checked) => setCourseTeacherIds((current) => (
-                          checked === true
-                            ? [...new Set([...current, teacher.id])]
-                            : current.filter((id) => id !== teacher.id)
-                        ))}
-                      />
-                      <span className="text-sm font-medium text-foreground">{teacher.fullName}</span>
-                    </label>
-                  ))}
-                  {teachers.length === 0 ? <p className="text-sm text-muted-foreground">{t('noTeachers')}</p> : null}
-                </div>
               </div>
 
               <FormField control={courseForm.control} name="isActive" render={({ field }) => (
@@ -1694,6 +1718,24 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       ? t('groupScheduleInvalid')
                       : t('groupScheduleOverlap');
                   toast({ title, variant: 'destructive' });
+                  return;
+                }
+                const earliestEndDate = getMinimumGroupEndDate({
+                  startDate: values.startDate,
+                  lessonCount: Number(values.lessonCount),
+                  schedule: groupSchedule,
+                });
+                if (earliestEndDate && values.endDate && values.endDate < earliestEndDate) {
+                  const formattedDate = new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                    timeZone: 'UTC',
+                  }).format(new Date(`${earliestEndDate}T00:00:00Z`));
+                  groupForm.setError('endDate', {
+                    type: 'scheduleRange',
+                    message: t('groupDateRangeTooShort').replace('{date}', formattedDate),
+                  }, { shouldFocus: true });
                   return;
                 }
                 saveGroup.mutate(values);
@@ -1833,7 +1875,19 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <FormField control={groupForm.control} name="endDate" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('endDate')}</FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        min={minimumGroupEndDate || selectedGroupStartDate || undefined}
+                        aria-invalid={isGroupEndDateTooEarly}
+                        {...field}
+                      />
+                    </FormControl>
+                    {minimumGroupEndDate ? (
+                      <p className="text-[11px] text-muted-foreground" aria-live="polite">
+                        {t('minimumGroupEndDate').replace('{date}', formattedMinimumGroupEndDate)}
+                      </p>
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )} />

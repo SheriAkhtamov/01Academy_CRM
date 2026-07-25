@@ -108,6 +108,54 @@ export const getGroupScheduleValidationError = (
   return hasOverlap ? 'groupScheduleOverlap' : null;
 };
 
+const parseCalendarDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const marker = new Date(Date.UTC(year, month - 1, day));
+  if (
+    marker.getUTCFullYear() !== year
+    || marker.getUTCMonth() + 1 !== month
+    || marker.getUTCDate() !== day
+  ) return null;
+  return marker;
+};
+
+/**
+ * Returns the earliest inclusive end date that can contain every recurring
+ * lesson. Date-only values are calculated in UTC so the result is independent
+ * from the browser/server timezone.
+ */
+export const getMinimumGroupEndDate = (options: {
+  startDate: string;
+  lessonCount: number;
+  schedule: unknown;
+}): string | null => {
+  const startDate = parseCalendarDate(options.startDate);
+  if (!startDate || !Number.isSafeInteger(options.lessonCount) || options.lessonCount < 1) return null;
+  if (getGroupScheduleValidationError(options.schedule)) return null;
+
+  const lessonDays = normalizeWeeklySchedule(options.schedule)
+    .reduce<Map<number, number>>((counts, item) => {
+      counts.set(item.dayOfWeek, (counts.get(item.dayOfWeek) ?? 0) + 1);
+      return counts;
+    }, new Map());
+  if (lessonDays.size === 0) return null;
+
+  let lessonsScheduled = 0;
+  const maximumDays = Math.max(370, options.lessonCount * 14 + 14);
+  for (let dayOffset = 0; dayOffset <= maximumDays; dayOffset += 1) {
+    const date = new Date(startDate.getTime() + dayOffset * 86_400_000);
+    const nativeDay = date.getUTCDay();
+    const dayOfWeek = nativeDay === 0 ? 7 : nativeDay;
+    lessonsScheduled += lessonDays.get(dayOfWeek) ?? 0;
+    if (lessonsScheduled >= options.lessonCount) return date.toISOString().slice(0, 10);
+  }
+  return null;
+};
+
 export const weeklySchedulesOverlap = (
   left: NormalizedWeeklyScheduleItem[],
   right: NormalizedWeeklyScheduleItem[],

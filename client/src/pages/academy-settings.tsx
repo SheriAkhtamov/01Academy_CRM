@@ -59,6 +59,7 @@ import {
 } from '@shared/scheduling';
 import {
   AlertCircle,
+  Archive,
   ArrowDown,
   ArrowUp,
   ArrowRightLeft,
@@ -886,12 +887,35 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
+  const isGroupArchive = requestedFilter === 'archive';
+  const activeGroupsCount = groups.filter((group) => group.status !== 'completed').length;
+  const archivedGroupsCount = groups.length - activeGroupsCount;
   const displayedGroups = useMemo(
-    () => requestedFilter === 'without-teacher'
-      ? groups.filter((group) => !group.teacherId)
-      : groups,
+    () => {
+      if (requestedFilter === 'archive') {
+        return groups.filter((group) => group.status === 'completed');
+      }
+      const activeGroups = groups.filter((group) => group.status !== 'completed');
+      return requestedFilter === 'without-teacher'
+        ? activeGroups.filter((group) => !group.teacherId)
+        : activeGroups;
+    },
     [groups, requestedFilter],
   );
+  const groupEmptyState = isGroupArchive
+    ? {
+      title: t('noCompletedGroups'),
+      description: t('noCompletedGroupsDescription'),
+    }
+    : requestedFilter === 'without-teacher'
+      ? {
+        title: ceoCopy.settings.noGroupsWithoutTeacher,
+        description: ceoCopy.settings.allGroupsStaffed,
+      }
+      : {
+        title: t('noGroups'),
+        description: t('noGroupsDescription'),
+      };
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const selectedGroupTeacherId = groupForm.watch('teacherId');
   const selectedGroupRoomId = groupForm.watch('roomId');
@@ -1379,11 +1403,51 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>{t('navGroups')}</CardTitle>
-                <CardDescription>{t('groupsDescription')}</CardDescription>
+                <CardDescription>
+                  {isGroupArchive ? t('completedGroupsArchiveDescription') : t('groupsDescription')}
+                </CardDescription>
               </div>
-              <Button onClick={() => openGroup()}>
-                <Plus data-icon="inline-start" />{t('addGroup')}
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
+                  role="group"
+                  aria-label={t('groupListView')}
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isGroupArchive ? 'ghost' : 'secondary'}
+                    className="min-h-11 gap-2"
+                    aria-pressed={!isGroupArchive}
+                    onClick={() => navigate(`${basePath}?tab=groups`)}
+                  >
+                    <UsersRound />
+                    {t('adminActiveGroups')}
+                    <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
+                      {activeGroupsCount}
+                    </Badge>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isGroupArchive ? 'secondary' : 'ghost'}
+                    className="min-h-11 gap-2"
+                    aria-pressed={isGroupArchive}
+                    onClick={() => navigate(`${basePath}?tab=groups&filter=archive`)}
+                  >
+                    <Archive />
+                    {t('groupArchiveLabel')}
+                    <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
+                      {archivedGroupsCount}
+                    </Badge>
+                  </Button>
+                </div>
+                {!isGroupArchive ? (
+                  <Button onClick={() => openGroup()}>
+                    <Plus data-icon="inline-start" />{t('addGroup')}
+                  </Button>
+                ) : null}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
@@ -1391,7 +1455,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 data={displayedGroups}
                 keyExtractor={(row) => `group-${row.id}`}
                 defaultSortKey="name"
-                emptyState={<EmptyTableState title={requestedFilter === 'without-teacher' ? ceoCopy.settings.noGroupsWithoutTeacher : t('noGroups')} description={requestedFilter === 'without-teacher' ? ceoCopy.settings.allGroupsStaffed : t('noGroupsDescription')} />}
+                emptyState={<EmptyTableState title={groupEmptyState.title} description={groupEmptyState.description} />}
               />
             </CardContent>
           </Card>

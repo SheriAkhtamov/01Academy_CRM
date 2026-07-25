@@ -15,7 +15,6 @@ import {
     type DragEndEvent,
     type DragStartEvent,
 } from '@dnd-kit/core';
-import { GripVertical } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
     finishOptimisticChange,
@@ -53,33 +52,37 @@ function DraggableTaskCard({
     task: TaskSummary;
     onClick: () => void;
 }) {
-    const { t } = useTranslation();
-    const { attributes, listeners, setActivatorNodeRef, setNodeRef, isDragging } = useDraggable({
+    const suppressClickRef = useRef(false);
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `task-${task.id}`,
         data: { taskId: task.id, status: task.status },
     });
 
+    useEffect(() => {
+        if (isDragging) {
+            suppressClickRef.current = true;
+            return undefined;
+        }
+        if (!suppressClickRef.current) return undefined;
+
+        const timer = window.setTimeout(() => {
+            suppressClickRef.current = false;
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [isDragging]);
+
     return (
         <div
             ref={setNodeRef}
-            className={cn('relative', isDragging && 'opacity-25')}
+            className={cn(isDragging && 'opacity-25')}
         >
-            <TaskCard task={task} onClick={onClick} hasDragHandle />
-            <button
-                ref={setActivatorNodeRef}
-                type="button"
-                {...attributes}
-                {...listeners}
-                className={cn(
-                    'absolute right-2 top-2 z-10 flex size-8 touch-none items-center justify-center rounded-md text-muted-foreground/70',
-                    'cursor-grab hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    isDragging && 'cursor-grabbing',
-                )}
-                onClick={(event) => event.stopPropagation()}
-                aria-label={`${t('dragTaskHint')}: ${task.title}`}
-            >
-                <GripVertical className="size-4" />
-            </button>
+            <TaskCard
+                task={task}
+                dragProps={{ ...attributes, ...listeners }}
+                onClick={() => {
+                    if (!suppressClickRef.current) onClick();
+                }}
+            />
         </div>
     );
 }

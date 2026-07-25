@@ -1,3 +1,4 @@
+import { type ButtonHTMLAttributes } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -19,19 +20,23 @@ import {
 interface TaskCardProps {
     task: TaskSummary;
     onClick?: () => void;
-    hasDragHandle?: boolean;
+    dragProps?: ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
-export function TaskCard({ task, onClick, hasDragHandle = false }: TaskCardProps) {
+export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
     const { t } = useTranslation();
     const priority = PRIORITY_META[task.priority];
     const overdue = isOverdue(task);
 
     return (
         <button
+            {...dragProps}
             type="button"
             onClick={onClick}
-            className="group w-full rounded-lg border border-border/80 bg-card p-3 text-left shadow-2xs transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            className={cn(
+                'group w-full rounded-lg border border-border/80 bg-card p-3 text-left shadow-2xs transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                dragProps && 'cursor-grab active:cursor-grabbing',
+            )}
         >
             <div className="flex items-start gap-2">
                 <Tooltip>
@@ -40,10 +45,7 @@ export function TaskCard({ task, onClick, hasDragHandle = false }: TaskCardProps
                     </TooltipTrigger>
                     <TooltipContent side="top">{t(priority.labelKey)}</TooltipContent>
                 </Tooltip>
-                <span className={cn(
-                    'min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-3',
-                    hasDragHandle && 'pr-7',
-                )}>
+                <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-3">
                     {task.title}
                 </span>
             </div>

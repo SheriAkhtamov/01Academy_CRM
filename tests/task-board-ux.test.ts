@@ -27,9 +27,11 @@ describe('task board interaction UX', () => {
     expect(taskBoard).toContain('[scrollbar-gutter:stable]');
   });
 
-  it('uses a dedicated drag handle and a single stable drag preview', () => {
-    expect(taskBoard).toContain('setActivatorNodeRef');
-    expect(taskBoard).toContain('<GripVertical');
+  it('drags from the whole card without a separate handle and keeps one stable preview', () => {
+    expect(taskBoard).toContain('dragProps={{ ...attributes, ...listeners }}');
+    expect(taskBoard).not.toContain('setActivatorNodeRef');
+    expect(taskBoard).not.toContain('GripVertical');
+    expect(taskBoard).not.toContain('hasDragHandle');
     expect(taskBoard).not.toContain('CSS.Translate');
     expect(taskBoard).not.toContain('rotate-2');
     expect(taskBoard).toContain('adjustScale={false}');

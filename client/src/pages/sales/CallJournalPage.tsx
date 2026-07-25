@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
@@ -67,6 +67,7 @@ type JournalResponse = {
 };
 
 const finalStatuses = new Set<TelephonyCallStatus>(['ended', 'failed', 'declined', 'missed']);
+const CALL_JOURNAL_PAGE_SIZE = 50;
 
 const statusVariant = (status: TelephonyCallStatus) => {
   if (status === 'connected' || status === 'ended') return 'success' as const;
@@ -83,12 +84,19 @@ export default function CallJournalPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
+  const journalListRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => setPage(1), [deferredSearch, direction, status, from, to]);
+  useEffect(() => {
+    journalListRef.current?.scrollTo({ top: 0 });
+  }, [deferredSearch, direction, from, page, status, to]);
 
   const queryString = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), limit: '50' });
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(CALL_JOURNAL_PAGE_SIZE),
+    });
     if (deferredSearch) params.set('q', deferredSearch);
     if (direction !== 'all') params.set('direction', direction);
     if (status !== 'all') params.set('status', status);
@@ -110,7 +118,8 @@ export default function CallJournalPage() {
     hour: '2-digit',
     minute: '2-digit',
   });
-  const totalPages = Math.max(1, Math.ceil((journalQuery.data?.total ?? 0) / 50));
+  const pageSize = journalQuery.data?.limit ?? CALL_JOURNAL_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil((journalQuery.data?.total ?? 0) / pageSize));
   const items = journalQuery.data?.items ?? [];
 
   return (
@@ -131,7 +140,7 @@ export default function CallJournalPage() {
       />
 
       <WorkspacePageBody contained ariaLabel={t('callJournal')} className="flex flex-col gap-5 pb-2">
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('callJournalSummary')}>
+        <section className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('callJournalSummary')}>
           <SummaryCard icon={PhoneCall} title={t('totalCalls')} value={journalQuery.data?.total ?? 0} />
           <SummaryCard icon={Headphones} title={t('answeredCalls')} value={journalQuery.data?.summary.answered ?? 0} tone="success" />
           <SummaryCard icon={PhoneMissed} title={t('missedCalls')} value={journalQuery.data?.summary.missed ?? 0} tone="danger" />
@@ -142,7 +151,7 @@ export default function CallJournalPage() {
           />
         </section>
 
-        <Card>
+        <Card className="shrink-0">
           <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_190px_170px_170px]">
             <div className="relative sm:col-span-2 xl:col-span-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -178,7 +187,7 @@ export default function CallJournalPage() {
           </CardContent>
         </Card>
 
-        <Card className="min-h-0 overflow-hidden">
+        <Card className="flex min-h-[22rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1">
           {journalQuery.isLoading ? (
             <div className="space-y-3 p-5">
               {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-14 w-full" />)}
@@ -195,10 +204,17 @@ export default function CallJournalPage() {
               <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('noCallsInJournalDescription')}</p>
             </div>
           ) : (
-            <>
-              <div className="hidden overflow-x-auto md:block">
+            <div
+              ref={journalListRef}
+              className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+              data-call-journal-scroll
+              role="region"
+              aria-label={t('callJournal')}
+              tabIndex={0}
+            >
+              <div className="hidden md:block">
                 <table className="w-full min-w-[980px] text-left text-sm">
-                  <thead className="border-b bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <thead className="sticky top-0 z-10 border-b bg-card text-xs font-medium uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
                     <tr>
                       <th className="px-4 py-3">{t('dateColumn')}</th>
                       <th className="px-4 py-3">{t('callDirection')}</th>
@@ -232,12 +248,12 @@ export default function CallJournalPage() {
                   />
                 ))}
               </div>
-            </>
+            </div>
           )}
         </Card>
 
         {journalQuery.data && journalQuery.data.total > 0 ? (
-          <div className="flex items-center justify-between gap-3 pb-2 text-sm text-muted-foreground">
+          <div className="flex shrink-0 items-center justify-between gap-3 pb-2 text-sm text-muted-foreground">
             <span>{t('callJournalCount').replace('{count}', String(journalQuery.data.total))}</span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>

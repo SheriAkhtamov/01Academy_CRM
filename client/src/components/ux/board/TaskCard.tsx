@@ -19,10 +19,10 @@ import {
 interface TaskCardProps {
     task: TaskSummary;
     onClick?: () => void;
-    dragHandleProps?: React.HTMLAttributes<HTMLElement>;
+    hasDragHandle?: boolean;
 }
 
-export function TaskCard({ task, onClick }: TaskCardProps) {
+export function TaskCard({ task, onClick, hasDragHandle = false }: TaskCardProps) {
     const { t } = useTranslation();
     const priority = PRIORITY_META[task.priority];
     const overdue = isOverdue(task);
@@ -40,7 +40,10 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
                     </TooltipTrigger>
                     <TooltipContent side="top">{t(priority.labelKey)}</TooltipContent>
                 </Tooltip>
-                <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-3">
+                <span className={cn(
+                    'min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-3',
+                    hasDragHandle && 'pr-7',
+                )}>
                     {task.title}
                 </span>
             </div>

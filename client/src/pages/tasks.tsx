@@ -91,8 +91,8 @@ export default function TasksPage() {
     };
 
     return (
-        <div className="flex h-full flex-col p-6 lg:p-8">
-            <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden p-6 lg:p-8">
+            <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col overflow-hidden">
                 <PageHeader
                     title={t('taskBoard')}
                     subtitle={t('taskBoardSubtitle')}

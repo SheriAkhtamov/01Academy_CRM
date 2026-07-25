@@ -42,7 +42,9 @@ describe('lead and student UX separation', () => {
   });
 
   it('keeps telephony interactive above dialogs and notifications above telephony', () => {
-    expect(telephonyWidget).toContain('pointer-events-auto fixed bottom-5 right-5 z-[70]');
+    expect(telephonyWidget).toContain('useMovableWidget<HTMLDivElement>');
+    expect(telephonyWidget).toContain('data-telephony-widget');
+    expect(telephonyWidget).toContain('pointer-events-auto fixed z-[70]');
     expect(telephonyWidget).toContain('aria-modal="false"');
     expect(toast).toContain('pointer-events-none fixed top-0 z-[200]');
     expect(toast).toContain('group pointer-events-auto');

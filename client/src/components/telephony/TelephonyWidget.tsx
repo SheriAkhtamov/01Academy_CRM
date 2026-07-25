@@ -5,6 +5,7 @@ import {
   Clock3,
   Delete,
   Grid3X3,
+  GripHorizontal,
   Headphones,
   History,
   Mic,
@@ -24,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useMovableWidget } from '@/hooks/useMovableWidget';
 import { toast } from '@/hooks/use-toast';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { useTelephony, type ActiveTelephonyCall, type TelephonyCallStatus } from '@/contexts/TelephonyContext';
@@ -58,6 +60,7 @@ type TelephonyExtension = {
 };
 
 const dialpad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+const TELEPHONY_WIDGET_POSITION_KEY = '01academy.telephony.widget.position.v1';
 
 const formatDuration = (seconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -99,6 +102,12 @@ export function TelephonyWidget({
   const [showTransfer, setShowTransfer] = useState(false);
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
   const [recordingCallId, setRecordingCallId] = useState<number | null>(null);
+  const {
+    widgetRef,
+    widgetStyle,
+    dragHandleProps,
+    isDragging,
+  } = useMovableWidget<HTMLDivElement>(TELEPHONY_WIDGET_POSITION_KEY, 20, isOpen);
   const callDuration = useCallDuration(telephony.activeCall);
   const isActive = Boolean(telephony.activeCall && !['ended', 'failed', 'declined', 'missed'].includes(telephony.activeCall.status));
 
@@ -337,13 +346,20 @@ export function TelephonyWidget({
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
       {isOpen ? (
-        <section
-          className="pointer-events-auto fixed bottom-5 right-5 z-[70] isolate w-[min(380px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20"
+        <div
+          ref={widgetRef}
+          style={widgetStyle}
+          data-telephony-widget
+          data-dragging={isDragging || undefined}
+          className={cn(
+            'pointer-events-auto fixed z-[70] isolate flex max-h-[calc(100dvh-24px)] w-[min(380px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20',
+            isDragging && 'select-none ring-2 ring-primary/30',
+          )}
           role="dialog"
           aria-modal="false"
           aria-label={t('telephonyTitle')}
         >
-          <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <header className="flex shrink-0 items-center justify-between border-b border-slate-100 py-2 pl-4 pr-2">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex size-9 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
                 <Headphones className="size-5" />
@@ -356,18 +372,34 @@ export function TelephonyWidget({
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              className="flex size-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-              onClick={() => setIsOpen(false)}
-              aria-label={t('close')}
-            >
-              <ChevronDown className="size-5" />
-            </button>
+            <div className="ml-2 flex shrink-0 items-center">
+              <button
+                type="button"
+                {...dragHandleProps}
+                className={cn(
+                  'flex size-10 touch-none items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700',
+                  'cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                  isDragging && 'cursor-grabbing',
+                )}
+                aria-label={t('telephonyMoveWidget')}
+                title={t('telephonyMoveWidgetHint')}
+              >
+                <GripHorizontal className="size-5" />
+              </button>
+              <button
+                type="button"
+                className="flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+                onClick={() => setIsOpen(false)}
+                aria-label={t('close')}
+              >
+                <ChevronDown className="size-5" />
+              </button>
+            </div>
           </header>
 
-          {telephony.activeCall ? renderActiveCall(telephony.activeCall) : (
-            <>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {telephony.activeCall ? renderActiveCall(telephony.activeCall) : (
+              <>
               <div className="grid grid-cols-2 border-b border-slate-100 p-1.5">
                 <button
                   type="button"
@@ -489,27 +521,50 @@ export function TelephonyWidget({
                   </div>
                 </ScrollArea>
               )}
-            </>
-          )}
-        </section>
+              </>
+            )}
+          </div>
+        </div>
       ) : (
-        <button
-          type="button"
+        <div
+          ref={widgetRef}
+          style={widgetStyle}
+          data-telephony-widget
+          data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed bottom-5 right-5 z-[70] flex h-14 items-center gap-3 rounded-full px-4 text-white shadow-xl transition hover:-translate-y-0.5',
+            'pointer-events-auto fixed z-[70] flex h-14 items-center overflow-hidden rounded-full text-white shadow-xl',
             isActive ? 'bg-emerald-600' : telephony.connectionState === 'ready' ? 'bg-slate-950' : 'bg-slate-600',
+            isDragging && 'select-none ring-2 ring-primary/30',
           )}
-          onClick={() => setIsOpen(true)}
-          aria-label={t('telephonyOpen')}
         >
-          <PhoneCall className="size-5" />
-          {isActive && telephony.activeCall ? (
-            <span className="font-mono text-sm tabular-nums">{formatDuration(callDuration)}</span>
-          ) : (
-            <span className="text-sm font-medium">{t('telephonyTitle')}</span>
-          )}
-          <span className={cn('size-2 rounded-full', telephony.connectionState === 'ready' ? 'bg-emerald-400' : 'bg-amber-300')} />
-        </button>
+          <button
+            type="button"
+            {...dragHandleProps}
+            className={cn(
+              'flex h-full w-12 shrink-0 touch-none items-center justify-center text-white/70 hover:bg-white/10 hover:text-white',
+              'cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white',
+              isDragging && 'cursor-grabbing',
+            )}
+            aria-label={t('telephonyMoveWidget')}
+            title={t('telephonyMoveWidgetHint')}
+          >
+            <GripHorizontal className="size-5" />
+          </button>
+          <button
+            type="button"
+            className="flex h-full items-center gap-3 pr-4 text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
+            onClick={() => setIsOpen(true)}
+            aria-label={t('telephonyOpen')}
+          >
+            <PhoneCall className="size-5" />
+            {isActive && telephony.activeCall ? (
+              <span className="font-mono text-sm tabular-nums">{formatDuration(callDuration)}</span>
+            ) : (
+              <span className="text-sm font-medium">{t('telephonyTitle')}</span>
+            )}
+            <span className={cn('size-2 rounded-full', telephony.connectionState === 'ready' ? 'bg-emerald-400' : 'bg-amber-300')} />
+          </button>
+        </div>
       )}
 
       {recordingUrl ? (

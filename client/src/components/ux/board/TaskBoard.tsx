@@ -4,15 +4,19 @@ import {
     DndContext,
     DragOverlay,
     KeyboardSensor,
-    PointerSensor,
+    MouseSensor,
+    TouchSensor,
+    pointerWithin,
+    rectIntersection,
     useDraggable,
     useDroppable,
     useSensor,
     useSensors,
+    type CollisionDetection,
     type DragEndEvent,
     type DragStartEvent,
 } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
+import { GripVertical } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
     finishOptimisticChange,
@@ -49,7 +53,8 @@ function DraggableTaskCard({
     task: TaskSummary;
     onClick: () => void;
 }) {
-    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    const { t } = useTranslation();
+    const { attributes, listeners, setActivatorNodeRef, setNodeRef, isDragging } = useDraggable({
         id: `task-${task.id}`,
         data: { taskId: task.id, status: task.status },
     });
@@ -57,12 +62,24 @@ function DraggableTaskCard({
     return (
         <div
             ref={setNodeRef}
-            style={{ transform: CSS.Translate.toString(transform) }}
-            className={cn('touch-none', isDragging && 'opacity-30')}
-            {...attributes}
-            {...listeners}
+            className={cn('relative', isDragging && 'opacity-25')}
         >
-            <TaskCard task={task} onClick={onClick} />
+            <TaskCard task={task} onClick={onClick} hasDragHandle />
+            <button
+                ref={setActivatorNodeRef}
+                type="button"
+                {...attributes}
+                {...listeners}
+                className={cn(
+                    'absolute right-2 top-2 z-10 flex size-8 touch-none items-center justify-center rounded-md text-muted-foreground/70',
+                    'cursor-grab hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isDragging && 'cursor-grabbing',
+                )}
+                onClick={(event) => event.stopPropagation()}
+                aria-label={`${t('dragTaskHint')}: ${task.title}`}
+            >
+                <GripVertical className="size-4" />
+            </button>
         </div>
     );
 }
@@ -72,21 +89,30 @@ function TaskColumn({
     label,
     tasks,
     onTaskClick,
+    canDrop,
 }: {
     status: BoardStatus;
     label: string;
     tasks: TaskSummary[];
     onTaskClick: (taskId: number) => void;
+    canDrop: boolean;
 }) {
     const { t } = useTranslation();
-    const { isOver, setNodeRef } = useDroppable({ id: `col-${status}`, data: { status } });
+    const { isOver, setNodeRef } = useDroppable({
+        id: `col-${status}`,
+        data: { status },
+        disabled: !canDrop,
+    });
 
     return (
         <div
             ref={setNodeRef}
+            role="region"
+            aria-label={label}
             className={cn(
                 'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
                 isOver && 'border-primary bg-primary/5 shadow-md',
+                !canDrop && 'opacity-60',
             )}
         >
             <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/95 p-3.5 backdrop-blur-sm">
@@ -96,7 +122,10 @@ function TaskColumn({
                 </span>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3">
+            <div
+                data-task-column-scroll
+                className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 [scrollbar-gutter:stable]"
+            >
                 {tasks.map((task) => (
                     <DraggableTaskCard key={task.id} task={task} onClick={() => onTaskClick(task.id)} />
                 ))}
@@ -110,6 +139,14 @@ function TaskColumn({
     );
 }
 
+const columnCollisionDetection: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) return pointerCollisions;
+
+    const intersectingColumns = rectIntersection(args);
+    return intersectingColumns.length > 0 ? intersectingColumns : closestCorners(args);
+};
+
 export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: TaskBoardProps) {
     const { t } = useTranslation();
     const [boardTasks, setBoardTasks] = useState(tasks);
@@ -120,7 +157,8 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
     latestTasksRef.current = tasks;
 
     const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
         useSensor(KeyboardSensor),
     );
 
@@ -202,7 +240,7 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
         >
             <DndContext
                 sensors={sensors}
-                collisionDetection={closestCorners}
+                collisionDetection={columnCollisionDetection}
                 onDragStart={handleDragStart}
                 onDragCancel={() => setActiveTaskId(null)}
                 onDragEnd={handleDragEnd}
@@ -224,13 +262,18 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                                 label={t(col.labelKey)}
                                 tasks={col.tasks}
                                 onTaskClick={onTaskClick}
+                                canDrop={!activeTask || !canMoveTask || canMoveTask(activeTask, col.status)}
                             />
                         ))}
                     </div>
                 </div>
-                <DragOverlay>
+                <DragOverlay
+                    adjustScale={false}
+                    dropAnimation={{ duration: 180, easing: 'ease-out' }}
+                    style={{ zIndex: 90 }}
+                >
                     {activeTask ? (
-                        <div className="w-72 rotate-2">
+                        <div className="w-[296px] cursor-grabbing opacity-95 shadow-2xl">
                             <TaskCard task={activeTask} />
                         </div>
                     ) : null}

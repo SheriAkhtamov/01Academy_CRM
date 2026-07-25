@@ -19,6 +19,8 @@ interface ConfirmDialogProps {
     cancelLabel?: string;
     onConfirm: () => void;
     variant?: 'default' | 'destructive';
+    isPending?: boolean;
+    keepOpenOnConfirm?: boolean;
 }
 
 export default function ConfirmDialog({
@@ -30,6 +32,8 @@ export default function ConfirmDialog({
     cancelLabel,
     onConfirm,
     variant = 'default',
+    isPending = false,
+    keepOpenOnConfirm = false,
 }: ConfirmDialogProps) {
     const { t } = useTranslation();
     const finalConfirmLabel = confirmLabel || t('ok');
@@ -43,12 +47,16 @@ export default function ConfirmDialog({
                     <AlertDialogDescription>{description}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                    <AlertDialogCancel>{finalCancelLabel}</AlertDialogCancel>
+                    <AlertDialogCancel disabled={isPending}>{finalCancelLabel}</AlertDialogCancel>
                     <AlertDialogAction
-                        onClick={onConfirm}
+                        disabled={isPending}
+                        onClick={(event) => {
+                            if (keepOpenOnConfirm) event.preventDefault();
+                            onConfirm();
+                        }}
                         className={variant === 'destructive' ? 'bg-red-600 hover:bg-red-700 text-white' : ''}
                     >
-                        {finalConfirmLabel}
+                        {isPending ? t('saving') : finalConfirmLabel}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

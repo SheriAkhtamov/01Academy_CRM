@@ -7489,6 +7489,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           await deleteRow(table, id);
         });
       }
+      if (table === 'academy_groups') {
+        await createAudit(req, 'DELETE_ACADEMY_GROUP', 'academy_group', id, undefined, row);
+      }
       res.json({ ok: true });
     } catch (error: any) {
       logger.error(`Failed to delete ${path}`, { error });
@@ -9669,7 +9672,10 @@ registerSimpleCrud('groups', 'academy_groups', [
       row,
     });
   },
-  beforeDelete: async ({ id }) => {
+  beforeDelete: async ({ id, row }) => {
+    if (row.status !== 'completed') {
+      throw Object.assign(new Error('groupMustBeArchivedBeforeDelete'), { statusCode: 409 });
+    }
     const usage = await queryOne<{ inUse: boolean }>(
       `SELECT (
          EXISTS (

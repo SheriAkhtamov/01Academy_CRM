@@ -2137,6 +2137,88 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
+  it('rejects permanent deletion until a group is archived', async () => {
+    const group = groupFixture({ status: 'in_progress' });
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM "academy_groups" WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .delete('/api/academy/groups/20');
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('groupMustBeArchivedBeforeDelete');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) =>
+      String(sql).includes('DELETE FROM "academy_groups"'))).toBe(false);
+  });
+
+  it('permanently deletes only an empty archived group and records the action', async () => {
+    const group = groupFixture({ status: 'completed' });
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM "academy_groups" WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      if (sql.includes('AS in_use')) return { rows: [{ in_use: false }] };
+      if (sql.includes('DELETE FROM "academy_groups"')) return emptyResult();
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .delete('/api/academy/groups/20');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+    expect(mocks.clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM "academy_groups"'),
+      [20],
+    );
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'DELETE_ACADEMY_GROUP',
+      entityType: 'academy_group',
+      entityId: 20,
+    }));
+  });
+
+  it('preserves an archived group that has academy history', async () => {
+    const group = groupFixture({ status: 'completed' });
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM "academy_groups" WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      if (sql.includes('AS in_use')) return { rows: [{ in_use: true }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .delete('/api/academy/groups/20');
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('groupHistoryCannotBeDeleted');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) =>
+      String(sql).includes('DELETE FROM "academy_groups"'))).toBe(false);
+  });
+
   it('saves a course and every teacher assignment in one transaction', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();

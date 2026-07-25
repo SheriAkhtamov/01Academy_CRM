@@ -68,6 +68,7 @@ import {
   DoorOpen,
   Edit3,
   GitBranch,
+  Loader2,
   MapPin,
   Plus,
   Trash2,
@@ -624,6 +625,25 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     },
   });
 
+  const archiveGroup = useMutation({
+    mutationFn: (group: Group) =>
+      apiRequest('PATCH', `/api/academy/groups/${group.id}`, { status: 'completed' }),
+    onSuccess: (_result, group) => {
+      toast({
+        title: t('groupArchived'),
+        description: group.name,
+      });
+      void invalidate();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('groupArchiveFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const saveStatus = useMutation({
     mutationFn: (values: StatusValues) => {
       return editingStatus
@@ -663,8 +683,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const deleteResource = useMutation({
     mutationFn: ({ resource, id }: NonNullable<typeof deleteTarget>) =>
       apiRequest('DELETE', `/api/academy/${resource}/${id}`),
-    onSuccess: () => {
-      toast({ title: t('resourceDeleted') });
+    onSuccess: (_result, target) => {
+      toast({
+        title: target.resource === 'groups' ? t('groupDeletedPermanently') : t('resourceDeleted'),
+      });
       setDeleteTarget(null);
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
@@ -1224,22 +1246,53 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     {
       key: 'actions',
       header: t('actions'),
-      render: (row) => (
-        <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" onClick={() => openGroup(row)}>
-            <Edit3 />
-            <span className="sr-only">{t('edit')}</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleteTarget({ resource: 'groups', id: row.id, name: row.name })}
-          >
-            <Trash2 />
-            <span className="sr-only">{t('delete')}</span>
-          </Button>
-        </div>
-      ),
+      render: (row) => {
+        const isArchiving = archiveGroup.isPending && archiveGroup.variables?.id === row.id;
+        return (
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="min-h-11 min-w-11"
+              onClick={() => openGroup(row)}
+            >
+              <Edit3 />
+              <span className="sr-only">{t('edit')}</span>
+            </Button>
+            {isGroupArchive ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="min-h-11 min-w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={deleteResource.isPending}
+                onClick={() => setDeleteTarget({
+                  resource: 'groups',
+                  id: row.id,
+                  name: row.name,
+                })}
+              >
+                <Trash2 />
+                <span className="sr-only">{t('deleteGroupPermanently')}</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-11"
+                disabled={archiveGroup.isPending}
+                onClick={() => archiveGroup.mutate(row)}
+              >
+                {isArchiving ? (
+                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <Archive data-icon="inline-start" />
+                )}
+                {isArchiving ? t('saving') : t('archiveGroup')}
+              </Button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -2164,12 +2217,22 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open && !deleteResource.isPending) setDeleteTarget(null);
         }}
-        title={t('confirmDeleteResource')}
-        description={deleteTarget ? `${t('deleteResourceDescription')} “${deleteTarget.name}”?` : ''}
-        confirmLabel={t('delete')}
+        title={deleteTarget?.resource === 'groups'
+          ? t('deleteArchivedGroupTitle')
+          : t('confirmDeleteResource')}
+        description={deleteTarget
+          ? deleteTarget.resource === 'groups'
+            ? t('deleteArchivedGroupDescription').replace('{name}', deleteTarget.name)
+            : `${t('deleteResourceDescription')} “${deleteTarget.name}”?`
+          : ''}
+        confirmLabel={deleteTarget?.resource === 'groups'
+          ? t('deleteGroupPermanently')
+          : t('delete')}
         variant="destructive"
+        isPending={deleteResource.isPending}
+        keepOpenOnConfirm={deleteTarget?.resource === 'groups'}
         onConfirm={() => {
           if (deleteTarget) deleteResource.mutate(deleteTarget);
         }}

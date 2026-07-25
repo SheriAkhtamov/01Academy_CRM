@@ -9,6 +9,14 @@ const tasksPage = readFileSync(
   new URL('../client/src/pages/tasks.tsx', import.meta.url),
   'utf8',
 );
+const salesKanban = readFileSync(
+  new URL('../client/src/components/ux/KanbanBoard.tsx', import.meta.url),
+  'utf8',
+);
+const dragOverlayPortal = readFileSync(
+  new URL('../client/src/components/ux/DragOverlayPortal.tsx', import.meta.url),
+  'utf8',
+);
 
 describe('task board interaction UX', () => {
   it('keeps the board height bounded so every column can scroll vertically', () => {
@@ -25,6 +33,15 @@ describe('task board interaction UX', () => {
     expect(taskBoard).not.toContain('CSS.Translate');
     expect(taskBoard).not.toContain('rotate-2');
     expect(taskBoard).toContain('adjustScale={false}');
+  });
+
+  it('renders both board previews outside paint-containment coordinates', () => {
+    expect(taskBoard).toContain('<DragOverlayPortal');
+    expect(salesKanban).toContain('<DragOverlayPortal');
+    expect(dragOverlayPortal).toContain('createPortal(');
+    expect(dragOverlayPortal).toContain('document.body');
+    expect(salesKanban).not.toContain('CSS.Translate');
+    expect(salesKanban).toContain('w-[296px]');
   });
 
   it('targets the column under the pointer and disables forbidden destinations', () => {

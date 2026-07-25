@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent 
 import {
   closestCorners,
   DndContext,
-  DragOverlay,
   KeyboardCode,
   KeyboardSensor,
   MouseSensor,
@@ -14,7 +13,6 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -45,6 +43,7 @@ import {
   type OptimisticChange,
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
+import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
 
 interface KanbanStatus {
   code: string;
@@ -231,7 +230,6 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     attributes,
     listeners,
     setNodeRef,
-    transform,
     isDragging,
   } = useDraggable({
     id: `lead-${lead.id}`,
@@ -242,10 +240,9 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
   const card = (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
       className={cn(
         'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        isDragging && 'opacity-30',
+        isDragging && 'opacity-25',
       )}
       aria-label={`${lead.contactName}. ${t('openLead')}`}
       {...attributes}
@@ -479,9 +476,13 @@ export function KanbanBoard({
             ))}
           </div>
         </div>
-        <DragOverlay>
+        <DragOverlayPortal
+          adjustScale={false}
+          dropAnimation={{ duration: 180, easing: 'ease-out' }}
+          style={{ zIndex: 90 }}
+        >
           {activeLead ? (
-            <div className="w-80 rounded-lg border border-primary/30 bg-card p-3 shadow-xl">
+            <div className="w-[296px] cursor-grabbing rounded-lg border border-primary/30 bg-card p-3 opacity-95 shadow-2xl">
               <LeadCardContent
                 lead={activeLead}
                 currentStatus={statusesByCode.get(activeLead.statusCode) ?? statuses[0]}
@@ -493,7 +494,7 @@ export function KanbanBoard({
               />
             </div>
           ) : null}
-        </DragOverlay>
+        </DragOverlayPortal>
       </DndContext>
     </div>
   );

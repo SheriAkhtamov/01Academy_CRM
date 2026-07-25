@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     closestCorners,
     DndContext,
-    DragOverlay,
     KeyboardSensor,
     MouseSensor,
     TouchSensor,
@@ -26,6 +25,7 @@ import {
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
 import { TaskCard } from './TaskCard';
+import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
 import { BOARD_COLUMNS, type BoardStatus, type TaskSummary } from '@/lib/boardTypes';
 
 interface TaskBoardProps {
@@ -267,7 +267,7 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                         ))}
                     </div>
                 </div>
-                <DragOverlay
+                <DragOverlayPortal
                     adjustScale={false}
                     dropAnimation={{ duration: 180, easing: 'ease-out' }}
                     style={{ zIndex: 90 }}
@@ -277,7 +277,7 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                             <TaskCard task={activeTask} />
                         </div>
                     ) : null}
-                </DragOverlay>
+                </DragOverlayPortal>
             </DndContext>
         </div>
     );

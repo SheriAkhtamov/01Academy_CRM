@@ -537,11 +537,6 @@ export const translations = {
   onlinePbxUseWebPhone: { en: 'Use the built-in browser phone', ru: 'Используйте встроенную телефонию в браузере' },
   telephonyTitle: { en: 'Phone', ru: 'Телефония' },
   telephonyOpen: { en: 'Open phone', ru: 'Открыть телефонию' },
-  telephonyMoveWidget: { en: 'Move phone widget', ru: 'Переместить виджет телефонии' },
-  telephonyMoveWidgetHint: {
-    en: 'Drag to move. Use arrow keys for precise positioning; Home resets the position.',
-    ru: 'Перетащите, чтобы переместить. Стрелки — точная настройка, Home — сброс позиции.',
-  },
   telephonyReady: { en: 'Ready for calls', ru: 'Готова к звонкам' },
   telephonyConnecting: { en: 'Connecting…', ru: 'Подключение…' },
   telephonyOffline: { en: 'Connection lost. Reconnecting…', ru: 'Связь потеряна. Переподключаемся…' },

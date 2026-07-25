@@ -3,9 +3,10 @@ import {
   useEffect,
   useRef,
   useState,
-  type ButtonHTMLAttributes,
   type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
+  type DragEvent as ReactDragEvent,
+  type HTMLAttributes,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
@@ -20,11 +21,11 @@ type DragState = {
   startPointerY: number;
   startWidgetX: number;
   startWidgetY: number;
+  activated: boolean;
 };
 
 const POSITION_VERSION = 1;
-const KEYBOARD_STEP = 16;
-const KEYBOARD_LARGE_STEP = 48;
+const DRAG_ACTIVATION_DISTANCE = 6;
 
 export const clampWidgetPosition = (
   position: WidgetPosition,
@@ -68,6 +69,12 @@ export const parseStoredWidgetPosition = (value: string | null): WidgetPosition 
   }
 };
 
+export const hasMovedPastDragThreshold = (
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  threshold = DRAG_ACTIVATION_DISTANCE,
+) => Math.hypot(current.x - start.x, current.y - start.y) >= threshold;
+
 export function useMovableWidget<T extends HTMLElement>(
   storageKey: string,
   defaultMargin = 20,
@@ -75,6 +82,7 @@ export function useMovableWidget<T extends HTMLElement>(
 ) {
   const widgetRef = useRef<T | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const suppressNextClickRef = useRef(false);
   const [position, setPosition] = useState<WidgetPosition | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -152,6 +160,24 @@ export function useMovableWidget<T extends HTMLElement>(
     const handlePointerMove = (event: PointerEvent) => {
       const dragState = dragStateRef.current;
       if (!dragState || event.pointerId !== dragState.pointerId) return;
+
+      if (!dragState.activated) {
+        if (!hasMovedPastDragThreshold(
+          { x: dragState.startPointerX, y: dragState.startPointerY },
+          { x: event.clientX, y: event.clientY },
+        )) {
+          return;
+        }
+        dragState.activated = true;
+        suppressNextClickRef.current = true;
+        setIsDragging(true);
+        try {
+          widgetRef.current?.setPointerCapture(event.pointerId);
+        } catch {
+          // Global pointer listeners still keep the drag active.
+        }
+      }
+
       event.preventDefault();
       moveTo({
         x: dragState.startWidgetX + event.clientX - dragState.startPointerX,
@@ -162,6 +188,11 @@ export function useMovableWidget<T extends HTMLElement>(
     const finishDrag = (event: PointerEvent) => {
       const dragState = dragStateRef.current;
       if (!dragState || event.pointerId !== dragState.pointerId) return;
+      if (dragState.activated) {
+        window.setTimeout(() => {
+          suppressNextClickRef.current = false;
+        }, 0);
+      }
       dragStateRef.current = null;
       setIsDragging(false);
     };
@@ -177,8 +208,8 @@ export function useMovableWidget<T extends HTMLElement>(
     };
   }, [moveTo]);
 
-  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || !widgetRef.current) return;
+  const handlePointerDown = useCallback((event: ReactPointerEvent<T>) => {
+    if (event.button !== 0 || !event.isPrimary || !widgetRef.current) return;
     const bounds = widgetRef.current.getBoundingClientRect();
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -186,41 +217,26 @@ export function useMovableWidget<T extends HTMLElement>(
       startPointerY: event.clientY,
       startWidgetX: bounds.left,
       startWidgetY: bounds.top,
+      activated: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setPosition({ x: bounds.left, y: bounds.top });
-    setIsDragging(true);
+  }, []);
+
+  const handleClickCapture = useCallback((event: ReactMouseEvent<T>) => {
+    if (suppressNextClickRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressNextClickRef.current = false;
+    }
+  }, []);
+
+  const handleNativeDragStart = useCallback((event: ReactDragEvent<T>) => {
     event.preventDefault();
   }, []);
 
-  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'Home') {
-      event.preventDefault();
-      resetToDefault();
-      return;
-    }
-
-    const directions: Partial<Record<string, [number, number]>> = {
-      ArrowLeft: [-1, 0],
-      ArrowRight: [1, 0],
-      ArrowUp: [0, -1],
-      ArrowDown: [0, 1],
-    };
-    const direction = directions[event.key];
-    if (!direction || !widgetRef.current) return;
-
-    event.preventDefault();
-    const bounds = widgetRef.current.getBoundingClientRect();
-    const step = event.shiftKey ? KEYBOARD_LARGE_STEP : KEYBOARD_STEP;
-    moveTo({
-      x: bounds.left + direction[0] * step,
-      y: bounds.top + direction[1] * step,
-    });
-  }, [moveTo, resetToDefault]);
-
-  const dragHandleProps: ButtonHTMLAttributes<HTMLButtonElement> = {
+  const widgetDragProps: HTMLAttributes<T> = {
     onPointerDown: handlePointerDown,
-    onKeyDown: handleKeyDown,
+    onClickCapture: handleClickCapture,
+    onDragStart: handleNativeDragStart,
   };
 
   const widgetStyle: CSSProperties = position
@@ -230,7 +246,7 @@ export function useMovableWidget<T extends HTMLElement>(
   return {
     widgetRef,
     widgetStyle,
-    dragHandleProps,
+    widgetDragProps,
     isDragging,
     resetToDefault,
   };

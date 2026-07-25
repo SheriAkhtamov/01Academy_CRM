@@ -5,7 +5,6 @@ import {
   Clock3,
   Delete,
   Grid3X3,
-  GripHorizontal,
   Headphones,
   History,
   Mic,
@@ -105,7 +104,7 @@ export function TelephonyWidget({
   const {
     widgetRef,
     widgetStyle,
-    dragHandleProps,
+    widgetDragProps,
     isDragging,
   } = useMovableWidget<HTMLDivElement>(TELEPHONY_WIDGET_POSITION_KEY, 20, isOpen);
   const callDuration = useCallDuration(telephony.activeCall);
@@ -349,11 +348,12 @@ export function TelephonyWidget({
         <div
           ref={widgetRef}
           style={widgetStyle}
+          {...widgetDragProps}
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] isolate flex max-h-[calc(100dvh-24px)] w-[min(380px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20',
-            isDragging && 'select-none ring-2 ring-primary/30',
+            'pointer-events-auto fixed z-[70] isolate flex max-h-[calc(100dvh-24px)] w-[min(380px,calc(100vw-24px))] cursor-move flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20',
+            isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
           )}
           role="dialog"
           aria-modal="false"
@@ -375,20 +375,7 @@ export function TelephonyWidget({
             <div className="ml-2 flex shrink-0 items-center">
               <button
                 type="button"
-                {...dragHandleProps}
-                className={cn(
-                  'flex size-10 touch-none items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700',
-                  'cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                  isDragging && 'cursor-grabbing',
-                )}
-                aria-label={t('telephonyMoveWidget')}
-                title={t('telephonyMoveWidgetHint')}
-              >
-                <GripHorizontal className="size-5" />
-              </button>
-              <button
-                type="button"
-                className="flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+                className="flex size-10 cursor-pointer items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
                 onClick={() => setIsOpen(false)}
                 aria-label={t('close')}
               >
@@ -529,30 +516,18 @@ export function TelephonyWidget({
         <div
           ref={widgetRef}
           style={widgetStyle}
+          {...widgetDragProps}
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] flex h-14 items-center overflow-hidden rounded-full text-white shadow-xl',
+            'pointer-events-auto fixed z-[70] flex h-14 touch-none cursor-move items-center overflow-hidden rounded-full text-white shadow-xl',
             isActive ? 'bg-emerald-600' : telephony.connectionState === 'ready' ? 'bg-slate-950' : 'bg-slate-600',
-            isDragging && 'select-none ring-2 ring-primary/30',
+            isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
           )}
         >
           <button
             type="button"
-            {...dragHandleProps}
-            className={cn(
-              'flex h-full w-12 shrink-0 touch-none items-center justify-center text-white/70 hover:bg-white/10 hover:text-white',
-              'cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white',
-              isDragging && 'cursor-grabbing',
-            )}
-            aria-label={t('telephonyMoveWidget')}
-            title={t('telephonyMoveWidgetHint')}
-          >
-            <GripHorizontal className="size-5" />
-          </button>
-          <button
-            type="button"
-            className="flex h-full items-center gap-3 pr-4 text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
+            className="flex h-full cursor-pointer items-center gap-3 px-4 text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
             onClick={() => setIsOpen(true)}
             aria-label={t('telephonyOpen')}
           >

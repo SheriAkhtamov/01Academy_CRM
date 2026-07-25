@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampWidgetPosition,
+  hasMovedPastDragThreshold,
   parseStoredWidgetPosition,
 } from '../client/src/hooks/useMovableWidget';
 
@@ -30,5 +31,10 @@ describe('movable widget positioning', () => {
     expect(parseStoredWidgetPosition('{"version":2,"x":120,"y":80}')).toBeNull();
     expect(parseStoredWidgetPosition('{"version":1,"x":"120","y":80}')).toBeNull();
     expect(parseStoredWidgetPosition('not-json')).toBeNull();
+  });
+
+  it('waits for real pointer movement before treating a click as a drag', () => {
+    expect(hasMovedPastDragThreshold({ x: 100, y: 100 }, { x: 103, y: 104 })).toBe(false);
+    expect(hasMovedPastDragThreshold({ x: 100, y: 100 }, { x: 106, y: 100 })).toBe(true);
   });
 });

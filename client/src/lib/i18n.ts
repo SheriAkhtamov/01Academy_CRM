@@ -846,6 +846,11 @@ export const translations = {
     ru: 'Все связанные данные из «{duplicate}» перейдут в «{retained}». Карточка-источник будет архивирована.',
   },
   confirmLeadMergeTitle: { en: 'Confirm lead merge', ru: 'Подтвердите объединение лидов' },
+  confirmAction: { en: 'Confirm action', ru: 'Подтвердите действие' },
+  confirmReactivationDescription: {
+    en: 'This lead will be moved back to the sales pipeline as a new request.',
+    ru: 'Этот лид будет возвращён в воронку продаж как новая заявка.',
+  },
   createTask: { en: 'Create task', ru: 'Создать задачу' },
   dealDetails: { en: 'Deal details', ru: 'Параметры сделки' },
   dealTab: { en: 'Deal', ru: 'Сделка' },

@@ -301,11 +301,11 @@ function EmptyState({
   return (
     <Card className="border-dashed">
       <CardContent className="py-14 px-6 text-center">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-          <Icon className="h-7 w-7 text-slate-400" />
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
+          <Icon className="h-7 w-7 text-muted-foreground" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>
-        <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">{text}</p>
+        <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">{text}</p>
       </CardContent>
     </Card>
   );
@@ -858,13 +858,13 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   const getLessonStatusBadge = (status: string) => {
     const variants: Record<string, string> = {
-      scheduled: 'bg-blue-100 text-blue-700 border-blue-200',
-      conducted: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-      cancelled: 'bg-red-100 text-red-700 border-red-200',
-      postponed: 'bg-amber-100 text-amber-700 border-amber-200',
+      scheduled: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300',
+      conducted: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300',
+      cancelled: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300',
+      postponed: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300',
     };
     return (
-      <Badge className={cn('text-xs font-medium', variants[status] || 'bg-slate-100 text-slate-700')}>
+      <Badge className={cn('text-xs font-medium', variants[status] || 'bg-muted text-muted-foreground')}>
         {status === 'scheduled' && t('lessonStatusScheduled')}
         {status === 'conducted' && t('lessonStatusConducted')}
         {status === 'cancelled' && t('lessonStatusCancelled')}
@@ -881,12 +881,12 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
       completed: t('groupStatusCompleted'),
     };
     const classes: Record<string, string> = {
-      open: 'bg-blue-100 text-blue-700 border-blue-200',
-      in_progress: 'bg-amber-100 text-amber-700 border-amber-200',
-      completed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      open: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300',
+      in_progress: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300',
+      completed: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300',
     };
     return (
-      <Badge className={cn('text-xs font-medium', classes[status] || 'bg-slate-100 text-slate-700')}>
+      <Badge className={cn('text-xs font-medium', classes[status] || 'bg-muted text-muted-foreground')}>
         {labels[status] ?? status}
       </Badge>
     );
@@ -1040,7 +1040,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       {day.date.toLocaleDateString('ru-RU', {
                         timeZone: 'UTC',
                         day: 'numeric',
@@ -1050,7 +1050,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-2">
                     {day.lessons.length === 0 && (
-                      <p className="text-xs text-slate-400 text-center py-4">{t('noLessonsToday')}</p>
+                      <p className="text-xs text-muted-foreground text-center py-4">{t('noLessonsToday')}</p>
                     )}
                     {day.lessons.map((lesson) => (
                       <div
@@ -1063,11 +1063,11 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                         )}
                       >
                         <div className="flex items-center justify-between gap-1">
-                          <span className="font-semibold text-slate-900">{formatTime(lesson.scheduledAt)}</span>
+                          <span className="font-semibold text-foreground">{formatTime(lesson.scheduledAt)}</span>
                           {getLessonStatusBadge(lesson.status)}
                         </div>
-                        <p className="text-slate-700 font-medium truncate">{lesson.groupName || t('noGroup')}</p>
-                        <p className="text-slate-500 truncate">{lesson.topic}</p>
+                        <p className="text-foreground font-medium truncate">{lesson.groupName || t('noGroup')}</p>
+                        <p className="text-muted-foreground truncate">{lesson.topic}</p>
                         {lesson.status === 'conducted' && (
                           <Button
                             variant="ghost"
@@ -1107,14 +1107,14 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       className="flex items-center justify-between rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/50"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="text-sm font-semibold text-slate-900 tabular-nums">
+                        <div className="text-sm font-semibold text-foreground tabular-nums">
                           {formatTime(lesson.scheduledAt)}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-900">
+                          <p className="text-sm font-medium text-foreground">
                             {lesson.groupName || t('noGroup')} • {lesson.topic}
                           </p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-muted-foreground">
                             {lesson.courseName || t('noCourse')} • {lesson.durationMinutes}
                             {t('minutes')} • {lesson.schoolName || t('schoolNotSelected')}
                           </p>
@@ -1157,7 +1157,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="text-lg">{selectedGroup.name}</CardTitle>
-                      <p className="text-sm text-slate-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         {selectedGroup.courseName || t('noCourse')} • {t('teacher')}: {user?.fullName}
                       </p>
                     </div>
@@ -1167,8 +1167,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                 <CardContent className="space-y-4">
                   <div>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-slate-600">{t('lessonProgress')}</span>
-                      <span className="font-medium text-slate-900">
+                      <span className="text-muted-foreground">{t('lessonProgress')}</span>
+                      <span className="font-medium text-foreground">
                         {t('lessonsConductedCount')
                           .replace('{conducted}', String(groupLessonProgressById.get(selectedGroup.id)?.conducted ?? 0))
                           .replace('{total}', String(groupLessonProgressById.get(selectedGroup.id)?.total ?? 0))}
@@ -1263,10 +1263,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <CardContent className="p-5 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h3 className="text-base font-semibold text-slate-900 group-hover:text-primary-600 transition-colors">
+                        <h3 className="text-base font-semibold text-foreground group-hover:text-primary-600 transition-colors">
                           {group.name}
                         </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {group.courseName || t('noCourse')} · {group.schoolName || t('schoolNotSelected')}
                         </p>
                       </div>
@@ -1275,8 +1275,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
                     <div>
                       <div className="flex justify-between text-xs mb-1.5">
-                        <span className="text-slate-500">{t('lessonProgress')}</span>
-                        <span className="text-slate-700 font-medium">
+                        <span className="text-muted-foreground">{t('lessonProgress')}</span>
+                        <span className="text-foreground font-medium">
                           {t('lessonsConductedCount')
                             .replace('{conducted}', String(groupLessonProgressById.get(group.id)?.conducted ?? 0))
                             .replace('{total}', String(groupLessonProgressById.get(group.id)?.total ?? 0))}
@@ -1303,7 +1303,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     )}
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Users className="h-3.5 w-3.5" />
                         <span>{group.currentStudents || 0} {t('studentsCount')}</span>
                       </div>
@@ -1351,12 +1351,12 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               {selectedLessonDetails && (
                 <div className="rounded-lg border border-border/70 bg-muted/50 p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-medium text-slate-900">
+                    <div className="font-medium text-foreground">
                       {selectedLessonDetails.groupName || t('noGroup')} — {selectedLessonDetails.topic}
                     </div>
                     {getLessonStatusBadge(selectedLessonDetails.status)}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
+                  <div className="text-xs text-muted-foreground mt-0.5">
                     {formatDateFull(selectedLessonDetails.scheduledAt)} •{' '}
                     {formatTime(selectedLessonDetails.scheduledAt)} •{' '}
                     {selectedLessonDetails.durationMinutes}
@@ -1368,12 +1368,12 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
                   <div>
-                    <div className="font-medium text-sm text-slate-900">{t('rescheduleLesson')}</div>
-                    <p className="mt-0.5 text-xs text-slate-600">{t('rescheduleLessonHint')}</p>
+                    <div className="font-medium text-sm text-foreground">{t('rescheduleLesson')}</div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{t('rescheduleLessonHint')}</p>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label htmlFor="reschedule-at" className="text-xs text-slate-600">
+                      <Label htmlFor="reschedule-at" className="text-xs text-muted-foreground">
                         {t('newLessonDate')}
                       </Label>
                       <Input
@@ -1386,7 +1386,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="reschedule-reason" className="text-xs text-slate-600">
+                      <Label htmlFor="reschedule-reason" className="text-xs text-muted-foreground">
                         {t('rescheduleReason')}
                       </Label>
                       <Input
@@ -1473,16 +1473,16 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     <table className="w-full min-w-[640px] text-sm">
                       <thead className="bg-muted/70">
                         <tr className="border-b border-border/70">
-                          <th className="text-left p-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          <th className="text-left p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             {t('studentName')}
                           </th>
-                          <th className="text-center p-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          <th className="text-center p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             {t('present')}
                           </th>
-                          <th className="text-center p-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          <th className="text-center p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             {t('absent')}
                           </th>
-                          <th className="text-right p-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          <th className="text-right p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             {t('attendanceLabel')} %
                           </th>
                         </tr>
@@ -1495,7 +1495,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                               key={student.id}
                               className="border-b border-slate-100 hover:bg-primary/[0.035] transition-colors"
                             >
-                              <td className="p-3 px-4 font-medium text-slate-900">
+                              <td className="p-3 px-4 font-medium text-foreground">
                                 {student.studentName || student.contactName}
                               </td>
                               <td className="p-3 px-4 text-center">
@@ -1518,7 +1518,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                                   className="data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
                                 />
                               </td>
-                              <td className="p-3 px-4 text-right tabular-nums text-slate-500">
+                              <td className="p-3 px-4 text-right tabular-nums text-muted-foreground">
                                 {student.attendancePercent || 0}%
                               </td>
                             </tr>
@@ -1529,7 +1529,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">{t('comment')}</Label>
+                    <Label className="text-xs text-muted-foreground">{t('comment')}</Label>
                     <Textarea
                       value={attendanceNote}
                       disabled={lessonMutationPending}
@@ -1617,14 +1617,14 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm text-slate-500 truncate">
+                        <p className="text-sm text-muted-foreground truncate">
                           {group?.name || t('noGroup')}
                         </p>
-                        <div className="mt-1.5 text-[26px] font-bold text-slate-900 leading-tight tabular-nums">
+                        <div className="mt-1.5 text-[26px] font-bold text-foreground leading-tight tabular-nums">
                           {avgScore}
-                          <span className="text-sm text-slate-400 ml-1">/ 5</span>
+                          <span className="text-sm text-muted-foreground ml-1">/ 5</span>
                         </div>
-                        <p className="mt-1 text-xs text-slate-400">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {groupSurveys.length}{' '}
                           {groupSurveys.length === 1
                             ? t('ratingsCount')
@@ -1657,7 +1657,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             <Card className="border-border/70">
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-slate-500" />
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
                   {t('ratingDynamics')}
                 </CardTitle>
               </CardHeader>
@@ -1688,7 +1688,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                               />
                             ))}
                           </div>
-                          <span className="font-medium text-slate-900">{row.avgScore}</span>
+                          <span className="font-medium text-foreground">{row.avgScore}</span>
                         </div>
                       ),
                     },
@@ -1745,7 +1745,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                             )}
                           />
                         ))}
-                        <span className="ml-1 font-medium text-slate-900">{row.score}</span>
+                        <span className="ml-1 font-medium text-foreground">{row.score}</span>
                       </div>
                     ),
                   },

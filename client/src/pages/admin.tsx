@@ -500,17 +500,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const getWorkspaceColor = (workspace: string) => {
     switch (workspace) {
       case 'administration':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
       case 'sales':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300';
       case 'teacher':
-        return 'bg-amber-100 text-amber-800';
+        return 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300';
       case 'marketing':
-        return 'bg-pink-100 text-pink-800';
+        return 'bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300';
       case 'finance':
-        return 'bg-emerald-100 text-emerald-800';
+        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300';
       default:
-        return 'bg-slate-100 text-slate-800';
+        return 'bg-muted text-foreground';
     }
   };
 
@@ -519,8 +519,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const getStatusColor = (isActive: boolean) => {
     return isActive
-      ? 'bg-emerald-100 text-emerald-800'
-      : 'bg-red-100 text-red-800';
+      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+      : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
   };
 
   const primaryWorkspaceOptions = [
@@ -600,9 +600,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             </span>
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-900 truncate">{row.fullName}</p>
-            <p className="text-sm text-slate-500 truncate">{row.email}</p>
-            {row.position && <p className="text-xs text-slate-400 truncate">{row.position}</p>}
+            <p className="text-sm font-medium text-foreground truncate">{row.fullName}</p>
+            <p className="text-sm text-muted-foreground truncate">{row.email}</p>
+            {row.position && <p className="text-xs text-muted-foreground truncate">{row.position}</p>}
           </div>
         </div>
       ),
@@ -644,7 +644,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       sortable: true,
       accessor: (row) => row.createdAt ? new Date(row.createdAt).getTime() : 0,
       render: (row) => (
-        <span className="text-sm text-slate-500">
+        <span className="text-sm text-muted-foreground">
           {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : t('notAvailable')}
         </span>
       ),
@@ -686,8 +686,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         <Card>
           <CardContent className="p-12 text-center">
             <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">{t('accessDenied')}</h3>
-            <p className="text-slate-500">{t('noAdminPermission')}</p>
+            <h3 className="text-lg font-medium text-foreground mb-2">{t('accessDenied')}</h3>
+            <p className="text-muted-foreground">{t('noAdminPermission')}</p>
           </CardContent>
         </Card>
       </div>
@@ -723,8 +723,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           {/* User Management Header */}
           <div>
             <div>
-              <h2 className="text-xl font-semibold text-slate-900">{t('userManagement')}</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-xl font-semibold text-foreground">{t('userManagement')}</h2>
+              <p className="text-sm text-muted-foreground">
                 {t('createManageUserAccounts')}
               </p>
             </div>
@@ -773,15 +773,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                       {...field}
                                     />
                                   </FormControl>
-                                  <p className="text-xs text-slate-500">{t('loginManagedInCredentials')}</p>
+                                  <p className="text-xs text-muted-foreground">{t('loginManagedInCredentials')}</p>
                                   <FormMessage />
                                 </FormItem>
                               ) : (
                                 <FormItem>
                                   <FormLabel>{t('loginLabel')}</FormLabel>
                                   <div className="rounded-lg border border-dashed border-border bg-muted/70 p-3">
-                                    <p className="text-sm font-medium text-slate-700">{t('employeeLoginGenerated')}</p>
-                                    <p className="mt-1 text-xs text-slate-500">{t('employeeLoginHint')}</p>
+                                    <p className="text-sm font-medium text-foreground">{t('employeeLoginGenerated')}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">{t('employeeLoginHint')}</p>
                                   </div>
                                   <input type="hidden" {...field} value="" />
                                   <FormMessage />
@@ -826,13 +826,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           />
                         </div>
 
-                        <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                        <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-primary/5 dark:bg-primary/10 p-4">
                           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
                             <PhoneCall className="size-4" aria-hidden="true" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-semibold text-slate-900">{t('sharedTelephonyAccount')}</p>
+                              <p className="text-sm font-semibold text-foreground">{t('sharedTelephonyAccount')}</p>
                               <Badge variant="secondary" className="font-mono">
                                 {ONLINE_PBX_SHARED_EXTENSION}
                               </Badge>
@@ -877,7 +877,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
-                                <p className="text-xs text-slate-500">
+                                <p className="text-xs text-muted-foreground">
                                   {t('workspaceAssignmentHint')}
                                 </p>
                                 <FormMessage />
@@ -931,23 +931,23 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                       />
                                       <span className="min-w-0 flex-1 truncate">{option.label}</span>
                                       {isPrimary && (
-                                        <span className="shrink-0 text-xs text-slate-500">{t('primaryWorkspaceShort')}</span>
+                                        <span className="shrink-0 text-xs text-muted-foreground">{t('primaryWorkspaceShort')}</span>
                                       )}
                                     </label>
                                   );
                                 })}
                               </div>
-                              <p className="text-xs text-slate-500">{t('workspaceModulesHint')}</p>
+                              <p className="text-xs text-muted-foreground">{t('workspaceModulesHint')}</p>
                               <FormMessage />
                             </FormItem>
                           )}
                         />
 
                         {teacherModuleEnabled ? (
-                          <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                          <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4">
                             <div>
-                              <h3 className="text-sm font-semibold text-slate-900">{t('teacherAvailability')}</h3>
-                              <p className="mt-1 text-xs text-slate-500">
+                              <h3 className="text-sm font-semibold text-foreground">{t('teacherAvailability')}</h3>
+                              <p className="mt-1 text-xs text-muted-foreground">
                                 {t('teacherAvailabilityAdminDescription')}
                               </p>
                             </div>
@@ -984,13 +984,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                               );
                                             }}
                                           />
-                                          <span className="font-medium text-slate-900">{school.name}</span>
+                                          <span className="font-medium text-foreground">{school.name}</span>
                                         </label>
                                       );
                                     })}
                                   </div>
                                   {teacherScheduleSchools.length === 0 ? (
-                                    <p className="text-sm text-slate-500">{t('noSchools')}</p>
+                                    <p className="text-sm text-muted-foreground">{t('noSchools')}</p>
                                   ) : null}
                                   <FormMessage />
                                 </FormItem>
@@ -1031,7 +1031,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
                               <div className="min-w-0 space-y-0.5">
                                 <FormLabel className="text-base">{t('activeAccount')}</FormLabel>
-                                <div className="text-sm text-slate-500">
+                                <div className="text-sm text-muted-foreground">
                                   {t('canLoginAccess')}
                                 </div>
                               </div>
@@ -1087,30 +1087,30 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <UserCheck className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm text-slate-500 truncate">{t('activeUsers')}</p>
-                  <p className="text-lg font-bold text-slate-900 tabular-nums">{activeUserCount}</p>
+                  <p className="text-sm text-muted-foreground truncate">{t('activeUsers')}</p>
+                  <p className="text-lg font-bold text-foreground tabular-nums">{activeUserCount}</p>
                 </div>
               </CardContent>
             </Card>
             <Card className="hover-lift">
               <CardContent className="p-4 flex items-center space-x-3">
-                <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
                   <UserX className="h-5 w-5 text-amber-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm text-slate-500 truncate">{t('inactiveUsers')}</p>
-                  <p className="text-lg font-bold text-slate-900 tabular-nums">{inactiveUserCount}</p>
+                  <p className="text-sm text-muted-foreground truncate">{t('inactiveUsers')}</p>
+                  <p className="text-lg font-bold text-foreground tabular-nums">{inactiveUserCount}</p>
                 </div>
               </CardContent>
             </Card>
             <Card className="hover-lift">
               <CardContent className="p-4 flex items-center space-x-3">
                 <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                  <Clock className="h-5 w-5 text-slate-500" />
+                  <Clock className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm text-slate-500 truncate">{t('lastUpdated')}</p>
-                  <p className="text-lg font-bold text-slate-900 tabular-nums">{settingsSnapshotTime}</p>
+                  <p className="text-sm text-muted-foreground truncate">{t('lastUpdated')}</p>
+                  <p className="text-lg font-bold text-foreground tabular-nums">{settingsSnapshotTime}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1121,7 +1121,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             <CardContent className="p-4">
               <div className="flex items-center space-x-4">
                 <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder={t('searchUsers')}
                     value={searchTerm}
@@ -1171,9 +1171,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   defaultSortKey="user"
                   emptyState={
                     <div className="px-6 py-12 text-center">
-                      <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-slate-900 mb-2">{t('noUsersFound')}</h3>
-                      <p className="text-slate-500 mb-4">
+                      <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-foreground mb-2">{t('noUsersFound')}</h3>
+                      <p className="text-muted-foreground mb-4">
                         {searchTerm || workspaceFilter !== 'all'
                           ? t('adjustSearchCriteria')
                           : t('createFirstUser')}
@@ -1205,10 +1205,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                          <h2 className="font-semibold text-slate-900">{section.title}</h2>
-                          <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
+                          <h2 className="font-semibold text-foreground">{section.title}</h2>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </div>
-                        <p className="mt-1 text-sm leading-6 text-slate-500">{section.description}</p>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">{section.description}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1350,7 +1350,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             <Form {...credentialsForm}>
               <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="flex flex-col gap-4">
                 <div className="rounded-lg border border-border bg-muted/50 p-3">
-                  <p className="text-sm font-medium text-slate-900">{userCredentials.fullName}</p>
+                  <p className="text-sm font-medium text-foreground">{userCredentials.fullName}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Badge className={getWorkspaceColor(userCredentials.workspace)}>
                       {getWorkspaceLabel(userCredentials.workspace)}
@@ -1363,7 +1363,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         </Badge>
                       ))}
                     {userCredentials.position && (
-                      <span className="text-xs text-slate-500">{userCredentials.position}</span>
+                      <span className="text-xs text-muted-foreground">{userCredentials.position}</span>
                     )}
                   </div>
                 </div>
@@ -1383,11 +1383,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 />
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium text-slate-700">{t('password')}</label>
-                  <div className={`min-w-0 break-all rounded-md p-3 font-mono text-sm ${userCredentials.temporaryPassword ? 'bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-500 italic'}`}>
+                  <label className="text-sm font-medium text-foreground">{t('password')}</label>
+                  <div className={`min-w-0 break-all rounded-md p-3 font-mono text-sm ${userCredentials.temporaryPassword ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-900' : 'bg-slate-50 text-muted-foreground italic'}`}>
                     {userCredentials.temporaryPassword || t('passwordNotAvailable')}
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     {userCredentials.temporaryPassword
                       ? t('storedCredentialPasswordHint')
                       : userCredentials.passwordVisibleToAdministration

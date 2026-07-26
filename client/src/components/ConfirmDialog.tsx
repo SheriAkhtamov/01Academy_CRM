@@ -54,7 +54,7 @@ export default function ConfirmDialog({
                             if (keepOpenOnConfirm) event.preventDefault();
                             onConfirm();
                         }}
-                        className={variant === 'destructive' ? 'bg-red-600 hover:bg-red-700 text-white' : ''}
+                        className={variant === 'destructive' ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : ''}
                     >
                         {isPending ? t('saving') : finalConfirmLabel}
                     </AlertDialogAction>

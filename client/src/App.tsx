@@ -58,8 +58,8 @@ function AccessDenied({
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <div className="rounded-xl border border-border/70 bg-card p-8 text-center">
-        <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-        <p className="mt-2 text-sm text-slate-500">{description}</p>
+        <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
       </div>
     </div>
   );
@@ -103,8 +103,8 @@ function Router() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="w-10 h-10 border-[3px] border-slate-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 text-sm">{t('loading')}</p>
+          <div className="w-10 h-10 border-[3px] border-muted border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground text-sm">{t('loading')}</p>
         </div>
       </div>
     );

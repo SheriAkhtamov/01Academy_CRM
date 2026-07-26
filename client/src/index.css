@@ -250,9 +250,18 @@
     @apply border-border;
   }
 
+  html {
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
     min-height: 100dvh;
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: 'cv11', 'ss01';
     font-variation-settings: 'opsz' 32;
@@ -261,6 +270,9 @@
   /* App canvas background — soft, premium, never flat */
   #root {
     min-height: 100dvh;
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
     background: var(--app-bg);
     background-attachment: fixed;
   }

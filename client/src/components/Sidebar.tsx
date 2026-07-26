@@ -216,15 +216,15 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           <div className="flex items-center w-full">
             <Logo size="md" />
             <div className="ml-3 flex flex-col flex-1 min-w-0">
-              <span className="text-lg font-semibold text-slate-900 truncate tracking-tight leading-tight">
+              <span className="text-lg font-semibold text-foreground truncate tracking-tight leading-tight">
                 {t('platformName')}
               </span>
-              <span className="text-xs text-slate-400">{t('schoolCrm')}</span>
+              <span className="text-xs text-muted-foreground">{t('schoolCrm')}</span>
             </div>
             {onClose && (
               <button
                 onClick={onClose}
-                className="md:hidden ml-2 p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                className="md:hidden ml-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 aria-label={t('close')}
               >
                 <X className="w-5 h-5" />
@@ -283,13 +283,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               {getInitials(user.fullName)}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-900 truncate">{user.fullName}</p>
-              <p className="text-xs text-slate-500 truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
+              <p className="text-sm font-medium text-foreground truncate">{user.fullName}</p>
+              <p className="text-xs text-muted-foreground truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
               {user.position && (
-                <p className="text-[10px] text-slate-400 truncate">{formatUserWorkspace(user.workspace, t)}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{formatUserWorkspace(user.workspace, t)}</p>
               )}
               {additionalWorkspaces.length > 0 && (
-                <p className="text-[10px] text-slate-400 truncate">
+                <p className="text-[10px] text-muted-foreground truncate">
                   {additionalWorkspaces.map((item) => formatUserWorkspace(item, t)).join(' · ')}
                 </p>
               )}

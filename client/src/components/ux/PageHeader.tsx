@@ -45,8 +45,8 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-        <h1 className="break-words text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
-        {subtitle && <p className="max-w-3xl text-sm text-slate-500">{subtitle}</p>}
+        <h1 className="break-words text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="max-w-3xl text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {actions && (
         <div className="flex w-full max-w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0 md:justify-end">

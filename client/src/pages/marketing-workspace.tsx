@@ -23,6 +23,7 @@ import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   Dialog,
   DialogContent,
@@ -110,7 +111,7 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-slate-500">{label}</Label>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
     </div>
   );
@@ -120,11 +121,11 @@ function EmptyState({ title, text, icon: Icon = BarChart3 }: { title: string; te
   return (
     <Card className="border-dashed">
       <CardContent className="py-14 px-6 text-center">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-          <Icon className="h-7 w-7 text-slate-400" />
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
+          <Icon className="h-7 w-7 text-muted-foreground" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>
-        <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">{text}</p>
+        <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">{text}</p>
       </CardContent>
     </Card>
   );
@@ -147,10 +148,10 @@ function ConversionBar({ label, value, total, color = '#2563eb' }: {
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-sm">
-        <span className="text-slate-600">{label}</span>
-        <span className="font-medium text-slate-900">{value} <span className="text-slate-400">({percent}%)</span></span>
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium text-foreground">{value} <span className="text-muted-foreground">({percent}%)</span></span>
       </div>
-      <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+      <div className="h-2.5 rounded-full bg-muted overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${percent}%`, backgroundColor: color }}
@@ -227,6 +228,8 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const referrals = data?.referrals ?? [];
   const students = data?.students ?? [];
   const canManageExpenses = canAccessAcademyWorkspace(user, 'marketing') || hasLeadershipAccess(user);
+
+  const [confirmReactivateId, setConfirmReactivateId] = useState<number | null>(null);
 
   const warmLeads = useMemo(() => {
     return leads.filter((lead: any) => lead.statusCode === 'not_now');
@@ -385,7 +388,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         <Button
           variant="outline"
           size="sm"
-          onClick={() => updateLead.mutate({ id: row.id, payload: { statusCode: 'new_request' } })}
+          onClick={() => setConfirmReactivateId(row.id)}
           disabled={updateLead.isPending}
         >
           <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
@@ -612,10 +615,10 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="h-3 w-3 rounded-full" style={{ backgroundColor: stage.color }} />
-                          <span className="text-sm font-medium text-slate-700">{stage.label}</span>
+                          <span className="text-sm font-medium text-foreground">{stage.label}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-slate-900 tabular-nums">{count}</span>
+                          <span className="text-sm font-bold text-foreground tabular-nums">{count}</span>
                           {index > 0 && (
                             <Badge variant="outline" className="text-xs">
                               <ArrowRight className="h-3 w-3 mr-1" />
@@ -624,7 +627,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
                           )}
                         </div>
                       </div>
-                      <div className="h-4 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-4 rounded-full bg-muted overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
@@ -646,8 +649,8 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-center">
-                  <p className="text-sm text-slate-500">{t('avgDealCycle')}</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">
+                  <p className="text-sm text-muted-foreground">{t('avgDealCycle')}</p>
+                  <p className="text-3xl font-bold text-foreground mt-1 tabular-nums">
                     {typeof avgDealCycle === 'number' ? `${avgDealCycle} ${t('days')}` : avgDealCycle}
                   </p>
                 </div>
@@ -673,15 +676,15 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
 
                 <div className="pt-3 border-t border-slate-100 space-y-2.5 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-slate-500">{t('cplLabel')}</span>
-                    <strong className="text-slate-900 tabular-nums">{money(summary.cpl)}</strong>
+                    <span className="text-muted-foreground">{t('cplLabel')}</span>
+                    <strong className="text-foreground tabular-nums">{money(summary.cpl)}</strong>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">{t('cacLabel')}</span>
-                    <strong className="text-slate-900 tabular-nums">{money(summary.cac)}</strong>
+                    <span className="text-muted-foreground">{t('cacLabel')}</span>
+                    <strong className="text-foreground tabular-nums">{money(summary.cac)}</strong>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">{t('roasLabel')}</span>
+                    <span className="text-muted-foreground">{t('roasLabel')}</span>
                     <strong className="text-emerald-600 tabular-nums">{summary.roas}x</strong>
                   </div>
                 </div>
@@ -725,8 +728,8 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-500">{t('totalReferrals')}</p>
-                    <p className="text-2xl font-bold text-slate-900 tabular-nums">{referralStats.totalReferrals}</p>
+                    <p className="text-sm text-muted-foreground">{t('totalReferrals')}</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{referralStats.totalReferrals}</p>
                   </div>
                   <div className="h-11 w-11 rounded-xl bg-blue-50 flex items-center justify-center">
                     <Users className="h-5 w-5 text-blue-600" />
@@ -738,8 +741,8 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-500">{t('paidReferrals')}</p>
-                    <p className="text-2xl font-bold text-slate-900 tabular-nums">{referralStats.paidReferrals}</p>
+                    <p className="text-sm text-muted-foreground">{t('paidReferrals')}</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{referralStats.paidReferrals}</p>
                   </div>
                   <div className="h-11 w-11 rounded-xl bg-emerald-50 flex items-center justify-center">
                     <HeartHandshake className="h-5 w-5 text-emerald-600" />
@@ -751,8 +754,8 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-500">{t('conversionRate')}</p>
-                    <p className="text-2xl font-bold text-slate-900 tabular-nums">{referralStats.conversion}%</p>
+                    <p className="text-sm text-muted-foreground">{t('conversionRate')}</p>
+                    <p className="text-2xl font-bold text-foreground tabular-nums">{referralStats.conversion}%</p>
                   </div>
                   <div className="h-11 w-11 rounded-xl bg-purple-50 flex items-center justify-center">
                     <TrendingUp className="h-5 w-5 text-purple-600" />
@@ -873,6 +876,20 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         open={expenseDialogGuard.confirmationOpen}
         onOpenChange={expenseDialogGuard.setConfirmationOpen}
         onDiscard={expenseDialogGuard.discardChanges}
+      />
+
+      <ConfirmDialog
+        open={confirmReactivateId !== null}
+        onOpenChange={(open) => !open && setConfirmReactivateId(null)}
+        title={t('confirmAction')}
+        description={t('confirmReactivationDescription')}
+        onConfirm={() => {
+          if (confirmReactivateId !== null) {
+            updateLead.mutate({ id: confirmReactivateId, payload: { statusCode: 'new_request' } });
+            setConfirmReactivateId(null);
+          }
+        }}
+        isPending={updateLead.isPending}
       />
     </WorkspacePage>
   );

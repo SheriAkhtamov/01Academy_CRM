@@ -156,7 +156,7 @@ export default function Header({
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {notifications.length === 0 ? (
-                  <div className="p-6 text-center text-slate-500 text-sm">
+                  <div className="p-6 text-center text-muted-foreground text-sm">
                     {t('noNotifications')}
                   </div>
                 ) : (
@@ -167,32 +167,32 @@ export default function Header({
                       onClick={() => !notification.isRead && markReadMutation.mutate(notification.id)}
                     >
                       <div className="flex-1 pr-2">
-                        <div className="font-medium text-slate-900 text-sm">{notification.title}</div>
-                        <div className="text-xs text-slate-500 mt-1 leading-relaxed">{notification.message}</div>
+                        <div className="font-medium text-foreground text-sm">{notification.title}</div>
+                        <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{notification.message}</div>
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
                         {!notification.isRead && (
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0 hover:bg-slate-200 rounded-full"
+                            className="h-6 w-6 p-0 hover:bg-accent rounded-full"
                             onClick={(e) => handleMarkRead(notification.id, e)}
                             disabled={markReadMutation.isPending}
                             title={t('markAsRead')}
                             aria-label={t('markAsRead')}
                           >
-                            <CheckCheck className="h-3 w-3 text-slate-400 hover:text-slate-600" />
+                            <CheckCheck className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                           </Button>
                         )}
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 w-6 p-0 hover:bg-slate-200 rounded-full shrink-0"
+                          className="h-6 w-6 p-0 hover:bg-accent rounded-full shrink-0"
                           onClick={(e) => handleDeleteNotification(notification.id, e)}
                           disabled={deleteNotificationMutation.isPending}
                           aria-label={t('delete')}
                         >
-                          <X className="h-3 w-3 text-slate-400 hover:text-slate-600" />
+                          <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                         </Button>
                       </div>
                     </DropdownMenuItem>

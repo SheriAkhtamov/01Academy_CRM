@@ -48,6 +48,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { FinanceAnalyticsCharts } from '@/components/ux/analytics/FinanceAnalyticsCharts';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -303,12 +304,19 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const [cancelReason, setCancelReason] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [transactionFilter, setTransactionFilter] = useState('all');
-  const [expenseForm, setExpenseForm] = useState({
+  
+  const defaultExpenseForm = useMemo(() => ({
     category: 'other', title: '', vendor: '', description: '', amountUzs: '',
     expenseDate: currentDateOnly(), status: 'paid', method: 'transfer',
-  });
+  }), []);
+  const [expenseForm, setExpenseForm] = useState(defaultExpenseForm);
+  const [initialExpenseForm, setInitialExpenseForm] = useState(defaultExpenseForm);
+
   const [salaryForm, setSalaryForm] = useState({ employeeUserId: '', amountUzs: '', effectiveMonth: period, note: '' });
+  const [initialSalaryForm, setInitialSalaryForm] = useState({ employeeUserId: '', amountUzs: '', effectiveMonth: period, note: '' });
+
   const [payoutForm, setPayoutForm] = useState({ bonusUzs: '', deductionUzs: '', method: 'transfer', note: '' });
+  const [initialPayoutForm, setInitialPayoutForm] = useState({ bonusUzs: '', deductionUzs: '', method: 'transfer', note: '' });
 
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const money = (value: number) => `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
@@ -425,21 +433,43 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
   const openSalaryDialog = (entry?: Row | null) => {
     const target = entry ?? selectedPayrollEntry ?? payroll.data?.entries[0];
-    setSalaryForm({
+    const form = {
       employeeUserId: target ? String(target.employeeUserId) : '',
       amountUzs: target?.baseSalaryUzs ? String(target.baseSalaryUzs) : '',
       effectiveMonth: period,
       note: '',
-    });
+    };
+    setSalaryForm(form);
+    setInitialSalaryForm(form);
     setSalaryDialogOpen(true);
   };
   const openPayoutDialog = (entry: Row) => {
     setPayoutTarget(entry);
-    setPayoutForm({ bonusUzs: '', deductionUzs: '', method: 'transfer', note: '' });
+    const form = { bonusUzs: '', deductionUzs: '', method: 'transfer', note: '' };
+    setPayoutForm(form);
+    setInitialPayoutForm(form);
   };
   const payoutTotal = payoutTarget
     ? Math.max(0, Number(payoutTarget.baseSalaryUzs || 0) + Number(payoutForm.bonusUzs || 0) - Number(payoutForm.deductionUzs || 0))
     : 0;
+
+  const expenseGuard = useUnsavedChangesGuard({
+    open: expenseDialogOpen,
+    isDirty: JSON.stringify(expenseForm) !== JSON.stringify(initialExpenseForm),
+    onOpenChange: setExpenseDialogOpen,
+  });
+
+  const salaryGuard = useUnsavedChangesGuard({
+    open: salaryDialogOpen,
+    isDirty: JSON.stringify(salaryForm) !== JSON.stringify(initialSalaryForm),
+    onOpenChange: setSalaryDialogOpen,
+  });
+
+  const payoutGuard = useUnsavedChangesGuard({
+    open: Boolean(payoutTarget),
+    isDirty: JSON.stringify(payoutForm) !== JSON.stringify(initialPayoutForm),
+    onOpenChange: (open) => !open && setPayoutTarget(null),
+  });
 
   const activeQuery = section === 'overview' ? dashboard : section === 'income' ? income : section === 'expenses' ? expenses : section === 'payroll' ? payroll : transactions;
   const contained = section !== 'overview';
@@ -456,7 +486,11 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Input aria-label={copy.calculationMonth} type="month" value={period} onChange={(event) => setPeriod(event.target.value || currentFinancePeriod())} className="w-[165px]" />
             ) : null}
             {section === 'expenses' ? (
-              <Button onClick={() => setExpenseDialogOpen(true)}><Plus data-icon="inline-start" />{copy.addExpense}</Button>
+              <Button onClick={() => {
+                setExpenseForm(defaultExpenseForm);
+                setInitialExpenseForm(defaultExpenseForm);
+                setExpenseDialogOpen(true);
+              }}><Plus data-icon="inline-start" />{copy.addExpense}</Button>
             ) : null}
             {section === 'payroll' ? (
               <Button onClick={() => openSalaryDialog()}><Settings2 data-icon="inline-start" />{copy.configureSalary}</Button>
@@ -676,7 +710,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         </Card>
       ) : null}
 
-      <Dialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen}>
+      <Dialog open={expenseDialogOpen} onOpenChange={expenseGuard.handleOpenChange}>
         <DialogContent className="sm:max-w-[620px]">
           <DialogHeader><DialogTitle>{copy.expenseDialogTitle}</DialogTitle><DialogDescription>{copy.expenseDialogDescription}</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
@@ -695,7 +729,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         </DialogContent>
       </Dialog>
 
-      <Dialog open={salaryDialogOpen} onOpenChange={setSalaryDialogOpen}>
+      <Dialog open={salaryDialogOpen} onOpenChange={salaryGuard.handleOpenChange}>
         <DialogContent>
           <DialogHeader><DialogTitle>{copy.salaryDialogTitle}</DialogTitle><DialogDescription>{copy.salaryDialogDescription}</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
@@ -708,7 +742,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(payoutTarget)} onOpenChange={(open) => !open && setPayoutTarget(null)}>
+      <Dialog open={Boolean(payoutTarget)} onOpenChange={payoutGuard.handleOpenChange}>
         <DialogContent>
           <DialogHeader><DialogTitle>{copy.payoutDialogTitle}</DialogTitle><DialogDescription>{payoutTarget ? `${payoutTarget.employeeName} · ${payoutTarget.position || ''}` : ''}</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
@@ -728,6 +762,24 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      
+      <UnsavedChangesDialog
+        open={expenseGuard.confirmationOpen}
+        onOpenChange={expenseGuard.setConfirmationOpen}
+        onDiscard={expenseGuard.discardChanges}
+      />
+      
+      <UnsavedChangesDialog
+        open={salaryGuard.confirmationOpen}
+        onOpenChange={salaryGuard.setConfirmationOpen}
+        onDiscard={salaryGuard.discardChanges}
+      />
+
+      <UnsavedChangesDialog
+        open={payoutGuard.confirmationOpen}
+        onOpenChange={payoutGuard.setConfirmationOpen}
+        onDiscard={payoutGuard.discardChanges}
+      />
       </WorkspacePageBody>
     </WorkspacePage>
   );

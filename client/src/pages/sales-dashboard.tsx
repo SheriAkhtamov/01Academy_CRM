@@ -289,11 +289,11 @@ function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; t
   return (
     <Card className="border-dashed">
       <CardContent className="py-14 px-6 text-center">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-          <Icon className="h-7 w-7 text-slate-400" />
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
+          <Icon className="h-7 w-7 text-muted-foreground" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>
-        <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">{text}</p>
+        <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">{text}</p>
       </CardContent>
     </Card>
   );
@@ -334,24 +334,17 @@ function ArchiveLeadDialog({
   if (!lead) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" role="presentation" onMouseDown={() => !isPending && onClose()}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="archive-lead-title"
-        aria-describedby="archive-lead-description"
-        className="w-full max-w-md rounded-xl border border-border/70 bg-background p-6 shadow-xl"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="space-y-1.5">
-          <h2 id="archive-lead-title" className="text-lg font-semibold leading-none tracking-tight">{t('archiveLead')}</h2>
-          <p id="archive-lead-description" className="text-sm text-muted-foreground">
+    <Dialog open={Boolean(lead)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle id="archive-lead-title">{t('archiveLead')}</DialogTitle>
+          <DialogDescription id="archive-lead-description">
             {lead.contactName ? `${lead.contactName}. ` : null}
             {t('archiveLeadDescription')}
-          </p>
-        </div>
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-4 space-y-4">
+        <div className="space-y-4">
           {needsManager ? (
             <Alert>
               <AlertCircle />
@@ -364,20 +357,22 @@ function ArchiveLeadDialog({
             <label htmlFor="archive-reason" className="text-sm font-medium leading-none">
               {t('archiveReason')}
             </label>
-            <select
-              id="archive-reason"
+            <Select
               value={reason}
-              onChange={(event) => onReasonChange(event.target.value)}
+              onValueChange={onReasonChange}
               disabled={isPending}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-2xs outline-none transition-[border-color,box-shadow,background-color] duration-200 hover:border-slate-400 focus:border-primary-500 focus:ring-4 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="" disabled>{t('chooseArchiveReason')}</option>
-              {LEAD_ARCHIVE_REASONS.map((archiveReason) => (
-                <option key={archiveReason.code} value={archiveReason.code}>
-                  {t(archiveReason.translationKey as TranslationKey)}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="archive-reason" className="w-full">
+                <SelectValue placeholder={t('chooseArchiveReason')} />
+              </SelectTrigger>
+              <SelectContent>
+                {LEAD_ARCHIVE_REASONS.map((archiveReason) => (
+                  <SelectItem key={archiveReason.code} value={archiveReason.code}>
+                    {t(archiveReason.translationKey as TranslationKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {reason === 'other' ? (
@@ -415,8 +410,8 @@ function ArchiveLeadDialog({
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1395,8 +1390,8 @@ function ArchiveTab({
       accessor: (lead: Lead) => lead.contactName,
       render: (lead: Lead) => (
         <div>
-          <div className="font-medium text-slate-900">{lead.contactName}</div>
-          <div className="text-xs text-slate-500">{leadContactSummary(lead, t('noData'))}</div>
+          <div className="font-medium text-foreground">{lead.contactName}</div>
+          <div className="text-xs text-muted-foreground">{leadContactSummary(lead, t('noData'))}</div>
         </div>
       ),
     },
@@ -1414,14 +1409,14 @@ function ArchiveTab({
       header: t('manager'),
       sortable: true,
       accessor: (lead: Lead) => lead.managerName || t('noData'),
-      render: (lead: Lead) => <span className="text-slate-600">{lead.managerName || t('noData')}</span>,
+      render: (lead: Lead) => <span className="text-muted-foreground">{lead.managerName || t('noData')}</span>,
     },
     {
       key: 'archiveReason',
       header: t('archiveReason'),
       sortable: true,
       accessor: (lead: Lead) => archiveReasonName(lead.archiveReason),
-      render: (lead: Lead) => <span className="text-slate-600">{archiveReasonName(lead.archiveReason)}</span>,
+      render: (lead: Lead) => <span className="text-muted-foreground">{archiveReasonName(lead.archiveReason)}</span>,
     },
     {
       key: 'archivedAt',
@@ -1430,9 +1425,9 @@ function ArchiveTab({
       accessor: (lead: Lead) => lead.archivedAt,
       render: (lead: Lead) => (
         <div>
-          <div className="text-slate-600">{dateTime(lead.archivedAt)}</div>
+          <div className="text-muted-foreground">{dateTime(lead.archivedAt)}</div>
           {lead.archivedByName ? (
-            <div className="text-xs text-slate-500">{t('archivedBy')} {lead.archivedByName}</div>
+            <div className="text-xs text-muted-foreground">{t('archivedBy')} {lead.archivedByName}</div>
           ) : null}
         </div>
       ),
@@ -1539,8 +1534,8 @@ function StudentsTab({
       accessor: (student: Student) => student.studentName || student.contactName,
       render: (student: Student) => (
         <div>
-          <div className="font-medium text-slate-900">{student.studentName || student.contactName}</div>
-          <div className="text-xs text-slate-500">{student.phone}</div>
+          <div className="font-medium text-foreground">{student.studentName || student.contactName}</div>
+          <div className="text-xs text-muted-foreground">{student.phone}</div>
         </div>
       ),
     },
@@ -1550,7 +1545,7 @@ function StudentsTab({
       sortable: true,
       accessor: (student: Student) => student.groupNames?.join(', ') || student.groupName,
       render: (student: Student) => (
-        <span className="line-clamp-2 text-slate-600">
+        <span className="line-clamp-2 text-muted-foreground">
           {student.groupNames?.join(', ') || student.groupName || t('noGroup')}
         </span>
       ),
@@ -1560,14 +1555,14 @@ function StudentsTab({
       header: t('course'),
       sortable: true,
       accessor: (student: Student) => student.courseName,
-      render: (student: Student) => <span className="text-slate-600">{student.courseName || t('noCourse')}</span>,
+      render: (student: Student) => <span className="text-muted-foreground">{student.courseName || t('noCourse')}</span>,
     },
     ...(showManager ? [{
       key: 'managerName',
       header: t('manager'),
       sortable: true,
       accessor: (student: Student) => student.managerName || t('noData'),
-      render: (student: Student) => <span className="text-slate-600">{student.managerName || t('noData')}</span>,
+      render: (student: Student) => <span className="text-muted-foreground">{student.managerName || t('noData')}</span>,
     }] : []),
     {
       key: 'attendancePercent',
@@ -1577,7 +1572,7 @@ function StudentsTab({
       render: (student: Student) => (
         <div className="w-28">
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-slate-500">{student.attendancePercent}%</span>
+            <span className="text-muted-foreground">{student.attendancePercent}%</span>
           </div>
           <Progress value={student.attendancePercent} />
         </div>
@@ -1591,7 +1586,7 @@ function StudentsTab({
       render: (student: Student) => (
         <div className="w-28">
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-slate-500">{student.progressPercent}%</span>
+            <span className="text-muted-foreground">{student.progressPercent}%</span>
           </div>
           <Progress value={student.progressPercent} />
         </div>

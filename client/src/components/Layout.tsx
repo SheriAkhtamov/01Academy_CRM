@@ -23,8 +23,8 @@ export default function Layout({ children }: LayoutProps) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="w-10 h-10 border-[3px] border-slate-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 text-sm">{t('loading')}</p>
+          <div className="w-10 h-10 border-[3px] border-muted border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground text-sm">{t('loading')}</p>
         </div>
       </div>
     );

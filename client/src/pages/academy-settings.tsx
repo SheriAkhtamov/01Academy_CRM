@@ -2048,7 +2048,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <DialogDescription>{t('pipelineStageFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...statusForm}>
-            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={statusForm.handleSubmit((values) => saveStatus.mutate(values))}>
+            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); statusForm.handleSubmit((values) => saveStatus.mutate(values))(event); }}>
               <FormField control={statusForm.control} name="name" render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t('name')}</FormLabel>
@@ -2088,9 +2088,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <div className="flex justify-end gap-2 md:col-span-2">
                 <Button type="button" variant="outline" onClick={() => setStatusDialogOpen(false)}>{t('cancel')}</Button>
                 <Button
-                  type="button"
+                  type="submit"
                   disabled={saveStatus.isPending}
-                  onClick={statusForm.handleSubmit((values) => saveStatus.mutate(values))}
                 >
                   {t('save')}
                 </Button>

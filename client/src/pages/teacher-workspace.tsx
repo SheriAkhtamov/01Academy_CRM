@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
+import { TeacherAnalyticsCharts } from '@/components/ux/analytics/TeacherAnalyticsCharts';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,7 @@ import {
   GraduationCap,
   ClipboardList,
   CheckCircle2,
+  Clock3,
   XCircle,
   TrendingUp,
   BarChart3,
@@ -43,6 +45,11 @@ import { cn } from '@/lib/utils';
 import { sortAttendanceLessons } from '@/lib/attendance';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
+import {
+  buildAnalyticsTimeline,
+  compactRankedSeries,
+  percentage,
+} from '@/lib/analyticsCharts';
 
 type Lesson = {
   id: number;
@@ -337,7 +344,8 @@ function formatDateFull(dateStr: string): string {
 }
 
 export default function TeacherWorkspace({ section = 'overview' }: { section?: TeacherSection }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -448,7 +456,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   );
 
   const periodLessons = useMemo(
-    () => lessons.filter((lesson) => isInReportingRange(lesson.scheduledAt, reportingRange)),
+    () => lessons.filter((lesson) => (
+      lesson.status !== 'cancelled'
+      && isInReportingRange(lesson.scheduledAt, reportingRange)
+    )),
     [lessons, reportingRange],
   );
   const conductedPeriodLessons = useMemo(
@@ -479,6 +490,90 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     const sum = periodSurveys.reduce((acc, survey) => acc + survey.score, 0);
     return (sum / periodSurveys.length).toFixed(1);
   }, [periodSurveys]);
+
+  const teachingHours = useMemo(
+    () => conductedPeriodLessons.reduce(
+      (sum, lesson) => sum + Number(lesson.durationMinutes || 0) / 60,
+      0,
+    ),
+    [conductedPeriodLessons],
+  );
+
+  const teacherTimeline = useMemo(() => {
+    const lessonDateById = new Map(periodLessons.map((lesson) => [Number(lesson.id), lesson.scheduledAt]));
+    const timeline = buildAnalyticsTimeline([
+      ...periodLessons.map((lesson) => ({
+        at: lesson.scheduledAt,
+        series: lesson.status === 'conducted' ? 'conducted' : 'pending',
+      })),
+      ...periodAttendanceRecords.flatMap((record) => {
+        const at = lessonDateById.get(Number(record.lessonId));
+        return at ? [{ at, series: record.status }] : [];
+      }),
+    ], reportingRange, locale, ['conducted', 'pending', 'present', 'absent']);
+
+    return timeline.map((point) => {
+      const present = Number(point.present || 0);
+      const absent = Number(point.absent || 0);
+      return {
+        periodStart: point.periodStart,
+        label: point.label,
+        conducted: Number(point.conducted || 0),
+        pending: Number(point.pending || 0),
+        present,
+        absent,
+        attendance: percentage(present, present + absent),
+      };
+    });
+  }, [locale, periodAttendanceRecords, periodLessons, reportingRange]);
+
+  const groupQuality = useMemo(() => {
+    const rows = groups.flatMap((group) => {
+      const groupLessons = periodLessons.filter((lesson) => Number(lesson.groupId) === Number(group.id));
+      if (groupLessons.length === 0) return [];
+      const lessonIds = new Set(groupLessons.map((lesson) => Number(lesson.id)));
+      const records = periodAttendanceRecords.filter((record) => lessonIds.has(Number(record.lessonId)));
+      const groupSurveys = periodSurveys.filter((survey) => Number(survey.groupId) === Number(group.id));
+      const averageRating = groupSurveys.length > 0
+        ? groupSurveys.reduce((sum, survey) => sum + Number(survey.score || 0), 0) / groupSurveys.length
+        : 0;
+      return [{
+        name: group.name,
+        lessonVolume: groupLessons.length,
+        completion: percentage(
+          groupLessons.filter((lesson) => lesson.status === 'conducted').length,
+          groupLessons.length,
+        ),
+        attendance: percentage(
+          records.filter((record) => record.status === 'present').length,
+          records.length,
+        ),
+        rating: Math.round((averageRating / 5) * 100),
+      }];
+    });
+    return compactRankedSeries(rows, (row) => row.lessonVolume, 8);
+  }, [groups, periodAttendanceRecords, periodLessons, periodSurveys]);
+
+  const attendanceDistribution = useMemo(() => [
+    {
+      name: t('present'),
+      value: periodAttendanceRecords.filter((record) => record.status === 'present').length,
+      color: 'var(--chart-1)',
+    },
+    {
+      name: t('absent'),
+      value: periodAttendanceRecords.filter((record) => record.status === 'absent').length,
+      color: 'var(--chart-5)',
+    },
+  ], [periodAttendanceRecords, t]);
+
+  const ratingDistribution = useMemo(
+    () => [1, 2, 3, 4, 5].map((score) => ({
+      score: `${score}★`,
+      count: periodSurveys.filter((survey) => Number(survey.score) === score).length,
+    })),
+    [periodSurveys],
+  );
 
   // Schedule: show today first, followed by the next six academy days.
   const scheduleByDay = useMemo(() => {
@@ -847,7 +942,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
       {/* KPI Cards */}
       {section === 'overview' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <div className="stagger-item">
             <KpiCard
               title={t('myGroupsCount')}
@@ -893,7 +988,25 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               tone="green"
             />
           </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('teachingHours')}
+              value={new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours)}
+              detail={t('dataForSelectedPeriod')}
+              icon={Clock3}
+              tone="slate"
+            />
+          </div>
         </div>
+      ) : null}
+
+      {section === 'overview' ? (
+        <TeacherAnalyticsCharts
+          timeline={teacherTimeline}
+          groupQuality={groupQuality}
+          attendance={attendanceDistribution}
+          ratings={ratingDistribution}
+        />
       ) : null}
 
       <WorkspacePageBody contained={contained} ariaLabel={sectionTitle[section]}>

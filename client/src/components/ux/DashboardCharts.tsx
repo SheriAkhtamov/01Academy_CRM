@@ -2,30 +2,53 @@ import { useMemo } from 'react';
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Cell,
+  LabelList,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Bar,
-  BarChart,
-  Cell,
 } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from '@/hooks/useTranslation';
 import { buildMonthlyRevenueData, buildReportingRevenueData } from '@/lib/dashboardCharts';
+import { compactRankedSeries, percentage } from '@/lib/analyticsCharts';
+import {
+  AnalyticsChartCard,
+  AnalyticsChartEmpty,
+  AnalyticsChartLegend,
+  analyticsAxisTick,
+  analyticsTooltipStyle,
+} from '@/components/ux/analytics/AnalyticsChartCard';
 
 interface DashboardChartsProps {
   payments?: any[];
   funnel?: any[];
-  analytics?: any;
+  leads?: Array<{
+    sourceName?: string | null;
+    statusCode?: string | null;
+  }>;
   leadStatusName: (code: string) => string;
   statusColor: (code: string) => string;
   money: (value: number) => string;
   reportingRange?: { from: string; to: string };
 }
 
-export function DashboardCharts({ payments = [], funnel = [], leadStatusName, statusColor, money, reportingRange }: DashboardChartsProps) {
+const PAYMENT_METHOD_COLORS = ['var(--chart-2)', 'var(--chart-1)', 'var(--chart-4)', 'var(--chart-6)'];
+
+export function DashboardCharts({
+  payments = [],
+  funnel = [],
+  leads = [],
+  leadStatusName,
+  statusColor,
+  money,
+  reportingRange,
+}: DashboardChartsProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
 
@@ -46,99 +69,243 @@ export function DashboardCharts({ payments = [], funnel = [], leadStatusName, st
     [funnel, leadStatusName, statusColor]
   );
 
+  const sourceData = useMemo(() => {
+    const sources = new Map<string, { name: string; leads: number; paid: number; conversion: number }>();
+    for (const lead of leads) {
+      const name = String(lead.sourceName || t('unknownSource'));
+      const current = sources.get(name) ?? { name, leads: 0, paid: 0, conversion: 0 };
+      current.leads += 1;
+      if (lead.statusCode === 'paid') current.paid += 1;
+      sources.set(name, current);
+    }
+    return compactRankedSeries(
+      [...sources.values()].map((item) => ({
+        ...item,
+        conversion: percentage(item.paid, item.leads),
+      })),
+      (item) => item.leads,
+      7,
+    );
+  }, [leads, t]);
+
+  const paymentMethodData = useMemo(() => {
+    const labels: Record<string, string> = {
+      card: t('paymentMethodCard'),
+      cash: t('paymentMethodCash'),
+      transfer: t('paymentMethodTransfer'),
+    };
+    const methods = new Map<string, { name: string; amount: number; count: number }>();
+    for (const payment of payments) {
+      const method = String(payment.method || 'other');
+      const current = methods.get(method) ?? {
+        name: labels[method] || t('other'),
+        amount: 0,
+        count: 0,
+      };
+      current.amount += Number(payment.amountUzs || 0);
+      current.count += 1;
+      methods.set(method, current);
+    }
+    return compactRankedSeries([...methods.values()], (item) => item.amount, 4);
+  }, [payments, t]);
+
+  const totalRevenue = useMemo(
+    () => payments.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
+    [payments],
+  );
+
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-      <Card className="hover-lift">
-        <CardHeader className="pb-4">
-          <CardTitle>{t('revenueTrend')}</CardTitle>
-        </CardHeader>
-        <CardContent className="h-72">
+    <div className="grid grid-cols-1 gap-5 2xl:grid-cols-12">
+      <AnalyticsChartCard
+        title={t('revenueTrend')}
+        description={t('revenueTrendDescription')}
+        summary={`${t('revenueTrend')}. ${t('dataForSelectedPeriod')}`}
+        className="2xl:col-span-7"
+        chartClassName="h-[320px]"
+        footer={(
+          <AnalyticsChartLegend
+            items={[{
+              label: t('revenueForPeriod'),
+              color: 'var(--primary-500)',
+              value: money(totalRevenue),
+            }]}
+          />
+        )}
+      >
           {revenueData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData}>
+              <AreaChart data={revenueData} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="salesRevenueFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--primary-500)" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="var(--primary-500)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--slate-200)" />
+                <CartesianGrid strokeDasharray="3 4" vertical={false} stroke="var(--border)" />
                 <XAxis
                   dataKey="month"
                   axisLine={false}
                   tickLine={false}
                   minTickGap={24}
                   interval="preserveStartEnd"
-                  tick={{ fill: 'var(--slate-500)', fontSize: 12 }}
+                  tick={analyticsAxisTick}
                 />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: 'var(--slate-500)', fontSize: 12 }}
-                  tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`}
+                  tick={analyticsAxisTick}
+                  width={58}
+                  tickFormatter={(value) => new Intl.NumberFormat(locale, {
+                    notation: 'compact',
+                    maximumFractionDigits: 1,
+                  }).format(Number(value))}
                 />
                 <Tooltip
                   formatter={(value: number) => [money(value), t('revenue')]}
-                  contentStyle={{
-                    borderRadius: '0.625rem',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow-lg)',
-                  }}
+                  contentStyle={analyticsTooltipStyle}
                 />
                 <Area
                   type="monotone"
                   dataKey="amount"
                   stroke="var(--primary-500)"
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   fillOpacity={1}
-                  fill="url(#colorRevenue)"
+                  fill="url(#salesRevenueFill)"
+                  activeDot={{ r: 5 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-sm text-slate-500">{t('noPaymentData')}</div>
+            <AnalyticsChartEmpty title={t('noPaymentData')} description={t('analyticsEmptyPeriodHint')} />
           )}
-        </CardContent>
-      </Card>
+      </AnalyticsChartCard>
 
-      <Card className="hover-lift">
-        <CardHeader className="pb-4">
-          <CardTitle>{t('conversionFunnel')}</CardTitle>
-        </CardHeader>
-        <CardContent className="h-72">
+      <AnalyticsChartCard
+        title={t('conversionFunnel')}
+        description={t('conversionFunnelDescription')}
+        summary={`${t('conversionFunnel')}. ${funnelData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
+        className="2xl:col-span-5"
+        chartClassName="h-[320px]"
+      >
           {funnelData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={funnelData} layout="vertical" margin={{ left: 24, right: 24 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--slate-200)" />
+              <BarChart data={funnelData} layout="vertical" margin={{ left: 12, right: 34, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
                 <XAxis type="number" hide />
                 <YAxis
                   dataKey="name"
                   type="category"
-                  width={100}
+                  width={112}
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: 'var(--slate-600)', fontSize: 12 }}
+                  tick={analyticsAxisTick}
                 />
                 <Tooltip
-                  cursor={{ fill: 'var(--slate-100)' }}
-                  contentStyle={{
-                    borderRadius: '0.625rem',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow-lg)',
-                  }}
+                  cursor={{ fill: 'var(--muted)' }}
+                  formatter={(value: number) => [value, t('navLeads')]}
+                  contentStyle={analyticsTooltipStyle}
                 />
-                <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                <Bar dataKey="count" radius={[0, 7, 7, 0]} maxBarSize={28}>
                   {funnelData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
+                  <LabelList dataKey="count" position="right" className="fill-foreground text-xs font-semibold" />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-sm text-slate-500">{t('noFunnelData')}</div>
+            <AnalyticsChartEmpty title={t('noFunnelData')} description={t('analyticsEmptyPeriodHint')} />
           )}
-        </CardContent>
-      </Card>
+      </AnalyticsChartCard>
+
+      <AnalyticsChartCard
+        title={t('salesSourcePerformance')}
+        description={t('salesSourcePerformanceDescription')}
+        summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
+        className="2xl:col-span-8"
+        chartClassName="h-[330px]"
+        footer={(
+          <AnalyticsChartLegend items={[
+            { label: t('navLeads'), color: 'var(--chart-2)' },
+            { label: t('paidCustomersForPeriod'), color: 'var(--chart-1)' },
+          ]} />
+        )}
+      >
+        {sourceData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={sourceData} layout="vertical" margin={{ left: 18, right: 30, top: 4, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
+              <XAxis type="number" axisLine={false} tickLine={false} tick={analyticsAxisTick} allowDecimals={false} />
+              <YAxis dataKey="name" type="category" width={118} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
+              <Tooltip
+                cursor={{ fill: 'var(--muted)' }}
+                formatter={(value: number, name: string) => [
+                  value,
+                  name === 'leads' ? t('navLeads') : t('paidCustomersForPeriod'),
+                ]}
+                contentStyle={analyticsTooltipStyle}
+              />
+              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={20} />
+              <Bar dataKey="paid" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={20}>
+                <LabelList dataKey="conversion" position="right" formatter={(value: number) => `${value}%`} className="fill-muted-foreground text-[11px]" />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+        )}
+      </AnalyticsChartCard>
+
+      <AnalyticsChartCard
+        title={t('paymentMethodsChart')}
+        description={t('paymentMethodsChartDescription')}
+        summary={`${t('paymentMethodsChart')}. ${paymentMethodData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
+        className="2xl:col-span-4"
+        chartClassName="h-[220px]"
+        footer={(
+          <div className="grid gap-2">
+            {paymentMethodData.map((item, index) => (
+              <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
+                <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                  <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: PAYMENT_METHOD_COLORS[index] }} />
+                  <span className="truncate">{item.name}</span>
+                </span>
+                <span className="shrink-0 font-semibold tabular-nums">{item.count} · {money(item.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      >
+        {paymentMethodData.length > 0 ? (
+          <div className="relative h-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={paymentMethodData}
+                  dataKey="amount"
+                  nameKey="name"
+                  innerRadius={62}
+                  outerRadius={92}
+                  paddingAngle={3}
+                  stroke="var(--card)"
+                  strokeWidth={3}
+                >
+                  {paymentMethodData.map((item, index) => (
+                    <Cell key={item.name} fill={PAYMENT_METHOD_COLORS[index]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: number) => money(value)} contentStyle={analyticsTooltipStyle} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl font-bold tabular-nums">{payments.length}</span>
+              <span className="text-xs text-muted-foreground">{t('paymentCount')}</span>
+            </div>
+          </div>
+        ) : (
+          <AnalyticsChartEmpty title={t('noPaymentData')} description={t('analyticsEmptyPeriodHint')} />
+        )}
+      </AnalyticsChartCard>
     </div>
   );
 }

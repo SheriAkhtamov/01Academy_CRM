@@ -8,6 +8,12 @@ const teacher = read('../client/src/pages/teacher-workspace.tsx');
 const marketing = read('../client/src/pages/marketing-workspace.tsx');
 const finance = read('../client/src/pages/finance-center.tsx');
 const administration = read('../client/src/pages/admin/AdminDashboardPage.tsx');
+const chartShell = read('../client/src/components/ux/analytics/AnalyticsChartCard.tsx');
+const salesCharts = read('../client/src/components/ux/DashboardCharts.tsx');
+const teacherCharts = read('../client/src/components/ux/analytics/TeacherAnalyticsCharts.tsx');
+const marketingCharts = read('../client/src/components/ux/analytics/MarketingAnalyticsCharts.tsx');
+const financeCharts = read('../client/src/components/ux/analytics/FinanceAnalyticsCharts.tsx');
+const adminHealthChart = read('../client/src/components/ux/analytics/AdminOperationalHealthChart.tsx');
 const leadSheet = read('../client/src/components/ux/LeadDetailSheet.tsx');
 const sidebar = read('../client/src/components/Sidebar.tsx');
 
@@ -42,5 +48,26 @@ describe('dashboard period filters and simplified actions', () => {
     expect(leadSheet).not.toContain("t('recordContact')");
     expect(leadSheet).not.toContain('name="channel"');
     expect(leadSheet).not.toContain('name="result"');
+  });
+
+  it('gives every requested overview diverse, accessible analytics instead of number-only cards', () => {
+    expect(sales).toContain('<DashboardCharts');
+    expect(teacher).toContain('<TeacherAnalyticsCharts');
+    expect(marketing).toContain('<MarketingAnalyticsCharts');
+    expect(finance).toContain('<FinanceAnalyticsCharts');
+    expect(administration).toContain('<AdminOperationalHealthChart');
+
+    expect(salesCharts).toContain('<AreaChart');
+    expect(salesCharts).toContain('<PieChart');
+    expect(teacherCharts).toContain('<ComposedChart');
+    expect(teacherCharts).toContain('<PieChart');
+    expect(marketingCharts).toContain('<FunnelChart');
+    expect(marketingCharts).toContain('<RadialBarChart');
+    expect(financeCharts).toContain('<AreaChart');
+    expect(financeCharts).toContain('<BarChart');
+    expect(adminHealthChart).toContain('<RadarChart');
+
+    expect(chartShell).toContain('<figure aria-label={summary}>');
+    expect(chartShell).toContain('<figcaption className="sr-only">{summary}</figcaption>');
   });
 });

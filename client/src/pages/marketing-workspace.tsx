@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
+import { MarketingAnalyticsCharts } from '@/components/ux/analytics/MarketingAnalyticsCharts';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
@@ -419,6 +420,20 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     label: String(stage.name || stage.code),
     color: String(stage.color || '#64748b'),
   }));
+  const overviewSourcePerformance = bySource.map((source: any) => ({
+    sourceName: String(source.sourceName || t('unknownSource')),
+    leads: Number(source.leads || 0),
+    paidStudents: Number(source.paidStudents || 0),
+    revenue: Number(source.revenue || 0),
+    expenses: Number(source.expenses || 0),
+    roas: Number(source.roas || 0),
+  }));
+  const overviewFunnel = funnelData.map((stage: any) => ({
+    code: String(stage.code),
+    name: String(stage.name || stage.code),
+    count: Number(stage.count || 0),
+    color: String(stage.color || '#64748b'),
+  }));
 
   const avgDealCycle = summary.avgDealCycleDays ?? t('noData');
   const sectionTitle: Record<MarketingSection, string> = {
@@ -504,6 +519,19 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
             />
           </div>
         </div>
+      ) : null}
+
+      {section === 'overview' ? (
+        <MarketingAnalyticsCharts
+          sources={overviewSourcePerformance}
+          funnel={overviewFunnel}
+          conversions={{
+            leadToDemo: Number(summary.leadToDemoConversion || 0),
+            demoToPaid: Number(summary.demoToPaidConversion || 0),
+            leadToPaid: Number(summary.leadToPaidConversion || 0),
+          }}
+          money={(value) => money(value)}
+        />
       ) : null}
 
       <WorkspacePageBody contained={contained} ariaLabel={sectionTitle[section]}>

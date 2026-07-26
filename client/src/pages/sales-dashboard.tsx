@@ -1064,6 +1064,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           </div>
           <OverviewTab
             payments={periodPayments}
+            leads={periodLeads}
             managerFunnel={managerFunnel}
             reportingRange={reportingRange}
             leadStatusName={leadStatusName}
@@ -1271,6 +1272,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
 function OverviewTab({
   payments,
+  leads,
   managerFunnel,
   reportingRange,
   leadStatusName,
@@ -1278,6 +1280,7 @@ function OverviewTab({
   money,
 }: {
   payments: any[];
+  leads: Lead[];
   managerFunnel: Array<{ code: string; count: number; color: string }>;
   reportingRange: { from: string; to: string };
   leadStatusName: (code: string) => string;
@@ -1287,6 +1290,7 @@ function OverviewTab({
   return (
     <DashboardCharts
       payments={payments}
+      leads={leads}
       funnel={managerFunnel}
       reportingRange={reportingRange}
       leadStatusName={leadStatusName}

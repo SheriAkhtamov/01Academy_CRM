@@ -50,6 +50,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
+import { AdminOperationalHealthChart } from '@/components/ux/analytics/AdminOperationalHealthChart';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -157,6 +158,13 @@ const CHURN_LABELS: Record<string, string> = {
 };
 
 const CHURN_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#0891b2'];
+
+const boundedPercent = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue)
+    ? Math.max(0, Math.min(100, Math.round(numericValue)))
+    : 0;
+};
 
 const FUNNEL_STAGE_KEYS: Record<string, TranslationKey> = {
   new_request: 'leadStatusNewRequest',
@@ -375,6 +383,42 @@ export default function AdminDashboardPage() {
     value,
     color: CHURN_COLORS[index % CHURN_COLORS.length],
   }));
+  const healthMetrics = [
+    {
+      label: t('averageAttendance'),
+      value: boundedPercent(summary.avgAttendance),
+      display: `${Math.round(Number(summary.avgAttendance || 0))}%`,
+    },
+    {
+      label: t('averageLessonRating'),
+      value: boundedPercent((Number(summary.avgLessonScore || 0) / 5) * 100),
+      display: `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`,
+    },
+    {
+      label: t('adminGroupLoad'),
+      value: boundedPercent(summary.groupLoadPercent),
+      display: `${Math.round(Number(summary.groupLoadPercent || 0))}%`,
+    },
+    {
+      label: t('conversionApplicationToDemo'),
+      value: boundedPercent(summary.leadToDemoConversion),
+      display: `${Math.round(Number(summary.leadToDemoConversion || 0))}%`,
+    },
+    {
+      label: t('conversionDemoToPayment'),
+      value: boundedPercent(summary.demoToPaidConversion),
+      display: `${Math.round(Number(summary.demoToPaidConversion || 0))}%`,
+    },
+    {
+      label: t('adminOnlineTeam'),
+      value: boundedPercent(
+        summary.activeUsers > 0
+          ? (Number(summary.onlineUsers || 0) / Number(summary.activeUsers)) * 100
+          : 0,
+      ),
+      display: `${summary.onlineUsers} / ${summary.activeUsers}`,
+    },
+  ];
 
   const alerts = [
     {
@@ -570,7 +614,7 @@ export default function AdminDashboardPage() {
         <Card className="self-start overflow-hidden xl:col-span-2 2xl:col-span-7">
           <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
             <div>
-              <CardTitle>{t('adminRevenueAndStudentsTrend')}</CardTitle>
+              <CardTitle>{t('adminBusinessDynamics')}</CardTitle>
               <CardDescription>{t('dataForSelectedPeriod')}</CardDescription>
             </div>
             <div className="hidden items-center gap-4 text-xs text-slate-500 sm:flex">
@@ -581,6 +625,10 @@ export default function AdminDashboardPage() {
               <span className="flex items-center gap-2">
                 <span className="size-2 rounded-full bg-emerald-500" />
                 {t('adminNewStudents')}
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="size-2 rounded-full bg-amber-500" />
+                {t('navLeads')}
               </span>
             </div>
           </CardHeader>
@@ -608,11 +656,15 @@ export default function AdminDashboardPage() {
                     tick={{ fill: 'var(--slate-500)', fontSize: 12 }}
                     tickFormatter={(value) => money(Number(value))}
                   />
-                  <YAxis yAxisId="students" orientation="right" hide />
+                  <YAxis yAxisId="counts" orientation="right" hide />
                   <Tooltip
                     formatter={(value: number, name: string) => [
                       name === 'revenue' ? fullMoney(Number(value)) : Number(value),
-                      name === 'revenue' ? t('revenue') : t('adminNewStudents'),
+                      name === 'revenue'
+                        ? t('revenue')
+                        : name === 'students'
+                          ? t('adminNewStudents')
+                          : t('navLeads'),
                     ]}
                     contentStyle={{
                       border: '1px solid var(--border)',
@@ -630,12 +682,22 @@ export default function AdminDashboardPage() {
                     fill="url(#adminRevenueFill)"
                   />
                   <Line
-                    yAxisId="students"
+                    yAxisId="counts"
                     type="monotone"
                     dataKey="students"
                     stroke="var(--emerald-500)"
                     strokeWidth={2}
                     dot={{ r: 3, fill: 'var(--emerald-500)', strokeWidth: 0 }}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line
+                    yAxisId="counts"
+                    type="monotone"
+                    dataKey="leads"
+                    stroke="var(--chart-3)"
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    dot={{ r: 3, fill: 'var(--chart-3)', strokeWidth: 0 }}
                     activeDot={{ r: 5 }}
                   />
                 </AreaChart>
@@ -850,26 +912,29 @@ export default function AdminDashboardPage() {
           </h2>
           <p className="mt-1 text-sm text-slate-500">{t('adminProjectPulseDescription')}</p>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {pulseCards.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Card key={item.title} className="hover:shadow-md">
-                <CardHeader className="flex flex-row items-start gap-3 p-5 pb-2">
-                  <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', item.tone)}>
-                    <Icon className="size-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <CardDescription className="truncate">{item.title}</CardDescription>
-                    <CardTitle className="mt-1.5 truncate text-lg">{item.value}</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-5 pb-5 pt-1">
-                  <p className="truncate text-xs text-slate-500">{item.detail}</p>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="grid grid-cols-1 gap-5 2xl:grid-cols-12">
+          <AdminOperationalHealthChart metrics={healthMetrics} className="2xl:col-span-5" />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:col-span-7">
+            {pulseCards.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Card key={item.title} className="hover:shadow-md">
+                  <CardHeader className="flex flex-row items-start gap-3 p-5 pb-2">
+                    <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', item.tone)}>
+                      <Icon className="size-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <CardDescription className="truncate">{item.title}</CardDescription>
+                      <CardTitle className="mt-1.5 truncate text-lg">{item.value}</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5 pt-1">
+                    <p className="truncate text-xs text-slate-500">{item.detail}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
       </section>
 

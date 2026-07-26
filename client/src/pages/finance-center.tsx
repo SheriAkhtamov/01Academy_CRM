@@ -46,6 +46,7 @@ import {
 } from '@/lib/financeCenter';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
+import { FinanceAnalyticsCharts } from '@/components/ux/analytics/FinanceAnalyticsCharts';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -74,13 +75,24 @@ interface DashboardData {
   to: string;
   summary: {
     revenue: number;
+    operatingExpenses: number;
+    payrollExpenses: number;
+    marketingExpenses: number;
     totalExpenses: number;
     netProfit: number;
     marginPercent: number;
     payrollDueUzs: number;
     profitChangePercent: number;
   };
-  trend: Array<{ periodStart: string; revenue: number; totalExpenses: number; netProfit: number }>;
+  trend: Array<{
+    periodStart: string;
+    revenue: number;
+    operatingExpenses: number;
+    payrollExpenses: number;
+    marketingExpenses: number;
+    totalExpenses: number;
+    netProfit: number;
+  }>;
   expenseBreakdown: Array<{ category: string; amount: number }>;
   recentTransactions: Row[];
 }
@@ -530,6 +542,14 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               </CardContent>
             </Card>
           </section>
+
+          <FinanceAnalyticsCharts
+            trend={dashboard.data.trend}
+            summary={dashboard.data.summary}
+            dateLabel={reportingDateLabel}
+            money={money}
+            compactMoney={compactMoney}
+          />
 
           <Card className="overflow-hidden">
             <CardHeader className="flex-row items-center justify-between gap-4 border-b border-border/70">

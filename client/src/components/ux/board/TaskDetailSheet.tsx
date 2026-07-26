@@ -357,12 +357,12 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                 {editing ? (
                                     <>
                                         <div className="space-y-1.5">
-                                            <Label className="text-xs text-slate-500">{t('description')}</Label>
+                                            <Label className="text-xs text-muted-foreground">{t('description')}</Label>
                                             <Textarea value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
                                         </div>
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs text-slate-500">{t('priorityLabel')}</Label>
+                                                <Label className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
                                                 <Select value={draftPriority} onValueChange={(v) => setDraftPriority(v as BoardPriority)}>
                                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                                     <SelectContent>
@@ -373,7 +373,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                 </Select>
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs text-slate-500">{t('assigneeLabel')}</Label>
+                                                <Label className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
                                                 {isTaskSupervisor ? (
                                                     <Select value={draftAssignee} onValueChange={setDraftAssignee}>
                                                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -388,7 +388,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <Label className="text-xs text-slate-500">{t('dueDateLabel')}</Label>
+                                            <Label className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
                                             <Input type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} />
                                         </div>
                                     </>
@@ -570,7 +570,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div className="space-y-1">
-            <p className="text-xs text-slate-500">{label}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
             {children}
         </div>
     );

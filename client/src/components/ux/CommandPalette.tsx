@@ -215,20 +215,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       <CommandList>
         {!normalizedSearch && (
           <CommandEmpty className="py-8 text-center">
-            <Search className="mx-auto h-8 w-8 text-slate-300 mb-2" />
-            <p className="text-sm text-slate-500">{t('commandPaletteHint')}</p>
+            <Search className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">{t('commandPaletteHint')}</p>
           </CommandEmpty>
         )}
         {normalizedSearch.length === 1 && (
           <CommandEmpty className="py-8 text-center">
-            <Search className="mx-auto h-8 w-8 text-slate-300 mb-2" />
-            <p className="text-sm text-slate-500">{t('commandPaletteHint')}</p>
+            <Search className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">{t('commandPaletteHint')}</p>
           </CommandEmpty>
         )}
         {showSearching && (
           <CommandEmpty className="py-8 text-center">
-            <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400 mb-2" />
-            <p className="text-sm text-slate-500">{t('loading')}</p>
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">{t('loading')}</p>
           </CommandEmpty>
         )}
         {normalizedSearch.length >= 2 && !isFetching && !showNavigation && !showEntities && (
@@ -244,7 +244,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   onSelect={() => handleSelect(item.href)}
                   className="cursor-pointer"
                 >
-                  {Icon && <Icon className="h-4 w-4 text-slate-500" />}
+                  {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
                   <span>{item.title}</span>
                 </CommandItem>
               );
@@ -262,14 +262,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   onSelect={() => handleSelect(item.href)}
                   className="cursor-pointer"
                 >
-                  {Icon && <Icon className="h-4 w-4 text-slate-500" />}
+                  {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
                   <div className="flex flex-col min-w-0">
                     <span className="truncate">{item.title}</span>
                     {item.subtitle && (
-                      <span className="text-xs text-slate-500 truncate">{item.subtitle}</span>
+                      <span className="text-xs text-muted-foreground truncate">{item.subtitle}</span>
                     )}
                   </div>
-                  <span className="ml-auto text-xs text-slate-400 shrink-0">{item.type}</span>
+                  <span className="ml-auto text-xs text-muted-foreground/70 shrink-0">{item.type}</span>
                 </CommandItem>
               );
             })}

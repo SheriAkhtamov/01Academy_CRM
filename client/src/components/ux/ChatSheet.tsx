@@ -293,7 +293,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                       {searchQuery ? t('noSearchResults') : t('noConversationsYet')}
                     </p>
                     {!searchQuery && (
-                      <p className="text-xs text-slate-400 mt-1">{t('useSearchToStartChat')}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{t('useSearchToStartChat')}</p>
                     )}
                   </div>
                 )}
@@ -319,9 +319,9 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     </div>
                     <Badge
                       variant={selectedEmployee.isOnline ? "default" : "secondary"}
-                      className={`ml-auto ${selectedEmployee.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}
+                      className={`ml-auto ${selectedEmployee.isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-muted text-muted-foreground'}`}
                     >
-                      <Circle className={`w-2 h-2 mr-1 ${selectedEmployee.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
+                      <Circle className={`w-2 h-2 mr-1 ${selectedEmployee.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
                       {selectedEmployee.isOnline ? t('online') : t('offline')}
                     </Badge>
                   </div>
@@ -331,7 +331,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 <ScrollArea className="flex-1 p-4">
                   <div className="flex flex-col gap-4">
                     {messagesLoading ? (
-                      <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-8 text-muted-foreground">
                         <p className="text-sm">{t('loadingMessages')}</p>
                       </div>
                     ) : Array.isArray(messages) && messages.length > 0 ? (
@@ -346,14 +346,14 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                               className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
                                 isOwnMessage
                                   ? 'text-white rounded-br-sm'
-                                  : 'bg-slate-100 text-slate-900 rounded-bl-sm'
+                                  : 'bg-muted text-foreground rounded-bl-sm'
                               }`}
                               style={isOwnMessage ? { background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' } : undefined}
                             >
                               <p className="text-sm leading-relaxed">{message.content}</p>
                               <p
                                 className={`text-xs mt-1 ${
-                                  isOwnMessage ? 'text-white/70' : 'text-slate-500'
+                                  isOwnMessage ? 'text-white/70' : 'text-muted-foreground'
                                 }`}
                               >
                                 {(() => {
@@ -369,10 +369,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                         );
                       })
                     ) : (
-                      <div className="text-center py-8 text-slate-500">
-                        <MessageCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                      <div className="text-center py-8 text-muted-foreground">
+                        <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
                         <p className="text-sm">{t('noMessagesYet')}</p>
-                        <p className="text-xs text-slate-400 mt-1">{t('startConversation')}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t('startConversation')}</p>
                       </div>
                     )}
                   </div>
@@ -404,11 +404,11 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-slate-500">
+              <div className="flex-1 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
-                  <MessageCircle className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                  <p className="text-lg font-medium mb-2">{t('selectEmployee')}</p>
-                  <p className="text-sm text-slate-400">{t('chatWithEmployees')}</p>
+                  <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                  <p className="text-lg font-medium mb-2 text-foreground">{t('selectEmployee')}</p>
+                  <p className="text-sm text-muted-foreground">{t('chatWithEmployees')}</p>
                 </div>
               </div>
             )}

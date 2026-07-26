@@ -505,7 +505,7 @@ function AttachmentMedia({
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 p-3 text-white">
           {isReelShare ? (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-slate-900 shadow-sm">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-foreground shadow-sm">
               <Play className="ml-0.5 h-4 w-4 fill-current" />
             </span>
           ) : (
@@ -908,7 +908,7 @@ function LeadPanel({
     <div className="flex items-center justify-between gap-2 border-b border-border p-4">
       <div className="flex min-w-0 items-center gap-2">
         <UserRoundCog className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <h2 className="truncate text-sm font-semibold text-slate-900">{t('leadCard')}</h2>
+        <h2 className="truncate text-sm font-semibold text-foreground">{t('leadCard')}</h2>
       </div>
       <div className="flex items-center gap-1">
         <Button
@@ -954,14 +954,14 @@ function LeadPanel({
                 <AvatarFallback>{initials(participantLabel)}</AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">{participantLabel}</p>
+                <p className="truncate text-sm font-semibold text-foreground">{participantLabel}</p>
                 {conversation?.participantUsername ? (
-                  <p className="truncate text-xs text-slate-500">@{conversation.participantUsername}</p>
+                  <p className="truncate text-xs text-muted-foreground">@{conversation.participantUsername}</p>
                 ) : null}
               </div>
             </div>
 
-            <div className="mt-3 space-y-2 text-xs text-slate-500">
+            <div className="mt-3 space-y-2 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <AtSign className="h-3.5 w-3.5 shrink-0" />
                 <span className="shrink-0 font-medium text-slate-400">{t('conversationAccount')}:</span>
@@ -1034,7 +1034,7 @@ function LeadPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-muted-foreground">{t('leadCard')}</p>
-            <h2 className="mt-1 truncate text-base font-semibold text-slate-900">{lead.contactName}</h2>
+            <h2 className="mt-1 truncate text-base font-semibold text-foreground">{lead.contactName}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-primary" />
               <span>{statusName(lead.statusCode)}</span>
@@ -1864,8 +1864,8 @@ export default function MessagesPage() {
               >
                 <MessageCircle className="h-8 w-8" />
               </div>
-              <h2 className="mt-5 text-lg font-semibold text-slate-900">{t('noConversations')}</h2>
-              <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
+              <h2 className="mt-5 text-lg font-semibold text-foreground">{t('noConversations')}</h2>
+              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                 {t('noConversationsDesc')}
               </p>
               <Button
@@ -1891,7 +1891,7 @@ export default function MessagesPage() {
               <div className="space-y-4 border-b border-border bg-background p-4">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-base font-semibold leading-tight text-slate-900">{t('conversations')}</h2>
+                    <h2 className="text-base font-semibold leading-tight text-foreground">{t('conversations')}</h2>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t('messagesCount').replace('{count}', String(conversations.length))}
                       {unreadCount > 0 ? ` · ${unreadCount} ${t('unreadConversations').toLowerCase()}` : ''}
@@ -1974,7 +1974,7 @@ export default function MessagesPage() {
                           'relative flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-1.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                           active
                             ? 'border-primary text-primary'
-                            : 'text-slate-500 hover:text-slate-900',
+                            : 'text-muted-foreground hover:text-foreground',
                         )}
                       >
                         <span>{t(labelKey)}</span>
@@ -2054,14 +2054,14 @@ export default function MessagesPage() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className={cn('truncate text-sm', unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-800')}>
+                              <p className={cn('truncate text-sm', unread ? 'font-semibold text-foreground' : 'font-medium text-slate-800')}>
                                 <Highlight text={conversation.participantUsername ? `@${conversation.participantUsername}` : participantLabel} query={search} />
                               </p>
                               <span className="ml-auto shrink-0 text-[11px] text-slate-400">
                                 {listTimestamp(conversation.lastMessageAt, t)}
                               </span>
                             </div>
-                            <p className={cn('mt-1 flex items-center gap-1 truncate text-xs', unread ? 'text-slate-700' : 'text-slate-500')}>
+                            <p className={cn('mt-1 flex items-center gap-1 truncate text-xs', unread ? 'text-slate-700' : 'text-muted-foreground')}>
                               {(() => {
                                 const previewLegacy = conversation.lastMessage?.match(LEGACY_ATTACHMENT);
                                 if (previewLegacy) {
@@ -2133,12 +2133,12 @@ export default function MessagesPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-slate-900">
+                      <p className="truncate font-semibold text-foreground">
                         {selectedConversation.participantUsername
                           ? `@${selectedConversation.participantUsername}`
                           : selectedConversation.participantName || selectedConversation.contactName}
                       </p>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                         <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', selectedCanReply ? 'bg-emerald-500' : 'bg-slate-300')} />
                         <span className="truncate">{selectedCanReply ? t('replyWindowOpen') : t('replyWindowClosed')}</span>
                         <span aria-hidden="true">·</span>
@@ -2282,12 +2282,12 @@ export default function MessagesPage() {
                             </Alert>
                           </div>
                         ) : messages.length === 0 ? (
-                          <div className="py-16 text-center text-sm text-slate-500">
+                          <div className="py-16 text-center text-sm text-muted-foreground">
                             <MessageCircle className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                             {t('noMessagesYet')}
                           </div>
                         ) : threadQuery && threadMatchCount === 0 ? (
-                          <div className="py-16 text-center text-sm text-slate-500">
+                          <div className="py-16 text-center text-sm text-muted-foreground">
                             <SearchX className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                             {t('noSearchResults')}
                           </div>
@@ -2297,7 +2297,7 @@ export default function MessagesPage() {
                               return (
                                 <div key={item.id} className="my-4 flex items-center gap-3">
                                   <div className="h-px flex-1 bg-border" />
-                                  <span className="bg-muted/40 px-2 text-[11px] font-medium text-slate-500">
+                                  <span className="bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground">
                                     {item.label}
                                   </span>
                                   <div className="h-px flex-1 bg-border" />
@@ -2388,7 +2388,7 @@ export default function MessagesPage() {
                                     >
                                       <button
                                         type="button"
-                                        className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-muted hover:text-primary"
+                                        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-primary"
                                         aria-label={t('replyToMessage')}
                                         title={t('replyToMessage')}
                                         onClick={() => replyToMessage(message)}
@@ -2397,7 +2397,7 @@ export default function MessagesPage() {
                                       </button>
                                       <button
                                         type="button"
-                                        className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-muted hover:text-primary"
+                                        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-primary"
                                         aria-label={t('copy')}
                                         title={t('copy')}
                                         onClick={() => copyMessage(message.content, message.id)}
@@ -2657,7 +2657,7 @@ export default function MessagesPage() {
                   </div>
                 </>
               ) : (
-                <div className="flex flex-1 items-center justify-center p-8 text-center text-slate-500">
+                <div className="flex flex-1 items-center justify-center p-8 text-center text-muted-foreground">
                   <div>
                     <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted text-slate-400">
                       <MessageCircle className="h-8 w-8" />

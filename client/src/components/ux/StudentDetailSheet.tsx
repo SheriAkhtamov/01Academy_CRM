@@ -148,7 +148,7 @@ export function StudentDetailSheet({
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
         <SheetHeader className="pb-4">
           <div className="flex items-start gap-4">
-            <Avatar className="h-16 w-16 border-2 border-slate-100">
+            <Avatar className="h-16 w-16 border-2 border-border">
               <AvatarFallback className="bg-gradient-to-br from-primary-500 to-primary-700 text-white text-lg">
                 {getInitials(displayName)}
               </AvatarFallback>
@@ -220,15 +220,15 @@ export function StudentDetailSheet({
           <div className="mt-5 grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">{t('attendanceLabel')}</span>
-                <span className="font-medium text-slate-700">{currentStudent.attendancePercent}%</span>
+                <span className="text-muted-foreground">{t('attendanceLabel')}</span>
+                <span className="font-medium text-foreground">{currentStudent.attendancePercent}%</span>
               </div>
               <Progress value={currentStudent.attendancePercent} />
             </div>
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">{t('progressLabel')}</span>
-                <span className="font-medium text-slate-700">{currentStudent.progressPercent}%</span>
+                <span className="text-muted-foreground">{t('progressLabel')}</span>
+                <span className="font-medium text-foreground">{currentStudent.progressPercent}%</span>
               </div>
               <Progress value={currentStudent.progressPercent} />
             </div>
@@ -395,13 +395,13 @@ export function StudentDetailSheet({
           </TabsContent>
 
           <TabsContent value="attendance">
-            <div className="text-sm text-slate-600">
+            <div className="text-sm text-muted-foreground">
               {t('attendanceRateLabel')} {currentStudent.attendancePercent}%
             </div>
           </TabsContent>
 
           <TabsContent value="progress">
-            <div className="text-sm text-slate-600">
+            <div className="text-sm text-muted-foreground">
               {t('courseProgressLabel')} {currentStudent.progressPercent}%
             </div>
           </TabsContent>
@@ -409,36 +409,36 @@ export function StudentDetailSheet({
           <TabsContent value="portfolio" className="space-y-2">
             {projects.length > 0 ? (
               projects.map((project: any) => (
-                <div key={project.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                <div key={project.id} className="rounded-lg border border-border p-3 text-sm">
                   <div className="font-medium">{project.title || project.name}</div>
-                  {project.description && <div className="text-slate-500 text-xs mt-1">{project.description}</div>}
+                  {project.description && <div className="text-muted-foreground text-xs mt-1">{project.description}</div>}
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-500">{t('noProjects')}</p>
+              <p className="text-sm text-muted-foreground">{t('noProjects')}</p>
             )}
           </TabsContent>
 
           <TabsContent value="payments" className="space-y-2">
             {payments.length > 0 ? (
               payments.map((payment: any) => (
-                <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+                <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm">
                   <div>
                     <div className="font-medium">
                       {Number(payment.amountUzs || 0).toLocaleString('ru-RU')} {t('uzs')}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500">{payment.period || payment.method || t('payment')}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{payment.period || payment.method || t('payment')}</div>
                   </div>
                   <div className="text-right">
                     <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : 'warning'}>
                       {payment.status === 'paid' ? t('paymentStatusPaid') : payment.status === 'overdue' ? t('paymentStatusOverdue') : t('paymentStatusPending')}
                     </Badge>
-                    <div className="mt-1 text-xs text-slate-500">{dateTime(payment.paidAt || payment.createdAt)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.createdAt)}</div>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-500">{t('noPayments')}</p>
+              <p className="text-sm text-muted-foreground">{t('noPayments')}</p>
             )}
           </TabsContent>
 
@@ -453,7 +453,7 @@ export function StudentDetailSheet({
             {referrals.length > 0 && (
               <div className="mt-3 space-y-2">
                 {referrals.map((reward: any) => (
-                  <div key={reward.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div key={reward.id} className="rounded-lg border border-border p-3 text-sm">
                     {t('referralBonus')} {reward.rewardValue || reward.amountUzs || t('noData')}
                   </div>
                 ))}
@@ -463,14 +463,14 @@ export function StudentDetailSheet({
 
           <TabsContent value="history">
             <div className="space-y-2">
-              <div className="rounded-lg border border-slate-200 p-3 text-sm">
+              <div className="rounded-lg border border-border p-3 text-sm">
                 <div className="font-medium">{t('clientCreated')}</div>
-                <div className="mt-1 text-xs text-slate-500">{dateTime(currentStudent.createdAt)}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{dateTime(currentStudent.createdAt)}</div>
               </div>
               {payments.map((payment: any) => (
-                <div key={`history-payment-${payment.id}`} className="rounded-lg border border-slate-200 p-3 text-sm">
+                <div key={`history-payment-${payment.id}`} className="rounded-lg border border-border p-3 text-sm">
                   <div className="font-medium">{t('paymentSaved')}</div>
-                  <div className="mt-1 text-xs text-slate-500">{dateTime(payment.paidAt || payment.createdAt)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.createdAt)}</div>
                 </div>
               ))}
             </div>
@@ -483,9 +483,9 @@ export function StudentDetailSheet({
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className="text-sm font-medium text-slate-900">{value}</span>
+    <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   );
 }

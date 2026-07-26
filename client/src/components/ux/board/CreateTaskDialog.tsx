@@ -111,7 +111,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
 
                 <div className="space-y-4">
                     <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">{t('taskTitle')}</Label>
+                        <Label className="text-xs text-muted-foreground">{t('taskTitle')}</Label>
                         <Input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
@@ -124,7 +124,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                     </div>
 
                     <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">{t('description')}</Label>
+                        <Label className="text-xs text-muted-foreground">{t('description')}</Label>
                         <Textarea
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
@@ -135,7 +135,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-slate-500">{t('priorityLabel')}</Label>
+                            <Label className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
                             <Select value={priority} onValueChange={(v) => setPriority(v as BoardPriority)}>
                                 <SelectTrigger>
                                     <SelectValue />
@@ -151,7 +151,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-slate-500">{t('assigneeLabel')}</Label>
+                            <Label className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
                             {canAssignUsers ? (
                                 <Select value={assigneeId} onValueChange={setAssigneeId}>
                                     <SelectTrigger>
@@ -173,7 +173,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                     </div>
 
                     <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">{t('dueDateLabel')}</Label>
+                        <Label className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
                         <Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
                     </div>
                 </div>

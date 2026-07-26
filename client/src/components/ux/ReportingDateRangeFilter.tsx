@@ -56,15 +56,15 @@ export function ReportingDateRangeFilter({
   };
 
   return (
-    <Card className={cn('border-border/70 bg-card/95 shadow-2xs', className)}>
-      <CardContent className="flex flex-col gap-3 p-3 sm:p-4 xl:flex-row xl:items-center">
-        <div className="flex min-w-0 items-center gap-3 xl:mr-auto">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <CalendarRange className="size-5" />
+    <Card className={cn('border-border/60 bg-card shadow-sm', className)}>
+      <CardContent className="flex flex-col gap-2.5 p-3 xl:flex-row xl:items-center">
+        <div className="flex min-w-0 items-center gap-2.5 xl:mr-auto">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <CalendarRange className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold">{t('reportingPeriod')}</p>
-            <p className="truncate text-xs text-muted-foreground" aria-live="polite">
+            <p className="text-xs font-semibold">{t('reportingPeriod')}</p>
+            <p className="truncate text-[11px] leading-4 text-muted-foreground" aria-live="polite">
               {formatDate(value.from)} — {formatDate(value.to)}
             </p>
           </div>
@@ -117,7 +117,7 @@ export function ReportingDateRangeFilter({
               value={value.from}
               max={value.to}
               onChange={(event) => setBoundary('from', event.target.value)}
-              className="h-12 min-w-0 pt-5 sm:w-[158px]"
+              className="h-11 min-w-0 pt-4 sm:w-[148px]"
             />
           </label>
           <label className="relative">
@@ -129,7 +129,7 @@ export function ReportingDateRangeFilter({
               value={value.to}
               min={value.from}
               onChange={(event) => setBoundary('to', event.target.value)}
-              className="h-12 min-w-0 pt-5 sm:w-[158px]"
+              className="h-11 min-w-0 pt-4 sm:w-[148px]"
             />
           </label>
         </div>

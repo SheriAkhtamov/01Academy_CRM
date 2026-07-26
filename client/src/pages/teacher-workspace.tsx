@@ -259,28 +259,28 @@ function KpiCard({
   tone?: 'blue' | 'green' | 'amber' | 'red' | 'slate';
 }) {
   const toneClass = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-emerald-50 text-emerald-600',
-    amber: 'bg-amber-50 text-amber-600',
-    red: 'bg-red-50 text-red-600',
-    slate: 'bg-slate-100 text-slate-600',
+    blue: 'bg-primary-50 text-primary-600',
+    green: 'bg-emerald-100 text-emerald-600',
+    amber: 'bg-amber-100 text-amber-600',
+    red: 'bg-destructive/10 text-destructive',
+    slate: 'bg-muted text-muted-foreground',
   }[tone];
 
   return (
-    <Card className="border-border/70 hover-lift group">
-      <CardContent className="p-5">
+    <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+      <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm text-slate-500 truncate">{title}</p>
-            <div className="mt-1.5 text-[26px] font-bold text-slate-900 leading-tight tracking-tight tabular-nums">
+            <p className="truncate text-xs font-medium text-muted-foreground">{title}</p>
+            <div className="mt-1 text-[22px] font-bold leading-tight tracking-tight tabular-nums text-foreground">
               {value}
             </div>
-            {detail && <p className="mt-1 text-xs text-slate-400 truncate">{detail}</p>}
+            {detail && <p className="mt-0.5 truncate text-[11px] leading-4 text-muted-foreground">{detail}</p>}
           </div>
           <div
-            className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${toneClass}`}
+            className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}
           >
-            <Icon className="h-5 w-5" />
+            <Icon className="size-4" />
           </div>
         </div>
       </CardContent>
@@ -551,7 +551,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         rating: Math.round((averageRating / 5) * 100),
       }];
     });
-    return compactRankedSeries(rows, (row) => row.lessonVolume, 8);
+    return compactRankedSeries(rows, (row) => row.lessonVolume, 6);
   }, [groups, periodAttendanceRecords, periodLessons, periodSurveys]);
 
   const attendanceDistribution = useMemo(() => [
@@ -926,7 +926,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   };
 
   return (
-    <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-6'}>
+    <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
         subtitle={t('teacherWorkspace')}
@@ -942,7 +942,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
       {/* KPI Cards */}
       {section === 'overview' ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <div className="stagger-item">
             <KpiCard
               title={t('myGroupsCount')}

@@ -201,10 +201,10 @@ function ChangeBadge({ value }: { value: number }) {
   const variant = value > 0 ? 'success' : value < 0 ? 'destructive' : 'secondary';
 
   return (
-    <Badge variant={variant}>
+    <Badge variant={variant} title={t('adminVsPreviousPeriod')} className="gap-1 px-1.5 py-0.5">
       <Icon data-icon="inline-start" />
       {value > 0 ? '+' : ''}{value}%
-      <span className="font-normal">{t('adminVsPreviousPeriod')}</span>
+      <span className="sr-only">{t('adminVsPreviousPeriod')}</span>
     </Badge>
   );
 }
@@ -225,23 +225,23 @@ function KpiCard({
   change?: number;
 }) {
   return (
-    <Card className="group overflow-hidden hover:shadow-md">
-      <CardHeader className="flex flex-row items-start justify-between gap-3 p-5 pb-2">
+    <Card className="overflow-hidden border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 p-4 pb-1">
         <div className="min-w-0">
-          <CardDescription className="min-h-10 leading-5">{title}</CardDescription>
-          <CardTitle className="mt-2 text-[26px] font-bold tabular-nums">{value}</CardTitle>
+          <CardDescription className="text-xs font-medium leading-4">{title}</CardDescription>
+          <CardTitle className="mt-1 text-[22px] font-bold leading-tight tabular-nums">{value}</CardTitle>
         </div>
-        <div className={cn('flex size-11 shrink-0 items-center justify-center rounded-xl', tone)}>
-          <Icon className="size-5" />
+        <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', tone)}>
+          <Icon className="size-4" />
         </div>
       </CardHeader>
-      <CardContent className="flex min-h-10 items-end px-5 pb-5 pt-1">
+      <CardContent className="flex items-center px-4 pb-4 pt-1">
         {change === undefined ? (
-          <p className="truncate text-xs text-slate-500">{detail}</p>
+          <p className="truncate text-[11px] leading-4 text-muted-foreground">{detail}</p>
         ) : (
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
             <ChangeBadge value={change} />
-            <span className="truncate text-xs text-slate-500">{detail}</span>
+            <span className="truncate text-[11px] text-muted-foreground">{detail}</span>
           </div>
         )}
       </CardContent>
@@ -251,7 +251,7 @@ function KpiCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6 lg:p-8">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <Skeleton className="h-4 w-28" />
@@ -260,17 +260,18 @@ function DashboardSkeleton() {
         </div>
         <Skeleton className="h-10 w-32" />
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {Array.from({ length: 5 }, (_, index) => (
-          <Skeleton key={index} className="h-36 rounded-xl" />
+          <Skeleton key={index} className="h-28 rounded-xl" />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 2xl:grid-cols-12">
-        <Skeleton className="h-[370px] rounded-xl xl:col-span-2 2xl:col-span-7" />
-        <Skeleton className="h-[370px] rounded-xl 2xl:col-span-2" />
-        <Skeleton className="h-[370px] rounded-xl 2xl:col-span-3" />
-        <Skeleton className="h-[330px] rounded-xl xl:col-span-2 2xl:col-span-9" />
-        <Skeleton className="h-[330px] rounded-xl xl:col-span-2 2xl:col-span-3" />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-6 2xl:grid-cols-12">
+        <Skeleton className="h-[320px] rounded-xl xl:col-span-4 2xl:col-span-7" />
+        <Skeleton className="h-[320px] rounded-xl xl:col-span-2" />
+        <Skeleton className="h-[320px] rounded-xl xl:col-span-3" />
+        <Skeleton className="h-[280px] rounded-xl xl:col-span-3" />
+        <Skeleton className="h-[280px] rounded-xl xl:col-span-4 2xl:col-span-6" />
+        <Skeleton className="h-[280px] rounded-xl xl:col-span-2 2xl:col-span-3" />
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
@@ -495,7 +496,7 @@ export default function AdminDashboardPage() {
   ];
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-6 p-6 lg:p-8">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
       <PageHeader
         title={t('adminDashboardTitle')}
         subtitle={t('adminDashboardSubtitle')}
@@ -528,7 +529,7 @@ export default function AdminDashboardPage() {
 
       <section
         aria-label={t('adminKeyMetrics')}
-        className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
+        className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
       >
         <KpiCard
           title={t('activeStudents')}
@@ -571,7 +572,7 @@ export default function AdminDashboardPage() {
       </section>
 
       {reportingRange.preset === 'thisMonth' || reportingRange.preset === 'previousMonth' ? (
-      <section aria-label={ceoCopy.dashboard.planFact} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section aria-label={ceoCopy.dashboard.planFact} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {[
           {
             title: ceoCopy.dashboard.revenue,
@@ -592,47 +593,47 @@ export default function AdminDashboardPage() {
             key={item.title}
             type="button"
             onClick={() => navigate(item.href)}
-            className="rounded-xl border border-border/70 bg-card p-5 text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-xl border border-border/60 bg-card p-4 text-left shadow-sm transition-[border-color,box-shadow] hover:border-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <div className="flex items-end justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-slate-700">{item.title}</p>
-                <p className="mt-2 text-2xl font-bold tabular-nums">{item.fact}</p>
+                <p className="mt-1 text-xl font-bold tabular-nums">{item.fact}</p>
               </div>
               <span className={cn('text-xl font-semibold tabular-nums', item.value >= 100 ? 'text-emerald-600' : 'text-primary-600')}>
                 {item.value}%
               </span>
             </div>
-            <Progress className="mt-4 h-2" value={item.value} />
-            <p className="mt-2 text-xs text-slate-500">{ceoCopy.dashboard.plan} {item.plan}</p>
+            <Progress className="mt-3 h-1.5" value={item.value} />
+            <p className="mt-1.5 text-[11px] text-muted-foreground">{ceoCopy.dashboard.plan} {item.plan}</p>
           </button>
         ))}
       </section>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-2 2xl:grid-cols-12">
-        <Card className="self-start overflow-hidden xl:col-span-2 2xl:col-span-7">
-          <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-6 2xl:grid-cols-12">
+        <Card className="self-start overflow-hidden border-border/60 shadow-sm xl:col-span-4 2xl:col-span-7">
+          <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
             <div>
-              <CardTitle>{t('adminBusinessDynamics')}</CardTitle>
-              <CardDescription>{t('dataForSelectedPeriod')}</CardDescription>
+              <CardTitle className="text-[15px]">{t('adminBusinessDynamics')}</CardTitle>
+              <CardDescription className="mt-0.5 text-xs">{t('dataForSelectedPeriod')}</CardDescription>
             </div>
-            <div className="hidden items-center gap-4 text-xs text-slate-500 sm:flex">
-              <span className="flex items-center gap-2">
+            <div className="hidden items-center gap-3 text-[11px] text-muted-foreground sm:flex">
+              <span className="flex items-center gap-1.5">
                 <span className="size-2 rounded-full bg-primary-600" />
                 {t('revenue')}
               </span>
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5">
                 <span className="size-2 rounded-full bg-emerald-500" />
                 {t('adminNewStudents')}
               </span>
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5">
                 <span className="size-2 rounded-full bg-amber-500" />
                 {t('navLeads')}
               </span>
             </div>
           </CardHeader>
-          <CardContent className="h-[300px] p-4 pt-2 sm:p-6 sm:pt-2">
+          <CardContent className="h-[258px] px-4 pb-4 pt-0">
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 12, right: 4, left: -12, bottom: 0 }}>
@@ -710,7 +711,7 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="self-start 2xl:col-span-2">
+        <Card className="self-start border-border/60 shadow-sm xl:col-span-2">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">{t('salesPipeline')}</CardTitle>
             <CardDescription>{t('adminCurrentPipeline')}</CardDescription>
@@ -753,7 +754,7 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="self-start 2xl:col-span-3">
+        <Card className="self-start border-border/60 shadow-sm xl:col-span-3">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">{t('adminOperationalAlerts')}</CardTitle>
             <CardDescription>{t('adminItemsNeedAttention')}</CardDescription>
@@ -805,12 +806,12 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="self-start 2xl:col-span-3">
-          <CardHeader className="pb-3">
+        <Card className="self-start border-border/60 shadow-sm xl:col-span-3">
+          <CardHeader className="px-4 pb-2 pt-3.5">
             <CardTitle className="text-base">{ceoCopy.dashboard.churnReasons}</CardTitle>
             <CardDescription>{ceoCopy.dashboard.churnStatuses}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4 pt-0">
             {churnData.length > 0 ? (
               <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                 <ResponsiveContainer width="100%" height={120}>
@@ -834,14 +835,14 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2 2xl:col-span-9">
-          <CardHeader className="pb-3">
-            <CardTitle>{t('adminCourseLoad')}</CardTitle>
+        <Card className="border-border/60 shadow-sm xl:col-span-4 2xl:col-span-6">
+          <CardHeader className="px-4 pb-2 pt-3.5">
+            <CardTitle className="text-[15px]">{t('adminCourseLoad')}</CardTitle>
             <CardDescription>{t('adminCourseLoadDescription')}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4 pt-0">
             {data.courseLoad.length > 0 ? (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
                 {data.courseLoad.map((course) => (
                   <div
                     key={course.courseId}
@@ -869,12 +870,12 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2 2xl:col-span-3">
-          <CardHeader className="pb-3">
+        <Card className="border-border/60 shadow-sm xl:col-span-2 2xl:col-span-3">
+          <CardHeader className="px-4 pb-2 pt-3.5">
             <CardTitle className="text-base">{t('adminRecentActivity')}</CardTitle>
             <CardDescription>{t('adminAcrossProject')}</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-1">
+          <CardContent className="flex flex-col gap-1 px-4 pb-4 pt-0">
             {data.recentActivity.length > 0 ? data.recentActivity.map((item) => {
               const config = ACTIVITY_CONFIG[item.type];
               const Icon = config.icon;
@@ -905,31 +906,31 @@ export default function AdminDashboardPage() {
         </Card>
       </section>
 
-      <section aria-labelledby="project-pulse-title" className="flex flex-col gap-4">
+      <section aria-labelledby="project-pulse-title" className="flex flex-col gap-3">
         <div>
-          <h2 id="project-pulse-title" className="text-xl font-semibold tracking-tight">
+          <h2 id="project-pulse-title" className="text-lg font-semibold tracking-tight">
             {t('adminProjectPulse')}
           </h2>
-          <p className="mt-1 text-sm text-slate-500">{t('adminProjectPulseDescription')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('adminProjectPulseDescription')}</p>
         </div>
-        <div className="grid grid-cols-1 gap-5 2xl:grid-cols-12">
-          <AdminOperationalHealthChart metrics={healthMetrics} className="2xl:col-span-5" />
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:col-span-7">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <AdminOperationalHealthChart metrics={healthMetrics} className="xl:col-span-5" />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:col-span-7">
             {pulseCards.map((item) => {
               const Icon = item.icon;
               return (
-                <Card key={item.title} className="hover:shadow-md">
-                  <CardHeader className="flex flex-row items-start gap-3 p-5 pb-2">
-                    <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', item.tone)}>
-                      <Icon className="size-5" />
+                <Card key={item.title} className="border-border/60 shadow-sm transition-[border-color,box-shadow] hover:border-border hover:shadow-md">
+                  <CardHeader className="flex flex-row items-start gap-3 p-4 pb-1">
+                    <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', item.tone)}>
+                      <Icon className="size-4" />
                     </div>
                     <div className="min-w-0">
-                      <CardDescription className="truncate">{item.title}</CardDescription>
-                      <CardTitle className="mt-1.5 truncate text-lg">{item.value}</CardTitle>
+                      <CardDescription className="truncate text-xs">{item.title}</CardDescription>
+                      <CardTitle className="mt-1 truncate text-base">{item.value}</CardTitle>
                     </div>
                   </CardHeader>
-                  <CardContent className="px-5 pb-5 pt-1">
-                    <p className="truncate text-xs text-slate-500">{item.detail}</p>
+                  <CardContent className="px-4 pb-4 pt-1">
+                    <p className="truncate text-[11px] text-muted-foreground">{item.detail}</p>
                   </CardContent>
                 </Card>
               );

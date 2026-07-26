@@ -65,7 +65,7 @@ export function FinanceAnalyticsCharts({
   ) > 0);
 
   return (
-    <section className="grid gap-5 xl:grid-cols-2">
+    <section className="grid gap-4 xl:grid-cols-2">
       <AnalyticsChartCard
         title={t('financeExpenseDynamics')}
         description={t('financeExpenseDynamicsDescription')}
@@ -74,7 +74,7 @@ export function FinanceAnalyticsCharts({
           + Number(point.payrollExpenses || 0)
           + Number(point.marketingExpenses || 0),
         )}`).join(', ')}`}
-        chartClassName="h-[320px]"
+        chartClassName="h-[258px]"
         footer={(
           <AnalyticsChartLegend items={[
             { label: t('financeCenterOperatingPaid'), color: 'var(--chart-5)' },
@@ -85,7 +85,7 @@ export function FinanceAnalyticsCharts({
       >
         {hasExpenseTrend ? (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trend} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
+            <AreaChart data={trend} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
               <defs>
                 <linearGradient id="financeOperatingFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--chart-5)" stopOpacity={0.5} />
@@ -129,10 +129,10 @@ export function FinanceAnalyticsCharts({
         title={t('financeProfitContribution')}
         description={t('financeProfitContributionDescription')}
         summary={`${t('financeProfitContribution')}. ${contributionData.map((item) => `${item.name}: ${money(item.value)}`).join(', ')}`}
-        chartClassName="h-[320px]"
+        chartClassName="h-[258px]"
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={contributionData} margin={{ top: 28, right: 12, left: 0, bottom: 0 }}>
+          <BarChart data={contributionData} margin={{ top: 24, right: 8, left: -4, bottom: 0 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="var(--border)" />
             <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0} tick={analyticsAxisTick} />
             <YAxis axisLine={false} tickLine={false} width={58} tickFormatter={compactMoney} tick={analyticsAxisTick} />

@@ -11,15 +11,17 @@ import { cn } from '@/lib/utils';
 
 export const analyticsAxisTick = {
   fill: 'var(--muted-foreground)',
-  fontSize: 12,
+  fontSize: 11,
 } as const;
 
 export const analyticsTooltipStyle = {
   backgroundColor: 'var(--card)',
   border: '1px solid var(--border)',
-  borderRadius: '0.75rem',
-  boxShadow: 'var(--shadow-lg)',
+  borderRadius: '0.625rem',
+  boxShadow: 'var(--shadow-md)',
   color: 'var(--foreground)',
+  fontSize: 12,
+  padding: '0.5rem 0.625rem',
 } as const;
 
 export function AnalyticsChartCard({
@@ -43,24 +45,24 @@ export function AnalyticsChartCard({
 }) {
   return (
     <Card className={cn(
-      'group overflow-hidden border-border/70 bg-card/95 shadow-sm transition-shadow duration-200 hover:shadow-md',
+      'overflow-hidden border-border/60 bg-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md',
       className,
     )}>
-      <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
         <div className="min-w-0">
-          <CardTitle className="text-base leading-6 sm:text-lg">{title}</CardTitle>
-          {description ? <CardDescription className="mt-1 leading-5">{description}</CardDescription> : null}
+          <CardTitle className="text-[15px] font-semibold leading-5 tracking-tight">{title}</CardTitle>
+          {description ? <CardDescription className="mt-0.5 text-xs leading-4">{description}</CardDescription> : null}
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </CardHeader>
-      <CardContent className="px-3 pb-4 pt-0 sm:px-5 sm:pb-5">
+      <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
         <figure aria-label={summary}>
-          <div className={cn('h-[300px] min-w-0', chartClassName)}>
+          <div className={cn('h-[236px] min-w-0', chartClassName)}>
             {children}
           </div>
           <figcaption className="sr-only">{summary}</figcaption>
         </figure>
-        {footer ? <div className="mt-4 border-t border-border/60 pt-4">{footer}</div> : null}
+        {footer ? <div className="mt-2.5 border-t border-border/50 pt-2.5">{footer}</div> : null}
       </CardContent>
     </Card>
   );
@@ -74,12 +76,12 @@ export function AnalyticsChartLegend({
   className?: string;
 }) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground', className)}>
+    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] leading-4 text-muted-foreground', className)}>
       {items.map((item) => (
-        <span key={item.label} className="inline-flex min-w-0 items-center gap-2">
+        <span key={item.label} className="inline-flex min-w-0 items-center gap-1.5">
           <span
             aria-hidden="true"
-            className={cn('h-0.5 w-4 shrink-0 rounded-full', item.dashed && 'border-t-2 border-dashed bg-transparent')}
+            className={cn('h-0.5 w-3 shrink-0 rounded-full', item.dashed && 'border-t-2 border-dashed bg-transparent')}
             style={item.dashed ? { borderColor: item.color } : { backgroundColor: item.color }}
           />
           <span className="truncate">{item.label}</span>
@@ -100,13 +102,13 @@ export function AnalyticsChartEmpty({
   description?: string;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <span className="flex size-11 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-        <BarChart3 className="size-5" />
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center">
+      <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <BarChart3 className="size-4" />
       </span>
       <div>
-        <p className="text-sm font-medium">{title}</p>
-        {description ? <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{description}</p> : null}
+        <p className="text-[13px] font-medium">{title}</p>
+        {description ? <p className="mt-0.5 max-w-sm text-[11px] leading-4 text-muted-foreground">{description}</p> : null}
       </div>
     </div>
   );

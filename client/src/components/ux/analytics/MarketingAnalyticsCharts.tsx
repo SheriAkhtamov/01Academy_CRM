@@ -84,13 +84,13 @@ export function MarketingAnalyticsCharts({
   const totalPaid = acquisitionSources.reduce((sum, source) => sum + Number(source.paidStudents || 0), 0);
 
   return (
-    <div className="grid grid-cols-1 gap-5 2xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <AnalyticsChartCard
         title={t('marketingSourceEconomics')}
         description={t('marketingSourceEconomicsDescription')}
         summary={`${t('marketingSourceEconomics')}. ${sourceEconomics.map((source) => `${source.sourceName}: ${source.roas}x`).join(', ')}`}
-        className="2xl:col-span-8"
-        chartClassName="h-[350px]"
+        className="xl:col-span-8"
+        chartClassName="h-[270px]"
         footer={(
           <AnalyticsChartLegend items={[
             { label: t('revenue'), color: 'var(--chart-2)' },
@@ -101,7 +101,7 @@ export function MarketingAnalyticsCharts({
       >
         {sourceEconomics.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={sourceEconomics} margin={{ top: 16, right: 8, left: 0, bottom: 8 }}>
+            <ComposedChart data={sourceEconomics} margin={{ top: 8, right: 4, left: -4, bottom: 2 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="var(--border)" />
               <XAxis dataKey="shortName" axisLine={false} tickLine={false} minTickGap={16} tick={analyticsAxisTick} />
               <YAxis
@@ -145,8 +145,8 @@ export function MarketingAnalyticsCharts({
         title={t('marketingConversionHealth')}
         description={t('marketingConversionHealthDescription')}
         summary={`${t('marketingConversionHealth')}. ${conversionRings.map((item) => `${item.name}: ${item.value}%`).join(', ')}`}
-        className="2xl:col-span-4"
-        chartClassName="h-[240px]"
+        className="xl:col-span-4"
+        chartClassName="h-[204px]"
         footer={(
           <div className="grid gap-2">
             {conversionRings.map((item) => (
@@ -181,8 +181,8 @@ export function MarketingAnalyticsCharts({
         title={t('conversionFunnel')}
         description={t('conversionFunnelDescription')}
         summary={`${t('conversionFunnel')}. ${funnel.map((stage) => `${stage.name}: ${stage.count}`).join(', ')}`}
-        className="2xl:col-span-7"
-        chartClassName="h-[340px]"
+        className="xl:col-span-7"
+        chartClassName="h-[252px]"
       >
         {funnel.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -216,8 +216,8 @@ export function MarketingAnalyticsCharts({
         title={t('marketingAcquisitionBySource')}
         description={t('marketingAcquisitionBySourceDescription')}
         summary={`${t('marketingAcquisitionBySource')}. ${acquisitionSources.map((source) => `${source.sourceName}: ${source.leads}/${source.paidStudents}`).join(', ')}`}
-        className="2xl:col-span-5"
-        chartClassName="h-[340px]"
+        className="xl:col-span-5"
+        chartClassName="h-[260px]"
         footer={(
           <AnalyticsChartLegend items={[
             { label: t('navLeads'), color: 'var(--chart-2)', value: totalLeads },
@@ -227,10 +227,10 @@ export function MarketingAnalyticsCharts({
       >
         {acquisitionSources.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={acquisitionSources} layout="vertical" margin={{ top: 4, right: 30, left: 18, bottom: 4 }}>
+            <BarChart data={acquisitionSources} layout="vertical" margin={{ top: 2, right: 28, left: 4, bottom: 2 }}>
               <CartesianGrid horizontal={false} strokeDasharray="3 4" stroke="var(--border)" />
               <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
-              <YAxis dataKey="sourceName" type="category" width={112} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
+              <YAxis dataKey="sourceName" type="category" width={94} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
               <Tooltip
                 cursor={{ fill: 'var(--muted)' }}
                 formatter={(value: number, name: string) => [

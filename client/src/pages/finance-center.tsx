@@ -158,31 +158,31 @@ function FinanceMetric({
 }) {
   return (
     <Card className={cn(
-      'overflow-hidden',
+      'overflow-hidden border-border/60 shadow-sm',
       large && 'border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20',
     )}>
-      <CardContent className={cn('flex h-full items-start justify-between gap-4 p-5', large && 'p-6')}>
+      <CardContent className="flex h-full items-start justify-between gap-3 p-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
           <p title={fullValue} className={cn(
-            'mt-2 whitespace-nowrap font-bold tabular-nums tracking-tight text-slate-900',
-            large ? 'text-3xl text-emerald-700 lg:text-4xl' : 'text-2xl',
+            'mt-1 whitespace-nowrap font-bold tabular-nums tracking-tight text-foreground',
+            large ? 'text-[26px] text-emerald-700' : 'text-xl',
             tone === 'success' && !large && 'text-emerald-700',
             tone === 'danger' && 'text-destructive',
             tone === 'warning' && 'text-amber-700',
           )}>
             {value}
           </p>
-          {detail ? <div className="mt-2 text-xs text-muted-foreground">{detail}</div> : null}
+          {detail ? <div className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{detail}</div> : null}
         </div>
         <div className={cn(
-          'flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground',
+          'flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground',
           tone === 'success' && 'bg-emerald-100 text-emerald-700',
           tone === 'danger' && 'bg-destructive/10 text-destructive',
           tone === 'warning' && 'bg-amber-100 text-amber-700',
           large && 'bg-emerald-100 text-emerald-700',
         )}>
-          <Icon className="size-5" />
+          <Icon className="size-4" />
         </div>
       </CardContent>
     </Card>
@@ -191,12 +191,12 @@ function FinanceMetric({
 
 function FinanceLoading() {
   return (
-    <div className="flex flex-col gap-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-32 rounded-xl" />)}
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
       </div>
-      <Skeleton className="h-[360px] rounded-xl" />
-      <Skeleton className="h-64 rounded-xl" />
+      <Skeleton className="h-[300px] rounded-xl" />
+      <Skeleton className="h-56 rounded-xl" />
     </div>
   );
 }
@@ -434,7 +434,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const contained = section !== 'overview';
 
   return (
-    <WorkspacePage contained={contained} className="flex flex-col gap-5">
+    <WorkspacePage contained={contained} className="flex flex-col gap-4">
       <PageHeader
         title={sectionTitle}
         subtitle={sectionSubtitle}
@@ -454,7 +454,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         )}
       />
 
-      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle} className="flex flex-col gap-5">
+      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle} className="flex flex-col gap-4">
 
       {section === 'overview' ? (
         <ReportingDateRangeFilter
@@ -468,8 +468,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       {activeQuery.isError ? <FinanceError copy={copy} onRetry={() => activeQuery.refetch()} /> : null}
 
       {section === 'overview' && dashboard.data ? (
-        <div className="flex flex-col gap-5">
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.75fr_repeat(4,minmax(0,1fr))]">
+        <div className="flex flex-col gap-4">
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]">
             <FinanceMetric
               label={copy.netProfit}
               value={compactCurrency(dashboard.data.summary.netProfit)}
@@ -493,17 +493,17 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <FinanceMetric label={copy.duePayroll} value={compactCurrency(dashboard.data.summary.payrollDueUzs)} fullValue={money(dashboard.data.summary.payrollDueUzs)} icon={WalletCards} tone="warning" />
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
-            <Card>
-              <CardHeader className="flex-row items-start justify-between gap-4">
+          <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
                 <div>
-                  <CardTitle>{copy.profitTrend}</CardTitle>
-                  <CardDescription>{reportingDateLabel(dashboard.data.from)} — {reportingDateLabel(dashboard.data.to)}</CardDescription>
+                  <CardTitle className="text-[15px]">{copy.profitTrend}</CardTitle>
+                  <CardDescription className="mt-0.5 text-xs">{reportingDateLabel(dashboard.data.from)} — {reportingDateLabel(dashboard.data.to)}</CardDescription>
                 </div>
               </CardHeader>
-              <CardContent className="h-[330px]">
+              <CardContent className="h-[258px] px-4 pb-4 pt-0">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dashboard.data.trend} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
+                  <ComposedChart data={dashboard.data.trend} margin={{ top: 8, right: 4, left: -4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                     <XAxis dataKey="periodStart" tickFormatter={reportingDateLabel} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} />
                     <YAxis tickFormatter={compactMoney} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} width={58} />
@@ -517,21 +517,21 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="px-4 pb-2 pt-3.5">
                 <div className="flex items-center gap-2">
-                  <CardTitle>{copy.expenseStructure}</CardTitle>
+                  <CardTitle className="text-[15px]">{copy.expenseStructure}</CardTitle>
                   <Tooltip><TooltipTrigger asChild><button type="button" aria-label={copy.methodology}><Info className="size-4 text-muted-foreground" /></button></TooltipTrigger><TooltipContent className="max-w-xs">{copy.methodology}</TooltipContent></Tooltip>
                 </div>
-                <CardDescription>{money(dashboard.data.summary.totalExpenses)}</CardDescription>
+                <CardDescription className="mt-0.5 text-xs">{money(dashboard.data.summary.totalExpenses)}</CardDescription>
               </CardHeader>
-              <CardContent className="grid min-h-[270px] gap-4 sm:grid-cols-[170px_1fr] sm:items-center">
+              <CardContent className="grid min-h-[220px] gap-3 px-4 pb-4 pt-0 sm:grid-cols-[145px_1fr] sm:items-center">
                 {dashboard.data.expenseBreakdown.length ? (
-                  <ResponsiveContainer width="100%" height={180}>
-                    <PieChart><Pie data={dashboard.data.expenseBreakdown} dataKey="amount" nameKey="category" innerRadius={48} outerRadius={78} paddingAngle={2}>{dashboard.data.expenseBreakdown.map((item, index) => <Cell key={item.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value: number) => money(value)} /></PieChart>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <PieChart><Pie data={dashboard.data.expenseBreakdown} dataKey="amount" nameKey="category" innerRadius={40} outerRadius={66} paddingAngle={2}>{dashboard.data.expenseBreakdown.map((item, index) => <Cell key={item.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value: number) => money(value)} /></PieChart>
                   </ResponsiveContainer>
-                ) : <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">{copy.noData}</div>}
-                <div className="flex flex-col gap-3">
+                ) : <div className="flex h-[150px] items-center justify-center text-sm text-muted-foreground">{copy.noData}</div>}
+                <div className="flex flex-col gap-2">
                   {dashboard.data.expenseBreakdown.map((item, index) => (
                     <div key={item.category} className="flex items-center justify-between gap-3 text-sm">
                       <span className="flex min-w-0 items-center gap-2"><span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }} /><span className="truncate text-muted-foreground">{categoryLabel(item.category)}</span></span>

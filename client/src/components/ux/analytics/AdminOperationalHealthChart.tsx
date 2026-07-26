@@ -34,16 +34,16 @@ export function AdminOperationalHealthChart({
       description={t('adminOperationalHealthDescription')}
       summary={`${t('adminOperationalHealth')}. ${metrics.map((metric) => `${metric.label}: ${metric.display}`).join(', ')}`}
       className={className}
-      chartClassName="h-[290px]"
+      chartClassName="h-[210px]"
       footer={(
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
           {metrics.map((metric) => (
             <div key={metric.label} className="min-w-0">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="truncate text-muted-foreground">{metric.label}</span>
                 <span className="font-semibold tabular-nums">{metric.display}</span>
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-[width] duration-300"
                   style={{ width: `${Math.max(0, Math.min(100, metric.value))}%` }}
@@ -55,7 +55,7 @@ export function AdminOperationalHealthChart({
       )}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={metrics} outerRadius="76%">
+        <RadarChart data={metrics} outerRadius="72%">
           <PolarGrid stroke="var(--border)" />
           <PolarAngleAxis dataKey="label" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
           <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />

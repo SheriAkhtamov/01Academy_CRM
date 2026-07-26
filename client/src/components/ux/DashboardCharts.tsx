@@ -115,13 +115,13 @@ export function DashboardCharts({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-5 2xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <AnalyticsChartCard
         title={t('revenueTrend')}
         description={t('revenueTrendDescription')}
         summary={`${t('revenueTrend')}. ${t('dataForSelectedPeriod')}`}
-        className="2xl:col-span-7"
-        chartClassName="h-[320px]"
+        className="xl:col-span-7"
+        chartClassName="h-[252px]"
         footer={(
           <AnalyticsChartLegend
             items={[{
@@ -134,7 +134,7 @@ export function DashboardCharts({
       >
           {revenueData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
+              <AreaChart data={revenueData} margin={{ top: 8, right: 12, left: -4, bottom: 0 }}>
                 <defs>
                   <linearGradient id="salesRevenueFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--primary-500)" stopOpacity={0.3} />
@@ -184,18 +184,18 @@ export function DashboardCharts({
         title={t('conversionFunnel')}
         description={t('conversionFunnelDescription')}
         summary={`${t('conversionFunnel')}. ${funnelData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
-        className="2xl:col-span-5"
-        chartClassName="h-[320px]"
+        className="xl:col-span-5"
+        chartClassName="h-[252px]"
       >
           {funnelData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={funnelData} layout="vertical" margin={{ left: 12, right: 34, top: 4, bottom: 4 }}>
+              <BarChart data={funnelData} layout="vertical" margin={{ left: 4, right: 28, top: 2, bottom: 2 }}>
                 <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
                 <XAxis type="number" hide />
                 <YAxis
                   dataKey="name"
                   type="category"
-                  width={112}
+                  width={96}
                   axisLine={false}
                   tickLine={false}
                   tick={analyticsAxisTick}
@@ -222,8 +222,8 @@ export function DashboardCharts({
         title={t('salesSourcePerformance')}
         description={t('salesSourcePerformanceDescription')}
         summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
-        className="2xl:col-span-8"
-        chartClassName="h-[330px]"
+        className="xl:col-span-8"
+        chartClassName="h-[270px]"
         footer={(
           <AnalyticsChartLegend items={[
             { label: t('navLeads'), color: 'var(--chart-2)' },
@@ -233,10 +233,10 @@ export function DashboardCharts({
       >
         {sourceData.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={sourceData} layout="vertical" margin={{ left: 18, right: 30, top: 4, bottom: 4 }}>
+            <BarChart data={sourceData} layout="vertical" margin={{ left: 6, right: 28, top: 2, bottom: 2 }}>
               <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
               <XAxis type="number" axisLine={false} tickLine={false} tick={analyticsAxisTick} allowDecimals={false} />
-              <YAxis dataKey="name" type="category" width={118} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
+              <YAxis dataKey="name" type="category" width={98} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
               <Tooltip
                 cursor={{ fill: 'var(--muted)' }}
                 formatter={(value: number, name: string) => [
@@ -260,8 +260,8 @@ export function DashboardCharts({
         title={t('paymentMethodsChart')}
         description={t('paymentMethodsChartDescription')}
         summary={`${t('paymentMethodsChart')}. ${paymentMethodData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
-        className="2xl:col-span-4"
-        chartClassName="h-[220px]"
+        className="xl:col-span-4"
+        chartClassName="h-[188px]"
         footer={(
           <div className="grid gap-2">
             {paymentMethodData.map((item, index) => (
@@ -284,8 +284,8 @@ export function DashboardCharts({
                   data={paymentMethodData}
                   dataKey="amount"
                   nameKey="name"
-                  innerRadius={62}
-                  outerRadius={92}
+                  innerRadius={50}
+                  outerRadius={76}
                   paddingAngle={3}
                   stroke="var(--card)"
                   strokeWidth={3}

@@ -70,4 +70,16 @@ describe('dashboard period filters and simplified actions', () => {
     expect(chartShell).toContain('<figure aria-label={summary}>');
     expect(chartShell).toContain('<figcaption className="sr-only">{summary}</figcaption>');
   });
+
+  it('keeps the analytics system compact on laptop dashboards', () => {
+    expect(filter).toContain('className="h-11 min-w-0 pt-4 sm:w-[148px]"');
+    expect(chartShell).toContain("'h-[236px] min-w-0'");
+    expect(chartShell).toContain('px-4 pb-2 pt-3.5');
+    for (const source of [salesCharts, teacherCharts, marketingCharts]) {
+      expect(source).toContain('gap-4 xl:grid-cols-12');
+      expect(source).not.toContain('gap-5 2xl:grid-cols-12');
+    }
+    expect(financeCharts).toContain('grid gap-4 xl:grid-cols-2');
+    expect(adminHealthChart).toContain('chartClassName="h-[210px]"');
+  });
 });

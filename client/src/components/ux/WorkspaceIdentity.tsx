@@ -111,22 +111,22 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
   const Icon = workspace.icon;
 
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 items-center gap-2.5">
       <div
-        className="hidden size-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary shadow-sm sm:flex"
+        className="hidden size-8 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary shadow-2xs sm:flex"
         aria-hidden="true"
       >
-        <Icon className="size-5" />
+        <Icon className="size-4" />
       </div>
 
-      <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="min-w-0 leading-tight">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
           {t('currentWorkspace')}
         </p>
-        <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+        <h1 className="truncate text-sm font-semibold tracking-tight text-foreground sm:text-base">
           {title ?? workspace.title}
         </h1>
-        <p className="hidden truncate text-xs text-muted-foreground xl:block">
+        <p className="hidden truncate text-[11px] text-muted-foreground/90 xl:block">
           {subtitle ?? workspace.description}
         </p>
       </div>

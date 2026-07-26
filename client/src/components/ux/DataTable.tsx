@@ -168,7 +168,7 @@ export function DataTable<T extends Record<string, any>>({
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((column) => (
-                    <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>
+                    <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('py-2.5 px-3.5 text-xs sm:text-sm', column.cellClassName)}>
                       {column.render
                         ? column.render(row, index)
                         : column.accessor

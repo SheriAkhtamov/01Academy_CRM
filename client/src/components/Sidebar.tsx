@@ -212,14 +212,14 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm">
         {/* Logo */}
-        <div className="flex items-center border-b border-border/70 px-5 py-4">
+        <div className="flex items-center border-b border-border/70 px-4 py-3">
           <div className="flex items-center w-full">
             <Logo size="md" />
-            <div className="ml-3 flex flex-col flex-1 min-w-0">
-              <span className="text-lg font-semibold text-foreground truncate tracking-tight leading-tight">
+            <div className="ml-2.5 flex flex-col flex-1 min-w-0">
+              <span className="text-base font-semibold text-foreground truncate tracking-tight leading-tight">
                 {t('platformName')}
               </span>
-              <span className="text-xs text-muted-foreground">{t('schoolCrm')}</span>
+              <span className="text-[11px] text-muted-foreground">{t('schoolCrm')}</span>
             </div>
             {onClose && (
               <button
@@ -234,7 +234,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden">
+        <nav className="flex-1 px-2.5 py-3 overflow-y-auto overflow-x-hidden space-y-1">
           {sections.map((section) => {
             const visibleItems = section.items;
             if (visibleItems.length === 0) return null;

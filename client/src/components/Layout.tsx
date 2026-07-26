@@ -52,7 +52,14 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
-        <main className={`min-h-0 flex-1 ${containsOwnScrollArea ? 'overflow-hidden' : 'overflow-auto'}`}>
+        <main
+          className={`min-h-0 flex-1 ${
+            containsOwnScrollArea
+              ? 'overflow-hidden'
+              : 'overflow-y-auto overflow-x-clip overscroll-y-contain [scrollbar-gutter:stable]'
+          }`}
+          data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}
+        >
           <div
             key={location}
             className={`page-enter min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full min-h-0 overflow-hidden' : ''}`}

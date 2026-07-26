@@ -25,7 +25,7 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
     : [{ label: t('dashboard'), href: '/' }, { label: title }];
 
   return (
-    <div data-page-header className="mb-4 flex min-w-0 shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div data-page-header className="mb-6 flex min-w-0 shrink-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
       <div className="min-w-0 space-y-1">
         <Breadcrumb>
           <BreadcrumbList>

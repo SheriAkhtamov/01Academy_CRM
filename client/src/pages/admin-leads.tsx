@@ -417,10 +417,27 @@ export function LeadAssignmentContent() {
                 defaultSortKey="createdAt"
                 defaultSortDirection="desc"
                 emptyState={
-                  <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-                    <UsersRound className="text-muted-foreground" />
-                    <h3 className="font-medium">{t('noLeadsFound')}</h3>
-                    <p className="text-sm text-muted-foreground">{t('adjustFilters')}</p>
+                  <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+                    <div className="flex size-12 items-center justify-center rounded-2xl bg-muted">
+                      <UsersRound className="size-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-foreground">{t('noLeadsFound')}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">{t('adjustFilters')}</p>
+                    </div>
+                    {(managerFilter !== 'all' || statusFilter !== 'all') ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-1"
+                        onClick={() => {
+                          setManagerFilter('all');
+                          setStatusFilter('all');
+                        }}
+                      >
+                        {t('resetFilters')}
+                      </Button>
+                    ) : null}
                   </div>
                 }
               />

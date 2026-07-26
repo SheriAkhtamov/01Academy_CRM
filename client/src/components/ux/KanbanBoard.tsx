@@ -302,23 +302,37 @@ function KanbanColumn({
     disabled: isPending,
   });
 
+  const totalSum = useMemo(() => {
+    return leads.reduce((sum, lead) => {
+      const val = Number(lead.offerPriceUzs || lead.expectedPaymentUzs || 0);
+      return sum + (Number.isFinite(val) ? val : 0);
+    }, 0);
+  }, [leads]);
+
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
-        isOver && 'border-primary bg-primary/5 shadow-md',
+        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200',
+        isOver && 'border-primary ring-2 ring-primary/40 bg-primary/5 shadow-lg scale-[1.005]',
       )}
     >
-      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/95 p-4 backdrop-blur-sm">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className="size-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: status.color }}
-          />
-          <span className="truncate text-sm font-semibold text-foreground">{status.name}</span>
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/95 p-3 px-4 backdrop-blur-sm">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: status.color }}
+            />
+            <span className="truncate text-sm font-semibold text-foreground">{status.name}</span>
+          </div>
+          {totalSum > 0 ? (
+            <span className="text-[11px] font-medium text-muted-foreground/80 pl-4">
+              {new Intl.NumberFormat('ru-RU').format(totalSum)} {t('currencyUzs')}
+            </span>
+          ) : null}
         </div>
-        <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-1.5 text-xs font-semibold text-muted-foreground shadow-2xs">
+        <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-2 text-xs font-semibold text-muted-foreground shadow-2xs">
           {leads.length}
         </span>
       </div>

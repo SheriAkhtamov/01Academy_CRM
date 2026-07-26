@@ -106,13 +106,23 @@ export default function Header({
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button
               variant="ghost"
+              size="icon"
+              className="flex md:hidden rounded-full"
+              onClick={() => setCommandOpen(true)}
+              aria-label={t('search')}
+            >
+              <Search className="h-5 w-5" />
+            </Button>
+
+            <Button
+              variant="ghost"
               size="sm"
               className="hidden items-center gap-2 rounded-full px-3 text-muted-foreground hover:bg-accent hover:text-foreground md:flex"
               onClick={() => setCommandOpen(true)}
             >
               <Search className="h-4 w-4" />
               <span className="text-sm">{t('search')}</span>
-              <kbd className="hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground lg:inline-flex">
+              <kbd className="hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex">
                 <span className="text-xs">⌘</span>K
               </kbd>
             </Button>

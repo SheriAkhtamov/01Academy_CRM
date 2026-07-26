@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -56,6 +57,7 @@ export default function ConfirmDialog({
                         }}
                         className={variant === 'destructive' ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : ''}
                     >
+                        {isPending ? <Loader2 className="animate-spin mr-1.5 h-4 w-4 inline-block" /> : null}
                         {isPending ? t('saving') : finalConfirmLabel}
                     </AlertDialogAction>
                 </AlertDialogFooter>

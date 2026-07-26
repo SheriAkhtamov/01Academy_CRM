@@ -7,6 +7,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -47,12 +54,13 @@ export function DataTable<T extends Record<string, any>>({
   defaultSortDirection = 'asc',
   onRowClick,
   rowClassName,
-  pageSize = 25,
+  pageSize: initialPageSize = 25,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey || null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
 
   const sortedData = useMemo(() => {
     if (!sortKey || !sortDirection) return data;
@@ -89,7 +97,7 @@ export function DataTable<T extends Record<string, any>>({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [data, sortKey, sortDirection]);
+  }, [data, sortKey, sortDirection, pageSize]);
 
   const totalPages = pageSize > 0 ? Math.ceil(sortedData.length / pageSize) : 1;
   const pagedData = pageSize > 0 ? sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize) : sortedData;
@@ -109,9 +117,9 @@ export function DataTable<T extends Record<string, any>>({
 
   const getSortIcon = (key: string, sortable?: boolean) => {
     if (!sortable) return null;
-    if (sortKey !== key) return <ArrowUpDown className="ml-1.5 h-3 w-3 text-slate-400 opacity-0 group-hover:opacity-50 transition-opacity" />;
-    if (sortDirection === 'asc') return <ArrowUp className="ml-1.5 h-3 w-3 text-primary-600" />;
-    return <ArrowDown className="ml-1.5 h-3 w-3 text-primary-600" />;
+    if (sortKey !== key) return <ArrowUpDown className="ml-1.5 h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-50 transition-opacity" />;
+    if (sortDirection === 'asc') return <ArrowUp className="ml-1.5 h-3 w-3 text-primary font-bold" />;
+    return <ArrowDown className="ml-1.5 h-3 w-3 text-primary font-bold" />;
   };
 
   return (
@@ -123,9 +131,18 @@ export function DataTable<T extends Record<string, any>>({
               {columns.map((column) => (
                 <TableHead
                   key={column.key}
+                  tabIndex={column.sortable ? 0 : undefined}
+                  role={column.sortable ? 'button' : undefined}
+                  aria-label={column.sortable ? `Sort by ${column.key}` : undefined}
+                  onKeyDown={(e) => {
+                    if (column.sortable && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      handleSort(column.key, column.sortable);
+                    }
+                  }}
                   className={cn(
-                    'whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground',
-                    column.sortable && 'cursor-pointer select-none group',
+                    'whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-primary rounded-sm',
+                    column.sortable && 'cursor-pointer select-none group hover:text-foreground transition-colors',
                     column.className
                   )}
                   onClick={() => handleSort(column.key, column.sortable)}
@@ -173,32 +190,53 @@ export function DataTable<T extends Record<string, any>>({
           </TableBody>
         </Table>
       </div>
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-2 mt-3 px-1 text-xs text-muted-foreground">
-          <div>
-            {Math.min((currentPage - 1) * pageSize + 1, sortedData.length)}-
-            {Math.min(currentPage * pageSize, sortedData.length)} {t('ofLabel')} {sortedData.length}
+      {sortedData.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-3 px-1 text-xs text-muted-foreground border-t border-border/40 pt-3">
+          <div className="flex items-center gap-2">
+            <span>
+              {Math.min((currentPage - 1) * pageSize + 1, sortedData.length)}-
+              {Math.min(currentPage * pageSize, sortedData.length)} {t('ofLabel')} {sortedData.length}
+            </span>
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-muted-foreground/70">{t('perPage')}</span>
+              <Select value={String(pageSize)} onValueChange={(val) => setPageSize(Number(val))}>
+                <SelectTrigger className="h-7 w-[70px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <span className="mr-2 text-muted-foreground/80">
+                {t('page')} {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

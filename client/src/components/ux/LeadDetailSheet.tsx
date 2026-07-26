@@ -1507,10 +1507,19 @@ function LeadCommentsCard({
           <Textarea
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                event.preventDefault();
+                if (!isPending && draft.trim()) {
+                  onSubmit();
+                }
+              }
+            }}
             placeholder={t('addCommentPlaceholder')}
             rows={3}
           />
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground/70">{t('ctrlEnterToSend')}</span>
             <Button type="submit" disabled={isPending || !draft.trim()}>
               {isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <MessageSquare data-icon="inline-start" />}
               {t('send')}

@@ -12,7 +12,14 @@ export function formatCurrencyInput(value: string | number | null | undefined): 
 }
 
 export function normalizeUzbekPhoneInput(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim();
   const digits = digitsOnly(value);
+  if (!digits) return '';
+
+  if (raw.startsWith('+') && !raw.startsWith('+998') && !digits.startsWith('998')) {
+    return `+${digits}`;
+  }
+
   const localDigits = (digits.startsWith(UZBEK_COUNTRY_CODE)
     ? digits.slice(UZBEK_COUNTRY_CODE.length)
     : digits.replace(/^0/, '')
@@ -22,8 +29,14 @@ export function normalizeUzbekPhoneInput(value: string | null | undefined): stri
 }
 
 export function formatUzbekPhone(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim();
+  if (raw.startsWith('+') && !raw.startsWith('+998')) {
+    return raw;
+  }
+
   const normalized = normalizeUzbekPhoneInput(value);
   if (!normalized) return '';
+  if (!normalized.startsWith(`+${UZBEK_COUNTRY_CODE}`)) return normalized;
 
   const localDigits = normalized.slice(4);
   const groups = [

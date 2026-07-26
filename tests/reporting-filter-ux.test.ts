@@ -8,6 +8,7 @@ const teacher = read('../client/src/pages/teacher-workspace.tsx');
 const marketing = read('../client/src/pages/marketing-workspace.tsx');
 const finance = read('../client/src/pages/finance-center.tsx');
 const administration = read('../client/src/pages/admin/AdminDashboardPage.tsx');
+const academyRoutes = read('../server/routes/academy.routes.ts');
 const chartShell = read('../client/src/components/ux/analytics/AnalyticsChartCard.tsx');
 const salesCharts = read('../client/src/components/ux/DashboardCharts.tsx');
 const teacherCharts = read('../client/src/components/ux/analytics/TeacherAnalyticsCharts.tsx');
@@ -67,19 +68,64 @@ describe('dashboard period filters and simplified actions', () => {
     expect(financeCharts).toContain('<BarChart');
     expect(adminHealthChart).toContain('<RadarChart');
 
-    expect(chartShell).toContain('<figure aria-label={summary}>');
-    expect(chartShell).toContain('<figcaption className="sr-only">{summary}</figcaption>');
+    expect(chartShell).toContain('aria-labelledby={titleId}');
+    expect(chartShell).toContain('aria-describedby={summaryId}');
+    expect(chartShell).toContain('<figcaption id={summaryId} className="sr-only">{summary}</figcaption>');
   });
 
-  it('keeps the analytics system compact on laptop dashboards', () => {
-    expect(filter).toContain('className="h-11 min-w-0 pt-4 sm:w-[148px]"');
+  it('keeps the analytics system compact and readable on laptop dashboards', () => {
+    expect(filter).toContain('className="h-12 min-w-0 pt-5 sm:w-[148px]"');
+    expect(filter).toContain('role="status"');
     expect(chartShell).toContain("'h-[236px] min-w-0'");
     expect(chartShell).toContain('px-4 pb-2 pt-3.5');
+    expect(chartShell).toContain('fontSize: 12');
+    expect(chartShell).not.toContain("'overflow-hidden border-border/60");
     for (const source of [salesCharts, teacherCharts, marketingCharts]) {
       expect(source).toContain('gap-4 xl:grid-cols-12');
       expect(source).not.toContain('gap-5 2xl:grid-cols-12');
     }
     expect(financeCharts).toContain('grid gap-4 xl:grid-cols-2');
     expect(adminHealthChart).toContain('chartClassName="h-[210px]"');
+  });
+
+  it('does not present absent or zero datasets as measured performance', () => {
+    expect(teacher).toContain('attendance: markedAttendance > 0 ? percentage(present, markedAttendance) : null');
+    expect(teacher).toContain('rating: averageRating == null ? null');
+    expect(teacher).toContain('surveys.filter((survey) => periodLessonIds.has(Number(survey.lessonId)))');
+    expect(teacherCharts).toContain('const hasTimelineData');
+    expect(salesCharts).toContain('totalRevenue > 0');
+    expect(salesCharts).toContain('hasPaymentRevenue ? (');
+    expect(marketingCharts).toContain('hasConversionCohort ? (');
+    expect(financeCharts).toContain('hasContributionData ? (');
+    expect(sales).toContain("managerStats.newLeadsPeriod > 0 ? `${managerStats.conversionRate}%` : t('noData')");
+    expect(teacher).toContain("avgAttendance == null ? t('noData')");
+    expect(marketing).toContain("overviewFunnel.find((stage) => stage.code === 'demo_invited')");
+    expect(marketing).toContain("overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')");
+    expect(finance).toContain("dashboard.data.summary.revenue > 0 ? `${dashboard.data.summary.marginPercent}%` : t('noData')");
+    expect(administration).toContain('Number(summary.attendanceMarks || 0) > 0');
+    expect(academyRoutes).toContain('attendanceMarks: periodAttendance.length');
+  });
+
+  it('keeps exact chart data understandable when labels are constrained', () => {
+    expect(salesCharts).toContain('rankWithRemainder');
+    expect(marketingCharts).toContain('rankWithRemainder');
+    expect(marketingCharts).toContain('<ol className="grid gap-x-4 gap-y-2 sm:grid-cols-2">');
+    expect(financeCharts).toContain('layout="vertical"');
+    expect(adminHealthChart).toContain('dataKey="shortLabel"');
+  });
+
+  it('renders dashboard data immediately without motion-only chart transitions', () => {
+    for (const source of [
+      salesCharts,
+      teacherCharts,
+      marketingCharts,
+      financeCharts,
+      adminHealthChart,
+      administration,
+      finance,
+    ]) {
+      expect(source).toContain('isAnimationActive={false}');
+    }
+    expect(marketingCharts).not.toContain('isAnimationActive>');
   });
 });

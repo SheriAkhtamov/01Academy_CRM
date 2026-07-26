@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { BarChart3 } from 'lucide-react';
 import {
   Card,
@@ -7,11 +7,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 export const analyticsAxisTick = {
   fill: 'var(--muted-foreground)',
-  fontSize: 11,
+  fontSize: 12,
 } as const;
 
 export const analyticsTooltipStyle = {
@@ -43,28 +44,50 @@ export function AnalyticsChartCard({
   className?: string;
   chartClassName?: string;
 }) {
+  const titleId = useId();
+  const summaryId = useId();
+
   return (
     <Card className={cn(
-      'overflow-hidden border-border/60 bg-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md',
+      'min-w-0 border-border/60 bg-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md',
       className,
     )}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
         <div className="min-w-0">
-          <CardTitle className="text-[15px] font-semibold leading-5 tracking-tight">{title}</CardTitle>
+          <CardTitle id={titleId} className="text-[15px] font-semibold leading-5 tracking-tight">{title}</CardTitle>
           {description ? <CardDescription className="mt-0.5 text-xs leading-4">{description}</CardDescription> : null}
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
-        <figure aria-label={summary}>
+        <figure className="min-w-0" aria-labelledby={titleId} aria-describedby={summaryId}>
           <div className={cn('h-[236px] min-w-0', chartClassName)}>
             {children}
           </div>
-          <figcaption className="sr-only">{summary}</figcaption>
+          <figcaption id={summaryId} className="sr-only">{summary}</figcaption>
         </figure>
         {footer ? <div className="mt-2.5 border-t border-border/50 pt-2.5">{footer}</div> : null}
       </CardContent>
     </Card>
+  );
+}
+
+export function AnalyticsChartsSkeleton({
+  cards = 4,
+  className,
+}: {
+  cards?: number;
+  className?: string;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn('grid grid-cols-1 gap-4 xl:grid-cols-2', className)}
+    >
+      {Array.from({ length: cards }, (_, index) => (
+        <Skeleton key={index} className="h-[350px] rounded-xl" />
+      ))}
+    </div>
   );
 }
 
@@ -76,7 +99,7 @@ export function AnalyticsChartLegend({
   className?: string;
 }) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] leading-4 text-muted-foreground', className)}>
+    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs leading-4 text-muted-foreground', className)}>
       {items.map((item) => (
         <span key={item.label} className="inline-flex min-w-0 items-center gap-1.5">
           <span
@@ -84,7 +107,7 @@ export function AnalyticsChartLegend({
             className={cn('h-0.5 w-3 shrink-0 rounded-full', item.dashed && 'border-t-2 border-dashed bg-transparent')}
             style={item.dashed ? { borderColor: item.color } : { backgroundColor: item.color }}
           />
-          <span className="truncate">{item.label}</span>
+          <span className="truncate" title={item.label}>{item.label}</span>
           {item.value !== undefined ? (
             <span className="font-semibold tabular-nums text-foreground">{item.value}</span>
           ) : null}
@@ -108,7 +131,7 @@ export function AnalyticsChartEmpty({
       </span>
       <div>
         <p className="text-[13px] font-medium">{title}</p>
-        {description ? <p className="mt-0.5 max-w-sm text-[11px] leading-4 text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-0.5 max-w-sm text-xs leading-4 text-muted-foreground">{description}</p> : null}
       </div>
     </div>
   );

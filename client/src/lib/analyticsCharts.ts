@@ -89,3 +89,25 @@ export function compactRankedSeries<T>(
     .sort((left, right) => score(right) - score(left))
     .slice(0, Math.max(1, limit));
 }
+
+export function rankWithRemainder<T>(
+  rows: readonly T[],
+  score: (row: T) => number,
+  visibleLimit: number,
+  mergeRemainder: (rows: readonly T[]) => T,
+) {
+  const ranked = [...rows].sort((left, right) => score(right) - score(left));
+  const safeLimit = Math.max(1, visibleLimit);
+  if (ranked.length <= safeLimit) return ranked;
+  return [
+    ...ranked.slice(0, safeLimit),
+    mergeRemainder(ranked.slice(safeLimit)),
+  ];
+}
+
+export function shortenChartLabel(value: unknown, maxLength = 16) {
+  const label = String(value ?? '').trim();
+  const safeLength = Math.max(4, maxLength);
+  if (label.length <= safeLength) return label;
+  return `${label.slice(0, safeLength - 1).trimEnd()}…`;
+}

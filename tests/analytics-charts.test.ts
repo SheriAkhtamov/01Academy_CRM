@@ -3,6 +3,8 @@ import {
   buildAnalyticsTimeline,
   compactRankedSeries,
   percentage,
+  rankWithRemainder,
+  shortenChartLabel,
 } from '../client/src/lib/analyticsCharts';
 
 describe('analytics chart helpers', () => {
@@ -30,5 +32,21 @@ describe('analytics chart helpers', () => {
     const source = [{ value: 2 }, { value: 7 }, { value: 4 }];
     expect(compactRankedSeries(source, (row) => row.value, 2)).toEqual([{ value: 7 }, { value: 4 }]);
     expect(source).toEqual([{ value: 2 }, { value: 7 }, { value: 4 }]);
+  });
+
+  it('preserves totals when a chart combines low-volume categories', () => {
+    const source = [{ value: 8 }, { value: 6 }, { value: 3 }, { value: 1 }];
+    expect(rankWithRemainder(
+      source,
+      (row) => row.value,
+      2,
+      (rows) => ({ value: rows.reduce((sum, row) => sum + row.value, 0) }),
+    )).toEqual([{ value: 8 }, { value: 6 }, { value: 4 }]);
+    expect(source).toEqual([{ value: 8 }, { value: 6 }, { value: 3 }, { value: 1 }]);
+  });
+
+  it('shortens long axis labels without changing short labels', () => {
+    expect(shortenChartLabel('Instagram', 12)).toBe('Instagram');
+    expect(shortenChartLabel('Очень длинный источник', 12)).toBe('Очень длинн…');
   });
 });

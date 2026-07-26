@@ -47,6 +47,7 @@ import {
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { FinanceAnalyticsCharts } from '@/components/ux/analytics/FinanceAnalyticsCharts';
+import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -165,7 +166,7 @@ function FinanceMetric({
         <div className="min-w-0">
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
           <p title={fullValue} className={cn(
-            'mt-1 whitespace-nowrap font-bold tabular-nums tracking-tight text-foreground',
+            'mt-1 block max-w-full truncate whitespace-nowrap font-bold tabular-nums tracking-tight text-foreground',
             large ? 'text-[26px] text-emerald-700' : 'text-xl',
             tone === 'success' && !large && 'text-emerald-700',
             tone === 'danger' && 'text-destructive',
@@ -173,7 +174,7 @@ function FinanceMetric({
           )}>
             {value}
           </p>
-          {detail ? <div className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{detail}</div> : null}
+          {detail ? <div className="mt-1.5 text-xs leading-4 text-muted-foreground">{detail}</div> : null}
         </div>
         <div className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground',
@@ -189,13 +190,23 @@ function FinanceMetric({
   );
 }
 
-function FinanceLoading() {
+function FinanceLoading({
+  showAnalytics = false,
+  metricCards = 4,
+}: {
+  showAnalytics?: boolean;
+  metricCards?: number;
+}) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
+      <div className={cn(
+        'grid gap-3 md:grid-cols-2',
+        showAnalytics ? 'xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]' : 'xl:grid-cols-4',
+      )}>
+        {Array.from({ length: metricCards }, (_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
       </div>
       <Skeleton className="h-[300px] rounded-xl" />
+      {showAnalytics ? <AnalyticsChartsSkeleton cards={2} /> : null}
       <Skeleton className="h-56 rounded-xl" />
     </div>
   );
@@ -464,7 +475,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         />
       ) : null}
 
-      {activeQuery.isLoading ? <FinanceLoading /> : null}
+      {activeQuery.isLoading ? (
+        <FinanceLoading
+          showAnalytics={section === 'overview'}
+          metricCards={section === 'overview' ? 5 : 4}
+        />
+      ) : null}
       {activeQuery.isError ? <FinanceError copy={copy} onRetry={() => activeQuery.refetch()} /> : null}
 
       {section === 'overview' && dashboard.data ? (
@@ -489,7 +505,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             />
             <FinanceMetric label={copy.revenue} value={compactCurrency(dashboard.data.summary.revenue)} fullValue={money(dashboard.data.summary.revenue)} icon={ArrowUpRight} tone="success" />
             <FinanceMetric label={copy.allExpenses} value={compactCurrency(dashboard.data.summary.totalExpenses)} fullValue={money(dashboard.data.summary.totalExpenses)} icon={ArrowDownRight} tone="danger" />
-            <FinanceMetric label={copy.margin} value={`${dashboard.data.summary.marginPercent}%`} icon={TrendingUp} tone="success" />
+            <FinanceMetric
+              label={copy.margin}
+              value={dashboard.data.summary.revenue > 0 ? `${dashboard.data.summary.marginPercent}%` : t('noData')}
+              icon={TrendingUp}
+              tone={dashboard.data.summary.revenue > 0 ? 'success' : 'neutral'}
+            />
             <FinanceMetric label={copy.duePayroll} value={compactCurrency(dashboard.data.summary.payrollDueUzs)} fullValue={money(dashboard.data.summary.payrollDueUzs)} icon={WalletCards} tone="warning" />
           </section>
 
@@ -509,9 +530,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                     <YAxis tickFormatter={compactMoney} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} width={58} />
                     <RechartsTooltip formatter={(value: number, name: string) => [money(value), name === 'revenue' ? copy.revenue : name === 'totalExpenses' ? copy.allExpenses : copy.netProfit]} labelFormatter={(value) => reportingDateLabel(String(value))} contentStyle={{ borderRadius: 10, borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }} />
                     <Legend formatter={(value) => value === 'revenue' ? copy.revenue : value === 'totalExpenses' ? copy.allExpenses : copy.netProfit} />
-                    <Bar dataKey="revenue" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={30} />
-                    <Bar dataKey="totalExpenses" fill="var(--chart-5)" radius={[5, 5, 0, 0]} maxBarSize={30} />
-                    <Line type="monotone" dataKey="netProfit" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <Bar dataKey="revenue" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                    <Bar dataKey="totalExpenses" fill="var(--chart-5)" radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="netProfit" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} isAnimationActive={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -528,7 +549,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <CardContent className="grid min-h-[220px] gap-3 px-4 pb-4 pt-0 sm:grid-cols-[145px_1fr] sm:items-center">
                 {dashboard.data.expenseBreakdown.length ? (
                   <ResponsiveContainer width="100%" height={150}>
-                    <PieChart><Pie data={dashboard.data.expenseBreakdown} dataKey="amount" nameKey="category" innerRadius={40} outerRadius={66} paddingAngle={2}>{dashboard.data.expenseBreakdown.map((item, index) => <Cell key={item.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value: number) => money(value)} /></PieChart>
+                    <PieChart><Pie data={dashboard.data.expenseBreakdown} dataKey="amount" nameKey="category" innerRadius={40} outerRadius={66} paddingAngle={2} isAnimationActive={false}>{dashboard.data.expenseBreakdown.map((item, index) => <Cell key={item.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value: number) => money(value)} /></PieChart>
                   </ResponsiveContainer>
                 ) : <div className="flex h-[150px] items-center justify-center text-sm text-muted-foreground">{copy.noData}</div>}
                 <div className="flex flex-col gap-2">
@@ -622,7 +643,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                 <Table>
                   <TableHeader><TableRow><TableHead>{copy.employee}</TableHead><TableHead>{copy.position}</TableHead><TableHead className="text-right">{copy.salary}</TableHead><TableHead className="text-right">{copy.bonus}</TableHead><TableHead className="text-right">{copy.deduction}</TableHead><TableHead className="text-right">{copy.payoutAmount}</TableHead><TableHead>{copy.status}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {payroll.data.entries.map((entry) => <TableRow key={entry.employeeUserId} data-state={selectedPayrollEntry?.employeeUserId === entry.employeeUserId ? 'selected' : undefined} onClick={() => setSelectedEmployeeId(entry.employeeUserId)} className="cursor-pointer"><TableCell><div className="flex items-center gap-3"><Avatar className="size-9"><AvatarFallback>{initials(entry.employeeName)}</AvatarFallback></Avatar><span className="font-medium">{entry.employeeName}</span></div></TableCell><TableCell className="text-muted-foreground">{entry.position || '—'}</TableCell><TableCell className="text-right tabular-nums">{money(entry.baseSalaryUzs)}</TableCell><TableCell className="text-right tabular-nums">{entry.status === 'paid' ? money(entry.bonusUzs) : '—'}</TableCell><TableCell className="text-right tabular-nums">{entry.status === 'paid' ? money(entry.deductionUzs) : '—'}</TableCell><TableCell className="text-right font-semibold tabular-nums">{money(entry.amountUzs ?? entry.baseSalaryUzs)}</TableCell><TableCell><div className="flex flex-col items-start gap-1"><StatusBadge status={entry.status} copy={copy} />{entry.paidAt ? <span className="text-[11px] text-muted-foreground">{date(entry.paidAt)}</span> : null}</div></TableCell><TableCell className="text-right" onClick={(event) => event.stopPropagation()}>{entry.status === 'pending' ? <Button size="sm" onClick={() => openPayoutDialog(entry)}>{copy.pay}</Button> : entry.status === 'unconfigured' ? <Button size="sm" variant="outline" onClick={() => openSalaryDialog(entry)}>{copy.configureSalary}</Button> : null}</TableCell></TableRow>)}
+                    {payroll.data.entries.map((entry) => <TableRow key={entry.employeeUserId} data-state={selectedPayrollEntry?.employeeUserId === entry.employeeUserId ? 'selected' : undefined} onClick={() => setSelectedEmployeeId(entry.employeeUserId)} className="cursor-pointer"><TableCell><div className="flex items-center gap-3"><Avatar className="size-9"><AvatarFallback>{initials(entry.employeeName)}</AvatarFallback></Avatar><span className="font-medium">{entry.employeeName}</span></div></TableCell><TableCell className="text-muted-foreground">{entry.position || '—'}</TableCell><TableCell className="text-right tabular-nums">{money(entry.baseSalaryUzs)}</TableCell><TableCell className="text-right tabular-nums">{entry.status === 'paid' ? money(entry.bonusUzs) : '—'}</TableCell><TableCell className="text-right tabular-nums">{entry.status === 'paid' ? money(entry.deductionUzs) : '—'}</TableCell><TableCell className="text-right font-semibold tabular-nums">{money(entry.amountUzs ?? entry.baseSalaryUzs)}</TableCell><TableCell><div className="flex flex-col items-start gap-1"><StatusBadge status={entry.status} copy={copy} />{entry.paidAt ? <span className="text-xs text-muted-foreground">{date(entry.paidAt)}</span> : null}</div></TableCell><TableCell className="text-right" onClick={(event) => event.stopPropagation()}>{entry.status === 'pending' ? <Button size="sm" onClick={() => openPayoutDialog(entry)}>{copy.pay}</Button> : entry.status === 'unconfigured' ? <Button size="sm" variant="outline" onClick={() => openSalaryDialog(entry)}>{copy.configureSalary}</Button> : null}</TableCell></TableRow>)}
                   </TableBody>
                 </Table>
               </CardContent>

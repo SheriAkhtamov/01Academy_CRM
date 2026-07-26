@@ -5,7 +5,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  LabelList,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,6 +19,7 @@ import {
   analyticsAxisTick,
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
+import { shortenChartLabel } from '@/lib/analyticsCharts';
 
 type FinanceTrendPoint = {
   periodStart: string;
@@ -63,6 +64,7 @@ export function FinanceAnalyticsCharts({
     + Number(point.payrollExpenses || 0)
     + Number(point.marketingExpenses || 0)
   ) > 0);
+  const hasContributionData = contributionData.some((item) => Number(item.value || 0) !== 0);
 
   return (
     <section className="grid gap-4 xl:grid-cols-2">
@@ -75,13 +77,13 @@ export function FinanceAnalyticsCharts({
           + Number(point.marketingExpenses || 0),
         )}`).join(', ')}`}
         chartClassName="h-[258px]"
-        footer={(
+        footer={hasExpenseTrend ? (
           <AnalyticsChartLegend items={[
             { label: t('financeCenterOperatingPaid'), color: 'var(--chart-5)' },
             { label: t('financeCenterPayroll'), color: 'var(--chart-3)' },
             { label: t('marketing'), color: 'var(--chart-4)' },
           ]} />
-        )}
+        ) : undefined}
       >
         {hasExpenseTrend ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -115,9 +117,9 @@ export function FinanceAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Area type="monotone" dataKey="operatingExpenses" stackId="expenses" stroke="var(--chart-5)" fill="url(#financeOperatingFill)" />
-              <Area type="monotone" dataKey="payrollExpenses" stackId="expenses" stroke="var(--chart-3)" fill="url(#financePayrollFill)" />
-              <Area type="monotone" dataKey="marketingExpenses" stackId="expenses" stroke="var(--chart-4)" fill="url(#financeMarketingFill)" />
+              <Area type="monotone" dataKey="operatingExpenses" stackId="expenses" stroke="var(--chart-5)" fill="url(#financeOperatingFill)" isAnimationActive={false} />
+              <Area type="monotone" dataKey="payrollExpenses" stackId="expenses" stroke="var(--chart-3)" fill="url(#financePayrollFill)" isAnimationActive={false} />
+              <Area type="monotone" dataKey="marketingExpenses" stackId="expenses" stroke="var(--chart-4)" fill="url(#financeMarketingFill)" isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -130,24 +132,48 @@ export function FinanceAnalyticsCharts({
         description={t('financeProfitContributionDescription')}
         summary={`${t('financeProfitContribution')}. ${contributionData.map((item) => `${item.name}: ${money(item.value)}`).join(', ')}`}
         chartClassName="h-[258px]"
+        footer={hasContributionData ? (
+          <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+            {contributionData.map((item) => (
+              <div key={item.name} className="flex min-w-0 items-center justify-between gap-3 text-xs">
+                <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                  <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: item.color }} />
+                  <span className="truncate" title={item.name}>{item.name}</span>
+                </span>
+                <span className="shrink-0 font-semibold tabular-nums">{money(item.value)}</span>
+              </div>
+            ))}
+          </div>
+        ) : undefined}
       >
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={contributionData} margin={{ top: 24, right: 8, left: -4, bottom: 0 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="var(--border)" />
-            <XAxis dataKey="name" axisLine={false} tickLine={false} interval={0} tick={analyticsAxisTick} />
-            <YAxis axisLine={false} tickLine={false} width={58} tickFormatter={compactMoney} tick={analyticsAxisTick} />
-            <Tooltip formatter={(value: number) => money(value)} contentStyle={analyticsTooltipStyle} />
-            <Bar dataKey="value" radius={[7, 7, 0, 0]} maxBarSize={48}>
-              {contributionData.map((item) => <Cell key={item.name} fill={item.color} />)}
-              <LabelList
-                dataKey="value"
-                position="top"
-                formatter={(value: number) => compactMoney(value)}
-                className="fill-foreground text-[11px] font-semibold"
+        {hasContributionData ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={contributionData}
+              layout="vertical"
+              margin={{ top: 4, right: 8, left: 4, bottom: 0 }}
+            >
+              <CartesianGrid horizontal={false} strokeDasharray="3 4" stroke="var(--border)" />
+              <ReferenceLine x={0} stroke="var(--muted-foreground)" strokeOpacity={0.65} />
+              <XAxis type="number" axisLine={false} tickLine={false} tickFormatter={compactMoney} tick={analyticsAxisTick} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                width={118}
+                tick={analyticsAxisTick}
+                tickFormatter={(value) => shortenChartLabel(value, 17)}
               />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+              <Tooltip formatter={(value: number) => money(value)} contentStyle={analyticsTooltipStyle} />
+              <Bar dataKey="value" radius={[5, 5, 5, 5]} maxBarSize={28} isAnimationActive={false}>
+                {contributionData.map((item) => <Cell key={item.name} fill={item.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+        )}
       </AnalyticsChartCard>
     </section>
   );

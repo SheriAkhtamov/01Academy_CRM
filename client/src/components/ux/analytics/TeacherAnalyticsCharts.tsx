@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { ChevronDown } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   AnalyticsChartCard,
@@ -21,6 +22,7 @@ import {
   analyticsAxisTick,
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
+import { percentage, shortenChartLabel } from '@/lib/analyticsCharts';
 
 type TeacherTimelinePoint = {
   periodStart: string;
@@ -29,14 +31,14 @@ type TeacherTimelinePoint = {
   pending: number;
   present: number;
   absent: number;
-  attendance: number;
+  attendance: number | null;
 };
 
 type TeacherGroupQuality = {
   name: string;
   completion: number;
-  attendance: number;
-  rating: number;
+  attendance: number | null;
+  rating: number | null;
 };
 
 type DistributionItem = {
@@ -59,6 +61,14 @@ export function TeacherAnalyticsCharts({
   const { t } = useTranslation();
   const attendanceTotal = attendance.reduce((sum, item) => sum + item.value, 0);
   const ratingTotal = ratings.reduce((sum, item) => sum + item.count, 0);
+  const hasTimelineData = timeline.some((point) => point.conducted + point.pending > 0);
+  const hasTimelineAttendance = timeline.some((point) => point.attendance != null);
+  const groupsWithoutAttendance = groupQuality
+    .filter((item) => item.attendance == null)
+    .map((item) => item.name);
+  const groupsWithoutRatings = groupQuality
+    .filter((item) => item.rating == null)
+    .map((item) => item.name);
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -68,15 +78,17 @@ export function TeacherAnalyticsCharts({
         summary={`${t('teacherLessonDynamics')}. ${timeline.map((point) => `${point.label}: ${point.conducted}`).join(', ')}`}
         className="xl:col-span-8"
         chartClassName="h-[258px]"
-        footer={(
+        footer={hasTimelineData ? (
           <AnalyticsChartLegend items={[
             { label: t('lessonStatusConducted'), color: 'var(--chart-2)' },
             { label: t('lessonsAwaitingCompletion'), color: 'var(--chart-6)' },
-            { label: t('averageAttendance'), color: 'var(--chart-1)' },
+            ...(hasTimelineAttendance
+              ? [{ label: t('averageAttendance'), color: 'var(--chart-1)' }]
+              : []),
           ]} />
-        )}
+        ) : undefined}
       >
-        {timeline.length > 0 ? (
+        {hasTimelineData ? (
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={timeline} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="var(--border)" />
@@ -94,8 +106,8 @@ export function TeacherAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar yAxisId="lessons" dataKey="conducted" stackId="lessons" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={28} />
-              <Bar yAxisId="lessons" dataKey="pending" stackId="lessons" fill="var(--chart-6)" radius={[5, 5, 0, 0]} maxBarSize={28} />
+              <Bar yAxisId="lessons" dataKey="conducted" stackId="lessons" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+              <Bar yAxisId="lessons" dataKey="pending" stackId="lessons" fill="var(--chart-6)" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={false} />
               <Line
                 yAxisId="attendance"
                 type="monotone"
@@ -104,6 +116,7 @@ export function TeacherAnalyticsCharts({
                 strokeWidth={2.5}
                 dot={{ r: 3, fill: 'var(--chart-1)', strokeWidth: 0 }}
                 activeDot={{ r: 5 }}
+                isAnimationActive={false}
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -118,13 +131,13 @@ export function TeacherAnalyticsCharts({
         summary={`${t('attendanceStructure')}. ${attendance.map((item) => `${item.name}: ${item.value}`).join(', ')}`}
         className="xl:col-span-4"
         chartClassName="h-[188px]"
-        footer={(
+        footer={attendanceTotal > 0 ? (
           <AnalyticsChartLegend items={attendance.map((item) => ({
             label: item.name,
             color: item.color,
-            value: item.value,
+            value: `${item.value} · ${percentage(item.value, attendanceTotal)}%`,
           }))} />
-        )}
+        ) : undefined}
       >
         {attendanceTotal > 0 ? (
           <div className="relative h-full">
@@ -134,6 +147,7 @@ export function TeacherAnalyticsCharts({
                   data={attendance}
                   dataKey="value"
                   nameKey="name"
+                  isAnimationActive={false}
                   innerRadius={50}
                   outerRadius={76}
                   paddingAngle={3}
@@ -158,26 +172,77 @@ export function TeacherAnalyticsCharts({
       <AnalyticsChartCard
         title={t('groupQualityComparison')}
         description={t('groupQualityComparisonDescription')}
-        summary={`${t('groupQualityComparison')}. ${groupQuality.map((item) => `${item.name}: ${item.completion}%`).join(', ')}`}
+        summary={`${t('groupQualityComparison')}. ${groupQuality.map((item) => (
+          `${item.name}: ${t('lessonCompletion')} ${item.completion}%, `
+          + `${t('averageAttendance')} ${item.attendance == null ? t('noData') : `${item.attendance}%`}, `
+          + `${t('averageLessonRating')} ${item.rating == null ? t('noData') : `${(item.rating / 20).toFixed(1)} / 5`}`
+        )).join('; ')}`}
         className="xl:col-span-8"
         chartClassName="h-[278px]"
-        footer={(
-          <AnalyticsChartLegend items={[
-            { label: t('lessonCompletion'), color: 'var(--chart-2)' },
-            { label: t('averageAttendance'), color: 'var(--chart-1)' },
-            { label: t('averageLessonRating'), color: 'var(--chart-4)' },
-          ]} />
-        )}
+        footer={groupQuality.length > 0 ? (
+          <div className="space-y-2">
+            <AnalyticsChartLegend items={[
+              { label: t('lessonCompletion'), color: 'var(--chart-2)' },
+              { label: t('averageAttendance'), color: 'var(--chart-1)' },
+              { label: t('averageLessonRating'), color: 'var(--chart-4)' },
+            ]} />
+            {groupsWithoutAttendance.length > 0 ? (
+              <p className="text-xs leading-4 text-muted-foreground">
+                <span className="font-medium text-foreground">{t('noData')} · {t('averageAttendance')}:</span>{' '}
+                {groupsWithoutAttendance.join(', ')}
+              </p>
+            ) : null}
+            {groupsWithoutRatings.length > 0 ? (
+              <p className="text-xs leading-4 text-muted-foreground">
+                <span className="font-medium text-foreground">{t('noData')} · {t('averageLessonRating')}:</span>{' '}
+                {groupsWithoutRatings.join(', ')}
+              </p>
+            ) : null}
+            <details className="group/details rounded-lg bg-muted/50">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t('details')}
+                <ChevronDown className="size-4 shrink-0 transition-transform duration-200 group-open/details:rotate-180" />
+              </summary>
+              <div className="space-y-2 border-t border-border/50 px-3 py-2.5">
+                {groupQuality.map((item) => (
+                  <div
+                    key={item.name}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-xs"
+                  >
+                    <span className="truncate font-medium" title={item.name}>{item.name}</span>
+                    <span className="font-semibold tabular-nums">{item.completion}%</span>
+                    <span className="col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                      <span>
+                        {t('averageAttendance')}: {item.attendance == null ? t('noData') : `${item.attendance}%`}
+                      </span>
+                      <span className="tabular-nums">
+                        {t('averageLessonRating')}: {item.rating == null ? t('noData') : `${(item.rating / 20).toFixed(1)} / 5`}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        ) : undefined}
       >
         {groupQuality.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={groupQuality} layout="vertical" margin={{ top: 2, right: 32, left: 4, bottom: 2 }}>
               <CartesianGrid horizontal={false} strokeDasharray="3 4" stroke="var(--border)" />
               <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} tick={analyticsAxisTick} />
-              <YAxis dataKey="name" type="category" width={96} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
+              <YAxis
+                dataKey="name"
+                type="category"
+                width={96}
+                axisLine={false}
+                tickLine={false}
+                tick={analyticsAxisTick}
+                tickFormatter={(value) => shortenChartLabel(value, 14)}
+              />
               <Tooltip
                 formatter={(value: number, name: string) => [
-                  `${value}%`,
+                  name === 'rating' ? `${(Number(value) / 20).toFixed(1)} / 5` : `${value}%`,
                   name === 'completion'
                     ? t('lessonCompletion')
                     : name === 'attendance'
@@ -186,9 +251,9 @@ export function TeacherAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar dataKey="completion" fill="var(--chart-2)" radius={[0, 4, 4, 0]} maxBarSize={11} />
-              <Bar dataKey="attendance" fill="var(--chart-1)" radius={[0, 4, 4, 0]} maxBarSize={11} />
-              <Bar dataKey="rating" fill="var(--chart-4)" radius={[0, 4, 4, 0]} maxBarSize={11} />
+              <Bar dataKey="completion" fill="var(--chart-2)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={false} />
+              <Bar dataKey="attendance" fill="var(--chart-1)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={false} />
+              <Bar dataKey="rating" fill="var(--chart-4)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         ) : (
@@ -210,8 +275,13 @@ export function TeacherAnalyticsCharts({
               <XAxis dataKey="score" axisLine={false} tickLine={false} tick={analyticsAxisTick} />
               <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
               <Tooltip formatter={(value: number) => [value, t('responses')]} contentStyle={analyticsTooltipStyle} />
-              <Bar dataKey="count" fill="var(--chart-4)" radius={[7, 7, 0, 0]} maxBarSize={42}>
-                <LabelList dataKey="count" position="top" className="fill-foreground text-xs font-semibold" />
+              <Bar dataKey="count" fill="var(--chart-4)" radius={[7, 7, 0, 0]} maxBarSize={42} isAnimationActive={false}>
+                <LabelList
+                  dataKey="count"
+                  position="top"
+                  formatter={(value: number) => Number(value) > 0 ? value : ''}
+                  className="fill-foreground text-xs font-semibold"
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

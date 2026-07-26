@@ -16,7 +16,12 @@ import {
 } from 'recharts';
 import { useTranslation } from '@/hooks/useTranslation';
 import { buildMonthlyRevenueData, buildReportingRevenueData } from '@/lib/dashboardCharts';
-import { compactRankedSeries, percentage } from '@/lib/analyticsCharts';
+import {
+  compactRankedSeries,
+  percentage,
+  rankWithRemainder,
+  shortenChartLabel,
+} from '@/lib/analyticsCharts';
 import {
   AnalyticsChartCard,
   AnalyticsChartEmpty,
@@ -78,13 +83,27 @@ export function DashboardCharts({
       if (lead.statusCode === 'paid') current.paid += 1;
       sources.set(name, current);
     }
-    return compactRankedSeries(
+    return rankWithRemainder(
       [...sources.values()].map((item) => ({
         ...item,
         conversion: percentage(item.paid, item.leads),
       })),
       (item) => item.leads,
-      7,
+      6,
+      (items) => {
+        const combined = items.reduce(
+          (total, item) => ({
+            leads: total.leads + item.leads,
+            paid: total.paid + item.paid,
+          }),
+          { leads: 0, paid: 0 },
+        );
+        return {
+          name: t('other'),
+          ...combined,
+          conversion: percentage(combined.paid, combined.leads),
+        };
+      },
     );
   }, [leads, t]);
 
@@ -96,7 +115,8 @@ export function DashboardCharts({
     };
     const methods = new Map<string, { name: string; amount: number; count: number }>();
     for (const payment of payments) {
-      const method = String(payment.method || 'other');
+      const rawMethod = String(payment.method || 'other');
+      const method = Object.prototype.hasOwnProperty.call(labels, rawMethod) ? rawMethod : 'other';
       const current = methods.get(method) ?? {
         name: labels[method] || t('other'),
         amount: 0,
@@ -113,6 +133,9 @@ export function DashboardCharts({
     () => payments.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
     [payments],
   );
+  const hasFunnelData = funnelData.some((item) => Number(item.count || 0) > 0);
+  const hasSourceData = sourceData.some((item) => Number(item.leads || 0) > 0);
+  const hasPaymentRevenue = paymentMethodData.some((item) => Number(item.amount || 0) > 0);
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -122,7 +145,7 @@ export function DashboardCharts({
         summary={`${t('revenueTrend')}. ${t('dataForSelectedPeriod')}`}
         className="xl:col-span-7"
         chartClassName="h-[252px]"
-        footer={(
+        footer={totalRevenue > 0 ? (
           <AnalyticsChartLegend
             items={[{
               label: t('revenueForPeriod'),
@@ -130,9 +153,9 @@ export function DashboardCharts({
               value: money(totalRevenue),
             }]}
           />
-        )}
+        ) : undefined}
       >
-          {revenueData.length > 0 ? (
+          {totalRevenue > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueData} margin={{ top: 8, right: 12, left: -4, bottom: 0 }}>
                 <defs>
@@ -167,6 +190,7 @@ export function DashboardCharts({
                 <Area
                   type="monotone"
                   dataKey="amount"
+                  isAnimationActive={false}
                   stroke="var(--primary-500)"
                   strokeWidth={2.5}
                   fillOpacity={1}
@@ -187,7 +211,7 @@ export function DashboardCharts({
         className="xl:col-span-5"
         chartClassName="h-[252px]"
       >
-          {funnelData.length > 0 ? (
+          {hasFunnelData ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={funnelData} layout="vertical" margin={{ left: 4, right: 28, top: 2, bottom: 2 }}>
                 <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
@@ -199,13 +223,14 @@ export function DashboardCharts({
                   axisLine={false}
                   tickLine={false}
                   tick={analyticsAxisTick}
+                  tickFormatter={(value) => shortenChartLabel(value, 14)}
                 />
                 <Tooltip
                   cursor={{ fill: 'var(--muted)' }}
                   formatter={(value: number) => [value, t('navLeads')]}
                   contentStyle={analyticsTooltipStyle}
                 />
-                <Bar dataKey="count" radius={[0, 7, 7, 0]} maxBarSize={28}>
+                <Bar dataKey="count" radius={[0, 7, 7, 0]} maxBarSize={28} isAnimationActive={false}>
                   {funnelData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -224,19 +249,27 @@ export function DashboardCharts({
         summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
         className="xl:col-span-8"
         chartClassName="h-[270px]"
-        footer={(
+        footer={hasSourceData ? (
           <AnalyticsChartLegend items={[
             { label: t('navLeads'), color: 'var(--chart-2)' },
             { label: t('paidCustomersForPeriod'), color: 'var(--chart-1)' },
           ]} />
-        )}
+        ) : undefined}
       >
-        {sourceData.length > 0 ? (
+        {hasSourceData ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={sourceData} layout="vertical" margin={{ left: 6, right: 28, top: 2, bottom: 2 }}>
               <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
               <XAxis type="number" axisLine={false} tickLine={false} tick={analyticsAxisTick} allowDecimals={false} />
-              <YAxis dataKey="name" type="category" width={98} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
+              <YAxis
+                dataKey="name"
+                type="category"
+                width={98}
+                axisLine={false}
+                tickLine={false}
+                tick={analyticsAxisTick}
+                tickFormatter={(value) => shortenChartLabel(value, 14)}
+              />
               <Tooltip
                 cursor={{ fill: 'var(--muted)' }}
                 formatter={(value: number, name: string) => [
@@ -245,9 +278,9 @@ export function DashboardCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={20} />
-              <Bar dataKey="paid" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={20}>
-                <LabelList dataKey="conversion" position="right" formatter={(value: number) => `${value}%`} className="fill-muted-foreground text-[11px]" />
+              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={false} />
+              <Bar dataKey="paid" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={false}>
+                <LabelList dataKey="conversion" position="right" formatter={(value: number) => `${value}%`} className="fill-muted-foreground text-xs" />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -262,21 +295,26 @@ export function DashboardCharts({
         summary={`${t('paymentMethodsChart')}. ${paymentMethodData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
         className="xl:col-span-4"
         chartClassName="h-[188px]"
-        footer={(
+        footer={hasPaymentRevenue ? (
           <div className="grid gap-2">
             {paymentMethodData.map((item, index) => (
-              <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
+              <div key={item.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 text-xs">
                 <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
                   <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: PAYMENT_METHOD_COLORS[index] }} />
-                  <span className="truncate">{item.name}</span>
+                  <span className="truncate" title={item.name}>{item.name}</span>
                 </span>
-                <span className="shrink-0 font-semibold tabular-nums">{item.count} · {money(item.amount)}</span>
+                <span className="shrink-0 font-semibold tabular-nums">
+                  {item.count} · {percentage(item.amount, totalRevenue)}%
+                </span>
+                <span className="col-span-2 mt-0.5 text-right font-medium tabular-nums text-muted-foreground">
+                  {money(item.amount)}
+                </span>
               </div>
             ))}
           </div>
-        )}
+        ) : undefined}
       >
-        {paymentMethodData.length > 0 ? (
+        {hasPaymentRevenue ? (
           <div className="relative h-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -284,6 +322,7 @@ export function DashboardCharts({
                   data={paymentMethodData}
                   dataKey="amount"
                   nameKey="name"
+                  isAnimationActive={false}
                   innerRadius={50}
                   outerRadius={76}
                   paddingAngle={3}

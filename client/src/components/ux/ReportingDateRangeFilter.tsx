@@ -40,6 +40,7 @@ export function ReportingDateRangeFilter({
     year: 'numeric',
     timeZone: 'UTC',
   }).format(new Date(`${dateOnly}T00:00:00Z`));
+  const formattedRange = `${formatDate(value.from)} — ${formatDate(value.to)}`;
 
   const setPreset = (preset: Exclude<ReportingDatePreset, 'custom'>) => {
     onChange(reportingRangeForPreset(preset));
@@ -64,14 +65,19 @@ export function ReportingDateRangeFilter({
           </span>
           <div className="min-w-0">
             <p className="text-xs font-semibold">{t('reportingPeriod')}</p>
-            <p className="truncate text-[11px] leading-4 text-muted-foreground" aria-live="polite">
-              {formatDate(value.from)} — {formatDate(value.to)}
+            <p className="truncate text-xs leading-4 text-muted-foreground" title={formattedRange} aria-live="polite">
+              {formattedRange}
             </p>
           </div>
-          {isFetching ? <Loader2 className="ml-auto size-4 shrink-0 animate-spin text-muted-foreground xl:ml-0" /> : null}
+          {isFetching ? (
+            <span className="ml-auto shrink-0 xl:ml-0" role="status">
+              <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+              <span className="sr-only">{t('loading')}</span>
+            </span>
+          ) : null}
         </div>
 
-        <div className="hidden rounded-lg bg-muted p-1 xl:flex" aria-label={t('reportingQuickPeriods')}>
+        <div className="hidden rounded-lg bg-muted p-1 xl:flex" role="group" aria-label={t('reportingQuickPeriods')}>
           {quickPresets.map((preset) => (
             <Button
               key={preset}
@@ -79,7 +85,7 @@ export function ReportingDateRangeFilter({
               variant="ghost"
               size="sm"
               className={cn(
-                'h-8 px-3 text-xs font-medium',
+                'h-11 px-3 text-xs font-medium',
                 value.preset === preset && 'bg-background text-foreground shadow-sm hover:bg-background',
               )}
               aria-pressed={value.preset === preset}
@@ -96,7 +102,7 @@ export function ReportingDateRangeFilter({
             if (preset !== 'custom') setPreset(preset as Exclude<ReportingDatePreset, 'custom'>);
           }}
         >
-          <SelectTrigger className="xl:hidden" aria-label={t('reportingQuickPeriods')}>
+          <SelectTrigger className="h-11 xl:hidden" aria-label={t('reportingQuickPeriods')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -109,7 +115,7 @@ export function ReportingDateRangeFilter({
 
         <div className="grid grid-cols-2 gap-2">
           <label className="relative">
-            <span className="absolute left-3 top-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="absolute left-3 top-1 text-xs font-medium text-muted-foreground">
               {t('dateFrom')}
             </span>
             <Input
@@ -117,11 +123,11 @@ export function ReportingDateRangeFilter({
               value={value.from}
               max={value.to}
               onChange={(event) => setBoundary('from', event.target.value)}
-              className="h-11 min-w-0 pt-4 sm:w-[148px]"
+              className="h-12 min-w-0 pt-5 sm:w-[148px]"
             />
           </label>
           <label className="relative">
-            <span className="absolute left-3 top-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="absolute left-3 top-1 text-xs font-medium text-muted-foreground">
               {t('dateTo')}
             </span>
             <Input
@@ -129,7 +135,7 @@ export function ReportingDateRangeFilter({
               value={value.to}
               min={value.from}
               onChange={(event) => setBoundary('to', event.target.value)}
-              className="h-11 min-w-0 pt-4 sm:w-[148px]"
+              className="h-12 min-w-0 pt-5 sm:w-[148px]"
             />
           </label>
         </div>

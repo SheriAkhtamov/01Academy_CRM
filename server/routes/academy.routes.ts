@@ -4190,6 +4190,7 @@ const buildAnalytics = async (reportingRange: ReportingRange | null = null) => {
             (periodAttendance.filter((record) => record.status === 'present').length / periodAttendance.length) * 100,
           )
         : 0,
+      attendanceMarks: periodAttendance.length,
       avgLessonScore,
       nps,
       npsBelowTarget: nps < targets.nps,

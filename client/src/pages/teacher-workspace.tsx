@@ -23,6 +23,7 @@ import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { TeacherAnalyticsCharts } from '@/components/ux/analytics/TeacherAnalyticsCharts';
+import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import { Input } from '@/components/ui/input';
@@ -267,15 +268,15 @@ function KpiCard({
   }[tone];
 
   return (
-    <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+    <Card className="h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-muted-foreground">{title}</p>
+            <p className="line-clamp-2 min-h-8 text-xs font-medium leading-4 text-muted-foreground" title={title}>{title}</p>
             <div className="mt-1 text-[22px] font-bold leading-tight tracking-tight tabular-nums text-foreground">
               {value}
             </div>
-            {detail && <p className="mt-0.5 truncate text-[11px] leading-4 text-muted-foreground">{detail}</p>}
+            {detail && <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground" title={detail}>{detail}</p>}
           </div>
           <div
             className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}
@@ -475,18 +476,18 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     [attendanceRecords, periodLessonIds],
   );
   const periodSurveys = useMemo(
-    () => surveys.filter((survey) => isInReportingRange(survey.createdAt, reportingRange)),
-    [reportingRange, surveys],
+    () => surveys.filter((survey) => periodLessonIds.has(Number(survey.lessonId))),
+    [periodLessonIds, surveys],
   );
 
   const avgAttendance = useMemo(() => {
-    if (!periodAttendanceRecords.length) return 0;
+    if (!periodAttendanceRecords.length) return null;
     const presentCount = periodAttendanceRecords.filter((record) => record.status === 'present').length;
     return Math.round((presentCount / periodAttendanceRecords.length) * 100);
   }, [periodAttendanceRecords]);
 
   const avgLessonRating = useMemo(() => {
-    if (!periodSurveys.length) return 0;
+    if (!periodSurveys.length) return null;
     const sum = periodSurveys.reduce((acc, survey) => acc + survey.score, 0);
     return (sum / periodSurveys.length).toFixed(1);
   }, [periodSurveys]);
@@ -515,6 +516,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     return timeline.map((point) => {
       const present = Number(point.present || 0);
       const absent = Number(point.absent || 0);
+      const markedAttendance = present + absent;
       return {
         periodStart: point.periodStart,
         label: point.label,
@@ -522,7 +524,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         pending: Number(point.pending || 0),
         present,
         absent,
-        attendance: percentage(present, present + absent),
+        attendance: markedAttendance > 0 ? percentage(present, markedAttendance) : null,
       };
     });
   }, [locale, periodAttendanceRecords, periodLessons, reportingRange]);
@@ -533,10 +535,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
       if (groupLessons.length === 0) return [];
       const lessonIds = new Set(groupLessons.map((lesson) => Number(lesson.id)));
       const records = periodAttendanceRecords.filter((record) => lessonIds.has(Number(record.lessonId)));
-      const groupSurveys = periodSurveys.filter((survey) => Number(survey.groupId) === Number(group.id));
+      const groupSurveys = periodSurveys.filter((survey) => lessonIds.has(Number(survey.lessonId)));
       const averageRating = groupSurveys.length > 0
         ? groupSurveys.reduce((sum, survey) => sum + Number(survey.score || 0), 0) / groupSurveys.length
-        : 0;
+        : null;
       return [{
         name: group.name,
         lessonVolume: groupLessons.length,
@@ -544,11 +546,13 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           groupLessons.filter((lesson) => lesson.status === 'conducted').length,
           groupLessons.length,
         ),
-        attendance: percentage(
-          records.filter((record) => record.status === 'present').length,
-          records.length,
-        ),
-        rating: Math.round((averageRating / 5) * 100),
+        attendance: records.length > 0
+          ? percentage(
+            records.filter((record) => record.status === 'present').length,
+            records.length,
+          )
+          : null,
+        rating: averageRating == null ? null : Math.round((averageRating / 5) * 100),
       }];
     });
     return compactRankedSeries(rows, (row) => row.lessonVolume, 6);
@@ -831,12 +835,12 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           <div className="space-y-6">
             <Skeleton className="h-10 w-64" />
             <Skeleton className="h-6 w-48" />
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 5 }).map((_, i) => (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-28" />
               ))}
             </div>
-            <Skeleton className="h-96" />
+            <AnalyticsChartsSkeleton />
           </div>
         </WorkspacePageBody>
       </WorkspacePage>
@@ -973,19 +977,19 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           <div className="stagger-item">
             <KpiCard
               title={t('averageAttendance')}
-              value={`${avgAttendance}%`}
+              value={avgAttendance == null ? t('noData') : `${avgAttendance}%`}
               detail={t('byActiveStudents')}
               icon={ClipboardCheck}
-              tone="blue"
+              tone={avgAttendance == null ? 'slate' : 'blue'}
             />
           </div>
           <div className="stagger-item">
             <KpiCard
               title={t('averageLessonRating')}
-              value={`${avgLessonRating} / 5`}
+              value={avgLessonRating == null ? t('noData') : `${avgLessonRating} / 5`}
               detail={t('dataForSelectedPeriod')}
               icon={Star}
-              tone="green"
+              tone={avgLessonRating == null ? 'slate' : 'green'}
             />
           </div>
           <div className="stagger-item">
@@ -1031,7 +1035,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                         {dayNames[day.weekdayIndex]}
                       </CardTitle>
                       {isTodayFlag && (
-                        <Badge className="bg-primary-100 text-primary-700 text-[10px]">
+                        <Badge className="bg-primary-100 text-xs text-primary-700">
                           {t('now')}
                         </Badge>
                       )}
@@ -1068,7 +1072,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 text-[10px] px-2 mt-1 text-primary-600 hover:text-primary-700"
+                            className="mt-1 min-h-9 px-2 text-xs text-primary-600 hover:text-primary-700"
                             onClick={() => {
                               setSelectedLessonId(String(lesson.id));
                               setLocation('/teacher-workspace/attendance');
@@ -1291,7 +1295,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                     {group.schedule && group.schedule.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {group.schedule.map((s, i) => (
-                          <Badge key={i} variant="outline" className="text-[10px]">
+                          <Badge key={i} variant="outline" className="text-xs">
                             {dayNames[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
                           </Badge>
                         ))}

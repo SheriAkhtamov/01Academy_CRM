@@ -14,6 +14,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { MarketingAnalyticsCharts } from '@/components/ux/analytics/MarketingAnalyticsCharts';
+import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
@@ -63,6 +64,15 @@ const EMPTY_EXPENSE_FORM = {
 
 type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses';
 
+type OverviewSourcePerformance = {
+  sourceName: string;
+  leads: number;
+  paidStudents: number;
+  revenue: number;
+  expenses: number;
+  roas: number;
+};
+
 function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   title: string;
   value: string | number;
@@ -80,13 +90,13 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   }[tone];
 
   return (
-    <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+    <Card className="h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-muted-foreground">{title}</p>
+            <p className="line-clamp-2 min-h-8 text-xs font-medium leading-4 text-muted-foreground" title={title}>{title}</p>
             <div className="mt-1 text-[22px] font-bold leading-tight tracking-tight tabular-nums text-foreground">{value}</div>
-            {detail && <p className="mt-0.5 truncate text-[11px] leading-4 text-muted-foreground">{detail}</p>}
+            {detail && <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground" title={detail}>{detail}</p>}
           </div>
           <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}>
             <Icon className="size-4" />
@@ -152,7 +162,8 @@ function ConversionBar({ label, value, total, color = '#2563eb' }: {
 
 /* ─── main component ─── */
 export default function MarketingWorkspace({ section = 'overview' }: { section?: MarketingSection }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -163,13 +174,13 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
 
   const money = (value: number | string | null | undefined) =>
-    `${Number(value || 0).toLocaleString('ru-RU')}${t('uzs')}`;
+    `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
 
   const dateOnly = (value: string | null | undefined) => {
     if (!value) return t('noData');
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return t('noData');
-    return date.toLocaleDateString('ru-RU');
+    return date.toLocaleDateString(locale);
   };
 
   const reportingQuery = reportingRangeQuery(reportingRange);
@@ -317,7 +328,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
                 <Skeleton key={i} className="h-28" />
               ))}
             </div>
-            <Skeleton className="h-96" />
+            <AnalyticsChartsSkeleton />
           </div>
         </WorkspacePageBody>
       </WorkspacePage>
@@ -420,7 +431,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     label: String(stage.name || stage.code),
     color: String(stage.color || '#64748b'),
   }));
-  const overviewSourcePerformance = bySource.map((source: any) => ({
+  const overviewSourcePerformance: OverviewSourcePerformance[] = bySource.map((source: any) => ({
     sourceName: String(source.sourceName || t('unknownSource')),
     leads: Number(source.leads || 0),
     paidStudents: Number(source.paidStudents || 0),
@@ -434,6 +445,12 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     count: Number(stage.count || 0),
     color: String(stage.color || '#64748b'),
   }));
+  const overviewLeadCount = overviewSourcePerformance.reduce((sum, source) => sum + source.leads, 0);
+  const overviewPaidCount = overviewSourcePerformance.reduce((sum, source) => sum + source.paidStudents, 0);
+  const overviewMarketingSpend = overviewSourcePerformance.reduce((sum, source) => sum + source.expenses, 0);
+  const overviewDemoCohortCount = overviewFunnel.find((stage) => stage.code === 'demo_invited')?.count ?? 0;
+  const hasLeadCohort = overviewLeadCount > 0 || Number(summary.newLeadsMonth || 0) > 0;
+  const hasPaidCohort = overviewPaidCount > 0 || Number(summary.newPaidStudents || 0) > 0;
 
   const avgDealCycle = summary.avgDealCycleDays ?? t('noData');
   const sectionTitle: Record<MarketingSection, string> = {
@@ -484,27 +501,27 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
           <div className="stagger-item">
             <KpiCard
               title={t('conversionApplicationToDemo')}
-              value={`${summary.leadToDemoConversion ?? 0}%`}
+              value={hasLeadCohort ? `${summary.leadToDemoConversion ?? 0}%` : t('noData')}
               icon={TrendingUp}
-              tone="green"
+              tone={hasLeadCohort ? 'green' : 'slate'}
             />
           </div>
           <div className="stagger-item">
             <KpiCard
               title={t('conversionDemoToPayment')}
-              value={`${summary.demoToPaidConversion ?? 0}%`}
+              value={overviewDemoCohortCount > 0 ? `${summary.demoToPaidConversion ?? 0}%` : t('noData')}
               icon={TrendingDown}
-              tone="green"
+              tone={overviewDemoCohortCount > 0 ? 'green' : 'slate'}
             />
           </div>
           <div className="stagger-item">
-            <KpiCard title={t('cplLabel')} value={money(summary.cpl)} detail={t('cplTarget')} icon={Calculator} tone="amber" />
+            <KpiCard title={t('cplLabel')} value={hasLeadCohort ? money(summary.cpl) : t('noData')} detail={t('cplTarget')} icon={Calculator} tone={hasLeadCohort ? 'amber' : 'slate'} />
           </div>
           <div className="stagger-item">
-            <KpiCard title={t('cacLabel')} value={money(summary.cac)} detail={t('cacTarget')} icon={DollarSign} tone="amber" />
+            <KpiCard title={t('cacLabel')} value={hasPaidCohort ? money(summary.cac) : t('noData')} detail={t('cacTarget')} icon={DollarSign} tone={hasPaidCohort ? 'amber' : 'slate'} />
           </div>
           <div className="stagger-item">
-            <KpiCard title={t('roasLabel')} value={`${summary.roas ?? 0}x`} detail={t('roasTarget')} icon={Target} tone="purple" />
+            <KpiCard title={t('roasLabel')} value={overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')} detail={t('roasTarget')} icon={Target} tone={overviewMarketingSpend > 0 ? 'purple' : 'slate'} />
           </div>
           <div className="stagger-item">
             <KpiCard title={t('warmBaseSize')} value={summary.warmBaseSize ?? warmLeads.length} icon={Flame} tone="slate" />

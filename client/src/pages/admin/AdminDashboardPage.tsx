@@ -50,7 +50,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
-import { AdminOperationalHealthChart } from '@/components/ux/analytics/AdminOperationalHealthChart';
+import {
+  AdminOperationalHealthChart,
+} from '@/components/ux/analytics/AdminOperationalHealthChart';
+import { AnalyticsChartEmpty } from '@/components/ux/analytics/AnalyticsChartCard';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -106,6 +109,7 @@ interface AdministrationDashboardData {
     newLeadsMonth: number;
     revenueMonth: number;
     avgAttendance: number;
+    attendanceMarks: number;
     avgLessonScore: number;
     activeGroups: number;
     activeTeachers: number;
@@ -228,7 +232,7 @@ function KpiCard({
     <Card className="overflow-hidden border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
       <CardHeader className="flex flex-row items-start justify-between gap-3 p-4 pb-1">
         <div className="min-w-0">
-          <CardDescription className="text-xs font-medium leading-4">{title}</CardDescription>
+          <CardDescription className="line-clamp-2 min-h-8 text-xs font-medium leading-4" title={title}>{title}</CardDescription>
           <CardTitle className="mt-1 text-[22px] font-bold leading-tight tabular-nums">{value}</CardTitle>
         </div>
         <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', tone)}>
@@ -237,11 +241,11 @@ function KpiCard({
       </CardHeader>
       <CardContent className="flex items-center px-4 pb-4 pt-1">
         {change === undefined ? (
-          <p className="truncate text-[11px] leading-4 text-muted-foreground">{detail}</p>
+          <p className="line-clamp-2 text-xs leading-4 text-muted-foreground" title={detail}>{detail}</p>
         ) : (
           <div className="flex min-w-0 items-center gap-1.5">
             <ChangeBadge value={change} />
-            <span className="truncate text-[11px] text-muted-foreground">{detail}</span>
+            <span className="line-clamp-2 text-xs leading-4 text-muted-foreground" title={detail}>{detail}</span>
           </div>
         )}
       </CardContent>
@@ -368,6 +372,7 @@ export default function AdminDashboardPage() {
   const selectedFunnel = ['new_request', 'first_contact', 'demo_attended', 'paid']
     .map((code) => data.funnel.find((item) => item.code === code))
     .filter((item): item is DashboardFunnelItem => Boolean(item));
+  const demoInvitedFunnelCount = data.funnel.find((item) => item.code === 'demo_invited')?.count ?? 0;
   const maxFunnelValue = Math.max(...selectedFunnel.map((item) => item.count), 1);
   const generatedAt = new Intl.DateTimeFormat(locale, {
     day: '2-digit',
@@ -385,41 +390,67 @@ export default function AdminDashboardPage() {
     color: CHURN_COLORS[index % CHURN_COLORS.length],
   }));
   const healthMetrics = [
-    {
-      label: t('averageAttendance'),
-      value: boundedPercent(summary.avgAttendance),
-      display: `${Math.round(Number(summary.avgAttendance || 0))}%`,
-    },
-    {
-      label: t('averageLessonRating'),
-      value: boundedPercent((Number(summary.avgLessonScore || 0) / 5) * 100),
-      display: `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`,
-    },
-    {
-      label: t('adminGroupLoad'),
-      value: boundedPercent(summary.groupLoadPercent),
-      display: `${Math.round(Number(summary.groupLoadPercent || 0))}%`,
-    },
-    {
-      label: t('conversionApplicationToDemo'),
-      value: boundedPercent(summary.leadToDemoConversion),
-      display: `${Math.round(Number(summary.leadToDemoConversion || 0))}%`,
-    },
-    {
-      label: t('conversionDemoToPayment'),
-      value: boundedPercent(summary.demoToPaidConversion),
-      display: `${Math.round(Number(summary.demoToPaidConversion || 0))}%`,
-    },
-    {
-      label: t('adminOnlineTeam'),
-      value: boundedPercent(
-        summary.activeUsers > 0
-          ? (Number(summary.onlineUsers || 0) / Number(summary.activeUsers)) * 100
-          : 0,
-      ),
-      display: `${summary.onlineUsers} / ${summary.activeUsers}`,
-    },
+    ...(Number(summary.attendanceMarks || 0) > 0
+      ? [{
+        label: t('averageAttendance'),
+        shortLabel: t('attendanceLabel'),
+        value: boundedPercent(summary.avgAttendance),
+        display: `${Math.round(Number(summary.avgAttendance || 0))}%`,
+      }]
+      : []),
+    ...(Number(summary.avgLessonScore || 0) > 0
+      ? [{
+        label: t('averageLessonRating'),
+        shortLabel: t('lessonRatings'),
+        value: boundedPercent((Number(summary.avgLessonScore || 0) / 5) * 100),
+        display: `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`,
+      }]
+      : []),
+    ...(Number(summary.activeGroups || 0) > 0
+      ? [{
+        label: t('adminGroupLoad'),
+        shortLabel: t('adminGroupLoad'),
+        value: boundedPercent(summary.groupLoadPercent),
+        display: `${Math.round(Number(summary.groupLoadPercent || 0))}%`,
+      }]
+      : []),
+    ...(Number(summary.newLeadsMonth || 0) > 0
+      ? [{
+        label: t('conversionApplicationToDemo'),
+        shortLabel: t('leadStatusDemoAttended'),
+        value: boundedPercent(summary.leadToDemoConversion),
+        display: `${Math.round(Number(summary.leadToDemoConversion || 0))}%`,
+      }]
+      : []),
+    ...(demoInvitedFunnelCount > 0
+      ? [{
+        label: t('conversionDemoToPayment'),
+        shortLabel: t('payment'),
+        value: boundedPercent(summary.demoToPaidConversion),
+        display: `${Math.round(Number(summary.demoToPaidConversion || 0))}%`,
+      }]
+      : []),
+    ...(Number(summary.activeUsers || 0) > 0
+      ? [{
+        label: t('adminOnlineTeam'),
+        shortLabel: t('online'),
+        value: boundedPercent(
+          (Number(summary.onlineUsers || 0) / Number(summary.activeUsers)) * 100,
+        ),
+        display: `${summary.onlineUsers} / ${summary.activeUsers}`,
+      }]
+      : []),
   ];
+  const hasBusinessTrend = chartData.some((point) => (
+    Number(point.revenue || 0) > 0
+    || Number(point.students || 0) > 0
+    || Number(point.leads || 0) > 0
+  ));
+  const businessTrendSummary = `${t('adminBusinessDynamics')}. ${chartData.map((point) => (
+    `${point.label}: ${t('revenue')} ${fullMoney(Number(point.revenue || 0))}, `
+    + `${t('adminNewStudents')} ${Number(point.students || 0)}, `
+    + `${t('navLeads')} ${Number(point.leads || 0)}`
+  )).join('; ')}`;
 
   const alerts = [
     {
@@ -474,17 +505,25 @@ export default function AdminDashboardPage() {
     },
     {
       title: t('adminLessonQuality'),
-      value: `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`,
+      value: Number(summary.avgLessonScore || 0) > 0
+        ? `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`
+        : t('noData'),
       detail: t('adminAverageLessonScore'),
       icon: BookOpenCheck,
-      tone: 'bg-amber-100 text-amber-600',
+      tone: Number(summary.avgLessonScore || 0) > 0
+        ? 'bg-amber-100 text-amber-600'
+        : 'bg-muted text-muted-foreground',
     },
     {
       title: t('adminStaffActivity'),
-      value: `${summary.onlineUsers} / ${summary.activeUsers}`,
+      value: summary.activeUsers > 0
+        ? `${summary.onlineUsers} / ${summary.activeUsers}`
+        : t('noData'),
       detail: t('adminOnlineNow'),
       icon: Wifi,
-      tone: 'bg-primary-50 text-primary-600',
+      tone: summary.activeUsers > 0
+        ? 'bg-primary-50 text-primary-600'
+        : 'bg-muted text-muted-foreground',
     },
     {
       title: t('adminUpcomingLessons'),
@@ -605,38 +644,41 @@ export default function AdminDashboardPage() {
               </span>
             </div>
             <Progress className="mt-3 h-1.5" value={item.value} />
-            <p className="mt-1.5 text-[11px] text-muted-foreground">{ceoCopy.dashboard.plan} {item.plan}</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">{ceoCopy.dashboard.plan} {item.plan}</p>
           </button>
         ))}
       </section>
       ) : null}
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-6 2xl:grid-cols-12">
-        <Card className="self-start overflow-hidden border-border/60 shadow-sm xl:col-span-4 2xl:col-span-7">
-          <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
+        <Card className="min-w-0 self-start border-border/60 shadow-sm xl:col-span-4 2xl:col-span-7">
+          <CardHeader className="flex flex-col items-start gap-2 px-4 pb-2 pt-3.5 sm:flex-row sm:justify-between">
             <div>
               <CardTitle className="text-[15px]">{t('adminBusinessDynamics')}</CardTitle>
               <CardDescription className="mt-0.5 text-xs">{t('dataForSelectedPeriod')}</CardDescription>
             </div>
-            <div className="hidden items-center gap-3 text-[11px] text-muted-foreground sm:flex">
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-primary-600" />
-                {t('revenue')}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-emerald-500" />
-                {t('adminNewStudents')}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-amber-500" />
-                {t('navLeads')}
-              </span>
-            </div>
+            {hasBusinessTrend ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-primary-600" />
+                  {t('revenue')}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-emerald-500" />
+                  {t('adminNewStudents')}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-amber-500" />
+                  {t('navLeads')}
+                </span>
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent className="h-[258px] px-4 pb-4 pt-0">
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 12, right: 4, left: -12, bottom: 0 }}>
+            <figure className="h-full min-w-0" aria-label={t('adminBusinessDynamics')}>
+              {hasBusinessTrend ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 12, right: 4, left: -12, bottom: 0 }}>
                   <defs>
                     <linearGradient id="adminRevenueFill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="var(--primary-500)" stopOpacity={0.24} />
@@ -678,6 +720,7 @@ export default function AdminDashboardPage() {
                     yAxisId="money"
                     type="monotone"
                     dataKey="revenue"
+                    isAnimationActive={false}
                     stroke="var(--primary-600)"
                     strokeWidth={2.5}
                     fill="url(#adminRevenueFill)"
@@ -686,6 +729,7 @@ export default function AdminDashboardPage() {
                     yAxisId="counts"
                     type="monotone"
                     dataKey="students"
+                    isAnimationActive={false}
                     stroke="var(--emerald-500)"
                     strokeWidth={2}
                     dot={{ r: 3, fill: 'var(--emerald-500)', strokeWidth: 0 }}
@@ -695,19 +739,20 @@ export default function AdminDashboardPage() {
                     yAxisId="counts"
                     type="monotone"
                     dataKey="leads"
+                    isAnimationActive={false}
                     stroke="var(--chart-3)"
                     strokeWidth={2}
                     strokeDasharray="5 4"
                     dot={{ r: 3, fill: 'var(--chart-3)', strokeWidth: 0 }}
                     activeDot={{ r: 5 }}
                   />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                {t('noPaymentData')}
-              </div>
-            )}
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+              )}
+              <figcaption className="sr-only">{businessTrendSummary}</figcaption>
+            </figure>
           </CardContent>
         </Card>
 
@@ -730,7 +775,7 @@ export default function AdminDashboardPage() {
                   <div className="h-6 rounded-lg bg-muted p-1">
                     <div
                       className={cn(
-                        'flex h-full items-center justify-end rounded-md px-2 text-[11px] font-semibold text-primary-foreground',
+                        'flex h-full items-center justify-end rounded-md px-2 text-xs font-semibold text-primary-foreground',
                         index === selectedFunnel.length - 1 ? 'bg-emerald-500' : 'bg-primary-600',
                       )}
                       style={{ width: `${width}%` }}
@@ -743,12 +788,16 @@ export default function AdminDashboardPage() {
             })}
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-2 text-center">
               <div>
-                <p className="text-[11px] text-slate-500">{t('conversionApplicationToDemo')}</p>
-                <p className="mt-1 font-semibold tabular-nums">{summary.leadToDemoConversion}%</p>
+                <p className="text-xs text-slate-500">{t('conversionApplicationToDemo')}</p>
+                <p className="mt-1 font-semibold tabular-nums">
+                  {summary.newLeadsMonth > 0 ? `${summary.leadToDemoConversion}%` : t('noData')}
+                </p>
               </div>
               <div>
-                <p className="text-[11px] text-slate-500">{t('conversionDemoToPayment')}</p>
-                <p className="mt-1 font-semibold tabular-nums">{summary.demoToPaidConversion}%</p>
+                <p className="text-xs text-slate-500">{t('conversionDemoToPayment')}</p>
+                <p className="mt-1 font-semibold tabular-nums">
+                  {demoInvitedFunnelCount > 0 ? `${summary.demoToPaidConversion}%` : t('noData')}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -816,7 +865,7 @@ export default function AdminDashboardPage() {
               <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                 <ResponsiveContainer width="100%" height={120}>
                   <PieChart>
-                    <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={54} paddingAngle={2}>
+                    <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={54} paddingAngle={2} isAnimationActive={false}>
                       {churnData.map((item) => <Cell key={item.name} fill={item.color} />)}
                     </Pie>
                     <Tooltip formatter={(value: number) => [value, ceoCopy.dashboard.students]} />
@@ -892,7 +941,7 @@ export default function AdminDashboardPage() {
                       {item.amountUzs == null && item.meta ? ` · ${item.meta}` : ''}
                     </p>
                   </div>
-                  <time className="shrink-0 text-[11px] text-slate-400" dateTime={item.occurredAt}>
+                  <time className="shrink-0 text-xs text-muted-foreground" dateTime={item.occurredAt}>
                     {relativeTime(item.occurredAt)}
                   </time>
                 </div>
@@ -925,12 +974,12 @@ export default function AdminDashboardPage() {
                       <Icon className="size-4" />
                     </div>
                     <div className="min-w-0">
-                      <CardDescription className="truncate text-xs">{item.title}</CardDescription>
-                      <CardTitle className="mt-1 truncate text-base">{item.value}</CardTitle>
+                      <CardDescription className="line-clamp-2 text-xs">{item.title}</CardDescription>
+                      <CardTitle className="mt-1 text-base">{item.value}</CardTitle>
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-1">
-                    <p className="truncate text-[11px] text-muted-foreground">{item.detail}</p>
+                    <p className="line-clamp-2 text-xs leading-4 text-muted-foreground">{item.detail}</p>
                   </CardContent>
                 </Card>
               );

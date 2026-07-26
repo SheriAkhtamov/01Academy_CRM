@@ -442,6 +442,13 @@
       "when": 1786377600000,
       "tag": "0062_configurable_onlinepbx_forwarding",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1786464000000,
+      "tag": "0063_add_lead_comment_history",
+      "breakpoints": true
     }
   ]
 }

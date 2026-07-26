@@ -770,6 +770,12 @@ export const translations = {
   dealTab: { en: 'Deal', ru: 'Сделка' },
   expectedPayment: { en: 'Expected payment, UZS', ru: 'Ожидаемая оплата, сум' },
   keepLeadNamed: { en: 'Keep “{name}”', ru: 'Оставить «{name}»' },
+  leadCommentAdded: { en: 'Comment added', ru: 'Комментарий добавлен' },
+  leadCommentAddFailed: { en: 'Comment was not added', ru: 'Не удалось добавить комментарий' },
+  leadCommentsHint: {
+    en: 'Every comment is saved separately with its author, date, and time.',
+    ru: 'Каждый комментарий сохраняется отдельно с автором, датой и временем.',
+  },
   leadSaveFailed: { en: 'Lead was not saved', ru: 'Не удалось сохранить лида' },
   leadSaved: { en: 'Lead saved', ru: 'Лид сохранён' },
   leadTasks: { en: 'Lead tasks', ru: 'Задачи по лиду' },

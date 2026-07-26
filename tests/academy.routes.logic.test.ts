@@ -247,6 +247,71 @@ describe('academy route logic boundaries', () => {
     expect(response.body.error).toBe('Lead access required');
   });
 
+  it('appends a lead comment with its author and keeps the latest legacy cache in one transaction', async () => {
+    mocks.actor = {
+      id: 7,
+      fullName: 'Менеджер Азиза',
+      workspace: 'sales',
+      workspaces: ['sales'],
+    };
+    const lead = leadFixture({
+      manager_id: 7,
+      comment: 'Предыдущий комментарий',
+    });
+    const createdAt = new Date('2026-07-26T08:15:00.000Z');
+
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('WHERE l.id = $1') ? { rows: [lead] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [lead] };
+      }
+      if (sql.includes('INSERT INTO "academy_lead_comments"')) {
+        expect(readInsertValue(sql, values, 'lead_id')).toBe(42);
+        expect(readInsertValue(sql, values, 'author_id')).toBe(7);
+        expect(readInsertValue(sql, values, 'body')).toBe('Новый комментарий');
+        return {
+          rows: [{
+            id: 101,
+            lead_id: 42,
+            author_id: 7,
+            body: 'Новый комментарий',
+            created_at: createdAt,
+          }],
+        };
+      }
+      if (sql.includes('UPDATE "academy_leads"') && sql.includes('"comment" = $2')) {
+        expect(values).toEqual([42, 'Новый комментарий']);
+        return { rows: [{ ...lead, comment: 'Новый комментарий' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/42/comments')
+      .send({ body: '  Новый комментарий  ' });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(response.body).toMatchObject({
+      id: 101,
+      leadId: 42,
+      authorId: 7,
+      authorName: 'Менеджер Азиза',
+      body: 'Новый комментарий',
+    });
+    expect(mocks.clientQuery.mock.calls.map(([sql]) => sql)).toEqual(expect.arrayContaining([
+      'BEGIN',
+      'COMMIT',
+    ]));
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ADD_ACADEMY_LEAD_COMMENT',
+      entityType: 'academy_lead',
+      entityId: 42,
+    }));
+  });
+
   it('does not expose legacy lead group reservations as student enrollments', async () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {

@@ -148,6 +148,14 @@ interface LeadDetails {
     comment?: string | null;
     createdAt?: string | null;
   }>;
+  comments?: Array<{
+    id: number;
+    leadId: number;
+    authorId?: number | null;
+    authorName?: string | null;
+    body: string;
+    createdAt?: string | null;
+  }>;
   communications?: Array<{
     id: number;
     channel: string;
@@ -259,7 +267,6 @@ const leadSchema = z.object({
   language: z.string(),
   statusCode: z.string(),
   expectedPaymentUzs: optionalNumberString,
-  comment: z.string(),
 });
 
 const contactSchema = z.object({
@@ -315,7 +322,6 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   language: lead.language ?? 'ru',
   statusCode: lead.statusCode,
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
-  comment: lead.comment ?? '',
 });
 
 const toInputDate = (value?: string | null) => {
@@ -370,6 +376,7 @@ export function LeadDetailSheet({
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
 
   const leadQuery = useQuery<LeadDetails>({
     queryKey: ['/api/academy/leads', leadId],
@@ -386,7 +393,6 @@ export function LeadDetailSheet({
       language: 'ru',
       statusCode: 'new_request',
       expectedPaymentUzs: '',
-      comment: '',
     },
   });
   const contactForm = useForm<ContactFormValues>({
@@ -433,7 +439,6 @@ export function LeadDetailSheet({
       lead.language ?? '',
       lead.statusCode,
       lead.expectedPaymentUzs ?? '',
-      lead.comment ?? '',
     ].join('|');
   }, [leadQuery.data]);
 
@@ -493,6 +498,7 @@ export function LeadDetailSheet({
       setPendingManagerId(null);
       setDuplicateHint(null);
       setCreateStudentOpen(false);
+      setCommentDraft('');
     }
   }, [open]);
 
@@ -590,6 +596,20 @@ export function LeadDetailSheet({
       await finishMutation(t('contactRecorded'));
     },
     onError: (error: Error) => toast({ title: t('contactRecordFailed'), description: error.message, variant: 'destructive' }),
+  });
+
+  const addLeadComment = useMutation({
+    mutationFn: (body: string) =>
+      apiRequest('POST', `/api/academy/leads/${leadId}/comments`, { body }),
+    onSuccess: async () => {
+      setCommentDraft('');
+      await finishMutation(t('leadCommentAdded'));
+    },
+    onError: (error: Error) => toast({
+      title: t('leadCommentAddFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
   });
 
   const createPayment = useMutation({
@@ -801,7 +821,7 @@ export function LeadDetailSheet({
               </div>
 
               <div className="p-6">
-                <TabsContent value="deal" className="mt-0">
+                <TabsContent value="deal" className="mt-0 space-y-5">
                   <Form {...leadForm}>
                     <form className="flex flex-col gap-5" onSubmit={leadForm.handleSubmit((values) => updateLead.mutate(values))}>
                       <Card>
@@ -1052,17 +1072,6 @@ export function LeadDetailSheet({
                               </FormItem>
                             )}
                           />
-                          <FormField
-                            control={leadForm.control}
-                            name="comment"
-                            render={({ field }) => (
-                              <FormItem className="md:col-span-2">
-                                <FormLabel>{t('comment')}</FormLabel>
-                                <FormControl><Textarea {...field} /></FormControl>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
                         </CardContent>
                       </Card>
 
@@ -1074,6 +1083,17 @@ export function LeadDetailSheet({
                       </div>
                     </form>
                   </Form>
+                  <LeadCommentsCard
+                    comments={lead.comments ?? []}
+                    draft={commentDraft}
+                    isPending={addLeadComment.isPending}
+                    dateTime={dateTime}
+                    onDraftChange={setCommentDraft}
+                    onSubmit={() => {
+                      const body = commentDraft.trim();
+                      if (body) addLeadComment.mutate(body);
+                    }}
+                  />
                 </TabsContent>
 
                 <TabsContent value="activity" className="mt-0">
@@ -1510,6 +1530,85 @@ export function LeadDetailSheet({
   );
 }
 
+function LeadCommentsCard({
+  comments,
+  draft,
+  isPending,
+  dateTime,
+  onDraftChange,
+  onSubmit,
+}: {
+  comments: NonNullable<LeadDetails['comments']>;
+  draft: string;
+  isPending: boolean;
+  dateTime: (value: string | null | undefined) => string;
+  onDraftChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-muted/20">
+        <CardTitle className="flex items-center gap-2">
+          <MessageSquare className="size-5 text-primary" />
+          {t('commentsLabel')}
+          <Badge variant="secondary">{comments.length}</Badge>
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">{t('leadCommentsHint')}</p>
+      </CardHeader>
+      <CardContent className="space-y-5 pt-6">
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <Textarea
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder={t('addCommentPlaceholder')}
+            rows={3}
+          />
+          <div className="flex justify-end">
+            <Button type="submit" disabled={isPending || !draft.trim()}>
+              {isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <MessageSquare data-icon="inline-start" />}
+              {t('send')}
+            </Button>
+          </div>
+        </form>
+
+        {comments.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+            {t('noCommentsYet')}
+          </p>
+        ) : (
+          <ol className="divide-y divide-border">
+            {comments.map((comment) => {
+              const authorName = comment.authorName || t('unknown');
+              return (
+                <li key={comment.id} className="flex gap-3 py-4 first:pt-0 last:pb-0">
+                  <Avatar className="size-9 shrink-0 border border-border">
+                    <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="text-sm font-medium">{authorName}</p>
+                      <time className="text-xs text-muted-foreground">{dateTime(comment.createdAt)}</time>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">{comment.body}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ActivityTimeline({
   lead,
   dateTime,
@@ -1523,6 +1622,15 @@ function ActivityTimeline({
 }) {
   const { t } = useTranslation();
   const items = [
+    ...(lead.comments ?? []).map((item) => ({
+      id: `lead-comment-${item.id}`,
+      at: item.createdAt,
+      title: item.authorName ? `${t('comment')} · ${item.authorName}` : t('comment'),
+      text: item.body,
+      icon: MessageSquare,
+      callId: null,
+      hasRecording: false,
+    })),
     ...(lead.history ?? []).map((item) => ({
       id: `history-${item.id}`,
       at: item.enteredAt,
@@ -1609,7 +1717,7 @@ function ActivityTimeline({
                         {dateTime(item.at)}
                       </span>
                     </div>
-                    {item.text ? <p className="mt-1 text-sm text-muted-foreground">{item.text}</p> : null}
+                    {item.text ? <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.text}</p> : null}
                     {item.callId && item.hasRecording ? (
                       <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />
                     ) : null}

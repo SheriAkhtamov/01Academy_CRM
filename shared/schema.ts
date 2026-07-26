@@ -368,6 +368,17 @@ export const academyLeadAssignmentHistory = pgTable("academy_lead_assignment_his
   toManagerIdx: index("academy_lead_assignment_history_to_manager_idx").on(table.toManagerId),
 }));
 
+export const academyLeadComments = pgTable("academy_lead_comments", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  authorId: integer("author_id").references(() => users.id, { onDelete: "set null" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  leadCreatedIdx: index("academy_lead_comments_lead_created_idx").on(table.leadId, table.createdAt),
+  authorIdx: index("academy_lead_comments_author_idx").on(table.authorId),
+}));
+
 export const academyStudents = pgTable("academy_students", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
@@ -1136,6 +1147,11 @@ export const insertAcademyLeadAssignmentHistorySchema = createInsertSchema(acade
   createdAt: true,
 });
 
+export const insertAcademyLeadCommentSchema = createInsertSchema(academyLeadComments).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertAcademyStudentSchema = createInsertSchema(academyStudents).omit({
   id: true,
   createdAt: true,
@@ -1326,6 +1342,8 @@ export type AcademyLeadStageHistory = typeof academyLeadStageHistory.$inferSelec
 export type InsertAcademyLeadStageHistory = z.infer<typeof insertAcademyLeadStageHistorySchema>;
 export type AcademyLeadAssignmentHistory = typeof academyLeadAssignmentHistory.$inferSelect;
 export type InsertAcademyLeadAssignmentHistory = z.infer<typeof insertAcademyLeadAssignmentHistorySchema>;
+export type AcademyLeadComment = typeof academyLeadComments.$inferSelect;
+export type InsertAcademyLeadComment = z.infer<typeof insertAcademyLeadCommentSchema>;
 export type AcademyStudent = typeof academyStudents.$inferSelect;
 export type InsertAcademyStudent = z.infer<typeof insertAcademyStudentSchema>;
 export type AcademyStudentGroupEnrollment = typeof academyStudentGroupEnrollments.$inferSelect;

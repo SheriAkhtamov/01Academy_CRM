@@ -176,12 +176,12 @@ export const importLeadRecords = async (
       }
 
       const comment = buildLeadImportComment(normalizedRecord, options.providerLabel);
+      const commentCreatedAt = record.createdTime && !Number.isNaN(new Date(record.createdTime).getTime())
+        ? new Date(record.createdTime)
+        : new Date();
       let matchedLead = await findLeadByPhone(client, phone);
       let outcome: 'created' | 'merged' | 'merged_archived';
       if (!matchedLead) {
-        const createdAt = record.createdTime && !Number.isNaN(new Date(record.createdTime).getTime())
-          ? new Date(record.createdTime)
-          : new Date();
         const contactName = text(record.contactName) || `Новый контакт ${phone}`;
         const created = await client.query<{ id: number }>(
           `INSERT INTO academy_leads (
@@ -190,14 +190,14 @@ export const importLeadRecords = async (
            )
            VALUES ($1, $2, $3, $4, 'new_request', 'ru', $5, 'instagram', $6, NOW())
            RETURNING id`,
-          [contactName, phone, sourceId, text(record.campaignName) || null, comment, createdAt],
+          [contactName, phone, sourceId, text(record.campaignName) || null, comment, commentCreatedAt],
         );
         matchedLead = { id: created.rows[0].id, isArchived: false };
         await client.query(
           `INSERT INTO academy_lead_stage_history
-             (lead_id, from_status_code, to_status_code, entered_at, comment)
+           (lead_id, from_status_code, to_status_code, entered_at, comment)
            VALUES ($1, NULL, 'new_request', $2, $3)`,
-          [matchedLead.id, createdAt, `Импортирован из ${options.providerLabel ?? 'Meta Lead Ads'}`],
+          [matchedLead.id, commentCreatedAt, `Импортирован из ${options.providerLabel ?? 'Meta Lead Ads'}`],
         );
         outcome = 'created';
         summary.created += 1;
@@ -223,6 +223,16 @@ export const importLeadRecords = async (
         }
       }
 
+      await client.query(
+        `INSERT INTO academy_lead_comments (lead_id, author_id, body, created_at)
+         SELECT $1, NULL, $2, $3
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM academy_lead_comments existing
+           WHERE existing.lead_id = $1 AND existing.body = $2
+         )`,
+        [matchedLead.id, comment, commentCreatedAt],
+      );
       await client.query(
         `INSERT INTO academy_lead_phones
            (lead_id, phone, normalized_phone, is_primary)

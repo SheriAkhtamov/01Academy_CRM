@@ -134,6 +134,7 @@ const quoteIdent = (identifier: string) => `"${identifier.replace(/"/g, '""')}"`
 const TABLES_WITHOUT_UPDATED_AT = new Set([
   'academy_lead_stage_history',
   'academy_lead_assignment_history',
+  'academy_lead_comments',
   'academy_communications',
   'academy_student_transfers',
   'academy_student_status_history',
@@ -2064,6 +2065,21 @@ const mergeLeadRecords = async (
     throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
   }
 
+  for (const lead of [retainedLead, duplicateLead]) {
+    const legacyComment = nullableText(lead.comment);
+    if (!legacyComment) continue;
+    await query(
+      `INSERT INTO academy_lead_comments (lead_id, author_id, body, created_at)
+       SELECT $1, $2, $3, COALESCE($4, $5, NOW())
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM academy_lead_comments existing
+         WHERE existing.lead_id = $1 AND existing.body = $3
+       )`,
+      [lead.id, lead.createdBy ?? null, legacyComment, lead.updatedAt ?? null, lead.createdAt ?? null],
+    );
+  }
+
   const preferEnrollmentValue = <T>(retained: T | null | undefined, duplicate: T | null | undefined) => (
     preferLeadValue(retained, duplicate)
   );
@@ -2074,6 +2090,7 @@ const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM academy_communications WHERE lead_id = $1) AS communications,
        (SELECT COUNT(*)::int FROM academy_lead_assignment_history WHERE lead_id = $1) AS assignment_history,
        (SELECT COUNT(*)::int FROM academy_lead_stage_history WHERE lead_id = $1) AS stage_history,
+       (SELECT COUNT(*)::int FROM academy_lead_comments WHERE lead_id = $1) AS comments,
        (SELECT COUNT(*)::int FROM academy_payments WHERE lead_id = $1) AS payments,
        (SELECT COUNT(*)::int FROM academy_referral_rewards WHERE referred_lead_id = $1) AS referral_rewards,
        (SELECT COUNT(*)::int FROM academy_students WHERE lead_id = $1) AS students,
@@ -2152,6 +2169,7 @@ const mergeLeadRecords = async (
   await query(`UPDATE academy_communications SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(`UPDATE academy_lead_assignment_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(`UPDATE academy_lead_stage_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
+  await query(`UPDATE academy_lead_comments SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(
     `UPDATE academy_payments SET lead_id = $1, updated_at = NOW() WHERE lead_id = $2`,
     [retainedLeadId, duplicateLeadId],
@@ -2243,6 +2261,14 @@ const mergeLeadRecords = async (
       [retainedLeadId, primaryPhoneRow.id],
     );
   }
+  const latestMergedComment = await queryOne<{ body: string }>(
+    `SELECT body
+     FROM academy_lead_comments
+     WHERE lead_id = $1
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [retainedLeadId],
+  );
 
   await query(
     `UPDATE academy_tasks
@@ -2288,7 +2314,7 @@ const mergeLeadRecords = async (
       : duplicateLead.acquisitionCostUzs,
     managerId: preferLeadValue(retainedLead.managerId, duplicateLead.managerId),
     language: preferLeadValue(retainedLead.language, duplicateLead.language),
-    comment: combineLeadComments(retainedLead.comment, duplicateLead.comment),
+    comment: latestMergedComment?.body ?? combineLeadComments(retainedLead.comment, duplicateLead.comment),
     firstContactAt: earliestLeadDate(retainedLead.firstContactAt, duplicateLead.firstContactAt),
     firstContactChannel: preferLeadValue(retainedLead.firstContactChannel, duplicateLead.firstContactChannel),
     firstContactResult: preferLeadValue(retainedLead.firstContactResult, duplicateLead.firstContactResult),
@@ -2370,6 +2396,7 @@ const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM academy_communications WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_assignment_history WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_stage_history WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_comments WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_payments WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_referral_rewards WHERE referred_lead_id = $1)
        + (SELECT COUNT(*) FROM academy_students WHERE lead_id = $1)
@@ -2497,6 +2524,7 @@ const mergeLeadDraftIntoExisting = async (
     && nullableText(draft.contactName)
     ? nullableText(draft.contactName)
     : retainedLead.contactName;
+  const draftComment = nullableText(draft.comment);
   const updatedLead = await updateRow('academy_leads', retainedLeadId, {
     contactName: retainedContactName,
     phone: phoneValuesToSave[0]?.phone ?? retainedLead.phone,
@@ -2508,12 +2536,19 @@ const mergeLeadDraftIntoExisting = async (
       ? Number(requestedGroup.schoolId)
       : preferLeadValue(retainedLead.schoolId, toIdOrNull(draft.schoolId, 'schoolId')),
     managerId: assignedManager?.id ?? retainedLead.managerId,
-    comment: combineLeadComments(retainedLead.comment, nullableText(draft.comment)),
+    comment: draftComment ?? retainedLead.comment,
     language: preferLeadValue(retainedLead.language, nullableText(draft.language)),
     enrolledGroupId: nextEnrolledGroupId,
   });
   if (!updatedLead) {
     throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
+  }
+  if (draftComment) {
+    await insertRow('academy_lead_comments', {
+      leadId: retainedLeadId,
+      authorId: req.user!.id,
+      body: draftComment,
+    });
   }
   if (nextEnrolledGroupId) {
     await query(
@@ -5135,6 +5170,7 @@ router.post('/leads', async (req, res) => {
       }
 
       const source = await queryOne(`SELECT * FROM academy_lead_sources WHERE id = $1`, [sourceId]);
+      const initialComment = nullableText(req.body.comment);
       const createdLead = await insertRow('academy_leads', {
         contactName,
         phone: primaryPhone,
@@ -5149,12 +5185,19 @@ router.post('/leads', async (req, res) => {
         statusCode,
         managerId,
         language: nullableText(req.body.language) ?? 'ru',
-        comment: nullableText(req.body.comment) ?? null,
+        comment: initialComment ?? null,
         enrolledGroupId,
         referralCode: nullableText(req.body.referralCode) ?? null,
         referrerStudentId: requestedReferrerStudentId,
         createdBy: req.user!.id,
       });
+      if (initialComment) {
+        await insertRow('academy_lead_comments', {
+          leadId: createdLead.id,
+          authorId: req.user!.id,
+          body: initialComment,
+        });
+      }
       if (enrolledGroupId) {
         await query(
           `INSERT INTO academy_lead_group_reservations
@@ -5401,7 +5444,7 @@ router.get('/leads/:id', async (req, res) => {
     const lead = await getLead(id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadRowAccess(req, res, lead)) return;
-    const [history, assignmentHistory, communications, calls, tasks, payments, students] = await Promise.all([
+    const [history, assignmentHistory, comments, communications, calls, tasks, payments, students] = await Promise.all([
       query(`SELECT * FROM academy_lead_stage_history WHERE lead_id = $1 ORDER BY entered_at DESC`, [id]),
       query(
         `SELECT h.*,
@@ -5414,6 +5457,14 @@ router.get('/leads/:id', async (req, res) => {
          LEFT JOIN users actor ON actor.id = h.changed_by
          WHERE h.lead_id = $1
          ORDER BY h.created_at DESC`,
+        [id],
+      ),
+      query(
+        `SELECT comment.*, author.full_name AS author_name
+         FROM academy_lead_comments comment
+         LEFT JOIN users author ON author.id = comment.author_id
+         WHERE comment.lead_id = $1
+         ORDER BY comment.created_at DESC, comment.id DESC`,
         [id],
       ),
       query(`SELECT * FROM academy_communications WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
@@ -5467,6 +5518,7 @@ router.get('/leads/:id', async (req, res) => {
       ...visibleLead,
       history,
       assignmentHistory,
+      comments,
       stageDurations: buildLeadStageDurations(history),
       communications,
       calls,
@@ -5481,6 +5533,52 @@ router.get('/leads/:id', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch lead', { error });
     res.status(500).json({ error: 'Failed to fetch lead' });
+  }
+});
+
+router.post('/leads/:id/comments', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+    const body = nullableText(req.body.body);
+    if (!body) return res.status(400).json({ error: 'leadCommentRequired' });
+
+    const initialLead = await getLead(id);
+    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
+
+    const comment = await withTransaction<Row & { authorName: string | null }>(async () => {
+      const lockedLead = await queryOne(
+        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (!lockedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (!canMutateLeadRow(req, lockedLead)) {
+        throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
+      }
+
+      const created = await insertRow('academy_lead_comments', {
+        leadId: id,
+        authorId: req.user!.id,
+        body,
+      });
+      await updateRow('academy_leads', id, { comment: body });
+      return {
+        ...created,
+        authorName: req.user!.fullName ?? null,
+      };
+    });
+
+    await createAudit(req, 'ADD_ACADEMY_LEAD_COMMENT', 'academy_lead', id, {
+      commentId: comment.id,
+    });
+    res.status(201).json(comment);
+  } catch (error: any) {
+    logger.error('Failed to add lead comment', { error, leadId: req.params.id });
+    res.status(error.statusCode || 500).json({ error: error.message || 'leadCommentAddFailed' });
   }
 });
 
@@ -5851,6 +5949,9 @@ router.patch('/leads/:id', async (req, res) => {
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadMutationAccess(req, res, oldLead)) return;
+    const requestedComment = req.body.comment === undefined
+      ? undefined
+      : nullableText(req.body.comment);
 
     const hasRequestedGroup = req.body.enrolledGroupId !== undefined;
     const requestedGroupId = hasRequestedGroup
@@ -5974,7 +6075,7 @@ router.patch('/leads/:id', async (req, res) => {
       statusCode: nullableText(req.body.statusCode),
       managerId,
       language: nullableText(req.body.language),
-      comment: nullableText(req.body.comment),
+      comment: requestedComment,
       firstContactAt: nullableDate(req.body.firstContactAt),
       firstContactChannel: nullableText(req.body.firstContactChannel),
       firstContactResult: nullableText(req.body.firstContactResult),
@@ -6122,6 +6223,17 @@ router.patch('/leads/:id', async (req, res) => {
           sourceId: Number(updated.sourceId),
           messenger: updated.messenger,
           phone: updated.phone,
+        });
+      }
+      if (
+        updated
+        && requestedComment
+        && requestedComment !== nullableText(lockedLead.comment)
+      ) {
+        await insertRow('academy_lead_comments', {
+          leadId: id,
+          authorId: req.user!.id,
+          body: requestedComment,
         });
       }
       if (updated && requestedGroupId && lockedStudent) {

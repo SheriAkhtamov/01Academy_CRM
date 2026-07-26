@@ -1435,6 +1435,8 @@ export const boardTasks = pgTable("board_tasks", {
   position: integer("position").notNull().default(0),
   creatorId: integer("creator_id").references(() => users.id, { onDelete: "set null" }),
   assigneeId: integer("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
+  legacyAcademyTaskId: integer("legacy_academy_task_id"),
   dueAt: timestamp("due_at"),
   acceptedAt: timestamp("accepted_at"),
   acceptedBy: integer("accepted_by").references(() => users.id, { onDelete: "set null" }),
@@ -1444,6 +1446,10 @@ export const boardTasks = pgTable("board_tasks", {
   boardStatusIdx: index("board_tasks_board_status_idx").on(table.boardId, table.status),
   assigneeIdx: index("board_tasks_assignee_idx").on(table.assigneeId),
   creatorIdx: index("board_tasks_creator_idx").on(table.creatorId),
+  leadIdx: index("board_tasks_lead_idx").on(table.leadId),
+  legacyAcademyTaskUnique: uniqueIndex("board_tasks_legacy_academy_task_unique")
+    .on(table.legacyAcademyTaskId)
+    .where(sql`${table.legacyAcademyTaskId} IS NOT NULL`),
   statusCheck: check("board_tasks_status_check", sql`${table.status} IN ('backlog', 'todo', 'in_progress', 'done', 'accepted')`),
   priorityCheck: check("board_tasks_priority_check", sql`${table.priority} IN ('urgent', 'normal', 'low')`),
 }));

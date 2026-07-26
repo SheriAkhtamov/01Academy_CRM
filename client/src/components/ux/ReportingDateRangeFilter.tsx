@@ -1,0 +1,139 @@
+import { CalendarRange, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
+import {
+  reportingRangeForPreset,
+  type ReportingDatePreset,
+  type ReportingDateRange,
+} from '@/lib/reportingDateRange';
+import { cn } from '@/lib/utils';
+
+const presetTranslationKeys = {
+  last7: 'reportingLast7Days',
+  last30: 'reportingLast30Days',
+  thisMonth: 'reportingThisMonth',
+  previousMonth: 'reportingPreviousMonth',
+} as const satisfies Record<Exclude<ReportingDatePreset, 'custom'>, TranslationKey>;
+
+const quickPresets = ['last7', 'last30', 'thisMonth', 'previousMonth'] as const;
+
+export function ReportingDateRangeFilter({
+  value,
+  onChange,
+  isFetching = false,
+  className,
+}: {
+  value: ReportingDateRange;
+  onChange: (value: ReportingDateRange) => void;
+  isFetching?: boolean;
+  className?: string;
+}) {
+  const { t, language } = useTranslation();
+  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const formatDate = (dateOnly: string) => new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${dateOnly}T00:00:00Z`));
+
+  const setPreset = (preset: Exclude<ReportingDatePreset, 'custom'>) => {
+    onChange(reportingRangeForPreset(preset));
+  };
+
+  const setBoundary = (boundary: 'from' | 'to', nextValue: string) => {
+    if (!nextValue) return;
+    const next = { ...value, [boundary]: nextValue, preset: 'custom' as const };
+    if (next.from > next.to) {
+      if (boundary === 'from') next.to = nextValue;
+      else next.from = nextValue;
+    }
+    onChange(next);
+  };
+
+  return (
+    <Card className={cn('border-border/70 bg-card/95 shadow-2xs', className)}>
+      <CardContent className="flex flex-col gap-3 p-3 sm:p-4 xl:flex-row xl:items-center">
+        <div className="flex min-w-0 items-center gap-3 xl:mr-auto">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <CalendarRange className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{t('reportingPeriod')}</p>
+            <p className="truncate text-xs text-muted-foreground" aria-live="polite">
+              {formatDate(value.from)} — {formatDate(value.to)}
+            </p>
+          </div>
+          {isFetching ? <Loader2 className="ml-auto size-4 shrink-0 animate-spin text-muted-foreground xl:ml-0" /> : null}
+        </div>
+
+        <div className="hidden rounded-lg bg-muted p-1 xl:flex" aria-label={t('reportingQuickPeriods')}>
+          {quickPresets.map((preset) => (
+            <Button
+              key={preset}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-8 px-3 text-xs font-medium',
+                value.preset === preset && 'bg-background text-foreground shadow-sm hover:bg-background',
+              )}
+              aria-pressed={value.preset === preset}
+              onClick={() => setPreset(preset)}
+            >
+              {t(presetTranslationKeys[preset])}
+            </Button>
+          ))}
+        </div>
+
+        <Select
+          value={value.preset}
+          onValueChange={(preset) => {
+            if (preset !== 'custom') setPreset(preset as Exclude<ReportingDatePreset, 'custom'>);
+          }}
+        >
+          <SelectTrigger className="xl:hidden" aria-label={t('reportingQuickPeriods')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {quickPresets.map((preset) => (
+              <SelectItem key={preset} value={preset}>{t(presetTranslationKeys[preset])}</SelectItem>
+            ))}
+            {value.preset === 'custom' ? <SelectItem value="custom">{t('reportingCustomPeriod')}</SelectItem> : null}
+          </SelectContent>
+        </Select>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="relative">
+            <span className="absolute left-3 top-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t('dateFrom')}
+            </span>
+            <Input
+              type="date"
+              value={value.from}
+              max={value.to}
+              onChange={(event) => setBoundary('from', event.target.value)}
+              className="h-12 min-w-0 pt-5 sm:w-[158px]"
+            />
+          </label>
+          <label className="relative">
+            <span className="absolute left-3 top-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t('dateTo')}
+            </span>
+            <Input
+              type="date"
+              value={value.to}
+              min={value.from}
+              onChange={(event) => setBoundary('to', event.target.value)}
+              className="h-12 min-w-0 pt-5 sm:w-[158px]"
+            />
+          </label>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

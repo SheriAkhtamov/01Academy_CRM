@@ -18,6 +18,8 @@ export interface TaskSummary {
     status: BoardStatus;
     priority: BoardPriority;
     position: number;
+    leadId: number | null;
+    lead: { id: number; contactName: string } | null;
     dueAt: string | null;
     acceptedAt: string | null;
     createdAt: string;
@@ -81,6 +83,8 @@ export interface TaskDetail {
     position: number;
     creatorId: number | null;
     assigneeId: number | null;
+    leadId: number | null;
+    lead: { id: number; contactName: string } | null;
     dueAt: string | null;
     acceptedAt: string | null;
     acceptedBy: number | null;

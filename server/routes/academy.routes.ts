@@ -8,7 +8,6 @@ import { storage } from '../storage';
 import { logger } from '../lib/logger';
 import { isGeneratedInstagramLeadName } from '../lib/instagram-lead';
 import {
-  getTrailingZonedMonthRanges,
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
   getZonedDayRange,
@@ -976,6 +975,54 @@ const parseDateOnly = (value: unknown) => {
     || marker.getUTCDate() !== day
   ) return null;
   return zonedWallClockToInstant({ year, month, day }, ACADEMY_TIME_ZONE);
+};
+
+type ReportingRange = {
+  start: Date;
+  end: Date;
+  from: string;
+  to: string;
+};
+
+const parseReportingRange = (fromValue: unknown, toValue: unknown): ReportingRange | null => {
+  if (fromValue === undefined && toValue === undefined) return null;
+  const from = String(fromValue ?? '');
+  const to = String(toValue ?? '');
+  const start = parseDateOnly(from);
+  const inclusiveEnd = parseDateOnly(to);
+  if (!start || !inclusiveEnd) {
+    throw Object.assign(new Error('invalidReportingPeriod'), { statusCode: 400 });
+  }
+  const end = getZonedDayRange(inclusiveEnd, ACADEMY_TIME_ZONE).end;
+  if (end <= start) {
+    throw Object.assign(new Error('invalidReportingPeriod'), { statusCode: 400 });
+  }
+  const totalDays = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1_000));
+  if (totalDays > 731) {
+    throw Object.assign(new Error('reportingPeriodTooLong'), { statusCode: 400 });
+  }
+  return { start, end, from, to };
+};
+
+const academyDateOnlyKey = (value: Date) => {
+  const parts = getZonedDateTimeParts(value, ACADEMY_TIME_ZONE);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+};
+
+const reportingBuckets = (range: ReportingRange) => {
+  const dayMs = 24 * 60 * 60 * 1_000;
+  const totalDays = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / dayMs));
+  const stepDays = totalDays <= 14 ? 1 : totalDays <= 70 ? 7 : Math.ceil(totalDays / 12);
+  const result: Array<{ start: Date; end: Date; periodStart: string }> = [];
+  for (let cursor = range.start.getTime(); cursor < range.end.getTime(); cursor += stepDays * dayMs) {
+    const start = new Date(cursor);
+    result.push({
+      start,
+      end: new Date(Math.min(cursor + stepDays * dayMs, range.end.getTime())),
+      periodStart: academyDateOnlyKey(start),
+    });
+  }
+  return result;
 };
 
 const startOfAcademyDay = (date: Date) =>
@@ -2277,6 +2324,12 @@ const mergeLeadRecords = async (
     [retainedLeadId, duplicateLeadId],
   );
   await query(
+    `UPDATE board_tasks
+     SET lead_id = $1, updated_at = NOW()
+     WHERE lead_id = $2`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
     `UPDATE academy_notification_outbox
      SET entity_id = $1, updated_at = NOW()
      WHERE entity_type = 'lead' AND entity_id = $2`,
@@ -2708,6 +2761,13 @@ const syncLeadManagerAssignment = async (
            AND entity_id IN (SELECT id FROM academy_students WHERE lead_id = $2)
          )
        )`,
+    [manager.id, lead.id],
+  );
+  await query(
+    `UPDATE board_tasks
+     SET assignee_id = $1, updated_at = NOW()
+     WHERE lead_id = $2
+       AND status NOT IN ('done', 'accepted')`,
     [manager.id, lead.id],
   );
   await syncLeadOwnedNotifications(manager.id, [Number(lead.id)]);
@@ -3843,7 +3903,7 @@ const studentBelongsToCourse = (student: Row, courseId: number) => {
   return Number(student.courseId) === Number(courseId);
 };
 
-const buildAnalytics = async () => {
+const buildAnalytics = async (reportingRange: ReportingRange | null = null) => {
   const [data, companySettings] = await Promise.all([getAcademyDataset(), getCompanySettings()]);
   const targets = toAnalyticsTargets(companySettings);
   const now = new Date();
@@ -3852,8 +3912,21 @@ const buildAnalytics = async () => {
     now,
     ACADEMY_TIME_ZONE,
   );
+  const metricStart = reportingRange?.start ?? monthStart;
+  const metricEnd = reportingRange?.end ?? nextMonthStart;
+  const valueInMetricRange = (value: unknown) => {
+    const date = getValidDate(value);
+    return date !== null && date >= metricStart && date < metricEnd;
+  };
+  const periodLeads = data.leads.filter((lead) => valueInMetricRange(lead.createdAt));
+  const periodLessons = data.lessons.filter((lesson) => valueInMetricRange(lesson.scheduledAt));
+  const periodLessonIds = new Set(periodLessons.map((lesson) => Number(lesson.id)));
+  const periodAttendance = data.attendance.filter((record) => periodLessonIds.has(Number(record.lessonId)));
+  const periodLessonSurveys = data.lessonSurveys.filter((survey) => valueInMetricRange(survey.createdAt));
+  const periodParentSurveys = data.parentSurveys.filter((survey) => valueInMetricRange(survey.createdAt));
 
   const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid');
+  const periodPaidPayments = paidPayments.filter((payment) => valueInMetricRange(payment.paidAt));
   const studentById = new Map(data.students.map((student) => [Number(student.id), student]));
   const leadById = new Map(data.leads.map((lead) => [Number(lead.id), lead]));
   const leadIdForPayment = (payment: Row): number | null => {
@@ -3885,19 +3958,15 @@ const buildAnalytics = async () => {
   }
   const newPaidCustomersThisMonth = new Set(
     [...firstPaidAtByCustomer.entries()]
-      .filter(([, paidAt]) => paidAt >= monthStart && paidAt < nextMonthStart)
+      .filter(([, paidAt]) => paidAt >= metricStart && paidAt < metricEnd)
       .map(([customerKey]) => customerKey),
   );
-  const revenueMonth = paidPayments
-    .filter((payment) => {
-      const paidAt = getValidDate(payment.paidAt);
-      return paidAt !== null && paidAt >= monthStart && paidAt < nextMonthStart;
-    })
+  const revenueMonth = periodPaidPayments
     .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
   const revenueTotal = paidPayments.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
-  const avgCheck = calculateAverage(paidPayments.map((payment) => Number(payment.amountUzs || 0))) ?? 0;
+  const avgCheck = calculateAverage(periodPaidPayments.map((payment) => Number(payment.amountUzs || 0))) ?? 0;
   const expensesMonth = data.expenses
-    .reduce((sum, expense) => sum + expenseAmountInsidePeriod(expense, monthStart, nextMonthStart), 0);
+    .reduce((sum, expense) => sum + expenseAmountInsidePeriod(expense, metricStart, metricEnd), 0);
   const cac = calculateCac(expensesMonth, newPaidCustomersThisMonth.size) ?? 0;
   const roas = calculateRoas(revenueMonth, expensesMonth) ?? 0;
   const ltvByStudent = data.students.map((student) => ({
@@ -3922,17 +3991,17 @@ const buildAnalytics = async () => {
       || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance)
     )
   ));
-  const lowScores = data.lessonSurveys.filter((survey) => Number(survey.score) < 3);
+  const lowScores = periodLessonSurveys.filter((survey) => Number(survey.score) < 3);
   const longThinkingLeads = data.leads.filter((lead) =>
     lead.statusCode === 'thinking' && lead.updatedAt && new Date(lead.updatedAt) < addDays(now, -7)
   );
-  const nps = calculateNps(data.parentSurveys.map((survey) => Number(survey.npsScore)).filter(Number.isFinite)) ?? 0;
+  const nps = calculateNps(periodParentSurveys.map((survey) => Number(survey.npsScore)).filter(Number.isFinite)) ?? 0;
   const churnByReason = data.students
     .filter((student) => ['paused', 'expelled'].includes(String(student.status))
       && student.exitReason
       && student.updatedAt
-      && new Date(student.updatedAt) >= monthStart
-      && new Date(student.updatedAt) < nextMonthStart)
+      && new Date(student.updatedAt) >= metricStart
+      && new Date(student.updatedAt) < metricEnd)
     .reduce<Record<string, number>>((acc, student) => {
       const reason = String(student.exitReason);
       acc[reason] = (acc[reason] ?? 0) + 1;
@@ -3955,9 +4024,9 @@ const buildAnalytics = async () => {
   // larger than the preceding one and produce conversion above 100%.
   const funnel = activePipelineStatuses.map((status, stageIndex) => ({
     ...status,
-    count: reachedStageCount(data.leads, stageIndex) }));
+    count: reachedStageCount(periodLeads, stageIndex) }));
   const funnelBySource = Object.fromEntries(data.sources.map((source) => {
-    const sourceLeads = data.leads.filter((lead) => Number(lead.sourceId) === Number(source.id));
+    const sourceLeads = periodLeads.filter((lead) => Number(lead.sourceId) === Number(source.id));
     return [String(source.id), activePipelineStatuses.map((status, stageIndex) => ({
       ...status,
       count: reachedStageCount(sourceLeads, stageIndex),
@@ -3970,27 +4039,25 @@ const buildAnalytics = async () => {
     capacityLabel: `${Number(group.currentStudents || 0)}/${Number(group.maxStudents || 12)}`,
     isFull: Number(group.currentStudents || 0) >= Number(group.maxStudents || 12) }));
 
-  const teacherHours = data.lessons
+  const teacherHours = periodLessons
     .filter((lesson) => lesson.status === 'conducted')
     .reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0);
 
   // --- Marketing metrics (TZ 4.2): conversions, CPL, deal cycle, warm-base conversion. ---
-  const newRequestCount = data.leads.length;
-  const invitedToDemoCount = data.leads.filter((lead) =>
+  const newRequestCount = periodLeads.length;
+  const invitedToDemoCount = periodLeads.filter((lead) =>
     ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
     || lead.demoAttended).length;
-  const paidAfterDemoCount = data.leads.filter((lead) =>
+  const paidAfterDemoCount = periodLeads.filter((lead) =>
     paidLeadIds.has(Number(lead.id))
     && (['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
       || lead.demoAttended),
   ).length;
   const leadToDemoConversion = newRequestCount > 0 ? Number(((invitedToDemoCount / newRequestCount) * 100).toFixed(1)) : 0;
   const demoToPaidConversion = invitedToDemoCount > 0 ? Number(((paidAfterDemoCount / invitedToDemoCount) * 100).toFixed(1)) : 0;
-  const leadToPaidConversion = newRequestCount > 0 ? Number(((paidLeadIds.size / newRequestCount) * 100).toFixed(1)) : 0;
-  const newLeadsMonth = data.leads.filter((lead) => {
-    const createdAt = getValidDate(lead.createdAt);
-    return createdAt !== null && createdAt >= monthStart && createdAt < nextMonthStart;
-  });
+  const paidPeriodLeadCount = periodLeads.filter((lead) => paidLeadIds.has(Number(lead.id))).length;
+  const leadToPaidConversion = newRequestCount > 0 ? Number(((paidPeriodLeadCount / newRequestCount) * 100).toFixed(1)) : 0;
+  const newLeadsMonth = periodLeads;
   const cpl = newLeadsMonth.length > 0 ? Math.round(expensesMonth / newLeadsMonth.length) : 0;
   // Average deal cycle (days) from lead creation to first paid payment.
   const firstPaidAtByLead = new Map<number, Date>();
@@ -4001,7 +4068,7 @@ const buildAnalytics = async () => {
     const previous = firstPaidAtByLead.get(leadId);
     if (!previous || paidAt < previous) firstPaidAtByLead.set(leadId, paidAt);
   }
-  const dealCycleDays = data.leads
+  const dealCycleDays = periodLeads
     .map((lead) => {
       const firstPaidAt = firstPaidAtByLead.get(Number(lead.id));
       const createdAt = getValidDate(lead.createdAt);
@@ -4011,17 +4078,20 @@ const buildAnalytics = async () => {
     .filter((d): d is number => d !== null && Number.isFinite(d));
   const avgDealCycleDays = calculateAvgDealCycleDays(dealCycleDays) ?? 0;
   // Warm-base reactivation: leads that returned from not_now to an active status (via stage history absent here; approximate via current status).
-  const warmReactivated = data.leads.filter((lead) => lead.statusCode !== 'not_now' && lead.warmMovedAt).length;
+  const warmReactivated = data.leads.filter((lead) => (
+    lead.statusCode !== 'not_now'
+    && lead.warmMovedAt
+    && valueInMetricRange(lead.warmMovedAt)
+  )).length;
 
   // --- Operations metrics (TZ 4.3): lesson NPS by teacher/course/group, progress, teacher hours, retention %. ---
-  const lessonScores = data.lessonSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
+  const lessonScores = periodLessonSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
   const avgLessonScore = calculateAverage(lessonScores) ?? 0;
   const byTeacher = data.teachers.map((teacher) => {
-    const teacherLessons = data.lessons.filter((lesson) => Number(lesson.teacherId) === Number(teacher.id) && lesson.status === 'conducted');
-    const teacherSurveys = data.lessonSurveys.filter((survey) => Number(survey.teacherId) === Number(teacher.id));
-    const teacherStudents = activeStudentsWithAttendance.filter((student) =>
-      data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id))
-        .some((group) => studentBelongsToGroup(student, Number(group.id))));
+    const teacherLessons = periodLessons.filter((lesson) => Number(lesson.teacherId) === Number(teacher.id) && lesson.status === 'conducted');
+    const teacherLessonIds = new Set(teacherLessons.map((lesson) => Number(lesson.id)));
+    const teacherAttendance = periodAttendance.filter((record) => teacherLessonIds.has(Number(record.lessonId)));
+    const teacherSurveys = periodLessonSurveys.filter((survey) => Number(survey.teacherId) === Number(teacher.id));
     const scoresByDate = [...teacherSurveys]
       .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
       .map((survey) => Number(survey.score))
@@ -4031,15 +4101,17 @@ const buildAnalytics = async () => {
       teacherName: teacher.fullName,
       hours: teacherLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0),
       avgScore: calculateAverage(scoresByDate) ?? 0,
-      attendance: calculateAverage(teacherStudents
-        .map((student) => Number(student.attendancePercent || 0))
-        .filter(Number.isFinite)) ?? 0,
+      attendance: teacherAttendance.length > 0
+        ? Math.round(
+            (teacherAttendance.filter((record) => record.status === 'present').length / teacherAttendance.length) * 100,
+          )
+        : 0,
       groupsCount: data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id)).length,
       trend: calculateTrend(scoresByDate),
     };
   });
   const byCourseLessonNps = data.courses.map((course) => {
-    const courseSurveys = data.lessonSurveys.filter((survey) => Number(survey.courseId) === Number(course.id));
+    const courseSurveys = periodLessonSurveys.filter((survey) => Number(survey.courseId) === Number(course.id));
     const scores = [...courseSurveys]
       .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
       .map((survey) => Number(survey.score))
@@ -4097,9 +4169,11 @@ const buildAnalytics = async () => {
 
   return {
     summary: {
-      newLeadsWeek: data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
+      newLeadsWeek: reportingRange
+        ? periodLeads.length
+        : data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: newLeadsMonth.length,
-      activeLeads: data.leads.filter((lead) => activePipelineStatusCodes.has(String(lead.statusCode))).length,
+      activeLeads: periodLeads.filter((lead) => activePipelineStatusCodes.has(String(lead.statusCode))).length,
       warmBaseSize: data.leads.filter((lead) => lead.statusCode === 'not_now').length,
       warmReactivated,
       activeStudents: data.students.filter((student) => student.status === 'studying').length,
@@ -4111,9 +4185,11 @@ const buildAnalytics = async () => {
       cpl,
       averageLtv,
       ltvCac: cac ? Number((averageLtv / cac).toFixed(2)) : 0,
-      avgAttendance: calculateAverage(activeStudentsWithAttendance
-        .map((student) => Number(student.attendancePercent || 0))
-        .filter(Number.isFinite)) ?? 0,
+      avgAttendance: periodAttendance.length > 0
+        ? Math.round(
+            (periodAttendance.filter((record) => record.status === 'present').length / periodAttendance.length) * 100,
+          )
+        : 0,
       avgLessonScore,
       nps,
       npsBelowTarget: nps < targets.nps,
@@ -4135,7 +4211,7 @@ const buildAnalytics = async () => {
       longThinkingLeads,
       overdueTasks },
     byCourse: data.courses.map((course) => {
-      const coursePaidCustomers = new Set(paidPayments
+      const coursePaidCustomers = new Set(periodPaidPayments
         .filter((payment) => {
           const studentCourseId = studentById.get(Number(payment.studentId))?.courseId;
           const leadCourseId = leadById.get(Number(leadIdForPayment(payment)))?.courseId;
@@ -4144,17 +4220,18 @@ const buildAnalytics = async () => {
         .map(customerKeyForPayment)
         .filter((key): key is string => Boolean(key)));
       const courseExpenses = data.expenses.reduce((sum, expense) => {
-        const sourceLeads = data.leads.filter((lead) => Number(lead.sourceId) === Number(expense.sourceId));
+        const sourceLeads = periodLeads.filter((lead) => Number(lead.sourceId) === Number(expense.sourceId));
         if (sourceLeads.length === 0) return sum;
         const courseLeadCount = sourceLeads.filter((lead) => Number(lead.courseId) === Number(course.id)).length;
-        return sum + (Number(expense.amountUzs || 0) * courseLeadCount) / sourceLeads.length;
+        const recognizedExpense = expenseAmountInsidePeriod(expense, metricStart, metricEnd);
+        return sum + (recognizedExpense * courseLeadCount) / sourceLeads.length;
       }, 0);
       return {
         courseId: course.id,
         courseName: course.name,
-        leads: data.leads.filter((lead) => Number(lead.courseId) === Number(course.id)).length,
+        leads: periodLeads.filter((lead) => Number(lead.courseId) === Number(course.id)).length,
         students: data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying').length,
-        revenue: paidPayments
+        revenue: periodPaidPayments
           .filter((payment) => {
             const studentCourseId = studentById.get(Number(payment.studentId))?.courseId;
             const leadCourseId = leadById.get(Number(leadIdForPayment(payment)))?.courseId;
@@ -4171,12 +4248,12 @@ const buildAnalytics = async () => {
         cac: calculateCac(courseExpenses, coursePaidCustomers.size) ?? 0 };
     }),
     bySource: data.sources.map((source) => {
-      const sourceLeads = data.leads.filter((lead) => Number(lead.sourceId) === Number(source.id));
+      const sourceLeads = periodLeads.filter((lead) => Number(lead.sourceId) === Number(source.id));
       const sourceLeadIds = new Set(sourceLeads.map((lead) => Number(lead.id)));
       const sourceStudents = data.students.filter((student) => sourceLeadIds.has(Number(student.leadId)));
       const paidSourceStudents = sourceStudents.filter((student) => paidStudentIds.has(Number(student.id)));
       const paidSourceLeadIds = new Set([...paidLeadIds].filter((leadId) => sourceLeadIds.has(leadId)));
-      const sourceRevenue = paidPayments
+      const sourceRevenue = periodPaidPayments
         .filter((payment) => {
           const leadId = leadIdForPayment(payment);
           return leadId !== null && sourceLeadIds.has(leadId);
@@ -4184,7 +4261,7 @@ const buildAnalytics = async () => {
         .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
       const sourceExpenses = data.expenses
         .filter((expense) => Number(expense.sourceId) === Number(source.id))
-        .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0);
+        .reduce((sum, expense) => sum + expenseAmountInsidePeriod(expense, metricStart, metricEnd), 0);
       const sourceCac = calculateCac(sourceExpenses, paidSourceLeadIds.size) ?? 0;
       return {
         sourceId: source.id,
@@ -4204,12 +4281,28 @@ const buildAnalytics = async () => {
     retentionByCourse,
     churnByReason,
     targets,
+    reportingRange: reportingRange
+      ? { from: reportingRange.from, to: reportingRange.to }
+      : { from: academyDateOnlyKey(monthStart), to: academyDateOnlyKey(new Date(nextMonthStart.getTime() - 1)) },
     data };
 };
 
-const buildAdministrationDashboard = async () => {
+const buildAdministrationDashboard = async (requestedRange: ReportingRange | null = null) => {
+  const now = new Date();
+  const defaultMonth = getZonedMonthRange(now, ACADEMY_TIME_ZONE);
+  const currentRange: ReportingRange = requestedRange ?? {
+    start: defaultMonth.start,
+    end: defaultMonth.end,
+    from: academyDateOnlyKey(defaultMonth.start),
+    to: academyDateOnlyKey(new Date(defaultMonth.end.getTime() - 1)),
+  };
+  const rangeDuration = currentRange.end.getTime() - currentRange.start.getTime();
+  const previousRange = {
+    start: new Date(currentRange.start.getTime() - rangeDuration),
+    end: currentRange.start,
+  };
   const [analytics, users, escalatedTasks] = await Promise.all([
-    buildAnalytics(),
+    buildAnalytics(currentRange),
     storage.getUsers(),
     query(`SELECT t.id, t.title, t.deadline_at, u.full_name AS responsible_name
            FROM academy_tasks t
@@ -4219,12 +4312,9 @@ const buildAdministrationDashboard = async () => {
            LIMIT 20`),
   ]);
   const data = analytics.data;
-  const now = new Date();
-  const currentMonth = getZonedMonthRange(now, ACADEMY_TIME_ZONE);
-  const previousMonth = getZonedMonthRange(now, ACADEMY_TIME_ZONE, -1);
-  const currentMonthStart = currentMonth.start;
-  const nextMonthStart = currentMonth.end;
-  const previousMonthStart = previousMonth.start;
+  const currentMonthStart = currentRange.start;
+  const nextMonthStart = currentRange.end;
+  const previousMonthStart = previousRange.start;
   const activeGroups = data.groups.filter((group) => ['open', 'in_progress'].includes(group.status));
   const activeTeachers = data.teachers.filter((teacher) => teacher.status === 'active');
   const activeUsers = users.filter((user) => user.isActive);
@@ -4263,10 +4353,9 @@ const buildAdministrationDashboard = async () => {
     (student) => inRange(student.enrolledAt || student.createdAt, previousMonthStart, currentMonthStart),
   ).length;
 
-  const monthRanges = getTrailingZonedMonthRanges(now, ACADEMY_TIME_ZONE, 6);
-  const trends = monthRanges.map(({ start, end, key }) => {
+  const trends = reportingBuckets(currentRange).map(({ start, end, periodStart }) => {
     return {
-      month: key,
+      periodStart,
       revenue: paidPayments
         .filter((payment) => inRange(payment.paidAt, start, end))
         .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
@@ -4350,6 +4439,7 @@ const buildAdministrationDashboard = async () => {
     })),
   ]
     .filter((item) => item.occurredAt)
+    .filter((item) => inRange(item.occurredAt, currentRange.start, currentRange.end))
     .sort((left, right) =>
       new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
     .slice(0, 6);
@@ -4414,6 +4504,7 @@ const buildAdministrationDashboard = async () => {
     upcomingLessons,
     churnByReason,
     escalatedTasks,
+    reportingRange: { from: currentRange.from, to: currentRange.to },
     generatedAt: now.toISOString(),
   };
 };
@@ -4452,6 +4543,7 @@ const buildMarketingAnalyticsPayload = (analytics: Row) => ({
     cac: analytics.summary.cac,
     roas: analytics.summary.roas,
     avgDealCycleDays: analytics.summary.avgDealCycleDays,
+    newPaidStudents: analytics.summary.newPaidStudents,
   },
   funnel: analytics.funnel,
   funnelBySource: analytics.funnelBySource,
@@ -4464,15 +4556,17 @@ const buildMarketingAnalyticsPayload = (analytics: Row) => ({
   cpl: analytics.summary.cpl,
   avgDealCycleDays: analytics.summary.avgDealCycleDays,
   targets: analytics.targets,
+  reportingRange: analytics.reportingRange,
 });
 
 router.get('/workspaces/administration', async (req, res) => {
   if (!ensureAdministrationWorkspaceAccess(req, res)) return;
   try {
-    res.json(await buildAdministrationDashboard());
-  } catch (error) {
+    const reportingRange = parseReportingRange(req.query.from, req.query.to);
+    res.json(await buildAdministrationDashboard(reportingRange));
+  } catch (error: any) {
     logger.error('Failed to fetch administration dashboard', { error });
-    res.status(500).json({ error: 'Failed to fetch administration dashboard' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch administration dashboard' });
   }
 });
 
@@ -4770,18 +4864,19 @@ router.patch('/teachers/me/availability', (_req, res) => {
 router.get('/workspaces/marketing', async (req, res) => {
   if (!ensureMarketingWorkspaceAccess(req, res)) return;
   try {
+    const reportingRange = parseReportingRange(req.query.from, req.query.to);
     const [dataset, analytics] = await Promise.all([
       getMarketingWorkspaceDataset(),
-      buildAnalytics(),
+      buildAnalytics(reportingRange),
     ]);
     res.json({
       ...dataset,
       analytics: buildMarketingAnalyticsPayload(analytics),
       constants: academyConstants(),
     });
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Failed to fetch marketing workspace', { error });
-    res.status(500).json({ error: 'Failed to fetch marketing workspace' });
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch marketing workspace' });
   }
 });
 
@@ -5302,6 +5397,13 @@ router.post('/leads/bulk-assign', async (req, res) => {
            )`,
         [lockedManager.id, changedIds],
       );
+      await query(
+        `UPDATE board_tasks
+         SET assignee_id = $1, updated_at = NOW()
+         WHERE lead_id = ANY($2::int[])
+           AND status NOT IN ('done', 'accepted')`,
+        [lockedManager.id, changedIds],
+      );
       await syncLeadOwnedNotifications(lockedManager.id, changedIds);
       for (const lead of changed) {
         await insertRow('academy_lead_assignment_history', {
@@ -5481,7 +5583,13 @@ router.get('/leads/:id', async (req, res) => {
          ORDER BY call.started_at DESC`,
         [id],
       ),
-      query(`SELECT * FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1 ORDER BY deadline_at`, [id]),
+      query(
+        `SELECT task.id, task.title, task.description, task.due_at, task.status
+         FROM board_tasks task
+         WHERE task.lead_id = $1
+         ORDER BY task.due_at NULLS LAST, task.created_at DESC`,
+        [id],
+      ),
       query(
         `SELECT payment.*,
                 student.student_name,

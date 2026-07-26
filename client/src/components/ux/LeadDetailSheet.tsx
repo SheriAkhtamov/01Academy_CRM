@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { Link } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -182,7 +183,7 @@ interface LeadDetails {
     id: number;
     title: string;
     description?: string | null;
-    deadlineAt?: string | null;
+    dueAt?: string | null;
     status: string;
   }>;
   payments?: Array<{
@@ -269,12 +270,6 @@ const leadSchema = z.object({
   expectedPaymentUzs: optionalNumberString,
 });
 
-const contactSchema = z.object({
-  channel: z.string().min(1, 'fillRequiredFields'),
-  result: z.string().trim().min(1, 'fillRequiredFields'),
-  comment: z.string(),
-});
-
 const paymentSchema = z.object({
   studentId: z.string().min(1, 'studentSelectionRequired'),
   amountUzs: z.string().refine((value) => Number(value) > 0, 'fillRequiredFields'),
@@ -311,7 +306,6 @@ const taskSchema = z.object({
 });
 
 type LeadFormValues = z.infer<typeof leadSchema>;
-type ContactFormValues = z.infer<typeof contactSchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type TaskFormValues = z.infer<typeof taskSchema>;
 
@@ -394,10 +388,6 @@ export function LeadDetailSheet({
       statusCode: 'new_request',
       expectedPaymentUzs: '',
     },
-  });
-  const contactForm = useForm<ContactFormValues>({
-    resolver: zodResolver(contactSchema),
-    defaultValues: { channel: 'call', result: '', comment: '' },
   });
   const paymentForm = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -588,16 +578,6 @@ export function LeadDetailSheet({
     },
   });
 
-  const addContact = useMutation({
-    mutationFn: (values: ContactFormValues) =>
-      apiRequest('POST', `/api/academy/leads/${leadId}/contact`, values),
-    onSuccess: async () => {
-      contactForm.reset({ channel: 'call', result: '', comment: '' });
-      await finishMutation(t('contactRecorded'));
-    },
-    onError: (error: Error) => toast({ title: t('contactRecordFailed'), description: error.message, variant: 'destructive' }),
-  });
-
   const addLeadComment = useMutation({
     mutationFn: (body: string) =>
       apiRequest('POST', `/api/academy/leads/${leadId}/comments`, { body }),
@@ -648,27 +628,31 @@ export function LeadDetailSheet({
   });
 
   const createTask = useMutation({
-    mutationFn: (values: TaskFormValues) => apiRequest('POST', '/api/academy/tasks', {
+    mutationFn: (values: TaskFormValues) => apiRequest('POST', '/api/board/tasks', {
       title: values.title,
       description: values.description,
-      deadlineAt: values.deadlineAt ? new Date(values.deadlineAt).toISOString() : null,
-      responsibleId: currentUserId,
-      entityType: 'lead',
-      entityId: leadId,
+      dueAt: values.deadlineAt ? new Date(values.deadlineAt).toISOString() : null,
+      assigneeId: currentUserId,
+      status: 'backlog',
+      priority: 'normal',
+      leadId,
     }),
     onSuccess: async () => {
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
+      await queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
       await finishMutation(t('taskCreated'));
     },
     onError: (error: Error) => toast({ title: t('taskCreateFailed'), description: error.message, variant: 'destructive' }),
   });
 
   const updateTask = useMutation({
-    mutationFn: (taskId: number) => apiRequest('PATCH', `/api/academy/tasks/${taskId}`, {
+    mutationFn: (taskId: number) => apiRequest('PATCH', `/api/board/tasks/${taskId}/status`, {
       status: 'done',
-      completedAt: new Date().toISOString(),
     }),
-    onSuccess: () => finishMutation(t('taskUpdated')),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+      await finishMutation(t('taskUpdated'));
+    },
     onError: (error: Error) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
@@ -816,7 +800,7 @@ export function LeadDetailSheet({
                   <TabsTrigger value="deal" className="shrink-0 gap-1.5"><UserRound data-icon="inline-start" />{t('dealTab')}</TabsTrigger>
                   <TabsTrigger value="activity" className="shrink-0 gap-1.5"><History data-icon="inline-start" />{t('activityTab')}</TabsTrigger>
                   <TabsTrigger value="payment" className="shrink-0 gap-1.5"><CreditCard data-icon="inline-start" />{t('payment')}</TabsTrigger>
-                  <TabsTrigger value="tasks" className="shrink-0 gap-1.5"><ClipboardList data-icon="inline-start" />{t('myTasks')}</TabsTrigger>
+                  <TabsTrigger value="tasks" className="shrink-0 gap-1.5"><ClipboardList data-icon="inline-start" />{t('leadTasks')}</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -1083,78 +1067,21 @@ export function LeadDetailSheet({
                       </div>
                     </form>
                   </Form>
-                  <LeadCommentsCard
-                    comments={lead.comments ?? []}
-                    draft={commentDraft}
-                    isPending={addLeadComment.isPending}
-                    dateTime={dateTime}
-                    onDraftChange={setCommentDraft}
-                    onSubmit={() => {
-                      const body = commentDraft.trim();
-                      if (body) addLeadComment.mutate(body);
-                    }}
-                  />
                 </TabsContent>
 
                 <TabsContent value="activity" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <Card>
-                      <CardHeader><CardTitle>{t('recordContact')}</CardTitle></CardHeader>
-                      <CardContent>
-                        <Form {...contactForm}>
-                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={contactForm.handleSubmit((values) => addContact.mutate(values))}>
-                            <FormField
-                              control={contactForm.control}
-                              name="channel"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('channel')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        <SelectItem value="call">{t('call')}</SelectItem>
-                                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                                        <SelectItem value="telegram">Telegram</SelectItem>
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={contactForm.control}
-                              name="result"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{t('contactResult')}</FormLabel>
-                                  <FormControl><Input {...field} aria-invalid={fieldState.invalid} placeholder={t('contactResultPlaceholder')} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={contactForm.control}
-                              name="comment"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('comment')}</FormLabel>
-                                  <FormControl><Textarea {...field} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex justify-end md:col-span-2">
-                              <Button type="submit" disabled={addContact.isPending}>
-                                <CheckCircle2 data-icon="inline-start" />
-                                {t('saveContact')}
-                              </Button>
-                            </div>
-                          </form>
-                        </Form>
-                      </CardContent>
-                    </Card>
+                    <LeadCommentsCard
+                      comments={lead.comments ?? []}
+                      draft={commentDraft}
+                      isPending={addLeadComment.isPending}
+                      dateTime={dateTime}
+                      onDraftChange={setCommentDraft}
+                      onSubmit={() => {
+                        const body = commentDraft.trim();
+                        if (body) addLeadComment.mutate(body);
+                      }}
+                    />
 
                     <ActivityTimeline
                       lead={lead}
@@ -1367,6 +1294,18 @@ export function LeadDetailSheet({
 
                 <TabsContent value="tasks" className="mt-0">
                   <div className="flex flex-col gap-5">
+                    <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{t('leadTasks')}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{t('leadTasksBoardHint')}</p>
+                      </div>
+                      <Button asChild type="button" variant="outline" size="sm" className="shrink-0 bg-background">
+                        <Link href="/tasks">
+                          <ExternalLink data-icon="inline-start" />
+                          {t('taskBoard')}
+                        </Link>
+                      </Button>
+                    </div>
                     <Card>
                       <CardHeader><CardTitle>{t('newTask')}</CardTitle></CardHeader>
                       <CardContent>
@@ -1432,7 +1371,7 @@ export function LeadDetailSheet({
                                 <Badge variant={task.status === 'done' ? 'success' : 'outline'}>
                                   {task.status === 'done' ? t('taskDone') : t('taskInProgress')}
                                 </Badge>
-                                {task.deadlineAt ? <p className="text-xs text-muted-foreground">{dateTime(task.deadlineAt)}</p> : null}
+                                {task.dueAt ? <p className="text-xs text-muted-foreground">{dateTime(task.dueAt)}</p> : null}
                                 {task.status !== 'done' ? (
                                   <Button
                                     type="button"

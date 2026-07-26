@@ -21,6 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import { Input } from '@/components/ui/input';
@@ -41,6 +42,7 @@ import {
 import { cn } from '@/lib/utils';
 import { sortAttendanceLessons } from '@/lib/attendance';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
+import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 
 type Lesson = {
   id: number;
@@ -379,6 +381,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   // Group detail dialog
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/workspaces/teacher'],
   });
@@ -444,17 +447,38 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     [lessons]
   );
 
+  const periodLessons = useMemo(
+    () => lessons.filter((lesson) => isInReportingRange(lesson.scheduledAt, reportingRange)),
+    [lessons, reportingRange],
+  );
+  const conductedPeriodLessons = useMemo(
+    () => periodLessons.filter((lesson) => lesson.status === 'conducted'),
+    [periodLessons],
+  );
+  const periodLessonIds = useMemo(
+    () => new Set(periodLessons.map((lesson) => Number(lesson.id))),
+    [periodLessons],
+  );
+  const periodAttendanceRecords = useMemo(
+    () => attendanceRecords.filter((record) => periodLessonIds.has(Number(record.lessonId))),
+    [attendanceRecords, periodLessonIds],
+  );
+  const periodSurveys = useMemo(
+    () => surveys.filter((survey) => isInReportingRange(survey.createdAt, reportingRange)),
+    [reportingRange, surveys],
+  );
+
   const avgAttendance = useMemo(() => {
-    if (!attendanceRecords.length) return 0;
-    const presentCount = attendanceRecords.filter((a: any) => a.status === 'present').length;
-    return Math.round((presentCount / attendanceRecords.length) * 100);
-  }, [attendanceRecords]);
+    if (!periodAttendanceRecords.length) return 0;
+    const presentCount = periodAttendanceRecords.filter((record) => record.status === 'present').length;
+    return Math.round((presentCount / periodAttendanceRecords.length) * 100);
+  }, [periodAttendanceRecords]);
 
   const avgLessonRating = useMemo(() => {
-    if (!surveys.length) return 0;
-    const sum = surveys.reduce((acc, s) => acc + s.score, 0);
-    return (sum / surveys.length).toFixed(1);
-  }, [surveys]);
+    if (!periodSurveys.length) return 0;
+    const sum = periodSurveys.reduce((acc, survey) => acc + survey.score, 0);
+    return (sum / periodSurveys.length).toFixed(1);
+  }, [periodSurveys]);
 
   // Schedule: show today first, followed by the next six academy days.
   const scheduleByDay = useMemo(() => {
@@ -817,6 +841,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         ]}
       />
 
+      {section === 'overview' ? (
+        <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
+      ) : null}
+
       {/* KPI Cards */}
       {section === 'overview' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
@@ -840,9 +868,9 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
           </div>
           <div className="stagger-item">
             <KpiCard
-              title={t('lessonsToday')}
-              value={todayLessons.length}
-              detail={formatDateFull(new Date().toISOString())}
+              title={t('lessonsForPeriod')}
+              value={`${conductedPeriodLessons.length} / ${periodLessons.length}`}
+              detail={t('conductedOfScheduled')}
               icon={Calendar}
               tone="amber"
             />
@@ -854,6 +882,15 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
               detail={t('byActiveStudents')}
               icon={ClipboardCheck}
               tone="blue"
+            />
+          </div>
+          <div className="stagger-item">
+            <KpiCard
+              title={t('averageLessonRating')}
+              value={`${avgLessonRating} / 5`}
+              detail={t('dataForSelectedPeriod')}
+              icon={Star}
+              tone="green"
             />
           </div>
         </div>

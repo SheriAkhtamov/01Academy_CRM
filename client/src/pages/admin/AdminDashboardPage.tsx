@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import {
@@ -49,13 +49,18 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { ceoCopy } from '@/components/ui/ceo-copy';
+import {
+  reportingRangeForPreset,
+  reportingRangeQuery,
+} from '@/lib/reportingDateRange';
 
 interface DashboardTrendPoint {
-  month: string;
+  periodStart: string;
   revenue: number;
   students: number;
   leads: number;
@@ -191,7 +196,7 @@ function ChangeBadge({ value }: { value: number }) {
     <Badge variant={variant}>
       <Icon data-icon="inline-start" />
       {value > 0 ? '+' : ''}{value}%
-      <span className="font-normal">{t('adminVsPreviousMonth')}</span>
+      <span className="font-normal">{t('adminVsPreviousPeriod')}</span>
     </Badge>
   );
 }
@@ -271,8 +276,12 @@ function DashboardSkeleton() {
 export default function AdminDashboardPage() {
   const { t, language } = useTranslation();
   const [, navigate] = useLocation();
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
+  const reportingQuery = reportingRangeQuery(reportingRange);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<AdministrationDashboardData>({
-    queryKey: ['/api/academy/workspaces/administration'],
+    queryKey: ['/api/academy/workspaces/administration', reportingQuery],
+    queryFn: () => apiRequest('GET', `/api/academy/workspaces/administration?${reportingQuery}`),
+    placeholderData: (previousData) => previousData,
   });
 
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
@@ -313,8 +322,8 @@ export default function AdminDashboardPage() {
   const chartData = useMemo(
     () => (data?.trends ?? []).map((point) => ({
       ...point,
-      label: new Intl.DateTimeFormat(locale, { month: 'short' })
-        .format(new Date(`${point.month}-01T00:00:00`)),
+      label: new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' })
+        .format(new Date(`${point.periodStart}T00:00:00Z`)),
     })),
     [data?.trends, locale],
   );
@@ -402,7 +411,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.overdueTasks,
       icon: ListTodo,
       tone: 'bg-destructive/10 text-destructive',
-      href: '/sales/tasks',
+      href: '/tasks',
     },
   ];
 
@@ -467,6 +476,12 @@ export default function AdminDashboardPage() {
         )}
       />
 
+      <ReportingDateRangeFilter
+        value={reportingRange}
+        onChange={setReportingRange}
+        isFetching={isFetching}
+      />
+
       <section
         aria-label={t('adminKeyMetrics')}
         className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
@@ -474,13 +489,13 @@ export default function AdminDashboardPage() {
         <KpiCard
           title={t('activeStudents')}
           value={new Intl.NumberFormat(locale).format(summary.activeStudents)}
-          detail={`${summary.newStudentsMonth} ${t('adminNewStudentsMonth')}`}
+          detail={`${summary.newStudentsMonth} ${t('studentsForPeriod').toLocaleLowerCase(locale)}`}
           icon={GraduationCap}
           tone="bg-primary-50 text-primary-600"
           change={summary.studentsChangePercent}
         />
         <KpiCard
-          title={t('newLeadsMonth')}
+          title={t('leadsForPeriod')}
           value={new Intl.NumberFormat(locale).format(summary.newLeadsMonth)}
           detail={t('adminAllLeadSources')}
           icon={UserRoundPlus}
@@ -488,7 +503,7 @@ export default function AdminDashboardPage() {
           change={summary.leadsChangePercent}
         />
         <KpiCard
-          title={t('monthlyRevenue')}
+          title={t('revenueForPeriod')}
           value={`${money(summary.revenueMonth)}${t('uzs')}`}
           detail={t('adminConfirmedPayments')}
           icon={CircleDollarSign}
@@ -511,6 +526,7 @@ export default function AdminDashboardPage() {
         />
       </section>
 
+      {reportingRange.preset === 'thisMonth' || reportingRange.preset === 'previousMonth' ? (
       <section aria-label={ceoCopy.dashboard.planFact} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {[
           {
@@ -548,13 +564,14 @@ export default function AdminDashboardPage() {
           </button>
         ))}
       </section>
+      ) : null}
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2 2xl:grid-cols-12">
         <Card className="self-start overflow-hidden xl:col-span-2 2xl:col-span-7">
           <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
             <div>
               <CardTitle>{t('adminRevenueAndStudentsTrend')}</CardTitle>
-              <CardDescription>{t('adminLastSixMonths')}</CardDescription>
+              <CardDescription>{t('dataForSelectedPeriod')}</CardDescription>
             </div>
             <div className="hidden items-center gap-4 text-xs text-slate-500 sm:flex">
               <span className="flex items-center gap-2">

@@ -139,7 +139,12 @@ export default function CallJournalPage() {
         )}
       />
 
-      <WorkspacePageBody contained ariaLabel={t('callJournal')} className="flex flex-col gap-5 pb-2">
+      <WorkspacePageBody
+        contained
+        scroll="hidden"
+        ariaLabel={t('callJournal')}
+        className="flex flex-col gap-4 overflow-y-auto pb-2 lg:overflow-hidden"
+      >
         <section className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('callJournalSummary')}>
           <SummaryCard icon={PhoneCall} title={t('totalCalls')} value={journalQuery.data?.total ?? 0} />
           <SummaryCard icon={Headphones} title={t('answeredCalls')} value={journalQuery.data?.summary.answered ?? 0} tone="success" />
@@ -187,7 +192,7 @@ export default function CallJournalPage() {
           </CardContent>
         </Card>
 
-        <Card className="flex min-h-[22rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1">
+        <Card className="flex min-h-[28rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1">
           {journalQuery.isLoading ? (
             <div className="space-y-3 p-5">
               {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-14 w-full" />)}

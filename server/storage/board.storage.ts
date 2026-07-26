@@ -6,6 +6,7 @@ import {
     boardTaskChecklistItems,
     boardTaskAttachments,
     boardTaskActivity,
+    academyLeads,
     users,
     type Board,
     type BoardTask,
@@ -56,6 +57,18 @@ class BoardStorage {
         return first;
     }
 
+    async getLeadReference(id: number) {
+        const [lead] = await db
+            .select({
+                id: academyLeads.id,
+                contactName: academyLeads.contactName,
+                managerId: academyLeads.managerId,
+            })
+            .from(academyLeads)
+            .where(eq(academyLeads.id, id));
+        return lead;
+    }
+
     // -- Tasks (list with embedded users + counts) -------------------------
     async getTasks(boardId: number, visibleToUserId?: number) {
         const visibilityWhere = visibleToUserId
@@ -77,16 +90,22 @@ class BoardStorage {
                 status: boardTasks.status,
                 priority: boardTasks.priority,
                 position: boardTasks.position,
+                leadId: boardTasks.leadId,
                 dueAt: boardTasks.dueAt,
                 acceptedAt: boardTasks.acceptedAt,
                 createdAt: boardTasks.createdAt,
                 updatedAt: boardTasks.updatedAt,
                 creator: userMini(creator),
                 assignee: userMini(assignee),
+                lead: {
+                    id: academyLeads.id,
+                    contactName: academyLeads.contactName,
+                },
             })
             .from(boardTasks)
             .leftJoin(creator, eq(boardTasks.creatorId, creator.id))
             .leftJoin(assignee, eq(boardTasks.assigneeId, assignee.id))
+            .leftJoin(academyLeads, eq(boardTasks.leadId, academyLeads.id))
             .where(visibilityWhere)
             .orderBy(asc(boardTasks.position), asc(boardTasks.id));
 
@@ -97,6 +116,7 @@ class BoardStorage {
             ...r,
             creator: r.creator?.id ? r.creator : null,
             assignee: r.assignee?.id ? r.assignee : null,
+            lead: r.lead?.id ? r.lead : null,
             ...(counts.get(r.id) ?? { commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 }),
         }));
     }
@@ -153,6 +173,7 @@ class BoardStorage {
                 position: boardTasks.position,
                 creatorId: boardTasks.creatorId,
                 assigneeId: boardTasks.assigneeId,
+                leadId: boardTasks.leadId,
                 dueAt: boardTasks.dueAt,
                 acceptedAt: boardTasks.acceptedAt,
                 acceptedBy: boardTasks.acceptedBy,
@@ -160,10 +181,15 @@ class BoardStorage {
                 updatedAt: boardTasks.updatedAt,
                 creator: userMini(creator),
                 assignee: userMini(assignee),
+                lead: {
+                    id: academyLeads.id,
+                    contactName: academyLeads.contactName,
+                },
             })
             .from(boardTasks)
             .leftJoin(creator, eq(boardTasks.creatorId, creator.id))
             .leftJoin(assignee, eq(boardTasks.assigneeId, assignee.id))
+            .leftJoin(academyLeads, eq(boardTasks.leadId, academyLeads.id))
             .where(eq(boardTasks.id, id));
 
         if (!task) return undefined;
@@ -223,6 +249,7 @@ class BoardStorage {
             ...task,
             creator: task.creator?.id ? task.creator : null,
             assignee: task.assignee?.id ? task.assignee : null,
+            lead: task.lead?.id ? task.lead : null,
             comments: comments.map((c) => ({ ...c, author: c.author?.id ? c.author : null })),
             checklist,
             attachments: attachments.map((a) => ({ ...a, uploadedBy: a.uploadedBy?.id ? a.uploadedBy : null })),

@@ -6,7 +6,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { CalendarClock, CheckSquare, MessageSquare, Paperclip } from 'lucide-react';
+import { CalendarClock, CheckSquare, MessageSquare, Paperclip, UserRound } from 'lucide-react';
 import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -54,6 +54,12 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                 <Badge variant="secondary" className={cn('h-5 px-1.5 text-[10px] font-medium', priority.badge)}>
                     {t(priority.labelKey)}
                 </Badge>
+                {task.lead ? (
+                    <Badge variant="outline" className="h-5 max-w-full gap-1 px-1.5 text-[10px] font-medium">
+                        <UserRound className="size-3 shrink-0" />
+                        <span className="truncate">{task.lead.contactName}</span>
+                    </Badge>
+                ) : null}
                 {task.dueAt ? (
                     <Badge
                         variant="outline"

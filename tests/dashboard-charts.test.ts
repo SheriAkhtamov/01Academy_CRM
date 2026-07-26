@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMonthlyRevenueData } from '../client/src/lib/dashboardCharts';
+import { buildMonthlyRevenueData, buildReportingRevenueData } from '../client/src/lib/dashboardCharts';
 
 describe('dashboard revenue chart logic', () => {
   it('shows the latest six payment months in chronological order for descending API data', () => {
@@ -60,5 +60,19 @@ describe('dashboard revenue chart logic', () => {
     ], 'en-US');
 
     expect(result).toEqual([{ month: 'Jul 26', amount: 500 }]);
+  });
+
+  it('uses daily buckets for short selected reporting periods, including empty days', () => {
+    const result = buildReportingRevenueData([
+      { paidAt: '2026-07-20T08:00:00Z', amountUzs: 100, status: 'paid' },
+      { paidAt: '2026-07-22T08:00:00Z', amountUzs: 250, status: 'paid' },
+    ], 'en-US', { from: '2026-07-20', to: '2026-07-23' });
+
+    expect(result).toEqual([
+      { month: 'Jul 20', amount: 100 },
+      { month: 'Jul 21', amount: 0 },
+      { month: 'Jul 22', amount: 250 },
+      { month: 'Jul 23', amount: 0 },
+    ]);
   });
 });

@@ -9,6 +9,7 @@ const mockStorage = {
     getBoards: vi.fn(),
     getDefaultBoard: vi.fn(),
     getBoard: vi.fn(),
+    getLeadReference: vi.fn(),
     getTasks: vi.fn(),
     getTask: vi.fn(),
     getTaskDetail: vi.fn(),
@@ -93,6 +94,9 @@ describe("board routes", () => {
     mockStorage.getUser.mockImplementation(async (id: number) => usersById.get(Number(id)));
     mockStorage.board.getDefaultBoard.mockResolvedValue(defaultBoard);
     mockStorage.board.getBoard.mockResolvedValue(defaultBoard);
+    mockStorage.board.getLeadReference.mockImplementation(async (id: number) => (
+      id === 42 ? { id: 42, contactName: "Linked lead", managerId: staffUser.id } : undefined
+    ));
     mockStorage.board.getTasks.mockResolvedValue([]);
     mockStorage.board.getTask.mockResolvedValue({
       id: 100,
@@ -178,6 +182,48 @@ describe("board routes", () => {
       creatorId: staffUser.id,
       assigneeId: staffUser.id,
     }));
+  });
+
+  it("creates a task linked to an existing lead", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.post("/api/board/tasks").send({
+      title: "Call the lead",
+      leadId: 42,
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.board.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: 42,
+    }));
+  });
+
+  it("rejects malformed and missing lead links", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const malformed = await agent.post("/api/board/tasks").send({ title: "Bad link", leadId: "42oops" });
+    const missing = await agent.post("/api/board/tasks").send({ title: "Missing link", leadId: 999 });
+
+    expect(malformed.status).toBe(400);
+    expect(missing.status).toBe(404);
+  });
+
+  it("does not let an unrelated employee attach a task to a sales lead", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: assigneeUser.id });
+    const response = await agent.post("/api/board/tasks").send({
+      title: "Unauthorized link",
+      leadId: 42,
+    });
+
+    expect(response.status).toBe(403);
+    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
   });
 
   it("allows every employee to assign a task to another active employee", async () => {

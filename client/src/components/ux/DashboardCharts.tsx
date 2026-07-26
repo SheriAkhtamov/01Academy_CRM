@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from '@/hooks/useTranslation';
-import { buildMonthlyRevenueData } from '@/lib/dashboardCharts';
+import { buildMonthlyRevenueData, buildReportingRevenueData } from '@/lib/dashboardCharts';
 
 interface DashboardChartsProps {
   payments?: any[];
@@ -22,15 +22,18 @@ interface DashboardChartsProps {
   leadStatusName: (code: string) => string;
   statusColor: (code: string) => string;
   money: (value: number) => string;
+  reportingRange?: { from: string; to: string };
 }
 
-export function DashboardCharts({ payments = [], funnel = [], leadStatusName, statusColor, money }: DashboardChartsProps) {
+export function DashboardCharts({ payments = [], funnel = [], leadStatusName, statusColor, money, reportingRange }: DashboardChartsProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
 
   const revenueData = useMemo(
-    () => buildMonthlyRevenueData(payments, locale),
-    [locale, payments],
+    () => reportingRange
+      ? buildReportingRevenueData(payments, locale, reportingRange)
+      : buildMonthlyRevenueData(payments, locale),
+    [locale, payments, reportingRange],
   );
 
   const funnelData = useMemo(
@@ -60,7 +63,14 @@ export function DashboardCharts({ payments = [], funnel = [], leadStatusName, st
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--slate-200)" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--slate-500)', fontSize: 12 }} />
+                <XAxis
+                  dataKey="month"
+                  axisLine={false}
+                  tickLine={false}
+                  minTickGap={24}
+                  interval="preserveStartEnd"
+                  tick={{ fill: 'var(--slate-500)', fontSize: 12 }}
+                />
                 <YAxis
                   axisLine={false}
                   tickLine={false}

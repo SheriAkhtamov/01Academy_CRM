@@ -46,6 +46,7 @@ import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
@@ -53,6 +54,7 @@ import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
+import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -65,8 +67,6 @@ import {
 import {
   AlertCircle,
   Archive,
-  CheckCircle2,
-  ClipboardList,
   ExternalLink,
   GraduationCap,
   Megaphone,
@@ -78,7 +78,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 
-type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students' | 'tasks';
+type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
 
@@ -149,23 +149,11 @@ interface Student {
   progressPercent: number;
   satisfactionAvg: number;
   nextPaymentAt?: string;
+  enrolledAt?: string;
   createdAt: string;
   paymentStatus?: string;
   riskFlags?: string[];
   referralCode?: string;
-}
-
-interface Task {
-  id: number;
-  title: string;
-  description?: string;
-  responsibleId?: number;
-  responsibleName?: string;
-  deadlineAt?: string;
-  status: string;
-  entityType?: string;
-  entityId?: number;
-  createdAt?: string;
 }
 
 interface PipelineStatus {
@@ -200,7 +188,6 @@ const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   archive: '/sales/archive',
   schedule: '/sales/schedule',
   students: '/sales/clients',
-  tasks: '/sales/tasks',
 };
 
 const optionalPhoneString = z.string().trim().refine(
@@ -557,6 +544,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveCustomReason, setArchiveCustomReason] = useState('');
   const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
   const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
 
   const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(routeSearch);
@@ -640,11 +628,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return myStudents;
   }, [data?.constants?.targets?.attendance, myStudents, riskFilter]);
 
-  const myTasks = useMemo<Task[]>(() => {
-    if (!data?.tasks) return [];
-    return data.tasks;
-  }, [data?.tasks]);
-
   const myPayments = useMemo<any[]>(() => {
     if (!data?.payments) return [];
     return data.payments;
@@ -680,26 +663,35 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     [activePipelineCodes, myLeads],
   );
 
-  const managerStats = useMemo(() => {
-    const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const periodLeads = useMemo(
+    () => myLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
+    [myLeads, reportingRange],
+  );
+  const periodStudents = useMemo(
+    () => myStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)),
+    [myStudents, reportingRange],
+  );
+  const periodPayments = useMemo(
+    () => myPayments.filter((payment) => (
+      payment.status === 'paid'
+      && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)
+    )),
+    [myPayments, reportingRange],
+  );
 
-    const newLeadsWeek = myLeads.filter((lead) => new Date(lead.createdAt) >= weekAgo).length;
-    const activeLeads = myLeads.filter(
+  const managerStats = useMemo(() => {
+    const newLeadsPeriod = periodLeads.length;
+    const activeLeads = periodLeads.filter(
       (lead) => !lead.isArchived && lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
     ).length;
-    const totalStudents = myStudents.length;
+    const totalStudents = periodStudents.length;
 
-    const paidLeads = myLeads.filter((lead) => lead.statusCode === 'paid').length;
-    const totalManagedLeads = myLeads.length;
+    const paidLeads = periodLeads.filter((lead) => lead.statusCode === 'paid').length;
+    const totalManagedLeads = periodLeads.length;
     const conversionRate = totalManagedLeads > 0 ? Math.round((paidLeads / totalManagedLeads) * 100) : 0;
 
-    const overdueTasks = myTasks.filter(
-      (task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now
-    ).length;
-
-    return { newLeadsWeek, activeLeads, totalStudents, conversionRate, overdueTasks, totalTasks: myTasks.length };
-  }, [activePipelineCodes, myLeads, myStudents, myTasks]);
+    return { newLeadsPeriod, activeLeads, totalStudents, conversionRate };
+  }, [activePipelineCodes, periodLeads, periodStudents]);
 
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => apiRequest(
@@ -798,16 +790,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       invalidate();
     },
     onError: (error: any) => toast({ title: t('leadRestoreFailed'), description: error.message, variant: 'destructive' }),
-  });
-
-  const updateTask = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
-      apiRequest('PATCH', `/api/academy/tasks/${id}`, payload),
-    onSuccess: () => {
-      toast({ title: t('taskUpdated') });
-      invalidate();
-    },
-    onError: (error: any) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
   const updateStudentStatus = useMutation({
@@ -974,7 +956,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const managerFunnel = useMemo(() => {
     const statusIndex = new Map(activePipelineStatuses.map((status, index) => [status.code, index]));
-    const visibleLeads = myLeads.filter((lead) => !lead.isArchived);
+    const visibleLeads = periodLeads.filter((lead) => !lead.isArchived);
     return activePipelineStatuses.map((status, index) => {
       const count = visibleLeads.filter((lead) => {
         const currentIndex = statusIndex.get(lead.statusCode);
@@ -986,7 +968,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         color: status.color,
       };
     });
-  }, [activePipelineStatuses, myLeads]);
+  }, [activePipelineStatuses, periodLeads]);
 
   const contained = section !== 'overview';
 
@@ -1035,7 +1017,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     archive: t('leadArchive'),
     schedule: t('salesSchedule'),
     students: isAdministrationWorkspace ? t('allClients') : t('myStudents'),
-    tasks: isAdministrationWorkspace ? t('allTasks') : t('myTasks'),
   };
   const salesWorkspaceDescription = isAdministrationWorkspace
     ? t('globalSalesWorkspaceDescription')
@@ -1056,7 +1037,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
-          section === 'overview' || section === 'pipeline' ? (
+          section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
@@ -1074,31 +1055,20 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
       {section === 'overview' ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-            <KpiCard title={isAdministrationWorkspace ? t('newLeadsWeek') : t('myNewLeadsWeek')} value={managerStats.newLeadsWeek} detail={t('last7Days')} icon={Megaphone} tone="blue" />
+          <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <KpiCard title={t('leadsForPeriod')} value={managerStats.newLeadsPeriod} detail={t('dataForSelectedPeriod')} icon={Megaphone} tone="blue" />
             <KpiCard title={isAdministrationWorkspace ? t('activeLeads') : t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
-            <KpiCard title={isAdministrationWorkspace ? t('allClients') : t('myStudents')} value={managerStats.totalStudents} detail={isAdministrationWorkspace ? t('allManagers') : t('assignedToMe')} icon={GraduationCap} tone="green" />
-            <KpiCard title={isAdministrationWorkspace ? t('conversionRate') : t('myConversion')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
-            <KpiCard
-              title={isAdministrationWorkspace ? t('allTasks') : t('overdueTasks')}
-              value={isAdministrationWorkspace ? managerStats.totalTasks : managerStats.overdueTasks}
-              detail={managerStats.overdueTasks > 0 ? t('needsAttention') : t('allOnTime')}
-              icon={AlertCircle}
-              tone={managerStats.overdueTasks > 0 ? 'red' : 'green'}
-            />
+            <KpiCard title={t('studentsForPeriod')} value={managerStats.totalStudents} detail={t('dataForSelectedPeriod')} icon={GraduationCap} tone="green" />
+            <KpiCard title={t('conversionForPeriod')} value={`${managerStats.conversionRate}%`} detail={t('paidOverAllLeads')} icon={Percent} tone={managerStats.conversionRate >= 30 ? 'green' : managerStats.conversionRate >= 15 ? 'amber' : 'red'} />
           </div>
           <OverviewTab
-            t={t}
-            payments={myPayments.filter((payment) => payment.status === 'paid')}
+            payments={periodPayments}
             managerFunnel={managerFunnel}
-            managerStats={managerStats}
+            reportingRange={reportingRange}
             leadStatusName={leadStatusName}
             statusColor={leadStatusColor}
             money={money}
-            myTasks={myTasks}
-            dateTime={dateTime}
-            openLead={openLead}
-            noTasksText={isAdministrationWorkspace ? t('noSalesTasks') : t('noTasksAssigned')}
           />
         </div>
       ) : null}
@@ -1177,18 +1147,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         />
       ) : null}
 
-      {section === 'tasks' ? (
-        <TasksTab
-          t={t}
-          myTasks={myTasks}
-          updateTask={updateTask}
-          dateTime={dateTime}
-          openLead={(leadId) => openLead(leadId, 'tasks')}
-          title={sectionTitle.tasks}
-          noTasksText={isAdministrationWorkspace ? t('noSalesTasks') : t('noTasksAssigned')}
-          showResponsible={isAdministrationWorkspace}
-        />
-      ) : null}
       </WorkspacePageBody>
 
       <ArchiveLeadDialog
@@ -1312,85 +1270,29 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 // ---- Sub-components for tabs ----
 
 function OverviewTab({
-  t,
   payments,
   managerFunnel,
-  managerStats,
+  reportingRange,
   leadStatusName,
   statusColor,
   money,
-  myTasks,
-  dateTime,
-  openLead,
-  noTasksText,
 }: {
-  t: (key: TranslationKey) => string;
   payments: any[];
   managerFunnel: Array<{ code: string; count: number; color: string }>;
-  managerStats: {
-    newLeadsWeek: number;
-    activeLeads: number;
-    totalStudents: number;
-    conversionRate: number;
-    overdueTasks: number;
-    totalTasks: number;
-  };
+  reportingRange: { from: string; to: string };
   leadStatusName: (code: string) => string;
   statusColor: (code: string) => string;
   money: (value: number | string | null | undefined) => string;
-  myTasks: Task[];
-  dateTime: (value: string | null | undefined) => string;
-  openLead: (leadId: number, tab?: LeadSheetTab) => void;
-  noTasksText: string;
 }) {
-  const priorityTasks = [...myTasks]
-    .filter((task) => task.status !== 'done')
-    .sort((a, b) => {
-      const leftDeadline = a.deadlineAt ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
-      const rightDeadline = b.deadlineAt ? new Date(b.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
-      return leftDeadline - rightDeadline;
-    })
-    .slice(0, 5);
-
   return (
-    <div className="flex flex-col gap-5">
-      <DashboardCharts
-        payments={payments}
-        funnel={managerFunnel}
-        analytics={{ summary: { newLeadsWeek: managerStats.newLeadsWeek } }}
-        leadStatusName={leadStatusName}
-        statusColor={statusColor}
-        money={money}
-      />
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('priorityTasks')}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {priorityTasks.length === 0 ? (
-            <EmptyState title={t('noTasks')} text={noTasksText} icon={ClipboardList} />
-          ) : (
-            priorityTasks.map((task) => (
-              <button
-                key={task.id}
-                type="button"
-                className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-left enabled:hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-                disabled={task.entityType !== 'lead' || !task.entityId}
-                onClick={() => task.entityType === 'lead' && task.entityId ? openLead(task.entityId, 'tasks') : undefined}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{task.title}</span>
-                  {task.deadlineAt ? <span className="block text-xs text-muted-foreground">{dateTime(task.deadlineAt)}</span> : null}
-                </span>
-                <Badge variant={task.deadlineAt && new Date(task.deadlineAt) < new Date() ? 'destructive' : 'outline'}>
-                  {task.deadlineAt && new Date(task.deadlineAt) < new Date() ? t('paymentStatusOverdue') : t('taskInProgress')}
-                </Badge>
-              </button>
-            ))
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <DashboardCharts
+      payments={payments}
+      funnel={managerFunnel}
+      reportingRange={reportingRange}
+      leadStatusName={leadStatusName}
+      statusColor={statusColor}
+      money={money}
+    />
   );
 }
 
@@ -1722,123 +1624,6 @@ function StudentsTab({
         data={{ projects: data.projects, payments: data.payments, referrals: data.referrals, groups: data.groups }}
         dateTime={dateTime}
       />
-    </div>
-  );
-}
-
-function TasksTab({
-  t,
-  myTasks,
-  updateTask,
-  dateTime,
-  openLead,
-  title,
-  noTasksText,
-  showResponsible,
-}: {
-  t: (key: TranslationKey) => string;
-  myTasks: Task[];
-  updateTask: any;
-  dateTime: (v: string | null | undefined) => string;
-  openLead: (leadId: number) => void;
-  title: string;
-  noTasksText: string;
-  showResponsible: boolean;
-}) {
-  const now = new Date();
-  const sortedTasks = [...myTasks].sort((a, b) => {
-    const aOverdue = a.deadlineAt && new Date(a.deadlineAt) < now && a.status !== 'done';
-    const bOverdue = b.deadlineAt && new Date(b.deadlineAt) < now && b.status !== 'done';
-    if (aOverdue && !bOverdue) return -1;
-    if (!aOverdue && bOverdue) return 1;
-    const leftDeadline = a.deadlineAt ? new Date(a.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
-    const rightDeadline = b.deadlineAt ? new Date(b.deadlineAt).getTime() : Number.POSITIVE_INFINITY;
-    return leftDeadline - rightDeadline;
-  });
-
-  return (
-    <div className="space-y-5">
-      <Card className="hover-lift">
-        <CardHeader className="pb-4">
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2.5">
-          {sortedTasks.length === 0 && (
-            <EmptyState title={t('noTasks')} text={noTasksText} icon={ClipboardList} />
-          )}
-          {sortedTasks.map((task) => {
-            const isOverdue = task.deadlineAt && new Date(task.deadlineAt) < now && task.status !== 'done';
-            return (
-              <div
-                key={task.id}
-                className={`rounded-lg border p-3 transition-colors hover:border-border hover:bg-muted/50 ${
-                  isOverdue ? 'border-destructive/30 bg-destructive/10' : 'border-border/70'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {task.status === 'done' ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                    ) : isOverdue ? (
-                      <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
-                    ) : (
-                      <ClipboardList className="h-4 w-4 text-slate-400 shrink-0" />
-                    )}
-                    <p className={`text-sm font-medium truncate ${task.status === 'done' ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
-                      {task.title}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant={task.status === 'done' ? 'secondary' : isOverdue ? 'destructive' : 'outline'}>
-                      {task.status === 'done' ? t('taskDone') : isOverdue ? t('paymentStatusOverdue') : t('taskInProgress')}
-                    </Badge>
-                    {task.status !== 'done' && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        disabled={updateTask.isPending}
-                        onClick={() => updateTask.mutate({
-                          id: task.id,
-                          payload: { status: 'done', completedAt: new Date().toISOString() },
-                        })}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />{t('completeTask')}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {task.description && (
-                  <p className="mt-1 text-xs text-slate-500 ml-6">{task.description}</p>
-                )}
-                {showResponsible && task.responsibleName && (
-                  <p className="mt-1 text-xs text-slate-500 ml-6">{t('managerLabel')} {task.responsibleName}</p>
-                )}
-                <div className="flex items-center gap-3 mt-1.5 ml-6">
-                  {task.deadlineAt && (
-                    <span className={`text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-slate-400'}`}>
-                      {t('deadline')} {dateTime(task.deadlineAt)}
-                    </span>
-                  )}
-                  {task.entityType && (
-                    task.entityType === 'lead' && task.entityId ? (
-                      <button
-                        type="button"
-                        className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => openLead(task.entityId!)}
-                      >
-                        {t('openLead')}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-400">{task.entityType} #{task.entityId}</span>
-                    )
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
     </div>
   );
 }

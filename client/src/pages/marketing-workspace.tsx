@@ -14,6 +14,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import {
@@ -29,6 +30,10 @@ import {
 } from '@/components/ui/dialog';
 import { canAccessAcademyWorkspace, hasLeadershipAccess, TARGET_ROAS } from '@shared/academy';
 import { expenseOverlapsMonth, funnelForSource, leadToPaidConversion } from '@/lib/marketingLogic';
+import {
+  reportingRangeForPreset,
+  reportingRangeQuery,
+} from '@/lib/reportingDateRange';
 import {
   Megaphone,
   TrendingUp,
@@ -154,6 +159,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
   const [warmDateFilter, setWarmDateFilter] = useState('');
   const [expensePeriodFilter, setExpensePeriodFilter] = useState('');
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString('ru-RU')}${t('uzs')}`;
@@ -165,8 +171,11 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
     return date.toLocaleDateString('ru-RU');
   };
 
-  const { data, isLoading, isError, error, refetch } = useQuery<any>({
-    queryKey: ['/api/academy/workspaces/marketing'],
+  const reportingQuery = reportingRangeQuery(reportingRange);
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<any>({
+    queryKey: ['/api/academy/workspaces/marketing', reportingQuery],
+    queryFn: () => apiRequest('GET', `/api/academy/workspaces/marketing?${reportingQuery}`),
+    placeholderData: (previousData: any) => previousData,
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] });
@@ -440,14 +449,22 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         }
       />
 
+      {section === 'overview' ? (
+        <ReportingDateRangeFilter
+          value={reportingRange}
+          onChange={setReportingRange}
+          isFetching={isFetching}
+        />
+      ) : null}
+
       {/* ─── KPI cards ─── */}
       {section === 'overview' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           <div className="stagger-item">
-            <KpiCard title={t('newLeadsMonth')} value={summary.newLeadsMonth ?? 0} icon={Users} tone="blue" />
+            <KpiCard title={t('leadsForPeriod')} value={summary.newLeadsMonth ?? 0} detail={t('dataForSelectedPeriod')} icon={Users} tone="blue" />
           </div>
           <div className="stagger-item">
-            <KpiCard title={t('weeklyLeads')} value={summary.newLeadsWeek ?? 0} icon={Megaphone} tone="blue" />
+            <KpiCard title={t('paidCustomersForPeriod')} value={summary.newPaidStudents ?? 0} detail={t('dataForSelectedPeriod')} icon={Megaphone} tone="green" />
           </div>
           <div className="stagger-item">
             <KpiCard

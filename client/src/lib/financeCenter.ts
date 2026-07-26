@@ -44,6 +44,7 @@ export const financeCopy = (t: Translate) => ({
   duePayroll: t('financeCenterDuePayroll'),
   profitFormula: t('financeCenterProfitFormula'),
   vsPreviousMonth: t('adminVsPreviousMonth'),
+  vsPreviousPeriod: t('adminVsPreviousPeriod'),
   profitTrend: t('financeCenterProfitTrend'),
   expenseStructure: t('financeCenterExpenseStructure'),
   recentTransactions: t('financeCenterRecentTransactions'),

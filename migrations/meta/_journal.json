@@ -449,6 +449,13 @@
       "when": 1786464000000,
       "tag": "0063_add_lead_comment_history",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1786550400000,
+      "tag": "0064_link_lead_tasks_to_board",
+      "breakpoints": true
     }
   ]
 }

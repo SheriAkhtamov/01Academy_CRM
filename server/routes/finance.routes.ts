@@ -4,11 +4,11 @@ import { pool } from '../db';
 import { requireFinanceAccess } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import {
-  getTrailingZonedMonthRanges,
+  getZonedDateTimeParts,
   getZonedDateOnlyRange,
   getZonedMonthRange,
   zonedWallClockToInstant,
-  type ZonedMonthRange,
+  type ZonedDateRange,
 } from '../lib/academy-time';
 import {
   FINANCE_EXPENSE_CATEGORIES,
@@ -28,6 +28,7 @@ const MAX_MONEY_UZS = 2_147_483_647;
 
 type Executor = Pool | PoolClient;
 type Row = Record<string, any>;
+type FinanceDateRange = ZonedDateRange & { key: string };
 
 router.use(requireFinanceAccess);
 
@@ -100,6 +101,37 @@ const parsePeriod = (value: unknown) => {
   return { period, range: getZonedMonthRange(periodReference(period), ACADEMY_TIME_ZONE) };
 };
 
+const dateOnlyKey = (value: Date) => {
+  const parts = getZonedDateTimeParts(value, ACADEMY_TIME_ZONE);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+};
+
+const parseDashboardRange = (fromValue: unknown, toValue: unknown): FinanceDateRange => {
+  if (!isFinanceDate(fromValue) || !isFinanceDate(toValue)) {
+    throw httpError('invalidReportingPeriod');
+  }
+  const start = parseExpenseDate(fromValue);
+  const inclusiveEnd = parseExpenseDate(toValue);
+  const end = new Date(inclusiveEnd.getTime() + 24 * 60 * 60 * 1_000);
+  if (end <= start) throw httpError('invalidReportingPeriod');
+  const totalDays = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1_000));
+  if (totalDays > 731) throw httpError('reportingPeriodTooLong');
+  return { start, end, key: `${fromValue}:${toValue}` };
+};
+
+const buildDashboardBuckets = (range: FinanceDateRange): FinanceDateRange[] => {
+  const dayMs = 24 * 60 * 60 * 1_000;
+  const totalDays = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / dayMs));
+  const stepDays = totalDays <= 14 ? 1 : totalDays <= 70 ? 7 : Math.ceil(totalDays / 12);
+  const buckets: FinanceDateRange[] = [];
+  for (let cursor = range.start.getTime(); cursor < range.end.getTime(); cursor += stepDays * dayMs) {
+    const start = new Date(cursor);
+    const end = new Date(Math.min(cursor + stepDays * dayMs, range.end.getTime()));
+    buckets.push({ start, end, key: dateOnlyKey(start) });
+  }
+  return buckets;
+};
+
 const parseExpenseDate = (value: unknown) => {
   if (!isFinanceDate(value)) throw httpError('invalidExpenseDate');
   const [year, month, day] = value.split('-').map(Number);
@@ -114,12 +146,12 @@ const parseExpenseDate = (value: unknown) => {
   return zonedWallClockToInstant({ year, month, day }, ACADEMY_TIME_ZONE);
 };
 
-const inRange = (value: unknown, range: ZonedMonthRange) => {
+const inRange = (value: unknown, range: ZonedDateRange) => {
   const date = value instanceof Date ? value : new Date(String(value ?? ''));
   return !Number.isNaN(date.getTime()) && date >= range.start && date < range.end;
 };
 
-const marketingExpenseInsideRange = (expense: Row, range: ZonedMonthRange) => {
+const marketingExpenseInsideRange = (expense: Row, range: ZonedDateRange) => {
   const startMarker = expense.periodStart instanceof Date
     ? expense.periodStart
     : new Date(String(expense.periodStart));
@@ -228,8 +260,7 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
 
 const getTransactions = async (
   executor: Executor,
-  range: ZonedMonthRange,
-  period: string,
+  range: ZonedDateRange,
   limit = 250,
 ) => {
   const [income, operating, marketing, payroll] = await Promise.all([
@@ -280,9 +311,9 @@ const getTransactions = async (
               ('Зарплата · ' || p.employee_name) AS title,
               p.employee_name AS counterparty
        FROM academy_payroll_payouts p
-       WHERE p.period = $1 AND p.status = 'paid'
+       WHERE p.status = 'paid' AND p.paid_at >= $1 AND p.paid_at < $2
        ORDER BY p.paid_at DESC, p.id DESC`,
-      [period],
+      [range.start, range.end],
     ),
   ]);
 
@@ -297,9 +328,11 @@ const getTransactions = async (
     .slice(0, limit);
 };
 
-const loadDashboardRows = async (executor: Executor, ranges: ZonedMonthRange[]) => {
+const loadDashboardRows = async (executor: Executor, ranges: FinanceDateRange[]) => {
   const first = ranges[0];
   const last = ranges[ranges.length - 1];
+  const firstMonth = getZonedMonthRange(first.start, ACADEMY_TIME_ZONE);
+  const lastMonth = getZonedMonthRange(new Date(last.end.getTime() - 1), ACADEMY_TIME_ZONE);
   return Promise.all([
     query<Row>(
       executor,
@@ -320,7 +353,7 @@ const loadDashboardRows = async (executor: Executor, ranges: ZonedMonthRange[]) 
       `SELECT employee_user_id, amount_uzs, period
        FROM academy_payroll_payouts
        WHERE status = 'paid' AND period >= $1 AND period <= $2`,
-      [first.key, last.key],
+      [firstMonth.key, lastMonth.key],
     ),
     query<Row>(
       executor,
@@ -330,7 +363,7 @@ const loadDashboardRows = async (executor: Executor, ranges: ZonedMonthRange[]) 
        WHERE sr.effective_from <= $2::date
          AND (sr.effective_to IS NULL OR sr.effective_to >= $1::date)
        ORDER BY sr.employee_user_id, sr.effective_from DESC`,
-      [`${first.key}-01`, `${last.key}-01`],
+      [`${firstMonth.key}-01`, `${lastMonth.key}-01`],
     ),
     query<Row>(
       executor,
@@ -342,15 +375,37 @@ const loadDashboardRows = async (executor: Executor, ranges: ZonedMonthRange[]) 
   ]);
 };
 
+const payrollExpenseInsideRange = (
+  range: ZonedDateRange,
+  payrollPayouts: Row[],
+  salaryRates: Row[],
+) => {
+  let total = 0;
+  let month = getZonedMonthRange(range.start, ACADEMY_TIME_ZONE);
+  while (month.start < range.end) {
+    const overlapStart = Math.max(month.start.getTime(), range.start.getTime());
+    const overlapEnd = Math.min(month.end.getTime(), range.end.getTime());
+    if (overlapEnd > overlapStart) {
+      const monthlyExpense = calculateAccruedPayrollExpense({
+        period: month.key,
+        payouts: payrollPayouts.filter((payout) => payout.period === month.key),
+        salaryRates,
+      });
+      total += monthlyExpense * ((overlapEnd - overlapStart) / (month.end.getTime() - month.start.getTime()));
+    }
+    month = getZonedMonthRange(new Date(month.end.getTime() + 60 * 60 * 1_000), ACADEMY_TIME_ZONE);
+  }
+  return Math.round(total);
+};
+
 const buildRangeSummary = (
-  range: ZonedMonthRange,
+  range: FinanceDateRange,
   payments: Row[],
   operatingExpenses: Row[],
   payrollPayouts: Row[],
   salaryRates: Row[],
   marketingExpenses: Row[],
 ) => {
-  const paidForPeriod = payrollPayouts.filter((payout) => payout.period === range.key);
   return calculateFinanceSummary({
     revenue: payments
       .filter((payment) => inRange(payment.paidAt, range))
@@ -358,11 +413,7 @@ const buildRangeSummary = (
     operatingExpenses: operatingExpenses
       .filter((expense) => inRange(expense.expenseDate, range))
       .reduce((sum, expense) => sum + Number(expense.amountUzs || 0), 0),
-    payrollExpenses: calculateAccruedPayrollExpense({
-      period: range.key,
-      payouts: paidForPeriod,
-      salaryRates,
-    }),
+    payrollExpenses: payrollExpenseInsideRange(range, payrollPayouts, salaryRates),
     marketingExpenses: marketingExpenses
       .reduce((sum, expense) => sum + marketingExpenseInsideRange(expense, range), 0),
   });
@@ -370,18 +421,43 @@ const buildRangeSummary = (
 
 router.get('/dashboard', async (req, res) => {
   try {
-    const { period } = parsePeriod(req.query.period);
-    const reference = periodReference(period);
-    const ranges = getTrailingZonedMonthRanges(reference, ACADEMY_TIME_ZONE, 7);
-    const [payments, operatingExpenses, payrollPayouts, salaryRates, marketingExpenses] = await loadDashboardRows(pool, ranges);
-    const summaries = ranges.map((range) => ({
-      period: range.key,
+    const hasDateRange = req.query.from !== undefined || req.query.to !== undefined;
+    const fallbackPeriod = String(req.query.period || getZonedMonthRange(new Date(), ACADEMY_TIME_ZONE).key);
+    const fallback = parsePeriod(fallbackPeriod);
+    const currentRange: FinanceDateRange = hasDateRange
+      ? parseDashboardRange(req.query.from, req.query.to)
+      : { ...fallback.range, key: fallback.period };
+    const rangeDuration = currentRange.end.getTime() - currentRange.start.getTime();
+    const previousRange: FinanceDateRange = {
+      start: new Date(currentRange.start.getTime() - rangeDuration),
+      end: currentRange.start,
+      key: 'previous',
+    };
+    const trendRanges = buildDashboardBuckets(currentRange);
+    const loadRanges = [previousRange, ...trendRanges];
+    const [payments, operatingExpenses, payrollPayouts, salaryRates, marketingExpenses] = await loadDashboardRows(pool, loadRanges);
+    const current = buildRangeSummary(
+      currentRange,
+      payments,
+      operatingExpenses,
+      payrollPayouts,
+      salaryRates,
+      marketingExpenses,
+    );
+    const previous = buildRangeSummary(
+      previousRange,
+      payments,
+      operatingExpenses,
+      payrollPayouts,
+      salaryRates,
+      marketingExpenses,
+    );
+    const summaries = trendRanges.map((range) => ({
+      periodStart: range.key,
       ...buildRangeSummary(range, payments, operatingExpenses, payrollPayouts, salaryRates, marketingExpenses),
     }));
-    const current = summaries[summaries.length - 1];
-    const previous = summaries[summaries.length - 2];
-    const currentRange = ranges[ranges.length - 1];
-    const payroll = await getPayrollDataset(pool, period);
+    const payrollPeriod = getZonedMonthRange(new Date(currentRange.end.getTime() - 1), ACADEMY_TIME_ZONE).key;
+    const payroll = await getPayrollDataset(pool, payrollPeriod);
     const breakdown = new Map<string, number>([
       ['payroll', current.payrollExpenses],
       ['marketing', current.marketingExpenses],
@@ -390,17 +466,19 @@ router.get('/dashboard', async (req, res) => {
       const category = String(expense.category || 'other');
       breakdown.set(category, (breakdown.get(category) ?? 0) + Number(expense.amountUzs || 0));
     }
-    const recentTransactions = await getTransactions(pool, currentRange, period, 8);
+    const recentTransactions = await getTransactions(pool, currentRange, 8);
 
     res.json({
-      period,
+      period: payrollPeriod,
+      from: dateOnlyKey(currentRange.start),
+      to: dateOnlyKey(new Date(currentRange.end.getTime() - 1)),
       summary: {
         ...current,
         previousNetProfit: previous.netProfit,
         profitChangePercent: calculatePercentageChange(current.netProfit, previous.netProfit),
         payrollDueUzs: payroll.summary.pendingAmountUzs,
       },
-      trend: summaries.slice(-6),
+      trend: summaries,
       expenseBreakdown: [...breakdown.entries()]
         .filter(([, amount]) => amount > 0)
         .map(([category, amount]) => ({ category, amount }))
@@ -883,7 +961,7 @@ router.post('/payroll/payout-all', async (req, res) => {
 router.get('/transactions', async (req, res) => {
   try {
     const { period, range } = parsePeriod(req.query.period);
-    const rows = await getTransactions(pool, range, period);
+    const rows = await getTransactions(pool, range);
     res.json({ period, rows });
   } catch (error: any) {
     logger.error('Failed to load finance transactions', { error });

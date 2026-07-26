@@ -45,6 +45,7 @@ import {
   type FinanceSection,
 } from '@/lib/financeCenter';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -60,11 +61,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  reportingRangeForPreset,
+  reportingRangeQuery,
+} from '@/lib/reportingDateRange';
 
 type Row = Record<string, any>;
 
 interface DashboardData {
   period: string;
+  from: string;
+  to: string;
   summary: {
     revenue: number;
     totalExpenses: number;
@@ -73,7 +80,7 @@ interface DashboardData {
     payrollDueUzs: number;
     profitChangePercent: number;
   };
-  trend: Array<{ period: string; revenue: number; totalExpenses: number; netProfit: number }>;
+  trend: Array<{ periodStart: string; revenue: number; totalExpenses: number; netProfit: number }>;
   expenseBreakdown: Array<{ category: string; amount: number }>;
   recentTransactions: Row[];
 }
@@ -264,6 +271,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const copy = financeCopy(t);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState(currentFinancePeriod);
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [salaryDialogOpen, setSalaryDialogOpen] = useState(false);
   const [payoutTarget, setPayoutTarget] = useState<Row | null>(null);
@@ -294,11 +302,18 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     return labels[value] ?? copy.other;
   };
   const methodLabel = (value: string) => ({ cash: copy.cash, transfer: copy.transfer, card: copy.card }[value] ?? value);
+  const reportingQuery = reportingRangeQuery(reportingRange);
+  const reportingDateLabel = (value: string) => new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(`${value}T00:00:00Z`));
 
   const dashboard = useQuery<DashboardData>({
-    queryKey: ['finance', 'dashboard', period],
-    queryFn: () => apiRequest('GET', `/api/finance/dashboard?period=${period}`),
+    queryKey: ['finance', 'dashboard', reportingQuery],
+    queryFn: () => apiRequest('GET', `/api/finance/dashboard?${reportingQuery}`),
     enabled: section === 'overview',
+    placeholderData: (previousData) => previousData,
   });
   const income = useQuery<IncomeData>({
     queryKey: ['finance', 'income', period],
@@ -414,8 +429,10 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         breadcrumbs={[{ label: copy.module, href: financeRoutes.overview }, ...(section === 'overview' ? [] : [{ label: sectionTitle }])]}
         actions={(
           <>
-            <Input aria-label={copy.calculationMonth} type="month" value={period} onChange={(event) => setPeriod(event.target.value || currentFinancePeriod())} className="w-[165px]" />
-            {(section === 'overview' || section === 'expenses') ? (
+            {section !== 'overview' ? (
+              <Input aria-label={copy.calculationMonth} type="month" value={period} onChange={(event) => setPeriod(event.target.value || currentFinancePeriod())} className="w-[165px]" />
+            ) : null}
+            {section === 'expenses' ? (
               <Button onClick={() => setExpenseDialogOpen(true)}><Plus data-icon="inline-start" />{copy.addExpense}</Button>
             ) : null}
             {section === 'payroll' ? (
@@ -426,6 +443,14 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       />
 
       <WorkspacePageBody contained={contained} ariaLabel={sectionTitle} className="flex flex-col gap-5">
+
+      {section === 'overview' ? (
+        <ReportingDateRangeFilter
+          value={reportingRange}
+          onChange={setReportingRange}
+          isFetching={dashboard.isFetching}
+        />
+      ) : null}
 
       {activeQuery.isLoading ? <FinanceLoading /> : null}
       {activeQuery.isError ? <FinanceError copy={copy} onRetry={() => activeQuery.refetch()} /> : null}
@@ -444,7 +469,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                 <div className="flex flex-col gap-2">
                   <span className={cn('flex items-center gap-1 font-medium', dashboard.data.summary.profitChangePercent >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                     {dashboard.data.summary.profitChangePercent >= 0 ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-                    {dashboard.data.summary.profitChangePercent > 0 ? '+' : ''}{dashboard.data.summary.profitChangePercent}% {copy.vsPreviousMonth}
+                    {dashboard.data.summary.profitChangePercent > 0 ? '+' : ''}{dashboard.data.summary.profitChangePercent}% {copy.vsPreviousPeriod}
                   </span>
                   <span>{copy.profitFormula}</span>
                 </div>
@@ -459,15 +484,18 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <section className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
             <Card>
               <CardHeader className="flex-row items-start justify-between gap-4">
-                <div><CardTitle>{copy.profitTrend}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div>
+                <div>
+                  <CardTitle>{copy.profitTrend}</CardTitle>
+                  <CardDescription>{reportingDateLabel(dashboard.data.from)} — {reportingDateLabel(dashboard.data.to)}</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="h-[330px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dashboard.data.trend} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                    <XAxis dataKey="period" tickFormatter={(value) => monthLabel(value).split(' ')[0]} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} />
+                    <XAxis dataKey="periodStart" tickFormatter={reportingDateLabel} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} />
                     <YAxis tickFormatter={compactMoney} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} width={58} />
-                    <RechartsTooltip formatter={(value: number, name: string) => [money(value), name === 'revenue' ? copy.revenue : name === 'totalExpenses' ? copy.allExpenses : copy.netProfit]} labelFormatter={(value) => monthLabel(String(value))} contentStyle={{ borderRadius: 10, borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }} />
+                    <RechartsTooltip formatter={(value: number, name: string) => [money(value), name === 'revenue' ? copy.revenue : name === 'totalExpenses' ? copy.allExpenses : copy.netProfit]} labelFormatter={(value) => reportingDateLabel(String(value))} contentStyle={{ borderRadius: 10, borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }} />
                     <Legend formatter={(value) => value === 'revenue' ? copy.revenue : value === 'totalExpenses' ? copy.allExpenses : copy.netProfit} />
                     <Bar dataKey="revenue" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={30} />
                     <Bar dataKey="totalExpenses" fill="var(--chart-5)" radius={[5, 5, 0, 0]} maxBarSize={30} />

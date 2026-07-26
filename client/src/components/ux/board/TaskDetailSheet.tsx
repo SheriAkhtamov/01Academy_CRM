@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'wouter';
 import {
     Sheet,
     SheetContent,
@@ -41,6 +42,7 @@ import {
     Pencil,
     RotateCcw,
     Trash2,
+    UserRound,
     X,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
@@ -277,6 +279,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                 <span className={cn('size-1.5 rounded-full', priorityMeta.dot)} />
                                                 {t(priorityMeta.labelKey)}
                                             </Badge>
+                                        ) : null}
+                                        {task.lead ? (
+                                            <Button asChild variant="outline" size="sm" className="h-6 max-w-full gap-1.5 px-2 text-xs">
+                                                <Link href={`/sales/pipeline?lead=${task.lead.id}`}>
+                                                    <UserRound className="size-3.5 shrink-0" />
+                                                    <span className="truncate">{task.lead.contactName}</span>
+                                                </Link>
+                                            </Button>
                                         ) : null}
                                         <Badge variant="outline" className="h-5 px-1.5 text-[10px]">{columnLabel(task.status, t)}</Badge>
                                     </div>

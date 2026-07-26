@@ -11,7 +11,7 @@ import {
     type BoardTask,
     type BoardTaskStatus,
 } from '@shared/schema';
-import { hasLeadershipAccess } from '@shared/academy';
+import { getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
 import type { User } from '@shared/schema';
 
 const router = Router();
@@ -196,7 +196,7 @@ router.get('/tasks/:id', async (req, res) => {
 
 router.post('/tasks', async (req, res) => {
     try {
-        const { title, description, priority, status, assigneeId, dueAt } = req.body;
+        const { title, description, priority, status, assigneeId, dueAt, leadId } = req.body;
         let { boardId } = req.body;
 
         if (!title || typeof title !== 'string' || !title.trim()) {
@@ -231,6 +231,22 @@ router.post('/tasks', async (req, res) => {
         const parsedDueAt = parseDateInput(dueAt);
         if (!parsedDueAt.valid) return res.status(400).json({ error: 'Invalid due date' });
 
+        let parsedLeadId: number | null = null;
+        if (leadId !== undefined && leadId !== null && leadId !== '') {
+            parsedLeadId = parseId(leadId);
+            if (!parsedLeadId) return res.status(400).json({ error: 'Invalid lead id' });
+            const lead = await storage.board.getLeadReference(parsedLeadId);
+            if (!lead) {
+                return res.status(404).json({ error: 'Lead not found' });
+            }
+            const canLinkLead = isTaskSupervisor(req.user!)
+                || (
+                    getAssignedWorkspaces(req.user).includes('sales')
+                    && (lead.managerId === null || Number(lead.managerId) === Number(req.user!.id))
+                );
+            if (!canLinkLead) return res.status(403).json({ error: 'accessDenied' });
+        }
+
         const targetStatus: BoardTaskStatus = isStatus(status) ? status : 'backlog';
         // `accepted` is not an initial state. It records the creator's approval
         // of work that has already reached `done`, and therefore must only be
@@ -254,6 +270,7 @@ router.post('/tasks', async (req, res) => {
             position,
             creatorId: req.user!.id,
             assigneeId: resolvedAssignee.assigneeId,
+            leadId: parsedLeadId,
             dueAt: parsedDueAt.date,
         };
         const activityValues = {

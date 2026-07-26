@@ -141,11 +141,7 @@ function Router() {
             <SalesDashboard section="students" />
           </WorkspaceGuard>
         )} />
-        <Route path="/sales/tasks" component={() => (
-          <WorkspaceGuard workspace="sales">
-            <SalesDashboard section="tasks" />
-          </WorkspaceGuard>
-        )} />
+        <Route path="/sales/tasks" component={() => <Redirect to="/tasks" />} />
         <Route path="/sales/messages" component={() => (
           <WorkspaceGuard workspace="sales">
             <MessagesPage />

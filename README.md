@@ -1,37 +1,170 @@
 # 01 Academy CRM
 
-CRM для школы 01 Academy: маркетинговая воронка, продажи, группы, занятия, ученики, посещаемость, финансы, аналитика, рефералы и интеграции.
+CRM-система для школы программирования 01 Academy. Управление воронкой продаж, группами, учениками, посещаемостью, финансами и интеграциями.
 
-## Стек
+## 📋 Возможности
 
-- React + Vite
-- Express
+- **Воронка продаж** — управление лидами и сделками
+- **Группы и занятия** — расписание, посещаемость
+- **Ученики** — профили, прогресс, платежи
+- **Финансы** — учёт доходов и расходов
+- **Аналитика** — отчёты и метрики
+- **Реферальная система** — трекинг приглашений
+- **Интеграции** — Instagram, WhatsApp, Telegram, онлайн-телефония, Notion, Google Sheets
+
+## 🛠 Стек технологий
+
+### Frontend
+- React 18 + Vite
+- TypeScript
+- Tailwind CSS + shadcn/ui
+- TanStack Query
+- React Hook Form + Zod
+- Recharts (визуализация)
+- WebSockets (real-time)
+
+### Backend
+- Node.js + Express
+- TypeScript
 - Drizzle ORM
-- PostgreSQL
+- PostgreSQL 17
+- Winston (логирование)
+- Multer (загрузка файлов)
+- Node Cron (планировщик)
 
-## Запуск
+### Инфраструктура
+- Docker + Docker Compose
+- PM2 / tsx (dev)
+
+## 🚀 Быстрый старт
+
+### Требования
+
+- Node.js 20+
+- PostgreSQL 17+
+- npm или pnpm
+
+### Локальная разработка
 
 ```bash
+# Установка зависимостей
 npm install
+
+# Настройка конфигурации
+cp config/app.config.example.json config/app.config.json
+# Отредактируйте config/app.config.json под ваши данные
+
+# Применение миграций БД
 npm run db:migrate
-npm run start
+
+# Заполнение тестовыми данными (опционально)
+npm run seed:dev
+
+# Запуск в режиме разработки
+npm start
 ```
 
-## Instagram Direct
+Сервер запустится на `http://localhost:5000`
 
-Интеграция использует официальный
-[Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/).
+### Production сборка
 
-1. Создайте Business-приложение в Meta for Developers и добавьте продукт Instagram.
-2. Заполните `integrations.instagram` в `config/app.config.json` по примеру из
-   `config/app.config.example.json`.
-3. На странице CRM `/integrations` скопируйте OAuth Redirect URL и Webhook Callback URL
-   в настройки приложения Meta.
-4. Запросите права `instagram_business_basic` и
-   `instagram_business_manage_messages`.
-5. Подпишите webhook на `messages`, `messaging_postbacks`, `messaging_seen` и
-   `message_reactions`, затем переведите приложение в Live после App Review.
+```bash
+npm run build
+npm run start:prod
+```
 
-Подключаемый Instagram-аккаунт должен быть профессиональным (Business или Creator).
-Обычный ответ менеджера отправляется только в пределах 24 часов после последнего
-сообщения клиента — это ограничение Instagram Messaging API.
+## 🐳 Docker
+
+```bash
+docker compose up -d
+```
+
+CRM будет доступна на `http://localhost:8011`
+
+## 📁 Структура проекта
+
+```
+├── client/          # React frontend
+│   └── src/
+├── server/          # Express backend
+│   ├── routes/      # API endpoints
+│   ├── services/    # Бизнес-логика
+│   ├── middleware/  # Промежуточное ПО
+│   └── storage/     # Хранилища данных
+├── telegram-bot/    # Telegram бот
+├── migrations/      # Миграции БД (Drizzle)
+├── config/          # Конфигурация
+└── scripts/         # Утилиты
+```
+
+## ⚙️ Конфигурация
+
+Все настройки хранятся в `config/app.config.json`:
+
+- **database** — подключение к PostgreSQL
+- **server** — хост, порт, окружение
+- **session** — секрет сессий
+- **superAdmin** — учётные данные супер-админа
+- **email** — SMTP / Resend для уведомлений
+- **integrations** — токены внешних сервисов
+
+> ⚠️ Не коммитьте `app.config.json` с реальными секретами!
+
+## 🔌 Интеграции
+
+### Instagram Direct
+
+Используется официальный [Instagram API](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/).
+
+1. Создайте Business-приложение в Meta for Developers
+2. Добавьте продукт Instagram
+3. Заполните `integrations.instagram` в `config/app.config.json`
+4. На странице `/integrations` скопируйте OAuth Redirect URL и Webhook Callback URL
+5. Запросите права: `instagram_business_basic`, `instagram_business_manage_messages`
+6. Подпишите webhook на события: `messages`, `messaging_postbacks`, `messaging_seen`, `message_reactions`
+7. Пройдите App Review и переведите приложение в Live
+
+> Требуется профессиональный аккаунт (Business/Creator). Ответ менеджера возможен только в течение 24 часов после последнего сообщения клиента.
+
+### Другие интеграции
+
+- **WhatsApp Business API** — исходящие/входящие сообщения
+- **Telegram Bot** — уведомления, быстрые команды
+- **Онлайн-телефония** — звонки, запись разговоров
+- **Notion** — синхронизация сделок
+- **Google Sheets** — экспорт отчётов
+
+## 🧪 Тестирование
+
+```bash
+# Запуск тестов
+npm test
+
+# Тесты в режиме watch
+npm run test:watch
+```
+
+## 📦 Скрипты
+
+| Команда | Описание |
+|---------|----------|
+| `npm start` | Запуск dev-сервера |
+| `npm run build` | Production сборка |
+| `npm run start:prod` | Запуск production версии |
+| `npm run db:migrate` | Применение миграций |
+| `npm run db:backup` | Бэкап БД |
+| `npm run seed:dev` | Сидирование тестовых данных |
+| `npm test` | Запуск тестов |
+| `npm run check` | Полная проверка (TS, encoding, i18n) |
+
+## 👥 Роли пользователей
+
+- **Супер-админ** — полный доступ
+- **Администратор** — управление всеми модулями
+- **Менеджер по продажам** — воронка, сделки, клиенты
+- **Преподаватель** — группы, занятия, успеваемость
+- **Бухгалтер** — финансы, отчёты
+
+## 📄 Лицензия
+
+MIT

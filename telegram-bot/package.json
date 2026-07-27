@@ -13,7 +13,7 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "grammy": "^1.32.0",
-    "node-cron": "^3.0.3",
+    "node-cron": "^4.6.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {

@@ -2,14 +2,11 @@ import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 import { appConfig } from "./config";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const viteLogger = createLogger();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -23,6 +20,19 @@ export function log(message: string, source = "express") {
 }
 
 export async function setupVite(app: Express, server: Server) {
+  // Keep the development-only config out of the production server bundle.
+  // A variable import is intentional: esbuild otherwise hoists Vite and its
+  // plugins into dist/index.js, where pruned production dependencies cannot
+  // and should not satisfy them.
+  const viteConfigModulePath = "../vite.config";
+  const [
+    { createServer: createViteServer, createLogger },
+    { default: viteConfig },
+  ] = await Promise.all([
+    import("vite"),
+    import(viteConfigModulePath),
+  ]);
+  const viteLogger = createLogger();
   const hmrHost = appConfig.server.host === "0.0.0.0"
     ? "127.0.0.1"
     : appConfig.server.host;

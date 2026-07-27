@@ -28,6 +28,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    group_add:
+      - "${APP_CONFIG_GID:-1000}"
     volumes:
       - ./config:/app/config:ro
       - ./logs:/app/logs

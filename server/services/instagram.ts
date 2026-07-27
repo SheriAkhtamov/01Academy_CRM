@@ -1058,6 +1058,12 @@ const normalizeAttachmentPayload = (attachment: any): InstagramMessageAttachment
     mediaItem?.url,
   ) ?? firstPreferredDeepMediaUrlByKey(isDirectMediaKey, attachment, payload, genericTemplate);
   const previewUrl = firstMediaUrl(
+    payload.thumbnail_url,
+    payload.preview_url,
+    payload.image_url,
+    attachment.thumbnail_url,
+    attachment.preview_url,
+    attachment.image_url,
     imageData.preview_url,
     imageData.animated_gif_preview_url,
     videoData.preview_url,
@@ -1131,7 +1137,7 @@ const normalizeShare = (share: any): InstagramMessageAttachment | null => {
     mediaItem?.preview_url,
     share.picture,
   ) ?? firstDeepMediaUrlByKey((key) => key.includes('image') || key.includes('picture') || key.includes('thumbnail'), share, template, payload, mediaItem);
-  const previewUrl = firstMediaUrl(mediaItem?.image_src, mediaItem?.thumbnail_src, mediaItem?.thumbnail_url, mediaItem?.preview_url, share.picture);
+  const previewUrl = firstMediaUrl(share.thumbnail_url, share.image_url, mediaItem?.image_src, mediaItem?.thumbnail_src, mediaItem?.thumbnail_url, mediaItem?.preview_url, share.picture);
   const link = firstText(share.link);
   const mediaUrl = videoUrl || gifUrl || directMediaUrl || imageUrl;
   return makeMediaAttachment({

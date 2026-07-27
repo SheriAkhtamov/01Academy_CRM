@@ -481,6 +481,9 @@ function AttachmentMedia({
   const mediaUrl = safeHttpsUrl(attachment.url) ?? safeHttpsUrl(attachment.previewUrl);
   const externalLink = safeHttpsUrl(attachment.link);
   const proxiedMediaUrl = mediaProxyUrl(mediaUrl);
+  // For linked media cards (Reels, Share, Story) prefer the preview image over
+  // the main url which may point to a video file that cannot render in <img>.
+  const coverUrl = mediaProxyUrl(safeHttpsUrl(attachment.previewUrl) ?? safeHttpsUrl(attachment.url));
   const [mediaFailed, setMediaFailed] = useState(false);
   const isReelShare = attachment.type === 'reel'
     || (attachment.type !== 'video' && isInstagramReelLink(externalLink));
@@ -501,9 +504,9 @@ function AttachmentMedia({
         rel="noopener noreferrer"
         className="group relative block w-full max-w-sm overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        {proxiedMediaUrl && !mediaFailed ? (
+        {coverUrl && !mediaFailed ? (
           <img
-            src={proxiedMediaUrl}
+            src={coverUrl}
             alt=""
             className="max-h-72 w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
             loading="lazy"
@@ -543,6 +546,7 @@ function AttachmentMedia({
         <div className="relative overflow-hidden rounded-xl bg-black">
           <video
             controls
+            preload="metadata"
             src={proxiedMediaUrl}
             className="max-h-80 w-full"
             poster={mediaProxyUrl(attachment.previewUrl)}

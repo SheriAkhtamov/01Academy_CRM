@@ -3470,17 +3470,11 @@ const applyReferralRewards = async (req: any, studentId: number, leadId: number 
   }
 };
 
-const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string | null) => {
+const handleLeadStatusEffects = async (req: any, lead: Row, previousStatus?: string | null) => {
   const managerId = lead.managerId ?? req.user!.id;
   const now = new Date();
 
   if (lead.statusCode === 'new_request') {
-    await createTask('Первый контакт по новой заявке', {
-      responsibleId: managerId,
-      deadlineAt: addMinutes(now, 15),
-      entityType: 'lead',
-      entityId: lead.id,
-      description: 'Связаться с лидом в течение 15 минут после заявки.' });
     await createNotification(managerId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
     // The manager already receives an internal CRM notification above. A CRM
     // user id is not a Telegram chat id, so no Telegram outbox row is created.
@@ -3498,37 +3492,6 @@ const handleLeadAutomation = async (req: any, lead: Row, previousStatus?: string
       entityId: lead.id });
     await createOutbox('whatsapp', lead.phone, `Напоминание: демо-урок 01 Academy через 2 часа`, {
       scheduledAt: addMinutes(demoAt, -120),
-      entityType: 'lead',
-      entityId: lead.id });
-  }
-
-  if (lead.statusCode === 'demo_attended') {
-    await createTask('Follow-up после демо', {
-      responsibleId: managerId,
-      deadlineAt: addMinutes(now, 240),
-      entityType: 'lead',
-      entityId: lead.id,
-      description: 'Связаться через 2-4 часа после демо и зафиксировать результат.' });
-  }
-
-  if (lead.statusCode === 'offer') {
-    await createTask('Проверить ответ на предложение', {
-      responsibleId: managerId,
-      deadlineAt: addDays(now, 3),
-      entityType: 'lead',
-      entityId: lead.id,
-      description: 'Если нет ответа 3 дня, сделать повторный контакт.' });
-  }
-
-  if (lead.statusCode === 'thinking') {
-    await createTask('Напоминание: лид думает 3 дня', {
-      responsibleId: managerId,
-      deadlineAt: addDays(now, 3),
-      entityType: 'lead',
-      entityId: lead.id });
-    await createTask('Повторное напоминание: лид думает 7 дней', {
-      responsibleId: managerId,
-      deadlineAt: addDays(now, 7),
       entityType: 'lead',
       entityId: lead.id });
   }
@@ -5320,7 +5283,7 @@ router.post('/leads', async (req, res) => {
       return { ...createdLead, phoneNumbers: phones.map((phone) => phone.phone) };
     });
 
-    await handleLeadAutomation(req, lead);
+    await handleLeadStatusEffects(req, lead);
     await createAudit(req, 'CREATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead);
     res.status(201).json(lead);
   } catch (error: any) {
@@ -6030,7 +5993,7 @@ router.post('/leads/:id/restore', async (req, res) => {
         req.user!.id,
         `Восстановлен из архива${oldLead.archiveReason ? `: ${oldLead.archiveReason}` : ''}`,
       );
-      await handleLeadAutomation(req, restored, oldLead.statusCode);
+      await handleLeadStatusEffects(req, restored, oldLead.statusCode);
     }
 
     await createAudit(req, 'RESTORE_ACADEMY_LEAD', 'academy_lead', restored.id, restored, oldLead);
@@ -6415,7 +6378,7 @@ router.patch('/leads/:id', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     if (oldLead.statusCode !== lead.statusCode) {
-      await handleLeadAutomation(req, lead, oldLead.statusCode);
+      await handleLeadStatusEffects(req, lead, oldLead.statusCode);
     }
 
     if (manager && managerChanged && didChangeManager) {
@@ -6509,7 +6472,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (oldLead.statusCode !== nextStatus) {
       await createStageHistory(id, oldLead.statusCode, nextStatus, req.user!.id, 'Отмечено посещение демо');
-      await handleLeadAutomation(req, lead, oldLead.statusCode);
+      await handleLeadStatusEffects(req, lead, oldLead.statusCode);
     }
     res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error) {
@@ -6656,7 +6619,7 @@ router.post('/leads/:id/students', async (req, res) => {
     });
     const updatedLead = await getLead(leadId);
     if (updatedLead && String(updatedLead.statusCode) !== String(initialLead.statusCode)) {
-      await handleLeadAutomation(req, updatedLead, String(initialLead.statusCode));
+      await handleLeadStatusEffects(req, updatedLead, String(initialLead.statusCode));
     }
     const enriched = await queryOne(
       `SELECT student.*,
@@ -9730,7 +9693,7 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
           [target.code, leadIds],
         );
         for (const lead of leads) {
-          await handleLeadAutomation(
+          await handleLeadStatusEffects(
             req,
             { ...lead, statusCode: target.code },
             String(source.code),

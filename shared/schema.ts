@@ -1437,6 +1437,7 @@ export const boardTasks = pgTable("board_tasks", {
   assigneeId: integer("assignee_id").references(() => users.id, { onDelete: "set null" }),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
   legacyAcademyTaskId: integer("legacy_academy_task_id"),
+  telephonyCallId: integer("telephony_call_id").references(() => telephonyCalls.id, { onDelete: "set null" }),
   dueAt: timestamp("due_at"),
   acceptedAt: timestamp("accepted_at"),
   acceptedBy: integer("accepted_by").references(() => users.id, { onDelete: "set null" }),
@@ -1450,6 +1451,9 @@ export const boardTasks = pgTable("board_tasks", {
   legacyAcademyTaskUnique: uniqueIndex("board_tasks_legacy_academy_task_unique")
     .on(table.legacyAcademyTaskId)
     .where(sql`${table.legacyAcademyTaskId} IS NOT NULL`),
+  telephonyCallUnique: uniqueIndex("board_tasks_telephony_call_unique")
+    .on(table.telephonyCallId)
+    .where(sql`${table.telephonyCallId} IS NOT NULL`),
   statusCheck: check("board_tasks_status_check", sql`${table.status} IN ('backlog', 'todo', 'in_progress', 'done', 'accepted')`),
   priorityCheck: check("board_tasks_priority_check", sql`${table.priority} IN ('urgent', 'normal', 'low')`),
 }));

@@ -153,7 +153,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const iconForEntity = (entityType: string) => {
     const icons: Record<string, React.ComponentType<{ className?: string }>> = {
-      lead: Users,
+      lead: Flame,
       student: GraduationCap,
       course: BookOpen,
       group: Layers3,
@@ -212,7 +212,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const showSearching = normalizedSearch.length >= 2 && isFetching && !showEntities;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput
         placeholder={t('commandPalettePlaceholder')}
         value={search}
@@ -247,10 +247,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               return (
                 <CommandItem
                   key={item.id}
+                  value={item.id}
                   onSelect={() => handleSelect(item.href)}
                   className="cursor-pointer"
                 >
-                  {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+                  {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
                   <span>{item.title}</span>
                 </CommandItem>
               );
@@ -265,17 +266,18 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               return (
                 <CommandItem
                   key={item.id}
+                  value={item.id}
                   onSelect={() => handleSelect(item.href)}
-                  className="cursor-pointer"
+                  className="cursor-pointer flex items-center gap-2"
                 >
-                  {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
-                  <div className="flex flex-col min-w-0">
-                    <span className="truncate">{item.title}</span>
+                  {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="truncate font-medium">{item.title}</span>
                     {item.subtitle && (
                       <span className="text-xs text-muted-foreground truncate">{item.subtitle}</span>
                     )}
                   </div>
-                  <span className="ml-auto text-xs text-muted-foreground/70 shrink-0">{item.type}</span>
+                  <span className="ml-auto text-xs text-muted-foreground/70 shrink-0 pl-2">{item.type}</span>
                 </CommandItem>
               );
             })}

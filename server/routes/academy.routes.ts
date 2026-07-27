@@ -4861,28 +4861,45 @@ router.get('/search', async (req, res) => {
 
     const pushLeads = async (whereSql: string, params: DbValue[], href: string) => {
       if (remaining() <= 0) return;
+      const cleanDigits = term.replace(/\D/g, '');
+      const hasDigits = cleanDigits.length >= 3;
+
+      let matchConditions = `(
+        LOWER(l.contact_name) LIKE $${params.length + 1}
+        OR LOWER(COALESCE(l.student_name, '')) LIKE $${params.length + 1}
+        OR LOWER(COALESCE(l.phone, '')) LIKE $${params.length + 1}
+        OR EXISTS (
+          SELECT 1
+          FROM academy_lead_phones lp
+          WHERE lp.lead_id = l.id
+            AND LOWER(lp.phone) LIKE $${params.length + 1}
+        )
+        OR LOWER(COALESCE(l.messenger, '')) LIKE $${params.length + 1}
+        OR CAST(l.id AS text) LIKE $${params.length + 1}
+      )`;
+
+      const queryParams: DbValue[] = [...params, like];
+
+      if (hasDigits) {
+        queryParams.push(`%${cleanDigits}%`);
+        const digitParamIndex = queryParams.length;
+        matchConditions += ` OR (regexp_replace(COALESCE(l.phone, ''), '[^0-9]', '', 'g') LIKE $${digitParamIndex})`;
+        matchConditions += ` OR EXISTS (SELECT 1 FROM academy_lead_phones lp WHERE lp.lead_id = l.id AND regexp_replace(lp.phone, '[^0-9]', '', 'g') LIKE $${digitParamIndex})`;
+      }
+
+      queryParams.push(remaining());
+      const limitParamIndex = queryParams.length;
+
       const rows = await query(
-        `SELECT l.id, l.contact_name, l.phone, l.student_name, c.name AS course_name,
+        `SELECT l.id, l.contact_name, l.phone, l.student_name, l.is_archived, c.name AS course_name,
             ${leadPhoneNumbersSelect('l')}
          FROM academy_leads l
          LEFT JOIN academy_courses c ON c.id = l.course_id
          WHERE ${whereSql}
-           AND COALESCE(l.is_archived, false) = false
-           AND (
-             LOWER(l.contact_name) LIKE $${params.length + 1}
-             OR LOWER(COALESCE(l.student_name, '')) LIKE $${params.length + 1}
-             OR LOWER(COALESCE(l.phone, '')) LIKE $${params.length + 1}
-             OR EXISTS (
-               SELECT 1
-               FROM academy_lead_phones lp
-               WHERE lp.lead_id = l.id
-                 AND LOWER(lp.phone) LIKE $${params.length + 1}
-             )
-             OR LOWER(COALESCE(l.messenger, '')) LIKE $${params.length + 1}
-           )
+           AND ${matchConditions}
          ORDER BY l.created_at DESC
-         LIMIT $${params.length + 2}`,
-        [...params, like, remaining()],
+         LIMIT $${limitParamIndex}`,
+        queryParams,
       );
       const visibleRows = await applyLeadVisibilityForActor({
         userId: req.user!.id,
@@ -4890,17 +4907,55 @@ router.get('/search', async (req, res) => {
         workspaces: assignedWorkspaces,
         scopeWorkspace: 'sales',
       }, rows);
-      results.push(...visibleRows.map((lead) => ({
-        id: `lead-${lead.id}`,
-        entityType: 'lead',
-        title: lead.contactName,
-        subtitle: [lead.phoneNumbers?.[0] ?? lead.phone, lead.studentName, lead.courseName].filter(Boolean).join(' • '),
-        href: `${href}&lead=${lead.id}`,
-      })));
+      results.push(...visibleRows.map((lead) => {
+        const leadIdTag = `№ ${lead.id}`;
+        const mainPhone = lead.phoneNumbers?.[0] ?? lead.phone;
+        const mainTitle = lead.contactName || lead.studentName || mainPhone || leadIdTag;
+        const baseHref = lead.isArchived ? '/sales/archive' : href;
+        const finalHref = `${baseHref}${baseHref.includes('?') ? '&' : '?'}lead=${lead.id}`;
+
+        const subtitleItems = [
+          leadIdTag,
+          mainPhone && mainPhone !== mainTitle ? mainPhone : (mainPhone ? mainPhone : null),
+          lead.studentName && lead.studentName !== mainTitle ? lead.studentName : null,
+          lead.courseName,
+          lead.isArchived ? 'Архив' : null,
+        ].filter(Boolean);
+
+        return {
+          id: `lead-${lead.id}`,
+          entityType: 'lead',
+          title: mainTitle,
+          subtitle: subtitleItems.join(' • '),
+          href: finalHref,
+        };
+      }));
     };
 
     const pushStudents = async (whereSql: string, params: DbValue[], href: string) => {
       if (remaining() <= 0) return;
+      const cleanDigits = term.replace(/\D/g, '');
+      const hasDigits = cleanDigits.length >= 3;
+
+      let matchConditions = `(
+        LOWER(COALESCE(st.student_name, '')) LIKE $${params.length + 1}
+        OR LOWER(st.contact_name) LIKE $${params.length + 1}
+        OR LOWER(st.phone) LIKE $${params.length + 1}
+        OR LOWER(COALESCE(st.referral_code, '')) LIKE $${params.length + 1}
+        OR CAST(st.id AS text) LIKE $${params.length + 1}
+      )`;
+
+      const queryParams: DbValue[] = [...params, like];
+
+      if (hasDigits) {
+        queryParams.push(`%${cleanDigits}%`);
+        const digitParamIndex = queryParams.length;
+        matchConditions += ` OR (regexp_replace(COALESCE(st.phone, ''), '[^0-9]', '', 'g') LIKE $${digitParamIndex})`;
+      }
+
+      queryParams.push(remaining());
+      const limitParamIndex = queryParams.length;
+
       const rows = await query(
         `SELECT st.id, st.student_name, st.contact_name, st.phone, g.name AS group_name,
             COALESCE(
@@ -4915,29 +4970,27 @@ router.get('/search', async (req, res) => {
          FROM academy_students st
          LEFT JOIN academy_groups g ON g.id = st.group_id
          WHERE ${whereSql}
-           AND (
-             LOWER(COALESCE(st.student_name, '')) LIKE $${params.length + 1}
-             OR LOWER(st.contact_name) LIKE $${params.length + 1}
-             OR LOWER(st.phone) LIKE $${params.length + 1}
-             OR LOWER(COALESCE(st.referral_code, '')) LIKE $${params.length + 1}
-           )
+           AND ${matchConditions}
          ORDER BY st.created_at DESC
-         LIMIT $${params.length + 2}`,
-        [...params, like, remaining()],
+         LIMIT $${limitParamIndex}`,
+        queryParams,
       );
-      results.push(...rows.map((student) => ({
-        id: `student-${student.id}`,
-        entityType: 'student',
-        title: student.studentName || student.contactName,
-        subtitle: [
-          student.contactName,
-          student.phone,
-          Array.isArray(student.groupNames) && student.groupNames.length > 0
-            ? student.groupNames.join(', ')
-            : student.groupName,
-        ].filter(Boolean).join(' • '),
-        href: `${href}&student=${student.id}`,
-      })));
+      results.push(...rows.map((student) => {
+        const finalHref = `${href}${href.includes('?') ? '&' : '?'}student=${student.id}`;
+        return {
+          id: `student-${student.id}`,
+          entityType: 'student',
+          title: student.studentName || student.contactName,
+          subtitle: [
+            student.contactName,
+            student.phone,
+            Array.isArray(student.groupNames) && student.groupNames.length > 0
+              ? student.groupNames.join(', ')
+              : student.groupName,
+          ].filter(Boolean).join(' • '),
+          href: finalHref,
+        };
+      }));
     };
 
     const pushGroups = async (whereSql: string, params: DbValue[], href: string) => {

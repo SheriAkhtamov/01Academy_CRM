@@ -54,7 +54,7 @@
     "express-session": "^1.18.1",
     "lucide-react": "^0.453.0",
     "morgan": "^1.10.1",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.2.0",
     "nanoid": "^5.1.5",
     "node-cron": "^4.2.1",
     "node-telegram-bot-api": "^1.1.0",

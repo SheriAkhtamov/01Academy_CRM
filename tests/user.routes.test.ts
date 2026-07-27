@@ -35,10 +35,6 @@ vi.mock('../server/services/auth', () => ({
 vi.mock('../server/services/email', () => ({
   emailService: { sendWelcomeEmail: vi.fn() },
 }));
-vi.mock('../server/services/credential-password', () => ({
-  decryptCredentialPassword: vi.fn(),
-  encryptCredentialPassword: vi.fn(),
-}));
 describe('user route validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -93,6 +89,20 @@ describe('user route validation', () => {
     const response = await agent.put('/api/users/7').send({ isActive: 'false' });
 
     expect(response.status).toBe(400);
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
+  it('does not let the generic profile endpoint bypass credential confirmation', async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+
+    const response = await agent.put('/api/users/7').send({
+      email: 'changed@example.com',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('loginManagedInCredentials');
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
 

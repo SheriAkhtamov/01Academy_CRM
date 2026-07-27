@@ -1,13 +1,15 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     container_name: crm-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: crm
-      POSTGRES_PASSWORD: crm_password_2026
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: crm
       TZ: UTC
+    secrets:
+      - postgres_password
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,10 +20,11 @@ services:
 
   crm:
     build: .
+    image: 01academy-crm:deploy
     container_name: crm-pro
     restart: unless-stopped
     ports:
-      - "8011:5001"
+      - "127.0.0.1:8011:5001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,6 +36,32 @@ services:
       - NODE_ENV=production
       - TZ=UTC
       - ACADEMY_TIME_ZONE=Asia/Tashkent
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1770,uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5001/api/auth/session').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   pgdata:
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres_password

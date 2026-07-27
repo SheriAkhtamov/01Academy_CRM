@@ -2,13 +2,20 @@ import type { NextFunction, Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { logger } from "../lib/logger";
 import { toApiErrorKey } from "../lib/apiErrorKeys";
+import {
+  getHttpErrorStatus,
+  getPublicErrorMessage,
+} from "../lib/http-errors";
 
 const extractRequestId = (req: Request): string => {
   const headerId = req.headers["x-request-id"];
-  if (Array.isArray(headerId)) {
-    return headerId[0] ?? randomUUID();
-  }
-  return headerId ?? randomUUID();
+  const candidate = Array.isArray(headerId) ? headerId[0] : headerId;
+  return (
+    typeof candidate === "string"
+    && /^[A-Za-z0-9._:-]{1,128}$/.test(candidate)
+  )
+    ? candidate
+    : randomUUID();
 };
 
 const extractUserId = (req: Request): number | undefined => {
@@ -58,18 +65,19 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ) => {
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
+  const status = getHttpErrorStatus(err);
+  const internalMessage = err?.message || "Internal Server Error";
+  const publicMessage = getPublicErrorMessage(err, "internalServerError");
 
   logger.error("Server Error", {
     status,
-    message,
+    message: internalMessage,
     requestId: req.requestId,
     userId: extractUserId(req),
-    route: req.originalUrl,
+    route: req.originalUrl.split(/[?#]/, 1)[0],
     method: req.method,
     stack: err.stack,
   });
 
-  res.status(status).json({ message });
+  res.status(status).json({ message: publicMessage });
 };

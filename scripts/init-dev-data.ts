@@ -14,8 +14,12 @@ const SUPER = {
   username: process.env.SUPER_USERNAME || 'Sheri',
   fullName: process.env.SUPER_FULLNAME || process.env.SUPER_USERNAME || 'Sheri',
   email: (process.env.SUPER_EMAIL || 'admin@01academy.uz').trim().toLowerCase(),
-  password: process.env.SUPER_PASSWORD || 'Sheri2001',
+  password: process.env.SUPER_PASSWORD?.trim() ?? '',
 };
+
+if (SUPER.password.length < 12 || Buffer.byteLength(SUPER.password, 'utf8') > 72) {
+  throw new Error('SUPER_PASSWORD must contain 12-72 UTF-8 bytes; no default password is provided');
+}
 
 async function exec(sql, params = []) {
   return pool.query(sql, params);
@@ -31,7 +35,7 @@ async function seedSuperAdmin() {
     `SELECT id FROM users WHERE email = $1 OR full_name = $2 ORDER BY id LIMIT 1`,
     [SUPER.email, SUPER.username],
   );
-  const hash = await bcrypt.hash(SUPER.password, 10);
+  const hash = await bcrypt.hash(SUPER.password, 12);
 
   if (existingUser.rows[0]?.id) {
     await exec(

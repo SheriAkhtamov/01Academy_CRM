@@ -40,7 +40,7 @@ CRM-система для школы программирования 01 Academy
 
 ### Требования
 
-- Node.js 20+
+- Node.js 22 (или 20.19+)
 - PostgreSQL 17+
 - npm или pnpm
 
@@ -57,8 +57,9 @@ cp config/app.config.example.json config/app.config.json
 # Применение миграций БД
 npm run db:migrate
 
-# Заполнение тестовыми данными (опционально)
-npm run seed:dev
+# Заполнение тестовыми данными (опционально).
+# Пароль не имеет значения по умолчанию и должен быть задан явно:
+SUPER_PASSWORD='длинный-уникальный-пароль' npm run seed:dev
 
 # Запуск в режиме разработки
 npm start
@@ -76,10 +77,12 @@ npm run start:prod
 ## 🐳 Docker
 
 ```bash
+mkdir -p .secrets
+openssl rand -base64 32 > .secrets/postgres_password
 docker compose up -d
 ```
 
-CRM будет доступна на `http://localhost:8011`
+Порт CRM привязан только к `127.0.0.1:8011`; внешний HTTPS-доступ должен идти через доверенный reverse proxy.
 
 ## 📁 Структура проекта
 
@@ -104,11 +107,10 @@ CRM будет доступна на `http://localhost:8011`
 - **database** — подключение к PostgreSQL
 - **server** — хост, порт, окружение
 - **session** — секрет сессий
-- **superAdmin** — учётные данные супер-админа
 - **email** — SMTP / Resend для уведомлений
 - **integrations** — токены внешних сервисов
 
-> ⚠️ Не коммитьте `app.config.json` с реальными секретами!
+> Не коммитьте `app.config.json`, `.env`, `.secrets` или ключи. В production используйте HTTPS, отдельный случайный `session.secret`, отдельный `instagram.tokenEncryptionKey` и секрет для каждого входящего webhook.
 
 ## 🔌 Интеграции
 
@@ -142,6 +144,12 @@ npm test
 
 # Тесты в режиме watch
 npm run test:watch
+
+# TypeScript, кодировки и локализация
+npm run check
+
+# Уязвимости зависимостей и секреты в отслеживаемых файлах
+npm run audit:security
 ```
 
 ## 📦 Скрипты
@@ -156,6 +164,7 @@ npm run test:watch
 | `npm run seed:dev` | Сидирование тестовых данных |
 | `npm test` | Запуск тестов |
 | `npm run check` | Полная проверка (TS, encoding, i18n) |
+| `npm run audit:security` | Аудит зависимостей и секретов |
 
 ## 👥 Роли пользователей
 

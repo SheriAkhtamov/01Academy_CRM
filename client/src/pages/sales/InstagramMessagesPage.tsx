@@ -174,6 +174,18 @@ const parseLegacyAttachment = (content?: string): InstagramMessageAttachment[] =
 const mediaProxyUrl = (url?: string) =>
   url ? `/api/instagram/media-proxy?url=${encodeURIComponent(url)}` : undefined;
 
+const safeHttpsUrl = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 interface LookupOption {
   id: number;
   name: string;
@@ -466,13 +478,14 @@ function AttachmentMedia({
   onOpen: (media: { url: string; type: MediaType; title?: string }) => void;
 }) {
   const { t } = useTranslation();
-  const mediaUrl = attachment.url || attachment.previewUrl;
+  const mediaUrl = safeHttpsUrl(attachment.url) ?? safeHttpsUrl(attachment.previewUrl);
+  const externalLink = safeHttpsUrl(attachment.link);
   const proxiedMediaUrl = mediaProxyUrl(mediaUrl);
   const [mediaFailed, setMediaFailed] = useState(false);
   const isReelShare = attachment.type === 'reel'
-    || (attachment.type !== 'video' && isInstagramReelLink(attachment.link));
+    || (attachment.type !== 'video' && isInstagramReelLink(externalLink));
   const isLinkedInstagramMedia = isReelShare || attachment.type === 'share' || attachment.type === 'story';
-  const linkTarget = attachment.link || mediaUrl;
+  const linkTarget = externalLink || mediaUrl;
   const label = attachment.title || mediaTypeLabel(isReelShare ? 'reel' : attachment.type, t);
 
   // Meta does not always send a direct MP4 for a shared Reel — frequently it
@@ -580,7 +593,7 @@ function AttachmentMedia({
     );
   }
 
-  const fallbackUrl = attachment.link || mediaUrl;
+  const fallbackUrl = externalLink || mediaUrl;
   if (fallbackUrl) {
     return (
       <a

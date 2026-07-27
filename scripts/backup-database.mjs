@@ -38,9 +38,14 @@ try {
     backup.tables[tablename] = rows;
   }
 
-  await fs.mkdir('backups', { recursive: true });
+  await fs.mkdir('backups', { recursive: true, mode: 0o700 });
+  await fs.chmod('backups', 0o700);
   const file = path.join('backups', `academy-crm-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-  await fs.writeFile(file, JSON.stringify(backup, null, 2));
+  await fs.writeFile(file, JSON.stringify(backup, null, 2), {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  });
   console.log(file);
 } finally {
   client.release();

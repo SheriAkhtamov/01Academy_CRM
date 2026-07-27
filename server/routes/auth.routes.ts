@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { authService } from '../services/auth';
@@ -7,12 +7,14 @@ import { resolveAuthSession } from '../services/authSession';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
 import { t } from '../lib/i18n';
-import { appConfig } from '../config';
+import { secureSessionCookies } from '../config';
 import { logger } from '../lib/logger';
 import { getLinkedAccountId } from '@shared/account-switching';
-import { encryptCredentialPassword } from '../services/credential-password';
 import { pool } from '../db';
 import { hasLeadershipAccess } from '@shared/academy';
+import { getPasswordPolicyError, isPasswordWithinBcryptLimit } from '../lib/password-policy';
+import { revokeUserAuthenticationArtifacts } from '../services/session-security';
+import { sendHttpError } from '../lib/http-errors';
 
 const router = Router();
 
@@ -22,21 +24,37 @@ const destroySessionAsync = (req: Request) =>
     });
 
 // Rate limiting configurations
-const loginLimiter = rateLimit({
+const loginIpLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5,
-    message: t('tooManyLoginAttempts'),
+    max: 30,
+    handler: (_req, res) => res.status(429).json({ error: t('tooManyLoginAttempts') }),
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests: true,
 });
 
+const loginAccountLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    handler: (_req, res) => res.status(429).json({ error: t('tooManyLoginAttempts') }),
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => {
+        const login = normalizeLogin(req.body?.login ?? req.body?.email).slice(0, 254);
+        return `account:${crypto.createHash('sha256').update(login || 'missing').digest('hex')}`;
+    },
+});
+
 const accountLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
-    message: 'Too many account operations',
+    handler: (_req, res) => res.status(429).json({ error: 'tooManyRequests' }),
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => req.user?.id
+        ? `user:${req.user.id}`
+        : `ip:${ipKeyGenerator(req.ip || '127.0.0.1')}`,
 });
 
 const normalizeLogin = (value: unknown) =>
@@ -50,7 +68,7 @@ const parsePositiveId = (value: unknown): number | null => {
 };
 
 const isValidLogin = (value: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const findUserByLogin = async (login: string, exceptUserId?: number) => {
     const users = await storage.getUsers();
@@ -60,7 +78,7 @@ const findUserByLogin = async (login: string, exceptUserId?: number) => {
     );
 };
 
-router.post('/login', loginLimiter, async (req, res) => {
+router.post('/login', loginIpLimiter, loginAccountLimiter, async (req, res) => {
     try {
         const { login, email, password } = req.body;
         const loginOrEmail = login || email;
@@ -71,6 +89,9 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         if (typeof password !== 'string' || !password) {
             return res.status(400).json({ error: 'Password is required' });
+        }
+        if (loginOrEmail.trim().length > 254 || !isPasswordWithinBcryptLimit(password)) {
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         const user = await authService.authenticateUser(loginOrEmail, password);
@@ -116,11 +137,11 @@ router.get('/session', async (req, res) => {
 
 router.post('/logout', (req, res) => {
     req.session.destroy(() => {
-        res.clearCookie('connect.sid', {
+        res.clearCookie('academy.sid', {
             path: '/',
             httpOnly: true,
             sameSite: 'lax',
-            secure: appConfig.session.cookieSecure,
+            secure: secureSessionCookies,
         });
         res.json({ success: true });
     });
@@ -157,19 +178,22 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
         const confirmNewPassword = typeof req.body.confirmNewPassword === 'string'
             ? req.body.confirmNewPassword
             : '';
-        const passwordChanged = Boolean(currentPassword || newPassword || confirmNewPassword);
+        const loginChanged = email.toLowerCase() !== currentUser.email.toLowerCase();
+        const passwordChanged = Boolean(newPassword || confirmNewPassword);
+        const credentialsChanged = loginChanged || passwordChanged;
         let newPasswordHash: string | null = null;
-        let passwordCiphertext: string | null = null;
-        if (passwordChanged) {
+        if (credentialsChanged) {
             if (!currentPassword) return res.status(400).json({ error: 'currentPasswordRequired' });
-            if (!newPassword) return res.status(400).json({ error: 'newPasswordRequired' });
-            if (newPassword.length < 8) return res.status(400).json({ error: 'passwordTooShort' });
-            if (newPassword !== confirmNewPassword) return res.status(400).json({ error: 'passwordsDoNotMatch' });
             if (!await authService.verifyPassword(currentPassword, currentUser.password)) {
                 return res.status(401).json({ error: 'currentPasswordInvalid' });
             }
+        }
+        if (passwordChanged) {
+            if (!newPassword) return res.status(400).json({ error: 'newPasswordRequired' });
+            const passwordPolicyError = getPasswordPolicyError(newPassword);
+            if (passwordPolicyError) return res.status(400).json({ error: passwordPolicyError });
+            if (newPassword !== confirmNewPassword) return res.status(400).json({ error: 'passwordsDoNotMatch' });
             newPasswordHash = await authService.hashPassword(newPassword);
-            passwordCiphertext = encryptCredentialPassword(newPassword);
         }
 
         const client = await pool.connect();
@@ -191,7 +215,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
             if (!lockedUser) {
                 throw Object.assign(new Error('User not found'), { statusCode: 404 });
             }
-            if (passwordChanged && lockedUser.password !== currentUser.password) {
+            if (credentialsChanged && lockedUser.password !== currentUser.password) {
                 throw Object.assign(new Error('credentialsChangedConcurrently'), { statusCode: 409 });
             }
             oldEmail = lockedUser.email;
@@ -206,7 +230,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                      phone = $5,
                      has_report_access = $6,
                      password = COALESCE($7, password),
-                     credential_password_ciphertext = COALESCE($8, credential_password_ciphertext),
+                     credential_password_ciphertext = NULL,
                      updated_at = NOW()
                  WHERE id = $1`,
                 [
@@ -217,15 +241,20 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                     phone,
                     hasReportAccess,
                     newPasswordHash,
-                    passwordCiphertext,
                 ],
             );
             await client.query(
                 `UPDATE academy_teachers
                  SET full_name = $2, updated_at = NOW()
-                 WHERE user_id = $1`,
+                WHERE user_id = $1`,
                 [currentUser.id, fullName],
             );
+            if (credentialsChanged) {
+                await revokeUserAuthenticationArtifacts(currentUser.id, {
+                    exceptSessionId: req.sessionID,
+                    executor: client,
+                });
+            }
             await client.query('COMMIT');
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);
@@ -262,7 +291,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
         if (error?.code === '23505' && String(error?.constraint ?? '').includes('users_email_unique')) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
-        res.status(error?.statusCode || 500).json({ error: error?.message || 'failedToUpdateCredentials' });
+        return sendHttpError(res, error, 'failedToUpdateCredentials');
     }
 });
 
@@ -303,32 +332,33 @@ router.patch('/me/credentials', requireAuth, async (req: Request, res: Response)
                 : typeof req.body.confirmPassword === 'string'
                     ? req.body.confirmPassword
                     : '';
-        const wantsPasswordChange = Boolean(currentPassword || newPassword || confirmNewPassword);
+        const wantsPasswordChange = Boolean(newPassword || confirmNewPassword);
 
-        if (wantsPasswordChange) {
+        if (loginChanged || wantsPasswordChange) {
             if (!currentPassword) {
                 return res.status(400).json({ error: 'currentPasswordRequired' });
-            }
-
-            if (!newPassword) {
-                return res.status(400).json({ error: 'newPasswordRequired' });
-            }
-
-            if (newPassword.length < 8) {
-                return res.status(400).json({ error: 'passwordTooShort' });
-            }
-
-            if (newPassword !== confirmNewPassword) {
-                return res.status(400).json({ error: 'passwordsDoNotMatch' });
             }
 
             const currentPasswordValid = await authService.verifyPassword(currentPassword, currentUser.password);
             if (!currentPasswordValid) {
                 return res.status(401).json({ error: 'currentPasswordInvalid' });
             }
+        }
+
+        if (wantsPasswordChange) {
+            if (!newPassword) {
+                return res.status(400).json({ error: 'newPasswordRequired' });
+            }
+
+            const passwordPolicyError = getPasswordPolicyError(newPassword);
+            if (passwordPolicyError) return res.status(400).json({ error: passwordPolicyError });
+
+            if (newPassword !== confirmNewPassword) {
+                return res.status(400).json({ error: 'passwordsDoNotMatch' });
+            }
 
             updateData.password = await authService.hashPassword(newPassword);
-            updateData.credentialPasswordCiphertext = encryptCredentialPassword(newPassword);
+            updateData.credentialPasswordCiphertext = null;
             passwordChanged = true;
         }
 
@@ -337,6 +367,9 @@ router.patch('/me/credentials', requireAuth, async (req: Request, res: Response)
         }
 
         const updatedUser = await storage.updateUser(currentUser.id, updateData);
+        await revokeUserAuthenticationArtifacts(currentUser.id, {
+            exceptSessionId: req.sessionID,
+        });
 
         await storage.createAuditLog({
             userId: currentUser.id,
@@ -386,7 +419,7 @@ router.get('/accounts', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Add a saved account (authenticate with login/password, store token)
-router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: Response) => {
+router.post('/accounts', requireAuth, accountLimiter, async (req: Request, res: Response) => {
     try {
         const ownerUserId = req.session.userId!;
         const { login, password, label } = req.body;
@@ -413,6 +446,9 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
 
         // Check if already saved
         const existing = await storage.getSavedAccountsForUser(ownerUserId);
+        if (existing.length >= 10) {
+            return res.status(409).json({ error: 'Saved account limit reached' });
+        }
         if (existing.some((account) => account.accountUser.id === user.id)) {
             return res.status(409).json({ error: 'Account already saved' });
         }
@@ -438,7 +474,7 @@ router.post('/accounts', accountLimiter, requireAuth, async (req: Request, res: 
 });
 
 // Switch to a saved account by token
-router.post('/switch-account', accountLimiter, requireAuth, async (req: Request, res: Response) => {
+router.post('/switch-account', requireAuth, accountLimiter, async (req: Request, res: Response) => {
     try {
         const { token, tokens, targetAccountId } = req.body;
         const candidateTokens = Array.from(new Set(
@@ -446,16 +482,14 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
                 .filter((candidate): candidate is string => (
                     typeof candidate === 'string' && /^[a-f0-9]{64}$/i.test(candidate)
                 )),
-        )).slice(0, 25);
-        const requestedTargetId = targetAccountId === undefined
-            ? null
-            : parsePositiveId(targetAccountId);
+        )).slice(0, 10);
+        const requestedTargetId = parsePositiveId(targetAccountId);
 
         if (candidateTokens.length === 0) {
             return res.status(400).json({ error: 'Token is required' });
         }
 
-        if (targetAccountId !== undefined && requestedTargetId === null) {
+        if (requestedTargetId === null) {
             return res.status(400).json({ error: 'Target account ID is invalid' });
         }
 
@@ -466,7 +500,7 @@ router.post('/switch-account', accountLimiter, requireAuth, async (req: Request,
         let matchedTokenIndex = -1;
         for (const savedAccount of savedAccounts) {
             const linkedAccountId = getLinkedAccountId(savedAccount, currentUserId);
-            if (!linkedAccountId || (requestedTargetId !== null && linkedAccountId !== requestedTargetId)) {
+            if (!linkedAccountId || linkedAccountId !== requestedTargetId) {
                 continue;
             }
 

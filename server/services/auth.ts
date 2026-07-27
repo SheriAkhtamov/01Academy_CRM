@@ -1,16 +1,31 @@
 import bcrypt from 'bcrypt';
+import crypto from 'node:crypto';
 import { storage } from '../storage';
 import type { User, InsertUser } from '@shared/schema';
 import type { SanitizedUser } from '@shared/auth';
+import {
+  getPasswordPolicyError,
+  isPasswordWithinBcryptLimit,
+} from '../lib/password-policy';
+
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+  crypto.randomBytes(32).toString('base64url'),
+  12,
+);
 
 class AuthService {
-  private saltRounds = 10;
+  private saltRounds = 12;
 
   async hashPassword(password: string): Promise<string> {
+    const policyError = getPasswordPolicyError(password);
+    if (policyError) {
+      throw Object.assign(new Error(policyError), { statusCode: 400 });
+    }
     return bcrypt.hash(password, this.saltRounds);
   }
 
   async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
+    if (!isPasswordWithinBcryptLimit(password)) return false;
     return bcrypt.compare(password, hashedPassword);
   }
 
@@ -19,13 +34,19 @@ class AuthService {
     const normalizedLogin = trimmedLogin.includes('@')
       ? trimmedLogin.toLowerCase()
       : trimmedLogin;
-    const user = await storage.getUserByLoginOrEmail(normalizedLogin);
-    if (!user || !user.isActive) {
-      return null;
-    }
+    const shouldLookup = normalizedLogin.length > 0 && normalizedLogin.length <= 254;
+    const user = shouldLookup
+      ? await storage.getUserByLoginOrEmail(normalizedLogin)
+      : null;
 
-    const isValidPassword = await this.verifyPassword(password, user.password);
-    if (!isValidPassword) {
+    const passwordForComparison = isPasswordWithinBcryptLimit(password)
+      ? password
+      : 'invalid-password';
+    const isValidPassword = await bcrypt.compare(
+      passwordForComparison,
+      user?.password ?? DUMMY_PASSWORD_HASH,
+    );
+    if (!user || !user.isActive || !isValidPassword) {
       return null;
     }
 

@@ -3,7 +3,7 @@
 
   "database": {
     "provider": "postgresql",
-    "url": "postgresql://crm:crm_password_2026@postgres:5432/crm",
+    "url": "postgresql://crm:CHANGE_ME_DB_PASSWORD@postgres:5432/crm",
     "ssl": false,
     "pool": {
       "max": 20,
@@ -16,18 +16,13 @@
     "environment": "development",
     "host": "0.0.0.0",
     "port": 5000,
-    "appUrl": "http://localhost:5000"
+    "appUrl": "http://localhost:5000",
+    "trustedProxies": false
   },
 
   "session": {
     "secret": "CHANGE-ME-use-a-long-random-string-here",
     "cookieSecure": false
-  },
-
-  "superAdmin": {
-    "username": "Sheri",
-    "fullName": "Sheri Super Admin",
-    "password": "Sheri2001"
   },
 
   "email": {

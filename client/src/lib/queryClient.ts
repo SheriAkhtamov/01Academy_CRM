@@ -133,16 +133,16 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<any> {
-  let headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    "X-Requested-With": "XMLHttpRequest",
+  };
   let body: string | FormData | undefined;
 
   if (data instanceof FormData) {
     // Don't set Content-Type for FormData, let browser handle it
     body = data;
     devLog("Sending FormData to:", url);
-    for (let [key, value] of data.entries()) {
-      devLog(`FormData: ${key} = ${value}`);
-    }
+    devLog("FormData fields:", Array.from(data.keys()));
   } else if (data) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(data);

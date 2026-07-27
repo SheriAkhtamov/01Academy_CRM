@@ -1,1 +1,50 @@
-Nothing should be ignored since only a README.md file was modified and no build artifacts, dependencies, or temporary files were included in the changes.
+# Dependencies and generated output
+node_modules/
+telegram-bot/node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Runtime data
+logs/
+uploads/
+*.log
+
+# Local configuration and secrets
+config/app.config.json
+.env
+.env.*
+!.env.example
+!telegram-bot/.env.example
+.env.runtime
+.secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Local database backups
+backups/
+*.dump
+*.backup
+*.backup-*
+*.bak
+*.bak-*
+
+# Editor and operating-system files
+.DS_Store
+._*
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+tmp_patch_files/
+*.tmp

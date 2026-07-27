@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import fs from 'fs';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -13,6 +13,8 @@ import {
 } from '@shared/schema';
 import { getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
 import type { User } from '@shared/schema';
+import { attachmentUploadLimiter } from '../middleware/rateLimiter';
+import { sendHttpError } from '../lib/http-errors';
 
 const router = Router();
 
@@ -69,6 +71,57 @@ const removeUploadedFile = async (filePath?: string) => {
     } catch (error: any) {
         if (error?.code !== 'ENOENT') logger.error('Failed to remove orphaned board upload', { error, filePath });
     }
+};
+
+const STORED_ATTACHMENT_NAME = /^[A-Za-z0-9_-]{10,64}(?:\.[A-Za-z0-9]{1,10})?$/;
+
+const resolveStoredAttachmentPath = (fileName: string): string | null => {
+    if (!STORED_ATTACHMENT_NAME.test(fileName)) return null;
+    const filePath = path.resolve(BOARD_UPLOAD_DIR, fileName);
+    return path.dirname(filePath) === BOARD_UPLOAD_DIR ? filePath : null;
+};
+
+const sanitizeOriginalAttachmentName = (value: string) => {
+    const decoded = Buffer.from(value, 'latin1').toString('utf8');
+    return decoded
+        .replace(/[\u0000-\u001f\u007f/\\]/g, '_')
+        .trim()
+        .slice(0, 255) || 'attachment';
+};
+
+const authorizeAttachmentUpload = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    try {
+        const taskId = parseId(req.params.id);
+        if (!taskId) return res.status(400).json({ error: 'Invalid task id' });
+        const task = await storage.board.getTask(taskId);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canReadTask(req.user!, task)) {
+            return res.status(403).json({ error: 'accessDenied' });
+        }
+        res.locals.boardTask = task;
+        next();
+    } catch (error) {
+        logger.error('Failed to authorize attachment upload', { error, taskId: req.params.id });
+        res.status(500).json({ error: 'Failed to upload attachment' });
+    }
+};
+
+const uploadSingleBoardAttachment = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    boardAttachmentUpload.single('file')(req, res, (error: any) => {
+        if (!error) return next();
+        const isTooLarge = error?.code === 'LIMIT_FILE_SIZE';
+        return res.status(isTooLarge ? 413 : 400).json({
+            error: isTooLarge ? 'Attachment is too large' : 'Unsupported attachment',
+        });
+    });
 };
 
 const isStatus = (value: unknown): value is BoardTaskStatus =>
@@ -443,7 +496,7 @@ router.patch('/tasks/:id/status', async (req, res) => {
         res.json(updated);
     } catch (error: any) {
         logger.error('Failed to change task status', { error, taskId: req.params.id });
-        res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'Failed to change status' });
+        return sendHttpError(res, error, 'Failed to change status');
     }
 });
 
@@ -636,30 +689,23 @@ router.delete('/checklist/:id', async (req, res) => {
 
 // --- Attachments ------------------------------------------------------------
 
-router.post('/tasks/:id/attachments', boardAttachmentUpload.single('file'), async (req, res) => {
+router.post(
+    '/tasks/:id/attachments',
+    attachmentUploadLimiter,
+    authorizeAttachmentUpload,
+    uploadSingleBoardAttachment,
+    async (req, res) => {
     let persistedAttachmentId: number | null = null;
     try {
-        const id = parseId(req.params.id);
-        if (!id) {
-            await removeUploadedFile(req.file?.path);
-            return res.status(400).json({ error: 'Invalid task id' });
-        }
+        const id = parseId(req.params.id)!;
         if (!req.file) return res.status(400).json({ error: 'File is required' });
-
-        const task = await storage.board.getTask(id);
-        if (!task) {
-            await removeUploadedFile(req.file.path);
-            return res.status(404).json({ error: 'Task not found' });
-        }
-        if (!canReadTask(req.user!, task)) {
-            await removeUploadedFile(req.file.path);
-            return res.status(403).json({ error: 'accessDenied' });
-        }
+        const task = res.locals.boardTask as BoardTask;
+        await fs.promises.chmod(req.file.path, 0o640);
 
         const attachment = await storage.board.createAttachment({
             taskId: id,
             fileName: req.file.filename,
-            originalName: Buffer.from(req.file.originalname, 'latin1').toString('utf8'),
+            originalName: sanitizeOriginalAttachmentName(req.file.originalname),
             mimeType: req.file.mimetype,
             size: req.file.size,
             uploadedBy: req.user!.id,
@@ -701,9 +747,14 @@ router.get('/attachments/:id/download', async (req, res) => {
         const task = await storage.board.getTask(attachment.taskId);
         if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
 
-        const filePath = path.join(BOARD_UPLOAD_DIR, attachment.fileName);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
+        const filePath = resolveStoredAttachmentPath(attachment.fileName);
+        if (!filePath) return res.status(404).json({ error: 'File missing on disk' });
+        const fileStats = await fs.promises.lstat(filePath).catch(() => null);
+        if (!fileStats?.isFile() || fileStats.isSymbolicLink()) {
+            return res.status(404).json({ error: 'File missing on disk' });
+        }
 
+        res.setHeader('Content-Type', 'application/octet-stream');
         res.download(filePath, attachment.originalName);
     } catch (error) {
         logger.error('Failed to download attachment', { error, attachmentId: req.params.id });
@@ -728,7 +779,14 @@ router.delete('/attachments/:id', async (req, res) => {
         if (!canDelete) return res.status(403).json({ error: 'Not allowed to delete this attachment' });
 
         await storage.board.deleteAttachment(id);
-        fs.unlink(path.join(BOARD_UPLOAD_DIR, attachment.fileName), () => { });
+        const filePath = resolveStoredAttachmentPath(attachment.fileName);
+        if (filePath) {
+            await fs.promises.unlink(filePath).catch((error: any) => {
+                if (error?.code !== 'ENOENT') {
+                    logger.error('Failed to delete attachment file', { error, attachmentId: id });
+                }
+            });
+        }
         if (task) broadcastTask('BOARD_TASK_UPDATED', task);
         res.json({ success: true });
     } catch (error) {

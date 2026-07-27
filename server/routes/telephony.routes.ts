@@ -17,6 +17,7 @@ import { appConfig } from '../config';
 import { pool } from '../db';
 import { logger } from '../lib/logger';
 import { requireAuth } from '../middleware/auth.middleware';
+import { inboundWebhookLimiter } from '../middleware/rateLimiter';
 import {
   normalizeOnlinePbxPhone,
   onlinePbxClient,
@@ -555,8 +556,9 @@ const hasValidWebhookSecret = (candidate: unknown) => {
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
 };
 
-router.post('/webhook', asyncRoute(async (req, res) => {
-  if (!hasValidWebhookSecret(req.query.token)) {
+router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
+  const webhookSecret = req.get('x-webhook-secret') ?? req.query.token;
+  if (!hasValidWebhookSecret(webhookSecret)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { pool } from '../db';
 import { requireFinanceAccess } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
+import { sendHttpError } from '../lib/http-errors';
 import {
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
@@ -493,7 +494,7 @@ router.get('/dashboard', async (req, res) => {
     });
   } catch (error: any) {
     logger.error('Failed to load finance dashboard', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load finance dashboard' });
+    return sendHttpError(res, error, 'Failed to load finance dashboard');
   }
 });
 
@@ -532,7 +533,7 @@ router.get('/income', async (req, res) => {
     });
   } catch (error: any) {
     logger.error('Failed to load finance income', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load finance income' });
+    return sendHttpError(res, error, 'Failed to load finance income');
   }
 });
 
@@ -589,7 +590,7 @@ router.get('/expenses', async (req, res) => {
     });
   } catch (error: any) {
     logger.error('Failed to load finance expenses', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load finance expenses' });
+    return sendHttpError(res, error, 'Failed to load finance expenses');
   }
 });
 
@@ -628,7 +629,7 @@ router.post('/expenses', async (req, res) => {
     res.status(201).json(row);
   } catch (error: any) {
     logger.error('Failed to create finance expense', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create finance expense' });
+    return sendHttpError(res, error, 'Failed to create finance expense');
   }
 });
 
@@ -673,7 +674,7 @@ router.patch('/expenses/:id', async (req, res) => {
     res.json(updated);
   } catch (error: any) {
     logger.error('Failed to update finance expense', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update finance expense' });
+    return sendHttpError(res, error, 'Failed to update finance expense');
   }
 });
 
@@ -702,7 +703,7 @@ router.post('/expenses/:id/pay', async (req, res) => {
     res.json(row);
   } catch (error: any) {
     logger.error('Failed to pay finance expense', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to pay finance expense' });
+    return sendHttpError(res, error, 'Failed to pay finance expense');
   }
 });
 
@@ -731,7 +732,7 @@ router.post('/expenses/:id/cancel', async (req, res) => {
     res.json(row);
   } catch (error: any) {
     logger.error('Failed to cancel finance expense', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to cancel finance expense' });
+    return sendHttpError(res, error, 'Failed to cancel finance expense');
   }
 });
 
@@ -741,7 +742,7 @@ router.get('/payroll', async (req, res) => {
     res.json(await getPayrollDataset(pool, period));
   } catch (error: any) {
     logger.error('Failed to load finance payroll', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load finance payroll' });
+    return sendHttpError(res, error, 'Failed to load finance payroll');
   }
 });
 
@@ -817,7 +818,7 @@ router.post('/salary-rates', async (req, res) => {
     res.status(201).json(row);
   } catch (error: any) {
     logger.error('Failed to save salary rate', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save salary rate' });
+    return sendHttpError(res, error, 'Failed to save salary rate');
   }
 });
 
@@ -890,8 +891,10 @@ router.post('/payroll/payout', async (req, res) => {
     res.status(201).json(row);
   } catch (error: any) {
     logger.error('Failed to create payroll payout', { error });
-    const statusCode = error?.code === '23505' ? 409 : error.statusCode || 500;
-    res.status(statusCode).json({ error: error.message || 'Failed to create payroll payout' });
+    if (error?.code === '23505') {
+      return res.status(409).json({ error: 'payrollPayoutAlreadyExists' });
+    }
+    return sendHttpError(res, error, 'Failed to create payroll payout');
   }
 });
 
@@ -954,7 +957,7 @@ router.post('/payroll/payout-all', async (req, res) => {
     res.status(201).json({ count: result.length, payouts: result });
   } catch (error: any) {
     logger.error('Failed to create payroll batch payout', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create payroll batch payout' });
+    return sendHttpError(res, error, 'Failed to create payroll batch payout');
   }
 });
 
@@ -965,7 +968,7 @@ router.get('/transactions', async (req, res) => {
     res.json({ period, rows });
   } catch (error: any) {
     logger.error('Failed to load finance transactions', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load finance transactions' });
+    return sendHttpError(res, error, 'Failed to load finance transactions');
   }
 });
 

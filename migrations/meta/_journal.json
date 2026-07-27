@@ -463,6 +463,13 @@
       "when": 1786636800000,
       "tag": "0065_create_missed_call_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1786723200000,
+      "tag": "0066_purge_recoverable_passwords",
+      "breakpoints": true
     }
   ]
 }

@@ -36,7 +36,10 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { User, Mail, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
 
-const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
+const createSettingsSchema = (
+  t: (key: TranslationKey) => string,
+  currentEmail: string,
+) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
   email: z.string().email(t('validEmailRequired')),
   position: z.string().max(255),
@@ -46,13 +49,10 @@ const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
   newPassword: z.string().optional(),
   confirmNewPassword: z.string().optional(),
 }).superRefine((values, ctx) => {
-  const wantsPasswordChange = Boolean(
-    values.currentPassword ||
-    values.newPassword ||
-    values.confirmNewPassword,
-  );
+  const wantsPasswordChange = Boolean(values.newPassword || values.confirmNewPassword);
+  const loginChanged = values.email.trim().toLowerCase() !== currentEmail.trim().toLowerCase();
 
-  if (!wantsPasswordChange) return;
+  if (!wantsPasswordChange && !loginChanged) return;
 
   if (!values.currentPassword) {
     ctx.addIssue({
@@ -62,21 +62,30 @@ const createSettingsSchema = (t: (key: TranslationKey) => string) => z.object({
     });
   }
 
-  if (!values.newPassword) {
+  if (wantsPasswordChange && !values.newPassword) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['newPassword'],
       message: t('newPasswordRequired'),
     });
-  } else if (values.newPassword.length < 8) {
+  } else if (values.newPassword && values.newPassword.length < 12) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['newPassword'],
       message: t('passwordTooShort'),
     });
+  } else if (
+    values.newPassword
+    && new TextEncoder().encode(values.newPassword).length > 72
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['newPassword'],
+      message: t('passwordTooLong'),
+    });
   }
 
-  if (values.newPassword !== values.confirmNewPassword) {
+  if (wantsPasswordChange && values.newPassword !== values.confirmNewPassword) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['confirmNewPassword'],
@@ -95,7 +104,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const settingsSchema = React.useMemo(() => createSettingsSchema(t), [t]);
+  const settingsSchema = React.useMemo(
+    () => createSettingsSchema(t, user?.email ?? ''),
+    [t, user?.email],
+  );
 
 
   const form = useForm<z.infer<typeof settingsSchema>>({
@@ -145,15 +157,16 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         confirmNewPassword,
         ...profileData
       } = data;
-      const shouldChangePassword = Boolean(currentPassword || newPassword || confirmNewPassword);
       const normalizedEmail = profileData.email.trim().toLowerCase();
+      const credentialsChanged = normalizedEmail !== user.email.trim().toLowerCase()
+        || Boolean(newPassword || confirmNewPassword);
       const result = await apiRequest('PUT', '/api/auth/me/settings', {
         fullName: profileData.fullName.trim(),
         email: normalizedEmail,
         position: profileData.position.trim(),
         phone: profileData.phone?.trim() || null,
         hasReportAccess: profileData.hasReportAccess,
-        ...(shouldChangePassword ? { currentPassword, newPassword, confirmNewPassword } : {}),
+        ...(credentialsChanged ? { currentPassword, newPassword, confirmNewPassword } : {}),
       });
 
       return result.user ?? result;

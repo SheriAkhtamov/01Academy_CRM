@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { logger } from '../lib/logger';
-import { appConfig } from '../config';
+import { appConfig, isProductionEnvironment } from '../config';
 
 // Gemini MEDIUM #7: Escape HTML to prevent XSS in email templates
 function escapeHtml(str: string): string {
@@ -32,10 +32,19 @@ class EmailService {
     }
 
     if (appConfig.email.smtp?.user && appConfig.email.smtp?.pass) {
+      const smtpPort = appConfig.email.smtp.port || 587;
       this.transporter = nodemailer.createTransport({
         host: appConfig.email.smtp.host || 'smtp.gmail.com',
-        port: appConfig.email.smtp.port || 587,
-        secure: false,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        requireTLS: isProductionEnvironment && smtpPort !== 465,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
+        tls: {
+          minVersion: 'TLSv1.2',
+          rejectUnauthorized: isProductionEnvironment,
+        },
         auth: {
           user: appConfig.email.smtp.user,
           pass: appConfig.email.smtp.pass,
@@ -68,21 +77,24 @@ class EmailService {
         <p>You can access the platform at: ${appConfig.server.appUrl}</p>
       `;
 
-      return await this.sendEmail(to, subject, html, fullName);
+      return await this.sendEmail(to, subject, html);
     } catch (error) {
       logger.error('Failed to send welcome email', { error });
       return false;
     }
   }
 
-  private async sendEmail(to: string, subject: string, html: string, fullName?: string): Promise<boolean> {
+  private async sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     try {
+      const recipientDomain = to.split('@').pop()?.toLowerCase();
       if (this.emailMethod === 'resend' && this.resend) {
         const testDomains = ['example.com', 'test.com', 'localhost'];
-        const isTestDomain = testDomains.some(domain => to.includes(domain));
+        const isTestDomain = Boolean(
+          recipientDomain && testDomains.includes(recipientDomain),
+        );
 
         if (isTestDomain) {
-          logger.info('Test email skipped', { to });
+          logger.info('Test email skipped', { recipientDomain });
           return true;
         }
 
@@ -94,17 +106,17 @@ class EmailService {
         });
 
         if (error) {
-          logger.error('Resend API error', { error, to });
           const anyErr = error as { statusCode?: number; message?: string };
+          logger.error('Resend API error', { statusCode: anyErr.statusCode });
           if (anyErr.statusCode === 403 && anyErr.message?.includes('testing emails')) {
-            logger.info('Test email skipped because Resend account is in testing mode', { to });
+            logger.info('Test email skipped because Resend account is in testing mode');
             return true;
           }
           return false;
         }
 
         if (data?.id) {
-          logger.info('Email sent', { id: data.id, to, fullName });
+          logger.info('Email sent', { id: data.id, recipientDomain });
         }
 
         return true;
@@ -122,7 +134,10 @@ class EmailService {
 
       return false;
     } catch (error) {
-      logger.error('Failed to send email', { error, to });
+      logger.error('Failed to send email', {
+        error,
+        recipientDomain: to.split('@').pop()?.toLowerCase(),
+      });
       return false;
     }
   }

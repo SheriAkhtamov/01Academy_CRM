@@ -118,11 +118,17 @@ const createCredentialsSchema = (t: any) => z.object({
       path: ['password'],
       message: t('newPasswordRequired'),
     });
-  } else if (values.password.length < 8) {
+  } else if (values.password.length < 12) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['password'],
       message: t('passwordTooShort'),
+    });
+  } else if (new TextEncoder().encode(values.password).length > 72) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['password'],
+      message: t('passwordTooLong'),
     });
   }
 

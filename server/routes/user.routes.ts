@@ -16,12 +16,11 @@ import {
     type AcademyAccessModule,
     type AcademyWorkspace,
 } from '@shared/academy';
-import {
-    decryptCredentialPassword,
-    encryptCredentialPassword,
-} from '../services/credential-password';
 import type { AcademyScheduleItem } from '@shared/schema';
 import { ONLINE_PBX_SHARED_EXTENSION } from '@shared/telephony';
+import { getPasswordPolicyError } from '../lib/password-policy';
+import { revokeUserAuthenticationArtifacts } from '../services/session-security';
+import { sendHttpError } from '../lib/http-errors';
 
 const router = Router();
 const primaryWorkspaceSet = new Set<string>(ACADEMY_WORKSPACES);
@@ -100,7 +99,7 @@ const normalizeLogin = (value: unknown) =>
     typeof value === 'string' ? value.trim().toLowerCase() : '';
 
 const isValidLogin = (value: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const findUserByLogin = async (login: string, exceptUserId?: number) => {
     const users = await storage.getUsers();
@@ -238,7 +237,6 @@ const buildCredentialPayload = (user: {
     position?: string | null;
     workspace: string;
     workspaces?: string[] | null;
-    credentialPasswordCiphertext?: string | null;
 }, canViewPassword: boolean, fallbackPassword?: string) => ({
     id: user.id,
     fullName: user.fullName,
@@ -246,10 +244,9 @@ const buildCredentialPayload = (user: {
     position: user.position,
     workspace: user.workspace,
     workspaces: getAssignedWorkspaces(user),
-    temporaryPassword: canViewPassword
-        ? fallbackPassword ?? decryptCredentialPassword(user.credentialPasswordCiphertext)
-        : undefined,
-    passwordStored: Boolean(user.credentialPasswordCiphertext || fallbackPassword),
+    temporaryPassword: canViewPassword ? fallbackPassword : undefined,
+    passwordStored: false,
+    passwordOneTimeOnly: Boolean(fallbackPassword),
     passwordVisibleToAdministration: canViewPassword,
 });
 
@@ -610,7 +607,6 @@ router.post('/', requireAdministration, async (req, res) => {
 
         const temporaryPassword = crypto.randomBytes(12).toString('base64url');
         const hashedPassword = await authService.hashPassword(temporaryPassword);
-        const credentialPasswordCiphertext = encryptCredentialPassword(temporaryPassword);
         let email = providedEmail || generateLogin(fullName, workspace, unavailableLogins);
         let newUser: any = null;
 
@@ -635,7 +631,7 @@ router.post('/', requireAdministration, async (req, res) => {
                     [
                         email,
                         hashedPassword,
-                        credentialPasswordCiphertext,
+                        null,
                         fullName,
                         typeof phone === 'string' ? phone.trim() || null : null,
                         ONLINE_PBX_SHARED_EXTENSION,
@@ -702,7 +698,7 @@ router.post('/', requireAdministration, async (req, res) => {
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
-        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create user' });
+        return sendHttpError(res, error, 'Failed to create user');
     }
 });
 
@@ -786,16 +782,15 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
                 return res.status(400).json({ error: 'newPasswordRequired' });
             }
 
-            if (newPassword.length < 8) {
-                return res.status(400).json({ error: 'passwordTooShort' });
-            }
+            const passwordPolicyError = getPasswordPolicyError(newPassword);
+            if (passwordPolicyError) return res.status(400).json({ error: passwordPolicyError });
 
             if (newPassword !== confirmPassword) {
                 return res.status(400).json({ error: 'passwordsDoNotMatch' });
             }
 
             updateData.password = await authService.hashPassword(newPassword);
-            updateData.credentialPasswordCiphertext = encryptCredentialPassword(newPassword);
+            updateData.credentialPasswordCiphertext = null;
             plainPassword = newPassword;
             passwordChanged = true;
         }
@@ -805,6 +800,9 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
         }
 
         const updatedUser = await storage.updateUser(id, updateData);
+        await revokeUserAuthenticationArtifacts(id, {
+            exceptSessionId: id === req.user!.id ? req.sessionID : null,
+        });
 
         await storage.createAuditLog({
             userId: req.user!.id,
@@ -860,7 +858,10 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
 
         const updatedUser = await storage.updateUser(id, {
             password: hashedPassword,
-            credentialPasswordCiphertext: encryptCredentialPassword(temporaryPassword),
+            credentialPasswordCiphertext: null,
+        });
+        await revokeUserAuthenticationArtifacts(id, {
+            exceptSessionId: id === req.user!.id ? req.sessionID : null,
         });
 
         await storage.createAuditLog({
@@ -934,24 +935,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         if (req.body.email !== undefined) {
-            const nextLogin = normalizeLogin(req.body.email);
-
-            if (!nextLogin) {
-                return res.status(400).json({ error: 'loginRequired' });
-            }
-
-            if (!isValidLogin(nextLogin)) {
-                return res.status(400).json({ error: 'invalidEmailAddress' });
-            }
-
-            if (nextLogin !== existingUser.email.toLowerCase()) {
-                const userWithLogin = await findUserByLogin(nextLogin, id);
-                if (userWithLogin) {
-                    return res.status(400).json({ error: 'loginAlreadyExists' });
-                }
-            }
-
-            updateData.email = nextLogin;
+            return res.status(400).json({ error: 'loginManagedInCredentials' });
         }
 
         if (req.body.dateOfBirth !== undefined) {
@@ -1146,9 +1130,8 @@ router.put('/:id', requireAuth, async (req, res) => {
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
-        const typedError = error as { statusCode?: number; message?: string; leadCount?: number };
-        res.status(typedError.statusCode || 500).json({
-            error: typedError.message || 'Failed to update user',
+        const typedError = error as { leadCount?: number };
+        return sendHttpError(res, error, 'Failed to update user', {
             ...(typedError.leadCount !== undefined ? { leadCount: typedError.leadCount } : {}),
         });
     }
@@ -1265,9 +1248,8 @@ router.delete('/:id', requireAdministration, async (req, res) => {
         res.json({ message: 'User deleted successfully', transferredLeadCount });
     } catch (error) {
         logger.error('Error deleting user', { error, userId: req.params.id });
-        const typedError = error as { statusCode?: number; message?: string; leadCount?: number };
-        res.status(typedError.statusCode || 500).json({
-            error: typedError.message || 'Failed to delete user',
+        const typedError = error as { leadCount?: number };
+        return sendHttpError(res, error, 'Failed to delete user', {
             ...(typedError.leadCount !== undefined ? { leadCount: typedError.leadCount } : {}),
         });
     }

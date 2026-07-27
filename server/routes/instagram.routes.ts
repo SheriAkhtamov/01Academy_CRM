@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
-import { Readable } from 'node:stream';
+import { Readable, Transform, pipeline } from 'node:stream';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
+import { sendHttpError } from '../lib/http-errors';
 import { canAccessAcademyWorkspace, getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
 import {
   buildInstagramAuthorizationUrl,
@@ -53,15 +54,13 @@ const isAllowedMediaProxyUrl = (url: URL) => (
 
 const isProxyableMediaType = (contentType: string) =>
   /^(image|video|audio)\//i.test(contentType);
+const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+const MEDIA_FETCH_TIMEOUT_MS = 15_000;
+const MAX_MEDIA_REDIRECTS = 3;
 
 const parseId = (value: string) => {
   const id = Number.parseInt(value, 10);
   return Number.isFinite(id) && id > 0 ? id : null;
-};
-
-const getCurrentRequestUrlWithoutQuery = (req: any) => {
-  const path = String(req.originalUrl || '').split('?')[0] || req.path;
-  return `${req.protocol}://${req.get('host')}${path}`;
 };
 
 const getRawQueryParam = (req: any, name: string): string | null => {
@@ -102,10 +101,7 @@ router.post('/oauth/start', async (req, res) => {
     const state = crypto.randomBytes(24).toString('base64url');
     const redirectUri = getInstagramIntegrationConfig().redirectUri;
     const url = buildInstagramAuthorizationUrl(state, redirectUri);
-    logger.info('Instagram OAuth start', {
-      redirectUri,
-      authorizationUrl: url,
-    });
+    logger.info('Instagram OAuth start', { redirectUri });
     req.session.instagramOAuth = {
       state,
       createdAt: Date.now(),
@@ -121,7 +117,7 @@ router.post('/oauth/start', async (req, res) => {
     });
   } catch (error: any) {
     logger.error('Failed to start Instagram OAuth', { error });
-    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'instagramConnectionFailed' });
+    return sendHttpError(res, error, 'instagramConnectionFailed');
   }
 });
 
@@ -131,21 +127,13 @@ router.get('/oauth/callback', async (req, res) => {
   const code = String(getRawQueryParam(req, 'code') ?? req.query.code ?? '').replace(/#_$/, '');
   const oauthState = req.session.instagramOAuth;
   delete req.session.instagramOAuth;
-  const callbackRedirectUri = getCurrentRequestUrlWithoutQuery(req);
-
-  logger.info('Instagram OAuth callback received', {
-    callbackRedirectUri,
-    savedRedirectUri: oauthState?.redirectUri,
-    hasCode: Boolean(code),
-    codeLength: code.length,
-    codeHasWhitespace: /\s/.test(code),
-    stateMatches: Boolean(oauthState && state && state === oauthState.state),
-  });
+  const configuredRedirectUri = getInstagramIntegrationConfig().redirectUri;
 
   if (
     !oauthState
     || !state
     || state !== oauthState.state
+    || oauthState.redirectUri !== configuredRedirectUri
     || Date.now() - oauthState.createdAt > 10 * 60 * 1000
   ) {
     return res.redirect('/integrations?instagram=invalid_state');
@@ -155,19 +143,17 @@ router.get('/oauth/callback', async (req, res) => {
   }
 
   try {
-    const redirectUri = callbackRedirectUri || oauthState.redirectUri || getInstagramIntegrationConfig().redirectUri;
-    const account = await exchangeInstagramAuthorizationCode(code, req.user!.id, redirectUri);
+    const account = await exchangeInstagramAuthorizationCode(
+      code,
+      req.user!.id,
+      configuredRedirectUri,
+    );
     return res.redirect(`/integrations?instagram=connected&account=${account.id}`);
   } catch (error: any) {
     logger.error('Instagram OAuth callback failed', {
-      error,
       errorName: error?.name,
-      errorMessage: error?.message,
-      errorStack: error?.stack,
       statusCode: error?.statusCode,
-      response: error?.instagramResponse,
-      savedRedirectUri: oauthState.redirectUri,
-      callbackRedirectUri: getCurrentRequestUrlWithoutQuery(req),
+      userId: req.user?.id,
     });
     return res.redirect('/integrations?instagram=error');
   }
@@ -181,7 +167,7 @@ router.delete('/accounts/:id', async (req, res) => {
     res.json(await disconnectInstagramAccount(accountId));
   } catch (error: any) {
     logger.error('Failed to disconnect Instagram account', { accountId, error });
-    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'instagramDisconnectFailed' });
+    return sendHttpError(res, error, 'instagramDisconnectFailed');
   }
 });
 
@@ -208,9 +194,8 @@ router.post('/conversations/sync', async (req, res) => {
     logger.error('Failed to sync Instagram conversations', {
       userId: req.user?.id,
       error,
-      response: error?.instagramResponse,
     });
-    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'instagramSyncFailed' });
+    return sendHttpError(res, error, 'instagramSyncFailed');
   }
 });
 
@@ -236,40 +221,107 @@ router.get('/media-proxy', async (req, res) => {
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), MEDIA_FETCH_TIMEOUT_MS);
+    timeout.unref?.();
+    res.once('close', () => controller.abort());
+
     const headers: Record<string, string> = {
       Accept: 'image/avif,image/webp,image/apng,image/*,video/*,audio/*,*/*;q=0.8',
       'User-Agent': 'Mozilla/5.0 (compatible; 01AcademyCRM/1.0)',
     };
-    if (typeof req.headers.range === 'string') {
+    if (
+      typeof req.headers.range === 'string'
+      && /^bytes=(?:\d+-\d*|\d*-\d+)$/.test(req.headers.range)
+    ) {
       headers.Range = req.headers.range;
     }
 
-    const upstream = await fetch(mediaUrl, {
-      headers,
-      redirect: 'follow',
-    });
+    let currentUrl = mediaUrl;
+    let upstream: Response | null = null;
+    for (let redirectCount = 0; redirectCount <= MAX_MEDIA_REDIRECTS; redirectCount += 1) {
+      upstream = await fetch(currentUrl, {
+        headers,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+      if (upstream.status < 300 || upstream.status >= 400) break;
+
+      const location = upstream.headers.get('location');
+      if (!location || redirectCount === MAX_MEDIA_REDIRECTS) {
+        clearTimeout(timeout);
+        return res.status(502).json({ error: 'instagramMediaUnavailable' });
+      }
+      const redirectUrl = new URL(location, currentUrl);
+      if (!isAllowedMediaProxyUrl(redirectUrl)) {
+        clearTimeout(timeout);
+        return res.status(502).json({ error: 'instagramMediaUnavailable' });
+      }
+      currentUrl = redirectUrl;
+    }
+
+    if (!upstream) {
+      clearTimeout(timeout);
+      return res.status(502).json({ error: 'instagramMediaUnavailable' });
+    }
     const contentType = upstream.headers.get('content-type') ?? '';
+    const contentLengthValue = upstream.headers.get('content-length');
+    const contentLength = contentLengthValue ? Number(contentLengthValue) : null;
 
     if (!upstream.ok) {
+      clearTimeout(timeout);
       return res.status(upstream.status).json({ error: 'instagramMediaUnavailable' });
     }
     if (!isProxyableMediaType(contentType)) {
+      clearTimeout(timeout);
       return res.status(415).json({ error: 'instagramMediaUnavailable' });
+    }
+    if (
+      contentLength !== null
+      && (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > MAX_MEDIA_BYTES)
+    ) {
+      clearTimeout(timeout);
+      return res.status(413).json({ error: 'instagramMediaUnavailable' });
     }
 
     res.status(upstream.status);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'private, max-age=300');
 
-    const contentLength = upstream.headers.get('content-length');
     const contentRange = upstream.headers.get('content-range');
     const acceptRanges = upstream.headers.get('accept-ranges');
-    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (contentLengthValue) res.setHeader('Content-Length', contentLengthValue);
     if (contentRange) res.setHeader('Content-Range', contentRange);
     if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
 
-    if (!upstream.body) return res.end();
-    return Readable.fromWeb(upstream.body as any).pipe(res);
+    if (!upstream.body) {
+      clearTimeout(timeout);
+      return res.end();
+    }
+
+    let receivedBytes = 0;
+    const byteLimiter = new Transform({
+      transform(chunk, _encoding, callback) {
+        receivedBytes += Buffer.byteLength(chunk);
+        if (receivedBytes > MAX_MEDIA_BYTES) {
+          callback(new Error('Instagram media exceeds proxy limit'));
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+    pipeline(Readable.fromWeb(upstream.body as any), byteLimiter, res, (error) => {
+      clearTimeout(timeout);
+      if (error) {
+        controller.abort();
+        logger.warn('Instagram media stream stopped', {
+          host: currentUrl.hostname,
+          reason: error.message,
+        });
+        if (!res.destroyed) res.destroy();
+      }
+    });
+    return;
   } catch (error) {
     logger.error('Failed to proxy Instagram media', { error, host: mediaUrl.hostname });
     return res.status(502).json({ error: 'instagramMediaUnavailable' });
@@ -288,7 +340,7 @@ router.get('/conversations/:id/messages', async (req, res) => {
     }));
   } catch (error: any) {
     logger.error('Failed to list Instagram messages', { conversationId, error });
-    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'failedToLoadData' });
+    return sendHttpError(res, error, 'failedToLoadData');
   }
 });
 
@@ -304,7 +356,7 @@ router.post('/conversations/:id/read', async (req, res) => {
     }));
   } catch (error: any) {
     logger.error('Failed to mark Instagram conversation read', { conversationId, error });
-    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'failedToUpdateResource' });
+    return sendHttpError(res, error, 'failedToUpdateResource');
   }
 });
 
@@ -331,9 +383,8 @@ router.post('/conversations/:id/messages', async (req, res) => {
       conversationId,
       userId: req.user?.id,
       error,
-      response: error?.instagramResponse,
     });
-    res.status(error?.statusCode ?? 500).json({ error: error?.message ?? 'instagramSendFailed' });
+    return sendHttpError(res, error, 'instagramSendFailed');
   }
 });
 

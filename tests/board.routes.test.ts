@@ -355,4 +355,37 @@ describe("board routes", () => {
     const after = new Set(await fs.readdir(BOARD_UPLOAD_DIR));
     expect(after).toEqual(before);
   });
+
+  it("rejects active-content attachments before writing metadata", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: staffUser.id });
+
+    const response = await agent
+      .post("/api/board/tasks/100/attachments")
+      .attach("file", Buffer.from("<script>alert(1)</script>"), {
+        filename: "attack.html",
+        contentType: "text/html",
+      });
+
+    expect(response.status).toBe(400);
+    expect(mockStorage.board.createAttachment).not.toHaveBeenCalled();
+  });
+
+  it("does not resolve stored attachment names outside the upload directory", async () => {
+    mockStorage.board.getAttachment.mockResolvedValue({
+      id: 5,
+      taskId: 100,
+      fileName: "../../config/app.config.json",
+      originalName: "report.txt",
+      uploadedBy: staffUser.id,
+    });
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: staffUser.id });
+
+    const response = await agent.get("/api/board/attachments/5/download");
+
+    expect(response.status).toBe(404);
+  });
 });

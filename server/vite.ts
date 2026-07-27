@@ -26,6 +26,7 @@ export async function setupVite(app: Express, server: Server) {
   const hmrHost = appConfig.server.host === "0.0.0.0"
     ? "127.0.0.1"
     : appConfig.server.host;
+  const configuredHost = new URL(appConfig.server.appUrl).hostname;
   const serverOptions = {
     middlewareMode: true,
     hmr: {
@@ -35,7 +36,12 @@ export async function setupVite(app: Express, server: Server) {
       clientPort: appConfig.server.port,
       path: "/__vite_hmr",
     },
-    allowedHosts: true as const,
+    allowedHosts: [
+      "localhost",
+      "127.0.0.1",
+      configuredHost,
+      ...(appConfig.server.host === "0.0.0.0" ? [] : [appConfig.server.host]),
+    ],
   };
 
   server.on('error', (err) => {

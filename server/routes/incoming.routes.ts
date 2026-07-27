@@ -2,9 +2,10 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
-import { appConfig } from '../config';
+import { appConfig, isDevelopmentEnvironment } from '../config';
 import { resolveInstagramLeadContactName } from '../lib/instagram-lead';
 import { logger } from '../lib/logger';
+import { inboundWebhookLimiter } from '../middleware/rateLimiter';
 import {
   processInstagramWebhook,
   verifyInstagramWebhookChallenge,
@@ -14,6 +15,7 @@ import {
 const router = Router();
 
 router.use(expressRawJson);
+router.use(inboundWebhookLimiter);
 
 router.get('/instagram', (req, res) => {
   if (!verifyInstagramWebhookChallenge(req.query['hub.mode'], req.query['hub.verify_token'])) {
@@ -116,13 +118,23 @@ router.get('/instagram/data-deletion/status/:confirmationCode', (req, res) => {
 // Webhook secrets are optional in dev (so local testing works), but when a secret is
 // configured every inbound payload must carry it in the x-webhook-secret header.
 const verifyWebhookSecret = (req: any, res: any, secretKey: 'chatplace' | 'website'): boolean => {
-  const configured = appConfig.integrations?.[secretKey]?.webhookSecret;
+  const configured = appConfig.integrations?.[secretKey]?.webhookSecret?.trim();
   if (!configured) {
-    // No secret configured → allow (development mode). Log so it's visible.
-    return true;
+    if (isDevelopmentEnvironment) return true;
+    res.status(503).json({ error: 'integrationNotConfigured' });
+    return false;
   }
-  const provided = req.get('x-webhook-secret');
-  if (provided && provided === configured) return true;
+  const provided = req.get('x-webhook-secret')?.trim();
+  if (provided) {
+    const expectedBuffer = Buffer.from(configured);
+    const actualBuffer = Buffer.from(provided);
+    if (
+      actualBuffer.length === expectedBuffer.length
+      && crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+    ) {
+      return true;
+    }
+  }
   res.status(401).json({ error: 'Invalid or missing webhook secret' });
   return false;
 };
@@ -341,7 +353,7 @@ router.post('/chatplace', async (req, res) => {
 
 // Google Forms → CRM (TZ 6): demo registrations.
 router.post('/google-forms', async (req, res) => {
-  if (!verifyWebhookSecret(req, res, 'chatplace')) return;
+  if (!verifyWebhookSecret(req, res, 'website')) return;
   try {
     const body = req.body ?? {};
     const contactName = String(body.contactName ?? body.name ?? 'Google Forms lead').slice(0, 255);

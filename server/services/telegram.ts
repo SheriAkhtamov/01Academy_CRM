@@ -27,7 +27,7 @@ const getBot = async () => {
     logger.info("Telegram bot client initialized");
     return botClient;
   } catch (error: any) {
-    initError = error?.message ?? String(error);
+    initError = "Telegram bot initialization failed";
     logger.error("Failed to initialize Telegram bot client", { error });
     return null;
   }
@@ -72,11 +72,18 @@ export const sendTelegramMessage = async (
       error: "Telegram recipient must match the configured numeric chat id",
     };
   }
+  if (typeof text !== "string" || text.length === 0 || text.length > 4096) {
+    return {
+      ok: false,
+      retryable: false,
+      error: "Invalid Telegram message",
+    };
+  }
 
   const bot = await getBot();
 
   if (!bot) {
-    logger.info("[telegram:simulated] message not sent (no bot token)", { chatId });
+    logger.info("[telegram:simulated] message not sent (no bot token)");
     return {
       ok: true,
       simulated: true,
@@ -89,7 +96,11 @@ export const sendTelegramMessage = async (
     // as plain text avoids malformed HTML and markup injection.
     const result = await sendPlainTelegramText(bot, chatId, text);
     return { ok: true, messageId: result?.message_id };
-  } catch (error: any) {
-    return { ok: false, error: error?.message ?? String(error) };
+  } catch {
+    return {
+      ok: false,
+      retryable: true,
+      error: "Telegram API request failed",
+    };
   }
 };

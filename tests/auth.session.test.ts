@@ -219,4 +219,36 @@ describe("auth session routes", () => {
     expect(clientQuery).toHaveBeenCalledWith("COMMIT");
     expect(release).toHaveBeenCalledTimes(1);
   });
+
+  it("requires the current password before changing the login", async () => {
+    const password = "Secret123";
+    const hashedPassword = await bcrypt.hash(password, 1);
+    const user = {
+      id: 7,
+      email: "admin@example.com",
+      password: hashedPassword,
+      fullName: "Admin User",
+      workspace: "administration",
+      workspaces: ["administration"],
+      hasReportAccess: true,
+      isActive: true,
+    };
+    mockStorage.getUserByLoginOrEmail.mockResolvedValue(user);
+    mockStorage.getUser.mockResolvedValue(user);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/login").send({ login: user.email, password });
+    const response = await agent.put("/api/auth/me/settings").send({
+      fullName: user.fullName,
+      email: "changed@example.com",
+      position: "",
+      phone: "",
+      hasReportAccess: true,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("currentPasswordRequired");
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
 });

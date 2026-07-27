@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../server/config', () => ({
   appConfig: {
-    integrations: {},
+    integrations: {
+      chatplace: { webhookSecret: 'test-webhook-secret' },
+      website: { webhookSecret: 'test-webhook-secret' },
+    },
     server: { appUrl: 'http://localhost:5001' },
   },
   isDevelopmentEnvironment: false,
@@ -72,15 +75,15 @@ describe('external lead ownership', () => {
   it('keeps ChatPlace, Google Forms, and website leads and tasks unassigned', async () => {
     const app = createApp();
     const responses = await Promise.all([
-      request(app).post('/api/incoming/chatplace').send({
+      request(app).post('/api/incoming/chatplace').set('x-webhook-secret', 'test-webhook-secret').send({
         contactName: 'Instagram lead',
         instagramUsername: 'instagram_client',
       }),
-      request(app).post('/api/incoming/google-forms').send({
+      request(app).post('/api/incoming/google-forms').set('x-webhook-secret', 'test-webhook-secret').send({
         contactName: 'Google Client',
         phone: '+998 90 111 22 33',
       }),
-      request(app).post('/api/incoming/website-lead').send({
+      request(app).post('/api/incoming/website-lead').set('x-webhook-secret', 'test-webhook-secret').send({
         contactName: 'Website Client',
         phone: '+998 90 444 55 66',
         telegramUsername: '@telegram_client',
@@ -103,6 +106,15 @@ describe('external lead ownership', () => {
     for (const [sql] of taskInsertCalls) {
       expect(String(sql)).toMatch(/responsible_id[\s\S]+VALUES[\s\S]+NULL/);
     }
+  });
+
+  it('rejects unsigned lead webhooks', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .send({ contactName: 'Unsigned lead' });
+
+    expect(response.status).toBe(401);
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 
   it('keeps native Meta Instagram leads and tasks unassigned', () => {

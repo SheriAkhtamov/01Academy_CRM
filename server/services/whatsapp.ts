@@ -40,13 +40,41 @@ export const sendWhatsAppMessage = async (
       error: "WhatsApp api token / phone number id not configured",
     };
   }
+  if (
+    typeof text !== "string"
+    || text.length === 0
+    || text.length > 4096
+    || !/^\d{5,30}$/.test(cfg!.phoneNumberId!.trim())
+  ) {
+    return {
+      ok: false,
+      retryable: false,
+      error: "Invalid WhatsApp message configuration",
+    };
+  }
 
-  const apiUrl = `${cfg!.apiUrl}/${cfg!.phoneNumberId}/messages`;
-
+  let apiUrl: URL;
   try {
-    // Native fetch is available in Node 18+.
+    apiUrl = new URL(cfg!.apiUrl || "https://graph.facebook.com/v19.0");
+    if (apiUrl.protocol !== "https:") throw new Error("HTTPS is required");
+    apiUrl.pathname = `${apiUrl.pathname.replace(/\/+$/, "")}/${cfg!.phoneNumberId!.trim()}/messages`;
+    apiUrl.search = "";
+    apiUrl.hash = "";
+  } catch {
+    return {
+      ok: false,
+      retryable: false,
+      error: "Invalid WhatsApp API URL",
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
     const response = await fetch(apiUrl, {
       method: "POST",
+      redirect: "error",
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${cfg!.apiToken}`,
         "Content-Type": "application/json",
@@ -60,13 +88,24 @@ export const sendWhatsAppMessage = async (
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      return { ok: false, error: `WhatsApp API ${response.status}: ${body}` };
+      return {
+        ok: false,
+        retryable: response.status === 429 || response.status >= 500,
+        error: `WhatsApp API request failed (${response.status})`,
+      };
     }
 
     const data = await response.json() as any;
     return { ok: true, messageId: data?.messages?.[0]?.id };
   } catch (error: any) {
-    return { ok: false, error: error?.message ?? String(error) };
+    return {
+      ok: false,
+      retryable: true,
+      error: error?.name === "AbortError"
+        ? "WhatsApp API request timed out"
+        : "WhatsApp API request failed",
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 };

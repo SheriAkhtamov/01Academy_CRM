@@ -6,7 +6,17 @@ import { initializeDatabase, checkDatabaseConnection } from "./initDatabase";
 import { globalMutationLimiter, readLimiter } from './middleware/rateLimiter';
 import { logger } from './lib/logger';
 import { errorHandler, requestContextMiddleware } from "./middleware/errorHandler";
-import { appConfig, isDevelopmentEnvironment, isProductionEnvironment } from './config';
+import {
+  appConfig,
+  isDevelopmentEnvironment,
+  isProductionEnvironment,
+  trustedProxyConfig,
+} from './config';
+import {
+  browserMutationProtectionMiddleware,
+  corsMiddleware,
+  securityHeadersMiddleware,
+} from './middleware/security.middleware';
 
 if (!appConfig.database.url) {
   console.error('FATAL: database URL is not configured in config/app.config.json.');
@@ -15,57 +25,17 @@ if (!appConfig.database.url) {
 
 const app = express();
 
+app.disable('x-powered-by');
 app.set('env', appConfig.server.environment);
-app.set('trust proxy', 1);
+app.set('trust proxy', trustedProxyConfig);
 
-app.use((req, res, next) => {
-  const allowedOrigins = [
-    'http://localhost:5000',
-    'http://127.0.0.1:5000',
-    'http://localhost:5001',
-    'http://127.0.0.1:5001',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    appConfig.server.appUrl,
-  ].filter(Boolean);
-
-  const origin = req.headers.origin;
-  if (origin && (isDevelopmentEnvironment || allowedOrigins.includes(origin))) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Vary', 'Origin');
-  }
-
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie, x-bot-token, x-hub-signature-256');
-  res.header('Access-Control-Expose-Headers', 'Set-Cookie');
-
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-    return;
-  }
-
-  next();
-});
-
-app.use(express.json({
-  verify: (req, _res, buffer) => {
-    const request = req as Request;
-    if (request.originalUrl.startsWith('/api/incoming/instagram')) {
-      request.rawBody = Buffer.from(buffer);
-    }
-  },
-}));
-app.use(express.urlencoded({ extended: false }));
 app.use(requestContextMiddleware);
+app.use(securityHeadersMiddleware);
+app.use(corsMiddleware);
+app.use(browserMutationProtectionMiddleware);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!isProductionEnvironment) {
-    return next();
-  }
-
-  // Fix #79: Only apply rate limiting to API routes, not static assets
-  if (!req.path.startsWith('/api')) {
+  if (!isProductionEnvironment || !req.path.startsWith('/api')) {
     return next();
   }
 
@@ -80,12 +50,26 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-morgan.token('response-time-ms', (req, res) => {
-  const responseTime = res.getHeader('X-Response-Time');
-  return typeof responseTime === 'string' ? responseTime : (req.method ? '-' : '-');
-});
+app.use(express.json({
+  limit: '512kb',
+  verify: (req, _res, buffer) => {
+    const request = req as Request;
+    if (request.originalUrl.startsWith('/api/incoming/instagram')) {
+      request.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
+app.use(express.urlencoded({
+  extended: false,
+  limit: '64kb',
+  parameterLimit: 100,
+}));
 
-app.use(morgan(':method :url :status :response-time ms', {
+morgan.token('safe-path', (req) => (
+  req.url?.split(/[?#]/, 1)[0] || '/'
+));
+
+app.use(morgan(':method :safe-path :status :response-time ms', {
   stream: { write: (message: string) => logger.info(message.trim()) },
   skip: (req) => !req.path.startsWith('/api') || req.path === '/api/telephony/webhook',
 }));

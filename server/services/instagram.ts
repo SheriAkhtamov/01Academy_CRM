@@ -115,6 +115,7 @@ const INSTAGRAM_WEBHOOK_FIELDS = [
 ];
 const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const INSTAGRAM_FETCH_TIMEOUT_MS = 30_000;
+const INSTAGRAM_MAX_JSON_BYTES = 10 * 1024 * 1024;
 const INSTAGRAM_REAUTHORIZATION_REQUIRED = 'instagramReauthorizationRequired';
 const INSTAGRAM_MESSAGE_ATTACHMENT_FIELDS = 'file_url,generic_template,id,image_data,name,video_data';
 const INSTAGRAM_MESSAGE_SHARE_FIELDS = 'link,template';
@@ -223,7 +224,12 @@ const getEncryptionKey = () =>
 
 export const encryptInstagramToken = (value: string) => {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKey(), iv);
+  const cipher = crypto.createCipheriv(
+    'aes-256-gcm',
+    getEncryptionKey(),
+    iv,
+    { authTagLength: 16 },
+  );
   const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [iv, tag, ciphertext].map((part) => part.toString('base64url')).join('.');
@@ -238,6 +244,7 @@ export const decryptInstagramToken = (value: string) => {
     'aes-256-gcm',
     getEncryptionKey(),
     Buffer.from(ivEncoded, 'base64url'),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(tagEncoded, 'base64url'));
   return Buffer.concat([
@@ -261,27 +268,109 @@ export const buildInstagramAuthorizationUrl = (state: string, redirectUri = getI
   return url.toString();
 };
 
+const isAllowedInstagramApiUrl = (value: string): boolean => {
+  try {
+    const candidate = new URL(value);
+    const graphOrigin = new URL(instagramConfig().graphApiUrl).origin;
+    return candidate.protocol === 'https:'
+      && !candidate.username
+      && !candidate.password
+      && (
+        candidate.origin === graphOrigin
+        || candidate.origin === 'https://api.instagram.com'
+      );
+  } catch {
+    return false;
+  }
+};
+
+const readLimitedInstagramResponse = async (response: Response): Promise<string> => {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (
+    Number.isFinite(declaredLength)
+    && declaredLength > INSTAGRAM_MAX_JSON_BYTES
+  ) {
+    await response.body?.cancel().catch(() => undefined);
+    throw Object.assign(new Error('Instagram API response is too large'), {
+      statusCode: 502,
+    });
+  }
+
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let receivedBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      receivedBytes += chunk.length;
+      if (receivedBytes > INSTAGRAM_MAX_JSON_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw Object.assign(new Error('Instagram API response is too large'), {
+          statusCode: 502,
+        });
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, receivedBytes).toString('utf8');
+};
+
 const fetchInstagramJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
+  if (!isAllowedInstagramApiUrl(url)) {
+    throw Object.assign(new Error('Instagram API returned an invalid URL'), {
+      statusCode: 502,
+    });
+  }
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), INSTAGRAM_FETCH_TIMEOUT_MS);
+  timeout.unref?.();
   let response: Response;
   try {
     response = await fetch(url, {
       ...init,
-      signal: init?.signal ?? timeoutController.signal,
+      signal: timeoutController.signal,
+      redirect: 'manual',
     });
   } catch (error: any) {
     const message = error?.name === 'AbortError'
       ? 'Instagram API request timed out'
-      : error?.message || 'Instagram API request failed';
+      : 'Instagram API request failed';
+    clearTimeout(timeout);
     throw Object.assign(new Error(message), {
+      statusCode: 502,
+      cause: error,
+    });
+  }
+  if (response.status >= 300 && response.status < 400) {
+    clearTimeout(timeout);
+    await response.body?.cancel().catch(() => undefined);
+    throw Object.assign(new Error('Instagram API redirect was rejected'), {
+      statusCode: 502,
+    });
+  }
+  let raw: string;
+  try {
+    raw = await readLimitedInstagramResponse(response);
+  } catch (error: any) {
+    if (error?.statusCode) throw error;
+    throw Object.assign(new Error(
+      error?.name === 'AbortError'
+        ? 'Instagram API request timed out'
+        : 'Instagram API response could not be read',
+    ), {
       statusCode: 502,
       cause: error,
     });
   } finally {
     clearTimeout(timeout);
   }
-  const raw = await response.text();
   let body: any = null;
   try {
     body = raw ? JSON.parse(raw) : {};
@@ -290,14 +379,22 @@ const fetchInstagramJson = async <T>(url: string, init?: RequestInit): Promise<T
   }
 
   if (!response.ok || body?.error) {
-    const message = body?.error?.message || body?.error_message || raw || `Instagram API ${response.status}`;
-    throw Object.assign(new Error(message), {
-      statusCode: body?.error?.code === 4
+    const providerCode = Number(body?.error?.code);
+    const instagramError = {
+      code: Number.isFinite(providerCode) ? providerCode : null,
+      subcode: Number(body?.error?.error_subcode) || null,
+      type: typeof body?.error?.type === 'string' ? body.error.type.slice(0, 80) : null,
+      isTransient: body?.error?.is_transient === true,
+    };
+    throw Object.assign(new Error(
+      providerCode === 4 ? 'instagramRateLimited' : 'instagramProviderRequestFailed',
+    ), {
+      statusCode: providerCode === 4
         ? 429
         : response.status >= 400 && response.status < 500
           ? 409
           : 502,
-      instagramResponse: body,
+      instagramError,
     });
   }
   return body as T;
@@ -305,7 +402,7 @@ const fetchInstagramJson = async <T>(url: string, init?: RequestInit): Promise<T
 
 const isInstagramRateLimitError = (error: any) =>
   error?.statusCode === 429
-  || error?.instagramResponse?.error?.code === 4
+  || error?.instagramError?.code === 4
   || String(error?.message ?? '').toLowerCase().includes('request limit');
 
 const fetchInstagramPages = async <T>(initialUrl: string, maxPages = 100) => {
@@ -1155,7 +1252,7 @@ const getParticipantProfile = async (
     }
     return profile;
   } catch (error: any) {
-    const errorCode = Number(error?.instagramResponse?.error?.code);
+    const errorCode = Number(error?.instagramError?.code);
     if (accountId && errorCode === 190) {
       await pool.query(
         `UPDATE instagram_accounts SET last_error = $1, updated_at = NOW() WHERE id = $2`,
@@ -2098,7 +2195,6 @@ export const importInstagramConversationHistory = async (requestedBy: number) =>
         accountId: account.id,
         igUserId: account.ig_user_id,
         error,
-        response: error?.instagramResponse,
       });
     }
   }
@@ -2150,12 +2246,11 @@ export const startInstagramConversationHistorySync = (requestedBy: number) => {
         status: 'failed',
         finishedAt: new Date().toISOString(),
         stats: error?.partialStats ?? instagramImportJobStatus.stats,
-        error: error?.message ?? String(error),
+        error: 'instagramSyncFailed',
       };
       logger.error('Failed to run Instagram history import job', {
         requestedBy,
         error,
-        response: error?.instagramResponse,
       });
       broadcastInstagramImportJobStatus();
       throw error;

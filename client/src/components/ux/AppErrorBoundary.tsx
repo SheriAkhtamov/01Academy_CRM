@@ -32,7 +32,9 @@ class ErrorBoundaryRoot extends React.Component<{
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[AppErrorBoundary]', error, errorInfo);
+    if (import.meta.env.DEV) {
+      console.error('[AppErrorBoundary]', error, errorInfo);
+    }
   }
 
   reset = () => this.setState({ error: null });
@@ -59,7 +61,7 @@ export function AppErrorBoundary({ children }: { children: React.ReactNode }) {
             <AlertCircle />
             <AlertTitle>{t('errorOccurred')}</AlertTitle>
             <AlertDescription className="flex flex-col items-start gap-3">
-              <span>{error.message || t('failedToLoadData')}</span>
+              <span>{import.meta.env.DEV && error.message ? error.message : t('failedToLoadData')}</span>
               <Button type="button" variant="outline" size="sm" onClick={reset}>
                 <RotateCcw data-icon="inline-start" />
                 {t('retry')}

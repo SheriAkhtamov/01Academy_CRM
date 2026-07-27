@@ -18,7 +18,12 @@ import financeRoutes from './finance.routes';
 import telephonyRoutes from './telephony.routes';
 import { logger } from '../lib/logger';
 import { createPresenceTracker } from '../lib/presence';
-import { appConfig } from '../config';
+import {
+    appConfig,
+    isProductionEnvironment,
+    secureSessionCookies,
+} from '../config';
+import { isAllowedRequestOrigin } from '../middleware/security.middleware';
 
 import { setBroadcastFunction as setMessageBroadcast } from './message.routes';
 import { setBroadcastFunction as setBoardBroadcast } from './board.routes';
@@ -27,6 +32,8 @@ import { setTelephonyBroadcastFunction } from './telephony.routes';
 
 const PgStore = pgSession(session);
 const WS_OPEN_STATE = 1;
+const MAX_TOTAL_WEBSOCKET_CONNECTIONS = 1_000;
+const WEBSOCKET_AUTH_TIMEOUT_MS = 5_000;
 type SessionMiddleware = ReturnType<typeof session>;
 type WsSessionRequest = IncomingMessage & {
     session?: session.Session & Partial<session.SessionData>;
@@ -52,17 +59,18 @@ const buildSessionConfig = () => {
         secret: sessionSecret,
         resave: false,
         saveUninitialized: false,
-        name: 'connect.sid',
+        name: 'academy.sid',
         store: new PgStore({
             pool,
             tableName: 'session',
             createTableIfMissing: true,
         }),
         cookie: {
-            secure: appConfig.session.cookieSecure,
+            secure: secureSessionCookies,
             httpOnly: true,
             maxAge: 24 * 60 * 60 * 1000,
             sameSite: 'lax' as const,
+            priority: 'high' as const,
             domain: undefined,
             path: '/',
         },
@@ -88,11 +96,34 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     // Public inbound webhooks (verified by per-provider secrets, NOT session auth).
     app.use('/api/incoming', incomingRoutes);
     const httpServer = createServer(app);
+    httpServer.requestTimeout = 30_000;
+    httpServer.headersTimeout = 15_000;
+    httpServer.keepAliveTimeout = 5_000;
+    httpServer.maxHeadersCount = 100;
 
-    const wss = new WebSocket.WebSocketServer({ noServer: true });
+    const wss = new WebSocket.WebSocketServer({
+        noServer: true,
+        clientTracking: false,
+        maxPayload: 64 * 1024,
+        perMessageDeflate: false,
+    });
+    const allSockets = new Set<WebSocket>();
     const clients = new Set<WebSocket>();
     const clientContexts = new Map<WebSocket, SocketContext>();
     const socketClosedState = new WeakMap<WebSocket, { closed: boolean }>();
+    const socketAliveState = new WeakMap<WebSocket, boolean>();
+    const userConnectionCounts = new Map<number, number>();
+    const decrementUserConnectionCount = (userId: number) => {
+        const nextCount = Math.max(
+            0,
+            (userConnectionCounts.get(userId) ?? 1) - 1,
+        );
+        if (nextCount === 0) {
+            userConnectionCounts.delete(userId);
+        } else {
+            userConnectionCounts.set(userId, nextCount);
+        }
+    };
 
     await pool.query(`
       UPDATE users
@@ -105,8 +136,27 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     });
 
     httpServer.on('upgrade', (request, socket, head) => {
+        if (allSockets.size >= MAX_TOTAL_WEBSOCKET_CONNECTIONS) {
+            socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+
         const requestUrl = request.url ? new URL(request.url, 'http://localhost') : null;
         if (requestUrl?.pathname !== '/ws') {
+            socket.destroy();
+            return;
+        }
+
+        const origin = Array.isArray(request.headers.origin)
+            ? request.headers.origin[0]
+            : request.headers.origin;
+        if (
+            (isProductionEnvironment && !isAllowedRequestOrigin(origin))
+            || (!isProductionEnvironment && origin && !isAllowedRequestOrigin(origin))
+        ) {
+            socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+            socket.destroy();
             return;
         }
 
@@ -117,14 +167,22 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
 
     wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
         const lifecycle = { closed: false };
+        allSockets.add(ws);
         socketClosedState.set(ws, lifecycle);
+        socketAliveState.set(ws, true);
+
+        ws.on('pong', () => {
+            socketAliveState.set(ws, true);
+        });
 
         ws.on('close', () => {
             lifecycle.closed = true;
+            allSockets.delete(ws);
             const context = clientContexts.get(ws);
             clientContexts.delete(ws);
             clients.delete(ws);
             if (context) {
+                decrementUserConnectionCount(context.userId);
                 void presenceTracker.disconnect(context.userId);
             }
         });
@@ -167,7 +225,7 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
 
     const handleSocketConnection = async (ws: WebSocket, request: WsSessionRequest) => {
         try {
-            await applySessionMiddleware(sessionMiddleware, request);
+            await applySessionMiddlewareWithTimeout(sessionMiddleware, request);
 
             const sessionUserId = request.session?.userId;
             const lifecycle = socketClosedState.get(ws);
@@ -187,13 +245,29 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
                 return;
             }
 
+            const connectionCount = userConnectionCounts.get(user.id) ?? 0;
+            if (connectionCount >= 5) {
+                ws.close(1008, 'Too many connections');
+                return;
+            }
+            userConnectionCounts.set(user.id, connectionCount + 1);
+            let connectionReserved = true;
+
             if (lifecycle?.closed || ws.readyState !== WS_OPEN_STATE) {
+                decrementUserConnectionCount(user.id);
                 return;
             }
 
-            await presenceTracker.connect(user.id);
+            try {
+                await presenceTracker.connect(user.id);
+            } catch (error) {
+                decrementUserConnectionCount(user.id);
+                connectionReserved = false;
+                throw error;
+            }
 
             if (lifecycle?.closed || ws.readyState !== WS_OPEN_STATE) {
+                if (connectionReserved) decrementUserConnectionCount(user.id);
                 await presenceTracker.disconnect(user.id);
                 return;
             }
@@ -201,8 +275,13 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
             clientContexts.set(ws, {
                 userId: user.id,
             });
+            connectionReserved = false;
             clients.add(ws);
         } catch (error) {
+            if ((error as { code?: string })?.code === 'WS_AUTH_TIMEOUT') {
+                ws.terminate();
+                return;
+            }
             logger.error('Failed to authenticate WebSocket connection', { error });
             ws.close(1011, 'Session error');
         }
@@ -212,6 +291,19 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     setBoardBroadcast(broadcastToClients);
     setInstagramBroadcastFunction(broadcastToClients);
     setTelephonyBroadcastFunction(broadcastToClients);
+
+    const heartbeat = setInterval(() => {
+        for (const client of clients) {
+            if (!socketAliveState.get(client)) {
+                client.terminate();
+                continue;
+            }
+            socketAliveState.set(client, false);
+            client.ping();
+        }
+    }, 30_000);
+    heartbeat.unref();
+    httpServer.on('close', () => clearInterval(heartbeat));
 
     return httpServer;
 }
@@ -235,3 +327,25 @@ const applySessionMiddleware = async (middleware: SessionMiddleware, request: Ws
             resolve();
         });
     });
+
+const applySessionMiddlewareWithTimeout = async (
+    middleware: SessionMiddleware,
+    request: WsSessionRequest,
+) => {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+        await Promise.race([
+            applySessionMiddleware(middleware, request),
+            new Promise<void>((_resolve, reject) => {
+                timeout = setTimeout(() => {
+                    reject(Object.assign(new Error('WebSocket session lookup timed out'), {
+                        code: 'WS_AUTH_TIMEOUT',
+                    }));
+                }, WEBSOCKET_AUTH_TIMEOUT_MS);
+                timeout.unref();
+            }),
+        ]);
+    } finally {
+        if (timeout) clearTimeout(timeout);
+    }
+};

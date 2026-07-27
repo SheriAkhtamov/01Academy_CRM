@@ -6,6 +6,7 @@ import { appConfig } from '../config';
 import { requireAuth } from '../middleware/auth.middleware';
 import { storage } from '../storage';
 import { logger } from '../lib/logger';
+import { getPublicErrorMessage } from '../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../lib/instagram-lead';
 import {
   getZonedDateTimeParts,
@@ -4530,7 +4531,7 @@ router.get('/workspaces/administration', async (req, res) => {
     res.json(await buildAdministrationDashboard(reportingRange));
   } catch (error: any) {
     logger.error('Failed to fetch administration dashboard', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch administration dashboard' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch administration dashboard') });
   }
 });
 
@@ -4590,7 +4591,7 @@ router.get('/availability/slots', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to fetch available slots', { error });
     res.status(error.statusCode || 500).json({
-      error: error.message || 'Failed to fetch available slots',
+      error: getPublicErrorMessage(error, 'Failed to fetch available slots'),
     });
   }
 });
@@ -4840,7 +4841,7 @@ router.get('/workspaces/marketing', async (req, res) => {
     });
   } catch (error: any) {
     logger.error('Failed to fetch marketing workspace', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch marketing workspace' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch marketing workspace') });
   }
 });
 
@@ -5289,7 +5290,7 @@ router.post('/leads', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to create lead', { error });
     res.status(error.statusCode || 500).json({
-      error: error.message || 'Failed to create lead',
+      error: getPublicErrorMessage(error, 'Failed to create lead'),
       ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
     });
   }
@@ -5400,7 +5401,7 @@ router.post('/leads/bulk-assign', async (req, res) => {
     res.json({ updatedCount: changedLeads.length, manager });
   } catch (error: any) {
     logger.error('Failed to bulk assign leads', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign leads' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to assign leads') });
   }
 });
 
@@ -5449,7 +5450,7 @@ router.get('/leads/merge-preview', async (req, res) => {
     res.json({ leads });
   } catch (error: any) {
     logger.error('Failed to preview lead merge', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'leadMergePreviewFailed' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'leadMergePreviewFailed') });
   }
 });
 
@@ -5471,7 +5472,7 @@ router.post('/leads/merge', async (req, res) => {
     res.json({ ...result, retainedLead: visibleLead });
   } catch (error: any) {
     logger.error('Failed to merge leads', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'leadMergeFailed' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'leadMergeFailed') });
   }
 });
 
@@ -5497,7 +5498,7 @@ router.post('/leads/merge-draft', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to merge lead draft', { error });
     res.status(error.statusCode || 500).json({
-      error: error.message || 'leadMergeFailed',
+      error: getPublicErrorMessage(error, 'leadMergeFailed'),
       ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
     });
   }
@@ -5650,7 +5651,7 @@ router.post('/leads/:id/comments', async (req, res) => {
     res.status(201).json(comment);
   } catch (error: any) {
     logger.error('Failed to add lead comment', { error, leadId: req.params.id });
-    res.status(error.statusCode || 500).json({ error: error.message || 'leadCommentAddFailed' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'leadCommentAddFailed') });
   }
 });
 
@@ -5677,7 +5678,7 @@ router.post('/leads/:id/assign', async (req, res) => {
     res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to assign lead', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to assign lead' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to assign lead') });
   }
 });
 
@@ -5717,7 +5718,7 @@ router.delete('/leads/:id', async (req, res) => {
     logger.error('Failed to delete lead', { error });
     const isForeignKeyConflict = error?.code === '23503';
     res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
-      error: isForeignKeyConflict ? 'resourceInUse' : error.message || 'Failed to delete lead',
+      error: isForeignKeyConflict ? 'resourceInUse' : getPublicErrorMessage(error, 'Failed to delete lead'),
     });
   }
 });
@@ -5781,7 +5782,7 @@ router.post('/leads/:id/groups', async (req, res) => {
     res.status(201).json(lead);
   } catch (error: any) {
     logger.error('Failed to add lead group', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to add lead group' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to add lead group') });
   }
 });
 
@@ -5865,7 +5866,7 @@ router.delete('/leads/:id/groups/:groupId', async (req, res) => {
     res.json(lead);
   } catch (error: any) {
     logger.error('Failed to remove lead group', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to remove lead group' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to remove lead group') });
   }
 });
 
@@ -5935,7 +5936,7 @@ router.post('/leads/:id/archive', async (req, res) => {
     res.json(await getLead(id) ?? archived);
   } catch (error: any) {
     logger.error('Failed to archive lead', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to archive lead' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to archive lead') });
   }
 });
 
@@ -6000,7 +6001,7 @@ router.post('/leads/:id/restore', async (req, res) => {
     res.json(await getLead(id) ?? restored);
   } catch (error: any) {
     logger.error('Failed to restore lead', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to restore lead' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to restore lead') });
   }
 });
 
@@ -6396,7 +6397,7 @@ router.patch('/leads/:id', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to update lead', { error });
     res.status(error.statusCode || 500).json({
-      error: error.message || 'Failed to update lead',
+      error: getPublicErrorMessage(error, 'Failed to update lead'),
       ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
     });
   }
@@ -6503,7 +6504,7 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
     res.status(201).json(student);
   } catch (error: any) {
     logger.error('Failed to convert lead to student', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to convert lead to student' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to convert lead to student') });
   }
 });
 
@@ -6638,7 +6639,7 @@ router.post('/leads/:id/students', async (req, res) => {
     res.status(201).json(enriched ?? student);
   } catch (error: any) {
     logger.error('Failed to create student from lead card', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create student' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to create student') });
   }
 });
 
@@ -7455,7 +7456,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     } catch (error: any) {
       logger.error(`Failed to create ${path}`, { error });
       res.status(error.statusCode || 500).json({
-        error: error.message || `Failed to create ${path}`,
+        error: getPublicErrorMessage(error, `Failed to create ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
       });
     }
@@ -7606,7 +7607,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
     } catch (error: any) {
       logger.error(`Failed to update ${path}`, { error });
       res.status(error.statusCode || 500).json({
-        error: error.message || `Failed to update ${path}`,
+        error: getPublicErrorMessage(error, `Failed to update ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
       });
     }
@@ -7681,7 +7682,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       logger.error(`Failed to delete ${path}`, { error });
       const isForeignKeyConflict = error?.code === '23503';
       res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
-        error: isForeignKeyConflict ? 'resourceInUse' : error.message || `Failed to delete ${path}`,
+        error: isForeignKeyConflict ? 'resourceInUse' : getPublicErrorMessage(error, `Failed to delete ${path}`),
       });
     }
   });
@@ -7782,7 +7783,7 @@ router.get('/lessons/:id/attendance-roster', async (req, res) => {
     res.json({ lesson, students, attendance });
   } catch (error: any) {
     logger.error('Failed to load lesson attendance roster', { error, lessonId: req.params.id });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load attendance roster' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to load attendance roster') });
   }
 });
 
@@ -7959,7 +7960,7 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
     });
   } catch (error: any) {
     logger.error('Failed to reschedule lesson', { error, lessonId: req.params.id });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to reschedule lesson' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to reschedule lesson') });
   }
 });
 
@@ -8230,7 +8231,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     res.json({ lesson: result.lesson, attendance: result.attendance });
   } catch (error: any) {
     logger.error('Failed to save attendance', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save attendance' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to save attendance') });
   }
 });
 
@@ -8330,7 +8331,7 @@ router.post('/students/:id/transfer', async (req, res) => {
     res.json(student);
   } catch (error: any) {
     logger.error('Failed to transfer student', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to transfer student' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to transfer student') });
   }
 });
 
@@ -8418,7 +8419,7 @@ router.post('/students/:id/groups', async (req, res) => {
     res.status(201).json(student);
   } catch (error: any) {
     logger.error('Failed to add student group', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to add student group' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to add student group') });
   }
 });
 
@@ -8519,7 +8520,7 @@ router.delete('/students/:id/groups/:groupId', async (req, res) => {
     res.json(student);
   } catch (error: any) {
     logger.error('Failed to remove student group', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to remove student group' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to remove student group') });
   }
 });
 
@@ -8598,7 +8599,7 @@ router.patch('/students/:id/status', async (req, res) => {
     res.json(student);
   } catch (error: any) {
     logger.error('Failed to update student status', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update student status' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to update student status') });
   }
 });
 
@@ -8879,7 +8880,7 @@ router.post('/payments', async (req, res) => {
     res.status(201).json(result);
   } catch (error: any) {
     logger.error('Failed to create payment', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to create payment' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to create payment') });
   }
 });
 
@@ -9020,7 +9021,7 @@ router.post('/surveys/lesson', async (req, res) => {
     res.status(result.created ? 201 : 200).json(result.survey);
   } catch (error: any) {
     logger.error('Failed to save lesson survey', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save lesson survey' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to save lesson survey') });
   }
 });
 
@@ -9140,7 +9141,7 @@ router.post('/surveys/parent', async (req, res) => {
     res.status(result.created ? 201 : 200).json(result.survey);
   } catch (error: any) {
     logger.error('Failed to save parent survey', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save parent survey' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to save parent survey') });
   }
 });
 
@@ -9459,7 +9460,7 @@ router.post('/courses/with-teachers', async (req, res) => {
     logger.error('Failed to create course with teacher assignments', { error });
     const duplicateSlug = error?.code === '23505' && String(error?.constraint ?? '').includes('academy_courses_slug');
     res.status(duplicateSlug ? 409 : error.statusCode || 500).json({
-      error: duplicateSlug ? 'courseSlugAlreadyExists' : error.message || 'Failed to create courses',
+      error: duplicateSlug ? 'courseSlugAlreadyExists' : getPublicErrorMessage(error, 'Failed to create courses'),
     });
   }
 });
@@ -9483,7 +9484,7 @@ router.patch('/courses/:id/with-teachers', async (req, res) => {
     logger.error('Failed to update course with teacher assignments', { error, courseId });
     const duplicateSlug = error?.code === '23505' && String(error?.constraint ?? '').includes('academy_courses_slug');
     res.status(duplicateSlug ? 409 : error.statusCode || 500).json({
-      error: duplicateSlug ? 'courseSlugAlreadyExists' : error.message || 'Failed to update courses',
+      error: duplicateSlug ? 'courseSlugAlreadyExists' : getPublicErrorMessage(error, 'Failed to update courses'),
     });
   }
 });
@@ -9506,7 +9507,7 @@ router.delete('/courses/:id', async (req, res) => {
     logger.error('Failed to delete course', { error, courseId });
     const isForeignKeyConflict = error?.code === '23503';
     res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
-      error: isForeignKeyConflict ? 'resourceInUse' : error.message || 'Failed to delete courses',
+      error: isForeignKeyConflict ? 'resourceInUse' : getPublicErrorMessage(error, 'Failed to delete courses'),
     });
   }
 });
@@ -9549,7 +9550,7 @@ router.put('/pipeline-statuses/reorder', async (req, res) => {
     res.json(statuses);
   } catch (error: any) {
     logger.error('Failed to reorder pipeline statuses', { error });
-    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to reorder pipeline statuses' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to reorder pipeline statuses') });
   }
 });
 
@@ -9731,7 +9732,7 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
   } catch (error: any) {
     logger.error('Failed to transfer leads and delete pipeline stage', { error, statusId: req.params.id });
     res.status(error.statusCode || 500).json({
-      error: error.message || 'Failed to transfer leads and delete pipeline stage',
+      error: getPublicErrorMessage(error, 'Failed to transfer leads and delete pipeline stage'),
     });
   }
 });

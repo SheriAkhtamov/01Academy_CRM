@@ -24,6 +24,10 @@ vi.mock("../server/storage", () => ({
   },
 }));
 
+vi.mock("../server/realtime/realtime-hub", () => ({
+  publishRealtimeEvent: mocks.broadcast,
+}));
+
 const currentUser = {
   id: 1,
   fullName: "Current User",
@@ -49,7 +53,6 @@ describe("message routes", () => {
 
   const createApp = async () => {
     const module = await import("../server/routes/message.routes");
-    module.setBroadcastFunction(mocks.broadcast);
 
     const app = express();
     app.use(express.json());

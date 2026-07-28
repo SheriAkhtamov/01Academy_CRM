@@ -16,7 +16,6 @@ import {
   IncomingCallRingtone,
   shouldPlayIncomingRingtone,
 } from '@/lib/incomingCallRingtone';
-import { TelephonyWidget } from '@/components/telephony/TelephonyWidget';
 
 export type TelephonyConnectionState = 'disabled' | 'connecting' | 'ready' | 'offline' | 'error';
 export type TelephonyCallStatus = 'dialing' | 'ringing' | 'connected' | 'ended' | 'failed' | 'declined' | 'missed';
@@ -766,7 +765,9 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   return (
     <TelephonyContext.Provider value={value}>
       {children}
-      {isAuthenticated ? <TelephonyWidget remoteAudioRef={remoteAudioRef} /> : null}
+      {isAuthenticated ? (
+        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+      ) : null}
     </TelephonyContext.Provider>
   );
 }

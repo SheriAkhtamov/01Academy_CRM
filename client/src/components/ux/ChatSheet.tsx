@@ -14,29 +14,19 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
-import { apiRequest } from '@/lib/queryClient';
 import { MessageCircle, Send, User, Circle, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru, enUS } from 'date-fns/locale';
+import type {
+  ConversationUserDto,
+  MessageDto,
+  SendMessageRequest,
+} from '@shared/contracts/messages';
+import { messageQueryKeys, messagesApi } from '@/features/messages/api';
 
 interface ChatSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-interface Message {
-  id: number;
-  senderId: number;
-  receiverId: number;
-  content: string;
-  createdAt: string;
-  updatedAt?: string;
-  isRead?: boolean;
-  sender?: {
-    id: number;
-    fullName: string;
-    position: string;
-  };
 }
 
 export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
@@ -68,24 +58,24 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   });
 
   // Fetch employees with whom user has conversations
-  const { data: conversationEmployees = [] } = useQuery({
-    queryKey: ['/api/messages/conversations'],
-    queryFn: () => apiRequest('GET', '/api/messages/conversations'),
+  const { data: conversationEmployees = [] } = useQuery<ConversationUserDto[]>({
+    queryKey: messageQueryKeys.conversations,
+    queryFn: messagesApi.getConversations,
     enabled: open,
   });
 
   // Fetch online status for all users
-  const { data: usersWithStatus = [] } = useQuery({
-    queryKey: ['/api/users/online-status'],
-    queryFn: () => apiRequest('GET', '/api/users/online-status'),
+  const { data: usersWithStatus = [] } = useQuery<ConversationUserDto[]>({
+    queryKey: messageQueryKeys.onlineUsers,
+    queryFn: messagesApi.getOnlineUsers,
     enabled: open,
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
   // Fetch messages for selected employee
-  const { data: messagesData, isLoading: messagesLoading } = useQuery({
-    queryKey: ['/api/messages', selectedEmployeeId],
-    queryFn: () => apiRequest('GET', `/api/messages/${selectedEmployeeId}`),
+  const { data: messagesData, isLoading: messagesLoading } = useQuery<MessageDto[]>({
+    queryKey: messageQueryKeys.thread(selectedEmployeeId ?? 0),
+    queryFn: () => messagesApi.getThread(selectedEmployeeId!),
     enabled: open && !!selectedEmployeeId,
   });
 
@@ -94,12 +84,12 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   const markConversationRead = useMutation({
     mutationFn: (employeeId: number) =>
-      apiRequest('PUT', `/api/messages/conversations/${employeeId}/read`),
+      messagesApi.markConversationRead(employeeId),
     onMutate: async (employeeId) => {
-      const queryKey = ['/api/messages', employeeId];
+      const queryKey = messageQueryKeys.thread(employeeId);
       await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<Message[]>(queryKey);
-      queryClient.setQueryData<Message[]>(queryKey, (current = []) => current.map((message) => (
+      const previous = queryClient.getQueryData<MessageDto[]>(queryKey);
+      queryClient.setQueryData<MessageDto[]>(queryKey, (current = []) => current.map((message) => (
         message.receiverId === user?.id && !message.isRead
           ? { ...message, isRead: true }
           : message
@@ -108,15 +98,15 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
     },
     onError: (_error, _employeeId, context) => {
       if (context) {
-        queryClient.setQueryData(['/api/messages', context.employeeId], context.previous);
+        queryClient.setQueryData(messageQueryKeys.thread(context.employeeId), context.previous);
       }
     },
     onSettled: (_result, _error, employeeId) => {
       if (readAttemptedFor.current === employeeId) {
         readAttemptedFor.current = null;
       }
-      queryClient.invalidateQueries({ queryKey: ['/api/messages', employeeId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
+      queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(employeeId) });
+      queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
     },
   });
 
@@ -127,7 +117,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   useEffect(() => {
     if (!open || !selectedEmployeeId || !Array.isArray(messagesData)) return;
     const hasUnreadInbound = messagesData.some(
-      (message: Message) => message.receiverId === user?.id && !message.isRead,
+      (message: MessageDto) => message.receiverId === user?.id && !message.isRead,
     );
     if (hasUnreadInbound && readAttemptedFor.current !== selectedEmployeeId) {
       readAttemptedFor.current = selectedEmployeeId;
@@ -153,8 +143,8 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: (messageData: { receiverId: number; content: string; draftSnapshot: string }) =>
-      apiRequest('POST', '/api/messages', {
+    mutationFn: (messageData: SendMessageRequest & { draftSnapshot: string }) =>
+      messagesApi.send({
         receiverId: messageData.receiverId,
         content: messageData.content,
       }),
@@ -165,14 +155,14 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
         return rest;
       });
       if (createdMessage?.id) {
-        queryClient.setQueryData(['/api/messages', variables.receiverId], (prev: any) =>
+        queryClient.setQueryData(messageQueryKeys.thread(variables.receiverId), (prev: MessageDto[] | undefined) =>
           prev ? [...prev, createdMessage] : [createdMessage]
         );
       }
       
       // Force refresh of messages
-      queryClient.invalidateQueries({ queryKey: ['/api/messages', variables.receiverId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
+      queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(variables.receiverId) });
+      queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
       
       // Check if this is the first message to this employee
       const isNewConversation = !conversationEmployees.some((emp: any) => emp.id === variables.receiverId);
@@ -335,7 +325,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                         <p className="text-sm">{t('loadingMessages')}</p>
                       </div>
                     ) : Array.isArray(messages) && messages.length > 0 ? (
-                      messages.map((message: Message) => {
+                      messages.map((message: MessageDto) => {
                         const isOwnMessage = message.senderId === user?.id;
                         return (
                           <div

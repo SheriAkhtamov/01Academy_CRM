@@ -9,8 +9,8 @@ import {
 import { logger } from '../lib/logger';
 import { hasLeadershipAccess } from '@shared/academy';
 import { upsertLeadChannel } from './lead-channels';
+import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
-type InstagramBroadcast = (data: any) => void;
 type InstagramUser = {
   id: number;
   workspace: string;
@@ -133,8 +133,6 @@ const INSTAGRAM_MESSAGE_FIELDS = [
 ].join(',');
 const INSTAGRAM_MESSAGE_FIELDS_LEGACY = 'id,created_time,from,to,message,attachments,shares,story,is_unsupported,sticker';
 
-let broadcastToClients: InstagramBroadcast = () => undefined;
-
 const leadershipUserAccessSql = `
   (
     u.workspace = 'administration'
@@ -155,10 +153,6 @@ const salesUserAccessSql = `
     )
   )
 `;
-export const setInstagramBroadcastFunction = (broadcast: InstagramBroadcast) => {
-  broadcastToClients = broadcast;
-};
-
 /**
  * Mirrors the HTTP access boundary for realtime Instagram events: leadership
  * sees every conversation, while sales staff see either their assigned
@@ -1515,7 +1509,7 @@ const processReceiptEvent = async (account: InstagramAccountRow, event: any) => 
 
   if (conversation) {
     const audienceUserIds = await getInstagramConversationAudienceUserIds(conversation.manager_id);
-    broadcastToClients({
+    publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: {
         conversationId: Number(conversation.id),
@@ -1664,7 +1658,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
 
   if (result.inserted) {
     const audienceUserIds = await getInstagramConversationAudienceUserIds(result.managerId);
-    broadcastToClients({
+    publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: {
         conversationId: result.conversationId,
@@ -1674,7 +1668,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
       audienceUserIds,
     });
     if (!outbound && result.lead?.createdLead) {
-      broadcastToClients({
+      publishRealtimeEvent({
         type: 'ACADEMY_LEAD_CREATED',
         data: { id: result.lead.id },
         audienceUserIds,
@@ -1754,7 +1748,7 @@ const cloneInstagramImportJobStatus = (): InstagramImportJobStatus => ({
 });
 
 const broadcastInstagramImportJobStatus = () => {
-  broadcastToClients({
+  publishRealtimeEvent({
     type: 'INSTAGRAM_HISTORY_IMPORT_STATUS',
     data: cloneInstagramImportJobStatus(),
   });
@@ -2240,7 +2234,7 @@ export const importInstagramConversationHistory = async (requestedBy: number) =>
   }
 
   await logInstagramIntegration('history_import', stats.errors > 0 ? 'partial' : 'completed', stats);
-  broadcastToClients({
+  publishRealtimeEvent({
     type: 'INSTAGRAM_CONVERSATION_UPDATED',
     data: { imported: true, stats },
   });
@@ -2516,7 +2510,7 @@ export const sendInstagramTextMessage = async (
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id ? Number(conversation.manager_id) : null,
     );
-    broadcastToClients({
+    publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: { conversationId, message },
       audienceUserIds,
@@ -2550,7 +2544,7 @@ export const sendInstagramTextMessage = async (
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id ? Number(conversation.manager_id) : null,
     );
-    broadcastToClients({
+    publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: { conversationId, message },
       audienceUserIds,

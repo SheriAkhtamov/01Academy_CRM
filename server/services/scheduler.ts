@@ -92,6 +92,12 @@ export const startScheduler = () => {
   );
 };
 
+export const stopScheduler = async () => {
+  if (!started) return;
+  await cron.shutdown();
+  started = false;
+};
+
 const getSystemUserId = async (): Promise<number | null> => {
   if (!pool) return null;
   const { rows } = await pool.query(

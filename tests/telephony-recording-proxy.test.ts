@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 vi.mock('../server/config', () => ({
   appConfig: {
@@ -32,10 +33,7 @@ const telephonyRoutes = readFileSync(
   new URL('../server/routes/telephony.routes.ts', import.meta.url),
   'utf8',
 );
-const academyRoutes = readFileSync(
-  new URL('../server/routes/academy.routes.ts', import.meta.url),
-  'utf8',
-);
+const academyRoutes = readAcademyModuleSource();
 
 describe('OnlinePBX recording proxy URL validation', () => {
   it('allows only HTTPS recording downloads from the configured OnlinePBX origin', () => {

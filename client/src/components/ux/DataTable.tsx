@@ -19,6 +19,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'luci
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
+import { Skeleton } from '@/components/ui/skeleton';
+
 type SortDirection = 'asc' | 'desc' | null;
 
 interface DataTableColumn<T> {
@@ -42,6 +44,7 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   rowClassName?: (row: T) => string;
   pageSize?: number;
+  isLoading?: boolean;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -55,6 +58,7 @@ export function DataTable<T extends Record<string, any>>({
   onRowClick,
   rowClassName,
   pageSize: initialPageSize = 25,
+  isLoading = false,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey || null);

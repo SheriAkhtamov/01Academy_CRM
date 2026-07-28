@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 const migration = readFileSync(
   new URL('../migrations/0064_link_lead_tasks_to_board.sql', import.meta.url),
   'utf8',
 );
 const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
-const academyRoutes = readFileSync(new URL('../server/routes/academy.routes.ts', import.meta.url), 'utf8');
+const academyRoutes = readAcademyModuleSource();
 const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
   'utf8',

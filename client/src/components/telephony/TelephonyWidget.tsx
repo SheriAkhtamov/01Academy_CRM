@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MutableRefObject } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -87,11 +87,7 @@ const ContactAvatar = ({ call }: { call: ActiveTelephonyCall }) => (
   </div>
 );
 
-export function TelephonyWidget({
-  remoteAudioRef,
-}: {
-  remoteAudioRef: MutableRefObject<HTMLAudioElement | null>;
-}) {
+export function TelephonyWidget() {
   const { t } = useTranslation();
   const telephony = useTelephony();
   const [isOpen, setIsOpen] = useState(false);
@@ -342,8 +338,6 @@ export function TelephonyWidget({
 
   return (
     <>
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
-
       {isOpen ? (
         <div
           ref={widgetRef}

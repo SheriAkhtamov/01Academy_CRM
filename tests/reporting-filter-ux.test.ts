@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const filter = read('../client/src/components/ux/ReportingDateRangeFilter.tsx');
@@ -8,7 +9,7 @@ const teacher = read('../client/src/pages/teacher-workspace.tsx');
 const marketing = read('../client/src/pages/marketing-workspace.tsx');
 const finance = read('../client/src/pages/finance-center.tsx');
 const administration = read('../client/src/pages/admin/AdminDashboardPage.tsx');
-const academyRoutes = read('../server/routes/academy.routes.ts');
+const academyRoutes = readAcademyModuleSource();
 const chartShell = read('../client/src/components/ux/analytics/AnalyticsChartCard.tsx');
 const salesCharts = read('../client/src/components/ux/DashboardCharts.tsx');
 const teacherCharts = read('../client/src/components/ux/analytics/TeacherAnalyticsCharts.tsx');

@@ -100,6 +100,9 @@ docker compose up -d
 └── scripts/         # Утилиты
 ```
 
+Подробные границы модулей, направление зависимостей и правила развития
+описаны в [`docs/architecture.md`](docs/architecture.md).
+
 ## ⚙️ Конфигурация
 
 Все настройки хранятся в `config/app.config.json`:
@@ -163,7 +166,7 @@ npm run audit:security
 | `npm run db:backup` | Бэкап БД |
 | `npm run seed:dev` | Сидирование тестовых данных |
 | `npm test` | Запуск тестов |
-| `npm run check` | Полная проверка (TS, encoding, i18n) |
+| `npm run check` | Полная проверка (TS, architecture, encoding, i18n, a11y) |
 | `npm run audit:security` | Аудит зависимостей и секретов |
 
 ## 👥 Роли пользователей

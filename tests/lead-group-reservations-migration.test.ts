@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 const migration = readFileSync(
   new URL('../migrations/0050_add_lead_group_reservations.sql', import.meta.url),
   'utf8',
 );
 const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
-const routes = readFileSync(new URL('../server/routes/academy.routes.ts', import.meta.url), 'utf8');
+const routes = readAcademyModuleSource();
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
   'utf8',

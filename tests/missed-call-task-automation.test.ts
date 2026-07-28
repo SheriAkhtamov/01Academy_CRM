@@ -1,12 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
-const academyRoutes = fs.readFileSync(
-  path.join(repositoryRoot, 'server/routes/academy.routes.ts'),
-  'utf8',
-);
+const academyRoutes = readAcademyModuleSource();
 const telephonyRoutes = fs.readFileSync(
   path.join(repositoryRoot, 'server/routes/telephony.routes.ts'),
   'utf8',

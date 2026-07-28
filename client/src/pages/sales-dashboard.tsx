@@ -5,6 +5,8 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { useLocation, useSearch } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
+import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
+import { leadsApi } from '@/features/leads/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
@@ -210,7 +212,7 @@ const compactPhoneNumbers = (values: string[]) => {
   });
 };
 
-const createLeadPayload = (values: CreateLeadFormValues) => ({
+const createLeadPayload = (values: CreateLeadFormValues): CreateAcademyLeadRequest => ({
   ...values,
   phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
   sourceId: Number(values.sourceId),
@@ -227,7 +229,7 @@ const createLeadSchema = z.object({
   sourceId: z.string().min(1, 'fillRequiredFields'),
   managerId: z.string().min(1, 'fillRequiredFields'),
   comment: z.string(),
-  language: z.string().min(1, 'fillRequiredFields'),
+  language: z.enum(['ru', 'uz', 'en']),
 });
 
 type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
@@ -697,11 +699,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }, [activePipelineCodes, periodLeads, periodStudents]);
 
   const createLead = useMutation({
-    mutationFn: (values: CreateLeadFormValues) => apiRequest(
-      'POST',
-      '/api/academy/leads',
-      createLeadPayload(values),
-    ),
+    mutationFn: (values: CreateLeadFormValues) => leadsApi.create(createLeadPayload(values)),
     onSuccess: () => {
       toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
       leadForm.reset(leadFormDefaults);

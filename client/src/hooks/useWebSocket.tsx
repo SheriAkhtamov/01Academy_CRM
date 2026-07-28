@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { WebSocketEvent } from '@shared/websocket';
 import { useAuth } from './useAuth';
 import { devLog } from '@/lib/debug';
+import { messageQueryKeys } from '@/features/messages/api';
 
 export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
@@ -71,16 +72,16 @@ export function useWebSocket() {
           break;
         case 'NEW_MESSAGE':
           if (message.data?.senderId && message.data?.receiverId) {
-            queryClient.invalidateQueries({ queryKey: ['/api/messages', message.data.senderId] });
-            queryClient.invalidateQueries({ queryKey: ['/api/messages', message.data.receiverId] });
-            queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
+            queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(Number(message.data.senderId)) });
+            queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(Number(message.data.receiverId)) });
+            queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
           }
           break;
-        case 'MESSAGE_READ' as any:
+        case 'MESSAGE_READ':
           if (message.data?.senderId && message.data?.receiverId) {
-            queryClient.invalidateQueries({ queryKey: ['/api/messages', message.data.senderId] });
-            queryClient.invalidateQueries({ queryKey: ['/api/messages', message.data.receiverId] });
-            queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
+            queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(Number(message.data.senderId)) });
+            queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(Number(message.data.receiverId)) });
+            queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
           }
           break;
         case 'INSTAGRAM_CONVERSATION_UPDATED':

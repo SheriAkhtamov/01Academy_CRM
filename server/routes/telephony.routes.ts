@@ -27,6 +27,7 @@ import {
   queueOnlinePbxRoutingSync,
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
+import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
 const router = Router();
 const ONLINE_PBX_RECORDING_MAX_BYTES = 100 * 1024 * 1024;
@@ -73,13 +74,6 @@ type CallEventInput = {
   durationSeconds?: number;
   talkSeconds?: number;
   hangupCause?: string | null;
-};
-
-type BroadcastFunction = (data: WebSocketEvent) => void;
-let broadcastFunction: BroadcastFunction = () => undefined;
-
-export const setTelephonyBroadcastFunction = (fn: BroadcastFunction) => {
-  broadcastFunction = fn;
 };
 
 const callLimiter = rateLimit({
@@ -335,7 +329,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
     await claimUnassignedLeadForAnsweredCall(contact.leadId, userId);
   }
   if (contact.created) {
-    broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
+    publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
   }
   const startedAt = safeDate(input.startedAt) ?? new Date();
   const answeredAt = safeDate(input.answeredAt);
@@ -679,7 +673,7 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
     : null;
   const contact = await ensureContactByPhone(phone, { userId: contactOwnerId, direction });
   if (contact.created) {
-    broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
+    publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
   }
   if (direction === 'incoming' && status === 'connected' && employee) {
     await claimUnassignedLeadForAnsweredCall(contact.leadId, employee.id);
@@ -783,14 +777,14 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
     ? extensionAudience.rows.map((user) => user.id)
     : [employee.id];
   if (audienceUserIds.length > 0) {
-    broadcastFunction({
+    publishRealtimeEvent({
       type: 'TELEPHONY_CALL_UPDATED',
       data: call ?? {},
       audienceUserIds,
     });
   }
   if (missedCallTask) {
-    broadcastFunction({
+    publishRealtimeEvent({
       type: 'BOARD_TASK_CREATED',
       data: missedCallTask,
     });
@@ -1046,7 +1040,7 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
     client.release();
   }
 
-  broadcastFunction({
+  publishRealtimeEvent({
     type: 'TELEPHONY_ROUTING_UPDATED',
     data: { updatedAt: new Date().toISOString() },
   });
@@ -1178,7 +1172,7 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
   }
 
   const call = await upsertClientCall(req.user!.id, extension, req.body);
-  broadcastFunction({
+  publishRealtimeEvent({
     type: 'TELEPHONY_CALL_UPDATED',
     data: call,
     audienceUserIds: [req.user!.id],

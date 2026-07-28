@@ -15,14 +15,9 @@ import { getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
 import type { User } from '@shared/schema';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
+import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
 const router = Router();
-
-let broadcastToClients: (data: any) => void = () => { };
-
-export function setBroadcastFunction(fn: (data: any) => void) {
-    broadcastToClients = fn;
-}
 
 // --- Permission helpers -----------------------------------------------------
 
@@ -188,9 +183,12 @@ function validateTransition(
     return null;
 }
 
-const broadcastTask = (type: string, task: { id: number; boardId: number }) => {
+const broadcastTask = (
+    type: 'BOARD_TASK_CREATED' | 'BOARD_TASK_UPDATED' | 'BOARD_TASK_DELETED',
+    task: { id: number; boardId: number },
+) => {
     // Read access remains enforced when each client refreshes the board.
-    broadcastToClients({ type, data: { id: task.id, boardId: task.boardId } });
+    publishRealtimeEvent({ type, data: { id: task.id, boardId: task.boardId } });
 };
 
 // --- Boards -----------------------------------------------------------------

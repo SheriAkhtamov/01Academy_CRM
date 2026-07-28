@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
@@ -9,15 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -30,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  AlertTriangle,
   Calendar,
   Users,
   ClipboardCheck,
@@ -375,7 +379,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const [attendanceNote, setAttendanceNote] = useState('');
   const [rescheduleAt, setRescheduleAt] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
-  const [isAttendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
+  const [pendingLessonSwitch, setPendingLessonSwitch] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const attendanceDraftDirty = useRef(false);
   const attendanceNoteDirty = useRef(false);
@@ -929,6 +933,62 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     });
   };
 
+  const applyLessonSwitch = useCallback((lessonId: string) => {
+    attendanceDraftDirty.current = false;
+    attendanceNoteDirty.current = false;
+    setSelectedLessonId(lessonId);
+    setAttendanceDraft({});
+    setAttendanceNote('');
+  }, []);
+
+  const handleLessonSelect = useCallback((lessonId: string) => {
+    if (lessonMutationPending) return;
+    if (attendanceDraftDirty.current && selectedLessonId) {
+      setPendingLessonSwitch(lessonId);
+      return;
+    }
+    applyLessonSwitch(lessonId);
+  }, [applyLessonSwitch, lessonMutationPending, selectedLessonId]);
+
+  const confirmLessonSwitch = useCallback(() => {
+    if (pendingLessonSwitch) {
+      applyLessonSwitch(pendingLessonSwitch);
+      setPendingLessonSwitch(null);
+    }
+  }, [applyLessonSwitch, pendingLessonSwitch]);
+
+  const cancelLessonSwitch = useCallback(() => {
+    setPendingLessonSwitch(null);
+  }, []);
+
+  // Protect against accidental page close with unsaved attendance data
+  useEffect(() => {
+    if (section !== 'attendance') return;
+    const handler = (event: BeforeUnloadEvent) => {
+      if (attendanceDraftDirty.current) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [section]);
+
+  const attendanceSummary = useMemo(() => {
+    const total = selectedLessonStudents.length;
+    let marked = 0;
+    let present = 0;
+    let absent = 0;
+    for (const student of selectedLessonStudents) {
+      const status = attendanceDraft[student.id];
+      if (status) {
+        marked += 1;
+        if (status === 'present') present += 1;
+        else absent += 1;
+      }
+    }
+    return { total, marked, present, absent };
+  }, [selectedLessonStudents, attendanceDraft]);
+
   return (
     <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
@@ -1324,286 +1384,334 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         </TabsContent>
 
         {/* Attendance Tab */}
-        <TabsContent value="attendance" className="mt-6 space-y-4">
-          <AttendanceCalendar
-            lessons={attendanceLessons}
-            selectedLessonId={selectedLessonId}
-            now={now}
-            disabled={lessonMutationPending}
-            onSelectLesson={(lessonId) => {
-              if (lessonMutationPending) return;
-              attendanceDraftDirty.current = false;
-              attendanceNoteDirty.current = false;
-              setSelectedLessonId(lessonId);
-              setAttendanceDraft({});
-              setAttendanceNote('');
-              setAttendanceDialogOpen(true);
-            }}
-          />
+        <TabsContent value="attendance" className="mt-6 space-y-0">
+          {/* Unsaved changes confirmation */}
+          <AlertDialog open={pendingLessonSwitch !== null} onOpenChange={(open) => { if (!open) cancelLessonSwitch(); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="size-5 text-amber-500" />
+                  {t('unsavedAttendanceTitle')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>{t('unsavedAttendanceDesc')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={cancelLessonSwitch}>{t('keepEditing')}</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmLessonSwitch} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  {t('discardChanges')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
-          <Dialog open={isAttendanceDialogOpen} onOpenChange={setAttendanceDialogOpen}>
-            <DialogContent className="max-h-[90vh] max-w-4xl gap-0 overflow-y-auto p-0">
-              <DialogHeader className="border-b border-border/70 px-6 py-5 pr-12">
-                <DialogTitle>{t('attendanceChecklist')}</DialogTitle>
-                <DialogDescription>{t('attendanceCalendarHint')}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 p-6">
-              {selectedLessonDetails && (
-                <div className="rounded-lg border border-border/70 bg-muted/50 p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-medium text-foreground">
-                      {selectedLessonDetails.groupName || t('noGroup')} — {selectedLessonDetails.topic}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_480px] gap-5">
+            {/* Left column: Calendar */}
+            <div className="min-w-0">
+              <AttendanceCalendar
+                lessons={attendanceLessons}
+                selectedLessonId={selectedLessonId}
+                now={now}
+                disabled={lessonMutationPending}
+                onSelectLesson={handleLessonSelect}
+              />
+            </div>
+
+            {/* Right column: Attendance panel */}
+            <div className="min-w-0">
+              <Card className="border-border/70 lg:sticky lg:top-4 overflow-hidden">
+                <CardHeader className="border-b border-border/70 bg-muted/20 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ClipboardCheck className="size-5 text-primary" />
+                    {t('attendancePanelTitle')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {/* No lesson selected placeholder */}
+                  {!selectedLesson && (
+                    <div className="px-6 py-16 text-center">
+                      <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
+                        <ClipboardList className="h-7 w-7 text-muted-foreground" />
+                      </div>
+                      <h3 className="mt-4 text-base font-semibold text-foreground">{t('selectLessonPlaceholder')}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground max-w-xs mx-auto">{t('selectLessonForAttendance')}</p>
                     </div>
-                    {getLessonStatusBadge(selectedLessonDetails.status)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {formatDateFull(selectedLessonDetails.scheduledAt)} •{' '}
-                    {formatTime(selectedLessonDetails.scheduledAt)} •{' '}
-                    {selectedLessonDetails.durationMinutes}
-                    {t('minutes')}
-                  </div>
-                </div>
-              )}
+                  )}
 
-              {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
-                  <div>
-                    <div className="font-medium text-sm text-foreground">{t('rescheduleLesson')}</div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{t('rescheduleLessonHint')}</p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="reschedule-at" className="text-xs text-muted-foreground">
-                        {t('newLessonDate')}
-                      </Label>
-                      <Input
-                        id="reschedule-at"
-                        type="datetime-local"
-                        min={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
-                        value={rescheduleAt}
-                        disabled={lessonMutationPending}
-                        onChange={(event) => setRescheduleAt(event.target.value)}
-                      />
+                  {/* Loading state */}
+                  {selectedLesson && attendanceRosterQuery.isPending && (
+                    <div className="space-y-3 p-5">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-8 w-56" />
+                      <Skeleton className="h-40 w-full" />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="reschedule-reason" className="text-xs text-muted-foreground">
-                        {t('rescheduleReason')}
-                      </Label>
-                      <Input
-                        id="reschedule-reason"
-                        value={rescheduleReason}
-                        maxLength={500}
-                        disabled={lessonMutationPending}
-                        onChange={(event) => setRescheduleReason(event.target.value)}
-                        placeholder={t('rescheduleReasonPlaceholder')}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleRescheduleLesson}
-                      disabled={!canRescheduleLesson || lessonMutationPending}
-                    >
-                      <Calendar className="h-4 w-4 mr-2" />
-                      {rescheduleLesson.isPending ? t('saving') : t('rescheduleLesson')}
-                    </Button>
-                  </div>
-                </div>
-              )}
+                  )}
 
-              {selectedLesson && attendanceRosterQuery.isPending && (
-                <div className="space-y-3">
-                  <Skeleton className="h-8 w-56" />
-                  <Skeleton className="h-48 w-full" />
-                </div>
-              )}
-
-              {selectedLesson && attendanceRosterQuery.isError && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
-                  <p className="text-sm font-medium text-destructive">{t('attendanceRosterLoadFailed')}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {attendanceRosterQuery.error instanceof Error
-                      ? attendanceRosterQuery.error.message
-                      : t('failedToLoadData')}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    disabled={lessonMutationPending}
-                    onClick={() => attendanceRosterQuery.refetch()}
-                  >
-                    {t('retry')}
-                  </Button>
-                </div>
-              )}
-
-              {selectedLesson
-                && !attendanceRosterQuery.isPending
-                && !attendanceRosterQuery.isError
-                && selectedLessonStudents.length > 0 && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={lessonMutationPending}
-                      onClick={() => handleSetAllAttendance('present')}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                      {t('allPresent')}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={lessonMutationPending}
-                      onClick={() => handleSetAllAttendance('absent')}
-                    >
-                      <XCircle className="h-3.5 w-3.5 mr-1" />
-                      {t('allAbsent')}
-                    </Button>
-                  </div>
-
-                  <div className="border rounded-lg overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-sm">
-                      <thead className="bg-muted/70">
-                        <tr className="border-b border-border/70">
-                          <th className="text-left p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            {t('studentName')}
-                          </th>
-                          <th className="text-center p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            {t('present')}
-                          </th>
-                          <th className="text-center p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            {t('absent')}
-                          </th>
-                          <th className="text-right p-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            {t('attendanceLabel')} %
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedLessonStudents.map((student) => {
-                          const status = attendanceDraft[student.id];
-                          return (
-                            <tr
-                              key={student.id}
-                              className="border-b border-slate-100 hover:bg-primary/[0.035] transition-colors"
-                            >
-                              <td className="p-3 px-4 font-medium text-foreground">
-                                {student.studentName || student.contactName}
-                              </td>
-                              <td className="p-3 px-4 text-center">
-                                <Checkbox
-                                  checked={status === 'present'}
-                                  disabled={lessonMutationPending}
-                                  onCheckedChange={() =>
-                                    handleToggleAttendance(student.id, 'present')
-                                  }
-                                  className="data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
-                                />
-                              </td>
-                              <td className="p-3 px-4 text-center">
-                                <Checkbox
-                                  checked={status === 'absent'}
-                                  disabled={lessonMutationPending}
-                                  onCheckedChange={() =>
-                                    handleToggleAttendance(student.id, 'absent')
-                                  }
-                                  className="data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
-                                />
-                              </td>
-                              <td className="p-3 px-4 text-right tabular-nums text-muted-foreground">
-                                {student.attendancePercent || 0}%
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">{t('comment')}</Label>
-                    <Textarea
-                      value={attendanceNote}
-                      disabled={lessonMutationPending}
-                      onChange={(e) => {
-                        attendanceDraftDirty.current = true;
-                        attendanceNoteDirty.current = true;
-                        setAttendanceNote(e.target.value);
-                      }}
-                      placeholder={t('attendanceNotePlaceholder')}
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="flex justify-end">
-                    <div className="space-y-1 text-right">
-                      {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
-                        <p className="text-xs text-amber-700">{t('attendanceAvailableAfterLessonStart')}</p>
-                      )}
-                      {previousIncompleteLesson && (
-                        <p className="text-xs text-amber-700">{t('previousLessonMustBeCompleted')}</p>
-                      )}
-                      <Button
-                        onClick={handleSaveAttendance}
-                        disabled={lessonMutationPending || !canSaveAttendance}
-                      >
-                        {saveAttendance.isPending
-                          ? t('saving')
-                          : selectedLessonDetails?.status === 'conducted'
-                            ? t('updateAttendance')
-                            : t('finishLessonAndSaveAttendance')}
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {selectedLesson
-                && !attendanceRosterQuery.isPending
-                && !attendanceRosterQuery.isError
-                && selectedLessonStudents.length === 0 && (
-                <div className="space-y-3">
-                  <EmptyState
-                    title={t('noStudents')}
-                    text={t('noStudentsInGroup')}
-                    icon={Users}
-                  />
-                  {selectedLessonDetails?.status === 'scheduled' && (
-                    <div className="flex justify-end">
-                      <div className="space-y-1 text-right">
-                        {previousIncompleteLesson && (
-                          <p className="text-xs text-amber-700">{t('previousLessonMustBeCompleted')}</p>
-                        )}
+                  {/* Error state */}
+                  {selectedLesson && attendanceRosterQuery.isError && (
+                    <div className="p-5">
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
+                        <p className="text-sm font-medium text-destructive">{t('attendanceRosterLoadFailed')}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {attendanceRosterQuery.error instanceof Error
+                            ? attendanceRosterQuery.error.message
+                            : t('failedToLoadData')}
+                        </p>
                         <Button
-                          onClick={handleSaveAttendance}
-                          disabled={!canSaveAttendance || lessonMutationPending}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          disabled={lessonMutationPending}
+                          onClick={() => attendanceRosterQuery.refetch()}
                         >
-                          {saveAttendance.isPending ? t('saving') : t('finishLessonAndSaveAttendance')}
+                          {t('retry')}
                         </Button>
                       </div>
                     </div>
                   )}
-                </div>
-              )}
 
-              {!selectedLesson && (
-                <EmptyState
-                  title={t('selectLessonPlaceholder')}
-                  text={t('selectLessonForAttendance')}
-                  icon={ClipboardList}
-                />
-              )}
-              </div>
-            </DialogContent>
-          </Dialog>
+                  {/* Loaded state */}
+                  {selectedLesson
+                    && !attendanceRosterQuery.isPending
+                    && !attendanceRosterQuery.isError && (
+                    <div className="divide-y divide-border/70">
+                      {/* Lesson info header */}
+                      {selectedLessonDetails && (
+                        <div className="bg-muted/30 px-5 py-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm text-foreground truncate">
+                                {selectedLessonDetails.groupName || t('noGroup')} — {selectedLessonDetails.topic}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {formatDateFull(selectedLessonDetails.scheduledAt)} • {formatTime(selectedLessonDetails.scheduledAt)} • {selectedLessonDetails.durationMinutes}{t('minutes')}
+                              </p>
+                            </div>
+                            {getLessonStatusBadge(selectedLessonDetails.status)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Summary bar */}
+                      {selectedLessonStudents.length > 0 && (
+                        <div className="px-5 py-3 bg-background">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {t('attendanceMarkedOf').replace('{marked}', String(attendanceSummary.marked)).replace('{total}', String(attendanceSummary.total))}
+                            </span>
+                            <span className="text-xs font-medium text-emerald-600">
+                              {t('attendancePresentCount').replace('{count}', String(attendanceSummary.present))}
+                            </span>
+                            <span className="text-xs font-medium text-red-600">
+                              {t('attendanceAbsentCount').replace('{count}', String(attendanceSummary.absent))}
+                            </span>
+                          </div>
+                          <Progress
+                            value={attendanceSummary.total > 0 ? (attendanceSummary.marked / attendanceSummary.total) * 100 : 0}
+                            className="h-1.5 mt-2"
+                          />
+                        </div>
+                      )}
+
+                      {/* Quick actions */}
+                      {selectedLessonStudents.length > 0 && (
+                        <div className="px-5 py-2.5 flex items-center gap-2 bg-background">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={lessonMutationPending}
+                            onClick={() => handleSetAllAttendance('present')}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-500" />
+                            {t('allPresent')}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={lessonMutationPending}
+                            onClick={() => handleSetAllAttendance('absent')}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1 text-red-500" />
+                            {t('allAbsent')}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Student list with toggle buttons */}
+                      {selectedLessonStudents.length > 0 && (
+                        <div className="divide-y divide-border/50">
+                          {selectedLessonStudents.map((student) => {
+                            const status = attendanceDraft[student.id];
+                            return (
+                              <div
+                                key={student.id}
+                                className={cn(
+                                  'flex items-center justify-between gap-3 px-5 py-3 transition-colors',
+                                  status === 'present' && 'bg-emerald-50/40 dark:bg-emerald-950/10',
+                                  status === 'absent' && 'bg-red-50/40 dark:bg-red-950/10',
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-foreground truncate">
+                                    {student.studentName || student.contactName}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground tabular-nums">
+                                    {t('attendanceLabel')}: {student.attendancePercent || 0}%
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    disabled={lessonMutationPending}
+                                    onClick={() => handleToggleAttendance(student.id, 'present')}
+                                    className={cn(
+                                      'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
+                                      'disabled:cursor-not-allowed disabled:opacity-50',
+                                      status === 'present'
+                                        ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                                        : 'bg-background text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-600',
+                                    )}
+                                  >
+                                    <CheckCircle2 className="size-3.5 mr-1" />
+                                    {t('present')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={lessonMutationPending}
+                                    onClick={() => handleToggleAttendance(student.id, 'absent')}
+                                    className={cn(
+                                      'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
+                                      'disabled:cursor-not-allowed disabled:opacity-50',
+                                      status === 'absent'
+                                        ? 'bg-red-500 text-white border-red-500 shadow-sm'
+                                        : 'bg-background text-muted-foreground border-border hover:border-red-300 hover:text-red-600',
+                                    )}
+                                  >
+                                    <XCircle className="size-3.5 mr-1" />
+                                    {t('absent')}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Empty group state (no students) - BUG FIX: no save button for empty groups */}
+                      {selectedLessonStudents.length === 0 && (
+                        <div className="px-6 py-12 text-center">
+                          <div className="mx-auto h-12 w-12 rounded-2xl bg-muted flex items-center justify-center">
+                            <Users className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                          <h3 className="mt-3 text-sm font-semibold text-foreground">{t('noStudents')}</h3>
+                          <p className="mt-1 text-xs text-muted-foreground max-w-xs mx-auto">{t('noStudentsInGroup')}</p>
+                        </div>
+                      )}
+
+                      {/* Reschedule section */}
+                      {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
+                        <div className="px-5 py-4 space-y-3 bg-amber-50/40 dark:bg-amber-950/10">
+                          <div>
+                            <div className="font-medium text-sm text-foreground">{t('rescheduleLesson')}</div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{t('rescheduleLessonHint')}</p>
+                          </div>
+                          <div className="grid gap-3">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="reschedule-at" className="text-xs text-muted-foreground">
+                                {t('newLessonDate')}
+                              </Label>
+                              <Input
+                                id="reschedule-at"
+                                type="datetime-local"
+                                min={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
+                                value={rescheduleAt}
+                                disabled={lessonMutationPending}
+                                onChange={(event) => setRescheduleAt(event.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="reschedule-reason" className="text-xs text-muted-foreground">
+                                {t('rescheduleReason')}
+                              </Label>
+                              <Input
+                                id="reschedule-reason"
+                                value={rescheduleReason}
+                                maxLength={500}
+                                disabled={lessonMutationPending}
+                                onChange={(event) => setRescheduleReason(event.target.value)}
+                                placeholder={t('rescheduleReasonPlaceholder')}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleRescheduleLesson}
+                              disabled={!canRescheduleLesson || lessonMutationPending}
+                            >
+                              <Calendar className="h-4 w-4 mr-2" />
+                              {rescheduleLesson.isPending ? t('saving') : t('rescheduleLesson')}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Note + Save section */}
+                      {selectedLessonStudents.length > 0 && (
+                        <div className="px-5 py-4 space-y-3 bg-background">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground">{t('comment')}</Label>
+                            <Textarea
+                              value={attendanceNote}
+                              disabled={lessonMutationPending}
+                              onChange={(e) => {
+                                attendanceDraftDirty.current = true;
+                                attendanceNoteDirty.current = true;
+                                setAttendanceNote(e.target.value);
+                              }}
+                              placeholder={t('attendanceNotePlaceholder')}
+                              rows={2}
+                            />
+                          </div>
+
+                          {/* Warnings */}
+                          {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
+                            <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                              <Clock3 className="size-3.5 shrink-0" />
+                              {t('attendanceAvailableAfterLessonStart')}
+                            </p>
+                          )}
+                          {previousIncompleteLesson && (
+                            <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                              <AlertTriangle className="size-3.5 shrink-0" />
+                              {t('previousLessonMustBeCompleted')}
+                            </p>
+                          )}
+
+                          {/* Sticky save button */}
+                          <Button
+                            className="w-full"
+                            onClick={handleSaveAttendance}
+                            disabled={lessonMutationPending || !canSaveAttendance}
+                          >
+                            {saveAttendance.isPending
+                              ? t('saving')
+                              : selectedLessonDetails?.status === 'conducted'
+                                ? t('updateAttendance')
+                                : t('finishLessonAndSaveAttendance')}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         {/* Ratings Tab */}

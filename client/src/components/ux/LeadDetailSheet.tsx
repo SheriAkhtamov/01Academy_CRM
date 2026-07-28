@@ -42,6 +42,7 @@ import {
   useFormField,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -77,6 +78,7 @@ import {
   ExternalLink,
   History,
   Loader2,
+  LockKeyhole,
   MessageSquare,
   Phone,
   Plus,
@@ -87,9 +89,17 @@ import {
   GraduationCap,
   Tag,
   Users,
+  X,
 } from 'lucide-react';
 import { LEAD_STATUSES, PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 import type { LeadChannelView } from '@shared/lead-channels';
+import {
+  MAX_LEAD_TAG_NAME_LENGTH,
+  leadTagNameKey,
+  normalizeLeadTagName,
+  type LeadTagOption,
+  type LeadTagView,
+} from '@shared/lead-tags';
 import { formatCallDuration, telephonyStatusTranslationKey, type TelephonyCallStatus } from '@/lib/telephony';
 
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
@@ -102,6 +112,7 @@ interface LeadDetails {
   sourceId?: number | null;
   sourceName?: string | null;
   sourceChannel?: string | null;
+  tags?: LeadTagView[];
   statusCode: string;
   managerId?: number | null;
   managerName?: string | null;
@@ -344,6 +355,248 @@ function LocalizedFormMessage() {
     <p id={formMessageId} className="text-sm font-medium text-destructive">
       {t(key)}
     </p>
+  );
+}
+
+interface LeadTagsEditorProps {
+  leadId: number;
+  automaticTag?: string | null;
+  tags?: LeadTagView[];
+  onChanged: () => void;
+}
+
+const leadTagOptionValue = (option: LeadTagOption) => (
+  option.id === null ? `source:${leadTagNameKey(option.name)}` : `tag:${option.id}`
+);
+
+function LeadTagsEditor({
+  leadId,
+  automaticTag,
+  tags = [],
+  onChanged,
+}: LeadTagsEditorProps) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [selectedOptionValue, setSelectedOptionValue] = useState<string>();
+  const [customTagName, setCustomTagName] = useState('');
+  const [removeTarget, setRemoveTarget] = useState<LeadTagView | null>(null);
+
+  const tagOptionsQuery = useQuery<LeadTagOption[]>({
+    queryKey: ['/api/academy/lead-tags'],
+  });
+
+  const automaticTagKey = leadTagNameKey(automaticTag);
+  const manualTags = useMemo(
+    () => tags.filter((tag) => leadTagNameKey(tag.name) !== automaticTagKey),
+    [automaticTagKey, tags],
+  );
+  const assignedTagKeys = useMemo(
+    () => new Set([
+      automaticTagKey,
+      ...tags.map((tag) => leadTagNameKey(tag.name)),
+    ].filter(Boolean)),
+    [automaticTagKey, tags],
+  );
+  const availableOptions = useMemo(
+    () => (tagOptionsQuery.data ?? []).filter((option) => (
+      !assignedTagKeys.has(leadTagNameKey(option.name))
+    )),
+    [assignedTagKeys, tagOptionsQuery.data],
+  );
+  const selectedOption = availableOptions.find(
+    (option) => leadTagOptionValue(option) === selectedOptionValue,
+  );
+  const normalizedCustomTag = normalizeLeadTagName(customTagName);
+  const canAddCustomTag = Boolean(
+    normalizedCustomTag && !assignedTagKeys.has(normalizedCustomTag.normalizedName),
+  );
+
+  const refreshTags = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/leads', leadId] }),
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/lead-tags'] }),
+    ]);
+    onChanged();
+  };
+
+  const addTag = useMutation({
+    mutationFn: (payload: { tagId?: number; name?: string }) =>
+      apiRequest('POST', `/api/academy/leads/${leadId}/tags`, payload),
+    onSuccess: async (result: { created?: boolean }) => {
+      setSelectedOptionValue(undefined);
+      setCustomTagName('');
+      await refreshTags();
+      toast({
+        title: result.created ? t('leadTagAdded') : t('leadTagAlreadyAssigned'),
+      });
+    },
+    onError: (error: Error) => toast({
+      title: t('leadTagAddFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const removeTag = useMutation({
+    mutationFn: (tag: LeadTagView) =>
+      apiRequest('DELETE', `/api/academy/leads/${leadId}/tags/${tag.id}`),
+    onSuccess: async () => {
+      setRemoveTarget(null);
+      await refreshTags();
+      toast({ title: t('leadTagRemoved') });
+    },
+    onError: (error: Error) => {
+      setRemoveTarget(null);
+      toast({
+        title: t('leadTagRemoveFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const submitSelectedTag = () => {
+    if (!selectedOption || addTag.isPending) return;
+    addTag.mutate(
+      selectedOption.id === null
+        ? { name: selectedOption.name }
+        : { tagId: selectedOption.id },
+    );
+  };
+
+  const submitCustomTag = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!normalizedCustomTag || !canAddCustomTag || addTag.isPending) return;
+    addTag.mutate({ name: normalizedCustomTag.name });
+  };
+
+  return (
+    <section className="mt-3 rounded-lg border border-border/80 bg-background/70 p-3 text-left">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
+          <Tag className="size-3.5" />
+          {t('leadTags')}
+        </span>
+        {automaticTag ? (
+          <Badge variant="outline" className="gap-1">
+            {automaticTag}
+            <LockKeyhole className="size-3" aria-hidden="true" />
+            <span className="sr-only">{t('automaticTag')}</span>
+          </Badge>
+        ) : null}
+        {manualTags.map((tag) => (
+          <Badge key={tag.id} variant="secondary" className="gap-1 pr-1">
+            {tag.name}
+            <button
+              type="button"
+              className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`${t('removeLeadTag')} ${tag.name}`}
+              onClick={() => setRemoveTarget(tag)}
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          </Badge>
+        ))}
+      </div>
+
+      <p className="mt-1 text-xs text-muted-foreground">{t('leadTagsHint')}</p>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor={`lead-${leadId}-existing-tag`} className="text-xs">
+            {t('selectExistingTag')}
+          </Label>
+          <div className="flex gap-2">
+            <Select
+              value={selectedOptionValue}
+              onValueChange={setSelectedOptionValue}
+              disabled={tagOptionsQuery.isLoading || availableOptions.length === 0 || addTag.isPending}
+            >
+              <SelectTrigger id={`lead-${leadId}-existing-tag`} className="min-w-0">
+                <SelectValue placeholder={tagOptionsQuery.isLoading ? t('loading') : t('selectTag')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {availableOptions.map((option) => (
+                    <SelectItem key={leadTagOptionValue(option)} value={leadTagOptionValue(option)}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              aria-label={t('addTag')}
+              disabled={!selectedOption || addTag.isPending}
+              onClick={submitSelectedTag}
+            >
+              {addTag.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+            </Button>
+          </div>
+        </div>
+
+        <form className="space-y-1.5" onSubmit={submitCustomTag}>
+          <Label htmlFor={`lead-${leadId}-custom-tag`} className="text-xs">
+            {t('customTag')}
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id={`lead-${leadId}-custom-tag`}
+              value={customTagName}
+              maxLength={MAX_LEAD_TAG_NAME_LENGTH}
+              placeholder={t('customTagPlaceholder')}
+              onChange={(event) => setCustomTagName(event.target.value)}
+              disabled={addTag.isPending}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              aria-label={t('addTag')}
+              disabled={!canAddCustomTag || addTag.isPending}
+            >
+              {addTag.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      {tagOptionsQuery.isError ? (
+        <p className="mt-2 text-xs text-destructive">{t('leadTagsLoadFailed')}</p>
+      ) : availableOptions.length === 0 && !tagOptionsQuery.isLoading ? (
+        <p className="mt-2 text-xs text-muted-foreground">{t('noTagOptions')}</p>
+      ) : null}
+
+      <AlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !removeTag.isPending) setRemoveTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('removeLeadTagTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('removeLeadTagDescription').replace('{tag}', removeTarget?.name ?? '')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeTag.isPending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!removeTarget || removeTag.isPending}
+              onClick={() => {
+                if (removeTarget) removeTag.mutate(removeTarget);
+              }}
+            >
+              {removeTag.isPending ? t('saving') : t('removeLeadTag')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
   );
 }
 
@@ -724,12 +977,6 @@ export function LeadDetailSheet({
                         {lead.students?.length ?? 0} {t('studentsCount')}
                       </span>
                     ) : null}
-                    {lead.sourceName ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Tag className="size-3.5" />
-                        {lead.sourceName}
-                      </span>
-                    ) : null}
                   </div>
 
                   {/* Manager line — single clean row */}
@@ -752,6 +999,13 @@ export function LeadDetailSheet({
                       {dateTime(lead.createdAt)}
                     </span>
                   </div>
+
+                  <LeadTagsEditor
+                    leadId={lead.id}
+                    automaticTag={lead.sourceName}
+                    tags={lead.tags}
+                    onChanged={onChanged}
+                  />
 
                   {/* Quick actions — single prominent CTA + secondary outline buttons */}
                   <div className="mt-3 flex flex-wrap gap-2">

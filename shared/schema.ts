@@ -183,6 +183,21 @@ export const academyLeadSources = pgTable("academy_lead_sources", {
   codeUnique: uniqueIndex("academy_lead_sources_code_unique").on(table.code),
 }));
 
+export const academyLeadTags = pgTable("academy_lead_tags", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  normalizedName: varchar("normalized_name", { length: 64 }).notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  normalizedUnique: uniqueIndex("academy_lead_tags_normalized_unique").on(table.normalizedName),
+  nameNotBlank: check(
+    "academy_lead_tags_name_not_blank",
+    sql`BTRIM(${table.name}) <> '' AND BTRIM(${table.normalizedName}) <> ''`,
+  ),
+}));
+
 export const academyLeadStatuses = pgTable("academy_lead_statuses", {
   id: serial("id").primaryKey(),
   code: varchar("code", { length: 80 }).notNull(),
@@ -292,6 +307,18 @@ export const academyLeads = pgTable("academy_leads", {
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
   referrerIdx: index("academy_leads_referrer_idx").on(table.referrerStudentId),
   archiveIdx: index("academy_leads_archive_idx").on(table.isArchived, table.archivedAt),
+}));
+
+export const academyLeadTagAssignments = pgTable("academy_lead_tag_assignments", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  tagId: integer("tag_id").references(() => academyLeadTags.id, { onDelete: "cascade" }).notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  leadTagUnique: uniqueIndex("academy_lead_tag_assignments_lead_tag_unique").on(table.leadId, table.tagId),
+  leadIdx: index("academy_lead_tag_assignments_lead_idx").on(table.leadId),
+  tagIdx: index("academy_lead_tag_assignments_tag_idx").on(table.tagId),
 }));
 
 export const academyLeadPhones = pgTable("academy_lead_phones", {
@@ -1129,6 +1156,17 @@ export const insertAcademyLeadSchema = createInsertSchema(academyLeads).omit({
   updatedAt: true,
 });
 
+export const insertAcademyLeadTagSchema = createInsertSchema(academyLeadTags).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAcademyLeadTagAssignmentSchema = createInsertSchema(academyLeadTagAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertAcademyLeadPhoneSchema = createInsertSchema(academyLeadPhones).omit({
   id: true,
   createdAt: true,
@@ -1337,6 +1375,10 @@ export type AcademyGroup = typeof academyGroups.$inferSelect;
 export type InsertAcademyGroup = z.infer<typeof insertAcademyGroupSchema>;
 export type AcademyLead = typeof academyLeads.$inferSelect;
 export type InsertAcademyLead = z.infer<typeof insertAcademyLeadSchema>;
+export type AcademyLeadTag = typeof academyLeadTags.$inferSelect;
+export type InsertAcademyLeadTag = z.infer<typeof insertAcademyLeadTagSchema>;
+export type AcademyLeadTagAssignment = typeof academyLeadTagAssignments.$inferSelect;
+export type InsertAcademyLeadTagAssignment = z.infer<typeof insertAcademyLeadTagAssignmentSchema>;
 export type AcademyLeadPhone = typeof academyLeadPhones.$inferSelect;
 export type InsertAcademyLeadPhone = z.infer<typeof insertAcademyLeadPhoneSchema>;
 export type AcademyLeadChannel = typeof academyLeadChannels.$inferSelect;

@@ -78,6 +78,7 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
+import type { LeadTagView } from '@shared/lead-tags';
 
 type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
@@ -92,6 +93,7 @@ interface Lead {
   sourceId?: number;
   sourceName?: string;
   sourceChannel?: string | null;
+  tags?: LeadTagView[];
   statusCode: string;
   managerId?: number | null;
   managerName?: string | null;

@@ -312,6 +312,154 @@ describe('academy route logic boundaries', () => {
     }));
   });
 
+  it('adds a manual lead tag without changing the automatically assigned source', async () => {
+    mocks.actor = {
+      id: 7,
+      workspace: 'sales',
+      workspaces: ['sales'],
+    };
+    const lead = leadFixture({
+      manager_id: 7,
+      source_name: 'Instagram',
+    });
+
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('WHERE l.id = $1') ? { rows: [lead] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('FROM academy_leads lead') && sql.includes('FOR UPDATE OF lead')) {
+        return { rows: [lead] };
+      }
+      if (sql.includes('INSERT INTO academy_lead_tags')) {
+        expect(values).toEqual(['Летний лагерь', 'летний лагерь', 7]);
+        return {
+          rows: [{
+            id: 51,
+            name: 'Летний лагерь',
+            normalized_name: 'летний лагерь',
+            created_by: 7,
+          }],
+        };
+      }
+      if (sql.includes('INSERT INTO academy_lead_tag_assignments')) {
+        expect(values).toEqual([42, 51, 7]);
+        return {
+          rows: [{
+            id: 202,
+            lead_id: 42,
+            tag_id: 51,
+            created_by: 7,
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/42/tags')
+      .send({ name: '  Летний   лагерь  ' });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(response.body).toEqual({
+      automatic: false,
+      created: true,
+      tag: {
+        id: 202,
+        tagId: 51,
+        name: 'Летний лагерь',
+      },
+    });
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE academy_leads')
+      || String(sql).includes('UPDATE academy_lead_sources')
+    ))).toBe(false);
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ADD_ACADEMY_LEAD_TAG',
+      entityType: 'academy_lead',
+      entityId: 42,
+    }));
+  });
+
+  it('keeps an automatic source tag out of manual assignments', async () => {
+    const lead = leadFixture({ source_name: 'Instagram' });
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('WHERE l.id = $1') ? { rows: [lead] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('FROM academy_leads lead') && sql.includes('FOR UPDATE OF lead')) {
+        return { rows: [lead] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/42/tags')
+      .send({ name: ' instagram ' });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toEqual({
+      automatic: true,
+      created: false,
+      tag: {
+        id: null,
+        tagId: null,
+        name: 'Instagram',
+      },
+    });
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO academy_lead_tags')
+      || String(sql).includes('INSERT INTO academy_lead_tag_assignments')
+    ))).toBe(false);
+    expect(mocks.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('removes only a manual tag assignment and leaves the automatic source untouched', async () => {
+    const lead = leadFixture({ source_name: 'Instagram' });
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('WHERE l.id = $1') ? { rows: [lead] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('FROM academy_leads lead') && sql.includes('FOR UPDATE OF lead')) {
+        return { rows: [lead] };
+      }
+      if (sql.includes('FROM academy_lead_tag_assignments assignment')) {
+        expect(values).toEqual([202, 42]);
+        return { rows: [{ id: 202, tag_id: 51, name: 'Летний лагерь' }] };
+      }
+      if (sql.includes('DELETE FROM academy_lead_tag_assignments')) {
+        expect(values).toEqual([202, 42]);
+        return emptyResult();
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .delete('/api/academy/leads/42/tags/202');
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      tag: {
+        id: 202,
+        tagId: 51,
+        name: 'Летний лагерь',
+      },
+    });
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE academy_leads')
+      || String(sql).includes('UPDATE academy_lead_sources')
+      || String(sql).includes('DELETE FROM academy_lead_sources')
+    ))).toBe(false);
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'REMOVE_ACADEMY_LEAD_TAG',
+      entityType: 'academy_lead',
+      entityId: 42,
+    }));
+  });
+
   it('does not expose legacy lead group reservations as student enrollments', async () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {

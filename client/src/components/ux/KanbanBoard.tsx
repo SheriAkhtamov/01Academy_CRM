@@ -36,6 +36,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { leadTagNameKey, type LeadTagView } from '@shared/lead-tags';
 import {
   finishOptimisticChange,
   incomingValueChangedSinceStart,
@@ -60,6 +61,7 @@ interface KanbanLead {
   courseName?: string;
   sourceName?: string;
   sourceChannel?: string | null;
+  tags?: LeadTagView[];
   managerId?: number | null;
   managerName?: string | null;
   comment?: string | null;
@@ -181,6 +183,9 @@ function LeadCardContent({
       <div className="mt-2 flex flex-wrap gap-1">
         {lead.courseName ? <Badge variant="secondary">{lead.courseName}</Badge> : null}
         {lead.sourceName ? <Badge variant="outline">{lead.sourceName}</Badge> : null}
+        {(lead.tags ?? [])
+          .filter((tag) => leadTagNameKey(tag.name) !== leadTagNameKey(lead.sourceName))
+          .map((tag) => <Badge key={tag.id} variant="secondary">{tag.name}</Badge>)}
         {lead.studentAge ? <Badge variant="outline">{lead.studentAge} {t('years')}</Badge> : null}
         {showManager && lead.managerName ? <Badge variant="outline">{t('managerLabel')} {lead.managerName}</Badge> : null}
       </div>

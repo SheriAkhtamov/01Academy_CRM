@@ -76,6 +76,11 @@ import {
   weeklySchedulesOverlap,
   type NormalizedWeeklyScheduleItem,
 } from '@shared/scheduling';
+import {
+  leadTagNameKey,
+  normalizeLeadTagName,
+  type LeadTagOption,
+} from '@shared/lead-tags';
 
 const router = Router();
 
@@ -236,6 +241,24 @@ const leadChannelsSelect = (leadAlias = 'l') => `
     ),
     '[]'::json
   ) AS channels`;
+
+const leadTagsSelect = (leadAlias = 'l') => `
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'id', assignment.id,
+          'tagId', tag.id,
+          'name', tag.name
+        )
+        ORDER BY LOWER(tag.name), tag.id
+      )
+      FROM academy_lead_tag_assignments assignment
+      JOIN academy_lead_tags tag ON tag.id = assignment.tag_id
+      WHERE assignment.lead_id = ${leadAlias}.id
+    ),
+    '[]'::json
+  ) AS tags`;
 
 const leadGroupReservationsSelect = (leadAlias = 'l') => `
   COALESCE(
@@ -2144,6 +2167,7 @@ const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM academy_students WHERE lead_id = $1) AS students,
        (SELECT COUNT(*)::int FROM academy_lead_phones WHERE lead_id = $1) AS phones,
        (SELECT COUNT(*)::int FROM academy_lead_channels WHERE lead_id = $1) AS channels,
+       (SELECT COUNT(*)::int FROM academy_lead_tag_assignments WHERE lead_id = $1) AS manual_tags,
        (SELECT COUNT(*)::int FROM telephony_calls WHERE lead_id = $1) AS calls,
        (SELECT COUNT(*)::int FROM academy_lead_group_reservations WHERE lead_id = $1) AS group_reservations,
        (SELECT COUNT(*)::int FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1) AS tasks,
@@ -2202,6 +2226,19 @@ const mergeLeadRecords = async (
      SET lead_id = $1, updated_at = NOW()
      WHERE lead_id = $2`,
     [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `INSERT INTO academy_lead_tag_assignments
+       (lead_id, tag_id, created_by, created_at)
+     SELECT $1, tag_id, created_by, created_at
+     FROM academy_lead_tag_assignments
+     WHERE lead_id = $2
+     ON CONFLICT (lead_id, tag_id) DO NOTHING`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(
+    `DELETE FROM academy_lead_tag_assignments WHERE lead_id = $1`,
+    [duplicateLeadId],
   );
   await query(
     `UPDATE telephony_calls
@@ -2456,6 +2493,7 @@ const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM academy_students WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_phones WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_channels WHERE lead_id = $1)
+       + (SELECT COUNT(*) FROM academy_lead_tag_assignments WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM telephony_calls WHERE lead_id = $1 OR (contact_type = 'lead' AND contact_id = $1))
        + (SELECT COUNT(*) FROM academy_lead_group_reservations WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1)
@@ -2660,6 +2698,7 @@ const getLead = (id: number) =>
         archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')},
         ${leadChannelsSelect('l')},
+        ${leadTagsSelect('l')},
         ${leadGroupReservationsSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
@@ -2668,6 +2707,16 @@ const getLead = (id: number) =>
      LEFT JOIN users u ON u.id = l.manager_id
      LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
      WHERE l.id = $1`,
+    [id],
+  );
+
+const getLockedLeadWithSource = (id: number) =>
+  queryOne(
+    `SELECT lead.*, source.name AS source_name
+     FROM academy_leads lead
+     JOIN academy_lead_sources source ON source.id = lead.source_id
+     WHERE lead.id = $1
+     FOR UPDATE OF lead`,
     [id],
   );
 
@@ -3634,7 +3683,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
           ORDER BY g.created_at DESC`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
         sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
-        ${leadPhoneNumbersSelect('l')}
+        ${leadPhoneNumbersSelect('l')},
+        ${leadTagsSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -3647,7 +3697,8 @@ const getAcademyDataset = async (actor?: DatasetActor) => {
       ? Promise.resolve([])
       : query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
-          ${leadPhoneNumbersSelect('l')}
+          ${leadPhoneNumbersSelect('l')},
+          ${leadTagsSelect('l')}
         FROM academy_leads l
         LEFT JOIN academy_courses c ON c.id = l.course_id
         LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -4477,7 +4528,8 @@ const buildAdministrationDashboard = async (requestedRange: ReportingRange | nul
 const getMarketingWorkspaceDataset = async () => {
   const [sources, leads, students, expenses, referrals, referralBenefits] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
-    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name
+    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
+        ${leadTagsSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -5126,6 +5178,44 @@ router.get('/search', async (req, res) => {
   }
 });
 
+router.get('/lead-tags', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead access required')) return;
+  try {
+    const [sources, customTags] = await Promise.all([
+      query<{ name: string }>(
+        `SELECT name
+         FROM academy_lead_sources
+         WHERE is_active = true
+         ORDER BY name`,
+      ),
+      query<{ id: number; name: string }>(
+        `SELECT id, name
+         FROM academy_lead_tags
+         ORDER BY LOWER(name), id`,
+      ),
+    ]);
+
+    const options = new Map<string, LeadTagOption>();
+    for (const source of sources) {
+      const key = leadTagNameKey(source.name);
+      if (key) options.set(key, { id: null, name: source.name });
+    }
+    for (const tag of customTags) {
+      const key = leadTagNameKey(tag.name);
+      if (key) options.set(key, { id: Number(tag.id), name: tag.name });
+    }
+
+    res.json(
+      [...options.values()].sort((left, right) => (
+        left.name.localeCompare(right.name, 'ru', { sensitivity: 'base' })
+      )),
+    );
+  } catch (error) {
+    logger.error('Failed to fetch lead tags', { error });
+    res.status(500).json({ error: 'leadTagsLoadFailed' });
+  }
+});
+
 router.get('/leads', async (req, res) => {
   if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead access required')) return;
   try {
@@ -5181,7 +5271,8 @@ router.get('/leads', async (req, res) => {
     const leads = await query(
       `SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
-          ${leadPhoneNumbersSelect('l')}
+          ${leadPhoneNumbersSelect('l')},
+          ${leadTagsSelect('l')}
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
@@ -5659,6 +5750,183 @@ router.get('/leads/:id', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch lead', { error });
     res.status(500).json({ error: 'Failed to fetch lead' });
+  }
+});
+
+router.post('/leads/:id/tags', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  try {
+    const leadId = parseId(req.params.id);
+    if (!leadId) return res.status(400).json({ error: 'Invalid lead id' });
+
+    const usesExistingTag = req.body?.tagId !== undefined;
+    const tagId = usesExistingTag ? parseId(req.body.tagId) : null;
+    const normalizedTag = usesExistingTag ? null : normalizeLeadTagName(req.body?.name);
+    if ((usesExistingTag && !tagId) || (!usesExistingTag && !normalizedTag)) {
+      return res.status(400).json({ error: 'leadTagNameInvalid' });
+    }
+
+    const initialLead = await getLead(leadId);
+    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
+
+    const result = await withTransaction(async () => {
+      const lockedLead = await getLockedLeadWithSource(leadId);
+      if (!lockedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (!canMutateLeadRow(req, lockedLead)) {
+        throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
+      }
+
+      let tag: Row | undefined;
+      if (tagId) {
+        tag = await queryOne(
+          `SELECT *
+           FROM academy_lead_tags
+           WHERE id = $1
+           FOR SHARE`,
+          [tagId],
+        );
+        if (!tag) {
+          throw Object.assign(new Error('leadTagNotFound'), { statusCode: 404 });
+        }
+      } else if (normalizedTag) {
+        if (leadTagNameKey(lockedLead.sourceName) === normalizedTag.normalizedName) {
+          return {
+            automatic: true,
+            created: false,
+            tag: { id: null, tagId: null, name: lockedLead.sourceName },
+          };
+        }
+
+        tag = await queryOne(
+          `INSERT INTO academy_lead_tags
+             (name, normalized_name, created_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (normalized_name) DO NOTHING
+           RETURNING *`,
+          [normalizedTag.name, normalizedTag.normalizedName, req.user!.id],
+        );
+        tag ??= await queryOne(
+          `SELECT *
+           FROM academy_lead_tags
+           WHERE normalized_name = $1
+           FOR SHARE`,
+          [normalizedTag.normalizedName],
+        );
+      }
+
+      if (!tag) {
+        throw Object.assign(new Error('leadTagNotFound'), { statusCode: 404 });
+      }
+      if (leadTagNameKey(lockedLead.sourceName) === leadTagNameKey(tag.name)) {
+        return {
+          automatic: true,
+          created: false,
+          tag: { id: null, tagId: null, name: lockedLead.sourceName },
+        };
+      }
+
+      const insertedAssignment = await queryOne(
+        `INSERT INTO academy_lead_tag_assignments
+           (lead_id, tag_id, created_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (lead_id, tag_id) DO NOTHING
+         RETURNING *`,
+        [leadId, tag.id, req.user!.id],
+      );
+      const assignment = insertedAssignment ?? await queryOne(
+        `SELECT *
+         FROM academy_lead_tag_assignments
+         WHERE lead_id = $1 AND tag_id = $2
+         FOR SHARE`,
+        [leadId, tag.id],
+      );
+      if (!assignment) {
+        throw Object.assign(new Error('leadTagAddFailed'), { statusCode: 409 });
+      }
+
+      const responseTag = {
+        id: Number(assignment.id),
+        tagId: Number(tag.id),
+        name: String(tag.name),
+      };
+      if (insertedAssignment) {
+        await createAudit(req, 'ADD_ACADEMY_LEAD_TAG', 'academy_lead', leadId, responseTag);
+      }
+      return {
+        automatic: false,
+        created: Boolean(insertedAssignment),
+        tag: responseTag,
+      };
+    });
+
+    res.status(result.created ? 201 : 200).json(result);
+  } catch (error: any) {
+    logger.error('Failed to add lead tag', { error, leadId: req.params.id });
+    res.status(error.statusCode || 500).json({
+      error: getPublicErrorMessage(error, 'leadTagAddFailed'),
+    });
+  }
+});
+
+router.delete('/leads/:id/tags/:assignmentId', async (req, res) => {
+  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  try {
+    const leadId = parseId(req.params.id);
+    const assignmentId = parseId(req.params.assignmentId);
+    if (!leadId || !assignmentId) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+
+    const initialLead = await getLead(leadId);
+    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
+
+    const removedTag = await withTransaction(async () => {
+      const lockedLead = await getLockedLeadWithSource(leadId);
+      if (!lockedLead) {
+        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+      }
+      if (!canMutateLeadRow(req, lockedLead)) {
+        throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
+      }
+
+      // Automatic tags are derived from academy_leads.source_id and never have
+      // an assignment row. This endpoint can therefore only remove a manual link.
+      const assignment = await queryOne(
+        `SELECT assignment.id, tag.id AS tag_id, tag.name
+         FROM academy_lead_tag_assignments assignment
+         JOIN academy_lead_tags tag ON tag.id = assignment.tag_id
+         WHERE assignment.id = $1 AND assignment.lead_id = $2
+         FOR UPDATE OF assignment`,
+        [assignmentId, leadId],
+      );
+      if (!assignment) {
+        throw Object.assign(new Error('leadTagNotFound'), { statusCode: 404 });
+      }
+
+      await query(
+        `DELETE FROM academy_lead_tag_assignments
+         WHERE id = $1 AND lead_id = $2`,
+        [assignmentId, leadId],
+      );
+      const responseTag = {
+        id: Number(assignment.id),
+        tagId: Number(assignment.tagId),
+        name: String(assignment.name),
+      };
+      await createAudit(req, 'REMOVE_ACADEMY_LEAD_TAG', 'academy_lead', leadId, undefined, responseTag);
+      return responseTag;
+    });
+
+    res.json({ success: true, tag: removedTag });
+  } catch (error: any) {
+    logger.error('Failed to remove lead tag', { error, leadId: req.params.id });
+    res.status(error.statusCode || 500).json({
+      error: getPublicErrorMessage(error, 'leadTagRemoveFailed'),
+    });
   }
 });
 

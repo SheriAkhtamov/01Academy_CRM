@@ -477,6 +477,13 @@
       "when": 1786809600000,
       "tag": "0067_add_onlinepbx_manager_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1786896000000,
+      "tag": "0068_add_lead_tags",
+      "breakpoints": true
     }
   ]
 }

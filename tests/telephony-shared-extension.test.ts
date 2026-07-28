@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ONLINE_PBX_LEGACY_SHARED_EXTENSION,
+  ONLINE_PBX_SHARED_EXTENSION,
   onlinePbxRoutingDestination,
   sharedCallEventClaimsOwnership,
 } from '../shared/telephony';
 
-describe('dedicated OnlinePBX extensions', () => {
-  it('never routes new CRM calls through the legacy shared extension', () => {
-    expect(ONLINE_PBX_LEGACY_SHARED_EXTENSION).toBe('100');
-    expect(onlinePbxRoutingDestination(ONLINE_PBX_LEGACY_SHARED_EXTENSION)).toBeNull();
+describe('shared OnlinePBX extension', () => {
+  it('allows the existing extension 100 to be assigned without creating another user', () => {
+    expect(ONLINE_PBX_SHARED_EXTENSION).toBe('100');
+    expect(onlinePbxRoutingDestination(ONLINE_PBX_SHARED_EXTENSION)).toBe('100');
     expect(onlinePbxRoutingDestination('101')).toBe('101');
   });
 

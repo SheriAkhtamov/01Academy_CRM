@@ -121,25 +121,6 @@ describe('OnlinePbxClient', () => {
     });
   });
 
-  it('creates and renames a new employee extension through documented provider fields', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
-      .mockResolvedValueOnce(jsonResponse({ status: '1' }))
-      .mockResolvedValueOnce(jsonResponse({ status: '1' }));
-    const client = new OnlinePbxClient({
-      domain: 'pbx38153.onpbx.ru',
-      authKey: 'permanent-token',
-    }, fetchMock as unknown as typeof fetch);
-
-    await client.createExtension({ extension: '109', password: 'safe123456', name: 'CRM Reserve 109' });
-    await client.updateExtension({ extension: '109', name: 'CRM Sales User' });
-
-    expect(String(fetchMock.mock.calls[1][1]?.body))
-      .toBe('num=109&pass=safe123456&name=CRM+Reserve+109');
-    expect(String(fetchMock.mock.calls[2][1]?.body))
-      .toBe('num=109&name=CRM+Sales+User');
-  });
-
   it('reads and updates the existing incoming group without changing its other settings', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
@@ -174,31 +155,6 @@ describe('OnlinePbxClient', () => {
     });
     expect(String(fetchMock.mock.calls[2][1]?.body))
       .toBe('num=10&users=100&delay=20&default=&name=Sales+Department');
-  });
-
-  it('detects a missing group and creates the fallback group', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
-      .mockResolvedValueOnce(jsonResponse({ status: '1', data: null }))
-      .mockResolvedValueOnce(jsonResponse({ status: '1' }));
-    const client = new OnlinePbxClient({
-      domain: 'pbx38153.onpbx.ru',
-      authKey: 'permanent-token',
-    }, fetchMock as unknown as typeof fetch);
-
-    await expect(client.findGroup('11')).resolves.toBeNull();
-    await client.createGroup({
-      extension: '11',
-      name: 'CRM Backup Managers',
-      users: ['998901234567', '998911234567'],
-      delay: 20,
-      defaultDestination: null,
-    });
-
-    expect(String(fetchMock.mock.calls[2][1]?.body))
-      .toBe(
-        'num=11&users=998901234567%3B998911234567&delay=20&default=&name=CRM+Backup+Managers',
-      );
   });
 
   it('keeps provider diagnostics when a call request is rejected', async () => {

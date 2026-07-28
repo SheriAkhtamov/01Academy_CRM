@@ -491,6 +491,13 @@
       "when": 1786982400000,
       "tag": "0069_restore_dedicated_onlinepbx_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1787068800000,
+      "tag": "0070_reset_onlinepbx_assignments",
+      "breakpoints": true
     }
   ]
 }

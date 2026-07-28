@@ -41,9 +41,6 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   emailUnique: uniqueIndex("users_email_unique").on(sql`lower(${table.email})`),
-  onlinePbxExtensionUnique: uniqueIndex("users_online_pbx_extension_unique")
-    .on(table.onlinePbxExtension)
-    .where(sql`${table.onlinePbxExtension} IS NOT NULL AND BTRIM(${table.onlinePbxExtension}) <> ''`),
   workspaceIdx: index("users_workspace_idx").on(table.workspace),
   workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
@@ -106,7 +103,7 @@ export const academyCompanySettings = pgTable("academy_company_settings", {
   workdayEndHour: integer("workday_end_hour").notNull().default(20),
   workdays: jsonb("workdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5]),
   onlinePbxForwardingPhone: varchar("online_pbx_forwarding_phone", { length: 32 }).notNull().default("+998978576040"),
-  onlinePbxForwardingEnabled: boolean("online_pbx_forwarding_enabled").notNull().default(true),
+  onlinePbxForwardingEnabled: boolean("online_pbx_forwarding_enabled").notNull().default(false),
   onlinePbxPrimaryManagerId: integer("online_pbx_primary_manager_id")
     .references(() => users.id, { onDelete: "set null" }),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),

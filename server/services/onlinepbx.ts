@@ -300,34 +300,6 @@ export class OnlinePbxClient {
     };
   }
 
-  async createExtension(input: { extension: string; password: string; name: string }) {
-    if (!isOnlinePbxExtension(input.extension)) {
-      throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
-    }
-    await this.request<unknown>(
-      'user/add',
-      new URLSearchParams({
-        num: input.extension,
-        pass: input.password,
-        name: input.name,
-      }),
-    );
-  }
-
-  async updateExtension(input: {
-    extension: string;
-    name?: string;
-    password?: string;
-  }) {
-    if (!isOnlinePbxExtension(input.extension)) {
-      throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
-    }
-    const body = new URLSearchParams({ num: input.extension });
-    if (input.name) body.set('name', input.name);
-    if (input.password) body.set('pass', input.password);
-    await this.request<unknown>('user/edit', body);
-  }
-
   async findGroup(extension: string): Promise<OnlinePbxGroup | null> {
     const data = await this.request<Record<string, unknown> | null>(
       'group/get',
@@ -342,17 +314,6 @@ export class OnlinePbxClient {
       throw new OnlinePbxError('onlinePbxRingGroupUnavailable', 502);
     }
     return group;
-  }
-
-  async createGroup(input: OnlinePbxGroup): Promise<void> {
-    const body = new URLSearchParams({
-      num: input.extension,
-      users: input.users.join(';'),
-      delay: String(input.delay),
-      default: input.defaultDestination ?? '',
-    });
-    if (input.name) body.set('name', input.name);
-    await this.request<unknown>('group/add', body);
   }
 
   async updateGroup(input: OnlinePbxGroup): Promise<void> {

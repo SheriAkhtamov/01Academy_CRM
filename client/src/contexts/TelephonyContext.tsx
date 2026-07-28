@@ -52,6 +52,11 @@ type Credentials = {
   aor: string;
 };
 
+type IncomingAccess = {
+  allowed: boolean;
+  delayMs: number;
+};
+
 type VertoDialogLike = {
   callID: string;
   cause?: string;
@@ -178,6 +183,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const [extension, setExtension] = useState<string | null>(null);
   const [activeCall, setActiveCallState] = useState<ActiveTelephonyCall | null>(null);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [routingRevision, setRoutingRevision] = useState(0);
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
   const credentialsRef = useRef<Credentials | null>(null);
@@ -186,6 +192,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const ringtoneRef = useRef<IncomingCallRingtone | null>(null);
   const localMediaRef = useRef<MediaStream | null>(null);
   const callSetupTimerRef = useRef<number | null>(null);
+  const incomingPresentationTimersRef = useRef(new Map<string, number>());
+  const incomingAuthorizationRef = useRef(new Set<string>());
   const mountedRef = useRef(true);
 
   const setActiveCall = useCallback((next: ActiveTelephonyCall | null) => {
@@ -317,6 +325,12 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const refreshRouting = () => setRoutingRevision((current) => current + 1);
+    window.addEventListener('telephony-routing-updated', refreshRouting);
+    return () => window.removeEventListener('telephony-routing-updated', refreshRouting);
+  }, []);
+
+  useEffect(() => {
     if (shouldPlayIncomingRingtone(activeCall?.direction, activeCall?.status)) {
       startRingtone();
     } else {
@@ -365,25 +379,68 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
               return;
             }
             if (!existing || existing.clientCallId !== callId) {
-              const phone = dialogPhone(dialog);
-              const incoming: ActiveTelephonyCall = {
-                clientCallId: callId,
-                direction: 'incoming',
-                status: 'ringing',
-                phone,
-                contact: null,
-                startedAt: new Date().toISOString(),
-                answeredAt: null,
-                endedAt: null,
-                muted: false,
-                held: false,
-                errorCode: null,
+              const showIncomingCall = () => {
+                incomingPresentationTimersRef.current.delete(callId);
+                const currentCall = activeCallRef.current;
+                if (
+                  disposed
+                  || currentCall?.clientCallId === callId
+                  || (
+                    currentCall
+                    && !terminalStatuses.includes(currentCall.status)
+                  )
+                ) {
+                  return;
+                }
+                const phone = dialogPhone(dialog);
+                const incoming: ActiveTelephonyCall = {
+                  clientCallId: callId,
+                  direction: 'incoming',
+                  status: 'ringing',
+                  phone,
+                  contact: null,
+                  startedAt: new Date().toISOString(),
+                  answeredAt: null,
+                  endedAt: null,
+                  muted: false,
+                  held: false,
+                  errorCode: null,
+                };
+                setActiveCall(incoming);
+                void reportCall(incoming);
+                void lookupContact(phone).then((contact) => {
+                  if (contact && activeCallRef.current?.clientCallId === callId) {
+                    patchActiveCall({ contact });
+                  }
+                });
               };
-              setActiveCall(incoming);
-              void reportCall(incoming);
-              void lookupContact(phone).then((contact) => {
-                if (contact && activeCallRef.current?.clientCallId === callId) patchActiveCall({ contact });
-              });
+              if (!incomingAuthorizationRef.current.has(callId)) {
+                incomingAuthorizationRef.current.add(callId);
+                void apiRequest('GET', '/api/telephony/incoming/access')
+                  .then((access: IncomingAccess) => {
+                    const latestState = dialog.state?.name ?? 'unknown';
+                    if (
+                      disposed
+                      || !access.allowed
+                      || ['hangup', 'destroy', 'purge'].includes(latestState)
+                    ) {
+                      return;
+                    }
+                    const incomingDelayMs = Math.max(
+                      0,
+                      Math.min(Number(access.delayMs) || 0, 10_000),
+                    );
+                    if (incomingDelayMs === 0) {
+                      showIncomingCall();
+                    } else if (!incomingPresentationTimersRef.current.has(callId)) {
+                      const timer = window.setTimeout(showIncomingCall, incomingDelayMs);
+                      incomingPresentationTimersRef.current.set(callId, timer);
+                    }
+                  })
+                  .catch((error) => {
+                    devLog('Could not verify incoming call eligibility', error);
+                  });
+              }
             }
             return;
           }
@@ -402,6 +459,16 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           } else if (state === 'held') {
             patchActiveCall({ status: 'connected', held: true });
           } else if (['hangup', 'destroy', 'purge'].includes(state)) {
+            const pendingIncomingTimer = incomingPresentationTimersRef.current.get(callId);
+            if (pendingIncomingTimer !== undefined) {
+              window.clearTimeout(pendingIncomingTimer);
+              incomingPresentationTimersRef.current.delete(callId);
+            }
+            incomingAuthorizationRef.current.delete(callId);
+            if (activeCallRef.current?.clientCallId !== callId) {
+              if (sessionRef.current === dialog) sessionRef.current = null;
+              return;
+            }
             clearCallSetupTimer();
             finishSession(dialog.cause || null);
           }
@@ -464,13 +531,18 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       mountedRef.current = false;
       stopRingtone();
       clearCallSetupTimer();
+      for (const timer of incomingPresentationTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      incomingPresentationTimersRef.current.clear();
+      incomingAuthorizationRef.current.clear();
       stopLocalMedia();
       credentialsRef.current = null;
       managerRef.current = null;
       sessionRef.current = null;
       manager?.closeSocket(1000);
     };
-  }, [clearCallSetupTimer, finishSession, isAuthenticated, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, stopRingtone, user?.id]);
+  }, [clearCallSetupTimer, finishSession, isAuthenticated, lookupContact, patchActiveCall, reportCall, routingRevision, setActiveCall, stopLocalMedia, stopRingtone, user?.id]);
 
   const startCall = useCallback(async (rawPhone: string) => {
     const manager = managerRef.current;

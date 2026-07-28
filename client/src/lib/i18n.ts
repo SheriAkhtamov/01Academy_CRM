@@ -626,24 +626,15 @@ export const translations = {
     en: 'A personal OnlinePBX extension has not been assigned yet.',
     ru: 'Личный добавочный OnlinePBX ещё не назначен.',
   },
-  onlinePbxExtensionPoolExhausted: {
-    en: 'No free OnlinePBX internal extensions are available.',
-    ru: 'В OnlinePBX не осталось свободных внутренних добавочных.',
-  },
-  onlinePbxExtensionAlreadyAssigned: {
-    en: 'This OnlinePBX extension is already assigned to another employee.',
-    ru: 'Этот добавочный OnlinePBX уже назначен другому сотруднику.',
-  },
   onlinePbxUserLicenseRequired: {
     en: 'OnlinePBX user license required',
     ru: 'Нужна лицензия пользователя OnlinePBX',
   },
   personalTelephonyExtension: { en: 'Personal telephony extension', ru: 'Личный добавочный телефонии' },
   personalTelephonyExtensionHint: {
-    en: 'CRM assigns a dedicated internal OnlinePBX extension automatically for browser calls.',
-    ru: 'CRM автоматически назначает отдельный внутренний номер OnlinePBX для звонков в браузере.',
+    en: 'Assign an extension from the existing OnlinePBX list in Integration settings. CRM never creates internal extensions.',
+    ru: 'Назначьте номер из списка существующих OnlinePBX в настройках интеграции. CRM не создаёт внутренние номера.',
   },
-  assignedAutomatically: { en: 'Auto', ru: 'Авто' },
   onlinePbxWebRtcUnavailable: { en: 'The browser phone is unavailable', ru: 'Браузерная телефония недоступна' },
   onlinePbxWebPhoneOffline: { en: 'The browser phone is not connected yet', ru: 'Телефония в браузере ещё не подключена' },
   onlinePbxCallAlreadyActive: { en: 'Finish the current call first', ru: 'Сначала завершите текущий звонок' },
@@ -1324,28 +1315,84 @@ export const translations = {
   },
   onlinePbxSettingsTitle: { en: 'OnlinePBX settings', ru: 'Настройки OnlinePBX' },
   onlinePbxSettingsDescription: {
-    en: 'Choose who receives incoming calls, set the first manager, and verify the PBX connection.',
-    ru: 'Выберите получателей входящих звонков, назначьте первого менеджера и проверьте подключение АТС.',
-  },
-  onlinePbxRoutingTitle: {
-    en: 'Sequential incoming call routing',
-    ru: 'Последовательная маршрутизация входящих',
+    en: 'Assign existing OnlinePBX extensions to Sales managers and configure forwarding.',
+    ru: 'Назначьте менеджерам отдела продаж существующие добавочные OnlinePBX и настройте переадресацию.',
   },
   onlinePbxRoutingDescription: {
-    en: 'The first available manager rings inside CRM first. If there is no answer within {seconds} seconds, the other enabled online managers start ringing inside CRM. Mobile forwarding is never used.',
-    ru: 'Сначала звонок идёт первому доступному менеджеру внутри CRM. Если ответа нет в течение {seconds} секунд, звонок внутри CRM начинается у остальных включённых онлайн-менеджеров. Переадресация на мобильные номера не используется.',
+    en: 'Only added managers receive calls. The first online manager rings inside CRM immediately; the others start ringing after {seconds} seconds. Offline managers are skipped.',
+    ru: 'Звонки получают только добавленные менеджеры. У первого онлайн-менеджера звонок внутри CRM начинается сразу, у остальных — через {seconds} секунды. Менеджеры не в сети пропускаются.',
   },
-  onlinePbxManagers: {
-    en: 'Managers receiving incoming calls',
-    ru: 'Менеджеры, принимающие входящие звонки',
+  onlinePbxManagersBlockTitle: {
+    en: 'Managers receiving calls in CRM',
+    ru: 'Менеджеры, принимающие звонки в CRM',
   },
-  onlinePbxActivePrimary: {
-    en: 'First now',
-    ru: 'Сейчас первый',
+  onlinePbxChooseManager: {
+    en: 'Sales manager',
+    ru: 'Менеджер отдела продаж',
   },
-  onlinePbxExtensionPending: {
-    en: 'A personal internal extension will be assigned automatically.',
-    ru: 'Личный внутренний добавочный будет назначен автоматически.',
+  onlinePbxExistingExtension: {
+    en: 'Existing internal extension',
+    ru: 'Существующий внутренний номер',
+  },
+  onlinePbxAddManager: {
+    en: 'Add manager',
+    ru: 'Добавить менеджера',
+  },
+  onlinePbxNoExtensionsTitle: {
+    en: 'No existing extensions found',
+    ru: 'Существующие внутренние номера не найдены',
+  },
+  onlinePbxNoExtensionsDescription: {
+    en: 'Create or enable an extension in OnlinePBX itself, then reopen these settings. CRM never creates extensions.',
+    ru: 'Создайте или включите внутренний номер в самом OnlinePBX, затем снова откройте настройки. CRM не создаёт внутренние номера.',
+  },
+  onlinePbxNoAssignments: {
+    en: 'No managers added',
+    ru: 'Менеджеры не добавлены',
+  },
+  onlinePbxNoAssignmentsDescription: {
+    en: 'Until a manager is added and the settings are saved, nobody receives calls inside CRM.',
+    ru: 'Пока менеджер не добавлен и настройки не сохранены, звонки внутри CRM никому не поступают.',
+  },
+  onlinePbxRemoveManager: {
+    en: 'Remove manager',
+    ru: 'Убрать менеджера',
+  },
+  onlinePbxRemoveManagerTitle: {
+    en: 'Remove manager from telephony?',
+    ru: 'Убрать менеджера из телефонии?',
+  },
+  onlinePbxRemoveManagerDescription: {
+    en: 'After saving, incoming calls in CRM will no longer be sent to:',
+    ru: 'После сохранения входящие звонки внутри CRM больше не будут поступать сотруднику:',
+  },
+  onlinePbxOfflineExcluded: {
+    en: 'Offline — incoming calls are not sent to this manager.',
+    ru: 'Не в сети — входящие звонки этому менеджеру не поступают.',
+  },
+  onlinePbxForwardingTitle: {
+    en: 'Call forwarding',
+    ru: 'Переадресация',
+  },
+  onlinePbxForwardingDescription: {
+    en: 'Forward calls to an external phone only when this option is enabled.',
+    ru: 'Перенаправляйте звонки на внешний телефон только когда эта опция включена.',
+  },
+  onlinePbxForwardingEnabled: {
+    en: 'Enable call forwarding',
+    ru: 'Включить переадресацию',
+  },
+  onlinePbxForwardingPhone: {
+    en: 'Forwarding phone number',
+    ru: 'Номер переадресации',
+  },
+  onlinePbxForwardingOnHint: {
+    en: 'Forwarding is enabled: the external phone will also receive incoming calls.',
+    ru: 'Переадресация включена: входящий звонок также поступит на внешний номер.',
+  },
+  onlinePbxForwardingOffHint: {
+    en: 'Forwarding is disabled: no external phone numbers will be called.',
+    ru: 'Переадресация выключена: звонки на внешние номера не выполняются.',
   },
   onlinePbxTelephonyReady: {
     en: 'Phone ready',
@@ -1363,10 +1410,6 @@ export const translations = {
     en: 'Call first',
     ru: 'Звонить первым',
   },
-  onlinePbxReceiveCalls: {
-    en: 'Receive incoming calls',
-    ru: 'Принимать входящие звонки',
-  },
   onlinePbxRoutingLoadFailed: {
     en: 'Could not load call routing',
     ru: 'Не удалось загрузить маршрутизацию звонков',
@@ -1374,14 +1417,6 @@ export const translations = {
   onlinePbxRoutingLoadFailedDescription: {
     en: 'Check the OnlinePBX connection and try opening the settings again.',
     ru: 'Проверьте подключение OnlinePBX и откройте настройки ещё раз.',
-  },
-  onlinePbxNoManagers: {
-    en: 'No sales managers found',
-    ru: 'Менеджеры продаж не найдены',
-  },
-  onlinePbxNoManagersDescription: {
-    en: 'Assign Sales access to an active employee before enabling incoming calls.',
-    ru: 'Перед включением входящих звонков назначьте активному сотруднику доступ к модулю «Продажи».',
   },
   onlinePbxRoutingSaved: {
     en: 'Incoming call routing saved',
@@ -1403,25 +1438,18 @@ export const translations = {
     en: 'Select only active employees with Sales access.',
     ru: 'Выберите только активных сотрудников с доступом к модулю «Продажи».',
   },
-  onlinePbxManagerExtensionRequired: {
-    en: 'Could not assign a personal OnlinePBX extension to the manager.',
-    ru: 'Не удалось назначить менеджеру личный добавочный OnlinePBX.',
+  onlinePbxManagerNotAssigned: {
+    en: 'Telephony is not enabled for this manager.',
+    ru: 'Телефония для этого менеджера не включена.',
+  },
+  onlinePbxExtensionMustExist: {
+    en: 'Select an extension that already exists in OnlinePBX.',
+    ru: 'Выберите внутренний номер, который уже существует в OnlinePBX.',
   },
   onlinePbxPrimaryManagerMustBeEnabled: {
     en: 'The first manager must also be enabled for incoming calls.',
     ru: 'Первый менеджер также должен быть включён для входящих звонков.',
   },
-  onlinePbxForwardingReplaced: {
-    en: 'Mobile forwarding was replaced by manager call routing. Refresh this page.',
-    ru: 'Переадресация заменена маршрутизацией по менеджерам. Обновите страницу.',
-  },
-  onlinePbxTestConnection: { en: 'Test connection', ru: 'Проверить подключение' },
-  onlinePbxConnectionVerified: { en: 'OnlinePBX is connected', ru: 'OnlinePBX подключён' },
-  onlinePbxConnectionVerifiedDescription: {
-    en: 'The API token is valid and PBX extensions are available.',
-    ru: 'API‑токен действителен, внутренние номера АТС доступны.',
-  },
-  onlinePbxConnectionFailed: { en: 'OnlinePBX connection failed', ru: 'Не удалось подключиться к OnlinePBX' },
   adminWorkspaceBoundaryDescription: {
     en: 'This operational workspace is assigned to another employee account. Use Administration to configure the system.',
     ru: 'Эта операционная рабочая область назначена другой учётной записи сотрудника. Для настройки системы используйте раздел «Администрирование».',

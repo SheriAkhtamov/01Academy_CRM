@@ -842,7 +842,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   {t('personalTelephonyExtension')}
                                 </p>
                                 <Badge variant="secondary" className="font-mono">
-                                  {selectedUser?.onlinePbxExtension || t('assignedAutomatically')}
+                                  {selectedUser?.onlinePbxExtension || t('notAssigned')}
                                 </Badge>
                               </div>
                               <p className="mt-1 text-xs leading-5 text-slate-600">

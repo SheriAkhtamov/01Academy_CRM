@@ -23,12 +23,8 @@ const mockPool = {
   query: vi.fn(),
   connect: vi.fn(),
 };
-const mockEnsureSalesTelephonyExtension = vi.fn();
 vi.mock('../server/storage', () => ({ storage: mockStorage }));
 vi.mock('../server/db', () => ({ pool: mockPool }));
-vi.mock('../server/services/telephony-provisioning', () => ({
-  ensureSalesTelephonyExtension: mockEnsureSalesTelephonyExtension,
-}));
 vi.mock('../server/services/auth', () => ({
   authService: {
     sanitizeUser: vi.fn((user) => user),
@@ -44,10 +40,6 @@ describe('user route validation', () => {
     vi.clearAllMocks();
     mockStorage.getUser.mockResolvedValue(administrationUser);
     mockStorage.createAuditLog.mockResolvedValue(undefined);
-    mockEnsureSalesTelephonyExtension.mockImplementation(
-      async (_client, input: { currentExtension?: string | null }) =>
-        input.currentExtension || '101',
-    );
   });
 
   const createApp = async () => {
@@ -266,10 +258,9 @@ describe('user route validation', () => {
       String(statement).includes('UPDATE users')
     );
     expect(updateCall?.[1]).not.toEqual(expect.arrayContaining(['100', '101']));
-    expect(mockEnsureSalesTelephonyExtension).not.toHaveBeenCalled();
   });
 
-  it('automatically assigns a dedicated extension to a new Sales employee', async () => {
+  it('does not create or assign an OnlinePBX extension to a new Sales employee', async () => {
     mockStorage.getUsers.mockResolvedValue([]);
     const createdUser = {
       id: 20,
@@ -277,7 +268,7 @@ describe('user route validation', () => {
       fullName: 'New Sales User',
       workspace: 'sales',
       workspaces: ['sales'],
-      onlinePbxExtension: '101',
+      onlinePbxExtension: null,
       isActive: true,
     };
     const client = {
@@ -305,10 +296,6 @@ describe('user route validation', () => {
     const insertCall = client.query.mock.calls.find(([statement]) =>
       String(statement).includes('INSERT INTO users')
     );
-    expect(insertCall?.[1]?.[5]).toBe('101');
-    expect(mockEnsureSalesTelephonyExtension).toHaveBeenCalledWith(
-      client,
-      { fullName: 'New Sales User' },
-    );
+    expect(insertCall?.[1]?.[5]).toBeNull();
   });
 });

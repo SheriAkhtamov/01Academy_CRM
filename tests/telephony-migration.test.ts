@@ -15,6 +15,10 @@ const dedicatedExtensionsPath = path.join(
   repositoryRoot,
   'migrations/0069_restore_dedicated_onlinepbx_extensions.sql',
 );
+const resetAssignmentsPath = path.join(
+  repositoryRoot,
+  'migrations/0070_reset_onlinepbx_assignments.sql',
+);
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -47,6 +51,9 @@ describe('telephony calls migration', () => {
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 69)?.tag)
       .toBe('0069_restore_dedicated_onlinepbx_extensions');
     expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 69)).toHaveLength(1);
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 70)?.tag)
+      .toBe('0070_reset_onlinepbx_assignments');
+    expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 70)).toHaveLength(1);
   });
 
   it('persists the forwarding phone and enabled state in company settings', () => {
@@ -92,6 +99,17 @@ describe('telephony calls migration', () => {
     expect(migration).toContain('WHERE "online_pbx_extension" = \'100\'');
     expect(migration).toContain('"online_pbx_forwarding_enabled" = false');
     expect(migration).toContain('users_online_pbx_extension_unique');
+  });
+
+  it('resets generated assignments and allows the existing shared extension to be reused', () => {
+    const migration = fs.readFileSync(resetAssignmentsPath, 'utf8');
+
+    expect(migration).toContain('DROP INDEX IF EXISTS "users_online_pbx_extension_unique"');
+    expect(migration).toContain('"online_pbx_extension" = NULL');
+    expect(migration).toContain('"online_pbx_incoming_enabled" = false');
+    expect(migration).toContain('"online_pbx_primary_manager_id" = NULL');
+    expect(migration).toContain('"online_pbx_forwarding_enabled" = false');
+    expect(migration).toContain('DELETE FROM "telephony_managed_extensions"');
   });
 
   it('creates one lead for every previously unknown call number', () => {

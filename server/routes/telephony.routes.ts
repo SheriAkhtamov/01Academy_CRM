@@ -23,10 +23,10 @@ import {
 import { resolveOnlinePbxRecording } from '../services/telephony-recording';
 import {
   getOnlinePbxRoutingSettings,
+  getOnlinePbxIncomingDelayMs,
   queueOnlinePbxRoutingSync,
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
-import { ensureSalesTelephonyExtension } from '../services/telephony-provisioning';
 
 const router = Router();
 const ONLINE_PBX_RECORDING_MAX_BYTES = 100 * 1024 * 1024;
@@ -803,6 +803,9 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   if (!canAccessAcademyWorkspace(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
+  if (!req.user?.onlinePbxIncomingEnabled) {
+    return res.status(403).json({ error: 'onlinePbxManagerNotAssigned' });
+  }
   const extension = onlinePbxRoutingDestination(req.user?.onlinePbxExtension);
   if (!extension) {
     return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
@@ -825,19 +828,54 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   }
 }));
 
+router.get('/incoming/access', requireAuth, asyncRoute(async (req, res) => {
+  const allowed = Boolean(
+    canAccessAcademyWorkspace(req.user, 'sales')
+    && req.user?.onlinePbxIncomingEnabled
+    && req.user?.isOnline
+    && onlinePbxRoutingDestination(req.user?.onlinePbxExtension),
+  );
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.json({
+    allowed,
+    delayMs: allowed ? await getOnlinePbxIncomingDelayMs(req.user!.id) : 0,
+  });
+}));
+
 router.post('/availability/refresh', requireAuth, asyncRoute(async (req, res) => {
   if (!canAccessAcademyWorkspace(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  if (!req.user?.onlinePbxIncomingEnabled) {
+    return res.status(403).json({ error: 'onlinePbxManagerNotAssigned' });
   }
   queueOnlinePbxRoutingSync();
   res.status(202).json({ ok: true });
 }));
 
-const parseRoutingManagerIds = (value: unknown): number[] | null => {
+type OnlinePbxAssignmentInput = {
+  managerId: number;
+  extension: string;
+};
+
+const parseRoutingAssignments = (value: unknown): OnlinePbxAssignmentInput[] | null => {
   if (!Array.isArray(value) || value.length > 100) return null;
-  const managerIds = value.map(Number);
-  if (managerIds.some((id) => !Number.isInteger(id) || id <= 0)) return null;
-  return [...new Set(managerIds)];
+  const assignments = value.map((item) => {
+    if (!item || typeof item !== 'object') return null;
+    const managerId = Number((item as Record<string, unknown>).managerId);
+    const extension = onlinePbxRoutingDestination(
+      String((item as Record<string, unknown>).extension ?? ''),
+    );
+    return Number.isInteger(managerId) && managerId > 0 && extension
+      ? { managerId, extension }
+      : null;
+  });
+  if (assignments.some((assignment) => !assignment)) return null;
+  const parsed = assignments as OnlinePbxAssignmentInput[];
+  if (new Set(parsed.map((assignment) => assignment.managerId)).size !== parsed.length) {
+    return null;
+  }
+  return parsed;
 };
 
 router.get('/routing', requireAuth, asyncRoute(async (req, res) => {
@@ -853,12 +891,14 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
     return res.status(403).json({ error: 'adminAccessRequired' });
   }
 
-  const enabledManagerIds = parseRoutingManagerIds(req.body?.enabledManagerIds);
+  const assignments = parseRoutingAssignments(req.body?.assignments);
   const requestedPrimaryManagerId = req.body?.primaryManagerId === null
     ? null
     : Number(req.body?.primaryManagerId);
+  const forwardingEnabled = req.body?.forwarding?.enabled;
+  const requestedForwardingPhone = normalizeOnlinePbxPhone(req.body?.forwarding?.phone);
   if (
-    !enabledManagerIds
+    !assignments
     || (
       requestedPrimaryManagerId !== null
       && (!Number.isInteger(requestedPrimaryManagerId) || requestedPrimaryManagerId <= 0)
@@ -866,8 +906,44 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
   ) {
     return res.status(400).json({ error: 'onlinePbxInvalidManagerSelection' });
   }
+  if (
+    typeof forwardingEnabled !== 'boolean'
+    || (forwardingEnabled && !requestedForwardingPhone)
+    || (
+      req.body?.forwarding?.phone
+      && !requestedForwardingPhone
+    )
+  ) {
+    return res.status(400).json({ error: 'onlinePbxInvalidForwardingPhone' });
+  }
+  if (
+    requestedForwardingPhone
+    && digitsOnly(requestedForwardingPhone) === ONLINE_PBX_TRUNK_NUMBER
+  ) {
+    return res.status(400).json({ error: 'onlinePbxForwardingLoop' });
+  }
 
-  const current = await getOnlinePbxRoutingSettings();
+  const [current, existingExtensions] = await Promise.all([
+    getOnlinePbxRoutingSettings(),
+    onlinePbxClient.listExtensions(),
+  ]);
+  const existingExtensionNumbers = new Set(
+    existingExtensions.map((extension) => extension.extension),
+  );
+  if (assignments.some((assignment) => !existingExtensionNumbers.has(assignment.extension))) {
+    return res.status(400).json({ error: 'onlinePbxExtensionMustExist' });
+  }
+  const managerIds = assignments.map((assignment) => assignment.managerId);
+  const primaryManagerId = assignments.length === 0
+    ? null
+    : requestedPrimaryManagerId ?? assignments[0].managerId;
+  if (
+    primaryManagerId !== null
+    && !managerIds.includes(primaryManagerId)
+  ) {
+    return res.status(400).json({ error: 'onlinePbxPrimaryManagerMustBeEnabled' });
+  }
+  const forwardingPhone = requestedForwardingPhone ?? current.forwarding.phone;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -885,14 +961,8 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
            RETURNING id`,
         )
       ).rows[0].id;
-    const eligibleManagers = await client.query<{
-      id: number;
-      fullName: string;
-      extension: string | null;
-    }>(
-      `SELECT manager.id,
-              manager.full_name AS "fullName",
-              manager.online_pbx_extension AS extension
+    const eligibleManagers = await client.query<{ id: number }>(
+      `SELECT manager.id
        FROM users manager
        WHERE manager.is_active = true
          AND (
@@ -907,58 +977,46 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
        ORDER BY manager.id
        FOR UPDATE`,
     );
-    const managersById = new Map(eligibleManagers.rows.map((manager) => [manager.id, manager]));
-    if (enabledManagerIds.some((managerId) => !managersById.has(managerId))) {
+    const eligibleManagerIds = new Set(eligibleManagers.rows.map((manager) => manager.id));
+    if (managerIds.some((managerId) => !eligibleManagerIds.has(managerId))) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'onlinePbxInvalidManagerSelection' });
     }
 
-    for (const managerId of enabledManagerIds) {
-      const manager = managersById.get(managerId)!;
-      if (onlinePbxRoutingDestination(manager.extension)) continue;
-      const extension = await ensureSalesTelephonyExtension(client, {
-        fullName: manager.fullName,
-        currentExtension: manager.extension,
-      });
-      if (!onlinePbxRoutingDestination(extension)) {
-        throw Object.assign(new Error('onlinePbxManagerExtensionRequired'), { statusCode: 409 });
-      }
+    await client.query(
+      `UPDATE users
+       SET online_pbx_extension = NULL,
+           online_pbx_incoming_enabled = false,
+           updated_at = NOW()
+       WHERE online_pbx_extension IS NOT NULL
+          OR online_pbx_incoming_enabled = true`,
+    );
+    for (const assignment of assignments) {
       await client.query(
         `UPDATE users
          SET online_pbx_extension = $2,
+             online_pbx_incoming_enabled = true,
              updated_at = NOW()
          WHERE id = $1`,
-        [managerId, extension],
+        [assignment.managerId, assignment.extension],
       );
-      manager.extension = extension;
     }
 
-    const primaryManagerId = enabledManagerIds.length === 0
-      ? null
-      : requestedPrimaryManagerId ?? enabledManagerIds[0];
-    if (primaryManagerId !== null && !enabledManagerIds.includes(primaryManagerId)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'onlinePbxPrimaryManagerMustBeEnabled' });
-    }
-
-    await client.query(
-      `UPDATE users manager
-       SET online_pbx_incoming_enabled = manager.id = ANY($1::int[]),
-           updated_at = NOW()
-       WHERE manager.online_pbx_incoming_enabled IS DISTINCT FROM (manager.id = ANY($1::int[]))
-         AND (
-           manager.online_pbx_incoming_enabled = true
-           OR manager.id = ANY($1::int[])
-         )`,
-      [enabledManagerIds],
-    );
     await client.query(
       `UPDATE academy_company_settings
        SET online_pbx_primary_manager_id = $1,
-           updated_by = $2,
+           online_pbx_forwarding_phone = $2,
+           online_pbx_forwarding_enabled = $3,
+           updated_by = $4,
            updated_at = NOW()
-       WHERE id = $3`,
-      [primaryManagerId, req.user!.id, companySettingsId],
+       WHERE id = $5`,
+      [
+        primaryManagerId,
+        forwardingPhone,
+        forwardingEnabled,
+        req.user!.id,
+        companySettingsId,
+      ],
     );
     await client.query(
       `INSERT INTO audit_logs (user_id, action, entity_type, old_values, new_values)
@@ -967,9 +1025,17 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
         req.user!.id,
         JSON.stringify({
           primaryManagerId: current.primaryManagerId,
-          enabledManagerIds: current.enabledManagerIds,
+          assignments: current.assignments.map((assignment) => ({
+            managerId: assignment.managerId,
+            extension: assignment.extension,
+          })),
+          forwarding: current.forwarding,
         }),
-        JSON.stringify({ primaryManagerId, enabledManagerIds }),
+        JSON.stringify({
+          primaryManagerId,
+          assignments,
+          forwarding: { enabled: forwardingEnabled, phone: forwardingPhone },
+        }),
       ],
     );
     await client.query('COMMIT');
@@ -979,6 +1045,11 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
   } finally {
     client.release();
   }
+
+  broadcastFunction({
+    type: 'TELEPHONY_ROUTING_UPDATED',
+    data: { updatedAt: new Date().toISOString() },
+  });
 
   let synchronized = true;
   try {
@@ -1004,21 +1075,57 @@ router.get('/forwarding', requireAuth, asyncRoute(async (req, res) => {
   }
 
   const settings = await getOnlinePbxRoutingSettings();
-  const primaryManager = settings.managers.find(
-    (manager) => manager.id === settings.primaryManagerId,
-  );
   res.setHeader('Cache-Control', 'no-store, private');
-  res.json({
-    enabled: settings.enabledManagerIds.length > 0,
-    phone: primaryManager?.phone ?? '',
-  });
+  res.json(settings.forwarding);
 }));
 
 router.put('/forwarding', requireAuth, asyncRoute(async (req, res) => {
   if (!hasLeadershipAccess(req.user)) {
     return res.status(403).json({ error: 'adminAccessRequired' });
   }
-  res.status(410).json({ error: 'onlinePbxForwardingReplaced' });
+  const enabled = req.body?.enabled;
+  const phone = normalizeOnlinePbxPhone(req.body?.phone);
+  if (typeof enabled !== 'boolean' || !phone) {
+    return res.status(400).json({ error: 'onlinePbxInvalidForwardingPhone' });
+  }
+  if (digitsOnly(phone) === ONLINE_PBX_TRUNK_NUMBER) {
+    return res.status(400).json({ error: 'onlinePbxForwardingLoop' });
+  }
+
+  const current = await getOnlinePbxRoutingSettings();
+  const settingsRow = await pool.query<{ id: number }>(
+    `SELECT id
+     FROM academy_company_settings
+     ORDER BY id
+     LIMIT 1`,
+  );
+  const settingsId = settingsRow.rows[0]?.id
+    ?? (
+      await pool.query<{ id: number }>(
+        `INSERT INTO academy_company_settings DEFAULT VALUES
+         RETURNING id`,
+      )
+    ).rows[0].id;
+  await pool.query(
+    `UPDATE academy_company_settings
+     SET online_pbx_forwarding_phone = $1,
+         online_pbx_forwarding_enabled = $2,
+         updated_by = $3,
+         updated_at = NOW()
+     WHERE id = $4`,
+    [phone, enabled, req.user!.id, settingsId],
+  );
+  await pool.query(
+    `INSERT INTO audit_logs (user_id, action, entity_type, old_values, new_values)
+     VALUES ($1, 'UPDATE_TELEPHONY_FORWARDING', 'telephony', $2::jsonb, $3::jsonb)`,
+    [
+      req.user!.id,
+      JSON.stringify(current.forwarding),
+      JSON.stringify({ enabled, phone }),
+    ],
+  );
+  await synchronizeOnlinePbxRoutingWithRetry();
+  res.json({ enabled, phone });
 }));
 
 router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {
@@ -1061,6 +1168,9 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
   }
   if (!canAccessAcademyWorkspace(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  if (!req.user?.onlinePbxIncomingEnabled) {
+    return res.status(403).json({ error: 'onlinePbxManagerNotAssigned' });
   }
   const extension = onlinePbxRoutingDestination(req.user?.onlinePbxExtension);
   if (!extension) {

@@ -14,6 +14,7 @@ const websocketEventTypes = [
   "BOARD_TASK_UPDATED",
   "BOARD_TASK_DELETED",
   "TELEPHONY_CALL_UPDATED",
+  "TELEPHONY_ROUTING_UPDATED",
 ] as const;
 
 type WebSocketEventType = (typeof websocketEventTypes)[number];

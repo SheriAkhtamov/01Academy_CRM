@@ -1,11 +1,9 @@
 export const ONLINE_PBX_EXTENSION_MIN = 100;
 export const ONLINE_PBX_EXTENSION_MAX = 4999;
-export const ONLINE_PBX_LEGACY_SHARED_EXTENSION = '100' as const;
-export const ONLINE_PBX_UNIQUE_EXTENSION_MIN = 101;
+export const ONLINE_PBX_SHARED_EXTENSION = '100' as const;
 export const ONLINE_PBX_RING_GROUP = '10' as const;
-export const ONLINE_PBX_FALLBACK_RING_GROUP = '11' as const;
 export const ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS = 3 as const;
-export const ONLINE_PBX_FALLBACK_RING_DELAY_SECONDS = 20 as const;
+export const ONLINE_PBX_GROUP_RING_DELAY_SECONDS = 20 as const;
 export const ONLINE_PBX_HANGUP_DESTINATION = '0' as const;
 export const ONLINE_PBX_TRUNK_NUMBER = '998787070171' as const;
 
@@ -17,84 +15,42 @@ export type OnlinePbxRoutingCandidate = {
   isTelephonyReady: boolean;
 };
 
-export type OnlinePbxRoutingManager = OnlinePbxRoutingCandidate & {
-  destination: string;
-};
-
-export type OnlinePbxRoutingPlan = {
-  primary: OnlinePbxRoutingManager | null;
-  fallback: OnlinePbxRoutingManager[];
-};
-
-export type OnlinePbxRoutingTargets = {
-  primaryUsers: string[];
-  primaryDelay: number;
-  primaryDefaultDestination: string | null;
-  fallbackUsers: string[];
-  fallbackDelay: number;
-};
-
 export const onlinePbxRoutingDestination = (
   value: string | null | undefined,
 ): string | null => {
   const extension = String(value ?? '').trim();
-  return isOnlinePbxExtension(extension)
-    && extension !== ONLINE_PBX_LEGACY_SHARED_EXTENSION
-    ? extension
-    : null;
+  return isOnlinePbxExtension(extension) ? extension : null;
 };
 
-export const buildOnlinePbxRoutingPlan = (
+const phoneDigits = (value: string | null | undefined) =>
+  String(value ?? '').replace(/\D/g, '');
+
+export const buildOnlinePbxRingMembers = (
   candidates: OnlinePbxRoutingCandidate[],
-  preferredPrimaryManagerId: number | null,
-): OnlinePbxRoutingPlan => {
-  const ordered = candidates
+  forwarding: { enabled: boolean; phone: string | null },
+): string[] => {
+  const members = candidates
     .filter((candidate) => (
       candidate.enabled
       && candidate.isOnline
       && candidate.isTelephonyReady
     ))
-    .map((candidate) => ({
-      ...candidate,
-      destination: onlinePbxRoutingDestination(candidate.extension),
-    }))
-    .filter((candidate): candidate is OnlinePbxRoutingManager => Boolean(candidate.destination))
-    .sort((left, right) => {
-      if (left.id === preferredPrimaryManagerId) return -1;
-      if (right.id === preferredPrimaryManagerId) return 1;
-      return left.id - right.id;
-    });
+    .map((candidate) => onlinePbxRoutingDestination(candidate.extension))
+    .filter((extension): extension is string => Boolean(extension));
 
-  const seenDestinations = new Set<string>();
-  const uniqueManagers = ordered.filter((candidate) => {
-    if (seenDestinations.has(candidate.destination)) return false;
-    seenDestinations.add(candidate.destination);
-    return true;
-  });
+  const forwardingNumber = forwarding.enabled ? phoneDigits(forwarding.phone) : '';
+  if (forwardingNumber.length >= 7) members.push(forwardingNumber);
 
-  return {
-    primary: uniqueManagers[0] ?? null,
-    fallback: uniqueManagers.slice(1),
-  };
+  const uniqueMembers = [...new Set(members)];
+  return uniqueMembers.length > 0 ? uniqueMembers : [ONLINE_PBX_HANGUP_DESTINATION];
 };
 
-export const buildOnlinePbxRoutingTargets = (
-  plan: OnlinePbxRoutingPlan,
-): OnlinePbxRoutingTargets => ({
-  primaryUsers: [plan.primary?.destination ?? ONLINE_PBX_HANGUP_DESTINATION],
-  primaryDelay: plan.primary
-    ? plan.fallback.length > 0
-      ? ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS
-      : ONLINE_PBX_FALLBACK_RING_DELAY_SECONDS
-    : 1,
-  primaryDefaultDestination: plan.fallback.length > 0
-    ? ONLINE_PBX_FALLBACK_RING_GROUP
-    : null,
-  fallbackUsers: plan.fallback.length > 0
-    ? plan.fallback.map((manager) => manager.destination)
-    : [ONLINE_PBX_HANGUP_DESTINATION],
-  fallbackDelay: ONLINE_PBX_FALLBACK_RING_DELAY_SECONDS,
-});
+export const onlinePbxIncomingDelayMs = (
+  managerId: number,
+  primaryManagerId: number | null,
+) => managerId === primaryManagerId
+  ? 0
+  : ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS * 1_000;
 
 export const sharedCallEventClaimsOwnership = (input: {
   direction: 'incoming' | 'outgoing';

@@ -73,9 +73,11 @@ interface OnlinePbxManagerRoutingSetting {
   id: number;
   fullName: string;
   phone: string | null;
+  extension: string | null;
   enabled: boolean;
   isOnline: boolean;
-  hasValidPhone: boolean;
+  isTelephonyReady: boolean;
+  hasValidExtension: boolean;
   isPrimary: boolean;
   isActivePrimary: boolean;
 }
@@ -433,7 +435,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         <Field
                           key={manager.id}
                           orientation="responsive"
-                          data-disabled={!manager.hasValidPhone}
                           className="rounded-lg border p-3"
                         >
                           <FieldContent className="min-w-0">
@@ -442,12 +443,21 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                               <Badge variant={manager.isOnline ? 'success' : 'secondary'}>
                                 {manager.isOnline ? t('online') : t('offline')}
                               </Badge>
+                              {manager.isOnline ? (
+                                <Badge variant={manager.isTelephonyReady ? 'success' : 'warning'}>
+                                  {manager.isTelephonyReady
+                                    ? t('onlinePbxTelephonyReady')
+                                    : t('onlinePbxTelephonyNotReady')}
+                                </Badge>
+                              ) : null}
                               {manager.isActivePrimary ? (
                                 <Badge variant="info">{t('onlinePbxActivePrimary')}</Badge>
                               ) : null}
                             </FieldTitle>
                             <FieldDescription>
-                              {manager.phone ?? t('onlinePbxManagerPhoneMissing')}
+                              {manager.extension
+                                ? `${t('extensionShort')} ${manager.extension}`
+                                : t('onlinePbxExtensionPending')}
                             </FieldDescription>
                           </FieldContent>
                           <div className="flex items-center justify-between gap-2">
@@ -477,8 +487,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                                 setManagerCallsEnabled(manager.id, checked);
                               }}
                               disabled={
-                                !manager.hasValidPhone
-                                || updateOnlinePbxRouting.isPending
+                                updateOnlinePbxRouting.isPending
                                 || !onlinePbxIntegration?.connected
                               }
                               aria-label={`${t('onlinePbxReceiveCalls')}: ${manager.fullName}`}

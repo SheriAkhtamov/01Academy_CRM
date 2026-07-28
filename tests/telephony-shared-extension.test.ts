@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ONLINE_PBX_SHARED_EXTENSION,
+  ONLINE_PBX_LEGACY_SHARED_EXTENSION,
+  onlinePbxRoutingDestination,
   sharedCallEventClaimsOwnership,
 } from '../shared/telephony';
 
-describe('shared OnlinePBX extension', () => {
-  it('uses extension 100 for the whole CRM', () => {
-    expect(ONLINE_PBX_SHARED_EXTENSION).toBe('100');
+describe('dedicated OnlinePBX extensions', () => {
+  it('never routes new CRM calls through the legacy shared extension', () => {
+    expect(ONLINE_PBX_LEGACY_SHARED_EXTENSION).toBe('100');
+    expect(onlinePbxRoutingDestination(ONLINE_PBX_LEGACY_SHARED_EXTENSION)).toBeNull();
+    expect(onlinePbxRoutingDestination('101')).toBe('101');
   });
 
-  it('does not let a ringing or rejected browser claim a shared incoming call', () => {
+  it('does not let a ringing or rejected browser claim an incoming call', () => {
     expect(sharedCallEventClaimsOwnership({
       direction: 'incoming',
       status: 'ringing',

@@ -1,10 +1,10 @@
 import { timingSafeEqual } from 'crypto';
-import { Router, type RequestHandler } from 'express';
+import { Readable, Transform, pipeline } from 'node:stream';
+import { Router, type Request, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
 import {
-  ONLINE_PBX_SHARED_EXTENSION,
   ONLINE_PBX_TRUNK_NUMBER,
   onlinePbxRoutingDestination,
   sharedCallEventClaimsOwnership,
@@ -23,10 +23,27 @@ import {
 import { resolveOnlinePbxRecording } from '../services/telephony-recording';
 import {
   getOnlinePbxRoutingSettings,
+  queueOnlinePbxRoutingSync,
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
+import { ensureSalesTelephonyExtension } from '../services/telephony-provisioning';
 
 const router = Router();
+const ONLINE_PBX_RECORDING_MAX_BYTES = 100 * 1024 * 1024;
+const ONLINE_PBX_RECORDING_TIMEOUT_MS = 20_000;
+const ONLINE_PBX_RECORDING_MAX_REDIRECTS = 2;
+const configuredOnlinePbxApiUrl =
+  appConfig.integrations?.onlinePbx?.apiUrl?.trim() || 'https://api2.onlinepbx.ru';
+const configuredOnlinePbxMediaOrigin = new URL(configuredOnlinePbxApiUrl).origin;
+
+export const isAllowedOnlinePbxRecordingUrl = (url: URL) => (
+  url.protocol === 'https:'
+  && !url.username
+  && !url.password
+  && url.origin === configuredOnlinePbxMediaOrigin
+  && url.pathname.startsWith('/calls-records/download/')
+);
+
 const asyncRoute = (handler: RequestHandler): RequestHandler => (req, res, next) => {
   Promise.resolve(handler(req, res, next)).catch(next);
 };
@@ -287,7 +304,7 @@ const claimUnassignedLeadForAnsweredCall = async (leadId: number | null, userId:
      )
      INSERT INTO academy_lead_assignment_history
        (lead_id, from_manager_id, to_manager_id, changed_by, comment)
-     SELECT claimed.id, NULL, $2, $2, 'Назначено сотруднику, ответившему через общую телефонию'
+     SELECT claimed.id, NULL, $2, $2, 'Назначено сотруднику, ответившему во внутренней телефонии CRM'
      FROM claimed`,
     [leadId, userId],
   );
@@ -557,24 +574,21 @@ const hasValidWebhookSecret = (candidate: unknown) => {
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
 };
 
-const findIncomingManagerByDestinations = async (
+const findManagerByExtensions = async (
   candidates: string[],
-  callerPhoneDigits: string,
+  incoming: boolean,
 ) => {
-  const destinations = [...new Set(
+  const extensions = [...new Set(
     candidates
-      .filter((candidate) => candidate !== callerPhoneDigits)
       .map((candidate) => onlinePbxRoutingDestination(candidate))
       .filter((candidate): candidate is string => Boolean(candidate)),
   )];
-  if (destinations.length === 0) return null;
+  if (extensions.length === 0) return null;
 
   const result = await pool.query<{ id: number; extension: string }>(
     `SELECT manager.id, manager.online_pbx_extension AS extension
      FROM users manager
      WHERE manager.is_active = true
-       AND manager.is_online = true
-       AND manager.online_pbx_incoming_enabled = true
        AND (
          manager.workspace = 'sales'
          OR EXISTS (
@@ -584,14 +598,17 @@ const findIncomingManagerByDestinations = async (
              AND workspace.workspace = 'sales'
          )
        )
-       AND CASE
-         WHEN length(regexp_replace(COALESCE(manager.phone, ''), '\\D', '', 'g')) = 9
-           THEN '998' || regexp_replace(manager.phone, '\\D', '', 'g')
-         ELSE regexp_replace(COALESCE(manager.phone, ''), '\\D', '', 'g')
-       END = ANY($1::text[])
-     ORDER BY manager.id
+       AND manager.online_pbx_extension = ANY($1::text[])
+       AND (
+         $2::boolean = false
+         OR (
+           manager.is_online = true
+           AND manager.online_pbx_incoming_enabled = true
+         )
+       )
+     ORDER BY array_position($1::text[], manager.online_pbx_extension), manager.id
      LIMIT 1`,
-    [destinations],
+    [extensions, incoming],
   );
   return result.rows[0] ?? null;
 };
@@ -615,13 +632,21 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
     payload.callee_from,
     payload.callee_to,
   ].map(digitsOnly).filter(Boolean);
-  const extensionResult = await pool.query<{ id: number; extension: string }>(
+  const extensionAudience = await pool.query<{ id: number; extension: string | null }>(
     `SELECT id, online_pbx_extension AS extension
-     FROM users
-     WHERE is_active = true
-       AND online_pbx_extension = $1
-     ORDER BY id`,
-    [ONLINE_PBX_SHARED_EXTENSION],
+     FROM users manager
+     WHERE manager.is_active = true
+       AND manager.online_pbx_incoming_enabled = true
+       AND (
+         manager.workspace = 'sales'
+         OR EXISTS (
+           SELECT 1
+           FROM user_workspaces workspace
+           WHERE workspace.user_id = manager.id
+             AND workspace.workspace = 'sales'
+         )
+       )
+     ORDER BY manager.id`,
   );
   const ownerResult = await pool.query<{ id: number; extension: string }>(
     `SELECT employee.id,
@@ -641,16 +666,21 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   if (!phone) return res.status(200).json({ ok: true, ignored: true });
 
   const direction = String(payload.direction ?? '').toLowerCase().includes('out') ? 'outgoing' : 'incoming';
-  if (!employee && direction === 'incoming') {
-    employee = await findIncomingManagerByDestinations(candidates, phoneDigits);
-  }
-  const contact = await ensureContactByPhone(phone, { userId: employee?.id, direction });
-  if (contact.created) {
-    broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
+  if (!employee) {
+    employee = await findManagerByExtensions(candidates, direction === 'incoming');
   }
   const durationSeconds = safeInteger(payload.call_duration);
   const talkSeconds = safeInteger(payload.dialog_duration);
   const status = providerEventStatus(event, talkSeconds);
+  const contactOwnerId = direction === 'outgoing'
+    || status === 'connected'
+    || talkSeconds > 0
+    ? employee?.id
+    : null;
+  const contact = await ensureContactByPhone(phone, { userId: contactOwnerId, direction });
+  if (contact.created) {
+    broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
+  }
   if (direction === 'incoming' && status === 'connected' && employee) {
     await claimUnassignedLeadForAnsweredCall(contact.leadId, employee.id);
   }
@@ -666,7 +696,9 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   const values = [
     providerCallId,
     employee?.id ?? null,
-    ONLINE_PBX_SHARED_EXTENSION,
+    employee?.extension
+      ?? candidates.map((candidate) => onlinePbxRoutingDestination(candidate)).find(Boolean)
+      ?? null,
     direction,
     status,
     phone,
@@ -748,7 +780,7 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   }
 
   const audienceUserIds = direction === 'incoming' || !employee
-    ? extensionResult.rows.map((user) => user.id)
+    ? extensionAudience.rows.map((user) => user.id)
     : [employee.id];
   if (audienceUserIds.length > 0) {
     broadcastFunction({
@@ -768,7 +800,13 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
 }));
 
 router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
-  const extension = ONLINE_PBX_SHARED_EXTENSION;
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  const extension = onlinePbxRoutingDestination(req.user?.onlinePbxExtension);
+  if (!extension) {
+    return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
+  }
 
   try {
     const credentials = await onlinePbxClient.getWebRtcCredentials(extension);
@@ -785,6 +823,14 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
     });
     res.status(statusCode).json({ error: clientCode });
   }
+}));
+
+router.post('/availability/refresh', requireAuth, asyncRoute(async (req, res) => {
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  queueOnlinePbxRoutingSync();
+  res.status(202).json({ ok: true });
 }));
 
 const parseRoutingManagerIds = (value: unknown): number[] | null => {
@@ -821,6 +867,7 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
     return res.status(400).json({ error: 'onlinePbxInvalidManagerSelection' });
   }
 
+  const current = await getOnlinePbxRoutingSettings();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -838,8 +885,14 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
            RETURNING id`,
         )
       ).rows[0].id;
-    const eligibleManagers = await client.query<{ id: number; phone: string | null }>(
-      `SELECT manager.id, manager.phone
+    const eligibleManagers = await client.query<{
+      id: number;
+      fullName: string;
+      extension: string | null;
+    }>(
+      `SELECT manager.id,
+              manager.full_name AS "fullName",
+              manager.online_pbx_extension AS extension
        FROM users manager
        WHERE manager.is_active = true
          AND (
@@ -860,15 +913,24 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
       return res.status(400).json({ error: 'onlinePbxInvalidManagerSelection' });
     }
 
-    const selectedDestinations = enabledManagerIds.map((managerId) =>
-      onlinePbxRoutingDestination(managersById.get(managerId)?.phone));
-    if (selectedDestinations.some((destination) => !destination)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'onlinePbxManagerPhoneRequired' });
-    }
-    if (new Set(selectedDestinations).size !== selectedDestinations.length) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'onlinePbxDuplicateManagerPhone' });
+    for (const managerId of enabledManagerIds) {
+      const manager = managersById.get(managerId)!;
+      if (onlinePbxRoutingDestination(manager.extension)) continue;
+      const extension = await ensureSalesTelephonyExtension(client, {
+        fullName: manager.fullName,
+        currentExtension: manager.extension,
+      });
+      if (!onlinePbxRoutingDestination(extension)) {
+        throw Object.assign(new Error('onlinePbxManagerExtensionRequired'), { statusCode: 409 });
+      }
+      await client.query(
+        `UPDATE users
+         SET online_pbx_extension = $2,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [managerId, extension],
+      );
+      manager.extension = extension;
     }
 
     const primaryManagerId = enabledManagerIds.length === 0
@@ -879,7 +941,6 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
       return res.status(400).json({ error: 'onlinePbxPrimaryManagerMustBeEnabled' });
     }
 
-    const current = await getOnlinePbxRoutingSettings(client);
     await client.query(
       `UPDATE users manager
        SET online_pbx_incoming_enabled = manager.id = ANY($1::int[]),
@@ -930,9 +991,10 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
     });
   }
 
+  const settings = await getOnlinePbxRoutingSettings();
   res.json({
-    ...await getOnlinePbxRoutingSettings(),
-    synchronized,
+    ...settings,
+    synchronized: synchronized && settings.synchronized !== false,
   });
 }));
 
@@ -960,7 +1022,31 @@ router.put('/forwarding', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {
-  res.json([]);
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  const result = await pool.query(
+    `SELECT manager.id,
+            manager.full_name AS name,
+            manager.online_pbx_extension AS extension
+     FROM users manager
+     WHERE manager.is_active = true
+       AND manager.id <> $1
+       AND manager.online_pbx_extension IS NOT NULL
+       AND manager.online_pbx_extension <> ''
+       AND (
+         manager.workspace = 'sales'
+         OR EXISTS (
+           SELECT 1
+           FROM user_workspaces workspace
+           WHERE workspace.user_id = manager.id
+             AND workspace.workspace = 'sales'
+         )
+       )
+     ORDER BY manager.full_name, manager.id`,
+    [req.user!.id],
+  );
+  res.json(result.rows);
 }));
 
 router.get('/contacts/lookup', requireAuth, asyncRoute(async (req, res) => {
@@ -973,7 +1059,13 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
   if (!isCallEventInput(req.body)) {
     return res.status(400).json({ error: 'onlinePbxInvalidCallEvent' });
   }
-  const extension = ONLINE_PBX_SHARED_EXTENSION;
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  const extension = onlinePbxRoutingDestination(req.user?.onlinePbxExtension);
+  if (!extension) {
+    return res.status(422).json({ error: 'onlinePbxExtensionMissing' });
+  }
 
   const call = await upsertClientCall(req.user!.id, extension, req.body);
   broadcastFunction({
@@ -994,7 +1086,7 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
             answered_at AS "answeredAt", ended_at AS "endedAt",
             duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
             hangup_cause AS "hangupCause",
-            (recording_url IS NOT NULL OR talk_seconds > 0) AS "hasRecording"
+            (talk_seconds > 0) AS "hasRecording"
      FROM telephony_calls
      WHERE user_id = $1
      ORDER BY started_at DESC
@@ -1080,7 +1172,7 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
             call.duration_seconds AS "durationSeconds",
             call.talk_seconds AS "talkSeconds",
             call.hangup_cause AS "hangupCause",
-            (call.recording_url IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording",
+            (call.talk_seconds > 0) AS "hasRecording",
             COUNT(*) OVER()::int AS "totalCount",
             COUNT(*) FILTER (WHERE call.status = 'missed') OVER()::int AS "missedCount",
             COUNT(*) FILTER (WHERE call.talk_seconds > 0) OVER()::int AS "answeredCount",
@@ -1112,65 +1204,252 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
   });
 }));
 
-router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
-  const callId = Number(req.params.id);
-  if (!Number.isInteger(callId) || callId <= 0) {
-    return res.status(400).json({ error: 'onlinePbxInvalidCallId' });
-  }
+type RecordingCallRow = {
+  id: number;
+  userId: number | null;
+  providerCallId: string | null;
+  phone: string;
+  startedAt: string | Date;
+  talkSeconds: number;
+  leadId: number | null;
+  leadManagerId: number | null;
+};
+
+const loadAuthorizedRecordingCall = async (
+  callId: number,
+  user: NonNullable<Request['user']>,
+): Promise<RecordingCallRow | null> => {
   const result = await pool.query(
     `SELECT call.id, call.user_id AS "userId", call.provider_call_id AS "providerCallId",
-            call.phone, call.started_at AS "startedAt",
+            call.phone, call.started_at AS "startedAt", call.talk_seconds AS "talkSeconds",
             lead_id AS "leadId", lead.manager_id AS "leadManagerId"
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
      WHERE call.id = $1`,
     [callId],
   );
-  const call = result.rows[0];
+  const call = result.rows[0] as RecordingCallRow | undefined;
   const canReadRecording = Boolean(call) && (
-    Number(call.userId) === req.user!.id
-    || hasLeadershipAccess(req.user)
+    Number(call!.userId) === user.id
+    || hasLeadershipAccess(user)
     || (
-      canAccessAcademyWorkspace(req.user, 'sales')
-      && call.leadId
-      && (call.leadManagerId == null || Number(call.leadManagerId) === req.user!.id)
+      canAccessAcademyWorkspace(user, 'sales')
+      && call!.leadId
+      && (call!.leadManagerId == null || Number(call!.leadManagerId) === user.id)
     )
   );
-  if (!call || !canReadRecording) {
+  return call && canReadRecording ? call : null;
+};
+
+const resolveAndStoreOnlinePbxRecording = async (
+  call: RecordingCallRow,
+) => {
+  const recording = await resolveOnlinePbxRecording(call);
+  if (recording.state !== 'ready') return recording;
+
+  await pool.query(
+    `UPDATE telephony_calls
+     SET provider_call_id = COALESCE(provider_call_id, $2),
+         duration_seconds = GREATEST(duration_seconds, $3),
+         talk_seconds = GREATEST(talk_seconds, $4),
+         hangup_cause = COALESCE(NULLIF($5, ''), hangup_cause),
+         recording_url = $6,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [
+      call.id,
+      recording.providerCallId,
+      recording.history?.duration ?? 0,
+      recording.history?.talkTime ?? 0,
+      recording.history?.hangupCause ?? null,
+      recording.url,
+    ],
+  );
+  return recording;
+};
+
+const respondWithRecordingResolutionError = (
+  res: Parameters<RequestHandler>[1],
+  state: 'pending' | 'unavailable',
+) => res.status(404).json({
+  error: state === 'pending'
+    ? 'onlinePbxRecordingPending'
+    : 'onlinePbxRecordingUnavailable',
+});
+
+const proxyOnlinePbxRecording = async (
+  recordingUrl: string,
+  req: Request,
+  res: Parameters<RequestHandler>[1],
+) => {
+  let currentUrl: URL;
+  try {
+    currentUrl = new URL(recordingUrl);
+  } catch {
+    return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+  if (!isAllowedOnlinePbxRecordingUrl(currentUrl)) {
+    return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ONLINE_PBX_RECORDING_TIMEOUT_MS);
+  timeout.unref();
+  res.once('close', () => controller.abort());
+  const headers: Record<string, string> = {
+    Accept: 'audio/mpeg,audio/*;q=0.9,*/*;q=0.1',
+    'User-Agent': '01AcademyCRM/1.0',
+  };
+  if (
+    typeof req.headers.range === 'string'
+    && /^bytes=(?:\d+-\d*|\d*-\d+)$/.test(req.headers.range)
+  ) {
+    headers.Range = req.headers.range;
+  }
+
+  let upstream: Response | null = null;
+  for (
+    let redirectCount = 0;
+    redirectCount <= ONLINE_PBX_RECORDING_MAX_REDIRECTS;
+    redirectCount += 1
+  ) {
+    upstream = await fetch(currentUrl, {
+      headers,
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+    if (upstream.status < 300 || upstream.status >= 400) break;
+
+    const location = upstream.headers.get('location');
+    if (!location || redirectCount === ONLINE_PBX_RECORDING_MAX_REDIRECTS) {
+      clearTimeout(timeout);
+      return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+    }
+    const redirectUrl = new URL(location, currentUrl);
+    if (!isAllowedOnlinePbxRecordingUrl(redirectUrl)) {
+      clearTimeout(timeout);
+      return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+    }
+    currentUrl = redirectUrl;
+  }
+
+  if (!upstream?.ok) {
+    clearTimeout(timeout);
+    return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+  const contentType = upstream.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().startsWith('audio/')) {
+    clearTimeout(timeout);
+    return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+  const contentLengthValue = upstream.headers.get('content-length');
+  const contentLength = contentLengthValue ? Number(contentLengthValue) : null;
+  if (
+    contentLength !== null
+    && (
+      !Number.isSafeInteger(contentLength)
+      || contentLength < 0
+      || contentLength > ONLINE_PBX_RECORDING_MAX_BYTES
+    )
+  ) {
+    clearTimeout(timeout);
+    return res.status(413).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+
+  res.status(upstream.status);
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', 'inline; filename="recording.mp3"');
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (contentLengthValue) res.setHeader('Content-Length', contentLengthValue);
+  const contentRange = upstream.headers.get('content-range');
+  const acceptRanges = upstream.headers.get('accept-ranges');
+  if (contentRange) res.setHeader('Content-Range', contentRange);
+  if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+
+  if (!upstream.body) {
+    clearTimeout(timeout);
+    return res.end();
+  }
+
+  let receivedBytes = 0;
+  const byteLimiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      receivedBytes += Buffer.byteLength(chunk);
+      if (receivedBytes > ONLINE_PBX_RECORDING_MAX_BYTES) {
+        callback(new Error('OnlinePBX recording exceeds proxy limit'));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+  pipeline(Readable.fromWeb(upstream.body as never), byteLimiter, res, (error) => {
+    clearTimeout(timeout);
+    if (error) {
+      controller.abort();
+      logger.warn('OnlinePBX recording stream stopped', {
+        host: currentUrl.hostname,
+        reason: error.message,
+      });
+      if (!res.destroyed) res.destroy();
+    }
+  });
+  return undefined;
+};
+
+router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
+  const callId = Number(req.params.id);
+  if (!Number.isInteger(callId) || callId <= 0) {
+    return res.status(400).json({ error: 'onlinePbxInvalidCallId' });
+  }
+  const call = await loadAuthorizedRecordingCall(callId, req.user!);
+  if (!call) {
     return res.status(404).json({ error: 'onlinePbxCallNotFound' });
+  }
+  if (Number(call.talkSeconds) <= 0) {
+    return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
   }
   res.setHeader('Cache-Control', 'no-store, private');
 
   try {
-    const recording = await resolveOnlinePbxRecording(call);
-    if (recording.state === 'pending') {
-      return res.status(404).json({ error: 'onlinePbxRecordingPending' });
+    const recording = await resolveAndStoreOnlinePbxRecording(call);
+    if (recording.state !== 'ready') {
+      return respondWithRecordingResolutionError(res, recording.state);
     }
-    if (recording.state === 'unavailable') {
-      return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
-    }
-
-    await pool.query(
-      `UPDATE telephony_calls
-       SET provider_call_id = COALESCE(provider_call_id, $2),
-           duration_seconds = GREATEST(duration_seconds, $3),
-           talk_seconds = GREATEST(talk_seconds, $4),
-           hangup_cause = COALESCE(NULLIF($5, ''), hangup_cause),
-           recording_url = $6,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [
-        callId,
-        recording.providerCallId,
-        recording.history?.duration ?? 0,
-        recording.history?.talkTime ?? 0,
-        recording.history?.hangupCause ?? null,
-        recording.url,
-      ],
-    );
-    res.json({ url: recording.url });
+    res.json({ url: `/api/telephony/calls/${callId}/recording/media` });
   } catch (error) {
     const clientCode = error instanceof OnlinePbxError ? error.clientCode : 'onlinePbxRecordingUnavailable';
+    const statusCode = error instanceof OnlinePbxError ? error.statusCode : 502;
+    res.status(statusCode).json({ error: clientCode });
+  }
+}));
+
+router.get('/calls/:id/recording/media', requireAuth, asyncRoute(async (req, res) => {
+  const callId = Number(req.params.id);
+  if (!Number.isInteger(callId) || callId <= 0) {
+    return res.status(400).json({ error: 'onlinePbxInvalidCallId' });
+  }
+  const call = await loadAuthorizedRecordingCall(callId, req.user!);
+  if (!call) {
+    return res.status(404).json({ error: 'onlinePbxCallNotFound' });
+  }
+  if (Number(call.talkSeconds) <= 0) {
+    return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+
+  try {
+    const recording = await resolveAndStoreOnlinePbxRecording(call);
+    if (recording.state !== 'ready') {
+      return respondWithRecordingResolutionError(res, recording.state);
+    }
+    return await proxyOnlinePbxRecording(recording.url, req, res);
+  } catch (error) {
+    if (res.headersSent) {
+      if (!res.destroyed) res.destroy();
+      return;
+    }
+    const clientCode = error instanceof OnlinePbxError
+      ? error.clientCode
+      : 'onlinePbxRecordingUnavailable';
     const statusCode = error instanceof OnlinePbxError ? error.statusCode : 502;
     res.status(statusCode).json({ error: clientCode });
   }

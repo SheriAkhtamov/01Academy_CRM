@@ -11,6 +11,10 @@ const extensionAutomationPath = path.join(repositoryRoot, 'migrations/0057_autom
 const sharedExtensionPath = path.join(repositoryRoot, 'migrations/0059_use_shared_onlinepbx_extension.sql');
 const configurableForwardingPath = path.join(repositoryRoot, 'migrations/0062_configurable_onlinepbx_forwarding.sql');
 const managerRoutingPath = path.join(repositoryRoot, 'migrations/0067_add_onlinepbx_manager_routing.sql');
+const dedicatedExtensionsPath = path.join(
+  repositoryRoot,
+  'migrations/0069_restore_dedicated_onlinepbx_extensions.sql',
+);
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -40,6 +44,9 @@ describe('telephony calls migration', () => {
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 67)?.tag)
       .toBe('0067_add_onlinepbx_manager_routing');
     expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 67)).toHaveLength(1);
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 69)?.tag)
+      .toBe('0069_restore_dedicated_onlinepbx_extensions');
+    expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 69)).toHaveLength(1);
   });
 
   it('persists the forwarding phone and enabled state in company settings', () => {
@@ -75,6 +82,16 @@ describe('telephony calls migration', () => {
     expect(migration).toContain('ALTER COLUMN "online_pbx_extension" SET NOT NULL');
     expect(migration).toContain('"users_online_pbx_extension_shared_check"');
     expect(migration).toContain('"extension" <> \'100\'');
+  });
+
+  it('restores unique per-manager extensions and retires the shared assignment', () => {
+    const migration = fs.readFileSync(dedicatedExtensionsPath, 'utf8');
+
+    expect(migration).toContain('DROP CONSTRAINT IF EXISTS "users_online_pbx_extension_shared_check"');
+    expect(migration).toContain('ALTER COLUMN "online_pbx_extension" DROP NOT NULL');
+    expect(migration).toContain('WHERE "online_pbx_extension" = \'100\'');
+    expect(migration).toContain('"online_pbx_forwarding_enabled" = false');
+    expect(migration).toContain('users_online_pbx_extension_unique');
   });
 
   it('creates one lead for every previously unknown call number', () => {

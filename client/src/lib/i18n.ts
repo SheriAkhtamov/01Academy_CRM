@@ -16,11 +16,6 @@ export const translations = {
   currentAccount: { en: 'Current Account', ru: 'Текущий аккаунт' },
   removeAccount: { en: 'Remove account', ru: 'Удалить аккаунт' },
   removeLeadTag: { en: 'Remove tag', ru: 'Удалить тег' },
-  removeLeadTagDescription: {
-    en: 'Remove the manual tag “{tag}” from this lead? The tag will remain available for other leads.',
-    ru: 'Удалить ручной тег «{tag}» у этого лида? Сам тег останется доступен для других лидов.',
-  },
-  removeLeadTagTitle: { en: 'Remove tag from lead?', ru: 'Удалить тег у лида?' },
   actions: { en: 'Actions', ru: 'Действия' },
   active: { en: 'Active', ru: 'Активный' },
   activeAccount: { en: 'Active Account', ru: 'Активный аккаунт' },
@@ -89,7 +84,6 @@ export const translations = {
   cplLabel: { en: 'CPL (Cost Per Lead)', ru: 'CPL (стоимость лида)' },
   ctrlEnterToSend: { en: 'Press Ctrl+Enter to send', ru: 'Ctrl+Enter для отправки' },
   currencyUzs: { en: 'UZS', ru: 'сум' },
-  customTag: { en: 'Custom tag', ru: 'Свой тег' },
   customTagPlaceholder: { en: 'Enter a tag', ru: 'Введите тег' },
   createFirstUser: { en: 'Create the first user', ru: 'Создайте первого пользователя' },
   createLead: { en: 'Create Lead', ru: 'Создать лида' },
@@ -628,11 +622,24 @@ export const translations = {
     en: 'The OnlinePBX extension must be between 100 and 4999.',
     ru: 'Внутренний номер OnlinePBX должен быть в диапазоне от 100 до 4999.',
   },
-  sharedTelephonyAccount: { en: 'Shared telephony account', ru: 'Единый аккаунт телефонии' },
-  sharedTelephonyAccountHint: {
-    en: 'All employees make and receive calls through the shared OnlinePBX extension 100.',
-    ru: 'Все сотрудники звонят и принимают звонки через общий внутренний номер OnlinePBX 100.',
+  onlinePbxExtensionMissing: {
+    en: 'A personal OnlinePBX extension has not been assigned yet.',
+    ru: 'Личный добавочный OnlinePBX ещё не назначен.',
   },
+  onlinePbxExtensionPoolExhausted: {
+    en: 'No free OnlinePBX internal extensions are available.',
+    ru: 'В OnlinePBX не осталось свободных внутренних добавочных.',
+  },
+  onlinePbxExtensionAlreadyAssigned: {
+    en: 'This OnlinePBX extension is already assigned to another employee.',
+    ru: 'Этот добавочный OnlinePBX уже назначен другому сотруднику.',
+  },
+  personalTelephonyExtension: { en: 'Personal telephony extension', ru: 'Личный добавочный телефонии' },
+  personalTelephonyExtensionHint: {
+    en: 'CRM assigns a dedicated internal OnlinePBX extension automatically for browser calls.',
+    ru: 'CRM автоматически назначает отдельный внутренний номер OnlinePBX для звонков в браузере.',
+  },
+  assignedAutomatically: { en: 'Auto', ru: 'Авто' },
   onlinePbxWebRtcUnavailable: { en: 'The browser phone is unavailable', ru: 'Браузерная телефония недоступна' },
   onlinePbxWebPhoneOffline: { en: 'The browser phone is not connected yet', ru: 'Телефония в браузере ещё не подключена' },
   onlinePbxCallAlreadyActive: { en: 'Finish the current call first', ru: 'Сначала завершите текущий звонок' },
@@ -1321,8 +1328,8 @@ export const translations = {
     ru: 'Последовательная маршрутизация входящих',
   },
   onlinePbxRoutingDescription: {
-    en: 'The first available manager rings first. If there is no answer within {seconds} seconds, the other enabled online managers start ringing. Offline managers are always excluded.',
-    ru: 'Сначала звонок поступает первому доступному менеджеру. Если ответа нет в течение {seconds} секунд, начинают звонить остальные включённые онлайн-менеджеры. Офлайн-менеджеры всегда исключаются.',
+    en: 'The first available manager rings inside CRM first. If there is no answer within {seconds} seconds, the other enabled online managers start ringing inside CRM. Mobile forwarding is never used.',
+    ru: 'Сначала звонок идёт первому доступному менеджеру внутри CRM. Если ответа нет в течение {seconds} секунд, звонок внутри CRM начинается у остальных включённых онлайн-менеджеров. Переадресация на мобильные номера не используется.',
   },
   onlinePbxManagers: {
     en: 'Managers receiving incoming calls',
@@ -1332,9 +1339,17 @@ export const translations = {
     en: 'First now',
     ru: 'Сейчас первый',
   },
-  onlinePbxManagerPhoneMissing: {
-    en: 'Add a phone number in the employee profile to enable calls.',
-    ru: 'Чтобы включить звонки, добавьте номер телефона в профиле сотрудника.',
+  onlinePbxExtensionPending: {
+    en: 'A personal internal extension will be assigned automatically.',
+    ru: 'Личный внутренний добавочный будет назначен автоматически.',
+  },
+  onlinePbxTelephonyReady: {
+    en: 'Phone ready',
+    ru: 'Телефония готова',
+  },
+  onlinePbxTelephonyNotReady: {
+    en: 'Phone offline',
+    ru: 'Телефония не в сети',
   },
   onlinePbxPrimaryManager: {
     en: 'First manager',
@@ -1384,13 +1399,9 @@ export const translations = {
     en: 'Select only active employees with Sales access.',
     ru: 'Выберите только активных сотрудников с доступом к модулю «Продажи».',
   },
-  onlinePbxManagerPhoneRequired: {
-    en: 'Every enabled manager must have a valid phone number.',
-    ru: 'У каждого включённого менеджера должен быть корректный номер телефона.',
-  },
-  onlinePbxDuplicateManagerPhone: {
-    en: 'Enabled managers must have different phone numbers.',
-    ru: 'У включённых менеджеров должны быть разные номера телефонов.',
+  onlinePbxManagerExtensionRequired: {
+    en: 'Could not assign a personal OnlinePBX extension to the manager.',
+    ru: 'Не удалось назначить менеджеру личный добавочный OnlinePBX.',
   },
   onlinePbxPrimaryManagerMustBeEnabled: {
     en: 'The first manager must also be enabled for incoming calls.',
@@ -1534,7 +1545,6 @@ export const translations = {
   responsibleManager: { en: 'Responsible manager', ru: 'Ответственный менеджер' },
   selectLead: { en: 'Select lead', ru: 'Выбрать лида' },
   selectManager: { en: 'Select a manager', ru: 'Выберите менеджера' },
-  selectExistingTag: { en: 'Existing tag', ru: 'Существующий тег' },
   selectTag: { en: 'Select a tag', ru: 'Выберите тег' },
   selectedLeadsCount: { en: 'Selected leads: {count}', ru: 'Выбрано лидов: {count}' },
   transferLead: { en: 'Transfer lead', ru: 'Передать лида' },

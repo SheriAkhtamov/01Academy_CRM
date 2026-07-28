@@ -44,10 +44,10 @@ describe('HTTP security middleware', () => {
     expect(response.headers['access-control-allow-origin']).toBe('https://crm.01academy.uz');
     expect(response.headers['content-security-policy']).toContain("default-src 'self'");
     expect(response.headers['content-security-policy']).toContain(
-      "media-src 'self' data: blob: https://api2.onlinepbx.ru",
+      "media-src 'self' data: blob:",
     );
     expect(response.headers['content-security-policy']).not.toContain(
-      'https://api2.onlinepbx.ru/api/',
+      'https://api2.onlinepbx.ru',
     );
     expect(response.headers['strict-transport-security']).toContain('max-age=31536000');
     expect(response.headers['x-content-type-options']).toBe('nosniff');

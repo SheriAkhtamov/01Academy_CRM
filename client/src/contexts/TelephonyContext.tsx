@@ -333,6 +333,11 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
 
     let disposed = false;
     let manager: VertoClientLike | null = null;
+    const refreshIncomingRouting = () => {
+      void apiRequest('POST', '/api/telephony/availability/refresh').catch((error) => {
+        devLog('Failed to refresh OnlinePBX availability', error);
+      });
+    };
 
     const connect = async () => {
       setConnectionState('connecting');
@@ -423,10 +428,16 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           userVariables: { extension: credentials.extension },
         }, {
           onWSLogin: (_client: VertoClientLike, success: boolean) => {
-            if (!disposed) setConnectionState(success ? 'ready' : 'error');
+            if (!disposed) {
+              setConnectionState(success ? 'ready' : 'error');
+              refreshIncomingRouting();
+            }
           },
           onWSClose: () => {
-            if (!disposed) setConnectionState('offline');
+            if (!disposed) {
+              setConnectionState('offline');
+              refreshIncomingRouting();
+            }
           },
           onDialogState,
         }) as unknown as VertoClientLike;
@@ -434,7 +445,13 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         if (disposed) return;
         const apiError = error as Error & { status?: number; rawMessage?: string };
-        setConnectionState(apiError.status === 422 || apiError.rawMessage === 'onlinePbxExtensionMissing' ? 'disabled' : 'error');
+        setConnectionState(
+          apiError.status === 403
+          || apiError.status === 422
+          || apiError.rawMessage === 'onlinePbxExtensionMissing'
+            ? 'disabled'
+            : 'error',
+        );
         devLog('OnlinePBX WebRTC registration failed', error);
       }
     };

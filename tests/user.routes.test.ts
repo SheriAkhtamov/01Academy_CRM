@@ -23,8 +23,12 @@ const mockPool = {
   query: vi.fn(),
   connect: vi.fn(),
 };
+const mockEnsureSalesTelephonyExtension = vi.fn();
 vi.mock('../server/storage', () => ({ storage: mockStorage }));
 vi.mock('../server/db', () => ({ pool: mockPool }));
+vi.mock('../server/services/telephony-provisioning', () => ({
+  ensureSalesTelephonyExtension: mockEnsureSalesTelephonyExtension,
+}));
 vi.mock('../server/services/auth', () => ({
   authService: {
     sanitizeUser: vi.fn((user) => user),
@@ -40,6 +44,10 @@ describe('user route validation', () => {
     vi.clearAllMocks();
     mockStorage.getUser.mockResolvedValue(administrationUser);
     mockStorage.createAuditLog.mockResolvedValue(undefined);
+    mockEnsureSalesTelephonyExtension.mockImplementation(
+      async (_client, input: { currentExtension?: string | null }) =>
+        input.currentExtension || '101',
+    );
   });
 
   const createApp = async () => {
@@ -215,12 +223,9 @@ describe('user route validation', () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
-  it('normalizes an existing employee to the shared extension on update', async () => {
+  it('does not assign a telephony extension without Sales access', async () => {
     const currentUser = { ...administrationUser, onlinePbxExtension: null };
-    const updatedUser = {
-      ...administrationUser,
-      onlinePbxExtension: '100',
-    };
+    const updatedUser = { ...administrationUser, onlinePbxExtension: null };
     mockStorage.getUser
       .mockResolvedValueOnce(currentUser)
       .mockResolvedValueOnce(currentUser)
@@ -236,6 +241,7 @@ describe('user route validation', () => {
               full_name: 'Admin User',
               workspace: 'administration',
               is_active: true,
+              online_pbx_extension: null,
             }],
           };
         }
@@ -259,10 +265,11 @@ describe('user route validation', () => {
     const updateCall = client.query.mock.calls.find(([statement]) =>
       String(statement).includes('UPDATE users')
     );
-    expect(updateCall?.[1]).toEqual(expect.arrayContaining(['100']));
+    expect(updateCall?.[1]).not.toEqual(expect.arrayContaining(['100', '101']));
+    expect(mockEnsureSalesTelephonyExtension).not.toHaveBeenCalled();
   });
 
-  it('assigns extension 100 to every new employee and ignores per-user overrides', async () => {
+  it('automatically assigns a dedicated extension to a new Sales employee', async () => {
     mockStorage.getUsers.mockResolvedValue([]);
     const createdUser = {
       id: 20,
@@ -270,7 +277,7 @@ describe('user route validation', () => {
       fullName: 'New Sales User',
       workspace: 'sales',
       workspaces: ['sales'],
-      onlinePbxExtension: '100',
+      onlinePbxExtension: '101',
       isActive: true,
     };
     const client = {
@@ -298,6 +305,10 @@ describe('user route validation', () => {
     const insertCall = client.query.mock.calls.find(([statement]) =>
       String(statement).includes('INSERT INTO users')
     );
-    expect(insertCall?.[1]?.[5]).toBe('100');
+    expect(insertCall?.[1]?.[5]).toBe('101');
+    expect(mockEnsureSalesTelephonyExtension).toHaveBeenCalledWith(
+      client,
+      { fullName: 'New Sales User' },
+    );
   });
 });

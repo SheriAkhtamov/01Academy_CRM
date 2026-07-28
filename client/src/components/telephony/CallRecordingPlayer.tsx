@@ -57,9 +57,24 @@ export function CallRecordingPlayer({
     );
   }
 
+  const handlePlaybackError = () => {
+    setUrl(null);
+    toast({
+      title: t('telephonyRecordingUnavailable'),
+      description: t('telephonyRecordingUnavailable'),
+      variant: 'destructive',
+    });
+  };
+
   return (
     <div className={cn('flex min-w-0 items-center gap-2', className)}>
-      <audio src={url} controls autoPlay className="h-9 min-w-0 max-w-72 flex-1" />
+      <audio
+        src={url}
+        controls
+        autoPlay
+        className="h-9 min-w-0 max-w-72 flex-1"
+        onError={handlePlaybackError}
+      />
       <Button
         type="button"
         variant="ghost"

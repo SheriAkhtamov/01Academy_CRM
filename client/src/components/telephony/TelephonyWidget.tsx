@@ -477,7 +477,7 @@ export function TelephonyWidget({
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
-                            {call.status === 'ended' ? (
+                            {call.status === 'ended' && call.hasRecording ? (
                               <button
                                 type="button"
                                 className="flex size-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-primary-700"
@@ -544,7 +544,22 @@ export function TelephonyWidget({
 
       {recordingUrl ? (
         <div className="pointer-events-auto fixed bottom-5 left-1/2 z-[80] flex w-[min(520px,calc(100vw-24px))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-2xl">
-          <audio src={recordingUrl} controls autoPlay className="h-9 min-w-0 flex-1" onEnded={() => setRecordingCallId(null)} />
+          <audio
+            src={recordingUrl}
+            controls
+            autoPlay
+            className="h-9 min-w-0 flex-1"
+            onEnded={() => setRecordingCallId(null)}
+            onError={() => {
+              setRecordingUrl(null);
+              setRecordingCallId(null);
+              toast({
+                title: t('telephonyRecordingUnavailable'),
+                description: t('telephonyRecordingUnavailable'),
+                variant: 'destructive',
+              });
+            }}
+          />
           <button
             type="button"
             className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"

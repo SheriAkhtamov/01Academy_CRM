@@ -17,7 +17,7 @@ import {
     type AcademyWorkspace,
 } from '@shared/academy';
 import type { AcademyScheduleItem } from '@shared/schema';
-import { ONLINE_PBX_SHARED_EXTENSION } from '@shared/telephony';
+import { ensureSalesTelephonyExtension } from '../services/telephony-provisioning';
 import { getPasswordPolicyError } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
@@ -93,6 +93,12 @@ const isUsersEmailUniqueViolation = (error: unknown) => {
         (constraint.includes('users') && constraint.includes('email')) ||
         detail.includes('email') ||
         message.includes('users_email_unique');
+};
+
+const isOnlinePbxExtensionUniqueViolation = (error: unknown) => {
+    const pgError = error as { code?: string; constraint?: string };
+    return pgError?.code === '23505'
+        && pgError.constraint === 'users_online_pbx_extension_unique';
 };
 
 const normalizeLogin = (value: unknown) =>
@@ -614,6 +620,9 @@ router.post('/', requireAdministration, async (req, res) => {
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
+                const resolvedExtension = (isActive ?? true) && workspaces.includes('sales')
+                    ? await ensureSalesTelephonyExtension(client, { fullName })
+                    : null;
                 const inserted = await client.query(
                     `INSERT INTO users
                        (email, password, credential_password_ciphertext, full_name, phone,
@@ -634,7 +643,7 @@ router.post('/', requireAdministration, async (req, res) => {
                         null,
                         fullName,
                         typeof phone === 'string' ? phone.trim() || null : null,
-                        ONLINE_PBX_SHARED_EXTENSION,
+                        resolvedExtension,
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
                         workspace,
@@ -664,6 +673,9 @@ router.post('/', requireAdministration, async (req, res) => {
             } catch (error) {
                 await client.query('ROLLBACK').catch(() => undefined);
                 newUser = null;
+                if (isOnlinePbxExtensionUniqueViolation(error)) {
+                    return res.status(409).json({ error: 'onlinePbxExtensionAlreadyAssigned' });
+                }
                 if (!isUsersEmailUniqueViolation(error)) {
                     throw error;
                 }
@@ -697,6 +709,9 @@ router.post('/', requireAdministration, async (req, res) => {
         logger.error('Error creating user', { error });
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
+        }
+        if (isOnlinePbxExtensionUniqueViolation(error)) {
+            return res.status(409).json({ error: 'onlinePbxExtensionAlreadyAssigned' });
         }
         return sendHttpError(res, error, 'Failed to create user');
     }
@@ -1000,8 +1015,9 @@ router.put('/:id', requireAuth, async (req, res) => {
                 full_name: string;
                 workspace: AcademyWorkspace;
                 is_active: boolean;
+                online_pbx_extension: string | null;
             }>(
-                `SELECT id, full_name, workspace, is_active
+                `SELECT id, full_name, workspace, is_active, online_pbx_extension
                  FROM users
                  WHERE id = $1
                  FOR UPDATE`,
@@ -1025,7 +1041,12 @@ router.put('/:id', requireAuth, async (req, res) => {
                 ? [...new Set([nextPrimaryWorkspace, ...requestedWorkspaces])]
                 : [...new Set([nextPrimaryWorkspace, ...currentWorkspaces])];
             const nextIsActive = updateData.isActive ?? lockedUser.is_active;
-            updateData.onlinePbxExtension = ONLINE_PBX_SHARED_EXTENSION;
+            if (nextIsActive && nextWorkspaces.includes('sales')) {
+                updateData.onlinePbxExtension = await ensureSalesTelephonyExtension(client, {
+                    fullName: updateData.fullName ?? lockedUser.full_name,
+                    currentExtension: lockedUser.online_pbx_extension,
+                });
+            }
 
             const isRemovingActiveLeadershipAccess =
                 lockedUser.is_active
@@ -1129,6 +1150,9 @@ router.put('/:id', requireAuth, async (req, res) => {
         logger.error('Error updating user', { error, userId: req.params.id });
         if (isUsersEmailUniqueViolation(error)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
+        }
+        if (isOnlinePbxExtensionUniqueViolation(error)) {
+            return res.status(409).json({ error: 'onlinePbxExtensionAlreadyAssigned' });
         }
         const typedError = error as { leadCount?: number };
         return sendHttpError(res, error, 'Failed to update user', {

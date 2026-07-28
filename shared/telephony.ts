@@ -1,22 +1,20 @@
 export const ONLINE_PBX_EXTENSION_MIN = 100;
 export const ONLINE_PBX_EXTENSION_MAX = 4999;
-export const ONLINE_PBX_SHARED_EXTENSION = '100' as const;
+export const ONLINE_PBX_LEGACY_SHARED_EXTENSION = '100' as const;
+export const ONLINE_PBX_UNIQUE_EXTENSION_MIN = 101;
 export const ONLINE_PBX_RING_GROUP = '10' as const;
 export const ONLINE_PBX_FALLBACK_RING_GROUP = '11' as const;
 export const ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS = 3 as const;
 export const ONLINE_PBX_FALLBACK_RING_DELAY_SECONDS = 20 as const;
 export const ONLINE_PBX_HANGUP_DESTINATION = '0' as const;
-export const ONLINE_PBX_DEFAULT_FORWARDING_NUMBER = '+998978576040' as const;
 export const ONLINE_PBX_TRUNK_NUMBER = '998787070171' as const;
-
-const phoneDigits = (value: string | null | undefined) =>
-  String(value ?? '').replace(/\D/g, '');
 
 export type OnlinePbxRoutingCandidate = {
   id: number;
-  phone: string | null;
+  extension: string | null;
   enabled: boolean;
   isOnline: boolean;
+  isTelephonyReady: boolean;
 };
 
 export type OnlinePbxRoutingManager = OnlinePbxRoutingCandidate & {
@@ -39,16 +37,11 @@ export type OnlinePbxRoutingTargets = {
 export const onlinePbxRoutingDestination = (
   value: string | null | undefined,
 ): string | null => {
-  const digits = phoneDigits(value);
-  const normalized = digits.length === 9 ? `998${digits}` : digits;
-  if (
-    normalized.length < 7
-    || normalized.length > 15
-    || normalized === ONLINE_PBX_TRUNK_NUMBER
-  ) {
-    return null;
-  }
-  return normalized;
+  const extension = String(value ?? '').trim();
+  return isOnlinePbxExtension(extension)
+    && extension !== ONLINE_PBX_LEGACY_SHARED_EXTENSION
+    ? extension
+    : null;
 };
 
 export const buildOnlinePbxRoutingPlan = (
@@ -56,10 +49,14 @@ export const buildOnlinePbxRoutingPlan = (
   preferredPrimaryManagerId: number | null,
 ): OnlinePbxRoutingPlan => {
   const ordered = candidates
-    .filter((candidate) => candidate.enabled && candidate.isOnline)
+    .filter((candidate) => (
+      candidate.enabled
+      && candidate.isOnline
+      && candidate.isTelephonyReady
+    ))
     .map((candidate) => ({
       ...candidate,
-      destination: onlinePbxRoutingDestination(candidate.phone),
+      destination: onlinePbxRoutingDestination(candidate.extension),
     }))
     .filter((candidate): candidate is OnlinePbxRoutingManager => Boolean(candidate.destination))
     .sort((left, right) => {
@@ -98,40 +95,6 @@ export const buildOnlinePbxRoutingTargets = (
     : [ONLINE_PBX_HANGUP_DESTINATION],
   fallbackDelay: ONLINE_PBX_FALLBACK_RING_DELAY_SECONDS,
 });
-
-export const findOnlinePbxForwardingMember = (
-  members: string[],
-  preferredPhone?: string | null,
-): string | null => {
-  const normalized = members.map((member) => member.trim()).filter(Boolean);
-  const preferredDigits = phoneDigits(preferredPhone);
-  if (preferredDigits) {
-    const preferredMember = normalized.find(
-      (member) => phoneDigits(member) === preferredDigits,
-    );
-    if (preferredMember) return preferredMember;
-  }
-  return normalized.find((member) => phoneDigits(member).length >= 7) ?? null;
-};
-
-export const setOnlinePbxForwardingMember = (
-  members: string[],
-  input: {
-    enabled: boolean;
-    phone: string;
-    previousPhone?: string | null;
-  },
-): string[] => {
-  const normalized = members.map((member) => member.trim()).filter(Boolean);
-  const previousDigits = phoneDigits(input.previousPhone);
-  const nextDigits = phoneDigits(input.phone);
-  const withoutForwarding = normalized.filter(
-    (member) => !previousDigits || phoneDigits(member) !== previousDigits,
-  );
-  return input.enabled
-    ? [...new Set([...withoutForwarding, nextDigits])]
-    : [...new Set(withoutForwarding)];
-};
 
 export const sharedCallEventClaimsOwnership = (input: {
   direction: 'incoming' | 'outgoing';

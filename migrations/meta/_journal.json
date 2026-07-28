@@ -484,6 +484,13 @@
       "when": 1786896000000,
       "tag": "0068_add_lead_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1786982400000,
+      "tag": "0069_restore_dedicated_onlinepbx_extensions",
+      "breakpoints": true
     }
   ]
 }

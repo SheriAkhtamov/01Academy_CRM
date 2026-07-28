@@ -5,54 +5,55 @@ import {
   buildOnlinePbxRoutingPlan,
   buildOnlinePbxRoutingTargets,
   ONLINE_PBX_FALLBACK_RING_GROUP,
+  ONLINE_PBX_LEGACY_SHARED_EXTENSION,
   ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS,
   ONLINE_PBX_RING_GROUP,
-  ONLINE_PBX_TRUNK_NUMBER,
   onlinePbxRoutingDestination,
 } from '../shared/telephony';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 
 describe('OnlinePBX manager routing settings', () => {
-  it('rings the preferred online manager first and excludes offline or disabled managers', () => {
+  it('rings the preferred registered online manager first using only internal extensions', () => {
     expect(ONLINE_PBX_RING_GROUP).toBe('10');
     expect(ONLINE_PBX_FALLBACK_RING_GROUP).toBe('11');
     expect(ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS).toBe(3);
-    expect(ONLINE_PBX_TRUNK_NUMBER).toBe('998787070171');
-    expect(onlinePbxRoutingDestination('90 123-45-67')).toBe('998901234567');
-    expect(onlinePbxRoutingDestination(`+${ONLINE_PBX_TRUNK_NUMBER}`)).toBeNull();
+    expect(onlinePbxRoutingDestination('113')).toBe('113');
+    expect(onlinePbxRoutingDestination('+998 90 123-45-67')).toBeNull();
+    expect(onlinePbxRoutingDestination(ONLINE_PBX_LEGACY_SHARED_EXTENSION)).toBeNull();
 
     const plan = buildOnlinePbxRoutingPlan([
-      { id: 7, phone: '+998901234567', enabled: true, isOnline: true },
-      { id: 13, phone: '+998911234567', enabled: true, isOnline: true },
-      { id: 15, phone: '+998931234567', enabled: true, isOnline: false },
-      { id: 18, phone: '+998941234567', enabled: false, isOnline: true },
+      { id: 7, extension: '107', enabled: true, isOnline: true, isTelephonyReady: true },
+      { id: 13, extension: '113', enabled: true, isOnline: true, isTelephonyReady: true },
+      { id: 15, extension: '115', enabled: true, isOnline: false, isTelephonyReady: true },
+      { id: 18, extension: '118', enabled: false, isOnline: true, isTelephonyReady: true },
+      { id: 19, extension: '119', enabled: true, isOnline: true, isTelephonyReady: false },
     ], 13);
 
-    expect(plan.primary).toMatchObject({ id: 13, destination: '998911234567' });
+    expect(plan.primary).toMatchObject({ id: 13, destination: '113' });
     expect(plan.fallback).toEqual([
-      expect.objectContaining({ id: 7, destination: '998901234567' }),
+      expect.objectContaining({ id: 7, destination: '107' }),
     ]);
     expect(buildOnlinePbxRoutingTargets(plan)).toEqual({
-      primaryUsers: ['998911234567'],
+      primaryUsers: ['113'],
       primaryDelay: 3,
       primaryDefaultDestination: '11',
-      fallbackUsers: ['998901234567'],
+      fallbackUsers: ['107'],
       fallbackDelay: 20,
     });
   });
 
-  it('falls back to the next online manager and never duplicates a shared phone', () => {
+  it('falls back to the next ready manager and never duplicates an internal extension', () => {
     const plan = buildOnlinePbxRoutingPlan([
-      { id: 7, phone: '+998901234567', enabled: true, isOnline: true },
-      { id: 13, phone: '+998901234567', enabled: true, isOnline: true },
-      { id: 15, phone: '+998931234567', enabled: true, isOnline: false },
+      { id: 7, extension: '107', enabled: true, isOnline: true, isTelephonyReady: true },
+      { id: 13, extension: '107', enabled: true, isOnline: true, isTelephonyReady: true },
+      { id: 15, extension: '115', enabled: true, isOnline: false, isTelephonyReady: true },
     ], 15);
 
     expect(plan.primary?.id).toBe(7);
     expect(plan.fallback).toEqual([]);
     expect(buildOnlinePbxRoutingTargets(plan)).toMatchObject({
-      primaryUsers: ['998901234567'],
+      primaryUsers: ['107'],
       primaryDelay: 20,
       primaryDefaultDestination: null,
     });
@@ -99,6 +100,8 @@ describe('OnlinePBX manager routing settings', () => {
     expect(route).toContain('UPDATE_TELEPHONY_ROUTING');
     expect(route).toContain("res.status(410).json({ error: 'onlinePbxForwardingReplaced' })");
     expect(routingService).toContain('manager.is_online');
+    expect(routingService).toContain('extension.registered');
+    expect(routingService).not.toContain('onlinePbxRoutingDestination(manager.phone)');
     expect(routingService).toContain('ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS');
     expect(routingService).toContain('ONLINE_PBX_FALLBACK_RING_GROUP');
   });

@@ -33,6 +33,7 @@ import {
     queueOnlinePbxRoutingSync,
     synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
+import { provisionActiveSalesTelephonyExtensions } from '../services/telephony-provisioning';
 
 const PgStore = pgSession(session);
 const WS_OPEN_STATE = 1;
@@ -137,6 +138,9 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
       WHERE is_online = true
     `).catch((error) => {
         logger.error('Failed to reset stale online statuses', { error });
+    });
+    await provisionActiveSalesTelephonyExtensions().catch((error) => {
+        logger.error('Active sales telephony extensions could not be provisioned', { error });
     });
     await synchronizeOnlinePbxRoutingWithRetry(2).catch((error) => {
         logger.warn('OnlinePBX routing could not be synchronized during startup', { error });
@@ -313,7 +317,14 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
         }
     }, 30_000);
     heartbeat.unref();
-    httpServer.on('close', () => clearInterval(heartbeat));
+    const telephonyRoutingHeartbeat = setInterval(() => {
+        queueOnlinePbxRoutingSync();
+    }, 30_000);
+    telephonyRoutingHeartbeat.unref();
+    httpServer.on('close', () => {
+        clearInterval(heartbeat);
+        clearInterval(telephonyRoutingHeartbeat);
+    });
 
     return httpServer;
 }

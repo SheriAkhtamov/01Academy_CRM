@@ -79,7 +79,6 @@ import {
   type AcademyAccessModule,
   type AcademyWorkspace,
 } from '@shared/academy';
-import { ONLINE_PBX_SHARED_EXTENSION } from '@shared/telephony';
 
 // Schema functions that use runtime translation
 const createUserSchema = (t: any) => z.object({
@@ -832,22 +831,26 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           />
                         </div>
 
-                        <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-primary/5 dark:bg-primary/10 p-4">
-                          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
-                            <PhoneCall className="size-4" aria-hidden="true" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-semibold text-foreground">{t('sharedTelephonyAccount')}</p>
-                              <Badge variant="secondary" className="font-mono">
-                                {ONLINE_PBX_SHARED_EXTENSION}
-                              </Badge>
+                        {assignedWorkspaceValues.includes('sales') ? (
+                          <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-primary/5 p-4 dark:bg-primary/10">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                              <PhoneCall className="size-4" aria-hidden="true" />
                             </div>
-                            <p className="mt-1 text-xs leading-5 text-slate-600">
-                              {t('sharedTelephonyAccountHint')}
-                            </p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-semibold text-foreground">
+                                  {t('personalTelephonyExtension')}
+                                </p>
+                                <Badge variant="secondary" className="font-mono">
+                                  {selectedUser?.onlinePbxExtension || t('assignedAutomatically')}
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-xs leading-5 text-slate-600">
+                                {t('personalTelephonyExtensionHint')}
+                              </p>
+                            </div>
                           </div>
-                        </div>
+                        ) : null}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField

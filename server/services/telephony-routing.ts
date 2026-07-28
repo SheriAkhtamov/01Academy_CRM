@@ -36,6 +36,8 @@ export type OnlinePbxManagerRoutingSetting = {
   extension: string | null;
   enabled: boolean;
   isOnline: boolean;
+  isProviderEnabled: boolean;
+  isRegistered: boolean;
   isTelephonyReady: boolean;
   hasValidExtension: boolean;
   isPrimary: boolean;
@@ -90,15 +92,13 @@ const loadPreferredPrimaryManagerId = async (
   return Number.isInteger(value) && value > 0 ? value : null;
 };
 
-const registeredExtensionSet = (extensions: OnlinePbxExtension[]) => new Set(
-  extensions
-    .filter((extension) => extension.enabled && extension.registered)
-    .map((extension) => extension.extension),
+const providerExtensionMap = (extensions: OnlinePbxExtension[]) => new Map(
+  extensions.map((extension) => [extension.extension, extension]),
 );
 
 const loadRoutingState = async (
   executor: Queryable,
-  registeredExtensions: ReadonlySet<string>,
+  providerExtensions: ReadonlyMap<string, OnlinePbxExtension>,
 ) => {
   const [managers, primaryManagerId] = await Promise.all([
     loadManagerRoutingRows(executor),
@@ -110,7 +110,9 @@ const loadRoutingState = async (
     enabled: manager.enabled,
     isOnline: manager.isOnline,
     isTelephonyReady: Boolean(
-      manager.extension && registeredExtensions.has(manager.extension),
+      manager.extension
+      && providerExtensions.get(manager.extension)?.enabled
+      && providerExtensions.get(manager.extension)?.registered,
     ),
   }));
   const plan = buildOnlinePbxRoutingPlan(candidates, primaryManagerId);
@@ -129,10 +131,10 @@ export const getOnlinePbxRoutingSettings = async (
     logger.warn('Could not load OnlinePBX extension registration state', { error });
   }
 
-  const registeredExtensions = registeredExtensionSet(providerExtensions);
+  const extensionsByNumber = providerExtensionMap(providerExtensions);
   const { managers, primaryManagerId, candidates, plan } = await loadRoutingState(
     executor,
-    registeredExtensions,
+    extensionsByNumber,
   );
   const candidatesById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const activePrimaryManagerId = plan.primary?.id ?? null;
@@ -144,6 +146,9 @@ export const getOnlinePbxRoutingSettings = async (
     enabledManagerIds: managers.filter((manager) => manager.enabled).map((manager) => manager.id),
     managers: managers.map((manager) => {
       const candidate = candidatesById.get(manager.id)!;
+      const providerExtension = manager.extension
+        ? extensionsByNumber.get(manager.extension)
+        : undefined;
       return {
         id: manager.id,
         fullName: manager.fullName,
@@ -151,6 +156,8 @@ export const getOnlinePbxRoutingSettings = async (
         extension: manager.extension,
         enabled: manager.enabled,
         isOnline: manager.isOnline,
+        isProviderEnabled: Boolean(providerExtension?.enabled),
+        isRegistered: Boolean(providerExtension?.registered),
         isTelephonyReady: candidate.isTelephonyReady,
         hasValidExtension: Boolean(onlinePbxRoutingDestination(manager.extension)),
         isPrimary: manager.id === primaryManagerId,
@@ -199,7 +206,7 @@ const syncOnlinePbxRoutingOnce = async () => {
   const providerExtensions = await onlinePbxClient.listExtensions();
   const { plan } = await loadRoutingState(
     pool,
-    registeredExtensionSet(providerExtensions),
+    providerExtensionMap(providerExtensions),
   );
   const targets = buildOnlinePbxRoutingTargets(plan);
   await ensureFallbackGroup(plan);

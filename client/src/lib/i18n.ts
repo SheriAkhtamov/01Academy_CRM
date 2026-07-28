@@ -640,6 +640,10 @@ export const translations = {
     en: 'This OnlinePBX extension is already assigned to another employee.',
     ru: 'Этот добавочный OnlinePBX уже назначен другому сотруднику.',
   },
+  onlinePbxUserLicenseRequired: {
+    en: 'OnlinePBX user license required',
+    ru: 'Нужна лицензия пользователя OnlinePBX',
+  },
   personalTelephonyExtension: { en: 'Personal telephony extension', ru: 'Личный добавочный телефонии' },
   personalTelephonyExtensionHint: {
     en: 'CRM assigns a dedicated internal OnlinePBX extension automatically for browser calls.',

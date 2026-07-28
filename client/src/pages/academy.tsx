@@ -76,6 +76,8 @@ interface OnlinePbxManagerRoutingSetting {
   extension: string | null;
   enabled: boolean;
   isOnline: boolean;
+  isProviderEnabled: boolean;
+  isRegistered: boolean;
   isTelephonyReady: boolean;
   hasValidExtension: boolean;
   isPrimary: boolean;
@@ -443,7 +445,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                               <Badge variant={manager.isOnline ? 'success' : 'secondary'}>
                                 {manager.isOnline ? t('online') : t('offline')}
                               </Badge>
-                              {manager.isOnline ? (
+                              {manager.extension && !manager.isProviderEnabled ? (
+                                <Badge variant="warning">
+                                  {t('onlinePbxUserLicenseRequired')}
+                                </Badge>
+                              ) : manager.isOnline ? (
                                 <Badge variant={manager.isTelephonyReady ? 'success' : 'warning'}>
                                   {manager.isTelephonyReady
                                     ? t('onlinePbxTelephonyReady')

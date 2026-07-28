@@ -105,6 +105,11 @@ const cleanDomain = (value: string | undefined) => value?.trim().toLowerCase() ?
 const isValidDomain = (value: string) =>
   /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(value) && value.includes('.');
 
+const isEnabledOnlinePbxUser = (value: unknown) => {
+  if (value === true || value === 1) return true;
+  return ['1', 'true', 'on', 'yes', 'enabled'].includes(String(value ?? '').trim().toLowerCase());
+};
+
 const parseOnlinePbxGroup = (
   value: Record<string, unknown> | null | undefined,
   extension: string,
@@ -248,7 +253,7 @@ export class OnlinePbxClient {
       .map((user) => ({
         extension: String(user.num ?? '').trim(),
         name: user.name?.trim() || null,
-        enabled: !['0', 'false'].includes(String(user.enabled).toLowerCase()),
+        enabled: isEnabledOnlinePbxUser(user.enabled),
         registered: Boolean(user.device?.ip),
       }))
       .filter((user) => /^\d{2,10}$/.test(user.extension));
@@ -267,6 +272,14 @@ export class OnlinePbxClient {
       }),
     );
     const user = Array.isArray(data) ? data[0] : null;
+    if (!user || !isEnabledOnlinePbxUser(user.enabled)) {
+      throw new OnlinePbxError(
+        'onlinePbxUserLicenseRequired',
+        409,
+        'USER_DISABLED',
+        'The OnlinePBX user does not have an active user license',
+      );
+    }
     const username = String(user?.webrtc?.user ?? '').trim();
     const password = user?.webrtc?.password?.trim() ?? '';
     const rawHost = user?.webrtc?.host?.trim() ?? '';
@@ -305,7 +318,6 @@ export class OnlinePbxClient {
     extension: string;
     name?: string;
     password?: string;
-    enabled?: boolean;
   }) {
     if (!isOnlinePbxExtension(input.extension)) {
       throw new OnlinePbxError('onlinePbxInvalidExtension', 400);
@@ -313,7 +325,6 @@ export class OnlinePbxClient {
     const body = new URLSearchParams({ num: input.extension });
     if (input.name) body.set('name', input.name);
     if (input.password) body.set('pass', input.password);
-    if (input.enabled !== undefined) body.set('enabled', input.enabled ? '1' : '0');
     await this.request<unknown>('user/edit', body);
   }
 

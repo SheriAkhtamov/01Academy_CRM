@@ -29,7 +29,6 @@ describe('automatic OnlinePBX extension provisioning', () => {
     expect(provider.updateExtension).toHaveBeenCalledWith({
       extension: '109',
       name: 'CRM Novyy Menedzher',
-      enabled: true,
     });
   });
 
@@ -63,7 +62,6 @@ describe('automatic OnlinePBX extension provisioning', () => {
     expect(provider.updateExtension).toHaveBeenCalledWith({
       extension: '101',
       name: 'CRM Sales User',
-      enabled: true,
     });
   });
 });

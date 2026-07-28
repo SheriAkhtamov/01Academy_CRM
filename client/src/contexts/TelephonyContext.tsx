@@ -449,6 +449,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           apiError.status === 403
           || apiError.status === 422
           || apiError.rawMessage === 'onlinePbxExtensionMissing'
+          || apiError.rawMessage === 'onlinePbxUserLicenseRequired'
             ? 'disabled'
             : 'error',
         );

@@ -123,7 +123,6 @@ export const ensureSalesTelephonyExtension = async (
     await provider.updateExtension({
       extension: reserve.extension,
       name: onlinePbxEmployeeName(input.fullName, reserve.extension),
-      enabled: true,
     });
     await client.query(
       `INSERT INTO telephony_managed_extensions (extension, provider, updated_at)
@@ -143,7 +142,7 @@ export const ensureSalesTelephonyExtension = async (
   const password = crypto.randomBytes(16).toString('base64url');
   const name = onlinePbxEmployeeName(input.fullName, extension);
   await createProviderExtension(provider, { extension, password, name });
-  await provider.updateExtension({ extension, name, enabled: true });
+  await provider.updateExtension({ extension, name });
   await client.query(
     `INSERT INTO telephony_managed_extensions (extension, provider)
      VALUES ($1, 'onlinepbx')

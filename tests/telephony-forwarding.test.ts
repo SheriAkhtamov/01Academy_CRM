@@ -100,7 +100,8 @@ describe('OnlinePBX manager routing settings', () => {
     expect(route).toContain('UPDATE_TELEPHONY_ROUTING');
     expect(route).toContain("res.status(410).json({ error: 'onlinePbxForwardingReplaced' })");
     expect(routingService).toContain('manager.is_online');
-    expect(routingService).toContain('extension.registered');
+    expect(routingService).toContain('providerExtension?.enabled');
+    expect(routingService).toContain('providerExtension?.registered');
     expect(routingService).not.toContain('onlinePbxRoutingDestination(manager.phone)');
     expect(routingService).toContain('ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS');
     expect(routingService).toContain('ONLINE_PBX_FALLBACK_RING_GROUP');

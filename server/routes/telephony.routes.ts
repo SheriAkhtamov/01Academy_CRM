@@ -4,12 +4,9 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
 import {
-  ONLINE_PBX_DEFAULT_FORWARDING_NUMBER,
-  ONLINE_PBX_RING_GROUP,
   ONLINE_PBX_SHARED_EXTENSION,
   ONLINE_PBX_TRUNK_NUMBER,
-  findOnlinePbxForwardingMember,
-  setOnlinePbxForwardingMember,
+  onlinePbxRoutingDestination,
   sharedCallEventClaimsOwnership,
 } from '@shared/telephony';
 import { canAccessAcademyWorkspace, hasLeadershipAccess } from '@shared/academy';
@@ -24,6 +21,10 @@ import {
   OnlinePbxError,
   type OnlinePbxCallHistoryItem,
 } from '../services/onlinepbx';
+import {
+  getOnlinePbxRoutingSettings,
+  synchronizeOnlinePbxRoutingWithRetry,
+} from '../services/telephony-routing';
 
 const router = Router();
 const asyncRoute = (handler: RequestHandler): RequestHandler => (req, res, next) => {
@@ -556,6 +557,45 @@ const hasValidWebhookSecret = (candidate: unknown) => {
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
 };
 
+const findIncomingManagerByDestinations = async (
+  candidates: string[],
+  callerPhoneDigits: string,
+) => {
+  const destinations = [...new Set(
+    candidates
+      .filter((candidate) => candidate !== callerPhoneDigits)
+      .map((candidate) => onlinePbxRoutingDestination(candidate))
+      .filter((candidate): candidate is string => Boolean(candidate)),
+  )];
+  if (destinations.length === 0) return null;
+
+  const result = await pool.query<{ id: number; extension: string }>(
+    `SELECT manager.id, manager.online_pbx_extension AS extension
+     FROM users manager
+     WHERE manager.is_active = true
+       AND manager.is_online = true
+       AND manager.online_pbx_incoming_enabled = true
+       AND (
+         manager.workspace = 'sales'
+         OR EXISTS (
+           SELECT 1
+           FROM user_workspaces workspace
+           WHERE workspace.user_id = manager.id
+             AND workspace.workspace = 'sales'
+         )
+       )
+       AND CASE
+         WHEN length(regexp_replace(COALESCE(manager.phone, ''), '\\D', '', 'g')) = 9
+           THEN '998' || regexp_replace(manager.phone, '\\D', '', 'g')
+         ELSE regexp_replace(COALESCE(manager.phone, ''), '\\D', '', 'g')
+       END = ANY($1::text[])
+     ORDER BY manager.id
+     LIMIT 1`,
+    [destinations],
+  );
+  return result.rows[0] ?? null;
+};
+
 router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   const webhookSecret = req.get('x-webhook-secret') ?? req.query.token;
   if (!hasValidWebhookSecret(webhookSecret)) {
@@ -594,13 +634,16 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
      LIMIT 1`,
     [providerCallId],
   );
-  const employee = ownerResult.rows[0] ?? null;
+  let employee: { id: number; extension: string } | null = ownerResult.rows[0] ?? null;
   const trunk = ONLINE_PBX_TRUNK_NUMBER;
   const phoneDigits = candidates.find((value) => value.length >= 7 && value !== trunk) ?? '';
   const phone = normalizeOnlinePbxPhone(phoneDigits);
   if (!phone) return res.status(200).json({ ok: true, ignored: true });
 
   const direction = String(payload.direction ?? '').toLowerCase().includes('out') ? 'outgoing' : 'incoming';
+  if (!employee && direction === 'incoming') {
+    employee = await findIncomingManagerByDestinations(candidates, phoneDigits);
+  }
   const contact = await ensureContactByPhone(phone, { userId: employee?.id, direction });
   if (contact.created) {
     broadcastFunction({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
@@ -608,6 +651,9 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   const durationSeconds = safeInteger(payload.call_duration);
   const talkSeconds = safeInteger(payload.dialog_duration);
   const status = providerEventStatus(event, talkSeconds);
+  if (direction === 'incoming' && status === 'connected' && employee) {
+    await claimUnassignedLeadForAnsweredCall(contact.leadId, employee.id);
+  }
   const startedAtSeconds = safeInteger(payload.date);
   const startedAt = startedAtSeconds > 0 ? new Date(startedAtSeconds * 1000) : new Date();
   const endedAt = ['ended', 'failed', 'declined', 'missed'].includes(status) ? new Date() : null;
@@ -741,120 +787,176 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   }
 }));
 
-type StoredForwardingSettings = {
-  id: number;
-  phone: string;
-  enabled: boolean;
+const parseRoutingManagerIds = (value: unknown): number[] | null => {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  const managerIds = value.map(Number);
+  if (managerIds.some((id) => !Number.isInteger(id) || id <= 0)) return null;
+  return [...new Set(managerIds)];
 };
 
-const getStoredForwardingSettings = async (): Promise<StoredForwardingSettings> => {
-  const existing = await pool.query<StoredForwardingSettings>(
-    `SELECT id,
-            online_pbx_forwarding_phone AS phone,
-            online_pbx_forwarding_enabled AS enabled
-     FROM academy_company_settings
-     ORDER BY id
-     LIMIT 1`,
-  );
-  if (existing.rows[0]) return existing.rows[0];
+router.get('/routing', requireAuth, asyncRoute(async (req, res) => {
+  if (!hasLeadershipAccess(req.user)) {
+    return res.status(403).json({ error: 'adminAccessRequired' });
+  }
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.json(await getOnlinePbxRoutingSettings());
+}));
 
-  const inserted = await pool.query<StoredForwardingSettings>(
-    `INSERT INTO academy_company_settings (
-       online_pbx_forwarding_phone,
-       online_pbx_forwarding_enabled
-     )
-     VALUES ($1, true)
-     RETURNING id,
-               online_pbx_forwarding_phone AS phone,
-               online_pbx_forwarding_enabled AS enabled`,
-    [ONLINE_PBX_DEFAULT_FORWARDING_NUMBER],
-  );
-  return inserted.rows[0];
-};
+router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
+  if (!hasLeadershipAccess(req.user)) {
+    return res.status(403).json({ error: 'adminAccessRequired' });
+  }
 
-const forwardingResponse = (
-  members: string[],
-  stored: StoredForwardingSettings,
-) => {
-  const member = findOnlinePbxForwardingMember(members, stored.phone);
-  return {
-    enabled: Boolean(member),
-    phone: member
-      ? normalizeOnlinePbxPhone(member) ?? stored.phone
-      : stored.phone,
-  };
-};
+  const enabledManagerIds = parseRoutingManagerIds(req.body?.enabledManagerIds);
+  const requestedPrimaryManagerId = req.body?.primaryManagerId === null
+    ? null
+    : Number(req.body?.primaryManagerId);
+  if (
+    !enabledManagerIds
+    || (
+      requestedPrimaryManagerId !== null
+      && (!Number.isInteger(requestedPrimaryManagerId) || requestedPrimaryManagerId <= 0)
+    )
+  ) {
+    return res.status(400).json({ error: 'onlinePbxInvalidManagerSelection' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const companySettings = await client.query<{ id: number }>(
+      `SELECT id
+       FROM academy_company_settings
+       ORDER BY id
+       LIMIT 1
+       FOR UPDATE`,
+    );
+    const companySettingsId = companySettings.rows[0]?.id
+      ?? (
+        await client.query<{ id: number }>(
+          `INSERT INTO academy_company_settings DEFAULT VALUES
+           RETURNING id`,
+        )
+      ).rows[0].id;
+    const eligibleManagers = await client.query<{ id: number; phone: string | null }>(
+      `SELECT manager.id, manager.phone
+       FROM users manager
+       WHERE manager.is_active = true
+         AND (
+           manager.workspace = 'sales'
+           OR EXISTS (
+             SELECT 1
+             FROM user_workspaces workspace
+             WHERE workspace.user_id = manager.id
+               AND workspace.workspace = 'sales'
+           )
+         )
+       ORDER BY manager.id
+       FOR UPDATE`,
+    );
+    const managersById = new Map(eligibleManagers.rows.map((manager) => [manager.id, manager]));
+    if (enabledManagerIds.some((managerId) => !managersById.has(managerId))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'onlinePbxInvalidManagerSelection' });
+    }
+
+    const selectedDestinations = enabledManagerIds.map((managerId) =>
+      onlinePbxRoutingDestination(managersById.get(managerId)?.phone));
+    if (selectedDestinations.some((destination) => !destination)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'onlinePbxManagerPhoneRequired' });
+    }
+    if (new Set(selectedDestinations).size !== selectedDestinations.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'onlinePbxDuplicateManagerPhone' });
+    }
+
+    const primaryManagerId = enabledManagerIds.length === 0
+      ? null
+      : requestedPrimaryManagerId ?? enabledManagerIds[0];
+    if (primaryManagerId !== null && !enabledManagerIds.includes(primaryManagerId)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'onlinePbxPrimaryManagerMustBeEnabled' });
+    }
+
+    const current = await getOnlinePbxRoutingSettings(client);
+    await client.query(
+      `UPDATE users manager
+       SET online_pbx_incoming_enabled = manager.id = ANY($1::int[]),
+           updated_at = NOW()
+       WHERE manager.online_pbx_incoming_enabled IS DISTINCT FROM (manager.id = ANY($1::int[]))
+         AND (
+           manager.online_pbx_incoming_enabled = true
+           OR manager.id = ANY($1::int[])
+         )`,
+      [enabledManagerIds],
+    );
+    await client.query(
+      `UPDATE academy_company_settings
+       SET online_pbx_primary_manager_id = $1,
+           updated_by = $2,
+           updated_at = NOW()
+       WHERE id = $3`,
+      [primaryManagerId, req.user!.id, companySettingsId],
+    );
+    await client.query(
+      `INSERT INTO audit_logs (user_id, action, entity_type, old_values, new_values)
+       VALUES ($1, 'UPDATE_TELEPHONY_ROUTING', 'telephony', $2::jsonb, $3::jsonb)`,
+      [
+        req.user!.id,
+        JSON.stringify({
+          primaryManagerId: current.primaryManagerId,
+          enabledManagerIds: current.enabledManagerIds,
+        }),
+        JSON.stringify({ primaryManagerId, enabledManagerIds }),
+      ],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  let synchronized = true;
+  try {
+    await synchronizeOnlinePbxRoutingWithRetry();
+  } catch (error) {
+    synchronized = false;
+    logger.error('OnlinePBX manager routing was saved but provider synchronization failed', {
+      error,
+      userId: req.user?.id,
+    });
+  }
+
+  res.json({
+    ...await getOnlinePbxRoutingSettings(),
+    synchronized,
+  });
+}));
 
 router.get('/forwarding', requireAuth, asyncRoute(async (req, res) => {
   if (!hasLeadershipAccess(req.user)) {
     return res.status(403).json({ error: 'adminAccessRequired' });
   }
-  const [group, stored] = await Promise.all([
-    onlinePbxClient.getGroup(ONLINE_PBX_RING_GROUP),
-    getStoredForwardingSettings(),
-  ]);
+
+  const settings = await getOnlinePbxRoutingSettings();
+  const primaryManager = settings.managers.find(
+    (manager) => manager.id === settings.primaryManagerId,
+  );
   res.setHeader('Cache-Control', 'no-store, private');
-  res.json(forwardingResponse(group.users, stored));
+  res.json({
+    enabled: settings.enabledManagerIds.length > 0,
+    phone: primaryManager?.phone ?? '',
+  });
 }));
 
 router.put('/forwarding', requireAuth, asyncRoute(async (req, res) => {
   if (!hasLeadershipAccess(req.user)) {
     return res.status(403).json({ error: 'adminAccessRequired' });
   }
-  const phone = normalizeOnlinePbxPhone(req.body?.phone);
-  if (typeof req.body?.enabled !== 'boolean' || !phone) {
-    return res.status(400).json({ error: 'onlinePbxInvalidForwardingPhone' });
-  }
-  if (digitsOnly(phone) === ONLINE_PBX_TRUNK_NUMBER) {
-    return res.status(400).json({ error: 'onlinePbxForwardingLoop' });
-  }
-
-  const [group, stored] = await Promise.all([
-    onlinePbxClient.getGroup(ONLINE_PBX_RING_GROUP),
-    getStoredForwardingSettings(),
-  ]);
-  const current = forwardingResponse(group.users, stored);
-  const currentMember = findOnlinePbxForwardingMember(group.users, stored.phone);
-  const nextUsers = setOnlinePbxForwardingMember(group.users, {
-    enabled: req.body.enabled,
-    phone,
-    previousPhone: currentMember ?? stored.phone,
-  });
-  if (JSON.stringify(group.users) !== JSON.stringify(nextUsers)) {
-    await onlinePbxClient.updateGroup({ ...group, users: nextUsers });
-  }
-
-  const changed = current.enabled !== req.body.enabled || current.phone !== phone;
-  if (stored.enabled !== req.body.enabled || stored.phone !== phone) {
-    await pool.query(
-      `UPDATE academy_company_settings
-       SET online_pbx_forwarding_phone = $1,
-           online_pbx_forwarding_enabled = $2,
-           updated_by = $3,
-           updated_at = NOW()
-       WHERE id = $4`,
-      [phone, req.body.enabled, req.user!.id, stored.id],
-    );
-  }
-
-  if (changed) {
-    await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity_type, old_values, new_values)
-       VALUES ($1, 'UPDATE_TELEPHONY_FORWARDING', 'telephony', $2::jsonb, $3::jsonb)`,
-      [
-        req.user!.id,
-        JSON.stringify({ enabled: current.enabled, phone: current.phone }),
-        JSON.stringify({ enabled: req.body.enabled, phone }),
-      ],
-    ).catch((error) => {
-      logger.error('Failed to audit OnlinePBX forwarding update', {
-        error,
-        userId: req.user?.id,
-      });
-    });
-  }
-
-  res.json({ enabled: req.body.enabled, phone });
+  res.status(410).json({ error: 'onlinePbxForwardingReplaced' });
 }));
 
 router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {

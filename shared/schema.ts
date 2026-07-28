@@ -36,6 +36,7 @@ export const users = pgTable("users", {
   hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
+  onlinePbxIncomingEnabled: boolean("online_pbx_incoming_enabled").notNull().default(false),
   lastSeenAt: timestamp("last_seen_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -106,6 +107,8 @@ export const academyCompanySettings = pgTable("academy_company_settings", {
   workdays: jsonb("workdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5]),
   onlinePbxForwardingPhone: varchar("online_pbx_forwarding_phone", { length: 32 }).notNull().default("+998978576040"),
   onlinePbxForwardingEnabled: boolean("online_pbx_forwarding_enabled").notNull().default(true),
+  onlinePbxPrimaryManagerId: integer("online_pbx_primary_manager_id")
+    .references(() => users.id, { onDelete: "set null" }),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

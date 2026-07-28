@@ -470,6 +470,13 @@
       "when": 1786723200000,
       "tag": "0066_purge_recoverable_passwords",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1786809600000,
+      "tag": "0067_add_onlinepbx_manager_routing",
+      "breakpoints": true
     }
   ]
 }

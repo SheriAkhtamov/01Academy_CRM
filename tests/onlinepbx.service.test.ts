@@ -145,7 +145,32 @@ describe('OnlinePbxClient', () => {
       defaultDestination: null,
     });
     expect(String(fetchMock.mock.calls[2][1]?.body))
-      .toBe('num=10&users=100&delay=20&name=Sales+Department');
+      .toBe('num=10&users=100&delay=20&default=&name=Sales+Department');
+  });
+
+  it('detects a missing group and creates the fallback group', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'one', key: 'first' } }))
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: null }))
+      .mockResolvedValueOnce(jsonResponse({ status: '1' }));
+    const client = new OnlinePbxClient({
+      domain: 'pbx38153.onpbx.ru',
+      authKey: 'permanent-token',
+    }, fetchMock as unknown as typeof fetch);
+
+    await expect(client.findGroup('11')).resolves.toBeNull();
+    await client.createGroup({
+      extension: '11',
+      name: 'CRM Backup Managers',
+      users: ['998901234567', '998911234567'],
+      delay: 20,
+      defaultDestination: null,
+    });
+
+    expect(String(fetchMock.mock.calls[2][1]?.body))
+      .toBe(
+        'num=11&users=998901234567%3B998911234567&delay=20&default=&name=CRM+Backup+Managers',
+      );
   });
 
   it('keeps provider diagnostics when a call request is rejected', async () => {

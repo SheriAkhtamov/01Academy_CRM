@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,9 +17,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from '@/components/ui/field';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
 import {
@@ -32,6 +42,7 @@ import {
   PhoneForwarded,
   Plug,
   Settings2,
+  Star,
   Unplug,
 } from 'lucide-react';
 
@@ -58,9 +69,29 @@ interface IntegrationStatus {
   } | null;
 }
 
-interface OnlinePbxForwardingSettings {
+interface OnlinePbxManagerRoutingSetting {
+  id: number;
+  fullName: string;
+  phone: string | null;
   enabled: boolean;
-  phone: string;
+  isOnline: boolean;
+  hasValidPhone: boolean;
+  isPrimary: boolean;
+  isActivePrimary: boolean;
+}
+
+interface OnlinePbxRoutingSettings {
+  ringDelaySeconds: number;
+  primaryManagerId: number | null;
+  activePrimaryManagerId: number | null;
+  enabledManagerIds: number[];
+  managers: OnlinePbxManagerRoutingSetting[];
+  synchronized?: boolean;
+}
+
+interface OnlinePbxRoutingDraft {
+  primaryManagerId: number | null;
+  enabledManagerIds: number[];
 }
 
 const integrationCopy = (provider: string, t: (key: TranslationKey) => string) => {
@@ -90,14 +121,14 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     username?: string | null;
   } | null>(null);
   const [onlinePbxSettingsOpen, setOnlinePbxSettingsOpen] = useState(false);
-  const [onlinePbxForwardingDraft, setOnlinePbxForwardingDraft] =
-    useState<OnlinePbxForwardingSettings>({ enabled: false, phone: '' });
+  const [onlinePbxRoutingDraft, setOnlinePbxRoutingDraft] =
+    useState<OnlinePbxRoutingDraft>({ primaryManagerId: null, enabledManagerIds: [] });
 
   const integrations = useQuery<IntegrationStatus[]>({
     queryKey: ['/api/academy/integrations/status'],
   });
-  const onlinePbxForwarding = useQuery<OnlinePbxForwardingSettings>({
-    queryKey: ['/api/telephony/forwarding'],
+  const onlinePbxRouting = useQuery<OnlinePbxRoutingSettings>({
+    queryKey: ['/api/telephony/routing'],
     enabled: onlinePbxSettingsOpen,
     staleTime: 0,
   });
@@ -122,12 +153,15 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   }, [t]);
 
   useEffect(() => {
-    if (!onlinePbxForwarding.data) return;
-    setOnlinePbxForwardingDraft(onlinePbxForwarding.data);
+    if (!onlinePbxRouting.data) return;
+    setOnlinePbxRoutingDraft({
+      primaryManagerId: onlinePbxRouting.data.primaryManagerId,
+      enabledManagerIds: onlinePbxRouting.data.enabledManagerIds,
+    });
   }, [
     onlinePbxSettingsOpen,
-    onlinePbxForwarding.data?.enabled,
-    onlinePbxForwarding.data?.phone,
+    onlinePbxRouting.data?.primaryManagerId,
+    onlinePbxRouting.data?.enabledManagerIds.join(','),
   ]);
 
   const startInstagramConnection = useMutation({
@@ -179,22 +213,26 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     },
   });
 
-  const updateOnlinePbxForwarding = useMutation({
-    mutationFn: (settings: OnlinePbxForwardingSettings) =>
-      apiRequest('PUT', '/api/telephony/forwarding', settings) as Promise<OnlinePbxForwardingSettings>,
+  const updateOnlinePbxRouting = useMutation({
+    mutationFn: (settings: OnlinePbxRoutingDraft) =>
+      apiRequest('PUT', '/api/telephony/routing', settings) as Promise<OnlinePbxRoutingSettings>,
     onSuccess: (settings) => {
-      queryClient.setQueryData(['/api/telephony/forwarding'], settings);
-      setOnlinePbxForwardingDraft(settings);
+      queryClient.setQueryData(['/api/telephony/routing'], settings);
+      setOnlinePbxRoutingDraft({
+        primaryManagerId: settings.primaryManagerId,
+        enabledManagerIds: settings.enabledManagerIds,
+      });
       toast({
-        title: t('onlinePbxForwardingSaved'),
-        description: settings.enabled
-          ? t('onlinePbxForwardingEnabled')
-          : t('onlinePbxForwardingDisabled'),
+        title: t('onlinePbxRoutingSaved'),
+        description: settings.synchronized === false
+          ? t('onlinePbxRoutingSyncPending')
+          : t('onlinePbxRoutingSavedDescription'),
+        variant: settings.synchronized === false ? 'destructive' : undefined,
       });
     },
     onError: (error: Error) => {
       toast({
-        title: t('onlinePbxForwardingUpdateFailed'),
+        title: t('onlinePbxRoutingUpdateFailed'),
         description: error.message,
         variant: 'destructive',
       });
@@ -203,11 +241,33 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   const onlinePbxIntegration = integrations.data?.find(
     (integration) => integration.provider === 'onlinepbx',
   );
-  const forwardingPhoneIsValid =
-    onlinePbxForwardingDraft.phone.replace(/\D/g, '').length === 12;
-  const forwardingSettingsChanged =
-    onlinePbxForwarding.data?.enabled !== onlinePbxForwardingDraft.enabled
-    || onlinePbxForwarding.data?.phone !== onlinePbxForwardingDraft.phone;
+  const enabledRoutingManagerIds = useMemo(
+    () => new Set(onlinePbxRoutingDraft.enabledManagerIds),
+    [onlinePbxRoutingDraft.enabledManagerIds],
+  );
+  const routingSettingsChanged = Boolean(
+    onlinePbxRouting.data
+    && (
+      onlinePbxRouting.data.synchronized === false
+      || onlinePbxRouting.data.primaryManagerId !== onlinePbxRoutingDraft.primaryManagerId
+      || [...onlinePbxRouting.data.enabledManagerIds].sort((left, right) => left - right).join(',')
+        !== [...onlinePbxRoutingDraft.enabledManagerIds].sort((left, right) => left - right).join(',')
+    )
+  );
+
+  const setManagerCallsEnabled = (managerId: number, enabled: boolean) => {
+    setOnlinePbxRoutingDraft((current) => {
+      const enabledManagerIds = enabled
+        ? [...new Set([...current.enabledManagerIds, managerId])]
+        : current.enabledManagerIds.filter((id) => id !== managerId);
+      const primaryManagerId = enabled
+        ? current.primaryManagerId ?? managerId
+        : current.primaryManagerId === managerId
+          ? enabledManagerIds[0] ?? null
+          : current.primaryManagerId;
+      return { enabledManagerIds, primaryManagerId };
+    });
+  };
 
   return (
     <WorkspacePage contained>
@@ -324,79 +384,120 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       </WorkspacePageBody>
 
       <Dialog open={onlinePbxSettingsOpen} onOpenChange={setOnlinePbxSettingsOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('onlinePbxSettingsTitle')}</DialogTitle>
             <DialogDescription>{t('onlinePbxSettingsDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <PhoneForwarded className="size-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground">{t('onlinePbxForwarding')}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {t('onlinePbxForwardingDescription')}
-                    </p>
-                  </div>
-                </div>
-                {onlinePbxForwarding.isLoading ? (
-                  <Loader2 className="size-5 shrink-0 animate-spin text-muted-foreground" />
-                ) : (
-                  <Switch
-                    checked={onlinePbxForwardingDraft.enabled}
-                    onCheckedChange={(enabled) => {
-                      setOnlinePbxForwardingDraft((current) => ({ ...current, enabled }));
-                    }}
-                    disabled={
-                      onlinePbxForwarding.isError
-                      || updateOnlinePbxForwarding.isPending
-                      || !onlinePbxIntegration?.connected
-                    }
-                    aria-label={t('onlinePbxForwarding')}
-                  />
+          <div className="flex flex-col gap-4 py-2">
+            <Alert>
+              <PhoneForwarded />
+              <AlertTitle>{t('onlinePbxRoutingTitle')}</AlertTitle>
+              <AlertDescription>
+                {t('onlinePbxRoutingDescription').replace(
+                  '{seconds}',
+                  String(onlinePbxRouting.data?.ringDelaySeconds ?? 3),
                 )}
-              </div>
+              </AlertDescription>
+            </Alert>
 
-              <div className="mt-4 space-y-2 border-t border-border/70 pt-4">
-                <label
-                  className="text-sm font-medium text-foreground"
-                  htmlFor="online-pbx-forwarding-phone"
-                >
-                  {t('onlinePbxForwardingPhone')}
-                </label>
-                <PhoneInput
-                  id="online-pbx-forwarding-phone"
-                  value={onlinePbxForwardingDraft.phone}
-                  onValueChange={(phone) => {
-                    setOnlinePbxForwardingDraft((current) => ({ ...current, phone }));
-                  }}
-                  disabled={
-                    onlinePbxForwarding.isLoading
-                    || onlinePbxForwarding.isError
-                    || updateOnlinePbxForwarding.isPending
-                    || !onlinePbxIntegration?.connected
-                  }
-                  aria-invalid={
-                    Boolean(onlinePbxForwardingDraft.phone) && !forwardingPhoneIsValid
-                  }
-                />
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {t('onlinePbxForwardingPhoneHint')}
-                </p>
+            {onlinePbxRouting.isLoading ? (
+              <div className="flex flex-col gap-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="flex items-center gap-3 rounded-lg border p-3">
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-3 w-28" />
+                    </div>
+                    <Skeleton className="h-9 w-28" />
+                    <Skeleton className="h-6 w-11 rounded-full" />
+                  </div>
+                ))}
               </div>
-            </div>
-
-            {onlinePbxForwarding.isError ? (
-              <div className="flex items-start gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                <span>{t('onlinePbxForwardingLoadFailed')}</span>
-              </div>
-            ) : null}
+            ) : onlinePbxRouting.isError ? (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>{t('onlinePbxRoutingLoadFailed')}</AlertTitle>
+                <AlertDescription>{t('onlinePbxRoutingLoadFailedDescription')}</AlertDescription>
+              </Alert>
+            ) : (
+              <FieldSet>
+                <FieldLegend className="sr-only">{t('onlinePbxManagers')}</FieldLegend>
+                <ScrollArea className="max-h-[22rem] pr-3">
+                  <FieldGroup className="gap-3">
+                    {(onlinePbxRouting.data?.managers ?? []).map((manager) => {
+                      const enabled = enabledRoutingManagerIds.has(manager.id);
+                      const isPrimary = onlinePbxRoutingDraft.primaryManagerId === manager.id;
+                      return (
+                        <Field
+                          key={manager.id}
+                          orientation="responsive"
+                          data-disabled={!manager.hasValidPhone}
+                          className="rounded-lg border p-3"
+                        >
+                          <FieldContent className="min-w-0">
+                            <FieldTitle className="flex-wrap">
+                              <span className="truncate">{manager.fullName}</span>
+                              <Badge variant={manager.isOnline ? 'success' : 'secondary'}>
+                                {manager.isOnline ? t('online') : t('offline')}
+                              </Badge>
+                              {manager.isActivePrimary ? (
+                                <Badge variant="info">{t('onlinePbxActivePrimary')}</Badge>
+                              ) : null}
+                            </FieldTitle>
+                            <FieldDescription>
+                              {manager.phone ?? t('onlinePbxManagerPhoneMissing')}
+                            </FieldDescription>
+                          </FieldContent>
+                          <div className="flex items-center justify-between gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isPrimary ? 'secondary' : 'ghost'}
+                              aria-pressed={isPrimary}
+                              onClick={() => {
+                                setOnlinePbxRoutingDraft((current) => ({
+                                  ...current,
+                                  primaryManagerId: manager.id,
+                                }));
+                              }}
+                              disabled={
+                                !enabled
+                                || updateOnlinePbxRouting.isPending
+                                || !onlinePbxIntegration?.connected
+                              }
+                            >
+                              <Star data-icon="inline-start" />
+                              {isPrimary ? t('onlinePbxPrimaryManager') : t('onlinePbxMakePrimary')}
+                            </Button>
+                            <Switch
+                              checked={enabled}
+                              onCheckedChange={(checked) => {
+                                setManagerCallsEnabled(manager.id, checked);
+                              }}
+                              disabled={
+                                !manager.hasValidPhone
+                                || updateOnlinePbxRouting.isPending
+                                || !onlinePbxIntegration?.connected
+                              }
+                              aria-label={`${t('onlinePbxReceiveCalls')}: ${manager.fullName}`}
+                            />
+                          </div>
+                        </Field>
+                      );
+                    })}
+                  </FieldGroup>
+                </ScrollArea>
+                {(onlinePbxRouting.data?.managers.length ?? 0) === 0 ? (
+                  <Alert>
+                    <AlertCircle />
+                    <AlertTitle>{t('onlinePbxNoManagers')}</AlertTitle>
+                    <AlertDescription>{t('onlinePbxNoManagersDescription')}</AlertDescription>
+                  </Alert>
+                ) : null}
+              </FieldSet>
+            )}
           </div>
 
           <DialogFooter>
@@ -422,17 +523,16 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Button>
             <Button
               type="button"
-              onClick={() => updateOnlinePbxForwarding.mutate(onlinePbxForwardingDraft)}
+              onClick={() => updateOnlinePbxRouting.mutate(onlinePbxRoutingDraft)}
               disabled={
                 !onlinePbxIntegration?.connected
-                || onlinePbxForwarding.isLoading
-                || onlinePbxForwarding.isError
-                || updateOnlinePbxForwarding.isPending
-                || !forwardingPhoneIsValid
-                || !forwardingSettingsChanged
+                || onlinePbxRouting.isLoading
+                || onlinePbxRouting.isError
+                || updateOnlinePbxRouting.isPending
+                || !routingSettingsChanged
               }
             >
-              {updateOnlinePbxForwarding.isPending ? (
+              {updateOnlinePbxRouting.isPending ? (
                 <Loader2 className="animate-spin" data-icon="inline-start" />
               ) : null}
               {t('save')}

@@ -10,6 +10,7 @@ const historicalBackfillPath = path.join(repositoryRoot, 'migrations/0055_backfi
 const extensionAutomationPath = path.join(repositoryRoot, 'migrations/0057_automate_onlinepbx_extensions.sql');
 const sharedExtensionPath = path.join(repositoryRoot, 'migrations/0059_use_shared_onlinepbx_extension.sql');
 const configurableForwardingPath = path.join(repositoryRoot, 'migrations/0062_configurable_onlinepbx_forwarding.sql');
+const managerRoutingPath = path.join(repositoryRoot, 'migrations/0067_add_onlinepbx_manager_routing.sql');
 const journalPath = path.join(repositoryRoot, 'migrations/meta/_journal.json');
 
 describe('telephony calls migration', () => {
@@ -36,6 +37,9 @@ describe('telephony calls migration', () => {
     expect(journal.entries.find((entry: { idx: number }) => entry.idx === 62)?.tag)
       .toBe('0062_configurable_onlinepbx_forwarding');
     expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 62)).toHaveLength(1);
+    expect(journal.entries.find((entry: { idx: number }) => entry.idx === 67)?.tag)
+      .toBe('0067_add_onlinepbx_manager_routing');
+    expect(journal.entries.filter((entry: { idx: number }) => entry.idx === 67)).toHaveLength(1);
   });
 
   it('persists the forwarding phone and enabled state in company settings', () => {
@@ -44,6 +48,15 @@ describe('telephony calls migration', () => {
     expect(migration).toContain('"online_pbx_forwarding_phone"');
     expect(migration).toContain("DEFAULT '+998978576040'");
     expect(migration).toContain('"online_pbx_forwarding_enabled"');
+  });
+
+  it('persists per-manager call eligibility and the preferred first manager', () => {
+    const migration = fs.readFileSync(managerRoutingPath, 'utf8');
+
+    expect(migration).toContain('"online_pbx_incoming_enabled"');
+    expect(migration).toContain('"online_pbx_primary_manager_id"');
+    expect(migration).toContain('REFERENCES "users"("id") ON DELETE SET NULL');
+    expect(migration).toContain("workspace.\"workspace\" = 'sales'");
   });
 
   it('registers managed extensions and prevents duplicate employee assignments', () => {

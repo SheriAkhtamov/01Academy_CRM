@@ -100,6 +100,7 @@ export function useWebSocket() {
           break;
         case 'USER_STATUS_CHANGED':
           queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/telephony/routing'] });
           break;
         case 'BOARD_TASK_CREATED':
         case 'BOARD_TASK_UPDATED':

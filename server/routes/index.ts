@@ -29,6 +29,10 @@ import { setBroadcastFunction as setMessageBroadcast } from './message.routes';
 import { setBroadcastFunction as setBoardBroadcast } from './board.routes';
 import { setInstagramBroadcastFunction } from '../services/instagram';
 import { setTelephonyBroadcastFunction } from './telephony.routes';
+import {
+    queueOnlinePbxRoutingSync,
+    synchronizeOnlinePbxRoutingWithRetry,
+} from '../services/telephony-routing';
 
 const PgStore = pgSession(session);
 const WS_OPEN_STATE = 1;
@@ -134,6 +138,9 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     `).catch((error) => {
         logger.error('Failed to reset stale online statuses', { error });
     });
+    await synchronizeOnlinePbxRoutingWithRetry(2).catch((error) => {
+        logger.warn('OnlinePBX routing could not be synchronized during startup', { error });
+    });
 
     httpServer.on('upgrade', (request, socket, head) => {
         if (allSockets.size >= MAX_TOTAL_WEBSOCKET_CONNECTIONS) {
@@ -218,6 +225,9 @@ export async function registerModularRoutes(app: Express): Promise<Server> {
     const presenceTracker = createPresenceTracker({
         updateUserOnlineStatus: storage.updateUserOnlineStatus.bind(storage),
         broadcast: broadcastToClients,
+        afterPresenceChange: async () => {
+            queueOnlinePbxRoutingSync();
+        },
         onError: (error, context) => {
             logger.error('Failed to sync user presence', { error, ...context });
         },

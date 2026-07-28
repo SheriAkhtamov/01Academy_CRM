@@ -1286,49 +1286,92 @@ export const translations = {
   },
   onlinePbxSettingsTitle: { en: 'OnlinePBX settings', ru: 'Настройки OnlinePBX' },
   onlinePbxSettingsDescription: {
-    en: 'Manage the company mobile forwarding and verify the PBX connection.',
-    ru: 'Управляйте переадресацией на мобильный номер компании и проверяйте подключение АТС.',
+    en: 'Choose who receives incoming calls, set the first manager, and verify the PBX connection.',
+    ru: 'Выберите получателей входящих звонков, назначьте первого менеджера и проверьте подключение АТС.',
   },
-  onlinePbxForwarding: { en: 'Mobile forwarding', ru: 'Переадресация на мобильный' },
-  onlinePbxForwardingDescription: {
-    en: 'When enabled, incoming calls also ring the specified mobile number. Extension 100 is not changed.',
-    ru: 'Когда включено, входящий звонок также поступает на указанный мобильный номер. Внутренний номер 100 не изменяется.',
+  onlinePbxRoutingTitle: {
+    en: 'Sequential incoming call routing',
+    ru: 'Последовательная маршрутизация входящих',
   },
-  onlinePbxForwardingPhone: {
-    en: 'Forwarding phone number',
-    ru: 'Номер для переадресации',
+  onlinePbxRoutingDescription: {
+    en: 'The first available manager rings first. If there is no answer within {seconds} seconds, the other enabled online managers start ringing. Offline managers are always excluded.',
+    ru: 'Сначала звонок поступает первому доступному менеджеру. Если ответа нет в течение {seconds} секунд, начинают звонить остальные включённые онлайн-менеджеры. Офлайн-менеджеры всегда исключаются.',
   },
-  onlinePbxForwardingPhoneHint: {
-    en: 'This is the mobile number that will receive incoming company calls.',
-    ru: 'На этот мобильный номер будут поступать входящие звонки компании.',
+  onlinePbxManagers: {
+    en: 'Managers receiving incoming calls',
+    ru: 'Менеджеры, принимающие входящие звонки',
   },
-  onlinePbxForwardingSaved: {
-    en: 'Forwarding settings saved',
-    ru: 'Настройки переадресации сохранены',
+  onlinePbxActivePrimary: {
+    en: 'First now',
+    ru: 'Сейчас первый',
   },
-  onlinePbxForwardingEnabled: {
-    en: 'Mobile forwarding is enabled',
-    ru: 'Переадресация на мобильный включена',
+  onlinePbxManagerPhoneMissing: {
+    en: 'Add a phone number in the employee profile to enable calls.',
+    ru: 'Чтобы включить звонки, добавьте номер телефона в профиле сотрудника.',
   },
-  onlinePbxForwardingDisabled: {
-    en: 'Mobile forwarding is disabled',
-    ru: 'Переадресация на мобильный выключена',
+  onlinePbxPrimaryManager: {
+    en: 'First manager',
+    ru: 'Первый менеджер',
   },
-  onlinePbxForwardingUpdateFailed: {
-    en: 'Could not update mobile forwarding',
-    ru: 'Не удалось изменить переадресацию',
+  onlinePbxMakePrimary: {
+    en: 'Call first',
+    ru: 'Звонить первым',
   },
-  onlinePbxForwardingLoadFailed: {
-    en: 'Could not load the current forwarding state.',
-    ru: 'Не удалось получить текущее состояние переадресации.',
+  onlinePbxReceiveCalls: {
+    en: 'Receive incoming calls',
+    ru: 'Принимать входящие звонки',
   },
-  onlinePbxInvalidForwardingPhone: {
-    en: 'Enter a valid forwarding phone number.',
-    ru: 'Укажите корректный номер для переадресации.',
+  onlinePbxRoutingLoadFailed: {
+    en: 'Could not load call routing',
+    ru: 'Не удалось загрузить маршрутизацию звонков',
   },
-  onlinePbxForwardingLoop: {
-    en: 'The company phone number cannot forward calls to itself.',
-    ru: 'Нельзя переадресовать звонки с номера компании на него же.',
+  onlinePbxRoutingLoadFailedDescription: {
+    en: 'Check the OnlinePBX connection and try opening the settings again.',
+    ru: 'Проверьте подключение OnlinePBX и откройте настройки ещё раз.',
+  },
+  onlinePbxNoManagers: {
+    en: 'No sales managers found',
+    ru: 'Менеджеры продаж не найдены',
+  },
+  onlinePbxNoManagersDescription: {
+    en: 'Assign Sales access to an active employee before enabling incoming calls.',
+    ru: 'Перед включением входящих звонков назначьте активному сотруднику доступ к модулю «Продажи».',
+  },
+  onlinePbxRoutingSaved: {
+    en: 'Incoming call routing saved',
+    ru: 'Маршрутизация входящих сохранена',
+  },
+  onlinePbxRoutingSavedDescription: {
+    en: 'OnlinePBX groups were updated successfully.',
+    ru: 'Группы OnlinePBX успешно обновлены.',
+  },
+  onlinePbxRoutingSyncPending: {
+    en: 'The settings were saved, but OnlinePBX did not confirm synchronization. Try saving again.',
+    ru: 'Настройки сохранены, но OnlinePBX не подтвердил синхронизацию. Повторите сохранение.',
+  },
+  onlinePbxRoutingUpdateFailed: {
+    en: 'Could not update incoming call routing',
+    ru: 'Не удалось изменить маршрутизацию входящих',
+  },
+  onlinePbxInvalidManagerSelection: {
+    en: 'Select only active employees with Sales access.',
+    ru: 'Выберите только активных сотрудников с доступом к модулю «Продажи».',
+  },
+  onlinePbxManagerPhoneRequired: {
+    en: 'Every enabled manager must have a valid phone number.',
+    ru: 'У каждого включённого менеджера должен быть корректный номер телефона.',
+  },
+  onlinePbxDuplicateManagerPhone: {
+    en: 'Enabled managers must have different phone numbers.',
+    ru: 'У включённых менеджеров должны быть разные номера телефонов.',
+  },
+  onlinePbxPrimaryManagerMustBeEnabled: {
+    en: 'The first manager must also be enabled for incoming calls.',
+    ru: 'Первый менеджер также должен быть включён для входящих звонков.',
+  },
+  onlinePbxForwardingReplaced: {
+    en: 'Mobile forwarding was replaced by manager call routing. Refresh this page.',
+    ru: 'Переадресация заменена маршрутизацией по менеджерам. Обновите страницу.',
   },
   onlinePbxTestConnection: { en: 'Test connection', ru: 'Проверить подключение' },
   onlinePbxConnectionVerified: { en: 'OnlinePBX is connected', ru: 'OnlinePBX подключён' },

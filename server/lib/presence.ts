@@ -3,12 +3,14 @@ import type { WebSocketEvent } from "@shared/websocket";
 interface PresenceTrackerOptions {
   updateUserOnlineStatus: (userId: number, isOnline: boolean) => Promise<void>;
   broadcast: (event: WebSocketEvent) => void;
+  afterPresenceChange?: (userId: number, isOnline: boolean) => Promise<void>;
   onError?: (error: unknown, context: { userId: number; isOnline: boolean }) => void;
 }
 
 export function createPresenceTracker({
   updateUserOnlineStatus,
   broadcast,
+  afterPresenceChange,
   onError,
 }: PresenceTrackerOptions) {
   const connections = new Map<number, number>();
@@ -23,6 +25,13 @@ export function createPresenceTracker({
           isOnline,
         },
       });
+    } catch (error) {
+      onError?.(error, { userId, isOnline });
+      return;
+    }
+
+    try {
+      await afterPresenceChange?.(userId, isOnline);
     } catch (error) {
       onError?.(error, { userId, isOnline });
     }

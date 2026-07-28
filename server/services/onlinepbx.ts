@@ -105,6 +105,20 @@ const cleanDomain = (value: string | undefined) => value?.trim().toLowerCase() ?
 const isValidDomain = (value: string) =>
   /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(value) && value.includes('.');
 
+const parseOnlinePbxGroup = (
+  value: Record<string, unknown> | null | undefined,
+  extension: string,
+): OnlinePbxGroup | null => {
+  if (!value || String(value.num ?? '').trim() !== extension) return null;
+  return {
+    extension,
+    name: String(value.name ?? '').trim() || null,
+    users: String(value.users ?? '').split(';').map((user) => user.trim()).filter(Boolean),
+    delay: Math.max(1, Number(value.delay) || 20),
+    defaultDestination: String(value.default ?? '').trim() || null,
+  };
+};
+
 export const normalizeOnlinePbxPhone = (value: unknown): string | null => {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const raw = String(value).trim();
@@ -303,21 +317,31 @@ export class OnlinePbxClient {
     await this.request<unknown>('user/edit', body);
   }
 
-  async getGroup(extension: string): Promise<OnlinePbxGroup> {
-    const data = await this.request<Record<string, unknown>>(
+  async findGroup(extension: string): Promise<OnlinePbxGroup | null> {
+    const data = await this.request<Record<string, unknown> | null>(
       'group/get',
       new URLSearchParams({ num: extension }),
     );
-    if (!data || String(data.num ?? '').trim() !== extension) {
+    return parseOnlinePbxGroup(data, extension);
+  }
+
+  async getGroup(extension: string): Promise<OnlinePbxGroup> {
+    const group = await this.findGroup(extension);
+    if (!group) {
       throw new OnlinePbxError('onlinePbxRingGroupUnavailable', 502);
     }
-    return {
-      extension,
-      name: String(data.name ?? '').trim() || null,
-      users: String(data.users ?? '').split(';').map((user) => user.trim()).filter(Boolean),
-      delay: Math.max(1, Number(data.delay) || 20),
-      defaultDestination: String(data.default ?? '').trim() || null,
-    };
+    return group;
+  }
+
+  async createGroup(input: OnlinePbxGroup): Promise<void> {
+    const body = new URLSearchParams({
+      num: input.extension,
+      users: input.users.join(';'),
+      delay: String(input.delay),
+      default: input.defaultDestination ?? '',
+    });
+    if (input.name) body.set('name', input.name);
+    await this.request<unknown>('group/add', body);
   }
 
   async updateGroup(input: OnlinePbxGroup): Promise<void> {
@@ -325,9 +349,9 @@ export class OnlinePbxClient {
       num: input.extension,
       users: input.users.join(';'),
       delay: String(input.delay),
+      default: input.defaultDestination ?? '',
     });
     if (input.name) body.set('name', input.name);
-    if (input.defaultDestination) body.set('default', input.defaultDestination);
     await this.request<unknown>('group/edit', body);
   }
 

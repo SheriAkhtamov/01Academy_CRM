@@ -5684,7 +5684,8 @@ router.get('/leads/:id', async (req, res) => {
                 call.started_at, call.answered_at, call.ended_at,
                 call.duration_seconds, call.talk_seconds, call.hangup_cause,
                 call.user_id, employee.full_name AS user_name,
-                (call.talk_seconds > 0) AS has_recording
+                (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0)
+                  AS has_recording
          FROM telephony_calls call
          LEFT JOIN users employee ON employee.id = call.user_id
          WHERE call.lead_id = $1

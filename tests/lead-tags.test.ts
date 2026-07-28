@@ -16,6 +16,10 @@ const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
   'utf8',
 );
+const leadTagsEditor = leadSheet.slice(
+  leadSheet.indexOf('function LeadTagsEditor'),
+  leadSheet.indexOf('export function LeadDetailSheet'),
+);
 const kanban = readFileSync(
   new URL('../client/src/components/ux/KanbanBoard.tsx', import.meta.url),
   'utf8',
@@ -59,15 +63,23 @@ describe('lead tags', () => {
     expect(routes).toContain('(SELECT COUNT(*) FROM academy_lead_tag_assignments WHERE lead_id = $1)');
   });
 
-  it('keeps tag controls in the lead sheet and confirms manual removal', () => {
-    expect(leadSheet).toContain('<Sheet open={open}');
+  it('uses one compact tag input and protects the automatic source tag', () => {
+    expect(leadSheet).toContain('<Sheet');
+    expect(leadSheet).toContain('open={open}');
     expect(leadSheet).toContain('<LeadTagsEditor');
-    expect(leadSheet).toContain("queryKey: ['/api/academy/lead-tags']");
-    expect(leadSheet).toContain('customTagName');
-    expect(leadSheet).toContain('<Select');
-    expect(leadSheet).toContain('<AlertDialog');
-    expect(leadSheet).toContain('removeLeadTagDescription');
-    expect(leadSheet).toContain('<LockKeyhole');
+    expect(leadTagsEditor).toContain("queryKey: ['/api/academy/lead-tags']");
+    expect(leadTagsEditor).toContain('role="combobox"');
+    expect(leadTagsEditor).toContain('role="listbox"');
+    expect(leadTagsEditor).toContain('customTagName');
+    expect(leadTagsEditor).toContain('<LockKeyhole');
+    expect(leadTagsEditor).toContain('const manualTags = tags');
+    expect(leadTagsEditor).toContain('onDropdownOpenChange');
+    expect(leadTagsEditor).toContain("event.key === 'Escape' && isOpen");
+    expect(leadTagsEditor).not.toContain('<section');
+    expect(leadTagsEditor).not.toContain('<Select');
+    expect(leadTagsEditor).not.toContain('<AlertDialog');
+    expect(leadSheet).toContain('onEscapeKeyDown={(event)');
+    expect(leadSheet).toContain('if (tagDropdownOpen) event.preventDefault()');
     expect(kanban).toContain('(lead.tags ?? [])');
   });
 

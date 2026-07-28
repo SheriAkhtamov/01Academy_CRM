@@ -69,6 +69,7 @@ describe('OnlinePBX recording resolution', () => {
 
     await expect(resolveOnlinePbxRecording({
       providerCallId: null,
+      direction: 'outgoing',
       phone: '+998901234567',
       startedAt: new Date(startedAt),
     }, {
@@ -102,6 +103,72 @@ describe('OnlinePBX recording resolution', () => {
       getCallRecordingUrl,
     })).resolves.toEqual({ state: 'pending' });
     expect(getCallRecordingUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects distant or ambiguous calls on the same phone number', async () => {
+    const startedAt = Date.parse('2026-07-28T10:00:00.000Z');
+    const getCallRecordingUrl = vi.fn();
+    const getCallHistory = vi.fn().mockResolvedValue([
+      historyItem({
+        uuid: 'distant-call',
+        startStamp: Math.floor(startedAt / 1000) + 120,
+      }),
+      historyItem({
+        uuid: 'near-before',
+        startStamp: Math.floor(startedAt / 1000) - 5,
+      }),
+      historyItem({
+        uuid: 'near-after',
+        startStamp: Math.floor(startedAt / 1000) + 6,
+      }),
+    ]);
+
+    await expect(resolveOnlinePbxRecording({
+      providerCallId: null,
+      direction: 'outgoing',
+      phone: '+998901234567',
+      startedAt: new Date(startedAt),
+    }, {
+      getCallHistory,
+      getCallRecordingUrl,
+    })).resolves.toEqual({ state: 'pending' });
+    expect(getCallRecordingUrl).not.toHaveBeenCalled();
+  });
+
+  it('does not attach a recording from the opposite call direction', async () => {
+    const startedAt = Date.parse('2026-07-28T10:00:00.000Z');
+    const matchingDirection = historyItem({
+      uuid: 'outgoing-call',
+      direction: 'outbound',
+      startStamp: Math.floor(startedAt / 1000) + 20,
+    });
+    const getCallHistory = vi.fn().mockResolvedValue([
+      historyItem({
+        uuid: 'incoming-call',
+        direction: 'inbound',
+        startStamp: Math.floor(startedAt / 1000) + 1,
+      }),
+      matchingDirection,
+    ]);
+    const getCallRecordingUrl = vi.fn().mockResolvedValue(
+      'https://api2.onlinepbx.ru/calls-records/download/outgoing/rec.mp3',
+    );
+
+    await expect(resolveOnlinePbxRecording({
+      providerCallId: null,
+      direction: 'outgoing',
+      phone: '+998901234567',
+      startedAt: new Date(startedAt),
+    }, {
+      getCallHistory,
+      getCallRecordingUrl,
+    })).resolves.toEqual({
+      state: 'ready',
+      url: 'https://api2.onlinepbx.ru/calls-records/download/outgoing/rec.mp3',
+      providerCallId: 'outgoing-call',
+      history: matchingDirection,
+    });
+    expect(getCallRecordingUrl).toHaveBeenCalledWith('outgoing-call');
   });
 
   it('reports an unavailable recording when a matched call has no downloadable audio', async () => {

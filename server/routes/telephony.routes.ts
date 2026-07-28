@@ -1086,7 +1086,7 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
             answered_at AS "answeredAt", ended_at AS "endedAt",
             duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
             hangup_cause AS "hangupCause",
-            (talk_seconds > 0) AS "hasRecording"
+            (NULLIF(BTRIM(recording_url), '') IS NOT NULL OR talk_seconds > 0) AS "hasRecording"
      FROM telephony_calls
      WHERE user_id = $1
      ORDER BY started_at DESC
@@ -1172,7 +1172,7 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
             call.duration_seconds AS "durationSeconds",
             call.talk_seconds AS "talkSeconds",
             call.hangup_cause AS "hangupCause",
-            (call.talk_seconds > 0) AS "hasRecording",
+            (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording",
             COUNT(*) OVER()::int AS "totalCount",
             COUNT(*) FILTER (WHERE call.status = 'missed') OVER()::int AS "missedCount",
             COUNT(*) FILTER (WHERE call.talk_seconds > 0) OVER()::int AS "answeredCount",
@@ -1208,9 +1208,11 @@ type RecordingCallRow = {
   id: number;
   userId: number | null;
   providerCallId: string | null;
+  direction: 'incoming' | 'outgoing';
   phone: string;
   startedAt: string | Date;
   talkSeconds: number;
+  recordingUrl: string | null;
   leadId: number | null;
   leadManagerId: number | null;
 };
@@ -1221,7 +1223,9 @@ const loadAuthorizedRecordingCall = async (
 ): Promise<RecordingCallRow | null> => {
   const result = await pool.query(
     `SELECT call.id, call.user_id AS "userId", call.provider_call_id AS "providerCallId",
-            call.phone, call.started_at AS "startedAt", call.talk_seconds AS "talkSeconds",
+            call.direction, call.phone, call.started_at AS "startedAt",
+            call.talk_seconds AS "talkSeconds",
+            call.recording_url AS "recordingUrl",
             lead_id AS "leadId", lead.manager_id AS "leadManagerId"
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
@@ -1244,8 +1248,34 @@ const loadAuthorizedRecordingCall = async (
 const resolveAndStoreOnlinePbxRecording = async (
   call: RecordingCallRow,
 ) => {
-  const recording = await resolveOnlinePbxRecording(call);
-  if (recording.state !== 'ready') return recording;
+  const storedRecordingUrl = (() => {
+    const value = call.recordingUrl?.trim();
+    if (!value) return null;
+    try {
+      const url = new URL(value);
+      return isAllowedOnlinePbxRecordingUrl(url) ? url.toString() : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  let recording: Awaited<ReturnType<typeof resolveOnlinePbxRecording>>;
+  try {
+    recording = await resolveOnlinePbxRecording(call);
+  } catch (error) {
+    if (storedRecordingUrl) {
+      logger.warn('Using stored OnlinePBX recording URL after refresh failed', {
+        callId: call.id,
+      });
+      return { state: 'ready' as const, url: storedRecordingUrl };
+    }
+    throw error;
+  }
+  if (recording.state !== 'ready') {
+    return storedRecordingUrl
+      ? { state: 'ready' as const, url: storedRecordingUrl }
+      : recording;
+  }
 
   await pool.query(
     `UPDATE telephony_calls
@@ -1405,9 +1435,6 @@ router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
   if (!call) {
     return res.status(404).json({ error: 'onlinePbxCallNotFound' });
   }
-  if (Number(call.talkSeconds) <= 0) {
-    return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
-  }
   res.setHeader('Cache-Control', 'no-store, private');
 
   try {
@@ -1431,9 +1458,6 @@ router.get('/calls/:id/recording/media', requireAuth, asyncRoute(async (req, res
   const call = await loadAuthorizedRecordingCall(callId, req.user!);
   if (!call) {
     return res.status(404).json({ error: 'onlinePbxCallNotFound' });
-  }
-  if (Number(call.talkSeconds) <= 0) {
-    return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
   }
 
   try {

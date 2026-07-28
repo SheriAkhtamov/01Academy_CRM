@@ -42,7 +42,6 @@ import {
   useFormField,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -363,33 +362,44 @@ interface LeadTagsEditorProps {
   automaticTag?: string | null;
   tags?: LeadTagView[];
   onChanged: () => void;
+  onDropdownOpenChange: (open: boolean) => void;
 }
 
-const leadTagOptionValue = (option: LeadTagOption) => (
-  option.id === null ? `source:${leadTagNameKey(option.name)}` : `tag:${option.id}`
-);
+type LeadTagSuggestion =
+  | {
+      key: string;
+      kind: 'existing';
+      name: string;
+      option: LeadTagOption;
+    }
+  | {
+      key: string;
+      kind: 'create';
+      name: string;
+    };
 
 function LeadTagsEditor({
   leadId,
   automaticTag,
   tags = [],
   onChanged,
+  onDropdownOpenChange,
 }: LeadTagsEditorProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [selectedOptionValue, setSelectedOptionValue] = useState<string>();
   const [customTagName, setCustomTagName] = useState('');
-  const [removeTarget, setRemoveTarget] = useState<LeadTagView | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = `lead-${leadId}-tag-options`;
 
   const tagOptionsQuery = useQuery<LeadTagOption[]>({
     queryKey: ['/api/academy/lead-tags'],
   });
 
   const automaticTagKey = leadTagNameKey(automaticTag);
-  const manualTags = useMemo(
-    () => tags.filter((tag) => leadTagNameKey(tag.name) !== automaticTagKey),
-    [automaticTagKey, tags],
-  );
+  const manualTags = tags;
   const assignedTagKeys = useMemo(
     () => new Set([
       automaticTagKey,
@@ -403,13 +413,45 @@ function LeadTagsEditor({
     )),
     [assignedTagKeys, tagOptionsQuery.data],
   );
-  const selectedOption = availableOptions.find(
-    (option) => leadTagOptionValue(option) === selectedOptionValue,
-  );
   const normalizedCustomTag = normalizeLeadTagName(customTagName);
-  const canAddCustomTag = Boolean(
-    normalizedCustomTag && !assignedTagKeys.has(normalizedCustomTag.normalizedName),
+  const customTagKey = normalizedCustomTag?.normalizedName ?? '';
+  const matchingOptions = useMemo(
+    () => availableOptions
+      .filter((option) => (
+        !customTagKey || leadTagNameKey(option.name).includes(customTagKey)
+      ))
+      .slice(0, 8),
+    [availableOptions, customTagKey],
   );
+  const exactOption = availableOptions.find(
+    (option) => leadTagNameKey(option.name) === customTagKey,
+  );
+  const canAddCustomTag = Boolean(
+    normalizedCustomTag
+      && !assignedTagKeys.has(normalizedCustomTag.normalizedName)
+      && !exactOption,
+  );
+  const suggestions: LeadTagSuggestion[] = [
+    ...(normalizedCustomTag && canAddCustomTag
+      ? [{
+          key: `create:${normalizedCustomTag.normalizedName}`,
+          kind: 'create' as const,
+          name: normalizedCustomTag.name,
+        }]
+      : []),
+    ...matchingOptions.map((option) => ({
+      key: option.id === null
+        ? `source:${leadTagNameKey(option.name)}`
+        : `tag:${option.id}`,
+      kind: 'existing' as const,
+      name: option.name,
+      option,
+    })),
+  ];
+  const resolvedActiveSuggestionIndex = suggestions.length === 0
+    ? -1
+    : Math.min(activeSuggestionIndex, suggestions.length - 1);
+  const activeSuggestion = suggestions[resolvedActiveSuggestionIndex];
 
   const refreshTags = async () => {
     await Promise.all([
@@ -423,8 +465,10 @@ function LeadTagsEditor({
     mutationFn: (payload: { tagId?: number; name?: string }) =>
       apiRequest('POST', `/api/academy/leads/${leadId}/tags`, payload),
     onSuccess: async (result: { created?: boolean }) => {
-      setSelectedOptionValue(undefined);
       setCustomTagName('');
+      setIsOpen(false);
+      onDropdownOpenChange(false);
+      setActiveSuggestionIndex(0);
       await refreshTags();
       toast({
         title: result.created ? t('leadTagAdded') : t('leadTagAlreadyAssigned'),
@@ -441,12 +485,10 @@ function LeadTagsEditor({
     mutationFn: (tag: LeadTagView) =>
       apiRequest('DELETE', `/api/academy/leads/${leadId}/tags/${tag.id}`),
     onSuccess: async () => {
-      setRemoveTarget(null);
       await refreshTags();
       toast({ title: t('leadTagRemoved') });
     },
     onError: (error: Error) => {
-      setRemoveTarget(null);
       toast({
         title: t('leadTagRemoveFailed'),
         description: error.message,
@@ -454,149 +496,221 @@ function LeadTagsEditor({
       });
     },
   });
-
-  const submitSelectedTag = () => {
-    if (!selectedOption || addTag.isPending) return;
-    addTag.mutate(
-      selectedOption.id === null
-        ? { name: selectedOption.name }
-        : { tagId: selectedOption.id },
-    );
+  const isBusy = addTag.isPending || removeTag.isPending;
+  const setDropdownOpen = (nextOpen: boolean) => {
+    setIsOpen(nextOpen);
+    onDropdownOpenChange(nextOpen);
   };
 
-  const submitCustomTag = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!normalizedCustomTag || !canAddCustomTag || addTag.isPending) return;
-    addTag.mutate({ name: normalizedCustomTag.name });
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!editorRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+        onDropdownOpenChange(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [isOpen, onDropdownOpenChange]);
+
+  const submitSuggestion = (suggestion: LeadTagSuggestion | undefined) => {
+    if (!suggestion || isBusy) return;
+    if (suggestion.kind === 'existing') {
+      addTag.mutate(
+        suggestion.option.id === null
+          ? { name: suggestion.option.name }
+          : { tagId: suggestion.option.id },
+      );
+      return;
+    }
+    addTag.mutate({ name: suggestion.name });
+  };
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setDropdownOpen(true);
+      if (suggestions.length === 0) return;
+      setActiveSuggestionIndex((current) => {
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        return (current + direction + suggestions.length) % suggestions.length;
+      });
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitSuggestion(activeSuggestion);
+    }
   };
 
   return (
-    <section className="mt-3 rounded-lg border border-border/80 bg-background/70 p-3 text-left">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
-          <Tag className="size-3.5" />
-          {t('leadTags')}
-        </span>
-        {automaticTag ? (
-          <Badge variant="outline" className="gap-1">
-            {automaticTag}
-            <LockKeyhole className="size-3" aria-hidden="true" />
-            <span className="sr-only">{t('automaticTag')}</span>
-          </Badge>
-        ) : null}
-        {manualTags.map((tag) => (
-          <Badge key={tag.id} variant="secondary" className="gap-1 pr-1">
-            {tag.name}
-            <button
-              type="button"
-              className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`${t('removeLeadTag')} ${tag.name}`}
-              onClick={() => setRemoveTarget(tag)}
-            >
-              <X className="size-3" aria-hidden="true" />
-            </button>
-          </Badge>
-        ))}
-      </div>
+    <div
+      ref={editorRef}
+      className="mt-3 text-left"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropdownOpen(false);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && isOpen) {
+          event.preventDefault();
+          setDropdownOpen(false);
+        }
+      }}
+    >
+      <label
+        htmlFor={`lead-${leadId}-tag-input`}
+        className="mb-1.5 flex items-center gap-1 text-xs font-medium text-foreground"
+      >
+        <Tag className="size-3.5" aria-hidden="true" />
+        {t('leadTags')}
+      </label>
+      <span id={`lead-${leadId}-tag-hint`} className="sr-only">
+        {t('leadTagsHint')}
+      </span>
 
-      <p className="mt-1 text-xs text-muted-foreground">{t('leadTagsHint')}</p>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor={`lead-${leadId}-existing-tag`} className="text-xs">
-            {t('selectExistingTag')}
-          </Label>
-          <div className="flex gap-2">
-            <Select
-              value={selectedOptionValue}
-              onValueChange={setSelectedOptionValue}
-              disabled={tagOptionsQuery.isLoading || availableOptions.length === 0 || addTag.isPending}
-            >
-              <SelectTrigger id={`lead-${leadId}-existing-tag`} className="min-w-0">
-                <SelectValue placeholder={tagOptionsQuery.isLoading ? t('loading') : t('selectTag')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {availableOptions.map((option) => (
-                    <SelectItem key={leadTagOptionValue(option)} value={leadTagOptionValue(option)}>
-                      {option.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              size="icon"
+      <div className="relative">
+        <div
+          className="flex min-h-10 w-full cursor-text flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 shadow-2xs transition-[border-color,box-shadow] hover:border-primary/50 focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary/15"
+          onMouseDown={(event) => {
+            const target = event.target as Element;
+            if (target.closest('button, input')) return;
+            event.preventDefault();
+            inputRef.current?.focus();
+          }}
+        >
+          {automaticTag ? (
+            <Badge
               variant="outline"
-              aria-label={t('addTag')}
-              disabled={!selectedOption || addTag.isPending}
-              onClick={submitSelectedTag}
+              className="h-6 max-w-full shrink-0 gap-1 px-2 py-0"
+              title={t('automaticTag')}
             >
-              {addTag.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
-            </Button>
-          </div>
+              <span className="truncate">{automaticTag}</span>
+              <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
+              <span className="sr-only">{t('automaticTag')}</span>
+            </Badge>
+          ) : null}
+          {manualTags.map((tag) => {
+            const isRemoving = removeTag.isPending && removeTag.variables?.id === tag.id;
+            return (
+              <Badge
+                key={tag.id}
+                variant="secondary"
+                className="h-6 max-w-full shrink-0 gap-1 py-0 pl-2 pr-1"
+              >
+                <span className="truncate">{tag.name}</span>
+                <button
+                  type="button"
+                  className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+                  aria-label={`${t('removeLeadTag')} ${tag.name}`}
+                  disabled={isBusy}
+                  onClick={() => removeTag.mutate(tag)}
+                >
+                  {isRemoving ? (
+                    <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <X className="size-3" aria-hidden="true" />
+                  )}
+                </button>
+              </Badge>
+            );
+          })}
+
+          <input
+            ref={inputRef}
+            id={`lead-${leadId}-tag-input`}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={listboxId}
+            aria-expanded={isOpen}
+            aria-activedescendant={
+              isOpen && activeSuggestion
+                ? `${listboxId}-option-${resolvedActiveSuggestionIndex}`
+                : undefined
+            }
+            aria-describedby={`lead-${leadId}-tag-hint`}
+            autoComplete="off"
+            className="h-6 min-w-32 flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-wait"
+            value={customTagName}
+            maxLength={MAX_LEAD_TAG_NAME_LENGTH}
+            placeholder={t('customTagPlaceholder')}
+            disabled={isBusy}
+            onFocus={() => {
+              setActiveSuggestionIndex(0);
+              setDropdownOpen(true);
+            }}
+            onChange={(event) => {
+              setCustomTagName(event.target.value);
+              setActiveSuggestionIndex(0);
+              setDropdownOpen(true);
+            }}
+            onKeyDown={handleInputKeyDown}
+          />
+          {addTag.isPending || tagOptionsQuery.isLoading ? (
+            <Loader2 className="mr-1 size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+          ) : null}
         </div>
 
-        <form className="space-y-1.5" onSubmit={submitCustomTag}>
-          <Label htmlFor={`lead-${leadId}-custom-tag`} className="text-xs">
-            {t('customTag')}
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id={`lead-${leadId}-custom-tag`}
-              value={customTagName}
-              maxLength={MAX_LEAD_TAG_NAME_LENGTH}
-              placeholder={t('customTagPlaceholder')}
-              onChange={(event) => setCustomTagName(event.target.value)}
-              disabled={addTag.isPending}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              aria-label={t('addTag')}
-              disabled={!canAddCustomTag || addTag.isPending}
-            >
-              {addTag.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
-            </Button>
+        {isOpen ? (
+          <div
+            id={listboxId}
+            role="listbox"
+            aria-label={t('selectTag')}
+            className="absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          >
+            {tagOptionsQuery.isLoading ? (
+              <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                {t('loading')}
+              </div>
+            ) : null}
+            {tagOptionsQuery.isError ? (
+              <div className="px-2 py-2 text-sm text-destructive">
+                {t('leadTagsLoadFailed')}
+              </div>
+            ) : null}
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={suggestion.key}
+                id={`${listboxId}-option-${index}`}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === resolvedActiveSuggestionIndex}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground aria-selected:bg-accent aria-selected:text-accent-foreground"
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveSuggestionIndex(index)}
+                onClick={() => submitSuggestion(suggestion)}
+              >
+                {suggestion.kind === 'create' ? (
+                  <Plus className="size-4 shrink-0" aria-hidden="true" />
+                ) : (
+                  <Tag className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                )}
+                <span className="min-w-0 flex-1 truncate">
+                  {suggestion.kind === 'create'
+                    ? `${t('addTag')}: “${suggestion.name}”`
+                    : suggestion.name}
+                </span>
+              </button>
+            ))}
+            {!tagOptionsQuery.isLoading
+              && !tagOptionsQuery.isError
+              && suggestions.length === 0 ? (
+                <div className="px-2 py-2 text-sm text-muted-foreground">
+                  {customTagKey && assignedTagKeys.has(customTagKey)
+                    ? t('leadTagAlreadyAssigned')
+                    : t('noTagOptions')}
+                </div>
+              ) : null}
           </div>
-        </form>
+        ) : null}
       </div>
-
-      {tagOptionsQuery.isError ? (
-        <p className="mt-2 text-xs text-destructive">{t('leadTagsLoadFailed')}</p>
-      ) : availableOptions.length === 0 && !tagOptionsQuery.isLoading ? (
-        <p className="mt-2 text-xs text-muted-foreground">{t('noTagOptions')}</p>
-      ) : null}
-
-      <AlertDialog
-        open={removeTarget !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen && !removeTag.isPending) setRemoveTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('removeLeadTagTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('removeLeadTagDescription').replace('{tag}', removeTarget?.name ?? '')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={removeTag.isPending}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={!removeTarget || removeTag.isPending}
-              onClick={() => {
-                if (removeTarget) removeTag.mutate(removeTarget);
-              }}
-            >
-              {removeTag.isPending ? t('saving') : t('removeLeadTag')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </section>
+    </div>
   );
 }
 
@@ -624,6 +738,7 @@ export function LeadDetailSheet({
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
 
   const leadQuery = useQuery<LeadDetails>({
     queryKey: ['/api/academy/leads', leadId],
@@ -920,8 +1035,19 @@ export function LeadDetailSheet({
   const messageTarget = leadMessageTarget(lead);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-3xl">
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setTagDropdownOpen(false);
+        onOpenChange(nextOpen);
+      }}
+    >
+      <SheetContent
+        className="w-full overflow-y-auto p-0 sm:max-w-3xl"
+        onEscapeKeyDown={(event) => {
+          if (tagDropdownOpen) event.preventDefault();
+        }}
+      >
         {leadQuery.isError ? (
           <div className="flex flex-col gap-5 p-6">
             <SheetTitle>{t('lead')}</SheetTitle>
@@ -1005,6 +1131,7 @@ export function LeadDetailSheet({
                     automaticTag={lead.sourceName}
                     tags={lead.tags}
                     onChanged={onChanged}
+                    onDropdownOpenChange={setTagDropdownOpen}
                   />
 
                   {/* Quick actions — single prominent CTA + secondary outline buttons */}

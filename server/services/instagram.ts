@@ -821,11 +821,10 @@ const instagramPreviewUrlFromLink = (link?: string) => {
     const parsed = new URL(link);
     const host = parsed.hostname.toLowerCase();
     if (host !== 'instagram.com' && host !== 'www.instagram.com') return undefined;
-    // Meta often provides only a permalink for shared Reels. A Reel permalink
-    // is not a media file and must not be turned into an <img>; it is rendered
-    // as an explicit "open Reel" card by the client. Feed posts can still use
-    // Instagram's image preview endpoint.
-    const match = parsed.pathname.match(/^\/p\/([^/?#]+)/i);
+    // Direct webhooks commonly contain only a permalink for shared posts and
+    // Reels. Instagram's media endpoint accepts their shortcode through the
+    // canonical /p/ path and responds with the JPEG cover.
+    const match = parsed.pathname.match(/^\/(?:p|reel|tv)\/([a-z0-9_-]+)(?:\/|$)/i);
     if (!match?.[1]) return undefined;
     return `https://www.instagram.com/p/${match[1]}/media/?size=l`;
   } catch {
@@ -940,7 +939,14 @@ const makeMediaAttachment = ({
   if (!displayUrl) {
     const instagramPreviewUrl = instagramPreviewUrlFromLink(link);
     if (instagramPreviewUrl) {
-      return { type: 'share', url: instagramPreviewUrl, link, title, subtitle };
+      return {
+        type: instagramSharedContentType(link),
+        url: instagramPreviewUrl,
+        previewUrl: instagramPreviewUrl,
+        link,
+        title,
+        subtitle,
+      };
     }
     return link ? { type: instagramSharedContentType(link), link, title, subtitle } : null;
   }
@@ -1210,6 +1216,34 @@ const extractAttachments = (message: any): InstagramMessageAttachment[] => {
 // Kept public so webhook/import media payloads can be covered by isolated tests
 // without reaching the database or the Meta API.
 export const normalizeInstagramMessageAttachments = (message: unknown) => extractAttachments(message);
+
+/**
+ * Rehydrates legacy rows that were saved before Reel/post permalinks were
+ * converted into preview URLs. Falling back to raw_payload also restores the
+ * small number of historical webhook rows whose attachments array is empty.
+ */
+export const hydrateInstagramMessageAttachments = (
+  storedAttachments: unknown,
+  rawPayload?: unknown,
+): InstagramMessageAttachment[] => {
+  const stored = Array.isArray(storedAttachments)
+    ? storedAttachments.filter(isObjectRecord) as InstagramMessageAttachment[]
+    : [];
+  const rawMessage = isObjectRecord(rawPayload) && isObjectRecord(rawPayload.message)
+    ? rawPayload.message
+    : rawPayload;
+  const attachments = stored.length ? stored : extractAttachments(rawMessage);
+
+  return attachments.map((attachment) => {
+    const generatedPreviewUrl = instagramPreviewUrlFromLink(attachment.link);
+    if (!generatedPreviewUrl || attachment.previewUrl) return attachment;
+    return {
+      ...attachment,
+      url: attachment.url ?? generatedPreviewUrl,
+      previewUrl: generatedPreviewUrl,
+    };
+  });
+};
 
 const primaryTypeFromAttachments = (attachments: InstagramMessageAttachment[]): string => {
   if (attachments.length === 0) return 'text';
@@ -2374,13 +2408,20 @@ export const listInstagramMessages = async (conversationId: number, user: Instag
   const { rows } = await pool.query(
     `SELECT id, conversation_id, external_message_id, direction, sender_igsid,
             recipient_igsid, content, message_type, status, sent_by, attachments,
-            delivered_at, read_at, created_at, updated_at
+            raw_payload, delivered_at, read_at, created_at, updated_at
      FROM instagram_messages
      WHERE conversation_id = $1
      ORDER BY created_at ASC, id ASC`,
     [conversationId],
   );
-  return rows.map(camelize);
+  return rows.map((row) => {
+    const message = camelize(row);
+    const { rawPayload, ...publicMessage } = message;
+    return {
+      ...publicMessage,
+      attachments: hydrateInstagramMessageAttachments(message.attachments, rawPayload),
+    };
+  });
 };
 
 export const markInstagramConversationRead = async (conversationId: number, user: InstagramUser) => {

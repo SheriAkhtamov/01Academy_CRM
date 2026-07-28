@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getInstagramIntegrationConfig,
+  hydrateInstagramMessageAttachments,
   normalizeInstagramMessageAttachments,
 } from '../server/services/instagram';
 
@@ -54,6 +55,61 @@ describe('Instagram media normalization', () => {
       previewUrl: 'https://scontent.cdninstagram.com/reel-preview',
       link: 'https://www.instagram.com/reel/C0FFEE/',
       title: 'A shared Reel',
+      subtitle: undefined,
+    }]);
+  });
+
+  it('builds a cover for the Reel-only payload sent by Instagram webhooks', () => {
+    const attachments = normalizeInstagramMessageAttachments({
+      attachments: [{
+        type: 'ig_reel',
+        payload: {
+          reel_video_id: '17890000000000000',
+          title: 'Shared reel',
+          url: 'https://www.instagram.com/reel/C0FFEE/',
+        },
+      }],
+    });
+
+    expect(attachments).toEqual([{
+      type: 'reel',
+      url: 'https://www.instagram.com/p/C0FFEE/media/?size=l',
+      previewUrl: 'https://www.instagram.com/p/C0FFEE/media/?size=l',
+      link: 'https://www.instagram.com/reel/C0FFEE/',
+      title: 'Shared reel',
+      subtitle: undefined,
+    }]);
+  });
+
+  it('hydrates covers for legacy Reel rows and restores empty stored attachments from raw payload', () => {
+    const legacy = hydrateInstagramMessageAttachments([{
+      type: 'reel',
+      link: 'https://www.instagram.com/reel/LEGACY1/',
+    }]);
+    const restored = hydrateInstagramMessageAttachments([], {
+      message: {
+        attachments: [{
+          type: 'ig_reel',
+          payload: {
+            reel_video_id: '17890000000000001',
+            url: 'https://www.instagram.com/reel/RESTORED1/',
+          },
+        }],
+      },
+    });
+
+    expect(legacy).toEqual([{
+      type: 'reel',
+      url: 'https://www.instagram.com/p/LEGACY1/media/?size=l',
+      previewUrl: 'https://www.instagram.com/p/LEGACY1/media/?size=l',
+      link: 'https://www.instagram.com/reel/LEGACY1/',
+    }]);
+    expect(restored).toEqual([{
+      type: 'reel',
+      url: 'https://www.instagram.com/p/RESTORED1/media/?size=l',
+      previewUrl: 'https://www.instagram.com/p/RESTORED1/media/?size=l',
+      link: 'https://www.instagram.com/reel/RESTORED1/',
+      title: undefined,
       subtitle: undefined,
     }]);
   });

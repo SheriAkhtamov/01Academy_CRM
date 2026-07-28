@@ -18,6 +18,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 
@@ -933,29 +940,52 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
     });
   };
 
-  const applyLessonSwitch = useCallback((lessonId: string) => {
+  const [isAttendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
+  const [pendingDialogClose, setPendingDialogClose] = useState(false);
+
+  const openAttendanceDialog = useCallback((lessonId: string) => {
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     setSelectedLessonId(lessonId);
     setAttendanceDraft({});
     setAttendanceNote('');
+    setAttendanceDialogOpen(true);
   }, []);
 
   const handleLessonSelect = useCallback((lessonId: string) => {
     if (lessonMutationPending) return;
-    if (attendanceDraftDirty.current && selectedLessonId) {
+    if (isAttendanceDialogOpen && attendanceDraftDirty.current && selectedLessonId) {
       setPendingLessonSwitch(lessonId);
       return;
     }
-    applyLessonSwitch(lessonId);
-  }, [applyLessonSwitch, lessonMutationPending, selectedLessonId]);
+    openAttendanceDialog(lessonId);
+  }, [isAttendanceDialogOpen, lessonMutationPending, openAttendanceDialog, selectedLessonId]);
+
+  const handleDialogCloseRequest = useCallback((open: boolean) => {
+    if (!open) {
+      if (attendanceDraftDirty.current) {
+        setPendingDialogClose(true);
+        return;
+      }
+      setAttendanceDialogOpen(false);
+      attendanceDraftDirty.current = false;
+      attendanceNoteDirty.current = false;
+    }
+  }, []);
+
+  const confirmDialogClose = useCallback(() => {
+    setPendingDialogClose(false);
+    setAttendanceDialogOpen(false);
+    attendanceDraftDirty.current = false;
+    attendanceNoteDirty.current = false;
+  }, []);
 
   const confirmLessonSwitch = useCallback(() => {
     if (pendingLessonSwitch) {
-      applyLessonSwitch(pendingLessonSwitch);
+      openAttendanceDialog(pendingLessonSwitch);
       setPendingLessonSwitch(null);
     }
-  }, [applyLessonSwitch, pendingLessonSwitch]);
+  }, [openAttendanceDialog, pendingLessonSwitch]);
 
   const cancelLessonSwitch = useCallback(() => {
     setPendingLessonSwitch(null);
@@ -1384,8 +1414,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         </TabsContent>
 
         {/* Attendance Tab */}
-        <TabsContent value="attendance" className="mt-6 space-y-0">
-          {/* Unsaved changes confirmation */}
+        <TabsContent value="attendance" className="mt-6 space-y-4">
+          {/* Unsaved changes confirmation for lesson switch */}
           <AlertDialog open={pendingLessonSwitch !== null} onOpenChange={(open) => { if (!open) cancelLessonSwitch(); }}>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -1404,314 +1434,317 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             </AlertDialogContent>
           </AlertDialog>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_480px] gap-5">
-            {/* Left column: Calendar */}
-            <div className="min-w-0">
-              <AttendanceCalendar
-                lessons={attendanceLessons}
-                selectedLessonId={selectedLessonId}
-                now={now}
-                disabled={lessonMutationPending}
-                onSelectLesson={handleLessonSelect}
-              />
-            </div>
+          {/* Unsaved changes confirmation for dialog close */}
+          <AlertDialog open={pendingDialogClose} onOpenChange={setPendingDialogClose}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="size-5 text-amber-500" />
+                  {t('unsavedAttendanceTitle')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>{t('unsavedAttendanceDesc')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setPendingDialogClose(false)}>{t('keepEditing')}</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDialogClose} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  {t('discardChanges')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
-            {/* Right column: Attendance panel */}
-            <div className="min-w-0">
-              <Card className="border-border/70 lg:sticky lg:top-4 overflow-hidden">
-                <CardHeader className="border-b border-border/70 bg-muted/20 pb-4">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ClipboardCheck className="size-5 text-primary" />
-                    {t('attendancePanelTitle')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {/* No lesson selected placeholder */}
-                  {!selectedLesson && (
-                    <div className="px-6 py-16 text-center">
-                      <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
-                        <ClipboardList className="h-7 w-7 text-muted-foreground" />
-                      </div>
-                      <h3 className="mt-4 text-base font-semibold text-foreground">{t('selectLessonPlaceholder')}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground max-w-xs mx-auto">{t('selectLessonForAttendance')}</p>
+          {/* Main Full-Width Calendar */}
+          <AttendanceCalendar
+            lessons={attendanceLessons}
+            selectedLessonId={selectedLessonId}
+            now={now}
+            disabled={lessonMutationPending}
+            onSelectLesson={handleLessonSelect}
+          />
+
+          {/* Attendance Checklist Modal Dialog */}
+          <Dialog open={isAttendanceDialogOpen} onOpenChange={handleDialogCloseRequest}>
+            <DialogContent className="max-h-[90vh] max-w-3xl gap-0 overflow-y-auto p-0">
+              <DialogHeader className="border-b border-border/70 px-6 py-4">
+                <DialogTitle className="flex items-center gap-2 text-lg">
+                  <ClipboardCheck className="size-5 text-primary" />
+                  {t('attendanceChecklist')}
+                </DialogTitle>
+                <DialogDescription>{t('attendanceCalendarHint')}</DialogDescription>
+              </DialogHeader>
+
+              <div className="p-0">
+                {/* Loading state */}
+                {selectedLesson && attendanceRosterQuery.isPending && (
+                  <div className="space-y-3 p-6">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-8 w-56" />
+                    <Skeleton className="h-48 w-full" />
+                  </div>
+                )}
+
+                {/* Error state */}
+                {selectedLesson && attendanceRosterQuery.isError && (
+                  <div className="p-6">
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
+                      <p className="text-sm font-medium text-destructive">{t('attendanceRosterLoadFailed')}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {attendanceRosterQuery.error instanceof Error
+                          ? attendanceRosterQuery.error.message
+                          : t('failedToLoadData')}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        disabled={lessonMutationPending}
+                        onClick={() => attendanceRosterQuery.refetch()}
+                      >
+                        {t('retry')}
+                      </Button>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Loading state */}
-                  {selectedLesson && attendanceRosterQuery.isPending && (
-                    <div className="space-y-3 p-5">
-                      <Skeleton className="h-16 w-full" />
-                      <Skeleton className="h-8 w-56" />
-                      <Skeleton className="h-40 w-full" />
-                    </div>
-                  )}
-
-                  {/* Error state */}
-                  {selectedLesson && attendanceRosterQuery.isError && (
-                    <div className="p-5">
-                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
-                        <p className="text-sm font-medium text-destructive">{t('attendanceRosterLoadFailed')}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {attendanceRosterQuery.error instanceof Error
-                            ? attendanceRosterQuery.error.message
-                            : t('failedToLoadData')}
-                        </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          disabled={lessonMutationPending}
-                          onClick={() => attendanceRosterQuery.refetch()}
-                        >
-                          {t('retry')}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Loaded state */}
-                  {selectedLesson
-                    && !attendanceRosterQuery.isPending
-                    && !attendanceRosterQuery.isError && (
-                    <div className="divide-y divide-border/70">
-                      {/* Lesson info header */}
-                      {selectedLessonDetails && (
-                        <div className="bg-muted/30 px-5 py-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-medium text-sm text-foreground truncate">
-                                {selectedLessonDetails.groupName || t('noGroup')} — {selectedLessonDetails.topic}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {formatDateFull(selectedLessonDetails.scheduledAt)} • {formatTime(selectedLessonDetails.scheduledAt)} • {selectedLessonDetails.durationMinutes}{t('minutes')}
-                              </p>
-                            </div>
-                            {getLessonStatusBadge(selectedLessonDetails.status)}
+                {/* Loaded state */}
+                {selectedLesson
+                  && !attendanceRosterQuery.isPending
+                  && !attendanceRosterQuery.isError && (
+                  <div className="divide-y divide-border/70">
+                    {/* Lesson info banner */}
+                    {selectedLessonDetails && (
+                      <div className="bg-muted/30 px-6 py-3.5">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div>
+                            <p className="font-semibold text-foreground text-sm">
+                              {selectedLessonDetails.groupName || t('noGroup')} — {selectedLessonDetails.topic}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {formatDateFull(selectedLessonDetails.scheduledAt)} • {formatTime(selectedLessonDetails.scheduledAt)} • {selectedLessonDetails.durationMinutes} {t('minutes')}
+                            </p>
                           </div>
+                          {getLessonStatusBadge(selectedLessonDetails.status)}
                         </div>
-                      )}
+                      </div>
+                    )}
 
-                      {/* Summary bar */}
-                      {selectedLessonStudents.length > 0 && (
-                        <div className="px-5 py-3 bg-background">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="text-xs font-medium text-muted-foreground">
+                    {/* Summary bar */}
+                    {selectedLessonStudents.length > 0 && (
+                      <div className="px-6 py-3 bg-background">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-4 text-xs font-medium">
+                            <span className="text-muted-foreground">
                               {t('attendanceMarkedOf').replace('{marked}', String(attendanceSummary.marked)).replace('{total}', String(attendanceSummary.total))}
                             </span>
-                            <span className="text-xs font-medium text-emerald-600">
+                            <span className="text-emerald-600 font-semibold">
                               {t('attendancePresentCount').replace('{count}', String(attendanceSummary.present))}
                             </span>
-                            <span className="text-xs font-medium text-red-600">
+                            <span className="text-red-600 font-semibold">
                               {t('attendanceAbsentCount').replace('{count}', String(attendanceSummary.absent))}
                             </span>
                           </div>
-                          <Progress
-                            value={attendanceSummary.total > 0 ? (attendanceSummary.marked / attendanceSummary.total) * 100 : 0}
-                            className="h-1.5 mt-2"
-                          />
-                        </div>
-                      )}
-
-                      {/* Quick actions */}
-                      {selectedLessonStudents.length > 0 && (
-                        <div className="px-5 py-2.5 flex items-center gap-2 bg-background">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            disabled={lessonMutationPending}
-                            onClick={() => handleSetAllAttendance('present')}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-500" />
-                            {t('allPresent')}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            disabled={lessonMutationPending}
-                            onClick={() => handleSetAllAttendance('absent')}
-                          >
-                            <XCircle className="h-3.5 w-3.5 mr-1 text-red-500" />
-                            {t('allAbsent')}
-                          </Button>
-                        </div>
-                      )}
-
-                      {/* Student list with toggle buttons */}
-                      {selectedLessonStudents.length > 0 && (
-                        <div className="divide-y divide-border/50">
-                          {selectedLessonStudents.map((student) => {
-                            const status = attendanceDraft[student.id];
-                            return (
-                              <div
-                                key={student.id}
-                                className={cn(
-                                  'flex items-center justify-between gap-3 px-5 py-3 transition-colors',
-                                  status === 'present' && 'bg-emerald-50/40 dark:bg-emerald-950/10',
-                                  status === 'absent' && 'bg-red-50/40 dark:bg-red-950/10',
-                                )}
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-foreground truncate">
-                                    {student.studentName || student.contactName}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground tabular-nums">
-                                    {t('attendanceLabel')}: {student.attendancePercent || 0}%
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    disabled={lessonMutationPending}
-                                    onClick={() => handleToggleAttendance(student.id, 'present')}
-                                    className={cn(
-                                      'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
-                                      'disabled:cursor-not-allowed disabled:opacity-50',
-                                      status === 'present'
-                                        ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                                        : 'bg-background text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-600',
-                                    )}
-                                  >
-                                    <CheckCircle2 className="size-3.5 mr-1" />
-                                    {t('present')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={lessonMutationPending}
-                                    onClick={() => handleToggleAttendance(student.id, 'absent')}
-                                    className={cn(
-                                      'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
-                                      'disabled:cursor-not-allowed disabled:opacity-50',
-                                      status === 'absent'
-                                        ? 'bg-red-500 text-white border-red-500 shadow-sm'
-                                        : 'bg-background text-muted-foreground border-border hover:border-red-300 hover:text-red-600',
-                                    )}
-                                  >
-                                    <XCircle className="size-3.5 mr-1" />
-                                    {t('absent')}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Empty group state (no students) - BUG FIX: no save button for empty groups */}
-                      {selectedLessonStudents.length === 0 && (
-                        <div className="px-6 py-12 text-center">
-                          <div className="mx-auto h-12 w-12 rounded-2xl bg-muted flex items-center justify-center">
-                            <Users className="h-6 w-6 text-muted-foreground" />
-                          </div>
-                          <h3 className="mt-3 text-sm font-semibold text-foreground">{t('noStudents')}</h3>
-                          <p className="mt-1 text-xs text-muted-foreground max-w-xs mx-auto">{t('noStudentsInGroup')}</p>
-                        </div>
-                      )}
-
-                      {/* Reschedule section */}
-                      {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
-                        <div className="px-5 py-4 space-y-3 bg-amber-50/40 dark:bg-amber-950/10">
-                          <div>
-                            <div className="font-medium text-sm text-foreground">{t('rescheduleLesson')}</div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{t('rescheduleLessonHint')}</p>
-                          </div>
-                          <div className="grid gap-3">
-                            <div className="space-y-1.5">
-                              <Label htmlFor="reschedule-at" className="text-xs text-muted-foreground">
-                                {t('newLessonDate')}
-                              </Label>
-                              <Input
-                                id="reschedule-at"
-                                type="datetime-local"
-                                min={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
-                                value={rescheduleAt}
-                                disabled={lessonMutationPending}
-                                onChange={(event) => setRescheduleAt(event.target.value)}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label htmlFor="reschedule-reason" className="text-xs text-muted-foreground">
-                                {t('rescheduleReason')}
-                              </Label>
-                              <Input
-                                id="reschedule-reason"
-                                value={rescheduleReason}
-                                maxLength={500}
-                                disabled={lessonMutationPending}
-                                onChange={(event) => setRescheduleReason(event.target.value)}
-                                placeholder={t('rescheduleReasonPlaceholder')}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex justify-end">
+                          <div className="flex items-center gap-2">
                             <Button
-                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={handleRescheduleLesson}
-                              disabled={!canRescheduleLesson || lessonMutationPending}
+                              className="h-7 text-xs"
+                              disabled={lessonMutationPending}
+                              onClick={() => handleSetAllAttendance('present')}
                             >
-                              <Calendar className="h-4 w-4 mr-2" />
-                              {rescheduleLesson.isPending ? t('saving') : t('rescheduleLesson')}
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-500" />
+                              {t('allPresent')}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              disabled={lessonMutationPending}
+                              onClick={() => handleSetAllAttendance('absent')}
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1 text-red-500" />
+                              {t('allAbsent')}
                             </Button>
                           </div>
                         </div>
-                      )}
+                        <Progress
+                          value={attendanceSummary.total > 0 ? (attendanceSummary.marked / attendanceSummary.total) * 100 : 0}
+                          className="h-1.5 mt-2.5"
+                        />
+                      </div>
+                    )}
 
-                      {/* Note + Save section */}
-                      {selectedLessonStudents.length > 0 && (
-                        <div className="px-5 py-4 space-y-3 bg-background">
+                    {/* Student list with toggle buttons */}
+                    {selectedLessonStudents.length > 0 && (
+                      <div className="divide-y divide-border/50 max-h-[350px] overflow-y-auto">
+                        {selectedLessonStudents.map((student) => {
+                          const status = attendanceDraft[student.id];
+                          return (
+                            <div
+                              key={student.id}
+                              className={cn(
+                                'flex items-center justify-between gap-3 px-6 py-3 transition-colors',
+                                status === 'present' && 'bg-emerald-50/40 dark:bg-emerald-950/10',
+                                status === 'absent' && 'bg-red-50/40 dark:bg-red-950/10',
+                              )}
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {student.studentName || student.contactName}
+                                </p>
+                                <p className="text-xs text-muted-foreground tabular-nums">
+                                  {t('attendanceLabel')}: {student.attendancePercent || 0}%
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={lessonMutationPending}
+                                  onClick={() => handleToggleAttendance(student.id, 'present')}
+                                  className={cn(
+                                    'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
+                                    'disabled:cursor-not-allowed disabled:opacity-50',
+                                    status === 'present'
+                                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                                      : 'bg-background text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-600',
+                                  )}
+                                >
+                                  <CheckCircle2 className="size-3.5 mr-1" />
+                                  {t('present')}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={lessonMutationPending}
+                                  onClick={() => handleToggleAttendance(student.id, 'absent')}
+                                  className={cn(
+                                    'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
+                                    'disabled:cursor-not-allowed disabled:opacity-50',
+                                    status === 'absent'
+                                      ? 'bg-red-500 text-white border-red-500 shadow-sm'
+                                      : 'bg-background text-muted-foreground border-border hover:border-red-300 hover:text-red-600',
+                                  )}
+                                >
+                                  <XCircle className="size-3.5 mr-1" />
+                                  {t('absent')}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Empty group state (no students) */}
+                    {selectedLessonStudents.length === 0 && (
+                      <div className="px-6 py-12 text-center">
+                        <div className="mx-auto h-12 w-12 rounded-2xl bg-muted flex items-center justify-center">
+                          <Users className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <h3 className="mt-3 text-sm font-semibold text-foreground">{t('noStudents')}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground max-w-xs mx-auto">{t('noStudentsInGroup')}</p>
+                      </div>
+                    )}
+
+                    {/* Reschedule section */}
+                    {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
+                      <div className="px-6 py-4 space-y-3 bg-amber-50/40 dark:bg-amber-950/10">
+                        <div>
+                          <div className="font-medium text-sm text-foreground">{t('rescheduleLesson')}</div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{t('rescheduleLessonHint')}</p>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground">{t('comment')}</Label>
-                            <Textarea
-                              value={attendanceNote}
+                            <Label htmlFor="reschedule-at" className="text-xs text-muted-foreground">
+                              {t('newLessonDate')}
+                            </Label>
+                            <Input
+                              id="reschedule-at"
+                              type="datetime-local"
+                              min={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
+                              value={rescheduleAt}
                               disabled={lessonMutationPending}
-                              onChange={(e) => {
-                                attendanceDraftDirty.current = true;
-                                attendanceNoteDirty.current = true;
-                                setAttendanceNote(e.target.value);
-                              }}
-                              placeholder={t('attendanceNotePlaceholder')}
-                              rows={2}
+                              onChange={(event) => setRescheduleAt(event.target.value)}
                             />
                           </div>
-
-                          {/* Warnings */}
-                          {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
-                            <p className="text-xs text-amber-700 flex items-center gap-1.5">
-                              <Clock3 className="size-3.5 shrink-0" />
-                              {t('attendanceAvailableAfterLessonStart')}
-                            </p>
-                          )}
-                          {previousIncompleteLesson && (
-                            <p className="text-xs text-amber-700 flex items-center gap-1.5">
-                              <AlertTriangle className="size-3.5 shrink-0" />
-                              {t('previousLessonMustBeCompleted')}
-                            </p>
-                          )}
-
-                          {/* Sticky save button */}
+                          <div className="space-y-1.5">
+                            <Label htmlFor="reschedule-reason" className="text-xs text-muted-foreground">
+                              {t('rescheduleReason')}
+                            </Label>
+                            <Input
+                              id="reschedule-reason"
+                              value={rescheduleReason}
+                              maxLength={500}
+                              disabled={lessonMutationPending}
+                              onChange={(event) => setRescheduleReason(event.target.value)}
+                              placeholder={t('rescheduleReasonPlaceholder')}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
                           <Button
-                            className="w-full"
-                            onClick={handleSaveAttendance}
-                            disabled={lessonMutationPending || !canSaveAttendance}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRescheduleLesson}
+                            disabled={!canRescheduleLesson || lessonMutationPending}
                           >
-                            {saveAttendance.isPending
-                              ? t('saving')
-                              : selectedLessonDetails?.status === 'conducted'
-                                ? t('updateAttendance')
-                                : t('finishLessonAndSaveAttendance')}
+                            <Calendar className="h-4 w-4 mr-2" />
+                            {rescheduleLesson.isPending ? t('saving') : t('rescheduleLesson')}
                           </Button>
                         </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+                      </div>
+                    )}
+
+                    {/* Comment + Save section */}
+                    {selectedLessonStudents.length > 0 && (
+                      <div className="px-6 py-4 space-y-4 bg-background">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">{t('comment')}</Label>
+                          <Textarea
+                            value={attendanceNote}
+                            disabled={lessonMutationPending}
+                            onChange={(e) => {
+                              attendanceDraftDirty.current = true;
+                              attendanceNoteDirty.current = true;
+                              setAttendanceNote(e.target.value);
+                            }}
+                            placeholder={t('attendanceNotePlaceholder')}
+                            rows={2}
+                          />
+                        </div>
+
+                        {/* Warnings */}
+                        {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
+                          <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                            <Clock3 className="size-3.5 shrink-0" />
+                            {t('attendanceAvailableAfterLessonStart')}
+                          </p>
+                        )}
+                        {previousIncompleteLesson && (
+                          <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                            <AlertTriangle className="size-3.5 shrink-0" />
+                            {t('previousLessonMustBeCompleted')}
+                          </p>
+                        )}
+
+                        <Button
+                          className="w-full h-10 text-sm font-medium"
+                          onClick={handleSaveAttendance}
+                          disabled={lessonMutationPending || !canSaveAttendance}
+                        >
+                          {saveAttendance.isPending
+                            ? t('saving')
+                            : selectedLessonDetails?.status === 'conducted'
+                              ? t('updateAttendance')
+                              : t('finishLessonAndSaveAttendance')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Ratings Tab */}

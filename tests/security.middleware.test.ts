@@ -8,6 +8,11 @@ vi.mock('../server/config', () => ({
       appUrl: 'https://crm.01academy.uz',
       environment: 'production',
     },
+    integrations: {
+      onlinePbx: {
+        apiUrl: 'https://api2.onlinepbx.ru/api/path-is-not-a-csp-source',
+      },
+    },
   },
   isDevelopmentEnvironment: false,
   isProductionEnvironment: true,
@@ -38,6 +43,12 @@ describe('HTTP security middleware', () => {
     expect(response.status).toBe(200);
     expect(response.headers['access-control-allow-origin']).toBe('https://crm.01academy.uz');
     expect(response.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(response.headers['content-security-policy']).toContain(
+      "media-src 'self' data: blob: https://api2.onlinepbx.ru",
+    );
+    expect(response.headers['content-security-policy']).not.toContain(
+      'https://api2.onlinepbx.ru/api/',
+    );
     expect(response.headers['strict-transport-security']).toContain('max-age=31536000');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['cache-control']).toBe('no-store');

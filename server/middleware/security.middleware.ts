@@ -20,7 +20,20 @@ const normalizeOrigin = (value: string | undefined): string | null => {
   }
 };
 
+const normalizeHttpsOrigin = (value: string | undefined): string | null => {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+};
+
 const configuredOrigin = normalizeOrigin(appConfig.server.appUrl);
+const onlinePbxMediaOrigin = normalizeHttpsOrigin(
+  appConfig.integrations?.onlinePbx?.apiUrl,
+);
 const allowedOrigins = new Set(
   [
     configuredOrigin,
@@ -54,6 +67,10 @@ export const securityHeadersMiddleware = (
   if (isDevelopmentEnvironment) {
     scriptSources.push("'unsafe-eval'");
   }
+  const mediaSources = ["'self'", 'data:', 'blob:'];
+  if (onlinePbxMediaOrigin) {
+    mediaSources.push(onlinePbxMediaOrigin);
+  }
 
   const directives = [
     "default-src 'self'",
@@ -66,7 +83,7 @@ export const securityHeadersMiddleware = (
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     "connect-src 'self' ws: wss:",
-    "media-src 'self' data: blob:",
+    `media-src ${mediaSources.join(' ')}`,
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     ...(isProductionEnvironment ? ['upgrade-insecure-requests'] : []),

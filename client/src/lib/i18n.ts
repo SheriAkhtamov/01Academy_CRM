@@ -801,7 +801,6 @@ export const translations = {
   unsavedAttendanceTitle: { en: 'Unsaved changes', ru: 'Несохранённые изменения' },
   unsavedAttendanceDesc: { en: 'You have unsaved attendance marks. Discard changes?', ru: 'У вас есть несохранённые отметки посещаемости. Отменить изменения?' },
   attendancePanelTitle: { en: 'Mark attendance', ru: 'Отметить посещаемость' },
-  lessonDetails: { en: 'Lesson details', ru: 'Детали занятия' },
   studentLessonRatings: { en: 'Student ratings', ru: 'Оценки учеников' },
   studentsCount: { en: 'students', ru: 'учеников' },
   sunday: { en: 'Sunday', ru: 'Воскресенье' },

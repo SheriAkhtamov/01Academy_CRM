@@ -34,4 +34,10 @@ describe('call journal navigation', () => {
     expect(pagination).toBeGreaterThan(scrollRegionEnd);
     expect(callJournal).toContain('journalListRef.current?.scrollTo({ top: 0 });');
   });
+
+  it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {
+    expect(telephonyRoutes).toContain('resolveOnlinePbxRecording(call)');
+    expect(telephonyRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");
+    expect(telephonyRoutes).not.toContain('if (call.recordingUrl) return');
+  });
 });

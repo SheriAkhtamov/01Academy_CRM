@@ -19,8 +19,8 @@ import {
   normalizeOnlinePbxPhone,
   onlinePbxClient,
   OnlinePbxError,
-  type OnlinePbxCallHistoryItem,
 } from '../services/onlinepbx';
+import { resolveOnlinePbxRecording } from '../services/telephony-recording';
 import {
   getOnlinePbxRoutingSettings,
   synchronizeOnlinePbxRoutingWithRetry,
@@ -1112,12 +1112,6 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
   });
 }));
 
-const historyMatchesPhone = (item: OnlinePbxCallHistoryItem, phone: string) => {
-  const target = digitsOnly(phone);
-  return [item.callerIdNumber, item.destinationNumber, ...item.events.map((event) => event.number)]
-    .some((value) => digitsOnly(value) === target);
-};
-
 router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
   const callId = Number(req.params.id);
   if (!Number.isInteger(callId) || callId <= 0) {
@@ -1125,7 +1119,7 @@ router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
   }
   const result = await pool.query(
     `SELECT call.id, call.user_id AS "userId", call.provider_call_id AS "providerCallId",
-            call.phone, call.started_at AS "startedAt", call.recording_url AS "recordingUrl",
+            call.phone, call.started_at AS "startedAt",
             lead_id AS "leadId", lead.manager_id AS "leadManagerId"
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
@@ -1145,23 +1139,16 @@ router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
   if (!call || !canReadRecording) {
     return res.status(404).json({ error: 'onlinePbxCallNotFound' });
   }
-  if (call.recordingUrl) return res.json({ url: call.recordingUrl });
+  res.setHeader('Cache-Control', 'no-store, private');
 
   try {
-    const startedAt = new Date(call.startedAt).getTime();
-    const history = call.providerCallId
-      ? await onlinePbxClient.getCallHistory({ uuid: call.providerCallId })
-      : await onlinePbxClient.getCallHistory({
-          phoneNumbers: call.phone,
-          startStampFrom: Math.floor(startedAt / 1000) - 180,
-          startStampTo: Math.floor(startedAt / 1000) + 300,
-        });
-    const match = history
-      .filter((item) => historyMatchesPhone(item, call.phone))
-      .sort((a, b) => Math.abs(a.startStamp * 1000 - startedAt) - Math.abs(b.startStamp * 1000 - startedAt))[0];
-    if (!match) return res.status(404).json({ error: 'onlinePbxRecordingPending' });
-    const url = await onlinePbxClient.getCallRecordingUrl(match.uuid);
-    if (!url) return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
+    const recording = await resolveOnlinePbxRecording(call);
+    if (recording.state === 'pending') {
+      return res.status(404).json({ error: 'onlinePbxRecordingPending' });
+    }
+    if (recording.state === 'unavailable') {
+      return res.status(404).json({ error: 'onlinePbxRecordingUnavailable' });
+    }
 
     await pool.query(
       `UPDATE telephony_calls
@@ -1172,9 +1159,16 @@ router.get('/calls/:id/recording', requireAuth, asyncRoute(async (req, res) => {
            recording_url = $6,
            updated_at = NOW()
        WHERE id = $1`,
-      [callId, match.uuid, match.duration, match.talkTime, match.hangupCause, url],
+      [
+        callId,
+        recording.providerCallId,
+        recording.history?.duration ?? 0,
+        recording.history?.talkTime ?? 0,
+        recording.history?.hangupCause ?? null,
+        recording.url,
+      ],
     );
-    res.json({ url });
+    res.json({ url: recording.url });
   } catch (error) {
     const clientCode = error instanceof OnlinePbxError ? error.clientCode : 'onlinePbxRecordingUnavailable';
     const statusCode = error instanceof OnlinePbxError ? error.statusCode : 502;

@@ -123,7 +123,7 @@ export default function CallJournalPage() {
   const items = journalQuery.data?.items ?? [];
 
   return (
-    <WorkspacePage contained>
+    <WorkspacePage contained className="pb-2 sm:pb-2 lg:pb-2">
       <PageHeader
         title={t('callJournal')}
         subtitle={t('callJournalDescription')}
@@ -143,7 +143,7 @@ export default function CallJournalPage() {
         contained
         scroll="hidden"
         ariaLabel={t('callJournal')}
-        className="flex flex-col gap-4 overflow-y-auto pb-2 lg:overflow-hidden"
+        className="flex flex-col gap-3 overflow-y-auto lg:overflow-hidden"
       >
         <section className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('callJournalSummary')}>
           <SummaryCard icon={PhoneCall} title={t('totalCalls')} value={journalQuery.data?.total ?? 0} />
@@ -157,7 +157,7 @@ export default function CallJournalPage() {
         </section>
 
         <Card className="shrink-0">
-          <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_190px_170px_170px]">
+          <CardContent className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_190px_170px_170px]">
             <div className="relative sm:col-span-2 xl:col-span-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -192,7 +192,7 @@ export default function CallJournalPage() {
           </CardContent>
         </Card>
 
-        <Card className="flex min-h-[28rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1">
+        <Card className="flex min-h-[32rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1">
           {journalQuery.isLoading ? (
             <div className="space-y-3 p-5">
               {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-14 w-full" />)}
@@ -258,7 +258,7 @@ export default function CallJournalPage() {
         </Card>
 
         {journalQuery.data && journalQuery.data.total > 0 ? (
-          <div className="flex shrink-0 items-center justify-between gap-3 pb-2 text-sm text-muted-foreground">
+          <div className="flex shrink-0 items-center justify-between gap-3 text-sm text-muted-foreground">
             <span>{t('callJournalCount').replace('{count}', String(journalQuery.data.total))}</span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>

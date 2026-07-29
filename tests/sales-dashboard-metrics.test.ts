@@ -12,9 +12,17 @@ describe('sales dashboard operational metrics', () => {
     expect(workspaceRoutes).toContain("router.get('/workspaces/sales/metrics'");
     expect(workspaceRoutes).toContain('parseReportingRange(req.query.from, req.query.to)');
     expect(workspaceRoutes).toContain('buildSalesDashboardMetrics(actor, reportingRange)');
-    expect(metrics).toContain('(lead.manager_id = $3 OR lead.manager_id IS NULL)');
+    expect(metrics).toContain('AND lead.manager_id = $3');
+    expect(metrics).not.toContain('lead.manager_id IS NULL');
     expect(salesDashboard).toContain('<SalesOverviewMetrics');
     expect(salesOverviewMetrics).toContain('/api/academy/workspaces/sales/metrics?${reportingQuery}');
+  });
+
+  it('keeps overview statistics scoped to the current sales employee', () => {
+    expect(salesDashboard).toContain('const overviewLeads = useMemo');
+    expect(salesDashboard).toContain('if (isAdministrationWorkspace) return myLeads;');
+    expect(salesDashboard).toContain('Number(lead.managerId) === Number(user.id)');
+    expect(salesDashboard).toContain('() => overviewLeads.filter');
   });
 
   it('counts processed leads from persisted lead actions', () => {

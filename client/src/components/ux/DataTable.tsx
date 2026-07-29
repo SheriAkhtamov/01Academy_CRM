@@ -39,6 +39,7 @@ interface DataTableProps<T> {
   keyExtractor: (row: T, index: number) => string;
   emptyState?: React.ReactNode;
   className?: string;
+  rootClassName?: string;
   defaultSortKey?: string;
   defaultSortDirection?: SortDirection;
   onRowClick?: (row: T) => void;
@@ -53,6 +54,7 @@ export function DataTable<T extends Record<string, any>>({
   keyExtractor,
   emptyState,
   className,
+  rootClassName,
   defaultSortKey,
   defaultSortDirection = 'asc',
   onRowClick,
@@ -127,7 +129,7 @@ export function DataTable<T extends Record<string, any>>({
   };
 
   return (
-    <div>
+    <div className={cn(rootClassName)}>
       <div className={cn('overflow-x-auto', className)}>
         <Table containerClassName="overflow-visible">
           <TableHeader className="sticky top-0 z-10 bg-muted/70">
@@ -195,7 +197,7 @@ export function DataTable<T extends Record<string, any>>({
         </Table>
       </div>
       {sortedData.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-3 px-1 text-xs text-muted-foreground border-t border-border/40 pt-3">
+        <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/40 px-1 pt-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span>
               {Math.min((currentPage - 1) * pageSize + 1, sortedData.length)}-

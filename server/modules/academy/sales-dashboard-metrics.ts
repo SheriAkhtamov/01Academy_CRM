@@ -47,7 +47,7 @@ export const buildSalesDashboardMetrics = async (
     && getAssignedWorkspaces(actor).includes('sales')
     && !hasLeadershipAccess(actor);
   const managerFilter = isManagerScoped
-    ? 'AND (lead.manager_id = $3 OR lead.manager_id IS NULL)'
+    ? 'AND lead.manager_id = $3'
     : '';
   const values = isManagerScoped
     ? [range.start, range.end, actor.userId]

@@ -636,9 +636,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     [activePipelineCodes, myLeads],
   );
 
+  const overviewLeads = useMemo(() => {
+    if (isAdministrationWorkspace) return myLeads;
+    if (!user?.id) return [];
+    return myLeads.filter((lead) => Number(lead.managerId) === Number(user.id));
+  }, [isAdministrationWorkspace, myLeads, user?.id]);
+
   const periodLeads = useMemo(
-    () => myLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
-    [myLeads, reportingRange],
+    () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
+    [overviewLeads, reportingRange],
   );
   const periodStudents = useMemo(
     () => myStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)),
@@ -1435,7 +1441,8 @@ function ArchiveTab({
       </CardHeader>
       <CardContent className="min-h-0 flex-1 p-0">
         <DataTable
-          className="h-full overflow-auto overscroll-contain"
+          rootClassName="flex h-full min-h-0 flex-col"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain"
           columns={columns}
           data={leads}
           keyExtractor={(lead: Lead) => `archived-lead-${lead.id}`}

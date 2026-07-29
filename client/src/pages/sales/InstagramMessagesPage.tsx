@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { WorkspacePage } from '@/components/ux/WorkspacePage';
 import {
   Tooltip,
   TooltipContent,
@@ -1820,7 +1821,7 @@ export default function MessagesPage() {
     : 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-[1600px] flex-col overflow-hidden p-6 lg:p-8">
+    <WorkspacePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
         title={t('messages')}
         subtitle={t('messagesDesc')}
@@ -1848,7 +1849,7 @@ export default function MessagesPage() {
       {showSyncStatus ? (
         <div
           className={cn(
-            'mt-4 flex flex-col gap-2 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between',
+            'mt-3 flex flex-col gap-2 rounded-xl border px-4 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between',
             syncStatus?.status === 'failed'
               ? 'border-red-200 bg-red-50 text-red-900'
               : syncStatus?.status === 'partial'
@@ -1870,7 +1871,7 @@ export default function MessagesPage() {
 
       <Card
         ref={inboxCardRef}
-        className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-border bg-background shadow-none lg:mt-6"
+        className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-border bg-background shadow-none"
       >
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">
@@ -2794,6 +2795,6 @@ export default function MessagesPage() {
           </div>
         </div>
       ) : null}
-    </div>
+    </WorkspacePage>
   );
 }

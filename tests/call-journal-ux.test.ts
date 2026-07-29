@@ -35,6 +35,12 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('journalListRef.current?.scrollTo({ top: 0 });');
   });
 
+  it('uses the available viewport height for a taller journal list', () => {
+    expect(callJournal).toContain('<WorkspacePage contained className="pb-2 sm:pb-2 lg:pb-2">');
+    expect(callJournal).toContain('className="flex flex-col gap-3 overflow-y-auto lg:overflow-hidden"');
+    expect(callJournal).toContain('className="flex min-h-[32rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1"');
+  });
+
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {
     expect(telephonyRoutes).toContain('resolveOnlinePbxRecording(call)');
     expect(telephonyRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");

@@ -54,6 +54,7 @@ import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
+import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
@@ -71,9 +72,6 @@ import {
   AlertCircle,
   Archive,
   ExternalLink,
-  GraduationCap,
-  Megaphone,
-  Percent,
   Plus,
   RotateCcw,
   TrendingUp,
@@ -242,39 +240,6 @@ const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   comment: '',
   language: 'ru',
 };
-
-function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
-  title: string;
-  value: string | number;
-  detail?: string;
-  icon: any;
-  tone?: 'blue' | 'green' | 'amber' | 'red' | 'slate';
-}) {
-  const toneClass = {
-    blue: 'bg-primary-50 text-primary-600',
-    green: 'bg-emerald-100 text-emerald-600',
-    amber: 'bg-amber-100 text-amber-600',
-    red: 'bg-destructive/10 text-destructive',
-    slate: 'bg-muted text-muted-foreground',
-  }[tone];
-
-  return (
-    <Card className="h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="line-clamp-2 min-h-8 text-xs font-medium leading-4 text-muted-foreground" title={title}>{title}</p>
-            <div className="mt-1 text-[22px] font-bold leading-tight tracking-tight tabular-nums text-foreground">{value}</div>
-            {detail && <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground" title={detail}>{detail}</p>}
-          </div>
-          <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}>
-            <Icon className="size-4" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function LocalizedFormMessage() {
   const { t } = useTranslation();
@@ -581,7 +546,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return code;
   };
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+  const invalidate = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales/metrics'] }),
+  ]);
   const currentSalesManagerId = hasSalesModule && user?.id ? String(user.id) : '';
   const leadFormDefaults = useMemo<CreateLeadFormValues>(() => ({
     ...EMPTY_LEAD_FORM,
@@ -1057,24 +1025,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       {section === 'overview' ? (
         <div className="space-y-5">
           <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <KpiCard title={t('leadsForPeriod')} value={managerStats.newLeadsPeriod} detail={t('dataForSelectedPeriod')} icon={Megaphone} tone="blue" />
-            <KpiCard title={isAdministrationWorkspace ? t('activeLeads') : t('activeMyLeads')} value={managerStats.activeLeads} detail={t('inSalesPipeline')} icon={UserCheck} tone="amber" />
-            <KpiCard title={t('studentsForPeriod')} value={managerStats.totalStudents} detail={t('dataForSelectedPeriod')} icon={GraduationCap} tone="green" />
-            <KpiCard
-              title={t('conversionForPeriod')}
-              value={managerStats.newLeadsPeriod > 0 ? `${managerStats.conversionRate}%` : t('noData')}
-              detail={t('paidOverAllLeads')}
-              icon={Percent}
-              tone={managerStats.newLeadsPeriod === 0
-                ? 'slate'
-                : managerStats.conversionRate >= 30
-                  ? 'green'
-                  : managerStats.conversionRate >= 15
-                    ? 'amber'
-                    : 'red'}
-            />
-          </div>
+          <SalesOverviewMetrics
+            reportingRange={reportingRange}
+            isAdministrationWorkspace={isAdministrationWorkspace}
+            activeLeads={managerStats.activeLeads}
+            totalStudents={managerStats.totalStudents}
+            conversionLeadCount={managerStats.newLeadsPeriod}
+            conversionRate={managerStats.conversionRate}
+          />
           <OverviewTab
             payments={periodPayments}
             leads={periodLeads}

@@ -5,6 +5,7 @@ import { readAcademyModuleSource } from './helpers/read-academy-module';
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const filter = read('../client/src/components/ux/ReportingDateRangeFilter.tsx');
 const sales = read('../client/src/pages/sales-dashboard.tsx');
+const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
 const teacher = read('../client/src/pages/teacher-workspace.tsx');
 const marketing = read('../client/src/pages/marketing-workspace.tsx');
 const finance = read('../client/src/pages/finance-center.tsx');
@@ -98,7 +99,7 @@ describe('dashboard period filters and simplified actions', () => {
     expect(salesCharts).toContain('hasPaymentRevenue ? (');
     expect(marketingCharts).toContain('hasConversionCohort ? (');
     expect(financeCharts).toContain('hasContributionData ? (');
-    expect(sales).toContain("managerStats.newLeadsPeriod > 0 ? `${managerStats.conversionRate}%` : t('noData')");
+    expect(salesOverviewMetrics).toContain("conversionLeadCount > 0 ? `${conversionRate}%` : t('noData')");
     expect(teacher).toContain("avgAttendance == null ? t('noData')");
     expect(marketing).toContain("overviewFunnel.find((stage) => stage.code === 'demo_invited')");
     expect(marketing).toContain("overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')");

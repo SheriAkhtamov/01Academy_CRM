@@ -588,6 +588,49 @@ export const translations = {
   conductedOfScheduled: { en: 'Conducted / scheduled', ru: 'Проведено / запланировано' },
   averageLessonRating: { en: 'Average lesson rating', ru: 'Средняя оценка уроков' },
   leadsForPeriod: { en: 'Leads in period', ru: 'Лиды за период' },
+  newLeads: { en: 'New leads', ru: 'Новые лиды' },
+  processedLeads: { en: 'Processed', ru: 'Обработано' },
+  processedLeadsDetail: {
+    en: 'Leads with at least one recorded action',
+    ru: 'Лиды хотя бы с одним зафиксированным действием',
+  },
+  reachedLeads: { en: 'Reached', ru: 'Дозвон' },
+  reachedLeadsDetail: {
+    en: 'Unique leads with a completed phone conversation',
+    ru: 'Уникальные лиды, с которыми состоялся разговор',
+  },
+  qualifiedLeads: { en: 'Qualified leads', ru: 'Качественные лиды' },
+  qualifiedLeadsDetail: {
+    en: 'Reached qualification or a later funnel stage',
+    ru: 'Дошли до квалификации или более позднего этапа',
+  },
+  demoBookings: { en: 'Booked a demo', ru: 'Записались на демо' },
+  demoBookingsDetail: {
+    en: 'Entered the demo booking stage',
+    ru: 'Перешли на этап записи на демо',
+  },
+  repeatCallLeads: { en: 'Repeat calls', ru: 'Повторные звонки' },
+  repeatCallLeadsDetail: {
+    en: 'Unique leads with 2–5 call attempts',
+    ru: 'Уникальные лиды с 2–5 касаниями',
+  },
+  targetRefusals: { en: 'Qualified refusals', ru: 'Отказы целевых' },
+  targetRefusalsDetail: {
+    en: 'Open the refusal reason breakdown',
+    ru: 'Нажмите, чтобы посмотреть причины',
+  },
+  targetRefusalReasonsTitle: {
+    en: 'Qualified lead refusal reasons',
+    ru: 'Причины отказов целевых лидов',
+  },
+  targetRefusalReasonsDescription: {
+    en: 'Leads that reached qualification or a later stage and were archived in the selected period.',
+    ru: 'Лиды, дошедшие до квалификации или более позднего этапа и отправленные в архив за выбранный период.',
+  },
+  targetRefusalReasonsEmpty: {
+    en: 'No qualified lead refusals in this period.',
+    ru: 'За выбранный период отказов целевых лидов нет.',
+  },
   studentsForPeriod: { en: 'New students in period', ru: 'Новые ученики за период' },
   conversionForPeriod: { en: 'Conversion in period', ru: 'Конверсия за период' },
   paidCustomersForPeriod: { en: 'New paid customers', ru: 'Новые оплатившие клиенты' },

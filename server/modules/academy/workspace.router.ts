@@ -120,6 +120,7 @@ import {
   getMarketingWorkspaceDataset,
   resolveTeacherId,
 } from './academy-analytics';
+import { buildSalesDashboardMetrics } from './sales-dashboard-metrics';
 
 export const registerAcademyWorkspaceRoutes = (router: ReturnType<typeof Router>) => {
 router.get('/workspaces/administration', async (req, res) => {
@@ -165,6 +166,28 @@ router.get('/workspaces/sales', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch sales workspace', { error });
     res.status(500).json({ error: 'Failed to fetch sales workspace' });
+  }
+});
+
+router.get('/workspaces/sales/metrics', async (req, res) => {
+  if (!ensureSalesWorkspaceAccess(req, res)) return;
+  try {
+    const reportingRange = parseReportingRange(req.query.from, req.query.to);
+    if (!reportingRange) {
+      return res.status(400).json({ error: 'invalidReportingPeriod' });
+    }
+    const actor: DatasetActor = {
+      userId: req.user!.id,
+      workspace: req.user!.workspace,
+      workspaces: getAssignedWorkspaces(req.user),
+      scopeWorkspace: 'sales',
+    };
+    res.json(await buildSalesDashboardMetrics(actor, reportingRange));
+  } catch (error: any) {
+    logger.error('Failed to fetch sales dashboard metrics', { error });
+    res.status(error.statusCode || 500).json({
+      error: getPublicErrorMessage(error, 'Failed to fetch sales dashboard metrics'),
+    });
   }
 });
 

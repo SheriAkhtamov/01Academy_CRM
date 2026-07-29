@@ -13,13 +13,14 @@ import {
 import { cn } from '@/lib/utils';
 
 const presetTranslationKeys = {
+  today: 'today',
   last7: 'reportingLast7Days',
   last30: 'reportingLast30Days',
   thisMonth: 'reportingThisMonth',
   previousMonth: 'reportingPreviousMonth',
 } as const satisfies Record<Exclude<ReportingDatePreset, 'custom'>, TranslationKey>;
 
-const quickPresets = ['last7', 'last30', 'thisMonth', 'previousMonth'] as const;
+const quickPresets = ['today', 'last7', 'last30', 'thisMonth', 'previousMonth'] as const;
 
 export function ReportingDateRangeFilter({
   value,

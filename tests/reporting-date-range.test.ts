@@ -7,6 +7,11 @@ import {
 
 describe('shared reporting date range', () => {
   it('builds stable quick periods from an explicit academy date', () => {
+    expect(reportingRangeForPreset('today', '2026-07-26')).toEqual({
+      from: '2026-07-26',
+      to: '2026-07-26',
+      preset: 'today',
+    });
     expect(reportingRangeForPreset('last7', '2026-07-26')).toEqual({
       from: '2026-07-20',
       to: '2026-07-26',

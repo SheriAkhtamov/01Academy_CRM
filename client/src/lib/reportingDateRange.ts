@@ -1,4 +1,4 @@
-export type ReportingDatePreset = 'last7' | 'last30' | 'thisMonth' | 'previousMonth' | 'custom';
+export type ReportingDatePreset = 'today' | 'last7' | 'last30' | 'thisMonth' | 'previousMonth' | 'custom';
 
 export type ReportingDateRange = {
   from: string;
@@ -54,6 +54,9 @@ export const reportingRangeForPreset = (
   preset: Exclude<ReportingDatePreset, 'custom'> = 'thisMonth',
   today = reportingToday(),
 ): ReportingDateRange => {
+  if (preset === 'today') {
+    return { from: today, to: today, preset };
+  }
   if (preset === 'last7') {
     return { from: addReportingDays(today, -6), to: today, preset };
   }

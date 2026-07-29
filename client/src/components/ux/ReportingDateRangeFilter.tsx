@@ -1,5 +1,4 @@
 import { CalendarRange, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,13 +13,14 @@ import { cn } from '@/lib/utils';
 
 const presetTranslationKeys = {
   today: 'today',
+  yesterday: 'yesterday',
   last7: 'reportingLast7Days',
   last30: 'reportingLast30Days',
   thisMonth: 'reportingThisMonth',
   previousMonth: 'reportingPreviousMonth',
 } as const satisfies Record<Exclude<ReportingDatePreset, 'custom'>, TranslationKey>;
 
-const quickPresets = ['today', 'last7', 'last30', 'thisMonth', 'previousMonth'] as const;
+const quickPresets = ['today', 'yesterday', 'last7', 'last30', 'thisMonth', 'previousMonth'] as const;
 
 export function ReportingDateRangeFilter({
   value,
@@ -78,32 +78,13 @@ export function ReportingDateRangeFilter({
           ) : null}
         </div>
 
-        <div className="hidden rounded-lg bg-muted p-1 xl:flex" role="group" aria-label={t('reportingQuickPeriods')}>
-          {quickPresets.map((preset) => (
-            <Button
-              key={preset}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'h-11 px-3 text-xs font-medium',
-                value.preset === preset && 'bg-background text-foreground shadow-sm hover:bg-background',
-              )}
-              aria-pressed={value.preset === preset}
-              onClick={() => setPreset(preset)}
-            >
-              {t(presetTranslationKeys[preset])}
-            </Button>
-          ))}
-        </div>
-
         <Select
           value={value.preset}
           onValueChange={(preset) => {
             if (preset !== 'custom') setPreset(preset as Exclude<ReportingDatePreset, 'custom'>);
           }}
         >
-          <SelectTrigger className="h-11 xl:hidden" aria-label={t('reportingQuickPeriods')}>
+          <SelectTrigger className="h-11 w-full sm:w-[180px]" aria-label={t('reportingQuickPeriods')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

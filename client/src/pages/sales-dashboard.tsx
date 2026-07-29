@@ -514,7 +514,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveCustomReason, setArchiveCustomReason] = useState('');
   const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
   const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
 
   const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
     const params = new URLSearchParams(routeSearch);

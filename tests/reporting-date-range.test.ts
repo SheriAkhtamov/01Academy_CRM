@@ -12,6 +12,11 @@ describe('shared reporting date range', () => {
       to: '2026-07-26',
       preset: 'today',
     });
+    expect(reportingRangeForPreset('yesterday', '2026-07-26')).toEqual({
+      from: '2026-07-25',
+      to: '2026-07-25',
+      preset: 'yesterday',
+    });
     expect(reportingRangeForPreset('last7', '2026-07-26')).toEqual({
       from: '2026-07-20',
       to: '2026-07-26',

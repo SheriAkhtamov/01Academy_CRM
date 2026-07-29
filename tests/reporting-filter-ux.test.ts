@@ -22,11 +22,13 @@ const sidebar = read('../client/src/components/Sidebar.tsx');
 
 describe('dashboard period filters and simplified actions', () => {
   it('offers shared quick periods and explicit accessible boundaries', () => {
-    expect(filter).toContain("const quickPresets = ['today', 'last7', 'last30', 'thisMonth', 'previousMonth']");
+    expect(filter).toContain("const quickPresets = ['today', 'yesterday', 'last7', 'last30', 'thisMonth', 'previousMonth']");
     expect(filter).toContain('type="date"');
     expect(filter).toContain("setBoundary('from'");
     expect(filter).toContain("setBoundary('to'");
-    expect(filter).toContain('aria-pressed={value.preset === preset}');
+    expect(filter).toContain('<SelectTrigger');
+    expect(filter).not.toContain('aria-pressed={value.preset === preset}');
+    expect(sales).toContain("reportingRangeForPreset('today')");
   });
 
   it('uses the same range UX on every requested overview', () => {

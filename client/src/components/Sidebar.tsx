@@ -48,12 +48,7 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import { financeCopy } from '@/lib/financeCenter';
-import {
-  conversationQueryOptions,
-  totalUnreadMessages,
-} from '@/features/messages/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
-import type { ConversationUserDto } from '@shared/contracts/messages';
 
 interface NavItem {
   name: string;
@@ -74,17 +69,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();
   const finance = financeCopy(t);
   const hasSalesWorkspace = canAccessAcademyWorkspace(user, 'sales');
-  const { data: conversations = [] } = useQuery<ConversationUserDto[]>({
-    ...conversationQueryOptions,
-    enabled: Boolean(user),
-  });
   const { data: missedCallUnread = { count: 0 } } = useQuery({
     ...missedCallUnreadQueryOptions,
     enabled: hasSalesWorkspace,
   });
-  const unreadMessageCount = totalUnreadMessages(conversations);
-  const unreadMessagesLabel = t('unreadMessageCount')
-    .replace('{count}', String(unreadMessageCount));
   const missedCallCount = Number(missedCallUnread.count) || 0;
   const missedCallsLabel = t('newMissedCallCount')
     .replace('{count}', String(missedCallCount));
@@ -135,13 +123,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('leadArchive'), href: '/sales/archive', icon: Archive },
         { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-        {
-          name: t('messages'),
-          href: '/sales/messages',
-          icon: MessagesSquare,
-          badgeCount: unreadMessageCount,
-          badgeLabel: unreadMessagesLabel,
-        },
+        { name: t('messages'), href: '/sales/messages', icon: MessagesSquare },
         {
           name: t('callJournal'),
           href: '/sales/calls',

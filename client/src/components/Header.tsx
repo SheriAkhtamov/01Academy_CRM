@@ -23,6 +23,12 @@ import AddAccountModal from './modals/AddAccountModal';
 import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
 import { WorkspaceIdentity } from './ux/WorkspaceIdentity';
+import { UnreadCountBadge } from './ux/UnreadCountBadge';
+import {
+  conversationQueryOptions,
+  totalUnreadMessages,
+} from '@/features/messages/api';
+import type { ConversationUserDto } from '@shared/contracts/messages';
 
 interface HeaderProps {
   title?: string;
@@ -52,7 +58,14 @@ export default function Header({
     refetchOnWindowFocus: true,
   });
 
-  const unreadCount = notifications.filter((n: any) => !n.isRead).length;
+  const { data: conversations = [] } = useQuery<ConversationUserDto[]>({
+    ...conversationQueryOptions,
+  });
+
+  const unreadNotificationCount = notifications.filter((n: any) => !n.isRead).length;
+  const unreadMessageCount = totalUnreadMessages(conversations);
+  const unreadMessagesLabel = t('unreadMessageCount')
+    .replace('{count}', String(unreadMessageCount));
 
   const markReadMutation = useMutation({
     mutationFn: (notificationId: number) =>
@@ -138,12 +151,12 @@ export default function Header({
                   aria-label={t('notifications')}
                 >
                   <Bell className="h-5 w-5" />
-                  {unreadCount > 0 && (
+                  {unreadNotificationCount > 0 && (
                     <Badge
                       variant="destructive"
                       className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center p-0 text-[10px] font-bold ring-2 ring-background"
                     >
-                      {unreadCount}
+                      {unreadNotificationCount}
                     </Badge>
                   )}
                 </Button>
@@ -151,7 +164,7 @@ export default function Header({
               <DropdownMenuContent align="end" className="w-80">
                 <DropdownMenuLabel className="flex items-center justify-between">
                   <span>{t('notifications')}</span>
-                  {unreadCount > 0 && (
+                  {unreadNotificationCount > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -211,10 +224,22 @@ export default function Header({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button onClick={() => setShowChat(true)} className="btn-modern">
-              <MessageCircle className="h-5 w-5 mr-2" />
-              {t('messages')}
-            </Button>
+            <div className="relative">
+              <Button
+                onClick={() => setShowChat(true)}
+                className="btn-modern"
+                aria-label={unreadMessageCount > 0 ? unreadMessagesLabel : t('messages')}
+              >
+                <MessageCircle className="h-5 w-5 mr-2" />
+                {t('messages')}
+              </Button>
+              <UnreadCountBadge
+                count={unreadMessageCount}
+                label={unreadMessagesLabel}
+                announce
+                className="pointer-events-none absolute -right-1.5 -top-2"
+              />
+            </div>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

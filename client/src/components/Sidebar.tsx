@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
@@ -9,6 +10,7 @@ import {
 import { canAccessAcademyWorkspace, getAssignedWorkspaces, hasFinanceAccess, type AcademyWorkspace } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
+import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import {
   Tooltip,
   TooltipContent,
@@ -46,11 +48,19 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ceoCopy } from '@/components/ui/ceo-copy';
 import { financeCopy } from '@/lib/financeCenter';
+import {
+  conversationQueryOptions,
+  totalUnreadMessages,
+} from '@/features/messages/api';
+import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
+import type { ConversationUserDto } from '@shared/contracts/messages';
 
 interface NavItem {
   name: string;
   href: string;
   icon: any;
+  badgeCount?: number;
+  badgeLabel?: string;
 }
 
 interface NavSection {
@@ -63,6 +73,21 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user } = useAuth();
   const { t } = useTranslation();
   const finance = financeCopy(t);
+  const hasSalesWorkspace = canAccessAcademyWorkspace(user, 'sales');
+  const { data: conversations = [] } = useQuery<ConversationUserDto[]>({
+    ...conversationQueryOptions,
+    enabled: Boolean(user),
+  });
+  const { data: missedCallUnread = { count: 0 } } = useQuery({
+    ...missedCallUnreadQueryOptions,
+    enabled: hasSalesWorkspace,
+  });
+  const unreadMessageCount = totalUnreadMessages(conversations);
+  const unreadMessagesLabel = t('unreadMessageCount')
+    .replace('{count}', String(unreadMessageCount));
+  const missedCallCount = Number(missedCallUnread.count) || 0;
+  const missedCallsLabel = t('newMissedCallCount')
+    .replace('{count}', String(missedCallCount));
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => (
     location.startsWith('/finance')
       ? {
@@ -110,8 +135,20 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('leadArchive'), href: '/sales/archive', icon: Archive },
         { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-        { name: t('messages'), href: '/sales/messages', icon: MessagesSquare },
-        { name: t('callJournal'), href: '/sales/calls', icon: PhoneCall },
+        {
+          name: t('messages'),
+          href: '/sales/messages',
+          icon: MessagesSquare,
+          badgeCount: unreadMessageCount,
+          badgeLabel: unreadMessagesLabel,
+        },
+        {
+          name: t('callJournal'),
+          href: '/sales/calls',
+          icon: PhoneCall,
+          badgeCount: missedCallCount,
+          badgeLabel: missedCallsLabel,
+        },
       ],
     };
 
@@ -197,7 +234,14 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             >
               <Icon className="sidebar-nav-item__icon" />
               <span className="truncate">{item.name}</span>
-              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600" />}
+              <UnreadCountBadge
+                count={item.badgeCount ?? 0}
+                label={item.badgeLabel ?? item.name}
+                className="ml-auto ring-card"
+              />
+              {isActive && !item.badgeCount && (
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600" />
+              )}
             </div>
           </Link>
         </TooltipTrigger>

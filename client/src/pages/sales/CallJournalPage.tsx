@@ -1,7 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
+  CheckCheck,
   Clock3,
   Headphones,
   Phone,
@@ -20,7 +21,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import {
+  missedCallUnreadQueryOptions,
+  telephonyApi,
+  telephonyQueryKeys,
+} from '@/features/telephony/api';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiRequest } from '@/lib/queryClient';
@@ -78,6 +85,7 @@ const statusVariant = (status: TelephonyCallStatus) => {
 export default function CallJournalPage() {
   const { t, language } = useTranslation();
   const onlinePbxCall = useOnlinePbxCall();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [direction, setDirection] = useState('all');
   const [status, setStatus] = useState('all');
@@ -110,6 +118,18 @@ export default function CallJournalPage() {
     queryFn: () => apiRequest('GET', `/api/telephony/calls/journal?${queryString}`),
     refetchInterval: (query) => (query.state.data?.items.some((call) => activeTelephonyStatuses.has(call.status)) ? 2_000 : 10_000),
   });
+  const { data: missedCallUnread = { count: 0 } } = useQuery({
+    ...missedCallUnreadQueryOptions,
+  });
+  const markMissedCallsRead = useMutation({
+    mutationFn: telephonyApi.markMissedCallsRead,
+    onSuccess: () => {
+      queryClient.setQueryData(
+        telephonyQueryKeys.missedCallUnread,
+        { count: 0 },
+      );
+    },
+  });
 
   const dateTime = (value: string) => new Date(value).toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US', {
     day: '2-digit',
@@ -121,21 +141,44 @@ export default function CallJournalPage() {
   const pageSize = journalQuery.data?.limit ?? CALL_JOURNAL_PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil((journalQuery.data?.total ?? 0) / pageSize));
   const items = journalQuery.data?.items ?? [];
+  const missedCallCount = Number(missedCallUnread.count) || 0;
+  const missedCallsLabel = t('newMissedCallCount')
+    .replace('{count}', String(missedCallCount));
 
   return (
     <WorkspacePage contained className="pb-2 sm:pb-2 lg:pb-2">
       <PageHeader
         title={t('callJournal')}
+        titleAccessory={(
+          <UnreadCountBadge
+            count={missedCallCount}
+            label={missedCallsLabel}
+            announce
+          />
+        )}
         subtitle={t('callJournalDescription')}
         breadcrumbs={[
           { label: t('navDashboard'), href: '/sales' },
           { label: t('callJournal') },
         ]}
         actions={(
-          <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
-            <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
-            {t('callJournalRefresh')}
-          </Button>
+          <>
+            {missedCallCount > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => markMissedCallsRead.mutate()}
+                disabled={markMissedCallsRead.isPending}
+              >
+                <CheckCheck />
+                {t('markMissedCallsRead')}
+              </Button>
+            )}
+            <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
+              <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
+              {t('callJournalRefresh')}
+            </Button>
+          </>
         )}
       />
 

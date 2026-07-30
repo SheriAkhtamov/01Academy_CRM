@@ -27,6 +27,12 @@ import {
   queueOnlinePbxRoutingSync,
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
+import {
+  buildTelephonyCallVisibilitySql,
+  getUnreadMissedCallCount,
+  markMissedCallsSeen,
+  MISSED_INCOMING_CALL_SQL,
+} from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
 const router = Router();
@@ -1200,6 +1206,27 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
   res.json(result.rows);
 }));
 
+router.get('/calls/missed/unread', requireAuth, asyncRoute(async (req, res) => {
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.json({ count: await getUnreadMissedCallCount(req.user!) });
+}));
+
+router.put('/calls/missed/read', requireAuth, asyncRoute(async (req, res) => {
+  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  const lastSeenCallId = await markMissedCallsSeen(req.user!);
+  publishRealtimeEvent({
+    type: 'TELEPHONY_MISSED_CALLS_READ',
+    data: { lastSeenCallId },
+    audienceUserIds: [req.user!.id],
+  });
+  res.json({ count: 0, lastSeenCallId });
+}));
+
 router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
   if (!canAccessAcademyWorkspace(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
@@ -1216,11 +1243,7 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
 
   if (!hasLeadershipAccess(req.user)) {
     const actor = addParam(req.user!.id);
-    conditions.push(`(
-      call.user_id = ${actor}
-      OR lead.manager_id = ${actor}
-      OR (lead.id IS NOT NULL AND lead.manager_id IS NULL)
-    )`);
+    conditions.push(buildTelephonyCallVisibilitySql(actor));
   }
 
   const direction = String(req.query.direction ?? '').trim();
@@ -1278,7 +1301,7 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
             call.hangup_cause AS "hangupCause",
             (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording",
             COUNT(*) OVER()::int AS "totalCount",
-            COUNT(*) FILTER (WHERE call.status = 'missed') OVER()::int AS "missedCount",
+            COUNT(*) FILTER (WHERE ${MISSED_INCOMING_CALL_SQL}) OVER()::int AS "missedCount",
             COUNT(*) FILTER (WHERE call.talk_seconds > 0) OVER()::int AS "answeredCount",
             COALESCE(SUM(call.talk_seconds) OVER(), 0)::int AS "totalTalkSeconds"
      FROM telephony_calls call

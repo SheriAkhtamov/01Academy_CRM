@@ -25,4 +25,5 @@ export type ConversationUserDto = {
   position?: string | null;
   isOnline?: boolean | null;
   lastSeenAt?: string | null;
+  unreadCount?: number;
 };

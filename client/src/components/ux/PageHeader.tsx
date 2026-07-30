@@ -14,10 +14,17 @@ interface PageHeaderProps {
   title: string;
   subtitle?: string;
   breadcrumbs?: Array<{ label: string; href?: string }>;
+  titleAccessory?: React.ReactNode;
   actions?: React.ReactNode;
 }
 
-export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  subtitle,
+  breadcrumbs = [],
+  titleAccessory,
+  actions,
+}: PageHeaderProps) {
   const { t } = useTranslation();
 
   const items = breadcrumbs.length > 0
@@ -45,7 +52,10 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions }: PageH
             ))}
           </BreadcrumbList>
         </Breadcrumb>
-        <h1 className="break-words text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="break-words text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+          {titleAccessory}
+        </div>
         {subtitle && <p className="max-w-3xl text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {actions && (

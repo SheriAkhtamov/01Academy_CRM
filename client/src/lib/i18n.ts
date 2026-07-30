@@ -221,6 +221,10 @@ export const translations = {
   marketingTab: { en: 'Marketing', ru: 'Маркетинг' },
   maxStudents: { en: 'Max Students', ru: 'Максимум' },
   messages: { en: 'Messages', ru: 'Сообщения' },
+  unreadMessageCount: {
+    en: '{count} unread messages',
+    ru: 'Непрочитанных сообщений: {count}',
+  },
   messagesDesc: {
     en: 'Manage conversations from every connected channel in one place.',
     ru: 'Работайте с диалогами из всех подключённых каналов в одном разделе.',
@@ -568,6 +572,14 @@ export const translations = {
   totalCalls: { en: 'All calls', ru: 'Всего звонков' },
   answeredCalls: { en: 'Conversations', ru: 'Разговоров' },
   missedCalls: { en: 'Missed', ru: 'Пропущено' },
+  newMissedCallCount: {
+    en: '{count} new missed calls',
+    ru: 'Новых пропущенных звонков: {count}',
+  },
+  markMissedCallsRead: {
+    en: 'Mark missed calls as viewed',
+    ru: 'Отметить пропущенные просмотренными',
+  },
   totalTalkTime: { en: 'Total talk time', ru: 'Общее время разговоров' },
   talkTime: { en: 'Talk time', ru: 'Время разговора' },
   callDirection: { en: 'Direction', ru: 'Направление' },

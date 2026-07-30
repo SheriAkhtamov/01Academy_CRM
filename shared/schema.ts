@@ -926,6 +926,19 @@ export const telephonyCalls = pgTable("telephony_calls", {
   leadStartedIdx: index("telephony_calls_lead_started_idx").on(table.leadId, table.startedAt),
 }));
 
+export const telephonyMissedCallStates = pgTable("telephony_missed_call_states", {
+  userId: integer("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  lastSeenCallId: integer("last_seen_call_id").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  cursorCheck: check(
+    "telephony_missed_call_states_cursor_check",
+    sql`${table.lastSeenCallId} >= 0`,
+  ),
+}));
+
 export const instagramAccounts = pgTable("instagram_accounts", {
   id: serial("id").primaryKey(),
   igUserId: varchar("ig_user_id", { length: 80 }).notNull(),

@@ -5,6 +5,7 @@ import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
 import { useAuth } from './useAuth';
 import { devLog } from '@/lib/debug';
 import { messageQueryKeys } from '@/features/messages/api';
+import { telephonyQueryKeys } from '@/features/telephony/api';
 
 export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
@@ -115,7 +116,11 @@ export function useWebSocket() {
         case 'TELEPHONY_CALL_UPDATED':
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls'] });
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls/journal'] });
+          queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread });
           queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] });
+          break;
+        case 'TELEPHONY_MISSED_CALLS_READ':
+          queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread });
           break;
         case 'TELEPHONY_ROUTING_UPDATED':
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/routing'] });

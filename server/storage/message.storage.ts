@@ -2,15 +2,23 @@ import { db } from '../db';
 import { messages, users, type Message, type InsertMessage, type User } from '@shared/schema';
 import { eq, or, and, asc, sql } from 'drizzle-orm';
 
+type ConversationUser = Pick<User, 'id' | 'fullName' | 'position' | 'email'> & {
+    unreadCount: number;
+};
+
 class MessageStorage {
-    async getConversations(userId: number): Promise<User[]> {
+    async getConversations(userId: number): Promise<ConversationUser[]> {
         const result = await db.execute(sql`
-      SELECT DISTINCT
+      SELECT
         ${users.id} as id,
         ${users.fullName} as "fullName",
         ${users.position} as position,
         ${users.email} as email,
-        MAX(${messages.createdAt}) as last_message_time
+        MAX(${messages.createdAt}) as last_message_time,
+        COUNT(*) FILTER (
+          WHERE ${messages.receiverId} = ${userId}
+            AND ${messages.isRead} IS NOT TRUE
+        )::int AS "unreadCount"
       FROM ${messages}
       INNER JOIN ${users} ON ${users.id} = CASE
         WHEN ${messages.senderId} = ${userId} THEN ${messages.receiverId}
@@ -21,7 +29,10 @@ class MessageStorage {
       ORDER BY last_message_time DESC
     `);
 
-        return (result.rows as any[]).map(({ last_message_time, ...user }) => user) as User[];
+        return (result.rows as any[]).map(({ last_message_time, unreadCount, ...user }) => ({
+            ...user,
+            unreadCount: Number(unreadCount ?? 0),
+        })) as ConversationUser[];
     }
 
     async getMessagesBetweenUsers(senderId: number, receiverId: number): Promise<Message[]> {

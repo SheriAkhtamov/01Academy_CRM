@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { MessageCircle, Send, User, Circle, Search } from 'lucide-react';
@@ -22,7 +23,11 @@ import type {
   MessageDto,
   SendMessageRequest,
 } from '@shared/contracts/messages';
-import { messageQueryKeys, messagesApi } from '@/features/messages/api';
+import {
+  conversationQueryOptions,
+  messageQueryKeys,
+  messagesApi,
+} from '@/features/messages/api';
 
 interface ChatSheetProps {
   open: boolean;
@@ -52,15 +57,14 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   };
 
   // Fetch all employees only when searching
-  const { data: employees = [] } = useQuery({
+  const { data: employees = [] } = useQuery<ConversationUserDto[]>({
     queryKey: ['/api/users'],
     enabled: open && !!searchQuery.trim(),
   });
 
   // Fetch employees with whom user has conversations
   const { data: conversationEmployees = [] } = useQuery<ConversationUserDto[]>({
-    queryKey: messageQueryKeys.conversations,
-    queryFn: messagesApi.getConversations,
+    ...conversationQueryOptions,
     enabled: open,
   });
 
@@ -86,19 +90,40 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
     mutationFn: (employeeId: number) =>
       messagesApi.markConversationRead(employeeId),
     onMutate: async (employeeId) => {
-      const queryKey = messageQueryKeys.thread(employeeId);
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<MessageDto[]>(queryKey);
-      queryClient.setQueryData<MessageDto[]>(queryKey, (current = []) => current.map((message) => (
+      const threadQueryKey = messageQueryKeys.thread(employeeId);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: threadQueryKey }),
+        queryClient.cancelQueries({ queryKey: messageQueryKeys.conversations }),
+      ]);
+      const previousThread = queryClient.getQueryData<MessageDto[]>(threadQueryKey);
+      const previousConversations = queryClient.getQueryData<ConversationUserDto[]>(
+        messageQueryKeys.conversations,
+      );
+      queryClient.setQueryData<MessageDto[]>(threadQueryKey, (current = []) => current.map((message) => (
         message.receiverId === user?.id && !message.isRead
           ? { ...message, isRead: true }
           : message
       )));
-      return { employeeId, previous };
+      queryClient.setQueryData<ConversationUserDto[]>(
+        messageQueryKeys.conversations,
+        (current = []) => current.map((conversation) => (
+          conversation.id === employeeId
+            ? { ...conversation, unreadCount: 0 }
+            : conversation
+        )),
+      );
+      return { employeeId, previousThread, previousConversations };
     },
     onError: (_error, _employeeId, context) => {
       if (context) {
-        queryClient.setQueryData(messageQueryKeys.thread(context.employeeId), context.previous);
+        queryClient.setQueryData(
+          messageQueryKeys.thread(context.employeeId),
+          context.previousThread,
+        );
+        queryClient.setQueryData(
+          messageQueryKeys.conversations,
+          context.previousConversations,
+        );
       }
     },
     onSettled: (_result, _error, employeeId) => {
@@ -129,15 +154,28 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const filteredEmployees = useMemo(() => {
     if (searchQuery.trim()) {
       // Show search results from all employees
-      const otherEmployees = Array.isArray(employees) ? employees.filter((emp: any) => emp.id !== user?.id) : [];
-      return otherEmployees.filter((emp: any) =>
-        emp.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        emp.position?.toLowerCase().includes(searchQuery.toLowerCase())
+      const conversationsByEmployeeId = new Map(
+        conversationEmployees.map((employee) => [employee.id, employee]),
+      );
+      const otherEmployees = Array.isArray(employees)
+        ? employees
+          .filter((employee) => employee.id !== user?.id)
+          .map((employee) => ({
+            ...employee,
+            unreadCount: conversationsByEmployeeId.get(employee.id)?.unreadCount
+              ?? employee.unreadCount
+              ?? 0,
+          }))
+        : [];
+      const normalizedSearch = searchQuery.toLowerCase();
+      return otherEmployees.filter((employee) =>
+        employee.fullName?.toLowerCase().includes(normalizedSearch) ||
+        employee.position?.toLowerCase().includes(normalizedSearch)
       );
     } else {
       // Show only employees with existing conversations
       const conversations = Array.isArray(conversationEmployees) ? conversationEmployees : [];
-      return conversations.filter((emp: any) => emp.id !== user?.id);
+      return conversations.filter((employee) => employee.id !== user?.id);
     }
   }, [employees, conversationEmployees, user?.id, searchQuery]);
 
@@ -165,7 +203,9 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
       queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
       
       // Check if this is the first message to this employee
-      const isNewConversation = !conversationEmployees.some((emp: any) => emp.id === variables.receiverId);
+      const isNewConversation = !conversationEmployees.some((employee) => (
+        employee.id === variables.receiverId
+      ));
       
       if (isNewConversation) {
         setSearchQuery('');
@@ -188,13 +228,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
     
     const employee = (Array.isArray(employees) ? employees : [])
       .concat(Array.isArray(conversationEmployees) ? conversationEmployees : [])
-      .find((emp: any) => emp.id === selectedEmployeeId);
+      .find((item) => item.id === selectedEmployeeId);
       
     if (!employee) return null;
     
     // Add online status from usersWithStatus
     const userStatus = Array.isArray(usersWithStatus) 
-      ? usersWithStatus.find((u: any) => u.id === selectedEmployeeId)
+      ? usersWithStatus.find((item) => item.id === selectedEmployeeId)
       : null;
     return {
       ...employee,
@@ -239,43 +279,52 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="p-2">
-                {filteredEmployees.map((employee: any) => (
-                  <div
-                    key={employee.id}
-                    className={`flex cursor-pointer items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted ${
-                      selectedEmployeeId === employee.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''
-                    }`}
-                    onClick={() => setSelectedEmployeeId(employee.id)}
-                  >
-                    <Avatar className="size-10">
-                      <AvatarFallback>
-                        {employee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {employee.fullName}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {employee.position}
-                      </p>
-                    </div>
-                    <div className="hidden items-center gap-1 lg:flex">
-                      {(() => {
-                        const userStatus = Array.isArray(usersWithStatus)
-                          ? usersWithStatus.find((u: any) => u.id === employee.id)
-                          : null;
-                        const isOnline = userStatus?.isOnline || false;
-                        return (
-                          <>
-                            <Circle className={`size-2 ${isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
-                            <span className="text-xs text-muted-foreground">{isOnline ? t('online') : t('offline')}</span>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                ))}
+                {filteredEmployees.map((employee) => {
+                  const employeeUnreadCount = Number(employee.unreadCount) || 0;
+                  const employeeUnreadLabel = t('unreadMessageCount')
+                    .replace('{count}', String(employeeUnreadCount));
+                  const userStatus = Array.isArray(usersWithStatus)
+                    ? usersWithStatus.find((item) => item.id === employee.id)
+                    : null;
+                  const isOnline = Boolean(userStatus?.isOnline);
+
+                  return (
+                    <button
+                      key={employee.id}
+                      type="button"
+                      className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        selectedEmployeeId === employee.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''
+                      }`}
+                      onClick={() => setSelectedEmployeeId(employee.id)}
+                    >
+                      <Avatar className="size-10">
+                        <AvatarFallback>
+                          {employee.fullName?.split(' ').map((name) => name[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {employee.fullName}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {employee.position}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <UnreadCountBadge
+                          count={employeeUnreadCount}
+                          label={employeeUnreadLabel}
+                        />
+                        <div className="hidden items-center gap-1 lg:flex">
+                          <Circle className={`size-2 ${isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-400 text-slate-400'}`} />
+                          <span className="text-xs text-muted-foreground">
+                            {isOnline ? t('online') : t('offline')}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
                 {filteredEmployees.length === 0 && (
                   <div className="py-8 text-center text-muted-foreground">
                     <User className="mx-auto mb-2 size-8 opacity-40" />

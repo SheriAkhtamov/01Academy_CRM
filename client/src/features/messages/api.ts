@@ -31,3 +31,18 @@ export const messagesApi = {
     apiRequest('POST', '/api/messages', message) as Promise<MessageDto>
   ),
 };
+
+export const conversationQueryOptions = {
+  queryKey: messageQueryKeys.conversations,
+  queryFn: messagesApi.getConversations,
+  staleTime: 10_000,
+  refetchInterval: 30_000,
+  refetchOnWindowFocus: true,
+};
+
+export const totalUnreadMessages = (
+  conversations: readonly ConversationUserDto[],
+): number => conversations.reduce(
+  (total, conversation) => total + Math.max(0, Number(conversation.unreadCount) || 0),
+  0,
+);

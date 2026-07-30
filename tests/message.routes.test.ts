@@ -80,6 +80,21 @@ describe("message routes", () => {
     }));
   });
 
+  it("returns the unread count for every employee conversation", async () => {
+    mocks.getConversationsByUser.mockResolvedValue([
+      { id: 2, fullName: "Colleague", unreadCount: 3 },
+    ]);
+    const agent = request.agent(await createApp());
+    await agent.post("/test/session").send({ userId: currentUser.id });
+
+    const response = await agent.get("/api/messages/conversations");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      { id: 2, fullName: "Colleague", unreadCount: 3 },
+    ]);
+  });
+
   it("rejects non-string content and malformed receiver ids", async () => {
     const agent = request.agent(await createApp());
     await agent.post("/test/session").send({ userId: currentUser.id });

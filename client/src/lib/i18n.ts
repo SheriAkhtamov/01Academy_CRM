@@ -473,8 +473,8 @@ export const translations = {
   },
   conversionFunnel: { en: 'Conversion Funnel', ru: 'Воронка конверсии' },
   conversionFunnelDescription: {
-    en: 'Leads that reached each sales stage',
-    ru: 'Лиды, дошедшие до каждого этапа продаж',
+    en: 'Lead movement and drop-off between sales stages',
+    ru: 'Движение лидов и потери между этапами продаж',
   },
   salesSourcePerformance: { en: 'Source performance', ru: 'Эффективность источников' },
   salesSourcePerformanceDescription: {

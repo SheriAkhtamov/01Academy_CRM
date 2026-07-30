@@ -1823,11 +1823,11 @@ export default function MessagesPage() {
   return (
     <WorkspacePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
-        title={t('messages')}
+        title={t('salesInbox')}
         subtitle={t('messagesDesc')}
         breadcrumbs={[
           { label: t('navDashboard'), href: '/sales' },
-          { label: t('messages') },
+          { label: t('salesInbox') },
         ]}
         actions={(
           <Button

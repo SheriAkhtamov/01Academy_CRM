@@ -221,6 +221,7 @@ export const translations = {
   marketingTab: { en: 'Marketing', ru: 'Маркетинг' },
   maxStudents: { en: 'Max Students', ru: 'Максимум' },
   messages: { en: 'Messages', ru: 'Сообщения' },
+  salesInbox: { en: 'Direct', ru: 'Входящие' },
   unreadMessageCount: {
     en: '{count} unread messages',
     ru: 'Непрочитанных сообщений: {count}',

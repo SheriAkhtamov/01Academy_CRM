@@ -123,7 +123,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('leadArchive'), href: '/sales/archive', icon: Archive },
         { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
         { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-        { name: t('messages'), href: '/sales/messages', icon: MessagesSquare },
+        { name: t('salesInbox'), href: '/sales/messages', icon: MessagesSquare },
         {
           name: t('callJournal'),
           href: '/sales/calls',

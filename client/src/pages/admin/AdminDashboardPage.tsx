@@ -292,8 +292,8 @@ export default function AdminDashboardPage() {
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
   const reportingQuery = reportingRangeQuery(reportingRange);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<AdministrationDashboardData>({
-    queryKey: ['/api/academy/workspaces/administration', reportingQuery],
-    queryFn: () => apiRequest('GET', `/api/academy/workspaces/administration?${reportingQuery}`),
+    queryKey: ['/api/academy/modules/administration', reportingQuery],
+    queryFn: () => apiRequest('GET', `/api/academy/modules/administration?${reportingQuery}`),
     placeholderData: (previousData) => previousData,
   });
 

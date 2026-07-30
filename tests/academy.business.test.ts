@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACADEMY_ACCESS_MODULES,
-  ACADEMY_WORKSPACES,
+  ACADEMY_MODULES,
   buildReferralCode,
   calculateAttendancePercent,
   calculateCac,
@@ -9,8 +9,8 @@ import {
   calculateNps,
   calculateProgressPercent,
   calculateRoas,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasFinanceAccess,
   hasLeadershipAccess,
@@ -24,8 +24,8 @@ import {
 } from "../shared/academy";
 
 describe("01 Academy business rules", () => {
-  it("exposes the supported employee workspaces", () => {
-    expect(ACADEMY_WORKSPACES).toEqual([
+  it("exposes the supported employee modules", () => {
+    expect(ACADEMY_MODULES).toEqual([
       "administration",
       "sales",
       "teacher",
@@ -43,65 +43,65 @@ describe("01 Academy business rules", () => {
     ]);
     expect(hasFinanceAccess("administration")).toBe(false);
     expect(hasFinanceAccess({
-      workspace: "administration",
-      workspaces: ["administration"],
+      module: "administration",
+      modules: ["administration"],
     })).toBe(false);
     expect(hasFinanceAccess({
-      workspace: "sales",
-      workspaces: ["sales", "finance"],
+      module: "sales",
+      modules: ["sales", "finance"],
     })).toBe(true);
   });
 
-  it("gives administration global workspace access", () => {
-    expect(canAccessAcademyWorkspace("administration", "administration")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "marketing")).toBe(true);
-    expect(canAccessAcademyWorkspace("administration", "teacher")).toBe(true);
+  it("gives administration global module access", () => {
+    expect(canAccessAcademyModule("administration", "administration")).toBe(true);
+    expect(canAccessAcademyModule("administration", "sales")).toBe(true);
+    expect(canAccessAcademyModule("administration", "marketing")).toBe(true);
+    expect(canAccessAcademyModule("administration", "teacher")).toBe(true);
   });
 
-  it("keeps other employees inside the assigned workspace", () => {
-    expect(canAccessAcademyWorkspace("sales", "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace("sales", "marketing")).toBe(false);
+  it("keeps other employees inside the assigned module", () => {
+    expect(canAccessAcademyModule("sales", "sales")).toBe(true);
+    expect(canAccessAcademyModule("sales", "marketing")).toBe(false);
   });
 
-  it("uses workspace assignment as the system access model", () => {
-    expect(canAccessAcademyWorkspace("teacher", "teacher")).toBe(true);
-    expect(canAccessAcademyWorkspace("marketing", "marketing")).toBe(true);
+  it("uses module assignment as the system access model", () => {
+    expect(canAccessAcademyModule("teacher", "teacher")).toBe(true);
+    expect(canAccessAcademyModule("marketing", "marketing")).toBe(true);
   });
 
-  it("supports several workspace modules on the same employee", () => {
+  it("supports several module modules on the same employee", () => {
     const employee = {
-      workspace: "teacher",
-      workspaces: ["teacher", "sales"],
+      module: "teacher",
+      modules: ["teacher", "sales"],
     };
 
-    expect(getAssignedWorkspaces(employee)).toEqual(["teacher", "sales"]);
-    expect(canAccessAcademyWorkspace(employee, "teacher")).toBe(true);
-    expect(canAccessAcademyWorkspace(employee, "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(false);
+    expect(getAssignedModules(employee)).toEqual(["teacher", "sales"]);
+    expect(canAccessAcademyModule(employee, "teacher")).toBe(true);
+    expect(canAccessAcademyModule(employee, "sales")).toBe(true);
+    expect(canAccessAcademyModule(employee, "marketing")).toBe(false);
   });
 
-  it("treats leadership modules as global access even when primary workspace differs", () => {
+  it("treats leadership modules as global access even when primary module differs", () => {
     const employee = {
-      workspace: "teacher",
-      workspaces: ["teacher", "administration"],
+      module: "teacher",
+      modules: ["teacher", "administration"],
     };
 
     expect(hasLeadershipAccess(employee)).toBe(true);
-    expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(true);
+    expect(canAccessAcademyModule(employee, "marketing")).toBe(true);
   });
 
-  it("represents leadership as all access modules instead of a separate workspace", () => {
+  it("represents leadership as all access modules instead of a separate module", () => {
     const employee = {
-      workspace: "administration",
-      workspaces: ["administration", "sales", "teacher", "marketing"],
+      module: "administration",
+      modules: ["administration", "sales", "teacher", "marketing"],
     };
 
-    expect(getAssignedWorkspaces(employee)).toEqual(["administration", "sales", "teacher", "marketing"]);
+    expect(getAssignedModules(employee)).toEqual(["administration", "sales", "teacher", "marketing"]);
     expect(hasLeadershipAccess(employee)).toBe(true);
-    expect(canAccessAcademyWorkspace(employee, "sales")).toBe(true);
-    expect(canAccessAcademyWorkspace(employee, "teacher")).toBe(true);
-    expect(canAccessAcademyWorkspace(employee, "marketing")).toBe(true);
+    expect(canAccessAcademyModule(employee, "sales")).toBe(true);
+    expect(canAccessAcademyModule(employee, "teacher")).toBe(true);
+    expect(canAccessAcademyModule(employee, "marketing")).toBe(true);
   });
 
   it("suggests course and age group from student age", () => {

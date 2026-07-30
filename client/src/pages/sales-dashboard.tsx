@@ -49,7 +49,7 @@ import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
@@ -64,7 +64,7 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import {
-  getAssignedWorkspaces,
+  getAssignedModules,
   hasLeadershipAccess,
   LEAD_ARCHIVE_REASONS,
 } from '@shared/academy';
@@ -474,8 +474,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
   const { startCall: startOnlinePbxCall } = useOnlinePbxCall();
-  const isAdministrationWorkspace = hasLeadershipAccess(user);
-  const hasSalesModule = getAssignedWorkspaces(user).includes('sales');
+  const isAdministrationModule = hasLeadershipAccess(user);
+  const hasSalesModule = getAssignedModules(user).includes('sales');
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
@@ -527,7 +527,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }, [pagePath, routeSearch, setLocation]);
 
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
-    queryKey: ['/api/academy/workspaces/sales'],
+    queryKey: ['/api/academy/modules/sales'],
   });
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ['/api/users'],
@@ -547,8 +547,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   };
 
   const invalidate = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales/metrics'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales/metrics'] }),
   ]);
   const currentSalesManagerId = hasSalesModule && user?.id ? String(user.id) : '';
   const leadFormDefaults = useMemo<CreateLeadFormValues>(() => ({
@@ -608,7 +608,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const salesManagers = useMemo(
     () => users
-      .filter((employee) => getAssignedWorkspaces(employee).includes('sales') && employee.isActive)
+      .filter((employee) => getAssignedModules(employee).includes('sales') && employee.isActive)
       .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
     [users],
   );
@@ -637,10 +637,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   );
 
   const overviewLeads = useMemo(() => {
-    if (isAdministrationWorkspace) return myLeads;
+    if (isAdministrationModule) return myLeads;
     if (!user?.id) return [];
     return myLeads.filter((lead) => Number(lead.managerId) === Number(user.id));
-  }, [isAdministrationWorkspace, myLeads, user?.id]);
+  }, [isAdministrationModule, myLeads, user?.id]);
 
   const periodLeads = useMemo(
     () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
@@ -862,12 +862,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (!lead) return false;
     if (!lead.managerId) {
       setPendingLeadMove({ lead, statusCode });
-      setPendingLeadMoveManagerId(isAdministrationWorkspace ? '' : String(user?.id ?? ''));
+      setPendingLeadMoveManagerId(isAdministrationModule ? '' : String(user?.id ?? ''));
       return false;
     }
     await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
     return true;
-  }, [isAdministrationWorkspace, myLeads, updateLead, user?.id]);
+  }, [isAdministrationModule, myLeads, updateLead, user?.id]);
 
   const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
     if (action === 'payment') {
@@ -949,8 +949,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   if (isLoading) {
     return (
-      <WorkspacePage contained={contained}>
-        <WorkspacePageBody contained={contained} ariaLabel={t('loading')}>
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('loading')}>
           <div className="space-y-6">
             <Skeleton className="h-10 w-64" />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -960,15 +960,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             </div>
             <AnalyticsChartsSkeleton />
           </div>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
   if (isError || !data) {
     return (
-      <WorkspacePage contained={contained}>
-        <WorkspacePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
           <Alert variant="destructive">
             <AlertCircle />
             <AlertTitle>{t('failedToLoadData')}</AlertTitle>
@@ -979,36 +979,36 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               </Button>
             </AlertDescription>
           </Alert>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
   const sectionTitle: Record<SalesSection, string> = {
-    overview: isAdministrationWorkspace
-      ? t('salesWorkspace')
+    overview: isAdministrationModule
+      ? t('salesModule')
       : `${t('welcome')}, ${user?.fullName || t('manager')}!`,
     pipeline: t('pipeline'),
     archive: t('leadArchive'),
     schedule: t('salesSchedule'),
-    students: isAdministrationWorkspace ? t('allClients') : t('myStudents'),
+    students: isAdministrationModule ? t('allClients') : t('myStudents'),
   };
-  const salesWorkspaceDescription = isAdministrationWorkspace
-    ? t('globalSalesWorkspaceDescription')
-    : t('salesManagerWorkspace');
+  const salesModuleDescription = isAdministrationModule
+    ? t('globalSalesModuleDescription')
+    : t('salesManagerModule');
   const sectionSubtitle = section === 'schedule'
     ? t('salesScheduleSubtitle')
     : section === 'archive'
       ? t('leadArchiveDescription')
-      : salesWorkspaceDescription;
+      : salesModuleDescription;
   const ownsContentScroll = ['pipeline', 'archive', 'schedule', 'students'].includes(section);
   return (
-    <WorkspacePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>
+    <ModulePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>
       <PageHeader
         title={sectionTitle[section]}
         subtitle={sectionSubtitle}
         breadcrumbs={[
-          { label: t('salesWorkspace'), href: '/sales' },
+          { label: t('salesModule'), href: '/sales' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
@@ -1022,7 +1022,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         }
       />
 
-      <WorkspacePageBody
+      <ModulePageBody
         contained={contained}
         scroll={ownsContentScroll ? 'hidden' : 'auto'}
         ariaLabel={sectionTitle[section]}
@@ -1033,7 +1033,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
           <SalesOverviewMetrics
             reportingRange={reportingRange}
-            isAdministrationWorkspace={isAdministrationWorkspace}
+            isAdministrationModule={isAdministrationModule}
             activeLeads={managerStats.activeLeads}
             totalStudents={managerStats.totalStudents}
             conversionLeadCount={managerStats.newLeadsPeriod}
@@ -1068,7 +1068,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             return requestLeadStatusChange(leadId, statusCode);
           }}
           isPending={updateLead.isPending || assignAndMoveLead.isPending}
-          showManager={isAdministrationWorkspace}
+          showManager={isAdministrationModule}
         />
       ) : null}
 
@@ -1107,13 +1107,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           openStudent={openStudent}
           openLead={openLead}
           onStudentSheetOpenChange={handleStudentSheetState}
-          onUpdateStudentStatus={isAdministrationWorkspace
+          onUpdateStudentStatus={isAdministrationModule
             ? (id, status, exitReason) => updateStudentStatus.mutateAsync({ id, status, exitReason })
             : undefined}
-          onAddStudentGroup={isAdministrationWorkspace
+          onAddStudentGroup={isAdministrationModule
             ? (id, groupId, isPrimary) => addStudentGroup.mutateAsync({ id, groupId, isPrimary })
             : undefined}
-          onRemoveStudentGroup={isAdministrationWorkspace
+          onRemoveStudentGroup={isAdministrationModule
             ? (id, groupId) => removeStudentGroup.mutateAsync({ id, groupId })
             : undefined}
           title={riskFilter === 'overdue'
@@ -1121,11 +1121,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             : riskFilter === 'low-attendance'
               ? ceoCopy.student.lowAttendanceStudents
               : sectionTitle.students}
-          showManager={isAdministrationWorkspace}
+          showManager={isAdministrationModule}
         />
       ) : null}
 
-      </WorkspacePageBody>
+      </ModulePageBody>
 
       <ArchiveLeadDialog
         lead={archiveDialogLead}
@@ -1147,7 +1147,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       <AssignLeadBeforeMoveDialog
         pendingMove={pendingLeadMove}
         managers={salesManagers}
-        canChooseAnyManager={isAdministrationWorkspace}
+        canChooseAnyManager={isAdministrationModule}
         currentUserId={user?.id}
         managerId={pendingLeadMoveManagerId}
         onManagerIdChange={setPendingLeadMoveManagerId}
@@ -1180,7 +1180,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             createLead={createLead}
             data={data}
             managers={leadManagerOptions}
-            managerSelectDisabled={hasSalesModule && !isAdministrationWorkspace}
+            managerSelectDisabled={hasSalesModule && !isAdministrationModule}
           />
         </DialogContent>
       </Dialog>
@@ -1228,7 +1228,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         groups={data.groups ?? []}
         sources={data.sources ?? []}
         statuses={data.statuses ?? []}
-        managers={isAdministrationWorkspace
+        managers={isAdministrationModule
           ? salesManagers
           : salesManagers.filter((manager) => Number(manager.id) === Number(user?.id))}
         currentUserId={user?.id}
@@ -1242,7 +1242,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           replaceSalesParams({ lead: String(retainedLeadId) });
         }}
       />
-    </WorkspacePage>
+    </ModulePage>
   );
 }
 // ---- Sub-components for tabs ----

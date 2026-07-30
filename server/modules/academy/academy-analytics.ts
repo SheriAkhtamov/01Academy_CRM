@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -110,13 +110,13 @@ export const resolveTeacherId = async (userId: number): Promise<number | null> =
 };
 
 export const getAcademyDataset = async (actor?: DatasetActor) => {
-  // Workspace scoping: teachers see only their own groups; sales employees see only
-  // their own leads/students; marketing receives its workspace dataset.
-  const actorWorkspaces = getAssignedWorkspaces(actor);
-  // Entering the teacher workspace is an explicit context switch. It must
+  // Module scoping: teachers see only their own groups; sales employees see only
+  // their own leads/students; marketing receives its module dataset.
+  const actorModules = getAssignedModules(actor);
+  // Entering the teacher module is an explicit context switch. It must
   // always resolve to the actor's teacher profile, even when that user also
   // has administration/leadership permissions.
-  const shouldScopeToTeacher = actor?.scopeWorkspace === 'teacher';
+  const shouldScopeToTeacher = actor?.scopeModule === 'teacher';
   const teacherId = shouldScopeToTeacher
     ? await resolveTeacherId(actor.userId)
     : null;
@@ -124,8 +124,8 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
   // unscoped dataset would expose every teacher's groups and students.
   const isTeacherScoped = shouldScopeToTeacher;
   const isManagerScoped =
-    actor?.scopeWorkspace === 'sales' &&
-    actorWorkspaces.includes('sales') &&
+    actor?.scopeModule === 'sales' &&
+    actorModules.includes('sales') &&
     !hasLeadershipAccess(actor);
 
   const managerParams = isManagerScoped ? [actor!.userId] : [];
@@ -1048,7 +1048,7 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
   };
 };
 
-export const getMarketingWorkspaceDataset = async () => {
+export const getMarketingModuleDataset = async () => {
   const [sources, leads, students, expenses, referrals, referralBenefits] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources ORDER BY name`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,

@@ -4,10 +4,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   getInitials,
-  formatUserWorkspace,
+  formatUserModule,
   canAccessReports,
 } from '@/lib/auth';
-import { canAccessAcademyWorkspace, getAssignedWorkspaces, hasFinanceAccess, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyModule, getAssignedModules, hasFinanceAccess, type AcademyModule } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
@@ -68,10 +68,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { user } = useAuth();
   const { t } = useTranslation();
   const finance = financeCopy(t);
-  const hasSalesWorkspace = canAccessAcademyWorkspace(user, 'sales');
+  const hasSalesModule = canAccessAcademyModule(user, 'sales');
   const { data: missedCallUnread = { count: 0 } } = useQuery({
     ...missedCallUnreadQueryOptions,
-    enabled: hasSalesWorkspace,
+    enabled: hasSalesModule,
   });
   const missedCallCount = Number(missedCallUnread.count) || 0;
   const missedCallsLabel = t('newMissedCallCount')
@@ -80,7 +80,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     location.startsWith('/finance')
       ? {
           [t('salesPipeline')]: true,
-          [t('teacherDepartmentWorkspace')]: true,
+          [t('teacherDepartmentModule')]: true,
           [t('marketingTab')]: true,
           [t('systemAdministration')]: true,
         }
@@ -89,9 +89,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   if (!user) return null;
 
-  const assignedWorkspaces = getAssignedWorkspaces(user);
-  const additionalWorkspaces = assignedWorkspaces.filter((workspace) => workspace !== user.workspace);
-  const hasWorkspace = (workspaceName: AcademyWorkspace) => canAccessAcademyWorkspace(user, workspaceName);
+  const assignedModules = getAssignedModules(user);
+  const additionalModules = assignedModules.filter((module) => module !== user.module);
+  const hasModule = (moduleName: AcademyModule) => canAccessAcademyModule(user, moduleName);
 
   const isItemActive = (href: string) => {
     const currentPath = location.split('?')[0];
@@ -135,24 +135,24 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     };
 
     const teacherSection: NavSection = {
-      label: t('teacherDepartmentWorkspace'),
+      label: t('teacherDepartmentModule'),
       items: [
-        { name: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
-        { name: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
-        { name: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
-        { name: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
+        { name: t('teacherModule'), href: '/teacher-module', icon: GraduationCap },
+        { name: t('schedule'), href: '/teacher-module/schedule', icon: Calendar },
+        { name: t('myGroups'), href: '/teacher-module/groups', icon: Layers3 },
+        { name: t('attendanceLabel'), href: '/teacher-module/attendance', icon: ClipboardCheck },
       ],
     };
 
     const marketingSection: NavSection = {
       label: t('marketingTab'),
       items: [
-        { name: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
-        { name: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
-        { name: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
-        { name: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
-        { name: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
-        { name: t('expenses'), href: '/marketing-workspace/expenses', icon: Banknote },
+        { name: t('navDashboard'), href: '/marketing-module', icon: BarChart3 },
+        { name: t('leadSources'), href: '/marketing-module/sources', icon: Megaphone },
+        { name: t('conversionFunnel'), href: '/marketing-module/funnel', icon: Flame },
+        { name: t('warmBase'), href: '/marketing-module/warm-base', icon: Users },
+        { name: t('navReferrals'), href: '/marketing-module/referrals', icon: HeartHandshake },
+        { name: t('expenses'), href: '/marketing-module/expenses', icon: Banknote },
       ],
     };
 
@@ -163,7 +163,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         { name: t('employees'), href: '/employees', icon: Users },
         { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
         { name: t('salesSettings'), href: '/admin/sales-settings', icon: UserCheck },
-        { name: ceoCopy.workspace.audit, href: '/admin/audit', icon: ClipboardList },
+        { name: ceoCopy.module.audit, href: '/admin/audit', icon: ClipboardList },
         { name: t('navIntegrations'), href: '/integrations', icon: Plug },
       ],
     };
@@ -180,11 +180,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     };
 
     return [
-      hasWorkspace('sales') ? salesSection : null,
-      hasWorkspace('teacher') ? teacherSection : null,
-      hasWorkspace('marketing') ? marketingSection : null,
+      hasModule('sales') ? salesSection : null,
+      hasModule('teacher') ? teacherSection : null,
+      hasModule('marketing') ? marketingSection : null,
       hasFinanceAccess(user) ? financeSection : null,
-      hasWorkspace('administration') ? systemSection : null,
+      hasModule('administration') ? systemSection : null,
     ].filter((section): section is NavSection => Boolean(section));
   };
 
@@ -310,13 +310,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground truncate">{user.fullName}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.position || formatUserWorkspace(user.workspace, t)}</p>
+              <p className="text-xs text-muted-foreground truncate">{user.position || formatUserModule(user.module, t)}</p>
               {user.position && (
-                <p className="text-[10px] text-muted-foreground truncate">{formatUserWorkspace(user.workspace, t)}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{formatUserModule(user.module, t)}</p>
               )}
-              {additionalWorkspaces.length > 0 && (
+              {additionalModules.length > 0 && (
                 <p className="text-[10px] text-muted-foreground truncate">
-                  {additionalWorkspaces.map((item) => formatUserWorkspace(item, t)).join(' · ')}
+                  {additionalModules.map((item) => formatUserModule(item, t)).join(' · ')}
                 </p>
               )}
               {canAccessReports(user) && (

@@ -1,7 +1,7 @@
 // Copy for the CEO control center. Kept next to UI primitives so the
 // product-specific Russian terminology stays consistent across its screens.
 export const ceoCopy = {
-  workspace: {
+  module: {
     audit: 'Журнал действий',
   },
   student: {

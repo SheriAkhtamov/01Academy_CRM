@@ -44,7 +44,7 @@ async function seedSuperAdmin() {
            password = $2,
            full_name = $3,
            position = $4,
-           workspace = 'administration',
+           module = 'administration',
            has_report_access = true,
            is_active = true,
            updated_at = now()
@@ -56,7 +56,7 @@ async function seedSuperAdmin() {
   }
 
   await exec(
-    `INSERT INTO users (email, password, full_name, position, workspace, has_report_access, is_active)
+    `INSERT INTO users (email, password, full_name, position, module, has_report_access, is_active)
      VALUES ($1, $2, $3, $4, 'administration', true, true)`,
     [SUPER.email, hash, SUPER.fullName, 'Super Administrator'],
   );

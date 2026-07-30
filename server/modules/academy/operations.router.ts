@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -84,17 +84,17 @@ import {
 
 import {
   ACADEMY_SCHEDULING_ADVISORY_LOCK,
-  OPERATIONS_WORKSPACES,
+  OPERATIONS_MODULES,
   Row,
-  SALES_WORKSPACES,
+  SALES_MODULES,
   createAudit,
   createNotification,
   createTask,
   createTaskOnce,
-  ensureAdministrationWorkspaceAccess,
+  ensureAdministrationModuleAccess,
   ensureOperationsAccess,
   ensureSalesAccess,
-  ensureWorkspaceAccess,
+  ensureModuleAccess,
   insertRow,
   leadershipUserAccessSql,
   logIntegration,
@@ -124,7 +124,7 @@ import {
 
 export const registerAcademyOperationsRoutes = (router: ReturnType<typeof Router>) => {
 router.post('/payments', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Payment access required')) return;
+  if (!ensureModuleAccess(req, res, SALES_MODULES, 'Payment access required')) return;
   try {
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
@@ -201,7 +201,7 @@ router.post('/payments', async (req, res) => {
       if (lead && existingStudent && Number(existingStudent.leadId) !== Number(lead.id)) {
         throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
       }
-      if (getAssignedWorkspaces(req.user).includes('sales') && !hasLeadershipAccess(req.user)) {
+      if (getAssignedModules(req.user).includes('sales') && !hasLeadershipAccess(req.user)) {
         const ownsLead = !lead || Number(lead.managerId) === Number(req.user!.id);
         const ownsStudent = !existingStudent || Number(existingStudent.managerId) === Number(req.user!.id);
         if (!ownsLead || !ownsStudent) {
@@ -666,7 +666,7 @@ router.post('/surveys/parent', async (req, res) => {
 });
 
 router.get('/integrations/status', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const logs = await query(
       `SELECT DISTINCT ON (provider) provider, direction, status, error_message, updated_at, created_at
@@ -736,7 +736,7 @@ router.get('/integrations/status', async (req, res) => {
 });
 
 router.post('/integrations/:provider/test', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const provider = String(req.params.provider);
     // Actually exercise the channel so the test reflects real connectivity.
@@ -780,7 +780,7 @@ router.post('/integrations/:provider/test', async (req, res) => {
 });
 
 router.post('/automations/run', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
+  if (!ensureModuleAccess(req, res, OPERATIONS_MODULES, 'Operations access required')) return;
   try {
     // Manual and scheduled runs must share the same locking/idempotency rules.
     // Keeping a second implementation here previously produced duplicate tasks
@@ -971,7 +971,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
 };
 
 router.post('/courses/with-teachers', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const result = await saveCourseWithTeachers(req);
     await createAudit(req, 'CREATE_ACADEMY_COURSE_WITH_TEACHERS', 'academy_course', Number(result.course.id), result.course);
@@ -986,7 +986,7 @@ router.post('/courses/with-teachers', async (req, res) => {
 });
 
 router.patch('/courses/:id/with-teachers', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   const courseId = parseId(req.params.id);
   if (!courseId) return res.status(400).json({ error: 'Invalid courses id' });
   try {
@@ -1010,7 +1010,7 @@ router.patch('/courses/:id/with-teachers', async (req, res) => {
 });
 
 router.delete('/courses/:id', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   const courseId = parseId(req.params.id);
   if (!courseId) return res.status(400).json({ error: 'Invalid courses id' });
   try {
@@ -1033,7 +1033,7 @@ router.delete('/courses/:id', async (req, res) => {
 });
 
 router.put('/pipeline-statuses/reorder', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     if (!Array.isArray(req.body.orderedStatusIds) || req.body.orderedStatusIds.length === 0) {
       return res.status(400).json({ error: 'invalidData' });
@@ -1075,7 +1075,7 @@ router.put('/pipeline-statuses/reorder', async (req, res) => {
 });
 
 router.get('/pipeline-statuses/:id/usage', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid pipeline stage id' });
@@ -1101,7 +1101,7 @@ router.get('/pipeline-statuses/:id/usage', async (req, res) => {
 });
 
 router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const id = parseId(req.params.id);
     const targetStatusId = parseId(req.body.targetStatusId);

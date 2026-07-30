@@ -3,24 +3,24 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const metrics = read('../server/modules/academy/sales-dashboard-metrics.ts');
-const workspaceRoutes = read('../server/modules/academy/workspace.router.ts');
+const moduleRoutes = read('../server/modules/academy/module.router.ts');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
 
 describe('sales dashboard operational metrics', () => {
   it('loads KPI data for the selected reporting range through a scoped endpoint', () => {
-    expect(workspaceRoutes).toContain("router.get('/workspaces/sales/metrics'");
-    expect(workspaceRoutes).toContain('parseReportingRange(req.query.from, req.query.to)');
-    expect(workspaceRoutes).toContain('buildSalesDashboardMetrics(actor, reportingRange)');
+    expect(moduleRoutes).toContain("router.get('/modules/sales/metrics'");
+    expect(moduleRoutes).toContain('parseReportingRange(req.query.from, req.query.to)');
+    expect(moduleRoutes).toContain('buildSalesDashboardMetrics(actor, reportingRange)');
     expect(metrics).toContain('AND lead.manager_id = $3');
     expect(metrics).not.toContain('lead.manager_id IS NULL');
     expect(salesDashboard).toContain('<SalesOverviewMetrics');
-    expect(salesOverviewMetrics).toContain('/api/academy/workspaces/sales/metrics?${reportingQuery}');
+    expect(salesOverviewMetrics).toContain('/api/academy/modules/sales/metrics?${reportingQuery}');
   });
 
   it('keeps overview statistics scoped to the current sales employee', () => {
     expect(salesDashboard).toContain('const overviewLeads = useMemo');
-    expect(salesDashboard).toContain('if (isAdministrationWorkspace) return myLeads;');
+    expect(salesDashboard).toContain('if (isAdministrationModule) return myLeads;');
     expect(salesDashboard).toContain('Number(lead.managerId) === Number(user.id)');
     expect(salesDashboard).toContain('() => overviewLeads.filter');
   });

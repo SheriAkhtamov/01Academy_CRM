@@ -50,7 +50,7 @@ interface SalesDashboardMetrics {
 
 type SalesOverviewMetricsProps = {
   reportingRange: Pick<ReportingDateRange, 'from' | 'to'>;
-  isAdministrationWorkspace: boolean;
+  isAdministrationModule: boolean;
   activeLeads: number;
   totalStudents: number;
   conversionLeadCount: number;
@@ -127,7 +127,7 @@ function KpiCard({
 
 export function SalesOverviewMetrics({
   reportingRange,
-  isAdministrationWorkspace,
+  isAdministrationModule,
   activeLeads,
   totalStudents,
   conversionLeadCount,
@@ -137,8 +137,8 @@ export function SalesOverviewMetrics({
   const [targetRefusalDialogOpen, setTargetRefusalDialogOpen] = useState(false);
   const reportingQuery = reportingRangeQuery(reportingRange);
   const metricsQuery = useQuery<SalesDashboardMetrics>({
-    queryKey: ['/api/academy/workspaces/sales/metrics', reportingQuery],
-    queryFn: () => apiRequest('GET', `/api/academy/workspaces/sales/metrics?${reportingQuery}`),
+    queryKey: ['/api/academy/modules/sales/metrics', reportingQuery],
+    queryFn: () => apiRequest('GET', `/api/academy/modules/sales/metrics?${reportingQuery}`),
     placeholderData: (previousData) => previousData,
   });
   const archiveReasonName = (code: string) => {
@@ -219,7 +219,7 @@ export function SalesOverviewMetrics({
           actionLabel={t('targetRefusalReasonsTitle')}
         />
         <KpiCard
-          title={isAdministrationWorkspace ? t('activeLeads') : t('activeMyLeads')}
+          title={isAdministrationModule ? t('activeLeads') : t('activeMyLeads')}
           value={activeLeads}
           detail={t('inSalesPipeline')}
           icon={UserCheck}

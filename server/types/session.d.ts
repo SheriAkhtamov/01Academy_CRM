@@ -3,7 +3,7 @@ import type { User } from '@shared/schema';
 import type { AcademyAccessModule } from '@shared/academy';
 
 type AuthenticatedUser = User & {
-  workspaces?: AcademyAccessModule[];
+  modules?: AcademyAccessModule[];
 };
 
 declare module 'express-session' {

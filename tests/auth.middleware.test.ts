@@ -60,7 +60,7 @@ describe("auth middleware", () => {
       fullName: "Teacher User",
       email: "teacher@example.com",
       password: "hashed",
-      workspace: "teacher",
+      module: "teacher",
       isActive: true,
       hasReportAccess: false,
     });
@@ -82,8 +82,8 @@ describe("auth middleware", () => {
       fullName: "Leadership User",
       email: "leadership@example.com",
       password: "hashed",
-      workspace: "administration",
-      workspaces: ["administration", "sales", "teacher", "marketing"],
+      module: "administration",
+      modules: ["administration", "sales", "teacher", "marketing"],
       isActive: true,
       hasReportAccess: true,
     });
@@ -105,8 +105,8 @@ describe("auth middleware", () => {
       fullName: "Teacher Admin",
       email: "teacher-admin@example.com",
       password: "hashed",
-      workspace: "teacher",
-      workspaces: ["teacher", "administration"],
+      module: "teacher",
+      modules: ["teacher", "administration"],
       isActive: true,
       hasReportAccess: true,
     });
@@ -128,8 +128,8 @@ describe("auth middleware", () => {
       fullName: "Administrator",
       email: "administrator@example.com",
       password: "hashed",
-      workspace: "administration",
-      workspaces: ["administration"],
+      module: "administration",
+      modules: ["administration"],
       isActive: true,
       hasReportAccess: true,
     });
@@ -151,8 +151,8 @@ describe("auth middleware", () => {
       fullName: "Finance Manager",
       email: "finance@example.com",
       password: "hashed",
-      workspace: "sales",
-      workspaces: ["sales", "finance"],
+      module: "sales",
+      modules: ["sales", "finance"],
       isActive: true,
       hasReportAccess: false,
     });

@@ -34,7 +34,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { TeacherAnalyticsCharts } from '@/components/ux/analytics/TeacherAnalyticsCharts';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -365,7 +365,7 @@ function formatDateFull(dateStr: string): string {
   });
 }
 
-export default function TeacherWorkspace({ section = 'overview' }: { section?: TeacherSection }) {
+export default function TeacherModule({ section = 'overview' }: { section?: TeacherSection }) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
@@ -414,10 +414,10 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
-    queryKey: ['/api/academy/workspaces/teacher'],
+    queryKey: ['/api/academy/modules/teacher'],
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/teacher'] });
 
   const saveAttendance = useMutation<unknown, Error, SaveAttendanceVariables>({
     mutationFn: ({ lessonId, roster, draft, note }) =>
@@ -838,22 +838,22 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
   if (isError) {
     return (
-      <WorkspacePage contained={contained}>
-        <WorkspacePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
           <div className="mx-auto max-w-xl space-y-4 text-center">
             <p className="font-medium text-destructive">{t('error')}</p>
             <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
             <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
           </div>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
   if (isLoading || !data) {
     return (
-      <WorkspacePage contained={contained}>
-        <WorkspacePageBody contained={contained} ariaLabel={t('loading')}>
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('loading')}>
           <div className="space-y-6">
             <Skeleton className="h-10 w-64" />
             <Skeleton className="h-6 w-48" />
@@ -864,8 +864,8 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
             </div>
             <AnalyticsChartsSkeleton />
           </div>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
@@ -1031,12 +1031,12 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
   }, [selectedLessonStudents, attendanceDraft]);
 
   return (
-    <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-5'}>
+    <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={t('teacherWorkspace')}
+        subtitle={t('teacherModule')}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/teacher-workspace' },
+          { label: t('navDashboard'), href: '/teacher-module' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
       />
@@ -1114,7 +1114,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
         />
       ) : null}
 
-      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle[section]}>
+      <ModulePageBody contained={contained} ariaLabel={sectionTitle[section]}>
       {section !== 'overview' ? (
       <Tabs value={section}>
         {/* Schedule Tab */}
@@ -1176,7 +1176,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                             className="mt-1 min-h-9 px-2 text-xs text-primary-600 hover:text-primary-700"
                             onClick={() => {
                               setSelectedLessonId(String(lesson.id));
-                              setLocation('/teacher-workspace/attendance');
+                              setLocation('/teacher-module/attendance');
                             }}
                           >
                             {t('attendanceLabel')}
@@ -1230,7 +1230,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
                             className="h-7 text-xs"
                             onClick={() => {
                               setSelectedLessonId(String(lesson.id));
-                              setLocation('/teacher-workspace/attendance');
+                              setLocation('/teacher-module/attendance');
                             }}
                           >
                             {t('attendanceChecklist')}
@@ -2016,7 +2016,7 @@ export default function TeacherWorkspace({ section = 'overview' }: { section?: T
 
       </Tabs>
       ) : null}
-      </WorkspacePageBody>
-    </WorkspacePage>
+      </ModulePageBody>
+    </ModulePage>
   );
 }

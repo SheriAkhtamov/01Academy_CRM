@@ -21,11 +21,11 @@ import { alias } from 'drizzle-orm/pg-core';
 
 // Minimal user shape embedded in task payloads. Accepts the `users` table or
 // any alias of it (creator/assignee/author/...), hence the loose column type.
-const userMini = (prefix: { id: any; fullName: any; position: any; workspace: any }) => ({
+const userMini = (prefix: { id: any; fullName: any; position: any; module: any }) => ({
     id: prefix.id,
     fullName: prefix.fullName,
     position: prefix.position,
-    workspace: prefix.workspace,
+    module: prefix.module,
 });
 
 const creator = alias(users, 'creator');

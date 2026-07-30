@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, ArrowRightLeft, Trash2, UsersRound } from 'lucide-react';
-import { getAssignedWorkspaces } from '@shared/academy';
+import { getAssignedModules } from '@shared/academy';
 
 interface AdminLead {
   id: number;
@@ -85,7 +85,7 @@ export function LeadAssignmentContent() {
 
   const managers = useMemo<SalesManager[]>(
     () => (usersQuery.data ?? [])
-      .filter((employee) => getAssignedWorkspaces(employee).includes('sales') && employee.isActive)
+      .filter((employee) => getAssignedModules(employee).includes('sales') && employee.isActive)
       .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
     [usersQuery.data],
   );
@@ -115,9 +115,9 @@ export function LeadAssignmentContent() {
 
   const invalidateLeads = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/administration'] }),
     queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
   ]);
 

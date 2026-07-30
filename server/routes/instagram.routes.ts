@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import { sendHttpError } from '../lib/http-errors';
-import { canAccessAcademyWorkspace, getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
+import { canAccessAcademyModule, getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import {
   buildInstagramAuthorizationUrl,
   disconnectInstagramAccount,
@@ -34,7 +34,7 @@ const ensureAdministration = (req: any, res: any) => {
 };
 
 const ensureMessagingAccess = (req: any, res: any) => {
-  if (canAccessAcademyWorkspace(req.user, 'sales')) return true;
+  if (canAccessAcademyModule(req.user, 'sales')) return true;
   res.status(403).json({ error: 'Sales access required' });
   return false;
 };
@@ -176,8 +176,8 @@ router.get('/conversations', async (req, res) => {
   try {
     res.json(await listInstagramConversations({
       id: req.user!.id,
-      workspace: req.user!.workspace,
-      workspaces: getAssignedWorkspaces(req.user),
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
     }));
   } catch (error) {
     logger.error('Failed to list Instagram conversations', { userId: req.user?.id, error });
@@ -335,8 +335,8 @@ router.get('/conversations/:id/messages', async (req, res) => {
   try {
     res.json(await listInstagramMessages(conversationId, {
       id: req.user!.id,
-      workspace: req.user!.workspace,
-      workspaces: getAssignedWorkspaces(req.user),
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
     }));
   } catch (error: any) {
     logger.error('Failed to list Instagram messages', { conversationId, error });
@@ -351,8 +351,8 @@ router.post('/conversations/:id/read', async (req, res) => {
   try {
     res.json(await markInstagramConversationRead(conversationId, {
       id: req.user!.id,
-      workspace: req.user!.workspace,
-      workspaces: getAssignedWorkspaces(req.user),
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
     }));
   } catch (error: any) {
     logger.error('Failed to mark Instagram conversation read', { conversationId, error });
@@ -373,8 +373,8 @@ router.post('/conversations/:id/messages', async (req, res) => {
       parsed.data.content,
       {
         id: req.user!.id,
-        workspace: req.user!.workspace,
-        workspaces: getAssignedWorkspaces(req.user),
+        module: req.user!.module,
+        modules: getAssignedModules(req.user),
       },
     );
     res.status(201).json(message);

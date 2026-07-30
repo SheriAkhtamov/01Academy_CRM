@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { isContainedWorkspaceRoute } from '../client/src/lib/containedWorkspaceRoutes';
+import { isContainedModuleRoute } from '../client/src/lib/containedModuleRoutes';
 
-describe('isContainedWorkspaceRoute', () => {
+describe('isContainedModuleRoute', () => {
   it.each([
     '/integrations',
     '/sales/pipeline',
@@ -13,16 +13,16 @@ describe('isContainedWorkspaceRoute', () => {
     '/sales/messages',
     '/sales/calls',
     '/sales/task-board',
-    '/teacher-workspace/schedule',
-    '/teacher-workspace/groups',
-    '/teacher-workspace/attendance',
-    '/teacher-workspace/tasks',
-    '/marketing-workspace/sources',
-    '/marketing-workspace/funnel',
-    '/marketing-workspace/warm-base',
-    '/marketing-workspace/referrals',
-    '/marketing-workspace/expenses',
-    '/marketing-workspace/tasks',
+    '/teacher-module/schedule',
+    '/teacher-module/groups',
+    '/teacher-module/attendance',
+    '/teacher-module/tasks',
+    '/marketing-module/sources',
+    '/marketing-module/funnel',
+    '/marketing-module/warm-base',
+    '/marketing-module/referrals',
+    '/marketing-module/expenses',
+    '/marketing-module/tasks',
     '/finance/income',
     '/finance/expenses',
     '/finance/payroll',
@@ -35,17 +35,17 @@ describe('isContainedWorkspaceRoute', () => {
     '/tasks',
     '/tasks?task=42',
   ])('keeps the app shell from adding a second scrollbar for %s', (location) => {
-    expect(isContainedWorkspaceRoute(location)).toBe(true);
+    expect(isContainedModuleRoute(location)).toBe(true);
   });
 
   it.each([
     '/sales',
-    '/teacher-workspace',
-    '/marketing-workspace',
+    '/teacher-module',
+    '/marketing-module',
     '/finance',
     '/admin',
     '/',
   ])('preserves normal page scrolling for %s', (location) => {
-    expect(isContainedWorkspaceRoute(location)).toBe(false);
+    expect(isContainedModuleRoute(location)).toBe(false);
   });
 });

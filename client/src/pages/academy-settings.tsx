@@ -44,7 +44,7 @@ import { Textarea } from '@/components/ui/textarea';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { ceoCopy } from '@/components/ui/ceo-copy';
@@ -404,10 +404,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const invalidate = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['/api/academy/configuration'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/teacher'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/administration'] }),
   ]);
 
   const handleTabChange = (nextTab: string) => {
@@ -599,7 +599,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       setGroupSchedule([]);
       groupForm.reset();
       invalidate();
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
     },
     onError: (error: Error & { rawMessage?: string; data?: { minimumEndDate?: string } }) => {
       const errorCode = error.rawMessage ?? error.message;
@@ -657,7 +657,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       statusForm.reset();
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
     },
     onError: (error: Error) => toast({
       title: t('error'),
@@ -671,7 +671,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     onSuccess: () => {
       toast({ title: ceoCopy.settings.saved });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/company-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/administration'] });
     },
     onError: (error: Error) => toast({
       title: ceoCopy.settings.failed,
@@ -690,7 +690,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       setDeleteTarget(null);
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
     },
     onError: (error: Error & { rawMessage?: string }, target) => {
       if (target.resource === 'pipeline-statuses' && error.rawMessage === 'pipelineStageHasLeads') {
@@ -753,8 +753,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       setPipelineTransferTargetId('');
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/administration'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/administration'] });
     },
     onError: (error: Error) => toast({
       title: t('resourceNotDeleted'),
@@ -781,7 +781,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     onSuccess: () => {
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['/api/academy/pipeline-statuses'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
     },
     onError: (error: Error) => {
       void invalidate();
@@ -1298,22 +1298,22 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   if (configuration.isLoading) {
     return (
-      <WorkspacePage contained>
-        <WorkspacePageBody contained ariaLabel={t('loading')}>
+      <ModulePage contained>
+        <ModulePageBody contained ariaLabel={t('loading')}>
           <div className="flex flex-col gap-6">
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-10 w-96 max-w-full" />
             <Skeleton className="h-[520px] w-full" />
           </div>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
   if (configuration.isError || !configuration.data) {
     return (
-      <WorkspacePage contained>
-        <WorkspacePageBody contained ariaLabel={t('failedToLoadData')}>
+      <ModulePage contained>
+        <ModulePageBody contained ariaLabel={t('failedToLoadData')}>
           <Card>
             <CardHeader>
               <CardTitle>{t('failedToLoadData')}</CardTitle>
@@ -1323,13 +1323,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <Button onClick={() => configuration.refetch()}>{t('retry')}</Button>
             </CardContent>
           </Card>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
   return (
-    <WorkspacePage contained>
+    <ModulePage contained>
       <PageHeader
         title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
         subtitle={isSalesSettingsMode ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
@@ -1339,7 +1339,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         ]}
       />
 
-      <WorkspacePageBody contained ariaLabel={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}>
+      <ModulePageBody contained ariaLabel={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList ref={tabsListRef} className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
           {isSalesSettingsMode ? (
@@ -1650,7 +1650,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
       </Tabs>
-      </WorkspacePageBody>
+      </ModulePageBody>
 
       <Dialog open={schoolDialogOpen} onOpenChange={setSchoolDialogOpen}>
         <DialogContent className="max-w-2xl">
@@ -2236,6 +2236,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           if (deleteTarget) deleteResource.mutate(deleteTarget);
         }}
       />
-    </WorkspacePage>
+    </ModulePage>
   );
 }

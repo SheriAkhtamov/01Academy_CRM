@@ -104,7 +104,7 @@ export function useAccounts(): UseAccountsReturn {
     },
     onSuccess: () => {
       // The next account has a different permission boundary. Clear all
-      // account-scoped cache before the UI navigates to its workspace home.
+      // account-scoped cache before the UI navigates to its module home.
       queryClient.clear();
     },
   });

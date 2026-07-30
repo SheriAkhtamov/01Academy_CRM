@@ -11,11 +11,11 @@ export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asi
 
 const leadershipUserAccessSql = `
   (
-    u.workspace = 'administration'
+    u.module = 'administration'
     OR EXISTS (
       SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+      FROM user_modules uw
+      WHERE uw.user_id = u.id AND uw.module = 'administration'
     )
   )
 `;

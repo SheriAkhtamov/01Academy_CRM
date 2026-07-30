@@ -46,7 +46,7 @@ describe("escalation monitor", () => {
       sqlText(query).startsWith("INSERT INTO notifications")
     );
     expect(sqlText(notificationCall?.[0])).toContain("WHERE task_owner.id = $1");
-    expect(sqlText(notificationCall?.[0])).not.toContain("user_workspaces");
+    expect(sqlText(notificationCall?.[0])).not.toContain("user_modules");
     expect(notificationCall?.[1]?.[0]).toBe(3);
     expect(sql.at(-1)).toBe("COMMIT");
     expect(mocks.release).toHaveBeenCalledOnce();

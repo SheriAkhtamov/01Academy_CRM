@@ -68,9 +68,9 @@ export function useWebSocket() {
         case 'ACADEMY_STUDENT_UPDATED':
         case 'ACADEMY_PAYMENT_CREATED':
         case 'ACADEMY_ATTENDANCE_UPDATED':
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/teacher'] });
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/teacher'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] });
           break;
         case 'NEW_MESSAGE':
           if (message.data?.senderId && message.data?.receiverId) {
@@ -98,7 +98,7 @@ export function useWebSocket() {
           queryClient.setQueryData(['/api/instagram/conversations/sync/status'], message.data);
           if (message.data?.status === 'completed' || message.data?.status === 'partial') {
             queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-            queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
           }
           break;
         case 'USER_STATUS_CHANGED':

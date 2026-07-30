@@ -1,84 +1,84 @@
 export const ACADEMY_BRAND_NAME = "01 Academy CRM";
 
-export const ACADEMY_WORKSPACES = [
+export const ACADEMY_MODULES = [
   "administration",
   "sales",
   "teacher",
   "marketing",
 ] as const;
 
-export type AcademyWorkspace = (typeof ACADEMY_WORKSPACES)[number];
+export type AcademyModule = (typeof ACADEMY_MODULES)[number];
 export const ACADEMY_ACCESS_MODULES = [
-  ...ACADEMY_WORKSPACES,
+  ...ACADEMY_MODULES,
   "finance",
 ] as const;
 export type AcademyAccessModule = (typeof ACADEMY_ACCESS_MODULES)[number];
-export type WorkspaceAccessSource =
+export type ModuleAccessSource =
   | string
   | readonly string[]
   | {
-      workspace?: string | null;
-      workspaces?: readonly string[] | null;
+      module?: string | null;
+      modules?: readonly string[] | null;
     }
   | null
   | undefined;
 
 const academyAccessModuleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
-const isWorkspaceArray = (source: WorkspaceAccessSource): source is readonly string[] =>
+const isModuleArray = (source: ModuleAccessSource): source is readonly string[] =>
   Array.isArray(source);
 
-export const LEADERSHIP_WORKSPACES = [
+export const LEADERSHIP_MODULES = [
   "administration",
 ] as const;
 
-export function isLeadershipWorkspace(
-  workspace: string | null | undefined,
+export function isLeadershipModule(
+  module: string | null | undefined,
 ): boolean {
-  return (LEADERSHIP_WORKSPACES as readonly string[]).includes(String(workspace));
+  return (LEADERSHIP_MODULES as readonly string[]).includes(String(module));
 }
 
-export function getAssignedWorkspaces(
-  source: WorkspaceAccessSource,
+export function getAssignedModules(
+  source: ModuleAccessSource,
 ): AcademyAccessModule[] {
-  let rawWorkspaces: readonly string[];
+  let rawModules: readonly string[];
   if (!source) {
-    rawWorkspaces = [];
+    rawModules = [];
   } else if (typeof source === "string") {
-    rawWorkspaces = [source];
-  } else if (isWorkspaceArray(source)) {
-    rawWorkspaces = source;
+    rawModules = [source];
+  } else if (isModuleArray(source)) {
+    rawModules = source;
   } else {
-    rawWorkspaces = [
-      ...(source.workspaces ?? []),
-      ...(source.workspace ? [source.workspace] : []),
+    rawModules = [
+      ...(source.modules ?? []),
+      ...(source.module ? [source.module] : []),
     ];
   }
 
-  const normalized = rawWorkspaces
-    .map((workspace) => String(workspace))
-    .filter((workspace): workspace is AcademyAccessModule => academyAccessModuleSet.has(workspace));
+  const normalized = rawModules
+    .map((module) => String(module))
+    .filter((module): module is AcademyAccessModule => academyAccessModuleSet.has(module));
 
   return [...new Set(normalized)];
 }
 
-export function hasFinanceAccess(source: WorkspaceAccessSource): boolean {
+export function hasFinanceAccess(source: ModuleAccessSource): boolean {
   // Finance is deliberately direct-only: the administration module must not
   // silently grant access to salaries, expenses, or profit data.
-  return getAssignedWorkspaces(source).includes("finance");
+  return getAssignedModules(source).includes("finance");
 }
 
-export function hasLeadershipAccess(source: WorkspaceAccessSource): boolean {
-  return getAssignedWorkspaces(source).some(isLeadershipWorkspace);
+export function hasLeadershipAccess(source: ModuleAccessSource): boolean {
+  return getAssignedModules(source).some(isLeadershipModule);
 }
 
-export function canAccessAcademyWorkspace(
-  assignedWorkspace: WorkspaceAccessSource,
-  workspace: AcademyWorkspace,
+export function canAccessAcademyModule(
+  assignedModule: ModuleAccessSource,
+  module: AcademyModule,
 ): boolean {
-  // Leadership workspaces intentionally bypass department boundaries so
+  // Leadership modules intentionally bypass department boundaries so
   // the head can investigate and act in any area without a second account.
-  const assignedWorkspaces = getAssignedWorkspaces(assignedWorkspace);
-  return assignedWorkspaces.some(isLeadershipWorkspace) || assignedWorkspaces.includes(workspace);
+  const assignedModules = getAssignedModules(assignedModule);
+  return assignedModules.some(isLeadershipModule) || assignedModules.includes(module);
 }
 
 export const LEAD_STATUSES = [

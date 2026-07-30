@@ -18,7 +18,7 @@ interface ApiUser {
     id: number;
     fullName: string;
     position: string | null;
-    workspace: string;
+    module: string;
     isActive?: boolean;
 }
 
@@ -44,7 +44,7 @@ export default function TasksPage() {
 
     const currentUser: UserMini | null = useMemo(() => (
         user
-            ? { id: user.id, fullName: user.fullName, position: user.position, workspace: user.workspace }
+            ? { id: user.id, fullName: user.fullName, position: user.position, module: user.module }
             : null
     ), [user]);
 
@@ -55,7 +55,7 @@ export default function TasksPage() {
                 id: employee.id,
                 fullName: employee.fullName,
                 position: employee.position,
-                workspace: employee.workspace,
+                module: employee.module,
             })),
         [usersData],
     );

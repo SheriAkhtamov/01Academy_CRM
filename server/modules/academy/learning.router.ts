@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -84,8 +84,8 @@ import {
 
 import {
   ACADEMY_SCHEDULING_ADVISORY_LOCK,
-  LEAD_WORKSPACES,
-  OPERATIONS_WORKSPACES,
+  LEAD_MODULES,
+  OPERATIONS_MODULES,
   Row,
   createAudit,
   createNotification,
@@ -93,7 +93,7 @@ import {
   createTask,
   ensureLeadMutationAccess,
   ensureOperationsAccess,
-  ensureWorkspaceAccess,
+  ensureModuleAccess,
   insertRow,
   nullableText,
   parseId,
@@ -132,7 +132,7 @@ router.get('/lessons/:id/attendance-roster', async (req, res) => {
     );
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
     if (
-      getAssignedWorkspaces(req.user).includes('teacher')
+      getAssignedModules(req.user).includes('teacher')
       && !hasLeadershipAccess(req.user)
       && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== Number(req.user!.id))
     ) {
@@ -181,7 +181,7 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         throw Object.assign(new Error('onlyReschedulableLessonCanBeRescheduled'), { statusCode: 409 });
       }
       if (
-        getAssignedWorkspaces(req.user).includes('teacher')
+        getAssignedModules(req.user).includes('teacher')
         && !hasLeadershipAccess(req.user)
         && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== Number(req.user!.id))
       ) {
@@ -213,7 +213,7 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
       }
       if (
-        getAssignedWorkspaces(req.user).includes('teacher')
+        getAssignedModules(req.user).includes('teacher')
         && !hasLeadershipAccess(req.user)
         && affected.some((item) => Number(item.teacherUserId) !== Number(req.user!.id))
       ) {
@@ -379,7 +379,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         throw Object.assign(new Error('cancelledLessonAttendanceNotAllowed'), { statusCode: 400 });
       }
       if (
-        getAssignedWorkspaces(req.user).includes('teacher')
+        getAssignedModules(req.user).includes('teacher')
         && !hasLeadershipAccess(req.user)
         && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)
       ) {
@@ -598,7 +598,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
 });
 
 router.post('/students/:id/transfer', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, OPERATIONS_WORKSPACES, 'Operations access required')) return;
+  if (!ensureModuleAccess(req, res, OPERATIONS_MODULES, 'Operations access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const toGroupId = parseId(req.body.toGroupId);
@@ -698,7 +698,7 @@ router.post('/students/:id/transfer', async (req, res) => {
 });
 
 router.post('/students/:id/groups', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead group access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const groupId = parseId(req.body.groupId);
@@ -786,7 +786,7 @@ router.post('/students/:id/groups', async (req, res) => {
 });
 
 router.delete('/students/:id/groups/:groupId', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead group access required')) return;
   try {
     const studentId = parseId(req.params.id);
     const groupId = parseId(req.params.groupId);
@@ -907,7 +907,7 @@ router.patch('/students/:id/status', async (req, res) => {
       if (!lockedStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       }
-      if (getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
+      if (getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
         const teacherId = await resolveTeacherId(req.user!.id);
         const ownsStudent = teacherId
           ? await queryOne(

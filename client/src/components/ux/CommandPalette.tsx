@@ -39,7 +39,7 @@ import {
   Landmark,
   ReceiptText,
 } from 'lucide-react';
-import { canAccessAcademyWorkspace, hasFinanceAccess, type AcademyWorkspace } from '@shared/academy';
+import { canAccessAcademyModule, hasFinanceAccess, type AcademyModule } from '@shared/academy';
 import { financeCopy } from '@/lib/financeCenter';
 
 interface SearchItem {
@@ -114,28 +114,28 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-sales-messages', type: t('salesPipeline'), title: t('salesInbox'), href: '/sales/messages', icon: MessagesSquare },
       ];
       const teacherItems: SearchItem[] = [
-        { id: 'nav-teacher', type: t('teacherWorkspace'), title: t('teacherWorkspace'), href: '/teacher-workspace', icon: GraduationCap },
-        { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-workspace/schedule', icon: Calendar },
-        { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-workspace/groups', icon: Layers3 },
-        { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-workspace/attendance', icon: ClipboardCheck },
+        { id: 'nav-teacher', type: t('teacherModule'), title: t('teacherModule'), href: '/teacher-module', icon: GraduationCap },
+        { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-module/schedule', icon: Calendar },
+        { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-module/groups', icon: Layers3 },
+        { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-module/attendance', icon: ClipboardCheck },
       ];
       const marketingItems: SearchItem[] = [
-        { id: 'nav-marketing', type: t('marketingTab'), title: t('navDashboard'), href: '/marketing-workspace', icon: BarChart3 },
-        { id: 'nav-marketing-sources', type: t('leadSources'), title: t('leadSources'), href: '/marketing-workspace/sources', icon: Megaphone },
-        { id: 'nav-marketing-funnel', type: t('conversionFunnel'), title: t('conversionFunnel'), href: '/marketing-workspace/funnel', icon: Flame },
-        { id: 'nav-marketing-warm', type: t('warmBase'), title: t('warmBase'), href: '/marketing-workspace/warm-base', icon: Users },
-        { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-workspace/referrals', icon: HeartHandshake },
-        { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-workspace/expenses', icon: Wallet },
+        { id: 'nav-marketing', type: t('marketingTab'), title: t('navDashboard'), href: '/marketing-module', icon: BarChart3 },
+        { id: 'nav-marketing-sources', type: t('leadSources'), title: t('leadSources'), href: '/marketing-module/sources', icon: Megaphone },
+        { id: 'nav-marketing-funnel', type: t('conversionFunnel'), title: t('conversionFunnel'), href: '/marketing-module/funnel', icon: Flame },
+        { id: 'nav-marketing-warm', type: t('warmBase'), title: t('warmBase'), href: '/marketing-module/warm-base', icon: Users },
+        { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-module/referrals', icon: HeartHandshake },
+        { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-module/expenses', icon: Wallet },
       ];
 
-      const hasWorkspace = (workspace: AcademyWorkspace) => canAccessAcademyWorkspace(user, workspace);
+      const hasModule = (module: AcademyModule) => canAccessAcademyModule(user, module);
 
       return [
-        ...(hasWorkspace('administration') ? administrationItems : []),
+        ...(hasModule('administration') ? administrationItems : []),
         ...(hasFinanceAccess(user) ? financeItems : []),
-        ...(hasWorkspace('sales') ? salesItems : []),
-        ...(hasWorkspace('teacher') ? teacherItems : []),
-        ...(hasWorkspace('marketing') ? marketingItems : []),
+        ...(hasModule('sales') ? salesItems : []),
+        ...(hasModule('teacher') ? teacherItems : []),
+        ...(hasModule('marketing') ? marketingItems : []),
         { id: 'nav-task-board', type: t('taskBoard'), title: t('taskBoard'), href: '/tasks', icon: KanbanSquare },
       ];
     },

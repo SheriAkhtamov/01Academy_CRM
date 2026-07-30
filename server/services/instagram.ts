@@ -13,8 +13,8 @@ import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
 type InstagramUser = {
   id: number;
-  workspace: string;
-  workspaces?: string[] | null;
+  module: string;
+  modules?: string[] | null;
 };
 
 type InstagramAccountRow = {
@@ -135,21 +135,21 @@ const INSTAGRAM_MESSAGE_FIELDS_LEGACY = 'id,created_time,from,to,message,attachm
 
 const leadershipUserAccessSql = `
   (
-    u.workspace = 'administration'
+    u.module = 'administration'
     OR EXISTS (
       SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+      FROM user_modules uw
+      WHERE uw.user_id = u.id AND uw.module = 'administration'
     )
   )
 `;
 const salesUserAccessSql = `
   (
-    u.workspace = 'sales'
+    u.module = 'sales'
     OR EXISTS (
       SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+      FROM user_modules uw
+      WHERE uw.user_id = u.id AND uw.module = 'sales'
     )
   )
 `;
@@ -1307,7 +1307,7 @@ const getSystemUserId = async (client: PoolClient) => {
      ORDER BY u.id LIMIT 1`,
   );
   if (!rows[0]?.id) {
-    throw new Error('No active leadership workspace user');
+    throw new Error('No active leadership module user');
   }
   return Number(rows[0].id);
 };
@@ -2316,7 +2316,7 @@ const assertConversationAccess = async (conversationId: number, user: InstagramU
   if (!conversation) {
     throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
   }
-  const hasSalesAccess = user.workspace === 'sales' || Boolean(user.workspaces?.includes('sales'));
+  const hasSalesAccess = user.module === 'sales' || Boolean(user.modules?.includes('sales'));
   const assignedManagerId = conversation.manager_id ? Number(conversation.manager_id) : null;
   if (
     !hasLeadershipAccess(user)

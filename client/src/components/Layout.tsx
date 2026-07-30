@@ -5,7 +5,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useLocation } from 'wouter';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { isContainedWorkspaceRoute } from '@/lib/containedWorkspaceRoutes';
+import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,7 +16,7 @@ export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const containsOwnScrollArea = isContainedWorkspaceRoute(location);
+  const containsOwnScrollArea = isContainedModuleRoute(location);
   useWebSocket();
 
   if (isLoading) {

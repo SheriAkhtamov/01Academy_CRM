@@ -14,9 +14,9 @@ export const storage = {
     createUser: userStorage.createUser.bind(userStorage),
     updateUser: userStorage.updateUser.bind(userStorage),
     deleteUser: userStorage.deleteUser.bind(userStorage),
-    getUserWorkspaces: userStorage.getUserWorkspaces.bind(userStorage),
-    setUserWorkspaces: userStorage.setUserWorkspaces.bind(userStorage),
-    ensureUserWorkspace: userStorage.ensureUserWorkspace.bind(userStorage),
+    getUserModules: userStorage.getUserModules.bind(userStorage),
+    setUserModules: userStorage.setUserModules.bind(userStorage),
+    ensureUserModule: userStorage.ensureUserModule.bind(userStorage),
     updateUserOnlineStatus: userStorage.updateUserOnlineStatus.bind(userStorage),
     getUsersWithOnlineStatus: userStorage.getUsersWithOnlineStatus.bind(userStorage),
 

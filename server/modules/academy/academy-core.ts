@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -90,12 +90,12 @@ export const transactionContext = new AsyncLocalStorage<PoolClient>();
 export type AfterCommitTask = () => Promise<void>;
 export const afterCommitContext = new AsyncLocalStorage<AfterCommitTask[]>();
 
-export const ADMINISTRATION_WORKSPACES = new Set(['administration']);
-export const OPERATIONS_WORKSPACES = new Set(['administration']);
-export const MARKETING_WORKSPACES = new Set(['marketing', 'administration']);
-export const SALES_WORKSPACES = new Set(['sales', 'administration']);
-export const LEAD_WORKSPACES = new Set(['administration', 'sales', 'marketing']);
-export const SOURCE_MANAGEMENT_WORKSPACES = new Set(['administration', 'marketing']);
+export const ADMINISTRATION_MODULES = new Set(['administration']);
+export const OPERATIONS_MODULES = new Set(['administration']);
+export const MARKETING_MODULES = new Set(['marketing', 'administration']);
+export const SALES_MODULES = new Set(['sales', 'administration']);
+export const LEAD_MODULES = new Set(['administration', 'sales', 'marketing']);
+export const SOURCE_MANAGEMENT_MODULES = new Set(['administration', 'marketing']);
 // All group and lesson mutations take this transaction-scoped lock before
 // checking room/teacher availability. It closes the race where two requests
 // checked the same free slot in different rooms and assigned one teacher twice.
@@ -104,21 +104,21 @@ export const ACADEMY_REFERRAL_ADVISORY_LOCK = 7_315_002;
 export const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || 'Asia/Tashkent';
 export const salesUserAccessSql = `
   (
-    u.workspace = 'sales'
+    u.module = 'sales'
     OR EXISTS (
       SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+      FROM user_modules uw
+      WHERE uw.user_id = u.id AND uw.module = 'sales'
     )
   )
 `;
 export const leadershipUserAccessSql = `
   (
-    u.workspace = 'administration'
+    u.module = 'administration'
     OR EXISTS (
       SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+      FROM user_modules uw
+      WHERE uw.user_id = u.id AND uw.module = 'administration'
     )
   )
 `;
@@ -541,10 +541,10 @@ export const normalizeDbValue = (value: DbValue) => {
 };
 
 export const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
-  const assignedWorkspaces = getAssignedWorkspaces(req.user);
-  const hasDirectSalesWorkspace = assignedWorkspaces.includes('sales');
+  const assignedModules = getAssignedModules(req.user);
+  const hasDirectSalesModule = assignedModules.includes('sales');
 
-  if (hasDirectSalesWorkspace && !hasLeadershipAccess(req.user)) {
+  if (hasDirectSalesModule && !hasLeadershipAccess(req.user)) {
     return Number(req.user.id);
   }
 
@@ -569,7 +569,7 @@ export const resolveLeadManagerId = async (req: any, requestedValue: unknown): P
     return Number(manager.id);
   }
 
-  if (hasDirectSalesWorkspace) {
+  if (hasDirectSalesModule) {
     const currentManager = await queryOne<{ id: string }>(
       `SELECT id
        FROM users u
@@ -653,8 +653,8 @@ export const syncLeadPhones = async (leadId: number, phones: NormalizedLeadPhone
 export const ensureOperationsAccess = (req: any, res: any) => {
   if (
     hasLeadershipAccess(req.user) ||
-    getAssignedWorkspaces(req.user).some((workspace) => OPERATIONS_WORKSPACES.has(workspace)) ||
-    canAccessAcademyWorkspace(req.user, 'teacher')
+    getAssignedModules(req.user).some((module) => OPERATIONS_MODULES.has(module)) ||
+    canAccessAcademyModule(req.user, 'teacher')
   ) return true;
   res.status(403).json({ error: 'Operations access required' });
   return false;
@@ -663,37 +663,37 @@ export const ensureOperationsAccess = (req: any, res: any) => {
 export const ensureMarketingAccess = (req: any, res: any) => {
   if (
     hasLeadershipAccess(req.user) ||
-    getAssignedWorkspaces(req.user).some((workspace) => MARKETING_WORKSPACES.has(workspace))
+    getAssignedModules(req.user).some((module) => MARKETING_MODULES.has(module))
   ) return true;
   res.status(403).json({ error: 'Marketing access required' });
   return false;
 };
 
-export const ensureWorkspaceAccess = (req: any, res: any, workspaces: Set<string>, message: string) => {
-  if (hasLeadershipAccess(req.user) || getAssignedWorkspaces(req.user).some((workspace) => workspaces.has(workspace))) return true;
+export const ensureModuleAccess = (req: any, res: any, modules: Set<string>, message: string) => {
+  if (hasLeadershipAccess(req.user) || getAssignedModules(req.user).some((module) => modules.has(module))) return true;
   res.status(403).json({ error: message });
   return false;
 };
 
 export const ensureSalesAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Sales access required');
+  ensureModuleAccess(req, res, SALES_MODULES, 'Sales access required');
 
-export const ensureSalesWorkspaceAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Sales workspace access required');
+export const ensureSalesModuleAccess = (req: any, res: any) =>
+  ensureModuleAccess(req, res, SALES_MODULES, 'Sales module access required');
 
-export const ensureTeacherWorkspaceAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, new Set(['teacher']), 'Teacher workspace access required');
+export const ensureTeacherModuleAccess = (req: any, res: any) =>
+  ensureModuleAccess(req, res, new Set(['teacher']), 'Teacher module access required');
 
-export const ensureMarketingWorkspaceAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, MARKETING_WORKSPACES, 'Marketing workspace access required');
+export const ensureMarketingModuleAccess = (req: any, res: any) =>
+  ensureModuleAccess(req, res, MARKETING_MODULES, 'Marketing module access required');
 
-export const ensureAdministrationWorkspaceAccess = (req: any, res: any) =>
-  ensureWorkspaceAccess(req, res, ADMINISTRATION_WORKSPACES, 'Admin access required');
+export const ensureAdministrationModuleAccess = (req: any, res: any) =>
+  ensureModuleAccess(req, res, ADMINISTRATION_MODULES, 'Admin access required');
 
 export const canAccessLeadRow = (req: any, lead?: Row | null) => {
   if (!lead) return false;
-  if (hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing')) return true;
-  return canAccessAcademyWorkspace(req.user, 'sales')
+  if (hasLeadershipAccess(req.user) || canAccessAcademyModule(req.user, 'marketing')) return true;
+  return canAccessAcademyModule(req.user, 'sales')
     && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id));
 };
 
@@ -707,9 +707,9 @@ export const canMutateLeadRow = (req: any, lead?: Row | null) => Boolean(
   lead
   && (
     hasLeadershipAccess(req.user)
-    || canAccessAcademyWorkspace(req.user, 'marketing')
+    || canAccessAcademyModule(req.user, 'marketing')
     || (
-      canAccessAcademyWorkspace(req.user, 'sales')
+      canAccessAcademyModule(req.user, 'sales')
       && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id))
     )
   ),
@@ -722,8 +722,8 @@ export const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) 
 };
 
 export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
-  const actorWorkspaces = getAssignedWorkspaces(actor);
-  if (!actor || !actorWorkspaces.includes('sales') || actorWorkspaces.includes('marketing') || hasLeadershipAccess(actor)) {
+  const actorModules = getAssignedModules(actor);
+  if (!actor || !actorModules.includes('sales') || actorModules.includes('marketing') || hasLeadershipAccess(actor)) {
     return leads;
   }
 
@@ -753,9 +753,9 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
 export const applyLeadVisibilityForRequest = async (req: any, lead: Row) => (
   await applyLeadVisibilityForActor({
     userId: req.user!.id,
-    workspace: String(req.user!.workspace),
-    workspaces: getAssignedWorkspaces(req.user),
-    scopeWorkspace: 'sales',
+    module: String(req.user!.module),
+    modules: getAssignedModules(req.user),
+    scopeModule: 'sales',
   }, [lead])
 )[0];
 
@@ -908,7 +908,7 @@ export const parseTimeToMinutes = parseScheduleTimeToMinutes;
 
 export interface DatasetActor {
   userId: number;
-  workspace: string;
-  workspaces?: string[];
-  scopeWorkspace?: 'sales' | 'teacher' | 'marketing';
+  module: string;
+  modules?: string[];
+  scopeModule?: 'sales' | 'teacher' | 'marketing';
 }

@@ -70,6 +70,7 @@ describe('telephony calls migration', () => {
     expect(migration).toContain('"online_pbx_incoming_enabled"');
     expect(migration).toContain('"online_pbx_primary_manager_id"');
     expect(migration).toContain('REFERENCES "users"("id") ON DELETE SET NULL');
+    expect(migration).toContain("manager.\"workspace\" = 'sales'");
     expect(migration).toContain("workspace.\"workspace\" = 'sales'");
   });
 

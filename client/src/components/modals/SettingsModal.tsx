@@ -9,7 +9,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
-import { formatUserWorkspace } from '@/lib/auth';
+import { formatUserModule } from '@/lib/auth';
 import { hasLeadershipAccess } from '@shared/academy';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -378,11 +378,11 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               />
             )}
 
-            {/* Current workspace info */}
+            {/* Current module info */}
             <div className="rounded-xl border border-border/70 bg-muted/60 p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentWorkspace')}</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentModule')}</h3>
               <p className="text-slate-700 font-medium">
-                {formatUserWorkspace(user?.workspace || 'sales', t)}
+                {formatUserModule(user?.module || 'sales', t)}
               </p>
             </div>
 

@@ -60,7 +60,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      workspace: "administration",
+      module: "administration",
       hasReportAccess: true,
       isActive: true,
     };
@@ -98,7 +98,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      workspace: "administration",
+      module: "administration",
       hasReportAccess: true,
       isActive: true,
     });
@@ -120,7 +120,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      workspace: "administration",
+      module: "administration",
       hasReportAccess: true,
       isActive: true,
     });
@@ -153,7 +153,7 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      workspace: "administration",
+      module: "administration",
       hasReportAccess: true,
       isActive: true,
     };
@@ -181,8 +181,8 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      workspace: "administration",
-      workspaces: ["administration"],
+      module: "administration",
+      modules: ["administration"],
       hasReportAccess: true,
       isActive: true,
     };
@@ -228,8 +228,8 @@ describe("auth session routes", () => {
       email: "admin@example.com",
       password: hashedPassword,
       fullName: "Admin User",
-      workspace: "administration",
-      workspaces: ["administration"],
+      module: "administration",
+      modules: ["administration"],
       hasReportAccess: true,
       isActive: true,
     };

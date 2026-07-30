@@ -11,7 +11,7 @@ import {
     type BoardTask,
     type BoardTaskStatus,
 } from '@shared/schema';
-import { getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
+import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import type { User } from '@shared/schema';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
@@ -292,7 +292,7 @@ router.post('/tasks', async (req, res) => {
             }
             const canLinkLead = isTaskSupervisor(req.user!)
                 || (
-                    getAssignedWorkspaces(req.user).includes('sales')
+                    getAssignedModules(req.user).includes('sales')
                     && (lead.managerId === null || Number(lead.managerId) === Number(req.user!.id))
                 );
             if (!canLinkLead) return res.status(403).json({ error: 'accessDenied' });

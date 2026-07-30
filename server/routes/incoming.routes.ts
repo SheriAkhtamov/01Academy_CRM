@@ -145,11 +145,11 @@ type QueryExecutor = {
 
 const leadershipUserAccessSql = `
   (
-    u.workspace = 'administration'
+    u.module = 'administration'
     OR EXISTS (
       SELECT 1
-      FROM user_workspaces uw
-      WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+      FROM user_modules uw
+      WHERE uw.user_id = u.id AND uw.module = 'administration'
     )
   )
 `;
@@ -173,7 +173,7 @@ const getSystemUserId = async (executor: QueryExecutor = pool): Promise<number> 
   const { rows } = await executor.query(
     `SELECT u.id FROM users u WHERE ${leadershipUserAccessSql} AND u.is_active=true ORDER BY u.id LIMIT 1`,
   );
-  if (!rows[0]?.id) throw new Error('No active leadership workspace user to attribute webhook actions');
+  if (!rows[0]?.id) throw new Error('No active leadership module user to attribute webhook actions');
   return Number(rows[0].id);
 };
 

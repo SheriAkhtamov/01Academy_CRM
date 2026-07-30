@@ -17,7 +17,7 @@ import { MarketingAnalyticsCharts } from '@/components/ux/analytics/MarketingAna
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import {
   UnsavedChangesDialog,
@@ -31,7 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { canAccessAcademyWorkspace, hasLeadershipAccess, TARGET_ROAS } from '@shared/academy';
+import { canAccessAcademyModule, hasLeadershipAccess, TARGET_ROAS } from '@shared/academy';
 import { expenseOverlapsMonth, funnelForSource, leadToPaidConversion } from '@/lib/marketingLogic';
 import {
   reportingRangeForPreset,
@@ -162,7 +162,7 @@ function ConversionBar({ label, value, total, color = '#2563eb' }: {
 }
 
 /* ─── main component ─── */
-export default function MarketingWorkspace({ section = 'overview' }: { section?: MarketingSection }) {
+export default function MarketingModule({ section = 'overview' }: { section?: MarketingSection }) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
@@ -186,12 +186,12 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
 
   const reportingQuery = reportingRangeQuery(reportingRange);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<any>({
-    queryKey: ['/api/academy/workspaces/marketing', reportingQuery],
-    queryFn: () => apiRequest('GET', `/api/academy/workspaces/marketing?${reportingQuery}`),
+    queryKey: ['/api/academy/modules/marketing', reportingQuery],
+    queryFn: () => apiRequest('GET', `/api/academy/modules/marketing?${reportingQuery}`),
     placeholderData: (previousData: any) => previousData,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/marketing'] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] });
 
   const createExpense = useMutation({
     mutationFn: () => apiRequest('POST', '/api/academy/expenses', {
@@ -227,7 +227,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   const expenses = data?.expenses ?? [];
   const referrals = data?.referrals ?? [];
   const students = data?.students ?? [];
-  const canManageExpenses = canAccessAcademyWorkspace(user, 'marketing') || hasLeadershipAccess(user);
+  const canManageExpenses = canAccessAcademyModule(user, 'marketing') || hasLeadershipAccess(user);
 
   const [confirmReactivateId, setConfirmReactivateId] = useState<number | null>(null);
 
@@ -308,22 +308,22 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   /* ─── loading state ─── */
   if (isError) {
     return (
-      <WorkspacePage contained={contained}>
-        <WorkspacePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
           <div className="mx-auto max-w-xl space-y-4 text-center">
             <p className="font-medium text-destructive">{t('error')}</p>
             <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
             <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
           </div>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
   if (isLoading || !data) {
     return (
-      <WorkspacePage contained={contained}>
-        <WorkspacePageBody contained={contained} ariaLabel={t('loading')}>
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('loading')}>
           <div className="space-y-6">
             <Skeleton className="h-10 w-64" />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
@@ -333,8 +333,8 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
             </div>
             <AnalyticsChartsSkeleton />
           </div>
-        </WorkspacePageBody>
-      </WorkspacePage>
+        </ModulePageBody>
+      </ModulePage>
     );
   }
 
@@ -466,12 +466,12 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
   };
 
   return (
-    <WorkspacePage contained={contained} className={contained ? undefined : 'space-y-5'}>
+    <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
         subtitle={t('channelsAndEfficiency')}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/marketing-workspace' },
+          { label: t('navDashboard'), href: '/marketing-module' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
@@ -554,7 +554,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         />
       ) : null}
 
-      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle[section]}>
+      <ModulePageBody contained={contained} ariaLabel={sectionTitle[section]}>
       {section !== 'overview' ? (
       <Tabs value={section} className="space-y-4">
         {/* ─── Tab: Sources ─── */}
@@ -817,7 +817,7 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
 
       </Tabs>
       ) : null}
-      </WorkspacePageBody>
+      </ModulePageBody>
 
       {/* ─── Expense Dialog ─── */}
       {canManageExpenses && (
@@ -891,6 +891,6 @@ export default function MarketingWorkspace({ section = 'overview' }: { section?:
         }}
         isPending={updateLead.isPending}
       />
-    </WorkspacePage>
+    </ModulePage>
   );
 }

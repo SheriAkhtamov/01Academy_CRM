@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useToast } from '@/hooks/use-toast';
-import { getInitials, formatUserWorkspace } from '@/lib/auth';
+import { getInitials, formatUserModule } from '@/lib/auth';
 import type { SavedAccountEntry } from '@shared/auth';
 import {
   DropdownMenu,
@@ -117,7 +117,7 @@ export default function AccountSwitcher() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">
-                        {account.accountUser.position || formatUserWorkspace(account.accountUser.workspace, t)}
+                        {account.accountUser.position || formatUserModule(account.accountUser.module, t)}
                       </p>
                     </div>
                     {isSwitching ? (

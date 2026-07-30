@@ -22,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import {
   missedCallUnreadQueryOptions,
   telephonyApi,
@@ -146,7 +146,7 @@ export default function CallJournalPage() {
     .replace('{count}', String(missedCallCount));
 
   return (
-    <WorkspacePage contained className="pb-2 sm:pb-2 lg:pb-2">
+    <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
       <PageHeader
         title={t('callJournal')}
         titleAccessory={(
@@ -182,7 +182,7 @@ export default function CallJournalPage() {
         )}
       />
 
-      <WorkspacePageBody
+      <ModulePageBody
         contained
         scroll="hidden"
         ariaLabel={t('callJournal')}
@@ -314,8 +314,8 @@ export default function CallJournalPage() {
             </div>
           </div>
         ) : null}
-      </WorkspacePageBody>
-    </WorkspacePage>
+      </ModulePageBody>
+    </ModulePage>
   );
 }
 

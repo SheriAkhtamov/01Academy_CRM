@@ -49,7 +49,7 @@ import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilt
 import { FinanceAnalyticsCharts } from '@/components/ux/analytics/FinanceAnalyticsCharts';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -475,7 +475,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const contained = section !== 'overview';
 
   return (
-    <WorkspacePage contained={contained} className="flex flex-col gap-4">
+    <ModulePage contained={contained} className="flex flex-col gap-4">
       <PageHeader
         title={sectionTitle}
         subtitle={sectionSubtitle}
@@ -499,7 +499,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         )}
       />
 
-      <WorkspacePageBody contained={contained} ariaLabel={sectionTitle} className="flex flex-col gap-4">
+      <ModulePageBody contained={contained} ariaLabel={sectionTitle} className="flex flex-col gap-4">
 
       {section === 'overview' ? (
         <ReportingDateRangeFilter
@@ -780,7 +780,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         onOpenChange={payoutGuard.setConfirmationOpen}
         onDiscard={payoutGuard.discardChanges}
       />
-      </WorkspacePageBody>
-    </WorkspacePage>
+      </ModulePageBody>
+    </ModulePage>
   );
 }

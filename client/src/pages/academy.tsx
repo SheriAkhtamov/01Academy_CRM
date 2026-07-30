@@ -32,7 +32,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import {
   AlertCircle,
   Camera,
@@ -359,14 +359,14 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   };
 
   return (
-    <WorkspacePage contained>
+    <ModulePage contained>
       <PageHeader
         title={section === 'integrations' ? t('navIntegrations') : t('navIntegrations')}
         subtitle={t('academyDescription')}
         breadcrumbs={[{ label: t('navIntegrations') }]}
       />
 
-      <WorkspacePageBody contained ariaLabel={t('navIntegrations')} className="space-y-3">
+      <ModulePageBody contained ariaLabel={t('navIntegrations')} className="space-y-3">
         {integrations.isLoading ? (
           Array.from({ length: 2 }).map((_, index) => (
             <Card key={index}>
@@ -470,7 +470,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Card>
           );
         })}
-      </WorkspacePageBody>
+      </ModulePageBody>
 
       <Dialog open={onlinePbxSettingsOpen} onOpenChange={setOnlinePbxSettingsOpen}>
         <DialogContent className="overflow-hidden sm:max-w-3xl">
@@ -808,6 +808,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         }}
         variant="destructive"
       />
-    </WorkspacePage>
+    </ModulePage>
   );
 }

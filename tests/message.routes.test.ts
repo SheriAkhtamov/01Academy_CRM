@@ -33,8 +33,8 @@ const currentUser = {
   fullName: "Current User",
   email: "current@example.com",
   password: "hash",
-  workspace: "sales",
-  workspaces: ["sales"],
+  module: "sales",
+  modules: ["sales"],
   isActive: true,
   hasReportAccess: false,
 };

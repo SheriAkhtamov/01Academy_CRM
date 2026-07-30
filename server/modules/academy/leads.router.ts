@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -85,19 +85,19 @@ import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads'
 
 import {
   DbValue,
-  LEAD_WORKSPACES,
+  LEAD_MODULES,
   Row,
-  SALES_WORKSPACES,
+  SALES_MODULES,
   applyLeadVisibilityForActor,
   applyLeadVisibilityForRequest,
   canMutateLeadRow,
   createAudit,
   createNotification,
   createTask,
-  ensureAdministrationWorkspaceAccess,
+  ensureAdministrationModuleAccess,
   ensureLeadMutationAccess,
   ensureLeadRowAccess,
-  ensureWorkspaceAccess,
+  ensureModuleAccess,
   getActiveLeadStatus,
   insertRow,
   isValidLeadArchiveReason,
@@ -151,7 +151,7 @@ import {
 
 export const registerAcademyLeadRoutes = (router: ReturnType<typeof Router>) => {
 router.get('/lead-tags', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead access required')) return;
   try {
     const [sources, customTags] = await Promise.all([
       query<{ name: string }>(
@@ -189,17 +189,17 @@ router.get('/lead-tags', async (req, res) => {
 });
 
 router.get('/leads', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead access required')) return;
   try {
     const conditions: string[] = [];
     const params: DbValue[] = [];
-    const assignedWorkspaces = getAssignedWorkspaces(req.user);
-    const canSeeAllLeads = hasLeadershipAccess(req.user) || assignedWorkspaces.includes('marketing');
+    const assignedModules = getAssignedModules(req.user);
+    const canSeeAllLeads = hasLeadershipAccess(req.user) || assignedModules.includes('marketing');
     const wantsArchived = req.query.archived === 'true';
 
     conditions.push(`COALESCE(l.is_archived, false) = ${wantsArchived ? 'true' : 'false'}`);
 
-    if (assignedWorkspaces.includes('sales') && !canSeeAllLeads) {
+    if (assignedModules.includes('sales') && !canSeeAllLeads) {
       params.push(req.user!.id);
       conditions.push(`(l.manager_id = $${params.length} OR l.manager_id IS NULL)`);
     }
@@ -258,9 +258,9 @@ router.get('/leads', async (req, res) => {
     res.json(await applyLeadVisibilityForActor(
       {
         userId: req.user!.id,
-        workspace: String(req.user!.workspace),
-        workspaces: assignedWorkspaces,
-        scopeWorkspace: 'sales',
+        module: String(req.user!.module),
+        modules: assignedModules,
+        scopeModule: 'sales',
       },
       leads,
     ));
@@ -271,7 +271,7 @@ router.get('/leads', async (req, res) => {
 });
 
 router.post('/leads', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const parsedInput = createAcademyLeadRequestSchema.safeParse(req.body);
     if (!parsedInput.success) {
@@ -418,7 +418,7 @@ router.post('/leads', async (req, res) => {
 });
 
 router.post('/leads/bulk-assign', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const leadIds = Array.from(new Set(
       (Array.isArray(req.body.leadIds) ? req.body.leadIds : [])
@@ -527,7 +527,7 @@ router.post('/leads/bulk-assign', async (req, res) => {
 });
 
 router.get('/leads/merge-candidates', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const term = String(req.query.q ?? '').trim();
     if (term.length < 2) return res.json([]);
@@ -559,7 +559,7 @@ router.get('/leads/merge-candidates', async (req, res) => {
 });
 
 router.get('/leads/merge-preview', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const firstLeadId = parseId(req.query.firstLeadId);
     const secondLeadId = parseId(req.query.secondLeadId);
@@ -576,7 +576,7 @@ router.get('/leads/merge-preview', async (req, res) => {
 });
 
 router.post('/leads/merge', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const retainedLeadId = parseId(req.body.retainedLeadId);
     const duplicateLeadId = parseId(req.body.duplicateLeadId);
@@ -586,9 +586,9 @@ router.post('/leads/merge', async (req, res) => {
     const result = await mergeLeadRecords(req, retainedLeadId, duplicateLeadId);
     const [visibleLead] = await applyLeadVisibilityForActor({
       userId: req.user!.id,
-      workspace: String(req.user!.workspace),
-      workspaces: getAssignedWorkspaces(req.user),
-      scopeWorkspace: 'sales',
+      module: String(req.user!.module),
+      modules: getAssignedModules(req.user),
+      scopeModule: 'sales',
     }, [result.retainedLead]);
     res.json({ ...result, retainedLead: visibleLead });
   } catch (error: any) {
@@ -598,7 +598,7 @@ router.post('/leads/merge', async (req, res) => {
 });
 
 router.post('/leads/merge-draft', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const retainedLeadId = parseId(req.body.retainedLeadId);
     const draft = req.body.draft && typeof req.body.draft === 'object' ? req.body.draft : null;
@@ -705,9 +705,9 @@ router.get('/leads/:id', async (req, res) => {
     ]);
     const [visibleLead] = await applyLeadVisibilityForActor({
       userId: req.user!.id,
-      workspace: String(req.user!.workspace),
-      workspaces: getAssignedWorkspaces(req.user),
-      scopeWorkspace: 'sales',
+      module: String(req.user!.module),
+      modules: getAssignedModules(req.user),
+      scopeModule: 'sales',
     }, [lead]);
     res.json({
       ...visibleLead,
@@ -732,7 +732,7 @@ router.get('/leads/:id', async (req, res) => {
 });
 
 router.post('/leads/:id/tags', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const leadId = parseId(req.params.id);
     if (!leadId) return res.status(400).json({ error: 'Invalid lead id' });
@@ -850,7 +850,7 @@ router.post('/leads/:id/tags', async (req, res) => {
 });
 
 router.delete('/leads/:id/tags/:assignmentId', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const leadId = parseId(req.params.id);
     const assignmentId = parseId(req.params.assignmentId);
@@ -909,7 +909,7 @@ router.delete('/leads/:id/tags/:assignmentId', async (req, res) => {
 });
 
 router.post('/leads/:id/comments', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -955,7 +955,7 @@ router.post('/leads/:id/comments', async (req, res) => {
 });
 
 router.post('/leads/:id/assign', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, new Set(['administration', 'sales']), 'Lead assignment access required')) return;
+  if (!ensureModuleAccess(req, res, new Set(['administration', 'sales']), 'Lead assignment access required')) return;
   try {
     const id = parseId(req.params.id);
     const managerId = parseId(req.body.managerId);
@@ -966,7 +966,7 @@ router.post('/leads/:id/assign', async (req, res) => {
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
-    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
+    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyModule(req.user, 'marketing');
     if (!canAssignAnyManager && Number(managerId) !== Number(req.user!.id)) {
       return res.status(403).json({ error: 'Only leadership can assign a lead to another manager' });
     }
@@ -982,7 +982,7 @@ router.post('/leads/:id/assign', async (req, res) => {
 });
 
 router.delete('/leads/:id', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -1023,7 +1023,7 @@ router.delete('/leads/:id', async (req, res) => {
 });
 
 router.post('/leads/:id/groups', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead group access required')) return;
   try {
     const leadId = parseId(req.params.id);
     const groupId = parseId(req.body.groupId);
@@ -1086,7 +1086,7 @@ router.post('/leads/:id/groups', async (req, res) => {
 });
 
 router.delete('/leads/:id/groups/:groupId', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead group access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead group access required')) return;
   try {
     const leadId = parseId(req.params.id);
     const groupId = parseId(req.params.groupId);
@@ -1170,7 +1170,7 @@ router.delete('/leads/:id/groups/:groupId', async (req, res) => {
 });
 
 router.post('/leads/:id/archive', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -1240,7 +1240,7 @@ router.post('/leads/:id/archive', async (req, res) => {
 });
 
 router.post('/leads/:id/restore', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Lead restore access required')) return;
+  if (!ensureModuleAccess(req, res, SALES_MODULES, 'Lead restore access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -1305,7 +1305,7 @@ router.post('/leads/:id/restore', async (req, res) => {
 });
 
 router.patch('/leads/:id', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     if (
       req.body.demoAt !== undefined
@@ -1391,7 +1391,7 @@ router.patch('/leads/:id', async (req, res) => {
     };
     const validationError = validateLeadForStatusChange(merged);
     if (validationError) return res.status(400).json({ error: validationError });
-    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyWorkspace(req.user, 'marketing');
+    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyModule(req.user, 'marketing');
     const hasRequestedManager = req.body.managerId !== undefined;
     const requestedManagerId = hasRequestedManager ? parseId(req.body.managerId) : undefined;
     if (hasRequestedManager && !requestedManagerId) {
@@ -1703,7 +1703,7 @@ router.patch('/leads/:id', async (req, res) => {
 });
 
 router.post('/leads/:id/contact', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -1748,12 +1748,12 @@ router.post('/leads/:id/contact', async (req, res) => {
 });
 
 router.post('/leads/:id/demo', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   res.status(400).json({ error: 'leadScheduleThroughGroupOnly' });
 });
 
 router.post('/leads/:id/demo-attendance', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Lead write access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -1782,7 +1782,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
 });
 
 router.post('/leads/:id/convert-to-student', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, SALES_WORKSPACES, 'Student conversion access required')) return;
+  if (!ensureModuleAccess(req, res, SALES_MODULES, 'Student conversion access required')) return;
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
@@ -1808,7 +1808,7 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
 });
 
 router.post('/leads/:id/students', async (req, res) => {
-  if (!ensureWorkspaceAccess(req, res, LEAD_WORKSPACES, 'Student creation access required')) return;
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Student creation access required')) return;
   try {
     const leadId = parseId(req.params.id);
     if (!leadId) return res.status(400).json({ error: 'Invalid lead id' });

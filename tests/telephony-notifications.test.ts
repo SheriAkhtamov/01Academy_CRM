@@ -13,8 +13,8 @@ import {
 
 const salesViewer = {
   id: 7,
-  workspace: 'sales',
-  workspaces: ['sales'],
+  module: 'sales',
+  modules: ['sales'],
 };
 
 describe('missed call notification state', () => {

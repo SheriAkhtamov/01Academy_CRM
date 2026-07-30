@@ -25,8 +25,8 @@ describe("Instagram realtime audience", () => {
     expect(audience).toEqual([1, 7]);
     const [sql, params] = mocks.poolQuery.mock.calls[0];
     expect(String(sql)).toContain("u.id = $1");
-    expect(String(sql)).toContain("u.workspace = 'sales'");
-    expect(String(sql)).toContain("u.workspace = 'administration'");
+    expect(String(sql)).toContain("u.module = 'sales'");
+    expect(String(sql)).toContain("u.module = 'administration'");
     expect(params).toEqual([7]);
   });
 

@@ -5,7 +5,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { getInitials, formatUserWorkspace } from '@/lib/auth';
+import { getInitials, formatUserModule } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -22,7 +22,7 @@ import SettingsModal from './modals/SettingsModal';
 import AddAccountModal from './modals/AddAccountModal';
 import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
-import { WorkspaceIdentity } from './ux/WorkspaceIdentity';
+import { ModuleIdentity } from './ux/ModuleIdentity';
 import { UnreadCountBadge } from './ux/UnreadCountBadge';
 import {
   conversationQueryOptions,
@@ -114,7 +114,7 @@ export default function Header({
             </button>
           )}
           <div className="order-2 min-w-0 w-full md:order-none md:flex-1">
-            <WorkspaceIdentity title={title} subtitle={subtitle} />
+            <ModuleIdentity title={title} subtitle={subtitle} />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button

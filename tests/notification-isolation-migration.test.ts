@@ -21,9 +21,9 @@ describe('0045 owned notification isolation migration', () => {
     );
   });
 
-  it('does not copy escalation notifications to administration workspaces', () => {
-    expect(compactSql).not.toContain('user_workspaces');
-    expect(compactSql).not.toContain("workspace = 'administration'");
+  it('does not copy escalation notifications to administration modules', () => {
+    expect(compactSql).not.toContain('user_modules');
+    expect(compactSql).not.toContain("module = 'administration'");
   });
 
   it('realigns task, lead, and student notifications with their current owners', () => {

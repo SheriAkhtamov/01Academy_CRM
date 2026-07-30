@@ -192,7 +192,7 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
   const [entries, salaryHistory] = await Promise.all([
     query<Row>(
       executor,
-      `SELECT u.id AS employee_user_id, u.full_name AS employee_name, u.position, u.workspace,
+      `SELECT u.id AS employee_user_id, u.full_name AS employee_name, u.position, u.module,
               rate.id AS salary_rate_id, COALESCE(rate.amount_uzs, 0) AS base_salary_uzs,
               rate.effective_from, rate.effective_to, rate.note AS salary_note,
               payout.id AS payout_id, COALESCE(payout.bonus_uzs, 0) AS bonus_uzs,

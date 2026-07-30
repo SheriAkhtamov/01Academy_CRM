@@ -1,7 +1,7 @@
 import { db } from '../db';
 import {
     users,
-    userWorkspaces,
+    userModules,
     savedAccounts,
     type User,
     type InsertUser,
@@ -10,86 +10,86 @@ import {
 import { ACADEMY_ACCESS_MODULES, type AcademyAccessModule } from '@shared/academy';
 import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
 
-export type UserWithWorkspaces = User & { workspaces: AcademyAccessModule[] };
-type SavedAccountWithUser = SavedAccount & { accountUser: UserWithWorkspaces };
+export type UserWithModules = User & { modules: AcademyAccessModule[] };
+type SavedAccountWithUser = SavedAccount & { accountUser: UserWithModules };
 
-const workspaceSet = new Set<string>(ACADEMY_ACCESS_MODULES);
+const moduleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
 
-const normalizeWorkspaceList = (
-    primaryWorkspace: string,
-    assignedWorkspaces: readonly string[] = [],
+const normalizeModuleList = (
+    primaryModule: string,
+    assignedModules: readonly string[] = [],
 ): AcademyAccessModule[] => {
-    const normalized = [primaryWorkspace, ...assignedWorkspaces]
-        .map((workspace) => String(workspace))
-        .filter((workspace): workspace is AcademyAccessModule => workspaceSet.has(workspace));
+    const normalized = [primaryModule, ...assignedModules]
+        .map((module) => String(module))
+        .filter((module): module is AcademyAccessModule => moduleSet.has(module));
 
     return [...new Set(normalized)];
 };
 
 class UserStorage {
-    private attachWorkspaces(user: User, assignedWorkspaces: readonly string[] = []): UserWithWorkspaces {
+    private attachModules(user: User, assignedModules: readonly string[] = []): UserWithModules {
         return {
             ...user,
-            workspaces: normalizeWorkspaceList(user.workspace, assignedWorkspaces),
+            modules: normalizeModuleList(user.module, assignedModules),
         };
     }
 
-    private async attachWorkspacesToUsers(userRows: User[]): Promise<UserWithWorkspaces[]> {
+    private async attachModulesToUsers(userRows: User[]): Promise<UserWithModules[]> {
         if (userRows.length === 0) return [];
 
         const assignments = await db
             .select({
-                userId: userWorkspaces.userId,
-                workspace: userWorkspaces.workspace,
+                userId: userModules.userId,
+                module: userModules.module,
             })
-            .from(userWorkspaces)
-            .where(inArray(userWorkspaces.userId, userRows.map((user) => user.id)))
-            .orderBy(asc(userWorkspaces.userId), asc(userWorkspaces.workspace));
+            .from(userModules)
+            .where(inArray(userModules.userId, userRows.map((user) => user.id)))
+            .orderBy(asc(userModules.userId), asc(userModules.module));
 
-        const workspacesByUser = new Map<number, string[]>();
+        const modulesByUser = new Map<number, string[]>();
         for (const assignment of assignments) {
-            const existing = workspacesByUser.get(assignment.userId) ?? [];
-            existing.push(assignment.workspace);
-            workspacesByUser.set(assignment.userId, existing);
+            const existing = modulesByUser.get(assignment.userId) ?? [];
+            existing.push(assignment.module);
+            modulesByUser.set(assignment.userId, existing);
         }
 
-        return userRows.map((user) => this.attachWorkspaces(user, workspacesByUser.get(user.id) ?? []));
+        return userRows.map((user) => this.attachModules(user, modulesByUser.get(user.id) ?? []));
     }
 
-    async getUser(id: number): Promise<UserWithWorkspaces | undefined> {
+    async getUser(id: number): Promise<UserWithModules | undefined> {
         const result = await db.select().from(users).where(eq(users.id, id));
-        return result[0] ? (await this.attachWorkspacesToUsers(result))[0] : undefined;
+        return result[0] ? (await this.attachModulesToUsers(result))[0] : undefined;
     }
 
-    async getUserByEmail(email: string): Promise<UserWithWorkspaces | undefined> {
+    async getUserByEmail(email: string): Promise<UserWithModules | undefined> {
         const result = await db.select().from(users).where(eq(users.email, email));
-        return result[0] ? (await this.attachWorkspacesToUsers(result))[0] : undefined;
+        return result[0] ? (await this.attachModulesToUsers(result))[0] : undefined;
     }
 
-    async getUserByLoginOrEmail(loginOrEmail: string): Promise<UserWithWorkspaces | undefined> {
+    async getUserByLoginOrEmail(loginOrEmail: string): Promise<UserWithModules | undefined> {
         const result = await db
             .select()
             .from(users)
             .where(or(eq(users.email, loginOrEmail), eq(users.fullName, loginOrEmail)));
-        return result[0] ? (await this.attachWorkspacesToUsers(result))[0] : undefined;
+        return result[0] ? (await this.attachModulesToUsers(result))[0] : undefined;
     }
 
-    async getUsers(): Promise<UserWithWorkspaces[]> {
+    async getUsers(): Promise<UserWithModules[]> {
         const result = await db.select().from(users).orderBy(asc(users.id));
-        return this.attachWorkspacesToUsers(result);
+        return this.attachModulesToUsers(result);
     }
 
-    async getUserWithPassword(id: number): Promise<UserWithWorkspaces | undefined> {
+    async getUserWithPassword(id: number): Promise<UserWithModules | undefined> {
         return this.getUser(id);
     }
 
-    async createUser(user: InsertUser): Promise<UserWithWorkspaces> {
+    async createUser(user: InsertUser): Promise<UserWithModules> {
         const result = await db.insert(users).values(user).returning();
-        await this.setUserWorkspaces(result[0].id, [result[0].workspace]);
-        return this.attachWorkspaces(result[0], [result[0].workspace]);
+        await this.setUserModules(result[0].id, [result[0].module]);
+        return this.attachModules(result[0], [result[0].module]);
     }
 
-    async updateUser(id: number, user: Partial<InsertUser>): Promise<UserWithWorkspaces> {
+    async updateUser(id: number, user: Partial<InsertUser>): Promise<UserWithModules> {
         const result = await db
             .update(users)
             .set({ ...user, updatedAt: new Date() })
@@ -98,33 +98,33 @@ class UserStorage {
         if (!result[0]) {
             throw new Error('User not found or access denied');
         }
-        if (user.workspace) {
-            await this.ensureUserWorkspace(id, user.workspace);
+        if (user.module) {
+            await this.ensureUserModule(id, user.module);
         }
-        return (await this.attachWorkspacesToUsers(result))[0];
+        return (await this.attachModulesToUsers(result))[0];
     }
 
     async deleteUser(id: number): Promise<void> {
         await db.delete(users).where(eq(users.id, id));
     }
 
-    async getUserWorkspaces(userId: number): Promise<AcademyAccessModule[]> {
+    async getUserModules(userId: number): Promise<AcademyAccessModule[]> {
         const user = await this.getUser(userId);
-        return user?.workspaces ?? [];
+        return user?.modules ?? [];
     }
 
-    async setUserWorkspaces(userId: number, workspaces: readonly string[]): Promise<AcademyAccessModule[]> {
-        const normalized = normalizeWorkspaceList('', workspaces);
+    async setUserModules(userId: number, modules: readonly string[]): Promise<AcademyAccessModule[]> {
+        const normalized = normalizeModuleList('', modules);
         if (normalized.length === 0) {
-            throw new Error('At least one workspace is required');
+            throw new Error('At least one module is required');
         }
 
         await db.transaction(async (tx) => {
-            await tx.delete(userWorkspaces).where(eq(userWorkspaces.userId, userId));
-            await tx.insert(userWorkspaces).values(
-                normalized.map((workspace) => ({
+            await tx.delete(userModules).where(eq(userModules.userId, userId));
+            await tx.insert(userModules).values(
+                normalized.map((module) => ({
                     userId,
-                    workspace,
+                    module,
                 })),
             );
         });
@@ -132,13 +132,13 @@ class UserStorage {
         return normalized;
     }
 
-    async ensureUserWorkspace(userId: number, workspace: string): Promise<void> {
-        const [normalized] = normalizeWorkspaceList(workspace);
+    async ensureUserModule(userId: number, module: string): Promise<void> {
+        const [normalized] = normalizeModuleList(module);
         if (!normalized) return;
 
         await db
-            .insert(userWorkspaces)
-            .values({ userId, workspace: normalized })
+            .insert(userModules)
+            .values({ userId, module: normalized })
             .onConflictDoNothing();
     }
 
@@ -153,24 +153,24 @@ class UserStorage {
             .where(eq(users.id, userId));
     }
 
-    async getUsersWithOnlineStatus(): Promise<UserWithWorkspaces[]> {
+    async getUsersWithOnlineStatus(): Promise<UserWithModules[]> {
         const result = await db
             .select()
             .from(users)
             .where(eq(users.isActive, true))
             .orderBy(asc(users.fullName), desc(users.createdAt));
-        return this.attachWorkspacesToUsers(result);
+        return this.attachModulesToUsers(result);
     }
 
-    private async attachWorkspacesToSavedAccounts(
+    private async attachModulesToSavedAccounts(
         accounts: (SavedAccount & { accountUser: User })[],
     ): Promise<SavedAccountWithUser[]> {
-        const accountUsers = await this.attachWorkspacesToUsers(accounts.map((account) => account.accountUser));
+        const accountUsers = await this.attachModulesToUsers(accounts.map((account) => account.accountUser));
         const usersById = new Map(accountUsers.map((user) => [user.id, user]));
 
         return accounts.map((account) => ({
             ...account,
-            accountUser: usersById.get(account.accountUser.id) ?? this.attachWorkspaces(account.accountUser),
+            accountUser: usersById.get(account.accountUser.id) ?? this.attachModules(account.accountUser),
         }));
     }
 
@@ -190,7 +190,7 @@ class UserStorage {
             .innerJoin(users, eq(savedAccounts.accountUserId, users.id))
             .where(eq(savedAccounts.ownerUserId, ownerUserId))
             .orderBy(asc(savedAccounts.createdAt));
-        return this.attachWorkspacesToSavedAccounts(rows);
+        return this.attachModulesToSavedAccounts(rows);
     }
 
     /**
@@ -215,7 +215,7 @@ class UserStorage {
                 .where(eq(savedAccounts.accountUserId, userId))
                 .orderBy(asc(savedAccounts.createdAt)),
         ]);
-        const linkedAccounts = await this.attachWorkspacesToSavedAccounts(linkedRows);
+        const linkedAccounts = await this.attachModulesToSavedAccounts(linkedRows);
 
         return [...ownedAccounts, ...linkedAccounts]
             .sort((left, right) => (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0));
@@ -243,7 +243,7 @@ class UserStorage {
             .from(savedAccounts)
             .innerJoin(users, eq(savedAccounts.accountUserId, users.id))
             .where(eq(savedAccounts.tokenHash, tokenHash));
-        return (await this.attachWorkspacesToSavedAccounts(rows))[0];
+        return (await this.attachModulesToSavedAccounts(rows))[0];
     }
 
     async deleteSavedAccount(ownerUserId: number, accountUserId: number): Promise<void> {

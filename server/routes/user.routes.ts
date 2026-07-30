@@ -9,12 +9,12 @@ import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
 import {
     ACADEMY_ACCESS_MODULES,
-    ACADEMY_WORKSPACES,
-    getAssignedWorkspaces,
+    ACADEMY_MODULES,
+    getAssignedModules,
     hasLeadershipAccess,
-    isLeadershipWorkspace,
+    isLeadershipModule,
     type AcademyAccessModule,
-    type AcademyWorkspace,
+    type AcademyModule,
 } from '@shared/academy';
 import type { AcademyScheduleItem } from '@shared/schema';
 import { getPasswordPolicyError } from '../lib/password-policy';
@@ -22,9 +22,9 @@ import { revokeUserAuthenticationArtifacts } from '../services/session-security'
 import { sendHttpError } from '../lib/http-errors';
 
 const router = Router();
-const primaryWorkspaceSet = new Set<string>(ACADEMY_WORKSPACES);
+const primaryModuleSet = new Set<string>(ACADEMY_MODULES);
 const accessModuleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
-const workspaceLoginPrefix: Record<AcademyWorkspace, string> = {
+const moduleLoginPrefix: Record<AcademyModule, string> = {
     administration: 'admin',
     sales: 'sales',
     teacher: 'teacher',
@@ -65,8 +65,8 @@ const slugifyName = (fullName: string) => {
     return slug || 'user';
 };
 
-const generateLogin = (fullName: string, workspace: AcademyWorkspace, unavailableLogins: Set<string>) => {
-    const prefix = workspaceLoginPrefix[workspace];
+const generateLogin = (fullName: string, module: AcademyModule, unavailableLogins: Set<string>) => {
+    const prefix = moduleLoginPrefix[module];
     const base = `${prefix}.${slugifyName(fullName)}`;
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -108,19 +108,19 @@ const findUserByLogin = async (login: string, exceptUserId?: number) => {
     );
 };
 
-const normalizeRequestedWorkspaces = (value: unknown, primaryWorkspace: AcademyWorkspace) => {
+const normalizeRequestedModules = (value: unknown, primaryModule: AcademyModule) => {
     if (value !== undefined && !Array.isArray(value)) {
         throw Object.assign(new Error('invalidData'), { statusCode: 400 });
     }
-    const rawWorkspaces = value ?? [];
-    if ((rawWorkspaces as unknown[]).some((workspace) => (
-        typeof workspace !== 'string' || !accessModuleSet.has(workspace)
+    const rawModules = value ?? [];
+    if ((rawModules as unknown[]).some((module) => (
+        typeof module !== 'string' || !accessModuleSet.has(module)
     ))) {
         throw Object.assign(new Error('invalidData'), { statusCode: 400 });
     }
-    const requested = rawWorkspaces as AcademyAccessModule[];
+    const requested = rawModules as AcademyAccessModule[];
 
-    return [...new Set([primaryWorkspace, ...requested])];
+    return [...new Set([primaryModule, ...requested])];
 };
 
 type TeacherSettings = {
@@ -227,22 +227,22 @@ const parseDateOfBirth = (value: unknown) => {
 };
 
 const canViewCredentialPassword = (req: any) =>
-    getAssignedWorkspaces(req.user).includes('administration');
+    getAssignedModules(req.user).includes('administration');
 
 const buildCredentialPayload = (user: {
     id: number;
     fullName: string;
     email: string;
     position?: string | null;
-    workspace: string;
-    workspaces?: string[] | null;
+    module: string;
+    modules?: string[] | null;
 }, canViewPassword: boolean, fallbackPassword?: string) => ({
     id: user.id,
     fullName: user.fullName,
     email: user.email,
     position: user.position,
-    workspace: user.workspace,
-    workspaces: getAssignedWorkspaces(user),
+    module: user.module,
+    modules: getAssignedModules(user),
     temporaryPassword: canViewPassword ? fallbackPassword : undefined,
     passwordStored: false,
     passwordOneTimeOnly: Boolean(fallbackPassword),
@@ -252,8 +252,8 @@ const buildCredentialPayload = (user: {
 const syncAcademyTeacherForUser = async (user: {
     id: number;
     fullName: string;
-    workspace: string;
-    workspaces?: string[] | null;
+    module: string;
+    modules?: string[] | null;
     isActive?: boolean | null;
 }, executor: QueryExecutor = pool, settings: TeacherSettings = {}) => {
     const existing = await executor.query<{ id: number }>(
@@ -262,7 +262,7 @@ const syncAcademyTeacherForUser = async (user: {
     );
     const teacherRecord = existing.rows[0];
 
-    if (getAssignedWorkspaces(user).includes('teacher')) {
+    if (getAssignedModules(user).includes('teacher')) {
         const status = user.isActive === false ? 'dismissed' : 'active';
         await ensureTeacherSettingSchoolsExist(executor, settings);
 
@@ -343,11 +343,11 @@ const getActiveSalesManagerForTransfer = async (managerId: number, executor: Que
          WHERE u.id = $1
            AND u.is_active = true
            AND (
-             u.workspace = 'sales'
+             u.module = 'sales'
              OR EXISTS (
                SELECT 1
-               FROM user_workspaces uw
-               WHERE uw.user_id = u.id AND uw.workspace = 'sales'
+               FROM user_modules uw
+               WHERE uw.user_id = u.id AND uw.module = 'sales'
              )
            )
          FOR UPDATE OF u`,
@@ -445,7 +445,7 @@ type UserUpdateData = {
     onlinePbxIncomingEnabled?: boolean;
     email?: string;
     dateOfBirth?: Date | null;
-    workspace?: AcademyWorkspace;
+    module?: AcademyModule;
     hasReportAccess?: boolean;
     isActive?: boolean;
 };
@@ -458,7 +458,7 @@ const userUpdateColumns: Record<keyof UserUpdateData, string> = {
     onlinePbxIncomingEnabled: 'online_pbx_incoming_enabled',
     email: 'email',
     dateOfBirth: 'date_of_birth',
-    workspace: 'workspace',
+    module: 'module',
     hasReportAccess: 'has_report_access',
     isActive: 'is_active',
 };
@@ -481,17 +481,17 @@ const updateUserWithExecutor = async (
     );
 };
 
-const replaceUserWorkspaces = async (
+const replaceUserModules = async (
     executor: QueryExecutor,
     userId: number,
-    workspaces: AcademyAccessModule[],
+    modules: AcademyAccessModule[],
 ) => {
-    await executor.query('DELETE FROM user_workspaces WHERE user_id = $1', [userId]);
+    await executor.query('DELETE FROM user_modules WHERE user_id = $1', [userId]);
     await executor.query(
-        `INSERT INTO user_workspaces (user_id, workspace)
-         SELECT $1, workspace
-         FROM UNNEST($2::text[]) AS workspace`,
-        [userId, workspaces],
+        `INSERT INTO user_modules (user_id, module)
+         SELECT $1, module
+         FROM UNNEST($2::text[]) AS module`,
+        [userId, modules],
     );
 };
 
@@ -499,7 +499,7 @@ router.get('/', requireAuth, async (req, res) => {
     try {
         const users = await storage.getUsers();
         const sanitizedUsers = users.map(u => authService.sanitizeUser(u));
-        if (!getAssignedWorkspaces(req.user).includes('administration') || users.length === 0) {
+        if (!getAssignedModules(req.user).includes('administration') || users.length === 0) {
             return res.json(sanitizedUsers);
         }
         const teacherRows = await pool.query<{
@@ -586,11 +586,11 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(400).json({ error: 'invalidData' });
         }
 
-        if (!primaryWorkspaceSet.has(req.body.workspace)) {
-            return res.status(400).json({ error: 'A valid workspace is required' });
+        if (!primaryModuleSet.has(req.body.module)) {
+            return res.status(400).json({ error: 'A valid module is required' });
         }
-        const workspace = req.body.workspace as AcademyWorkspace;
-        const workspaces = normalizeRequestedWorkspaces(req.body.workspaces, workspace);
+        const module = req.body.module as AcademyModule;
+        const modules = normalizeRequestedModules(req.body.modules, module);
         const teacherSettings = readTeacherSettings(req.body);
         const dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
 
@@ -608,7 +608,7 @@ router.post('/', requireAdministration, async (req, res) => {
 
         const temporaryPassword = crypto.randomBytes(12).toString('base64url');
         const hashedPassword = await authService.hashPassword(temporaryPassword);
-        let email = providedEmail || generateLogin(fullName, workspace, unavailableLogins);
+        let email = providedEmail || generateLogin(fullName, module, unavailableLogins);
         let newUser: any = null;
 
         for (let attempt = 0; attempt < maxGeneratedLoginAttempts; attempt += 1) {
@@ -618,14 +618,14 @@ router.post('/', requireAdministration, async (req, res) => {
                 const inserted = await client.query(
                     `INSERT INTO users
                        (email, password, credential_password_ciphertext, full_name, phone,
-                        online_pbx_extension, date_of_birth, position, workspace, has_report_access, is_active)
+                        online_pbx_extension, date_of_birth, position, module, has_report_access, is_active)
                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                      RETURNING
                        id, email, password,
                        credential_password_ciphertext AS "credentialPasswordCiphertext",
                        full_name AS "fullName", phone,
                        online_pbx_extension AS "onlinePbxExtension", date_of_birth AS "dateOfBirth",
-                       position, workspace, has_report_access AS "hasReportAccess",
+                       position, module, has_report_access AS "hasReportAccess",
                        is_active AS "isActive", is_online AS "isOnline",
                        last_seen_at AS "lastSeenAt", created_at AS "createdAt",
                        updated_at AS "updatedAt"`,
@@ -638,16 +638,16 @@ router.post('/', requireAdministration, async (req, res) => {
                         null,
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
-                        workspace,
+                        module,
                         hasReportAccess ?? false,
                         isActive !== undefined ? isActive : true,
                     ],
                 );
                 newUser = inserted.rows[0];
-                await replaceUserWorkspaces(client, newUser.id, workspaces);
+                await replaceUserModules(client, newUser.id, modules);
                 newUser = {
                     ...newUser,
-                    workspaces,
+                    modules,
                 };
                 await syncAcademyTeacherForUser(newUser, client, teacherSettings);
                 await client.query(
@@ -674,7 +674,7 @@ router.post('/', requireAdministration, async (req, res) => {
                 }
 
                 unavailableLogins.add(email.toLowerCase());
-                email = generateLogin(fullName, workspace, unavailableLogins);
+                email = generateLogin(fullName, module, unavailableLogins);
             } finally {
                 client.release();
             }
@@ -943,28 +943,28 @@ router.put('/:id', requireAuth, async (req, res) => {
             updateData.dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
         }
 
-        let requestedWorkspaces: AcademyAccessModule[] | null = null;
+        let requestedModules: AcademyAccessModule[] | null = null;
         const teacherSettings = readTeacherSettings(req.body);
         const teacherSettingsRequested = teacherSettings.schoolIds !== undefined
             || teacherSettings.availability !== undefined;
         if (
             teacherSettingsRequested
-            && !getAssignedWorkspaces(currentUser).includes('administration')
+            && !getAssignedModules(currentUser).includes('administration')
         ) {
             return res.status(403).json({ error: 'adminAccessRequired' });
         }
 
         if (hasLeadershipAccess(currentUser)) {
-            if (req.body.workspace !== undefined) {
-                if (!primaryWorkspaceSet.has(req.body.workspace)) {
-                    return res.status(400).json({ error: 'A valid workspace is required' });
+            if (req.body.module !== undefined) {
+                if (!primaryModuleSet.has(req.body.module)) {
+                    return res.status(400).json({ error: 'A valid module is required' });
                 }
-                updateData.workspace = req.body.workspace;
+                updateData.module = req.body.module;
             }
-            if (req.body.workspaces !== undefined) {
-                requestedWorkspaces = normalizeRequestedWorkspaces(
-                    req.body.workspaces,
-                    (updateData.workspace ?? existingUser.workspace) as AcademyWorkspace,
+            if (req.body.modules !== undefined) {
+                requestedModules = normalizeRequestedModules(
+                    req.body.modules,
+                    (updateData.module ?? existingUser.module) as AcademyModule,
                 );
             }
             if (req.body.hasReportAccess !== undefined) {
@@ -983,7 +983,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
         if (
             Object.values(updateData).every((value) => value === undefined)
-            && requestedWorkspaces === null
+            && requestedModules === null
             && !teacherSettingsRequested
         ) {
             return res.status(400).json({ error: 'invalidData' });
@@ -999,11 +999,11 @@ router.put('/:id', requireAuth, async (req, res) => {
             const lockedUserResult = await client.query<{
                 id: number;
                 full_name: string;
-                workspace: AcademyWorkspace;
+                module: AcademyModule;
                 is_active: boolean;
                 online_pbx_extension: string | null;
             }>(
-                `SELECT id, full_name, workspace, is_active, online_pbx_extension
+                `SELECT id, full_name, module, is_active, online_pbx_extension
                  FROM users
                  WHERE id = $1
                  FOR UPDATE`,
@@ -1014,33 +1014,33 @@ router.put('/:id', requireAuth, async (req, res) => {
                 throw Object.assign(new Error('User not found'), { statusCode: 404 });
             }
 
-            const assignedRows = await client.query<{ workspace: AcademyAccessModule }>(
-                'SELECT workspace FROM user_workspaces WHERE user_id = $1',
+            const assignedRows = await client.query<{ module: AcademyAccessModule }>(
+                'SELECT module FROM user_modules WHERE user_id = $1',
                 [id],
             );
-            const currentWorkspaces = getAssignedWorkspaces({
-                workspace: lockedUser.workspace,
-                workspaces: assignedRows.rows.map((row) => row.workspace),
+            const currentModules = getAssignedModules({
+                module: lockedUser.module,
+                modules: assignedRows.rows.map((row) => row.module),
             });
-            const nextPrimaryWorkspace = updateData.workspace ?? lockedUser.workspace;
-            const nextWorkspaces = requestedWorkspaces
-                ? [...new Set([nextPrimaryWorkspace, ...requestedWorkspaces])]
-                : [...new Set([nextPrimaryWorkspace, ...currentWorkspaces])];
+            const nextPrimaryModule = updateData.module ?? lockedUser.module;
+            const nextModules = requestedModules
+                ? [...new Set([nextPrimaryModule, ...requestedModules])]
+                : [...new Set([nextPrimaryModule, ...currentModules])];
             const nextIsActive = updateData.isActive ?? lockedUser.is_active;
             const isRemovingActiveLeadershipAccess =
                 lockedUser.is_active
-                && currentWorkspaces.some(isLeadershipWorkspace)
-                && (!nextIsActive || !nextWorkspaces.some(isLeadershipWorkspace));
+                && currentModules.some(isLeadershipModule)
+                && (!nextIsActive || !nextModules.some(isLeadershipModule));
             if (isRemovingActiveLeadershipAccess) {
                 const leadershipCount = await client.query<{ count: number | string }>(
                     `SELECT COUNT(*)::int AS count
                      FROM users u
                      WHERE u.is_active = true
                        AND (
-                         u.workspace = 'administration'
+                         u.module = 'administration'
                          OR EXISTS (
-                           SELECT 1 FROM user_workspaces uw
-                           WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+                           SELECT 1 FROM user_modules uw
+                           WHERE uw.user_id = u.id AND uw.module = 'administration'
                          )
                        )`,
                 );
@@ -1052,7 +1052,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                 }
             }
 
-            const losesSalesEligibility = !nextIsActive || !nextWorkspaces.includes('sales');
+            const losesSalesEligibility = !nextIsActive || !nextModules.includes('sales');
             if (losesSalesEligibility) {
                 updateData.onlinePbxExtension = null;
                 updateData.onlinePbxIncomingEnabled = false;
@@ -1084,22 +1084,22 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
 
             await updateUserWithExecutor(client, id, updateData);
-            if (requestedWorkspaces) {
-                await replaceUserWorkspaces(client, id, nextWorkspaces);
-            } else if (!currentWorkspaces.includes(nextPrimaryWorkspace)) {
+            if (requestedModules) {
+                await replaceUserModules(client, id, nextModules);
+            } else if (!currentModules.includes(nextPrimaryModule)) {
                 await client.query(
-                    `INSERT INTO user_workspaces (user_id, workspace)
+                    `INSERT INTO user_modules (user_id, module)
                      VALUES ($1, $2)
-                     ON CONFLICT (user_id, workspace) DO NOTHING`,
-                    [id, nextPrimaryWorkspace],
+                     ON CONFLICT (user_id, module) DO NOTHING`,
+                    [id, nextPrimaryModule],
                 );
             }
 
             await syncAcademyTeacherForUser({
                 id,
                 fullName: updateData.fullName ?? lockedUser.full_name,
-                workspace: nextPrimaryWorkspace,
-                workspaces: nextWorkspaces,
+                module: nextPrimaryModule,
+                modules: nextModules,
                 isActive: nextIsActive,
             }, client, teacherSettings);
             await client.query('COMMIT');
@@ -1167,10 +1167,10 @@ router.delete('/:id', requireAdministration, async (req, res) => {
                 `SELECT u.id,
                         u.is_active,
                         (
-                          u.workspace = 'administration'
+                          u.module = 'administration'
                           OR EXISTS (
-                            SELECT 1 FROM user_workspaces uw
-                            WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+                            SELECT 1 FROM user_modules uw
+                            WHERE uw.user_id = u.id AND uw.module = 'administration'
                           )
                         ) AS has_leadership
                  FROM users u
@@ -1188,10 +1188,10 @@ router.delete('/:id', requireAdministration, async (req, res) => {
                      FROM users u
                      WHERE u.is_active = true
                        AND (
-                         u.workspace = 'administration'
+                         u.module = 'administration'
                          OR EXISTS (
-                           SELECT 1 FROM user_workspaces uw
-                           WHERE uw.user_id = u.id AND uw.workspace = 'administration'
+                           SELECT 1 FROM user_modules uw
+                           WHERE uw.user_id = u.id AND uw.module = 'administration'
                          )
                        )`,
                 );

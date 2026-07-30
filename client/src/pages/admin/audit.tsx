@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { ceoCopy } from '@/components/ui/ceo-copy';
@@ -18,7 +18,7 @@ interface AuditLog {
   id: number;
   userId?: number | null;
   userName?: string | null;
-  userWorkspace?: string | null;
+  userModule?: string | null;
   action: string;
   entityType: string;
   entityId?: number | null;
@@ -39,7 +39,7 @@ interface AuditData {
     retryCount: number;
     createdAt: string;
   }>;
-  employees: Array<{ id: number; fullName: string; workspace: string }>;
+  employees: Array<{ id: number; fullName: string; module: string }>;
 }
 
 const actionLabel = (action: string) => {
@@ -107,7 +107,7 @@ export default function AuditPage() {
   const changedFields = selected ? [...new Set([...Object.keys(oldValues), ...Object.keys(newValues)])] : [];
 
   return (
-    <WorkspacePage contained>
+    <ModulePage contained>
       <PageHeader
         title={ceoCopy.audit.title}
         subtitle={ceoCopy.audit.subtitle}
@@ -115,7 +115,7 @@ export default function AuditPage() {
         actions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
       />
 
-      <WorkspacePageBody contained ariaLabel={ceoCopy.audit.title}>
+      <ModulePageBody contained ariaLabel={ceoCopy.audit.title}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="audit">{ceoCopy.audit.history}</TabsTrigger>
@@ -141,7 +141,7 @@ export default function AuditPage() {
                 <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.date}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.employee}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.action}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.object}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.changes}</th><th className="w-12 px-3 py-3" /></tr></thead>
                   <tbody>
-                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userWorkspace ?? '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType)}</span>{log.entityId ? <span className="ml-1 text-muted-foreground">#{log.entityId}</span> : null}</td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
+                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ?? '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType)}</span>{log.entityId ? <span className="ml-1 text-muted-foreground">#{log.entityId}</span> : null}</td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
                     {!isLoading && (data?.logs.length ?? 0) === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noResults}</td></tr> : null}
                   </tbody>
                 </table>
@@ -157,7 +157,7 @@ export default function AuditPage() {
           </Card>
         </TabsContent>
       </Tabs>
-      </WorkspacePageBody>
+      </ModulePageBody>
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
@@ -165,6 +165,6 @@ export default function AuditPage() {
           {selected ? <div className="mt-6 overflow-hidden rounded-lg border border-border/70"><div className="grid grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="grid grid-cols-[140px_1fr_1fr] border-b border-border/60 last:border-0 text-sm"><div className="break-words p-3 font-medium">{field}</div><div className="break-words border-l border-border/60 p-3 text-muted-foreground">{presentValue(oldValues[field])}</div><div className="break-words border-l border-border/60 p-3">{presentValue(newValues[field])}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div> : null}
         </SheetContent>
       </Sheet>
-    </WorkspacePage>
+    </ModulePage>
   );
 }

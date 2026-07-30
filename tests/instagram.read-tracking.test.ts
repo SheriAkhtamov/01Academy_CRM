@@ -23,7 +23,7 @@ describe('Instagram per-user read tracking', () => {
   it('calculates unread messages from the current employee read cursor', async () => {
     mocks.poolQuery.mockResolvedValue({ rows: [] });
 
-    await listInstagramConversations({ id: 7, workspace: 'sales', workspaces: ['sales'] });
+    await listInstagramConversations({ id: 7, module: 'sales', modules: ['sales'] });
 
     const [sql, params] = mocks.poolQuery.mock.calls[0];
     expect(String(sql)).toContain('instagram_conversation_reads conversation_read');
@@ -48,7 +48,7 @@ describe('Instagram per-user read tracking', () => {
 
     const result = await markInstagramConversationRead(
       9,
-      { id: 7, workspace: 'sales', workspaces: ['sales'] },
+      { id: 7, module: 'sales', modules: ['sales'] },
     );
 
     expect(result).toMatchObject({ id: 9, unreadCount: 0 });

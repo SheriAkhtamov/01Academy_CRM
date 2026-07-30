@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { ACADEMY_WORKSPACES } from "./academy";
+import { ACADEMY_MODULES } from "./academy";
 import { isOnlinePbxExtension } from "./telephony";
 
 export interface AcademyCourseProgramLesson {
@@ -30,7 +30,7 @@ export const users = pgTable("users", {
   onlinePbxExtension: varchar("online_pbx_extension", { length: 20 }),
   dateOfBirth: timestamp("date_of_birth"),
   position: varchar("position", { length: 255 }),
-  workspace: varchar("workspace", { length: 50 }).notNull(),
+  module: varchar("module", { length: 50 }).notNull(),
   hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
@@ -41,8 +41,8 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   emailUnique: uniqueIndex("users_email_unique").on(sql`lower(${table.email})`),
-  workspaceIdx: index("users_workspace_idx").on(table.workspace),
-  workspaceCheck: check("users_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing')`),
+  moduleIdx: index("users_module_idx").on(table.module),
+  moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
 
 export const telephonyManagedExtensions = pgTable("telephony_managed_extensions", {
@@ -64,17 +64,17 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const userWorkspaces = pgTable("user_workspaces", {
+export const userModules = pgTable("user_modules", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  workspace: varchar("workspace", { length: 50 }).notNull(),
+  module: varchar("module", { length: 50 }).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  userIdx: index("user_workspaces_user_idx").on(table.userId),
-  workspaceIdx: index("user_workspaces_workspace_idx").on(table.workspace),
-  userWorkspaceUnique: uniqueIndex("user_workspaces_user_workspace_unique").on(table.userId, table.workspace),
-  workspaceCheck: check("user_workspaces_workspace_check", sql`${table.workspace} IN ('administration', 'sales', 'teacher', 'marketing', 'finance')`),
+  userIdx: index("user_modules_user_idx").on(table.userId),
+  moduleIdx: index("user_modules_module_idx").on(table.module),
+  userModuleUnique: uniqueIndex("user_modules_user_module_unique").on(table.userId, table.module),
+  moduleCheck: check("user_modules_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing', 'finance')`),
 }));
 
 export const auditLogs = pgTable("audit_logs", {
@@ -1089,12 +1089,12 @@ export const insertUserSchema = z.object({
   onlinePbxExtension: z.string().refine(isOnlinePbxExtension).optional().nullable(),
   dateOfBirth: z.coerce.date().optional().nullable(),
   position: z.string().optional(),
-  workspace: z.enum(ACADEMY_WORKSPACES),
+  module: z.enum(ACADEMY_MODULES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
 });
 
-export const insertUserWorkspaceSchema = createInsertSchema(userWorkspaces).omit({
+export const insertUserModuleSchema = createInsertSchema(userModules).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -1361,8 +1361,8 @@ export const insertSavedAccountSchema = createInsertSchema(savedAccounts).omit({
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type UserWorkspace = typeof userWorkspaces.$inferSelect;
-export type InsertUserWorkspace = z.infer<typeof insertUserWorkspaceSchema>;
+export type UserModule = typeof userModules.$inferSelect;
+export type InsertUserModule = z.infer<typeof insertUserModuleSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;

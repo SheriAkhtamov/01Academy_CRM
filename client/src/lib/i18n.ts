@@ -30,7 +30,7 @@ export const translations = {
   age: { en: 'Age', ru: 'Возраст' },
   ageLabel: { en: 'Age:', ru: 'Возраст:' },
   allSources: { en: 'All Sources', ru: 'Все источники' },
-  allWorkspaces: { en: 'All workspaces', ru: 'Все рабочие области' },
+  allModules: { en: 'All modules', ru: 'Все модули' },
   allowReportsAccess: { en: 'Allow access to reports and analytics', ru: 'Разрешить доступ к отчётам и аналитике' },
   amount: { en: 'Amount', ru: 'Сумма' },
   areYouSureDeleteUser: { en: 'Are you sure you want to delete this user?', ru: 'Вы уверены, что хотите удалить этого пользователя?' },
@@ -302,8 +302,8 @@ export const translations = {
   },
   passwordResetDescription: { en: 'A new temporary password has been generated for this user.', ru: 'Для этого пользователя сгенерирован новый временный пароль.' },
   passwordHiddenForNonAdministration: {
-    en: 'The password is visible only to employees in the Administration workspace.',
-    ru: 'Пароль виден только сотрудникам из воркспейса администрирования.',
+    en: 'The password is visible only to employees in the Administration module.',
+    ru: 'Пароль виден только сотрудникам с доступом к модулю администрирования.',
   },
   passwordResetSuccessfullyTitle: { en: 'Password reset successfully', ru: 'Пароль успешно сброшен' },
   passwordsDoNotMatch: { en: 'Passwords do not match', ru: 'Пароли не совпадают' },
@@ -859,7 +859,7 @@ export const translations = {
   ratingsCount: { en: 'ratings', ru: 'оценок' },
   saturday: { en: 'Saturday', ru: 'Суббота' },
   saturdayShort: { en: 'Sat', ru: 'Сб' },
-  salesManagerWorkspace: { en: 'Sales manager workspace', ru: 'Рабочее место менеджера по продажам' },
+  salesManagerModule: { en: 'Sales manager module', ru: 'Модуль менеджера по продажам' },
   schedule: { en: 'Schedule', ru: 'Расписание' },
   score: { en: 'Score', ru: 'Оценка' },
   attendanceMarkedOf: { en: 'Marked: {marked}/{total}', ru: 'Отмечено: {marked}/{total}' },
@@ -873,7 +873,7 @@ export const translations = {
   sundayShort: { en: 'Sun', ru: 'Вс' },
   taskDone: { en: 'Done', ru: 'Выполнено' },
   taskInProgress: { en: 'In progress', ru: 'В работе' },
-  teacherWorkspace: { en: 'Teacher workspace', ru: 'Рабочее место преподавателя' },
+  teacherModule: { en: 'Teacher module', ru: 'Модуль учителей' },
   thursday: { en: 'Thursday', ru: 'Четверг' },
   thursdayShort: { en: 'Thu', ru: 'Чт' },
   todayLessons: { en: 'Today lessons', ru: 'Занятия сегодня' },
@@ -884,31 +884,31 @@ export const translations = {
   wednesdayShort: { en: 'Wed', ru: 'Ср' },
   whatImprove: { en: 'What to improve', ru: 'Что улучшить' },
   whatLiked: { en: 'What they liked', ru: 'Что понравилось' },
-  accessDeniedWorkspace: { en: 'This workspace is not assigned to your account', ru: 'Эта рабочая область не назначена вашей учётной записи' },
-  contactAdministratorForAccess: { en: 'Contact the administrator to change your assigned workspace.', ru: 'Обратитесь к администратору, чтобы изменить назначенную рабочую область.' },
+  accessDeniedModule: { en: 'This module is not assigned to your account', ru: 'Этот модуль не назначен вашей учётной записи' },
+  contactAdministratorForAccess: { en: 'Contact the administrator to change your assigned module.', ru: 'Обратитесь к администратору, чтобы изменить назначенный модуль.' },
   createEmployee: { en: 'Create employee', ru: 'Создать сотрудника' },
-  employeesPageSubtitle: { en: 'Create employees, assign workspaces, and manage login credentials.', ru: 'Создание сотрудников, назначение рабочих областей, управление логинами и паролями.' },
+  employeesPageSubtitle: { en: 'Create employees, assign modules, and manage login credentials.', ru: 'Создание сотрудников, назначение модулей, управление логинами и паролями.' },
   employeeLoginGenerated: { en: 'Login will be generated automatically', ru: 'Логин будет создан автоматически' },
   employeeLoginHint: { en: 'After saving, copy the generated login and temporary password from the credentials window.', ru: 'После сохранения скопируйте сгенерированный логин и временный пароль из окна доступа.' },
   loginLabel: { en: 'Login', ru: 'Логин' },
-  noWorkspaceAssigned: { en: 'No workspace assigned', ru: 'Рабочая область не назначена' },
+  noModuleAssigned: { en: 'No module assigned', ru: 'Модуль не назначен' },
   systemAdministration: { en: 'System Administration', ru: 'Администрирование системы' },
   salesSettings: { en: 'Sales settings', ru: 'Настройки продаж' },
   salesSettingsDescription: {
     en: 'Manage lead distribution, pipeline stages, and sales goals.',
     ru: 'Управляйте распределением лидов, этапами воронки и целями продаж.',
   },
-  primaryWorkspace: { en: 'Primary workspace', ru: 'Основная рабочая область' },
-  primaryWorkspaceShort: { en: 'Primary', ru: 'Основная' },
-  workspaceModules: { en: 'Access modules', ru: 'Модули доступа' },
-  workspaceModulesHint: {
-    en: 'Enable every workspace where this employee can work. The primary workspace opens after login.',
-    ru: 'Включите все рабочие области, где сотрудник может работать. Основная область открывается после входа.',
+  primaryModule: { en: 'Primary module', ru: 'Основной модуль' },
+  primaryModuleShort: { en: 'Primary', ru: 'Основной' },
+  accessModules: { en: 'Access modules', ru: 'Модули доступа' },
+  accessModulesHint: {
+    en: 'Enable every module where this employee can work. The primary module opens after login.',
+    ru: 'Включите все модули, доступные сотруднику. Основной модуль открывается после входа.',
   },
-  selectAtLeastOneWorkspace: { en: 'Select at least one access module', ru: 'Выберите хотя бы один модуль доступа' },
-  workspaceAssignmentHint: {
-    en: 'The primary workspace determines the first screen after login.',
-    ru: 'Основная рабочая область определяет первый экран после входа.',
+  selectAtLeastOneModule: { en: 'Select at least one access module', ru: 'Выберите хотя бы один модуль доступа' },
+  moduleAssignmentHint: {
+    en: 'The primary module determines the first screen after login.',
+    ru: 'Основной модуль определяет первый экран после входа.',
   },
   activityHistory: { en: 'Activity history', ru: 'История действий' },
   activityTab: { en: 'Activity', ru: 'Активность' },
@@ -1344,14 +1344,14 @@ export const translations = {
   titleRequired: { en: 'Enter a task title', ru: 'Укажите название задачи' },
   unassigned: { en: 'Unassigned', ru: 'Без исполнителя' },
 
-  // UX improvements — administration workspace boundaries
+  // UX improvements — administration module boundaries
   adminControlCenterSubtitle: {
-    en: 'Manage employees, academy structure, integrations, and system settings without entering operational workspaces.',
-    ru: 'Управляйте сотрудниками, структурой академии, интеграциями и настройками системы, не переходя в операционные рабочие области.',
+    en: 'Manage employees, academy structure, integrations, and system settings without entering operational modules.',
+    ru: 'Управляйте сотрудниками, структурой академии, интеграциями и настройками системы, не переходя в операционные модули.',
   },
   adminEmployeesDescription: {
-    en: 'Create accounts, assign workspaces, reset passwords, and deactivate access.',
-    ru: 'Создавайте учётные записи, назначайте рабочие области, сбрасывайте пароли и отключайте доступ.',
+    en: 'Create accounts, assign modules, reset passwords, and deactivate access.',
+    ru: 'Создавайте учётные записи, назначайте модули, сбрасывайте пароли и отключайте доступ.',
   },
   adminIntegrationsDescription: {
     en: 'Configure and test connected communication and automation services.',
@@ -1506,9 +1506,9 @@ export const translations = {
     en: 'The first manager must also be enabled for incoming calls.',
     ru: 'Первый менеджер также должен быть включён для входящих звонков.',
   },
-  adminWorkspaceBoundaryDescription: {
-    en: 'This operational workspace is assigned to another employee account. Use Administration to configure the system.',
-    ru: 'Эта операционная рабочая область назначена другой учётной записи сотрудника. Для настройки системы используйте раздел «Администрирование».',
+  adminModuleBoundaryDescription: {
+    en: 'This operational module is assigned to another employee account. Use Administration to configure the system.',
+    ru: 'Этот операционный модуль назначен другой учётной записи сотрудника. Для настройки системы используйте раздел «Администрирование».',
   },
   financeCenterAccessRequired: {
     en: 'Financial Center access must be assigned separately in System Administration → Employees.',
@@ -1543,24 +1543,24 @@ export const translations = {
   today: { en: 'Today', ru: 'Сегодня' },
   weeklySchedule: { en: 'Weekly schedule', ru: 'Недельное расписание' },
 
-  // UX improvements — persistent workspace identity
-  administrationWorkspace: {
+  // UX improvements — persistent module identity
+  administrationModule: {
     en: 'Administrator control center',
     ru: 'Панель управления администратора',
   },
-  administrationWorkspaceDescription: {
+  administrationModuleDescription: {
     en: 'Employees, academy structure, integrations, and system settings.',
     ru: 'Сотрудники, структура академии, интеграции и системные настройки.',
   },
-  currentWorkspace: {
-    en: 'Current workspace',
-    ru: 'Текущая рабочая область',
+  currentModule: {
+    en: 'Current module',
+    ru: 'Текущий модуль',
   },
-  marketingDepartmentWorkspace: {
+  marketingDepartmentModule: {
     en: 'Marketing department',
     ru: 'Отдел маркетинга',
   },
-  marketingDepartmentWorkspaceDescription: {
+  marketingDepartmentModuleDescription: {
     en: 'Lead sources, funnel performance, expenses, and reports.',
     ru: 'Источники лидов, воронка, расходы и отчётность.',
   },
@@ -1568,19 +1568,19 @@ export const translations = {
     en: 'Open navigation',
     ru: 'Открыть навигацию',
   },
-  salesDepartmentWorkspace: {
+  salesDepartmentModule: {
     en: 'Sales department',
     ru: 'Отдел продаж',
   },
-  salesDepartmentWorkspaceDescription: {
+  salesDepartmentModuleDescription: {
     en: 'Leads, deals, clients, and manager tasks.',
     ru: 'Лиды, сделки, клиенты и задачи менеджера.',
   },
-  teacherDepartmentWorkspace: {
+  teacherDepartmentModule: {
     en: 'Teachers department',
     ru: 'Отдел учителей',
   },
-  teacherWorkplaceWorkspaceDescription: {
+  teacherWorkplaceModuleDescription: {
     en: 'Schedule, groups, attendance, and lesson ratings.',
     ru: 'Расписание, группы, посещаемость и оценки занятий.',
   },
@@ -1609,11 +1609,11 @@ export const translations = {
     en: 'The lead and open related tasks will be transferred to {manager}.',
     ru: 'Лид и открытые связанные задачи будут переданы менеджеру {manager}.',
   },
-  globalSalesWorkspaceDescription: {
+  globalSalesModuleDescription: {
     en: 'All sales managers, leads, clients, and tasks.',
     ru: 'Все менеджеры, лиды, клиенты и задачи отдела продаж.',
   },
-  salesWorkspace: { en: 'Sales workspace', ru: 'Рабочее место продаж' },
+  salesModule: { en: 'Sales module', ru: 'Модуль продаж' },
   activeLeads: { en: 'Active leads', ru: 'Активные лиды' },
   allClients: { en: 'All clients', ru: 'Все клиенты' },
   leadAssignment: { en: 'Lead assignment', ru: 'Распределение лидов' },

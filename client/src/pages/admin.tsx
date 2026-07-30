@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { canManageUsers, formatUserWorkspace } from '@/lib/auth';
+import { canManageUsers, formatUserModule } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { WorkspacePage, WorkspacePageBody } from '@/components/ux/WorkspacePage';
+import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
   WeekScheduleEditor,
@@ -74,10 +74,10 @@ import { devLog } from '@/lib/debug';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   ACADEMY_ACCESS_MODULES,
-  ACADEMY_WORKSPACES,
-  getAssignedWorkspaces,
+  ACADEMY_MODULES,
+  getAssignedModules,
   type AcademyAccessModule,
-  type AcademyWorkspace,
+  type AcademyModule,
 } from '@shared/academy';
 
 // Schema functions that use runtime translation
@@ -90,8 +90,8 @@ const createUserSchema = (t: any) => z.object({
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
-  workspace: z.enum(ACADEMY_WORKSPACES),
-  workspaces: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneWorkspace')),
+  module: z.enum(ACADEMY_MODULES),
+  modules: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneModule')),
   teacherSchoolIds: z.array(z.number().int().positive()).default([]),
   teacherAvailability: z.array(z.object({
     dayOfWeek: z.number().int().min(1).max(7),
@@ -149,8 +149,8 @@ const defaultUserFormValues: UserFormValues = {
   phone: '',
   dateOfBirth: '',
   position: '',
-  workspace: 'sales',
-  workspaces: ['sales'],
+  module: 'sales',
+  modules: ['sales'],
   teacherSchoolIds: [],
   teacherAvailability: [],
   isActive: true,
@@ -184,7 +184,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   } | null>(null);
   const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [workspaceFilter, setWorkspaceFilter] = useState('all');
+  const [moduleFilter, setModuleFilter] = useState('all');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -396,7 +396,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     () => users.filter((candidate: any) => (
       candidate.isActive !== false
       && Number(candidate.id) !== Number(salesModuleTransfer?.user.id ?? selectedUser?.id)
-      && getAssignedWorkspaces(candidate).includes('sales')
+      && getAssignedModules(candidate).includes('sales')
     )),
     [salesModuleTransfer?.user.id, selectedUser?.id, users],
   );
@@ -406,7 +406,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     const firstEligibleManager = users.find((candidate: any) => (
       candidate.isActive !== false
       && Number(candidate.id) !== Number(pending?.user.id)
-      && getAssignedWorkspaces(candidate).includes('sales')
+      && getAssignedModules(candidate).includes('sales')
     ));
     setSalesLeadTransferManagerId(firstEligibleManager ? String(firstEligibleManager.id) : '');
   };
@@ -420,14 +420,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const onSubmitUser = async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
-    const workspaces = Array.from(new Set([data.workspace, ...data.workspaces]));
+    const modules = Array.from(new Set([data.module, ...data.modules]));
     const payload = {
       ...data,
-      workspaces,
+      modules,
     };
 
     if (selectedUser) {
-      const losesSalesEligibility = !data.isActive || !workspaces.includes('sales');
+      const losesSalesEligibility = !data.isActive || !modules.includes('sales');
       if (losesSalesEligibility) {
         try {
           const leadCount = await getAssignedResponsibilityCount(selectedUser, !data.isActive);
@@ -481,8 +481,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       phone: user.phone || '',
       dateOfBirth: formatDateInputValue(user.dateOfBirth),
       position: user.position || '',
-      workspace: user.workspace,
-      workspaces: getAssignedWorkspaces(user),
+      module: user.module,
+      modules: getAssignedModules(user),
       teacherSchoolIds: Array.isArray(user.teacherSchoolIds)
         ? user.teacherSchoolIds.map(Number).filter(Number.isSafeInteger)
         : [],
@@ -497,13 +497,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const filteredUsers = users.filter((user: any) => {
     const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesWorkspace = workspaceFilter === 'all' ||
-      getAssignedWorkspaces(user).includes(workspaceFilter as AcademyAccessModule);
-    return matchesSearch && matchesWorkspace;
+    const matchesModule = moduleFilter === 'all' ||
+      getAssignedModules(user).includes(moduleFilter as AcademyAccessModule);
+    return matchesSearch && matchesModule;
   });
 
-  const getWorkspaceColor = (workspace: string) => {
-    switch (workspace) {
+  const getModuleColor = (module: string) => {
+    switch (module) {
       case 'administration':
         return 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
       case 'sales':
@@ -519,8 +519,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     }
   };
 
-  const getWorkspaceLabel = (workspace: string) => formatUserWorkspace(workspace, t);
-  const getWorkspaceLabels = (user: any) => getAssignedWorkspaces(user).map(getWorkspaceLabel);
+  const getModuleLabel = (module: string) => formatUserModule(module, t);
+  const getModuleLabels = (user: any) => getAssignedModules(user).map(getModuleLabel);
 
   const getStatusColor = (isActive: boolean) => {
     return isActive
@@ -528,19 +528,19 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
   };
 
-  const primaryWorkspaceOptions = [
-    { value: 'administration', label: t('administrationWorkspace') },
-    { value: 'sales', label: t('salesDepartmentWorkspace') },
-    { value: 'teacher', label: t('teacherDepartmentWorkspace') },
-    { value: 'marketing', label: t('marketingDepartmentWorkspace') },
+  const primaryModuleOptions = [
+    { value: 'administration', label: t('administrationModule') },
+    { value: 'sales', label: t('salesDepartmentModule') },
+    { value: 'teacher', label: t('teacherDepartmentModule') },
+    { value: 'marketing', label: t('marketingDepartmentModule') },
   ] as const;
   const accessModuleOptions = [
-    ...primaryWorkspaceOptions,
+    ...primaryModuleOptions,
     { value: 'finance', label: t('financeCenterModule') },
   ] as const;
-  const primaryWorkspaceValue = userForm.watch('workspace');
-  const assignedWorkspaceValues = userForm.watch('workspaces');
-  const teacherModuleEnabled = assignedWorkspaceValues.includes('teacher');
+  const primaryModuleValue = userForm.watch('module');
+  const assignedModuleValues = userForm.watch('modules');
+  const teacherModuleEnabled = assignedModuleValues.includes('teacher');
   const selectedTeacherSchoolIds = userForm.watch('teacherSchoolIds');
   const teacherScheduleSchools = schools.filter((school) => (
     school.isActive !== false || selectedTeacherSchoolIds.includes(school.id)
@@ -613,20 +613,20 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       ),
     },
     {
-      key: 'workspace',
-      header: t('workspaceModules'),
+      key: 'module',
+      header: t('accessModules'),
       sortable: true,
-      accessor: (row) => getWorkspaceLabels(row).join(' '),
+      accessor: (row) => getModuleLabels(row).join(' '),
       render: (row) => (
         <div className="flex max-w-sm flex-wrap gap-1.5">
-          <Badge className={getWorkspaceColor(row.workspace)}>
-            {getWorkspaceLabel(row.workspace)}
+          <Badge className={getModuleColor(row.module)}>
+            {getModuleLabel(row.module)}
           </Badge>
-          {getAssignedWorkspaces(row)
-            .filter((workspace) => workspace !== row.workspace)
-            .map((workspace) => (
-              <Badge key={workspace} variant="outline" className={getWorkspaceColor(workspace)}>
-                {getWorkspaceLabel(workspace)}
+          {getAssignedModules(row)
+            .filter((module) => module !== row.module)
+            .map((module) => (
+              <Badge key={module} variant="outline" className={getModuleColor(module)}>
+                {getModuleLabel(module)}
               </Badge>
             ))}
         </div>
@@ -700,7 +700,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   }
 
   return (
-    <WorkspacePage contained={isEmployeesPage}>
+    <ModulePage contained={isEmployeesPage}>
       <PageHeader
         title={isEmployeesPage ? t('employees') : t('administration')}
         subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminControlCenterSubtitle')}
@@ -720,7 +720,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         ) : undefined}
       />
 
-      <WorkspacePageBody contained={isEmployeesPage} ariaLabel={isEmployeesPage ? t('employees') : t('administration')}>
+      <ModulePageBody contained={isEmployeesPage} ariaLabel={isEmployeesPage ? t('employees') : t('administration')}>
       <Tabs value={isEmployeesPage ? 'users' : 'reports'} className="space-y-6">
         {/* Users Tab */}
         {isEmployeesPage && (
@@ -831,7 +831,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           />
                         </div>
 
-                        {assignedWorkspaceValues.includes('sales') ? (
+                        {assignedModuleValues.includes('sales') ? (
                           <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-primary/5 p-4 dark:bg-primary/10">
                             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
                               <PhoneCall className="size-4" aria-hidden="true" />
@@ -855,17 +855,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField
                             control={userForm.control}
-                            name="workspace"
+                            name="module"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('primaryWorkspace')}</FormLabel>
+                                <FormLabel>{t('primaryModule')}</FormLabel>
                                 <Select
                                   onValueChange={(value) => {
-                                    const nextWorkspace = value as AcademyWorkspace;
-                                    field.onChange(nextWorkspace);
-                                    const currentWorkspaces = userForm.getValues('workspaces') ?? [];
-                                    if (!currentWorkspaces.includes(nextWorkspace)) {
-                                      userForm.setValue('workspaces', [...currentWorkspaces, nextWorkspace], {
+                                    const nextModule = value as AcademyModule;
+                                    field.onChange(nextModule);
+                                    const currentModules = userForm.getValues('modules') ?? [];
+                                    if (!currentModules.includes(nextModule)) {
+                                      userForm.setValue('modules', [...currentModules, nextModule], {
                                         shouldDirty: true,
                                         shouldValidate: true,
                                       });
@@ -880,14 +880,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   </FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      {primaryWorkspaceOptions.map((option) => (
+                                      {primaryModuleOptions.map((option) => (
                                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                                       ))}
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
                                 <p className="text-xs text-muted-foreground">
-                                  {t('workspaceAssignmentHint')}
+                                  {t('moduleAssignmentHint')}
                                 </p>
                                 <FormMessage />
                               </FormItem>
@@ -910,15 +910,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
                         <FormField
                           control={userForm.control}
-                          name="workspaces"
+                          name="modules"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>{t('workspaceModules')}</FormLabel>
+                              <FormLabel>{t('accessModules')}</FormLabel>
                               <div className="grid grid-cols-1 gap-2 rounded-lg border border-border p-3 sm:grid-cols-2">
                                 {accessModuleOptions.map((option) => {
                                   const value = option.value;
                                   const checked = (field.value ?? []).includes(value);
-                                  const isPrimary = primaryWorkspaceValue === value;
+                                  const isPrimary = primaryModuleValue === value;
 
                                   return (
                                     <label
@@ -929,24 +929,24 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                         checked={checked || isPrimary}
                                         disabled={isPrimary}
                                         onCheckedChange={(nextChecked) => {
-                                          const currentWorkspaces = field.value ?? [];
+                                          const currentModules = field.value ?? [];
                                           if (nextChecked) {
-                                            field.onChange([...new Set([...currentWorkspaces, value])]);
+                                            field.onChange([...new Set([...currentModules, value])]);
                                             return;
                                           }
 
-                                          field.onChange(currentWorkspaces.filter((workspace) => workspace !== value));
+                                          field.onChange(currentModules.filter((module) => module !== value));
                                         }}
                                       />
                                       <span className="min-w-0 flex-1 truncate">{option.label}</span>
                                       {isPrimary && (
-                                        <span className="shrink-0 text-xs text-muted-foreground">{t('primaryWorkspaceShort')}</span>
+                                        <span className="shrink-0 text-xs text-muted-foreground">{t('primaryModuleShort')}</span>
                                       )}
                                     </label>
                                   );
                                 })}
                               </div>
-                              <p className="text-xs text-muted-foreground">{t('workspaceModulesHint')}</p>
+                              <p className="text-xs text-muted-foreground">{t('accessModulesHint')}</p>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1138,13 +1138,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     className="pl-10"
                   />
                 </div>
-                <Select value={workspaceFilter} onValueChange={setWorkspaceFilter}>
+                <Select value={moduleFilter} onValueChange={setModuleFilter}>
                   <SelectTrigger className="w-52">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="all">{t('allWorkspaces')}</SelectItem>
+                      <SelectItem value="all">{t('allModules')}</SelectItem>
                       {accessModuleOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                       ))}
@@ -1183,7 +1183,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <h3 className="text-lg font-medium text-foreground mb-2">{t('noUsersFound')}</h3>
                       <p className="text-muted-foreground mb-4">
-                        {searchTerm || workspaceFilter !== 'all'
+                        {searchTerm || moduleFilter !== 'all'
                           ? t('adjustSearchCriteria')
                           : t('createFirstUser')}
                       </p>
@@ -1243,15 +1243,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">{t('administrationWorkspace')}</span>
+                  <span className="text-sm text-slate-600">{t('administrationModule')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => getAssignedWorkspaces(u).includes('administration')).length}
+                    {users.filter((u: any) => getAssignedModules(u).includes('administration')).length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">{t('salesDepartmentWorkspace')}</span>
+                  <span className="text-sm text-slate-600">{t('salesDepartmentModule')}</span>
                   <span className="text-sm font-medium">
-                    {users.filter((u: any) => getAssignedWorkspaces(u).includes('sales')).length}
+                    {users.filter((u: any) => getAssignedModules(u).includes('sales')).length}
                   </span>
                 </div>
               </div>
@@ -1259,7 +1259,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           </Card>
         </TabsContent>
       </Tabs>
-      </WorkspacePageBody>
+      </ModulePageBody>
 
       <Dialog
         open={Boolean(salesModuleTransfer)}
@@ -1361,14 +1361,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 <div className="rounded-lg border border-border bg-muted/50 p-3">
                   <p className="text-sm font-medium text-foreground">{userCredentials.fullName}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge className={getWorkspaceColor(userCredentials.workspace)}>
-                      {getWorkspaceLabel(userCredentials.workspace)}
+                    <Badge className={getModuleColor(userCredentials.module)}>
+                      {getModuleLabel(userCredentials.module)}
                     </Badge>
-                    {getAssignedWorkspaces(userCredentials)
-                      .filter((workspace) => workspace !== userCredentials.workspace)
-                      .map((workspace) => (
-                        <Badge key={workspace} variant="outline" className={getWorkspaceColor(workspace)}>
-                          {getWorkspaceLabel(workspace)}
+                    {getAssignedModules(userCredentials)
+                      .filter((module) => module !== userCredentials.module)
+                      .map((module) => (
+                        <Badge key={module} variant="outline" className={getModuleColor(module)}>
+                          {getModuleLabel(module)}
                         </Badge>
                       ))}
                     {userCredentials.position && (
@@ -1464,8 +1464,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       if (userCredentials.temporaryPassword) {
                         credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
                       }
-                      credentialLines.push(`${t('primaryWorkspace')}: ${getWorkspaceLabel(userCredentials.workspace)}`);
-                      credentialLines.push(`${t('workspaceModules')}: ${getWorkspaceLabels(userCredentials).join(', ')}`);
+                      credentialLines.push(`${t('primaryModule')}: ${getModuleLabel(userCredentials.module)}`);
+                      credentialLines.push(`${t('accessModules')}: ${getModuleLabels(userCredentials).join(', ')}`);
                       navigator.clipboard.writeText(credentialLines.join('\n'));
                       toast({
                         title: t('copiedToClipboard'),
@@ -1556,6 +1556,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         }}
         variant="destructive"
       />
-    </WorkspacePage>
+    </ModulePage>
   );
 }

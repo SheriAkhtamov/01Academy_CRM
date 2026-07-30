@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { WorkspacePage } from '@/components/ux/WorkspacePage';
+import { ModulePage } from '@/components/ux/ModulePage';
 import {
   Tooltip,
   TooltipContent,
@@ -217,7 +217,7 @@ interface LeadDetails {
   updatedAt?: string | null;
 }
 
-interface SalesWorkspaceData {
+interface SalesModuleData {
   courses?: LookupOption[];
   sources?: LookupOption[];
   statuses?: LookupOption[];
@@ -781,7 +781,7 @@ function Popover({
 function LeadPanel({
   leadId,
   conversation,
-  workspaceData,
+  moduleData,
   statusName,
   replyAvailable,
   replyWindowDeadlineText,
@@ -791,7 +791,7 @@ function LeadPanel({
 }: {
   leadId?: number | null;
   conversation?: InstagramConversation | null;
-  workspaceData?: SalesWorkspaceData;
+  moduleData?: SalesModuleData;
   statusName: (code: string) => string;
   replyAvailable?: boolean;
   replyWindowDeadlineText?: string;
@@ -858,10 +858,10 @@ function LeadPanel({
     [baselineDraft, draft],
   );
 
-  const courses = workspaceData?.courses ?? [];
-  const sources = workspaceData?.sources ?? [];
+  const courses = moduleData?.courses ?? [];
+  const sources = moduleData?.sources ?? [];
   const statuses = useMemo(
-    () => [...(workspaceData?.statuses ?? [])]
+    () => [...(moduleData?.statuses ?? [])]
       .filter((status) => (
         status.isActive !== false
         && (
@@ -870,7 +870,7 @@ function LeadPanel({
         )
       ))
       .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
-    [lead?.statusCode, workspaceData?.statuses],
+    [lead?.statusCode, moduleData?.statuses],
   );
 
   const updateLead = useMutation({
@@ -907,7 +907,7 @@ function LeadPanel({
       toast({ title: t('leadSaved') });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['/api/academy/leads', leadId] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
       ]);
       onChanged();
@@ -1351,8 +1351,8 @@ export default function MessagesPage() {
     });
   };
 
-  const workspaceQuery = useQuery<SalesWorkspaceData>({
-    queryKey: ['/api/academy/workspaces/sales'],
+  const moduleQuery = useQuery<SalesModuleData>({
+    queryKey: ['/api/academy/modules/sales'],
   });
 
   const conversationsQuery = useQuery<InstagramConversation[]>({
@@ -1615,7 +1615,7 @@ export default function MessagesPage() {
       });
       queryClient.invalidateQueries({ queryKey: context.queryKey });
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
     },
     onError: (error: Error, _variables, context) => {
       if (context) queryClient.setQueryData<ThreadMessage[]>(context.queryKey, (previous = []) =>
@@ -1650,7 +1650,7 @@ export default function MessagesPage() {
       }
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
       ]);
       toast({
         title: status.status === 'failed'
@@ -1669,7 +1669,7 @@ export default function MessagesPage() {
   const syncRunning = syncConversations.isPending || syncStatusRunning;
 
   const statusName = (code: string) => {
-    const status = workspaceQuery.data?.statuses?.find((item) => item.code === code);
+    const status = moduleQuery.data?.statuses?.find((item) => item.code === code);
     return status?.name ?? code;
   };
 
@@ -1821,7 +1821,7 @@ export default function MessagesPage() {
     : 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
 
   return (
-    <WorkspacePage contained className="[&>[data-page-header]]:mb-0">
+    <ModulePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
         title={t('salesInbox')}
         subtitle={t('messagesDesc')}
@@ -2713,14 +2713,14 @@ export default function MessagesPage() {
                 <LeadPanel
                   leadId={selectedConversation?.leadId}
                   conversation={selectedConversation}
-                  workspaceData={workspaceQuery.data}
+                  moduleData={moduleQuery.data}
                   statusName={statusName}
                   replyAvailable={selectedCanReply}
                   replyWindowDeadlineText={selectedReplyDeadline}
                   onCollapsedChange={() => setLeadCollapsed(true)}
                   onChanged={() => {
                     queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-                    queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
                   }}
                   onCloseMobile={() => setMobileLeadOpen(false)}
                 />
@@ -2741,14 +2741,14 @@ export default function MessagesPage() {
                   <LeadPanel
                     leadId={selectedConversation?.leadId}
                     conversation={selectedConversation}
-                    workspaceData={workspaceQuery.data}
+                    moduleData={moduleQuery.data}
                     statusName={statusName}
                     replyAvailable={selectedCanReply}
                     replyWindowDeadlineText={selectedReplyDeadline}
                     onCollapsedChange={() => setMobileLeadOpen(false)}
                     onChanged={() => {
                       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-                      queryClient.invalidateQueries({ queryKey: ['/api/academy/workspaces/sales'] });
+                      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
                     }}
                     onCloseMobile={() => setMobileLeadOpen(false)}
                   />
@@ -2795,6 +2795,6 @@ export default function MessagesPage() {
           </div>
         </div>
       ) : null}
-    </WorkspacePage>
+    </ModulePage>
   );
 }

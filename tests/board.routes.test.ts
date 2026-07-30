@@ -52,8 +52,8 @@ const staffUser = {
   fullName: "Staff User",
   email: "staff@example.com",
   password: "hashed",
-  workspace: "sales",
-  workspaces: ["sales"],
+  module: "sales",
+  modules: ["sales"],
   isActive: true,
   hasReportAccess: false,
 };
@@ -63,8 +63,8 @@ const adminUser = {
   fullName: "Admin User",
   email: "admin@example.com",
   password: "hashed",
-  workspace: "administration",
-  workspaces: ["administration"],
+  module: "administration",
+  modules: ["administration"],
   isActive: true,
   hasReportAccess: true,
 };
@@ -74,8 +74,8 @@ const assigneeUser = {
   fullName: "Assignee User",
   email: "assignee@example.com",
   password: "hashed",
-  workspace: "teacher",
-  workspaces: ["teacher"],
+  module: "teacher",
+  modules: ["teacher"],
   isActive: true,
   hasReportAccess: false,
 };

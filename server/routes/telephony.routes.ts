@@ -9,7 +9,7 @@ import {
   onlinePbxRoutingDestination,
   sharedCallEventClaimsOwnership,
 } from '@shared/telephony';
-import { canAccessAcademyWorkspace, hasLeadershipAccess } from '@shared/academy';
+import { canAccessAcademyModule, hasLeadershipAccess } from '@shared/academy';
 import { appConfig } from '../config';
 import { pool } from '../db';
 import { logger } from '../lib/logger';
@@ -216,10 +216,10 @@ const ensureContactByPhone = async (
            WHERE user_account.id = $1
              AND user_account.is_active = true
              AND (
-               user_account.workspace = 'sales'
+               user_account.module = 'sales'
                OR EXISTS (
-                 SELECT 1 FROM user_workspaces workspace
-                 WHERE workspace.user_id = user_account.id AND workspace.workspace = 'sales'
+                 SELECT 1 FROM user_modules module
+                 WHERE module.user_id = user_account.id AND module.module = 'sales'
                )
              )`,
           [actorId],
@@ -284,12 +284,12 @@ const claimUnassignedLeadForAnsweredCall = async (leadId: number | null, userId:
        WHERE user_account.id = $2
          AND user_account.is_active = true
          AND (
-           user_account.workspace = 'sales'
+           user_account.module = 'sales'
            OR EXISTS (
              SELECT 1
-             FROM user_workspaces workspace
-             WHERE workspace.user_id = user_account.id
-               AND workspace.workspace = 'sales'
+             FROM user_modules module
+             WHERE module.user_id = user_account.id
+               AND module.module = 'sales'
            )
          )
      ),
@@ -502,12 +502,12 @@ export const ensureMissedCallTask = async (
         AND open_task.status NOT IN ('done', 'accepted')
        WHERE manager.is_active = true
          AND (
-           manager.workspace = 'sales'
+           manager.module = 'sales'
            OR EXISTS (
              SELECT 1
-             FROM user_workspaces workspace
-             WHERE workspace.user_id = manager.id
-               AND workspace.workspace = 'sales'
+             FROM user_modules module
+             WHERE module.user_id = manager.id
+               AND module.module = 'sales'
            )
          )
        GROUP BY manager.id
@@ -590,12 +590,12 @@ const findManagerByExtensions = async (
      FROM users manager
      WHERE manager.is_active = true
        AND (
-         manager.workspace = 'sales'
+         manager.module = 'sales'
          OR EXISTS (
            SELECT 1
-           FROM user_workspaces workspace
-           WHERE workspace.user_id = manager.id
-             AND workspace.workspace = 'sales'
+           FROM user_modules module
+           WHERE module.user_id = manager.id
+             AND module.module = 'sales'
          )
        )
        AND manager.online_pbx_extension = ANY($1::text[])
@@ -638,12 +638,12 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
      WHERE manager.is_active = true
        AND manager.online_pbx_incoming_enabled = true
        AND (
-         manager.workspace = 'sales'
+         manager.module = 'sales'
          OR EXISTS (
            SELECT 1
-           FROM user_workspaces workspace
-           WHERE workspace.user_id = manager.id
-             AND workspace.workspace = 'sales'
+           FROM user_modules module
+           WHERE module.user_id = manager.id
+             AND module.module = 'sales'
          )
        )
      ORDER BY manager.id`,
@@ -800,7 +800,7 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
 }));
 
 router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   if (!req.user?.onlinePbxIncomingEnabled) {
@@ -830,7 +830,7 @@ router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
 
 router.get('/incoming/access', requireAuth, asyncRoute(async (req, res) => {
   const allowed = Boolean(
-    canAccessAcademyWorkspace(req.user, 'sales')
+    canAccessAcademyModule(req.user, 'sales')
     && req.user?.onlinePbxIncomingEnabled
     && req.user?.isOnline
     && onlinePbxRoutingDestination(req.user?.onlinePbxExtension),
@@ -843,7 +843,7 @@ router.get('/incoming/access', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.post('/availability/refresh', requireAuth, asyncRoute(async (req, res) => {
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   if (!req.user?.onlinePbxIncomingEnabled) {
@@ -966,12 +966,12 @@ router.put('/routing', requireAuth, asyncRoute(async (req, res) => {
        FROM users manager
        WHERE manager.is_active = true
          AND (
-           manager.workspace = 'sales'
+           manager.module = 'sales'
            OR EXISTS (
              SELECT 1
-             FROM user_workspaces workspace
-             WHERE workspace.user_id = manager.id
-               AND workspace.workspace = 'sales'
+             FROM user_modules module
+             WHERE module.user_id = manager.id
+               AND module.module = 'sales'
            )
          )
        ORDER BY manager.id
@@ -1129,7 +1129,7 @@ router.put('/forwarding', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   const result = await pool.query(
@@ -1142,12 +1142,12 @@ router.get('/extensions', requireAuth, asyncRoute(async (req, res) => {
        AND manager.online_pbx_extension IS NOT NULL
        AND manager.online_pbx_extension <> ''
        AND (
-         manager.workspace = 'sales'
+         manager.module = 'sales'
          OR EXISTS (
            SELECT 1
-           FROM user_workspaces workspace
-           WHERE workspace.user_id = manager.id
-             AND workspace.workspace = 'sales'
+           FROM user_modules module
+           WHERE module.user_id = manager.id
+             AND module.module = 'sales'
          )
        )
      ORDER BY manager.full_name, manager.id`,
@@ -1166,7 +1166,7 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
   if (!isCallEventInput(req.body)) {
     return res.status(400).json({ error: 'onlinePbxInvalidCallEvent' });
   }
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   if (!req.user?.onlinePbxIncomingEnabled) {
@@ -1207,7 +1207,7 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.get('/calls/missed/unread', requireAuth, asyncRoute(async (req, res) => {
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   res.setHeader('Cache-Control', 'no-store, private');
@@ -1215,7 +1215,7 @@ router.get('/calls/missed/unread', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.put('/calls/missed/read', requireAuth, asyncRoute(async (req, res) => {
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   const lastSeenCallId = await markMissedCallsSeen(req.user!);
@@ -1228,7 +1228,7 @@ router.put('/calls/missed/read', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
-  if (!canAccessAcademyWorkspace(req.user, 'sales')) {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
 
@@ -1364,7 +1364,7 @@ const loadAuthorizedRecordingCall = async (
     Number(call!.userId) === user.id
     || hasLeadershipAccess(user)
     || (
-      canAccessAcademyWorkspace(user, 'sales')
+      canAccessAcademyModule(user, 'sales')
       && call!.leadId
       && (call!.leadManagerId == null || Number(call!.leadManagerId) === user.id)
     )

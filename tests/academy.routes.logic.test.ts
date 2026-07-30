@@ -3,7 +3,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  actor: { id: 1, workspace: 'administration', workspaces: ['administration'] } as any,
+  actor: { id: 1, module: 'administration', modules: ['administration'] } as any,
   poolQuery: vi.fn(),
   clientQuery: vi.fn(),
   connect: vi.fn(),
@@ -118,7 +118,7 @@ const lessonFixture = (overrides: Record<string, unknown> = {}) => ({
 describe('academy route logic boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.actor = { id: 1, workspace: 'administration', workspaces: ['administration'] };
+    mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
     mocks.poolQuery.mockResolvedValue(emptyResult());
     mocks.clientQuery.mockResolvedValue(emptyResult());
     mocks.connect.mockImplementation(async () => ({
@@ -155,7 +155,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('shows full own and unassigned lead cards to sales while excluding other managers', async () => {
-    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql.includes('FROM academy_company_settings')) return { rows: [{ id: 1 }] };
       if (sql.includes('SELECT l.*') && sql.includes('COALESCE(l.is_archived, false) = false')) {
@@ -182,7 +182,7 @@ describe('academy route logic boundaries', () => {
       return emptyResult();
     });
 
-    const response = await request(await createApp()).get('/api/academy/workspaces/sales');
+    const response = await request(await createApp()).get('/api/academy/modules/sales');
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
     expect(response.body.leads).toEqual([
@@ -197,8 +197,8 @@ describe('academy route logic boundaries', () => {
   it('shows every manager lead with full data to an administration user', async () => {
     mocks.actor = {
       id: 1,
-      workspace: 'administration',
-      workspaces: ['administration', 'sales'],
+      module: 'administration',
+      modules: ['administration', 'sales'],
     };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_company_settings')) return { rows: [{ id: 1 }] };
@@ -214,7 +214,7 @@ describe('academy route logic boundaries', () => {
       return emptyResult();
     });
 
-    const response = await request(await createApp()).get('/api/academy/workspaces/sales');
+    const response = await request(await createApp()).get('/api/academy/modules/sales');
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
     expect(response.body.leads).toEqual([
@@ -225,7 +225,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('denies a sales employee direct access to another manager archived lead', async () => {
-    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('WHERE l.id = $1')) {
         return {
@@ -251,8 +251,8 @@ describe('academy route logic boundaries', () => {
     mocks.actor = {
       id: 7,
       fullName: 'Менеджер Азиза',
-      workspace: 'sales',
-      workspaces: ['sales'],
+      module: 'sales',
+      modules: ['sales'],
     };
     const lead = leadFixture({
       manager_id: 7,
@@ -315,8 +315,8 @@ describe('academy route logic boundaries', () => {
   it('adds a manual lead tag without changing the automatically assigned source', async () => {
     mocks.actor = {
       id: 7,
-      workspace: 'sales',
-      workspaces: ['sales'],
+      module: 'sales',
+      modules: ['sales'],
     };
     const lead = leadFixture({
       manager_id: 7,
@@ -487,7 +487,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('defers assignment notifications and audits until the archive transaction commits', async () => {
-    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     const events: string[] = [];
     const unassignedLead = leadFixture({
       id: 1679,
@@ -610,7 +610,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('discards deferred side effects when an archive transaction rolls back', async () => {
-    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     const events: string[] = [];
     const unassignedLead = leadFixture({
       id: 1679,
@@ -657,8 +657,8 @@ describe('academy route logic boundaries', () => {
     expect(mocks.createAuditLog).not.toHaveBeenCalled();
   });
 
-  it('fails closed when a teacher workspace has no teacher profile mapping', async () => {
-    mocks.actor = { id: 7, workspace: 'teacher', workspaces: ['teacher'] };
+  it('fails closed when a teacher module has no teacher profile mapping', async () => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return emptyResult();
       if (sql.includes('FROM academy_groups g') && !sql.includes('WHERE g.teacher_id = $1')) {
@@ -670,7 +670,7 @@ describe('academy route logic boundaries', () => {
       return emptyResult();
     });
 
-    const response = await request(await createApp()).get('/api/academy/workspaces/teacher');
+    const response = await request(await createApp()).get('/api/academy/modules/teacher');
 
     expect(response.status).toBe(200);
     expect(response.body.teacher).toBeNull();
@@ -678,11 +678,11 @@ describe('academy route logic boundaries', () => {
     expect(response.body.students).toEqual([]);
   });
 
-  it('scopes a leadership account to its own teacher profile inside the teacher workspace', async () => {
+  it('scopes a leadership account to its own teacher profile inside the teacher module', async () => {
     mocks.actor = {
       id: 1,
-      workspace: 'administration',
-      workspaces: ['administration', 'teacher'],
+      module: 'administration',
+      modules: ['administration', 'teacher'],
       position: 'Глобальный администратор',
     };
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -714,7 +714,7 @@ describe('academy route logic boundaries', () => {
       return emptyResult();
     });
 
-    const response = await request(await createApp()).get('/api/academy/workspaces/teacher');
+    const response = await request(await createApp()).get('/api/academy/modules/teacher');
 
     expect(response.status).toBe(200);
     expect(response.body.teacher).toMatchObject({ id: 4, fullName: 'Шерзод Ахтамов' });
@@ -727,7 +727,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('does not let a sales-only user mark lesson attendance', async () => {
-    mocks.actor = { id: 8, workspace: 'sales', workspaces: ['sales'] };
+    mocks.actor = { id: 8, module: 'sales', modules: ['sales'] };
 
     const response = await request(await createApp())
       .post('/api/academy/lessons/10/attendance')
@@ -738,7 +738,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('does not let a teacher change availability outside Administration', async () => {
-    mocks.actor = { id: 8, workspace: 'teacher', workspaces: ['teacher'] };
+    mocks.actor = { id: 8, module: 'teacher', modules: ['teacher'] };
 
     const response = await request(await createApp())
       .patch('/api/academy/teachers/me/availability')
@@ -760,7 +760,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('checks lesson ownership under lock before a teacher marks attendance', async () => {
-    mocks.actor = { id: 8, workspace: 'teacher', workspaces: ['teacher'] };
+    mocks.actor = { id: 8, module: 'teacher', modules: ['teacher'] };
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
       if (sql.includes('FOR UPDATE OF l')) {
@@ -1223,7 +1223,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('does not let a teacher shift a following lesson assigned to another teacher', async () => {
-    mocks.actor = { id: 7, workspace: 'teacher', workspaces: ['teacher'] };
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
     const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     originalAt.setSeconds(0, 0);
     const nextAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -1259,7 +1259,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('does not let a teacher change another teacher\'s student status', async () => {
-    mocks.actor = { id: 8, workspace: 'teacher', workspaces: ['teacher'] };
+    mocks.actor = { id: 8, module: 'teacher', modules: ['teacher'] };
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
       if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
@@ -2777,7 +2777,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('offers an assigned sales manager a merge when a new lead has an existing phone', async () => {
-    mocks.actor = { id: 7, workspace: 'sales', workspaces: ['sales'] };
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes("SELECT 'lead' AS entity_type")) {
         return {
@@ -2984,7 +2984,7 @@ describe('academy route logic boundaries', () => {
   });
 
   it('protects system lead sources from deletion and privilege changes', async () => {
-    mocks.actor = { id: 9, workspace: 'marketing', workspaces: ['marketing'] };
+    mocks.actor = { id: 9, module: 'marketing', modules: ['marketing'] };
     const systemSource = {
       id: 5,
       code: 'instagram',

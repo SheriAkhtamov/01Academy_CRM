@@ -77,15 +77,15 @@ const loadManagerRoutingRows = async (
      FROM users manager
      WHERE manager.is_active = true
        AND (
-         manager.workspace = 'sales'
+         manager.module = 'sales'
          OR EXISTS (
            SELECT 1
-           FROM user_workspaces workspace
-           WHERE workspace.user_id = manager.id
-             AND workspace.workspace = 'sales'
+           FROM user_modules module
+           WHERE module.user_id = manager.id
+             AND module.module = 'sales'
          )
        )
-     ORDER BY (manager.workspace = 'sales') DESC, manager.full_name, manager.id`,
+     ORDER BY (manager.module = 'sales') DESC, manager.full_name, manager.id`,
   );
   return result.rows;
 };

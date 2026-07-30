@@ -29,8 +29,8 @@ const staffUser = {
   fullName: "Sales User",
   email: "sales@example.com",
   password: "hashed",
-  workspace: "sales",
-  workspaces: ["sales"],
+  module: "sales",
+  modules: ["sales"],
   isActive: true,
   hasReportAccess: false,
 };

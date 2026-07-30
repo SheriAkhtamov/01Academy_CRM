@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -116,7 +116,7 @@ export const buildCrudScope = async (req: any, table: string, firstParamIndex = 
   params: DbValue[];
   denied?: boolean;
 }> => {
-  const assignedWorkspaces = getAssignedWorkspaces(req.user);
+  const assignedModules = getAssignedModules(req.user);
   const params: DbValue[] = [];
   const pushParam = (value: DbValue) => {
     params.push(value);
@@ -130,7 +130,7 @@ export const buildCrudScope = async (req: any, table: string, firstParamIndex = 
 
   if (table === 'academy_tasks') {
     if (hasLeadershipAccess(req.user)) return { whereSql: '', params };
-    if (!assignedWorkspaces.some((workspace) => ['sales', 'teacher', 'marketing'].includes(workspace))) {
+    if (!assignedModules.some((module) => ['sales', 'teacher', 'marketing'].includes(module))) {
       return { whereSql: 'FALSE', params, denied: true };
     }
     return { whereSql: `responsible_id = ${ownUserParam()}`, params };
@@ -138,7 +138,7 @@ export const buildCrudScope = async (req: any, table: string, firstParamIndex = 
 
   if (table === 'academy_lessons') {
     if (hasLeadershipAccess(req.user)) return { whereSql: '', params };
-    if (assignedWorkspaces.includes('teacher')) {
+    if (assignedModules.includes('teacher')) {
       const placeholder = await teacherParam();
       return placeholder ? { whereSql: `teacher_id = ${placeholder}`, params } : { whereSql: 'FALSE', params };
     }

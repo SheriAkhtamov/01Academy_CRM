@@ -1,13 +1,13 @@
 import type { Pool, PoolClient } from 'pg';
-import { hasLeadershipAccess, type WorkspaceAccessSource } from '@shared/academy';
+import { hasLeadershipAccess, type ModuleAccessSource } from '@shared/academy';
 import { pool } from '../db';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
 export type TelephonyNotificationViewer = {
   id: number;
-  workspace?: string | null;
-  workspaces?: readonly string[] | null;
+  module?: string | null;
+  modules?: readonly string[] | null;
 };
 
 export const MISSED_INCOMING_CALL_SQL = `(
@@ -23,7 +23,7 @@ export const buildTelephonyCallVisibilitySql = (actorParameter: string) => `(
 )`;
 
 const visibilityCondition = (viewer: TelephonyNotificationViewer) => (
-  hasLeadershipAccess(viewer as WorkspaceAccessSource)
+  hasLeadershipAccess(viewer as ModuleAccessSource)
     ? 'TRUE'
     : buildTelephonyCallVisibilitySql('$1')
 );

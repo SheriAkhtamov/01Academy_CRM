@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-interface WorkspacePageProps {
+interface ModulePageProps {
   children: ReactNode;
   contained?: boolean;
   className?: string;
 }
 
-interface WorkspacePageBodyProps {
+interface ModulePageBodyProps {
   children: ReactNode;
   contained?: boolean;
   scroll?: 'auto' | 'hidden';
@@ -16,10 +16,10 @@ interface WorkspacePageBodyProps {
 }
 
 /**
- * Keeps operational workspaces inside the available app viewport while
+ * Keeps operational modules inside the available app viewport while
  * preserving natural document scrolling for dashboard/overview pages.
  */
-export function WorkspacePage({ children, contained = false, className }: WorkspacePageProps) {
+export function ModulePage({ children, contained = false, className }: ModulePageProps) {
   return (
     <div
       className={cn(
@@ -29,7 +29,7 @@ export function WorkspacePage({ children, contained = false, className }: Worksp
           : 'p-4 sm:p-6 lg:p-8',
         className,
       )}
-      data-workspace-page={contained ? 'contained' : 'document'}
+      data-module-page={contained ? 'contained' : 'document'}
     >
       {children}
     </div>
@@ -40,13 +40,13 @@ export function WorkspacePage({ children, contained = false, className }: Worksp
  * The single vertical scroller for ordinary operational pages. Boards,
  * calendars and fixed tables can opt out and provide their own scroll areas.
  */
-export function WorkspacePageBody({
+export function ModulePageBody({
   children,
   contained = false,
   scroll = 'auto',
   ariaLabel,
   className,
-}: WorkspacePageBodyProps) {
+}: ModulePageBodyProps) {
   if (!contained) return <>{children}</>;
 
   const scrollable = scroll === 'auto';
@@ -59,7 +59,7 @@ export function WorkspacePageBody({
           : 'overflow-hidden',
         className,
       )}
-      data-workspace-scroll={scroll}
+      data-module-scroll={scroll}
       role={scrollable ? 'region' : undefined}
       aria-label={scrollable ? ariaLabel : undefined}
       tabIndex={scrollable ? 0 : undefined}

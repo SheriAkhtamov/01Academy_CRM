@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -91,11 +91,11 @@ import {
   applyLeadVisibilityForActor,
   createAudit,
   createTask,
-  ensureAdministrationWorkspaceAccess,
-  ensureMarketingWorkspaceAccess,
+  ensureAdministrationModuleAccess,
+  ensureMarketingModuleAccess,
   ensureSalesAccess,
-  ensureSalesWorkspaceAccess,
-  ensureTeacherWorkspaceAccess,
+  ensureSalesModuleAccess,
+  ensureTeacherModuleAccess,
   getCompanySettings,
   leadPhoneNumbersSelect,
   nullableDate,
@@ -117,14 +117,14 @@ import {
   buildAnalytics,
   buildMarketingAnalyticsPayload,
   getAcademyDataset,
-  getMarketingWorkspaceDataset,
+  getMarketingModuleDataset,
   resolveTeacherId,
 } from './academy-analytics';
 import { buildSalesDashboardMetrics } from './sales-dashboard-metrics';
 
-export const registerAcademyWorkspaceRoutes = (router: ReturnType<typeof Router>) => {
-router.get('/workspaces/administration', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+export const registerAcademyModuleRoutes = (router: ReturnType<typeof Router>) => {
+router.get('/modules/administration', async (req, res) => {
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const reportingRange = parseReportingRange(req.query.from, req.query.to);
     res.json(await buildAdministrationDashboard(reportingRange));
@@ -134,14 +134,14 @@ router.get('/workspaces/administration', async (req, res) => {
   }
 });
 
-router.get('/workspaces/sales', async (req, res) => {
-  if (!ensureSalesWorkspaceAccess(req, res)) return;
+router.get('/modules/sales', async (req, res) => {
+  if (!ensureSalesModuleAccess(req, res)) return;
   try {
     const actor: DatasetActor = {
       userId: req.user!.id,
-      workspace: req.user!.workspace,
-      workspaces: getAssignedWorkspaces(req.user),
-      scopeWorkspace: 'sales',
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
+      scopeModule: 'sales',
     };
     const [dataset, companySettings] = await Promise.all([getAcademyDataset(actor), getCompanySettings()]);
 
@@ -164,13 +164,13 @@ router.get('/workspaces/sales', async (req, res) => {
       constants: { ...academyConstants(), targets: toAnalyticsTargets(companySettings) },
     });
   } catch (error) {
-    logger.error('Failed to fetch sales workspace', { error });
-    res.status(500).json({ error: 'Failed to fetch sales workspace' });
+    logger.error('Failed to fetch sales module', { error });
+    res.status(500).json({ error: 'Failed to fetch sales module' });
   }
 });
 
-router.get('/workspaces/sales/metrics', async (req, res) => {
-  if (!ensureSalesWorkspaceAccess(req, res)) return;
+router.get('/modules/sales/metrics', async (req, res) => {
+  if (!ensureSalesModuleAccess(req, res)) return;
   try {
     const reportingRange = parseReportingRange(req.query.from, req.query.to);
     if (!reportingRange) {
@@ -178,9 +178,9 @@ router.get('/workspaces/sales/metrics', async (req, res) => {
     }
     const actor: DatasetActor = {
       userId: req.user!.id,
-      workspace: req.user!.workspace,
-      workspaces: getAssignedWorkspaces(req.user),
-      scopeWorkspace: 'sales',
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
+      scopeModule: 'sales',
     };
     res.json(await buildSalesDashboardMetrics(actor, reportingRange));
   } catch (error: any) {
@@ -217,14 +217,14 @@ router.get('/availability/slots', async (req, res) => {
   }
 });
 
-router.get('/workspaces/teacher', async (req, res) => {
-  if (!ensureTeacherWorkspaceAccess(req, res)) return;
+router.get('/modules/teacher', async (req, res) => {
+  if (!ensureTeacherModuleAccess(req, res)) return;
   try {
     const actor: DatasetActor = {
       userId: req.user!.id,
-      workspace: req.user!.workspace,
-      workspaces: getAssignedWorkspaces(req.user),
-      scopeWorkspace: 'teacher',
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
+      scopeModule: 'teacher',
     };
     const dataset = await getAcademyDataset(actor);
     res.json({
@@ -241,13 +241,13 @@ router.get('/workspaces/teacher', async (req, res) => {
       constants: academyConstants(),
     });
   } catch (error) {
-    logger.error('Failed to fetch teacher workspace', { error });
-    res.status(500).json({ error: 'Failed to fetch teacher workspace' });
+    logger.error('Failed to fetch teacher module', { error });
+    res.status(500).json({ error: 'Failed to fetch teacher module' });
   }
 });
 
 router.get('/configuration', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const dataset = await getAcademyDataset();
     res.json({
@@ -266,7 +266,7 @@ router.get('/configuration', async (req, res) => {
 });
 
 router.get('/company-settings', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     res.json(await getCompanySettings());
   } catch (error) {
@@ -276,7 +276,7 @@ router.get('/company-settings', async (req, res) => {
 });
 
 router.patch('/company-settings', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const current = await getCompanySettings();
     const values = {
@@ -302,7 +302,7 @@ router.patch('/company-settings', async (req, res) => {
 });
 
 router.get('/audit', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const filters: string[] = [];
     const params: DbValue[] = [];
@@ -323,7 +323,7 @@ router.get('/audit', async (req, res) => {
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
     const logs = await query(
-      `SELECT a.*, u.full_name AS user_name, u.workspace AS user_workspace
+      `SELECT a.*, u.full_name AS user_name, u.module AS user_module
        FROM audit_logs a
        LEFT JOIN users u ON u.id = a.user_id
        ${where}
@@ -338,7 +338,7 @@ router.get('/audit', async (req, res) => {
        LIMIT 100`,
     );
     const employees = await query(
-      `SELECT id, full_name, workspace FROM users WHERE is_active = true ORDER BY full_name`,
+      `SELECT id, full_name, module FROM users WHERE is_active = true ORDER BY full_name`,
     );
     res.json({ logs, integrationLogs, employees });
   } catch (error) {
@@ -348,34 +348,34 @@ router.get('/audit', async (req, res) => {
 });
 
 router.post('/dashboard/alerts/:key/task', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const key = String(req.params.key);
-    const tasks: Record<string, { title: string; description: string; entityType: string; targetWorkspace: string }> = {
+    const tasks: Record<string, { title: string; description: string; entityType: string; targetModule: string }> = {
       payments: {
         title: 'Позвонить должникам',
         description: 'Проверить и закрыть просроченные оплаты из CEO Dashboard.',
         entityType: 'payment',
-        targetWorkspace: 'sales',
+        targetModule: 'sales',
       },
       attendance: {
         title: 'Связаться с учениками с низкой посещаемостью',
         description: 'Разобрать причины посещаемости ниже установленной нормы.',
         entityType: 'student',
-        targetWorkspace: 'sales',
+        targetModule: 'sales',
       },
       teachers: {
         title: 'Назначить преподавателя в группы',
         description: 'Закрыть группы без назначенного преподавателя.',
         entityType: 'group',
-        targetWorkspace: 'teacher',
+        targetModule: 'teacher',
       },
     };
     const definition = tasks[key];
     if (!definition) return res.status(404).json({ error: 'Unknown dashboard alert' });
     const responsible = await queryOne(
-      `SELECT id FROM users WHERE workspace = $1 AND is_active = true ORDER BY id LIMIT 1`,
-      [definition.targetWorkspace],
+      `SELECT id FROM users WHERE module = $1 AND is_active = true ORDER BY id LIMIT 1`,
+      [definition.targetModule],
     );
     const task = await createTask(definition.title, {
       responsibleId: responsible ? Number(responsible.id) : req.user!.id,
@@ -392,7 +392,7 @@ router.post('/dashboard/alerts/:key/task', async (req, res) => {
 });
 
 router.get('/schedule/resource', async (req, res) => {
-  if (!ensureAdministrationWorkspaceAccess(req, res)) return;
+  if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
     const schoolId = parseId(req.query.schoolId);
     if (!schoolId) return res.status(400).json({ error: 'schoolRequired' });
@@ -447,12 +447,12 @@ router.patch('/teachers/me/availability', (_req, res) => {
   res.status(403).json({ error: 'adminAccessRequired' });
 });
 
-router.get('/workspaces/marketing', async (req, res) => {
-  if (!ensureMarketingWorkspaceAccess(req, res)) return;
+router.get('/modules/marketing', async (req, res) => {
+  if (!ensureMarketingModuleAccess(req, res)) return;
   try {
     const reportingRange = parseReportingRange(req.query.from, req.query.to);
     const [dataset, analytics] = await Promise.all([
-      getMarketingWorkspaceDataset(),
+      getMarketingModuleDataset(),
       buildAnalytics(reportingRange),
     ]);
     res.json({
@@ -461,8 +461,8 @@ router.get('/workspaces/marketing', async (req, res) => {
       constants: academyConstants(),
     });
   } catch (error: any) {
-    logger.error('Failed to fetch marketing workspace', { error });
-    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch marketing workspace') });
+    logger.error('Failed to fetch marketing module', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch marketing module') });
   }
 });
 
@@ -475,7 +475,7 @@ router.get('/search', async (req, res) => {
     }
 
     const like = `%${term.toLowerCase()}%`;
-    const assignedWorkspaces = getAssignedWorkspaces(req.user);
+    const assignedModules = getAssignedModules(req.user);
     const isLeadershipActor = hasLeadershipAccess(req.user);
     const results: Row[] = [];
     const remaining = () => Math.max(limit - results.length, 0);
@@ -524,9 +524,9 @@ router.get('/search', async (req, res) => {
       );
       const visibleRows = await applyLeadVisibilityForActor({
         userId: req.user!.id,
-        workspace: String(req.user!.workspace),
-        workspaces: assignedWorkspaces,
-        scopeWorkspace: 'sales',
+        module: String(req.user!.module),
+        modules: assignedModules,
+        scopeModule: 'sales',
       }, rows);
       results.push(...visibleRows.map((lead) => {
         const leadIdTag = `№ ${lead.id}`;
@@ -662,8 +662,8 @@ router.get('/search', async (req, res) => {
     if (isLeadershipActor) {
       await pushLeads(`TRUE`, [], '/sales/pipeline');
       await pushStudents(`TRUE`, [], '/sales/clients');
-      await pushGroups(`TRUE`, [], '/teacher-workspace/groups');
-      await pushCourses('/teacher-workspace/groups');
+      await pushGroups(`TRUE`, [], '/teacher-module/groups');
+      await pushCourses('/teacher-module/groups');
       if (remaining() > 0) {
         const sources = await query(
           `SELECT id, name, channel, campaign_name
@@ -678,14 +678,14 @@ router.get('/search', async (req, res) => {
           entityType: 'source',
           title: source.name,
           subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
-          href: '/marketing-workspace/sources',
+          href: '/marketing-module/sources',
         })));
       }
       if (remaining() > 0) {
         const users = await query(
-          `SELECT id, full_name, workspace
+          `SELECT id, full_name, module
            FROM users
-           WHERE LOWER(full_name) LIKE $1 OR LOWER(workspace) LIKE $1
+           WHERE LOWER(full_name) LIKE $1 OR LOWER(module) LIKE $1
            ORDER BY full_name
            LIMIT $2`,
           [like, remaining()],
@@ -694,19 +694,19 @@ router.get('/search', async (req, res) => {
           id: `user-${user.id}`,
           entityType: 'user',
           title: user.fullName,
-          subtitle: user.workspace,
+          subtitle: user.module,
           href: '/employees',
         })));
       }
     } else {
-      if (assignedWorkspaces.includes('sales')) {
+      if (assignedModules.includes('sales')) {
         await pushLeads(`(l.manager_id = $1 OR l.manager_id IS NULL)`, [req.user!.id], '/sales/pipeline');
         await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
       }
-      if (assignedWorkspaces.includes('teacher')) {
+      if (assignedModules.includes('teacher')) {
         const teacherId = await resolveTeacherId(req.user!.id);
         if (teacherId) {
-          await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-workspace/groups');
+          await pushGroups(`g.teacher_id = $1`, [teacherId], '/teacher-module/groups');
           await pushStudents(`EXISTS (
             SELECT 1
             FROM academy_student_group_enrollments teacher_membership
@@ -714,11 +714,11 @@ router.get('/search', async (req, res) => {
             WHERE teacher_membership.student_id = st.id
               AND teacher_membership.status = 'active'
               AND teacher_group.teacher_id = $1
-          )`, [teacherId], '/teacher-workspace/groups');
-          await pushCourses('/teacher-workspace/groups');
+          )`, [teacherId], '/teacher-module/groups');
+          await pushCourses('/teacher-module/groups');
         }
       }
-      if (assignedWorkspaces.includes('marketing')) {
+      if (assignedModules.includes('marketing')) {
         if (remaining() > 0) {
           const sources = await query(
             `SELECT id, name, channel, campaign_name
@@ -733,10 +733,10 @@ router.get('/search', async (req, res) => {
             entityType: 'source',
             title: source.name,
             subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
-            href: '/marketing-workspace/sources',
+            href: '/marketing-module/sources',
           })));
         }
-        await pushLeads(`TRUE`, [], '/marketing-workspace/warm-base');
+        await pushLeads(`TRUE`, [], '/marketing-module/warm-base');
       }
     }
 

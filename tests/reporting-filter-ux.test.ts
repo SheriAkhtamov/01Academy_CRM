@@ -6,8 +6,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const filter = read('../client/src/components/ux/ReportingDateRangeFilter.tsx');
 const sales = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
-const teacher = read('../client/src/pages/teacher-workspace.tsx');
-const marketing = read('../client/src/pages/marketing-workspace.tsx');
+const teacher = read('../client/src/pages/teacher-module.tsx');
+const marketing = read('../client/src/pages/marketing-module.tsx');
 const finance = read('../client/src/pages/finance-center.tsx');
 const administration = read('../client/src/pages/admin/AdminDashboardPage.tsx');
 const academyRoutes = readAcademyModuleSource();
@@ -35,9 +35,9 @@ describe('dashboard period filters and simplified actions', () => {
     for (const source of [sales, teacher, marketing, finance, administration]) {
       expect(source).toContain('<ReportingDateRangeFilter');
     }
-    expect(marketing).toContain('/api/academy/workspaces/marketing?${reportingQuery}');
+    expect(marketing).toContain('/api/academy/modules/marketing?${reportingQuery}');
     expect(finance).toContain('/api/finance/dashboard?${reportingQuery}');
-    expect(administration).toContain('/api/academy/workspaces/administration?${reportingQuery}');
+    expect(administration).toContain('/api/academy/modules/administration?${reportingQuery}');
   });
 
   it('removes duplicate overview actions and the sales task section', () => {

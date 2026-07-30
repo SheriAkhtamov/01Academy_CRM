@@ -11,7 +11,7 @@ import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 
-type WorkspaceType =
+type ModuleType =
   | 'sales'
   | 'administration'
   | 'teacher'
@@ -19,13 +19,13 @@ type WorkspaceType =
   | 'finance'
   | 'tasks';
 
-interface WorkspaceDefinition {
+interface ModuleDefinition {
   title: string;
   description: string;
   icon: LucideIcon;
 }
 
-function resolveWorkspaceType(location: string, assignedWorkspace?: string): WorkspaceType {
+function resolveModuleType(location: string, assignedModule?: string): ModuleType {
   if (location === '/tasks') {
     return 'tasks';
   }
@@ -34,11 +34,11 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
     return 'sales';
   }
 
-  if (location === '/teacher-workspace' || location.startsWith('/teacher-workspace/')) {
+  if (location === '/teacher-module' || location.startsWith('/teacher-module/')) {
     return 'teacher';
   }
 
-  if (location === '/marketing-workspace' || location.startsWith('/marketing-workspace/')) {
+  if (location === '/marketing-module' || location.startsWith('/marketing-module/')) {
     return 'marketing';
   }
 
@@ -55,45 +55,45 @@ function resolveWorkspaceType(location: string, assignedWorkspace?: string): Wor
     return 'administration';
   }
 
-  const knownWorkspaces: WorkspaceType[] = [
+  const knownModules: ModuleType[] = [
     'administration',
     'sales',
     'teacher',
     'marketing',
   ];
-  return knownWorkspaces.includes(assignedWorkspace as WorkspaceType)
-    ? assignedWorkspace as WorkspaceType
+  return knownModules.includes(assignedModule as ModuleType)
+    ? assignedModule as ModuleType
     : 'administration';
 }
 
-interface WorkspaceIdentityProps {
+interface ModuleIdentityProps {
   title?: string;
   subtitle?: string;
 }
 
-export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
+export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { t } = useTranslation();
-  const workspaceDefinitions: Record<WorkspaceType, WorkspaceDefinition> = {
+  const moduleDefinitions: Record<ModuleType, ModuleDefinition> = {
     sales: {
-      title: t('salesDepartmentWorkspace'),
-      description: t('salesDepartmentWorkspaceDescription'),
+      title: t('salesDepartmentModule'),
+      description: t('salesDepartmentModuleDescription'),
       icon: TrendingUp,
     },
     administration: {
-      title: t('administrationWorkspace'),
-      description: t('administrationWorkspaceDescription'),
+      title: t('administrationModule'),
+      description: t('administrationModuleDescription'),
       icon: ShieldCheck,
     },
     teacher: {
-      title: t('teacherWorkspace'),
-      description: t('teacherWorkplaceWorkspaceDescription'),
+      title: t('teacherModule'),
+      description: t('teacherWorkplaceModuleDescription'),
       icon: GraduationCap,
     },
     marketing: {
-      title: t('marketingDepartmentWorkspace'),
-      description: t('marketingDepartmentWorkspaceDescription'),
+      title: t('marketingDepartmentModule'),
+      description: t('marketingDepartmentModuleDescription'),
       icon: Megaphone,
     },
     finance: {
@@ -107,8 +107,8 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
       icon: KanbanSquare,
     },
   };
-  const workspace = workspaceDefinitions[resolveWorkspaceType(location, user?.workspace)];
-  const Icon = workspace.icon;
+  const module = moduleDefinitions[resolveModuleType(location, user?.module)];
+  const Icon = module.icon;
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -121,13 +121,13 @@ export function WorkspaceIdentity({ title, subtitle }: WorkspaceIdentityProps) {
 
       <div className="min-w-0">
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          {t('currentWorkspace')}
+          {t('currentModule')}
         </p>
         <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
-          {title ?? workspace.title}
+          {title ?? module.title}
         </h1>
         <p className="hidden truncate text-xs text-muted-foreground xl:block">
-          {subtitle ?? workspace.description}
+          {subtitle ?? module.description}
         </p>
       </div>
     </div>

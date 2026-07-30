@@ -1,4 +1,4 @@
-import { getAssignedWorkspaces, hasLeadershipAccess } from '@shared/academy';
+import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import {
   type DatasetActor,
   type Row,
@@ -43,8 +43,8 @@ export const buildSalesDashboardMetrics = async (
   range: ReportingRange,
 ): Promise<SalesDashboardMetrics> => {
   const isManagerScoped =
-    actor.scopeWorkspace === 'sales'
-    && getAssignedWorkspaces(actor).includes('sales')
+    actor.scopeModule === 'sales'
+    && getAssignedModules(actor).includes('sales')
     && !hasLeadershipAccess(actor);
   const managerFilter = isManagerScoped
     ? 'AND lead.manager_id = $3'

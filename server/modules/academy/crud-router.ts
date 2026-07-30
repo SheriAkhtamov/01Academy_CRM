@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -87,10 +87,10 @@ import {
   Row,
   createAudit,
   deleteRow,
-  ensureAdministrationWorkspaceAccess,
+  ensureAdministrationModuleAccess,
   ensureMarketingAccess,
   ensureOperationsAccess,
-  ensureWorkspaceAccess,
+  ensureModuleAccess,
   insertRow,
   nullableText,
   parseId,
@@ -119,7 +119,7 @@ export const createAcademyCrudRegistrar = (router: ReturnType<typeof Router>) =>
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
   orderBy?: string;
   listWhere?: string;
-  allowedWorkspaces?: Set<string>;
+  allowedModules?: Set<string>;
   requireAdministration?: boolean;
   requireOperations?: boolean;
   requireMarketing?: boolean;
@@ -130,8 +130,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   beforeDelete?: (context: { id: number; row: Row; req: any }) => Promise<void>;
 } = {}) => {
   router.get(`/${path}`, async (req, res) => {
-    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
-    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
+    if (options.allowedModules && !ensureModuleAccess(req, res, options.allowedModules, `${path} access required`)) return;
+    if (options.requireAdministration && !ensureAdministrationModuleAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     try {
@@ -151,8 +151,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.get(`/${path}/:id`, async (req, res) => {
-    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
-    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
+    if (options.allowedModules && !ensureModuleAccess(req, res, options.allowedModules, `${path} access required`)) return;
+    if (options.requireAdministration && !ensureAdministrationModuleAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     try {
@@ -171,12 +171,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.post(`/${path}`, async (req, res) => {
-    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
-    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
+    if (options.allowedModules && !ensureModuleAccess(req, res, options.allowedModules, `${path} access required`)) return;
+    if (options.requireAdministration && !ensureAdministrationModuleAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (options.allowCreate === false) return res.status(405).json({ error: 'methodNotAllowed' });
-    if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
+    if (options.requireOperations && getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {
@@ -261,12 +261,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.patch(`/${path}/:id`, async (req, res) => {
-    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
-    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
+    if (options.allowedModules && !ensureModuleAccess(req, res, options.allowedModules, `${path} access required`)) return;
+    if (options.requireAdministration && !ensureAdministrationModuleAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
     if (options.allowUpdate === false) return res.status(405).json({ error: 'methodNotAllowed' });
-    if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
+    if (options.requireOperations && getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {
@@ -412,11 +412,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
   });
 
   router.delete(`/${path}/:id`, async (req, res) => {
-    if (options.allowedWorkspaces && !ensureWorkspaceAccess(req, res, options.allowedWorkspaces, `${path} access required`)) return;
-    if (options.requireAdministration && !ensureAdministrationWorkspaceAccess(req, res)) return;
+    if (options.allowedModules && !ensureModuleAccess(req, res, options.allowedModules, `${path} access required`)) return;
+    if (options.requireAdministration && !ensureAdministrationModuleAccess(req, res)) return;
     if (options.requireOperations && !ensureOperationsAccess(req, res)) return;
     if (options.requireMarketing && !ensureMarketingAccess(req, res)) return;
-    if (options.requireOperations && getAssignedWorkspaces(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
+    if (options.requireOperations && getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
       return res.status(403).json({ error: 'Operations mutation access required' });
     }
     try {

@@ -8,8 +8,8 @@ const administrationUser = {
   email: 'admin@example.com',
   password: 'hashed',
   fullName: 'Admin User',
-  workspace: 'administration',
-  workspaces: ['administration'],
+  module: 'administration',
+  modules: ['administration'],
   isActive: true,
   hasReportAccess: true,
 };
@@ -66,15 +66,15 @@ describe('user route validation', () => {
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
-  it('rejects unknown workspace values instead of silently dropping them', async () => {
+  it('rejects unknown module values instead of silently dropping them', async () => {
     const app = await createApp();
     const agent = request.agent(app);
     await agent.post('/test/session');
 
     const response = await agent.post('/api/users').send({
       fullName: 'Sales User',
-      workspace: 'sales',
-      workspaces: ['sales', 'typo'],
+      module: 'sales',
+      modules: ['sales', 'typo'],
     });
 
     expect(response.status).toBe(400);
@@ -137,8 +137,8 @@ describe('user route validation', () => {
   it('keeps teacher availability under administration control', async () => {
     const teacherUser = {
       ...administrationUser,
-      workspace: 'teacher',
-      workspaces: ['teacher'],
+      module: 'teacher',
+      modules: ['teacher'],
       hasReportAccess: false,
     };
     mockStorage.getUser.mockResolvedValue(teacherUser);
@@ -157,8 +157,8 @@ describe('user route validation', () => {
   });
 
   it('commits lead transfer and access removal through the same database client', async () => {
-    const currentUser = { ...administrationUser, workspaces: ['administration', 'sales'] };
-    const updatedUser = { ...administrationUser, workspaces: ['administration'] };
+    const currentUser = { ...administrationUser, modules: ['administration', 'sales'] };
+    const updatedUser = { ...administrationUser, modules: ['administration'] };
     mockStorage.getUser
       .mockResolvedValueOnce(currentUser)
       .mockResolvedValueOnce(currentUser)
@@ -169,11 +169,11 @@ describe('user route validation', () => {
       release: vi.fn(),
       query: vi.fn(async (statement: string, _params?: unknown[]) => {
         statements.push(statement.trim());
-        if (statement.includes('SELECT id, full_name, workspace, is_active')) {
-          return { rows: [{ id: 7, full_name: 'Admin User', workspace: 'administration', is_active: true }] };
+        if (statement.includes('SELECT id, full_name, module, is_active')) {
+          return { rows: [{ id: 7, full_name: 'Admin User', module: 'administration', is_active: true }] };
         }
-        if (statement.includes('SELECT workspace FROM user_workspaces')) {
-          return { rows: [{ workspace: 'administration' }, { workspace: 'sales' }] };
+        if (statement.includes('SELECT module FROM user_modules')) {
+          return { rows: [{ module: 'administration' }, { module: 'sales' }] };
         }
         if (statement.includes('AS lead_count')) {
           return { rows: [{ lead_count: 1, student_count: 0, open_task_count: 0 }] };
@@ -199,8 +199,8 @@ describe('user route validation', () => {
     await agent.post('/test/session');
     const response = await agent.put('/api/users/7').send({
       fullName: 'Admin User',
-      workspace: 'administration',
-      workspaces: ['administration'],
+      module: 'administration',
+      modules: ['administration'],
       isActive: true,
       leadTransferManagerId: 8,
     });
@@ -226,19 +226,19 @@ describe('user route validation', () => {
     const client = {
       release: vi.fn(),
       query: vi.fn(async (statement: string, _params?: unknown[]) => {
-        if (statement.includes('SELECT id, full_name, workspace, is_active')) {
+        if (statement.includes('SELECT id, full_name, module, is_active')) {
           return {
             rows: [{
               id: 7,
               full_name: 'Admin User',
-              workspace: 'administration',
+              module: 'administration',
               is_active: true,
               online_pbx_extension: null,
             }],
           };
         }
-        if (statement.includes('SELECT workspace FROM user_workspaces')) {
-          return { rows: [{ workspace: 'administration' }] };
+        if (statement.includes('SELECT module FROM user_modules')) {
+          return { rows: [{ module: 'administration' }] };
         }
         if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
         return { rows: [], rowCount: 1 };
@@ -266,8 +266,8 @@ describe('user route validation', () => {
       id: 20,
       email: 'sales.new.user@01academy.local',
       fullName: 'New Sales User',
-      workspace: 'sales',
-      workspaces: ['sales'],
+      module: 'sales',
+      modules: ['sales'],
       onlinePbxExtension: null,
       isActive: true,
     };
@@ -286,8 +286,8 @@ describe('user route validation', () => {
     await agent.post('/test/session');
     const response = await agent.post('/api/users').send({
       fullName: 'New Sales User',
-      workspace: 'sales',
-      workspaces: ['sales'],
+      module: 'sales',
+      modules: ['sales'],
       onlinePbxExtension: '109',
       isActive: true,
     });

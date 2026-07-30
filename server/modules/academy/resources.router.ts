@@ -56,8 +56,8 @@ import {
   calculateProgressPercent,
   calculateRoas,
   calculateTrend,
-  canAccessAcademyWorkspace,
-  getAssignedWorkspaces,
+  canAccessAcademyModule,
+  getAssignedModules,
   getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
@@ -83,7 +83,7 @@ import {
 } from '@shared/lead-tags';
 
 import {
-  SOURCE_MANAGEMENT_WORKSPACES,
+  SOURCE_MANAGEMENT_MODULES,
   createPipelineStatusCode,
   nullableText,
   queryOne,
@@ -246,7 +246,7 @@ registerSimpleCrud('sources', 'academy_lead_sources', [
 ], {
   orderBy: 'name',
   listWhere: 'is_active = true',
-  allowedWorkspaces: SOURCE_MANAGEMENT_WORKSPACES,
+  allowedModules: SOURCE_MANAGEMENT_MODULES,
   beforeCreate: async ({ values }) => {
     const code = nullableText(values.code)?.toLowerCase();
     const name = nullableText(values.name);

@@ -6,7 +6,7 @@ const dataTable = read('../client/src/components/ux/DataTable.tsx');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
 const messages = read('../client/src/pages/sales/InstagramMessagesPage.tsx');
 
-describe('sales workspace layout', () => {
+describe('sales module layout', () => {
   it('keeps the archived lead rows scrollable inside their card', () => {
     expect(dataTable).toContain('rootClassName?: string;');
     expect(dataTable).toContain('<div className={cn(rootClassName)}>');
@@ -14,8 +14,8 @@ describe('sales workspace layout', () => {
     expect(salesDashboard).toContain('className="min-h-0 flex-1 overflow-auto overscroll-contain"');
   });
 
-  it('gives the conversations workspace the remaining viewport height without duplicate header spacing', () => {
-    expect(messages).toContain('<WorkspacePage contained className="[&>[data-page-header]]:mb-0">');
+  it('gives the conversations module the remaining viewport height without duplicate header spacing', () => {
+    expect(messages).toContain('<ModulePage contained className="[&>[data-page-header]]:mb-0">');
     expect(messages).toContain('className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden');
     expect(messages).not.toContain('lg:mt-6');
   });

@@ -1,17 +1,25 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
-import { AuthProvider, useAuth } from '@/hooks/useAuth';
-import { TelephonyProvider } from '@/contexts/TelephonyContext';
-import { TelephonyWidget } from '@/components/telephony/TelephonyWidget';
+import { AuthProvider } from '@/hooks/useAuth';
+import { TelephonyProvider, useTelephony } from '@/contexts/TelephonyContext';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 
+const TelephonyWidget = lazy(() => (
+  import('@/components/telephony/TelephonyWidget')
+    .then((module) => ({ default: module.TelephonyWidget }))
+));
+
 const TelephonyOverlay = () => {
-  const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <TelephonyWidget /> : null;
+  const { isManagerAssigned } = useTelephony();
+  return isManagerAssigned ? (
+    <Suspense fallback={null}>
+      <TelephonyWidget />
+    </Suspense>
+  ) : null;
 };
 
 export function AppProviders({ children }: { children: ReactNode }) {

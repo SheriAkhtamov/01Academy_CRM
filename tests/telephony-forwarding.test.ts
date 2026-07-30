@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildOnlinePbxRingMembers,
+  hasOnlinePbxManagerAssignment,
   ONLINE_PBX_PRIMARY_RING_DELAY_SECONDS,
   ONLINE_PBX_RING_GROUP,
   ONLINE_PBX_SHARED_EXTENSION,
@@ -21,6 +22,22 @@ describe('OnlinePBX CRM manager assignments', () => {
     expect(onlinePbxRoutingDestination('+998 90 123-45-67')).toBeNull();
     expect(onlinePbxIncomingDelayMs(7, 7)).toBe(0);
     expect(onlinePbxIncomingDelayMs(13, 7)).toBe(3_000);
+  });
+
+  it('enables the telephony runtime only for managers assigned in OnlinePBX settings', () => {
+    expect(hasOnlinePbxManagerAssignment({
+      onlinePbxIncomingEnabled: true,
+      onlinePbxExtension: '109',
+    })).toBe(true);
+    expect(hasOnlinePbxManagerAssignment({
+      onlinePbxIncomingEnabled: false,
+      onlinePbxExtension: '109',
+    })).toBe(false);
+    expect(hasOnlinePbxManagerAssignment({
+      onlinePbxIncomingEnabled: true,
+      onlinePbxExtension: null,
+    })).toBe(false);
+    expect(hasOnlinePbxManagerAssignment(null)).toBe(false);
   });
 
   it('rings only assigned online and registered CRM users and never forwards implicitly', () => {

@@ -22,6 +22,18 @@ export const onlinePbxRoutingDestination = (
   return isOnlinePbxExtension(extension) ? extension : null;
 };
 
+export type OnlinePbxManagerAssignment = {
+  onlinePbxExtension?: string | null;
+  onlinePbxIncomingEnabled?: boolean | null;
+};
+
+export const hasOnlinePbxManagerAssignment = (
+  user: OnlinePbxManagerAssignment | null | undefined,
+): boolean => Boolean(
+  user?.onlinePbxIncomingEnabled
+  && onlinePbxRoutingDestination(user.onlinePbxExtension),
+);
+
 const phoneDigits = (value: string | null | undefined) =>
   String(value ?? '').replace(/\D/g, '');
 

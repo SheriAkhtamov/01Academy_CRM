@@ -336,6 +336,8 @@ export function TelephonyWidget() {
     );
   };
 
+  if (!telephony.isManagerAssigned) return null;
+
   return (
     <>
       {isOpen ? (

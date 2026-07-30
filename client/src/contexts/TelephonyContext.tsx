@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
+import { hasOnlinePbxManagerAssignment } from '@shared/telephony';
 import {
   IncomingCallRingtone,
   shouldPlayIncomingRingtone,
@@ -97,6 +98,7 @@ export const waitForTelephonySocket = async (
 };
 
 type TelephonyContextValue = {
+  isManagerAssigned: boolean;
   connectionState: TelephonyConnectionState;
   extension: string | null;
   activeCall: ActiveTelephonyCall | null;
@@ -177,12 +179,12 @@ const requestMicrophone = async () => {
 
 export function TelephonyProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
+  const isManagerAssigned = isAuthenticated && hasOnlinePbxManagerAssignment(user);
   const queryClient = useQueryClient();
-  const [connectionState, setConnectionState] = useState<TelephonyConnectionState>('connecting');
+  const [connectionState, setConnectionState] = useState<TelephonyConnectionState>('disabled');
   const [extension, setExtension] = useState<string | null>(null);
   const [activeCall, setActiveCallState] = useState<ActiveTelephonyCall | null>(null);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
-  const [routingRevision, setRoutingRevision] = useState(0);
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
   const credentialsRef = useRef<Credentials | null>(null);
@@ -303,6 +305,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, [clearCallSetupTimer, reportCall, setActiveCall, stopLocalMedia, stopRingtone]);
 
   useEffect(() => {
+    if (!isManagerAssigned) return undefined;
+
     const ringtone = new IncomingCallRingtone();
     ringtoneRef.current = ringtone;
     const unlockAudio = () => {
@@ -321,13 +325,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       ringtone.destroy();
       if (ringtoneRef.current === ringtone) ringtoneRef.current = null;
     };
-  }, []);
-
-  useEffect(() => {
-    const refreshRouting = () => setRoutingRevision((current) => current + 1);
-    window.addEventListener('telephony-routing-updated', refreshRouting);
-    return () => window.removeEventListener('telephony-routing-updated', refreshRouting);
-  }, []);
+  }, [isManagerAssigned]);
 
   useEffect(() => {
     if (shouldPlayIncomingRingtone(activeCall?.direction, activeCall?.status)) {
@@ -339,8 +337,11 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!isAuthenticated || !user?.id) {
+    if (!isManagerAssigned || !user?.id) {
       setConnectionState('disabled');
+      setExtension(null);
+      setPendingPhone(null);
+      setActiveCall(null);
       return undefined;
     }
 
@@ -541,7 +542,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       sessionRef.current = null;
       manager?.closeSocket(1000);
     };
-  }, [clearCallSetupTimer, finishSession, isAuthenticated, lookupContact, patchActiveCall, reportCall, routingRevision, setActiveCall, stopLocalMedia, stopRingtone, user?.id]);
+  }, [clearCallSetupTimer, finishSession, isManagerAssigned, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, stopRingtone, user?.id, user?.onlinePbxExtension]);
 
   const startCall = useCallback(async (rawPhone: string) => {
     const manager = managerRef.current;
@@ -734,6 +735,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, [setActiveCall]);
 
   const value = useMemo<TelephonyContextValue>(() => ({
+    isManagerAssigned,
     connectionState,
     extension,
     activeCall,
@@ -754,6 +756,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     connectionState,
     extension,
     hangupCall,
+    isManagerAssigned,
     pendingPhone,
     sendDtmf,
     startCall,
@@ -765,7 +768,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   return (
     <TelephonyContext.Provider value={value}>
       {children}
-      {isAuthenticated ? (
+      {isManagerAssigned ? (
         <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       ) : null}
     </TelephonyContext.Provider>

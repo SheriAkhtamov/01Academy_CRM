@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
 import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
@@ -263,6 +264,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       apiRequest('PUT', '/api/telephony/routing', settings) as Promise<OnlinePbxRoutingSettings>,
     onSuccess: (settings) => {
       queryClient.setQueryData(['/api/telephony/routing'], settings);
+      void queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
       setOnlinePbxRoutingDraft({
         primaryManagerId: settings.primaryManagerId,
         assignments: settings.assignments.map((assignment) => ({

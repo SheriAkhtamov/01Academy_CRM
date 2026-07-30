@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WebSocketEvent } from '@shared/websocket';
+import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
 import { useAuth } from './useAuth';
 import { devLog } from '@/lib/debug';
 import { messageQueryKeys } from '@/features/messages/api';
@@ -118,7 +119,7 @@ export function useWebSocket() {
           break;
         case 'TELEPHONY_ROUTING_UPDATED':
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/routing'] });
-          window.dispatchEvent(new Event('telephony-routing-updated'));
+          queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
           break;
         default:
           devLog('Unhandled WebSocket message type:', message.type);

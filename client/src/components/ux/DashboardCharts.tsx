@@ -133,6 +133,8 @@ export function DashboardCharts({
     () => payments.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
     [payments],
   );
+  const maxFunnelCount = Math.max(1, ...funnelData.map((item) => Number(item.count || 0)));
+  const funnelFirstStageCount = Number(funnelData[0]?.count || 0);
   const hasFunnelData = funnelData.some((item) => Number(item.count || 0) > 0);
   const hasSourceData = sourceData.some((item) => Number(item.leads || 0) > 0);
   const hasPaymentRevenue = paymentMethodData.some((item) => Number(item.amount || 0) > 0);
@@ -209,38 +211,45 @@ export function DashboardCharts({
         description={t('conversionFunnelDescription')}
         summary={`${t('conversionFunnel')}. ${funnelData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
         className="xl:col-span-5"
-        chartClassName="h-[252px]"
+        chartClassName="h-auto min-h-[252px]"
       >
           {hasFunnelData ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={funnelData} layout="vertical" margin={{ left: 4, right: 28, top: 2, bottom: 2 }}>
-                <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke="var(--border)" />
-                <XAxis type="number" hide />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  width={96}
-                  axisLine={false}
-                  tickLine={false}
-                  tick={analyticsAxisTick}
-                  tickFormatter={(value) => shortenChartLabel(value, 14)}
-                />
-                <Tooltip
-                  cursor={{ fill: 'var(--muted)' }}
-                  formatter={(value: number) => [value, t('navLeads')]}
-                  contentStyle={analyticsTooltipStyle}
-                />
-                <Bar dataKey="count" radius={[0, 7, 7, 0]} maxBarSize={28} isAnimationActive={false}>
-                  {funnelData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                  <LabelList dataKey="count" position="right" className="fill-foreground text-xs font-semibold" />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ol className="flex min-h-[252px] flex-col justify-center gap-2.5 py-1" aria-label={t('conversionFunnel')}>
+              {funnelData.map((item) => {
+                const width = Math.max(2, Math.round((Number(item.count || 0) / maxFunnelCount) * 100));
+                return (
+                  <li key={item.name} className="flex items-center gap-3">
+                    <span className="w-28 shrink-0 truncate text-xs font-medium text-muted-foreground sm:w-32" title={item.name}>
+                      {item.name}
+                    </span>
+                    <div
+                      className="h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-muted"
+                      role="progressbar"
+                      aria-valuenow={Number(item.count || 0)}
+                      aria-valuemin={0}
+                      aria-valuemax={maxFunnelCount}
+                      aria-label={`${item.name}: ${item.count}`}
+                    >
+                      <span
+                        className="block h-full rounded-md"
+                        style={{ width: `${width}%`, backgroundColor: item.color }}
+                      />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
+                      {item.count}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
           ) : (
             <AnalyticsChartEmpty title={t('noFunnelData')} description={t('analyticsEmptyPeriodHint')} />
           )}
+          {hasFunnelData && funnelFirstStageCount > 0 ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {t('funnelStagesCumulative')}
+            </p>
+          ) : null}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard

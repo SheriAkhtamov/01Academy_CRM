@@ -233,6 +233,11 @@ export const translations = {
   },
   minutes: { en: ' min', ru: ' мин' },
   navDashboard: { en: 'Dashboard', ru: 'Главный экран' },
+  salesOverviewSubtitle: {
+    en: 'Key sales metrics for the selected period',
+    ru: 'Ключевые показатели продаж за выбранный период',
+  },
+  periodMetricsGroup: { en: 'Period metrics', ru: 'Показатели за период' },
   navGroups: { en: 'Groups', ru: 'Группы' },
   navIntegrations: { en: 'Integrations', ru: 'Интеграции' },
   navLeads: { en: 'Leads', ru: 'Лиды' },
@@ -479,8 +484,12 @@ export const translations = {
   },
   conversionFunnel: { en: 'Conversion Funnel', ru: 'Воронка конверсии' },
   conversionFunnelDescription: {
-    en: 'Lead movement and drop-off between sales stages',
-    ru: 'Движение лидов и потери между этапами продаж',
+    en: 'Leads that reached each sales stage',
+    ru: 'Лиды, дошедшие до каждого этапа продаж',
+  },
+  funnelStagesCumulative: {
+    en: 'Each stage includes leads that reached it or went further',
+    ru: 'Каждый этап включает лидов, дошедших до него или дальше',
   },
   salesSourcePerformance: { en: 'Source performance', ru: 'Эффективность источников' },
   salesSourcePerformanceDescription: {
@@ -818,7 +827,6 @@ export const translations = {
   unknown: { en: 'Unknown', ru: 'Неизвестно' },
   warmBaseSize: { en: 'Warm Base Size', ru: 'Размер тёплой базы' },
   warmReactivated: { en: 'Warm Reactivated', ru: 'Реактивировано из тёплой базы' },
-  welcome: { en: 'Welcome', ru: 'Добро пожаловать' },
   activeMyLeads: { en: 'My Active Leads', ru: 'Мои активные лиды' },
   attendanceNotePlaceholder: { en: 'Lesson note...', ru: 'Заметка по занятию...' },
   averageScore: { en: 'Average Score', ru: 'Средняя оценка' },

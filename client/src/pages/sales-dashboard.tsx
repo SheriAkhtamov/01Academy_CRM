@@ -989,22 +989,21 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }
 
   const sectionTitle: Record<SalesSection, string> = {
-    overview: isAdministrationModule
-      ? t('salesModule')
-      : `${t('welcome')}, ${user?.fullName || t('manager')}!`,
+    overview: t('navDashboard'),
     pipeline: t('pipeline'),
     archive: t('leadArchive'),
     schedule: t('salesSchedule'),
     students: isAdministrationModule ? t('allClients') : t('myStudents'),
   };
-  const salesModuleDescription = isAdministrationModule
-    ? t('globalSalesModuleDescription')
-    : t('salesManagerModule');
-  const sectionSubtitle = section === 'schedule'
-    ? t('salesScheduleSubtitle')
-    : section === 'archive'
-      ? t('leadArchiveDescription')
-      : salesModuleDescription;
+  const sectionSubtitle = section === 'overview'
+    ? t('salesOverviewSubtitle')
+    : section === 'schedule'
+      ? t('salesScheduleSubtitle')
+      : section === 'archive'
+        ? t('leadArchiveDescription')
+        : isAdministrationModule
+          ? t('globalSalesModuleDescription')
+          : t('salesManagerModule');
   const ownsContentScroll = ['pipeline', 'archive', 'schedule', 'students'].includes(section);
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>

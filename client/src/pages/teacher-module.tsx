@@ -33,6 +33,7 @@ import { DataTable } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { TeacherAnalyticsCharts } from '@/components/ux/analytics/TeacherAnalyticsCharts';
+import { TeacherOverviewKpis } from '@/components/ux/analytics/TeacherOverviewKpis';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
@@ -265,49 +266,6 @@ function getInitials(name?: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
-}
-
-function KpiCard({
-  title,
-  value,
-  detail,
-  icon: Icon,
-  tone = 'blue',
-}: {
-  title: string;
-  value: string | number;
-  detail?: string;
-  icon: any;
-  tone?: 'blue' | 'green' | 'amber' | 'red' | 'slate';
-}) {
-  const toneClass = {
-    blue: 'bg-primary-50 text-primary-600',
-    green: 'bg-emerald-100 text-emerald-600',
-    amber: 'bg-amber-100 text-amber-600',
-    red: 'bg-destructive/10 text-destructive',
-    slate: 'bg-muted text-muted-foreground',
-  }[tone];
-
-  return (
-    <Card className="h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="line-clamp-2 min-h-8 text-xs font-medium leading-4 text-muted-foreground" title={title}>{title}</p>
-            <div className="mt-1 text-[22px] font-bold leading-tight tracking-tight tabular-nums text-foreground">
-              {value}
-            </div>
-            {detail && <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground" title={detail}>{detail}</p>}
-          </div>
-          <div
-            className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}
-          >
-            <Icon className="size-4" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 function EmptyState({
@@ -1045,64 +1003,21 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
         <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
       ) : null}
 
-      {/* KPI Cards */}
+      {/* KPI overview — visual charts instead of plain number tiles */}
       {section === 'overview' ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <div className="stagger-item">
-            <KpiCard
-              title={t('myGroupsCount')}
-              value={groups.length}
-              detail={teacherCourses.map((c: any) => c.name).join(', ') || t('noData')}
-              icon={Users}
-              tone="blue"
-            />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('totalStudents')}
-              value={totalStudents}
-              detail={`${t('maxStudents')}: ${groups.reduce((s, g) => s + (g.maxStudents || 12), 0)}`}
-              icon={GraduationCap}
-              tone="green"
-            />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('lessonsForPeriod')}
-              value={`${conductedPeriodLessons.length} / ${periodLessons.length}`}
-              detail={t('conductedOfScheduled')}
-              icon={Calendar}
-              tone="amber"
-            />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('averageAttendance')}
-              value={avgAttendance == null ? t('noData') : `${avgAttendance}%`}
-              detail={t('byActiveStudents')}
-              icon={ClipboardCheck}
-              tone={avgAttendance == null ? 'slate' : 'blue'}
-            />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('averageLessonRating')}
-              value={avgLessonRating == null ? t('noData') : `${avgLessonRating} / 5`}
-              detail={t('dataForSelectedPeriod')}
-              icon={Star}
-              tone={avgLessonRating == null ? 'slate' : 'green'}
-            />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('teachingHours')}
-              value={new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours)}
-              detail={t('dataForSelectedPeriod')}
-              icon={Clock3}
-              tone="slate"
-            />
-          </div>
-        </div>
+        <TeacherOverviewKpis
+          data={{
+            groupsCount: groups.length,
+            courseNames: teacherCourses.map((c: any) => c.name).join(', ') || t('noData'),
+            totalStudents,
+            totalCapacity: groups.reduce((sum, group) => sum + (group.maxStudents || 12), 0),
+            conductedLessons: conductedPeriodLessons.length,
+            totalLessons: periodLessons.length,
+            avgAttendance,
+            avgRating: avgLessonRating == null ? null : Number(avgLessonRating),
+            teachingHours: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours),
+          }}
+        />
       ) : null}
 
       {section === 'overview' ? (

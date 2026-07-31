@@ -114,7 +114,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         { id: 'nav-sales-messages', type: t('salesPipeline'), title: t('salesInbox'), href: '/sales/messages', icon: MessagesSquare },
       ];
       const teacherItems: SearchItem[] = [
-        { id: 'nav-teacher', type: t('teacherModule'), title: t('teacherModule'), href: '/teacher-module', icon: GraduationCap },
+        { id: 'nav-teacher', type: t('teacherDepartmentModule'), title: t('navDashboard'), href: '/teacher-module', icon: GraduationCap },
         { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-module/schedule', icon: Calendar },
         { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-module/groups', icon: Layers3 },
         { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-module/attendance', icon: ClipboardCheck },

@@ -138,7 +138,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     const teacherSection: NavSection = {
       label: t('teacherDepartmentModule'),
       items: [
-        { name: t('teacherModule'), href: '/teacher-module', icon: GraduationCap },
+        { name: t('navDashboard'), href: '/teacher-module', icon: GraduationCap },
         { name: t('schedule'), href: '/teacher-module/schedule', icon: Calendar },
         { name: t('myGroups'), href: '/teacher-module/groups', icon: Layers3 },
         { name: t('attendanceLabel'), href: '/teacher-module/attendance', icon: ClipboardCheck },

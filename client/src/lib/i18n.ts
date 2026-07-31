@@ -220,7 +220,6 @@ export const translations = {
   marketingBySources: { en: 'Marketing by Sources (CPL / CAC / ROAS)', ru: 'Маркетинг по источникам (CPL / CAC / ROAS)' },
   marketingExpenseTitle: { en: 'Marketing Expense', ru: 'Маркетинговый расход' },
   marketingTab: { en: 'Marketing', ru: 'Маркетинг' },
-  maxStudents: { en: 'Max Students', ru: 'Максимум' },
   messages: { en: 'Messages', ru: 'Сообщения' },
   salesInbox: { en: 'Direct', ru: 'Входящие' },
   unreadMessageCount: {
@@ -538,6 +537,10 @@ export const translations = {
   responses: { en: 'Responses', ru: 'Ответов' },
   noRatings: { en: 'No ratings yet', ru: 'Оценок пока нет' },
   teachingHours: { en: 'Teaching hours', ru: 'Часы преподавания' },
+  teachingHoursUnit: { en: 'h', ru: 'ч' },
+  seatOccupancy: { en: 'Seat occupancy', ru: 'Заполняемость групп' },
+  seats: { en: 'seats', ru: 'мест' },
+  noSurveyData: { en: 'No survey data', ru: 'Нет данных опросов' },
   marketingSourceEconomics: { en: 'Channel economics', ru: 'Экономика каналов' },
   marketingSourceEconomicsDescription: {
     en: 'Revenue, spend, and ROAS by acquisition source',

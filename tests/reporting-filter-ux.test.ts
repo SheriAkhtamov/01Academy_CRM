@@ -101,7 +101,7 @@ describe('dashboard period filters and simplified actions', () => {
     expect(salesCharts).toContain('hasPaymentRevenue ? (');
     expect(marketingCharts).toContain('hasConversionCohort ? (');
     expect(financeCharts).toContain('hasContributionData ? (');
-    expect(salesOverviewMetrics).toContain("conversionLeadCount > 0 ? `${conversionRate}%` : t('noData')");
+    expect(salesOverviewMetrics).toContain('percent={conversionLeadCount > 0 ? conversionRate : null}');
     expect(teacher).toContain("avgAttendance == null ? t('noData')");
     expect(marketing).toContain("overviewFunnel.find((stage) => stage.code === 'demo_invited')");
     expect(marketing).toContain("overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')");

@@ -10,9 +10,9 @@ import {
     BOARD_TASK_PRIORITIES,
     type BoardTask,
     type BoardTaskStatus,
-} from '@shared/schema';
+    type User,
+} from '../db/schema';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import type { User } from '@shared/schema';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';

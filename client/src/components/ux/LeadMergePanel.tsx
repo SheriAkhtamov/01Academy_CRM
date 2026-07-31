@@ -1,7 +1,12 @@
 import { useDeferredValue, useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ArrowRightLeft, Search, UserRound } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
+import { leadsApi } from '@/features/leads/api';
+import {
+  useLeadMergeCandidatesQuery,
+  useLeadMergePreviewQuery,
+} from '@/features/leads/queries';
+import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
@@ -120,25 +125,17 @@ export function LeadMergePanel() {
   useEffect(() => {
     if (firstLead && secondLead) setRetainedLeadId(String(firstLead.id));
     else setRetainedLeadId('');
-  }, [firstLead?.id, secondLead?.id]);
+  }, [firstLead, secondLead]);
 
-  const searchQuery = useQuery<LeadMergeCandidate[]>({
-    queryKey: ['/api/academy/leads/merge-candidates', deferredSearch],
-    queryFn: () => apiRequest(
-      'GET',
-      `/api/academy/leads/merge-candidates?q=${encodeURIComponent(deferredSearch)}`,
-    ),
-    enabled: searchTarget !== null && deferredSearch.length >= 2,
-  });
+  const searchQuery = useLeadMergeCandidatesQuery<LeadMergeCandidate[]>(
+    deferredSearch,
+    searchTarget !== null,
+  );
 
-  const previewQuery = useQuery<{ leads: LeadMergeCandidate[] }>({
-    queryKey: ['/api/academy/leads/merge-preview', firstLead?.id, secondLead?.id],
-    queryFn: () => apiRequest(
-      'GET',
-      `/api/academy/leads/merge-preview?firstLeadId=${firstLead!.id}&secondLeadId=${secondLead!.id}`,
-    ),
-    enabled: Boolean(firstLead && secondLead && firstLead.id !== secondLead.id),
-  });
+  const previewQuery = useLeadMergePreviewQuery<{ leads: LeadMergeCandidate[] }>(
+    firstLead?.id,
+    secondLead?.id,
+  );
 
   const previewLeads = previewQuery.data?.leads ?? [];
   const freshFirstLead = previewLeads.find((lead) => lead.id === firstLead?.id) ?? firstLead;
@@ -147,7 +144,7 @@ export function LeadMergePanel() {
   const duplicateLead = retainedLeadId === String(freshFirstLead?.id) ? freshSecondLead : freshFirstLead;
 
   const mergeMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/academy/leads/merge', {
+    mutationFn: () => leadsApi.merge({
       retainedLeadId: Number(retainedLead?.id),
       duplicateLeadId: Number(duplicateLead?.id),
     }),
@@ -156,7 +153,7 @@ export function LeadMergePanel() {
       setFirstLead(null);
       setSecondLead(null);
       setRetainedLeadId('');
-      await queryClient.invalidateQueries({ queryKey: ['/api/academy'] });
+      await invalidateSalesLeadData(queryClient, Number(retainedLead?.id));
       toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
     },
     onError: (error: any) => {

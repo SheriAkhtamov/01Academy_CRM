@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { messages, users, type Message, type InsertMessage, type User } from '@shared/schema';
+import { messages, users, type Message, type InsertMessage, type User } from '../db/schema';
 import { eq, or, and, asc, sql } from 'drizzle-orm';
 
 type ConversationUser = Pick<User, 'id' | 'fullName' | 'position' | 'email'> & {

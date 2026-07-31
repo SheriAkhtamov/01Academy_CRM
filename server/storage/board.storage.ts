@@ -15,7 +15,7 @@ import {
     type InsertBoardTaskChecklistItem,
     type InsertBoardTaskAttachment,
     type InsertBoardTaskActivity,
-} from '@shared/schema';
+} from '../db/schema';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 

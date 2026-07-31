@@ -46,14 +46,14 @@ import {
 import { cn } from '@/lib/utils';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
 
-interface KanbanStatus {
+export interface KanbanStatus {
   code: string;
   name: string;
   color: string;
   sortOrder: number;
 }
 
-interface KanbanLead {
+export interface KanbanLead {
   id: number;
   contactName: string;
   phone?: string | null;

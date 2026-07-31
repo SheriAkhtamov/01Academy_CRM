@@ -794,39 +794,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const contained = section !== 'overview';
 
-  if (isError) {
-    return (
-      <ModulePage contained={contained}>
-        <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
-          <div className="mx-auto max-w-xl space-y-4 text-center">
-            <p className="font-medium text-destructive">{t('error')}</p>
-            <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
-            <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
-          </div>
-        </ModulePageBody>
-      </ModulePage>
-    );
-  }
-
-  if (isLoading || !data) {
-    return (
-      <ModulePage contained={contained}>
-        <ModulePageBody contained={contained} ariaLabel={t('loading')}>
-          <div className="space-y-6">
-            <Skeleton className="h-10 w-64" />
-            <Skeleton className="h-6 w-48" />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-28" />
-              ))}
-            </div>
-            <AnalyticsChartsSkeleton />
-          </div>
-        </ModulePageBody>
-      </ModulePage>
-    );
-  }
-
   const fullName = user?.fullName || t('teacher');
   const sectionTitle: Record<TeacherSection, string> = {
     overview: `${t('hello')}, ${fullName}`,
@@ -987,6 +954,39 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     }
     return { total, marked, present, absent };
   }, [selectedLessonStudents, attendanceDraft]);
+
+  if (isError) {
+    return (
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
+          <div className="mx-auto max-w-xl space-y-4 text-center">
+            <p className="font-medium text-destructive">{t('error')}</p>
+            <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
+            <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
+          </div>
+        </ModulePageBody>
+      </ModulePage>
+    );
+  }
+
+  if (isLoading || !data) {
+    return (
+      <ModulePage contained={contained}>
+        <ModulePageBody contained={contained} ariaLabel={t('loading')}>
+          <div className="space-y-6">
+            <Skeleton className="h-10 w-64" />
+            <Skeleton className="h-6 w-48" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-28" />
+              ))}
+            </div>
+            <AnalyticsChartsSkeleton />
+          </div>
+        </ModulePageBody>
+      </ModulePage>
+    );
+  }
 
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
@@ -1641,7 +1641,18 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                               <p className="text-[11px] text-muted-foreground">{t('rescheduleLessonHint')}</p>
                             </div>
                           </div>
-                          <Button variant="ghost" size="icon" className="size-7 text-muted-foreground">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-muted-foreground"
+                            aria-label={t('rescheduleLesson')}
+                            aria-expanded={isRescheduleOpen}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setIsRescheduleOpen((open) => !open);
+                            }}
+                          >
                             {isRescheduleOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
                           </Button>
                         </div>

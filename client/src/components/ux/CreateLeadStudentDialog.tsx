@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { GraduationCap, Loader2, Plus, Users } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
+import { leadsApi } from '@/features/leads/api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
@@ -123,9 +123,8 @@ export function CreateLeadStudentDialog({
   }, [form, primaryGroupId, selectedGroupIds]);
 
   const createStudent = useMutation({
-    mutationFn: (values: StudentFormValues) => apiRequest(
-      'POST',
-      `/api/academy/leads/${leadId}/students`,
+    mutationFn: (values: StudentFormValues) => leadsApi.createStudent<CreatedLeadStudent>(
+      leadId,
       {
         studentName: values.studentName,
         studentAge: values.studentAge ? Number(values.studentAge) : null,
@@ -134,7 +133,7 @@ export function CreateLeadStudentDialog({
         primaryGroupId: Number(values.primaryGroupId),
         enrolledAt: values.enrolledAt,
       },
-    ) as Promise<CreatedLeadStudent>,
+    ),
     onSuccess: async (student) => {
       await onCreated(student);
       toast({ title: t('studentCreated'), description: t('studentCreatedFromLead') });

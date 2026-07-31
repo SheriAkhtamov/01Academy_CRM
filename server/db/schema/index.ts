@@ -2,22 +2,15 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { ACADEMY_MODULES } from "./academy";
-import { isOnlinePbxExtension } from "./telephony";
+import { ACADEMY_MODULES } from "../../../shared/academy";
+import { isOnlinePbxExtension } from "../../../shared/telephony";
+import type { AcademyScheduleItem } from "../../../shared/scheduling";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
   topic: string;
   description?: string | null;
   materials?: string | null;
-}
-
-export interface AcademyScheduleItem {
-  dayOfWeek: number;
-  time?: string;
-  startTime?: string;
-  endTime?: string;
-  schoolId?: number | null;
 }
 
 export const users = pgTable("users", {

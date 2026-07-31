@@ -365,7 +365,7 @@ router.post('/payments', async (req, res) => {
 
       let student = existingStudent ?? null;
       if (status === 'paid' && leadId) {
-        student = await createStudentFromLead(req, leadId, payment.id);
+        student = await createStudentFromLead(req.actor!, leadId, payment.id);
       }
       const paidStudentId = student?.id ?? studentId;
       if (status === 'paid' && paidStudentId) {

@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { auditLogs, type AuditLog, type InsertAuditLog } from '@shared/schema';
+import { auditLogs, type AuditLog, type InsertAuditLog } from '../db/schema';
 
 class AuditStorage {
     async createAuditLog(auditLog: InsertAuditLog): Promise<AuditLog> {

@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
 import { storage } from '../storage';
-import type { User, InsertUser } from '@shared/schema';
+import type { User, InsertUser } from '../db/schema';
 import type { SanitizedUser } from '@shared/auth';
 import {
   getPasswordPolicyError,

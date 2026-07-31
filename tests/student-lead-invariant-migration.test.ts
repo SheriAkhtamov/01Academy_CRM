@@ -9,7 +9,7 @@ const separationMigration = readFileSync(
   new URL('../migrations/0058_separate_leads_and_students.sql', import.meta.url),
   'utf8',
 );
-const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
   'utf8',

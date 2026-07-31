@@ -6,10 +6,14 @@ const migration = readFileSync(
   new URL('../migrations/0064_link_lead_tasks_to_board.sql', import.meta.url),
   'utf8',
 );
-const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const academyRoutes = readAcademyModuleSource();
 const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
+  'utf8',
+);
+const boardApi = readFileSync(
+  new URL('../client/src/features/board/api.ts', import.meta.url),
   'utf8',
 );
 const journal = JSON.parse(readFileSync(
@@ -34,8 +38,10 @@ describe('lead tasks on the shared board', () => {
   });
 
   it('creates and completes lead tasks through the shared board API', () => {
-    expect(leadSheet).toContain("apiRequest('POST', '/api/board/tasks'");
-    expect(leadSheet).toContain("apiRequest('PATCH', `/api/board/tasks/${taskId}/status`");
+    expect(leadSheet).toContain('boardApi.createTask({');
+    expect(leadSheet).toContain("boardApi.updateTaskStatus(taskId, 'done')");
+    expect(boardApi).toContain("apiRequest('POST', '/api/board/tasks'");
+    expect(boardApi).toContain("apiRequest('PATCH', `/api/board/tasks/${taskId}/status`");
     expect(academyRoutes).toContain('FROM board_tasks task');
     expect(academyRoutes).toContain('WHERE task.lead_id = $1');
   });

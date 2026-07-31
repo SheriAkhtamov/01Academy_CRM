@@ -81,6 +81,15 @@ import {
   normalizeLeadTagName,
   type LeadTagOption,
 } from '@shared/lead-tags';
+import {
+  actorContextFrom,
+  type ActorSource,
+} from '../leads/domain/actor-context';
+import {
+  actorHasModule,
+  canActorMutateLead,
+  canActorViewLead,
+} from '../leads/domain/access-policy';
 
 
 export type DbValue = string | number | boolean | Date | null | unknown[] | Record<string, unknown>;
@@ -540,12 +549,13 @@ export const normalizeDbValue = (value: DbValue) => {
   return value;
 };
 
-export const resolveLeadManagerId = async (req: any, requestedValue: unknown): Promise<number> => {
-  const assignedModules = getAssignedModules(req.user);
+export const resolveLeadManagerId = async (source: ActorSource, requestedValue: unknown): Promise<number> => {
+  const actor = actorContextFrom(source);
+  const assignedModules = actor.modules;
   const hasDirectSalesModule = assignedModules.includes('sales');
 
-  if (hasDirectSalesModule && !hasLeadershipAccess(req.user)) {
-    return Number(req.user.id);
+  if (hasDirectSalesModule && !actor.isLeadership) {
+    return actor.userId;
   }
 
   const requestedId = requestedValue === undefined || requestedValue === null || requestedValue === ''
@@ -574,7 +584,7 @@ export const resolveLeadManagerId = async (req: any, requestedValue: unknown): P
       `SELECT id
        FROM users u
        WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
-      [req.user.id],
+      [actor.userId],
     );
     if (currentManager) {
       return Number(currentManager.id);
@@ -651,26 +661,29 @@ export const syncLeadPhones = async (leadId: number, phones: NormalizedLeadPhone
 };
 
 export const ensureOperationsAccess = (req: any, res: any) => {
+  const actor = actorContextFrom(req);
   if (
-    hasLeadershipAccess(req.user) ||
-    getAssignedModules(req.user).some((module) => OPERATIONS_MODULES.has(module)) ||
-    canAccessAcademyModule(req.user, 'teacher')
+    actor.isLeadership ||
+    actor.modules.some((module) => OPERATIONS_MODULES.has(module)) ||
+    actorHasModule(actor, 'teacher')
   ) return true;
   res.status(403).json({ error: 'Operations access required' });
   return false;
 };
 
 export const ensureMarketingAccess = (req: any, res: any) => {
+  const actor = actorContextFrom(req);
   if (
-    hasLeadershipAccess(req.user) ||
-    getAssignedModules(req.user).some((module) => MARKETING_MODULES.has(module))
+    actor.isLeadership ||
+    actor.modules.some((module) => MARKETING_MODULES.has(module))
   ) return true;
   res.status(403).json({ error: 'Marketing access required' });
   return false;
 };
 
 export const ensureModuleAccess = (req: any, res: any, modules: Set<string>, message: string) => {
-  if (hasLeadershipAccess(req.user) || getAssignedModules(req.user).some((module) => modules.has(module))) return true;
+  const actor = actorContextFrom(req);
+  if (actor.isLeadership || actor.modules.some((module) => modules.has(module))) return true;
   res.status(403).json({ error: message });
   return false;
 };
@@ -690,12 +703,9 @@ export const ensureMarketingModuleAccess = (req: any, res: any) =>
 export const ensureAdministrationModuleAccess = (req: any, res: any) =>
   ensureModuleAccess(req, res, ADMINISTRATION_MODULES, 'Admin access required');
 
-export const canAccessLeadRow = (req: any, lead?: Row | null) => {
-  if (!lead) return false;
-  if (hasLeadershipAccess(req.user) || canAccessAcademyModule(req.user, 'marketing')) return true;
-  return canAccessAcademyModule(req.user, 'sales')
-    && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id));
-};
+export const canAccessLeadRow = (source: ActorSource, lead?: Row | null) => (
+  canActorViewLead(actorContextFrom(source), lead)
+);
 
 export const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
   if (canAccessLeadRow(req, lead)) return true;
@@ -703,16 +713,8 @@ export const ensureLeadRowAccess = (req: any, res: any, lead?: Row | null) => {
   return false;
 };
 
-export const canMutateLeadRow = (req: any, lead?: Row | null) => Boolean(
-  lead
-  && (
-    hasLeadershipAccess(req.user)
-    || canAccessAcademyModule(req.user, 'marketing')
-    || (
-      canAccessAcademyModule(req.user, 'sales')
-      && (!lead.managerId || Number(lead.managerId) === Number(req.user?.id))
-    )
-  ),
+export const canMutateLeadRow = (source: ActorSource, lead?: Row | null) => (
+  canActorMutateLead(actorContextFrom(source), lead)
 );
 
 export const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) => {
@@ -722,8 +724,8 @@ export const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) 
 };
 
 export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
-  const actorModules = getAssignedModules(actor);
-  if (!actor || !actorModules.includes('sales') || actorModules.includes('marketing') || hasLeadershipAccess(actor)) {
+  const context = actorContextFrom(actor);
+  if (!actor || !context.modules.includes('sales') || context.modules.includes('marketing') || context.isLeadership) {
     return leads;
   }
 
@@ -731,7 +733,7 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
   // Cards assigned to another manager are excluded completely instead of
   // exposing a partially redacted card.
   const visibleLeads = leads.filter((lead) => (
-    !lead.managerId || Number(lead.managerId) === Number(actor.userId)
+    !lead.managerId || Number(lead.managerId) === context.userId
   ));
   const policy = await getWorkforcePolicy();
   if (policy.salesPhoneVisibility === 'own_leads') return visibleLeads;
@@ -750,14 +752,15 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
   });
 };
 
-export const applyLeadVisibilityForRequest = async (req: any, lead: Row) => (
-  await applyLeadVisibilityForActor({
-    userId: req.user!.id,
-    module: String(req.user!.module),
-    modules: getAssignedModules(req.user),
+export const applyLeadVisibilityForRequest = async (req: any, lead: Row) => {
+  const actor = actorContextFrom(req);
+  return (await applyLeadVisibilityForActor({
+    userId: actor.userId,
+    module: actor.primaryModule ?? '',
+    modules: [...actor.modules],
     scopeModule: 'sales',
-  }, [lead])
-)[0];
+  }, [lead]))[0];
+};
 
 export const academyConstants = () => ({
   leadStatuses: LEAD_STATUSES,
@@ -810,10 +813,11 @@ export const toAnalyticsTargets = (settings: Row) => ({
   attendance: Number(settings.targetAttendancePercent || TARGET_ATTENDANCE_PERCENT),
 });
 
-export const createAudit = async (req: any, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
+export const createAudit = async (source: ActorSource, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
+  const actor = actorContextFrom(source);
   await runAfterTransactionCommit(async () => {
     await storage.createAuditLog({
-      userId: req.user!.id,
+      userId: actor.userId,
       action,
       entityType,
       entityId,

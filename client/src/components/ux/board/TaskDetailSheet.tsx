@@ -319,10 +319,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                         editing ? (
                                             <>
                                                 <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{t('saveChanges')}</Button>
-                                                <Button size="icon" variant="ghost" className="size-8" onClick={() => setEditing(false)}><X className="size-4" /></Button>
+                                                <Button size="icon" variant="ghost" className="size-8" aria-label={t('cancel')} onClick={() => setEditing(false)}><X className="size-4" /></Button>
                                             </>
                                         ) : (
-                                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setEditing(true)}><Pencil className="size-4" /></Button>
+                                            <Button size="icon" variant="ghost" className="size-8" aria-label={t('edit')} onClick={() => setEditing(true)}><Pencil className="size-4" /></Button>
                                         )
                                     ) : null}
                                 </div>
@@ -471,7 +471,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt)}</span>
                                                         </div>
                                                         {user && (user.id === c.author?.id || isTaskSupervisor) ? (
-                                                            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => setPendingDelete({ kind: 'comment', id: c.id })}><Trash2 className="size-3.5" /></Button>
+                                                            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'comment', id: c.id })}><Trash2 className="size-3.5" /></Button>
                                                         ) : null}
                                                     </div>
                                                     <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{c.body}</p>
@@ -500,7 +500,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                 <li key={item.id} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60">
                                                     <Checkbox checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
                                                     <span className={cn('flex-1 text-sm', item.isDone && 'text-muted-foreground line-through')}>{item.content}</span>
-                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-0 group-hover:opacity-100" onClick={() => setPendingDelete({ kind: 'checklist', id: item.id })}><Trash2 className="size-3.5" /></Button>
+                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-0 group-hover:opacity-100" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'checklist', id: item.id })}><Trash2 className="size-3.5" /></Button>
                                                 </li>
                                             ))}
                                         </ul>
@@ -530,10 +530,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                         <p className="text-[11px] text-muted-foreground">{formatFileSize(a.size)} · {a.uploadedBy?.fullName ?? '—'}</p>
                                                     </div>
                                                     <a href={`/api/board/attachments/${a.id}/download`} className="inline-flex">
-                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground"><Download className="size-3.5" /></Button>
+                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('download')}><Download className="size-3.5" /></Button>
                                                     </a>
                                                     {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isTaskSupervisor) ? (
-                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => setPendingDelete({ kind: 'attachment', id: a.id })}><Trash2 className="size-3.5" /></Button>
+                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'attachment', id: a.id })}><Trash2 className="size-3.5" /></Button>
                                                     ) : null}
                                                 </li>
                                             ))}

@@ -232,6 +232,7 @@ export function DataTable<T extends Record<string, any>>({
                 variant="outline"
                 size="icon"
                 className="h-7 w-7"
+                aria-label={t('previousPage')}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
               >
@@ -241,6 +242,7 @@ export function DataTable<T extends Record<string, any>>({
                 variant="outline"
                 size="icon"
                 className="h-7 w-7"
+                aria-label={t('nextPage')}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
               >

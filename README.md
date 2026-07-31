@@ -90,6 +90,8 @@ docker compose up -d
 ├── client/          # React frontend
 │   └── src/
 ├── server/          # Express backend
+│   ├── db/schema/   # Server-only Drizzle persistence schema
+│   ├── modules/     # Domain/application/http/infrastructure slices
 │   ├── routes/      # API endpoints
 │   ├── services/    # Бизнес-логика
 │   ├── middleware/  # Промежуточное ПО
@@ -148,7 +150,7 @@ npm test
 # Тесты в режиме watch
 npm run test:watch
 
-# TypeScript, кодировки и локализация
+# TypeScript, ESLint, architecture, encoding, i18n и a11y
 npm run check
 
 # Уязвимости зависимостей и секреты в отслеживаемых файлах
@@ -166,7 +168,7 @@ npm run audit:security
 | `npm run db:backup` | Бэкап БД |
 | `npm run seed:dev` | Сидирование тестовых данных |
 | `npm test` | Запуск тестов |
-| `npm run check` | Полная проверка (TS, architecture, encoding, i18n, a11y) |
+| `npm run check` | Полная проверка (TS, ESLint, architecture, encoding, i18n, a11y) |
 | `npm run audit:security` | Аудит зависимостей и секретов |
 
 ## 👥 Роли пользователей

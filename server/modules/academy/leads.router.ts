@@ -76,11 +76,7 @@ import {
   weeklySchedulesOverlap,
   type NormalizedWeeklyScheduleItem,
 } from '@shared/scheduling';
-import {
-  leadTagNameKey,
-  normalizeLeadTagName,
-  type LeadTagOption,
-} from '@shared/lead-tags';
+import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
 
 import {
@@ -132,13 +128,9 @@ import {
   findDuplicate,
   getActiveSalesManager,
   getLead,
-  getLeadMergeCandidates,
   getLockedLeadWithSource,
   handleLeadStatusEffects,
   leadContactSummary,
-  leadMergeCandidateSelect,
-  mergeLeadDraftIntoExisting,
-  mergeLeadRecords,
   reassignLead,
   recalculateStudentMetrics,
   resolveCourseByAge,
@@ -292,7 +284,7 @@ router.post('/leads', async (req, res) => {
     if (duplicate) {
       return res.status(409).json({
         error: 'clientAlreadyExists',
-        duplicate: duplicateHintForRequest(req, duplicate),
+        duplicate: duplicateHintForRequest(req.actor!, duplicate),
       });
     }
     if (input.demoAt) {
@@ -327,7 +319,7 @@ router.post('/leads', async (req, res) => {
       if (statusCode === 'paid') {
         throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
       }
-      const managerId = await resolveLeadManagerId(req, input.managerId);
+      const managerId = await resolveLeadManagerId(req.actor!, input.managerId);
       await getActiveSalesManager(managerId, true);
 
       const enrolledGroupId = parseId(input.enrolledGroupId);
@@ -405,14 +397,14 @@ router.post('/leads', async (req, res) => {
       return { ...createdLead, phoneNumbers: phones.map((phone) => phone.phone) };
     });
 
-    await handleLeadStatusEffects(req, lead);
-    await createAudit(req, 'CREATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead);
+    await handleLeadStatusEffects(req.actor!, lead);
+    await createAudit(req.actor!, 'CREATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead);
     res.status(201).json(lead);
   } catch (error: any) {
     logger.error('Failed to create lead', { error });
     res.status(error.statusCode || 500).json({
       error: getPublicErrorMessage(error, 'Failed to create lead'),
-      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
+      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req.actor!, error.duplicate) } : {}),
     });
   }
 });
@@ -511,7 +503,7 @@ router.post('/leads/bulk-assign', async (req, res) => {
         `Назначено лидов: ${changedLeads.length}`,
         'lead_assignment',
       );
-      await createAudit(req, 'BULK_ASSIGN_ACADEMY_LEADS', 'academy_lead', 0, {
+      await createAudit(req.actor!, 'BULK_ASSIGN_ACADEMY_LEADS', 'academy_lead', 0, {
         leadIds: changedIds,
         managerId: manager.id,
       }, {
@@ -523,105 +515,6 @@ router.post('/leads/bulk-assign', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to bulk assign leads', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to assign leads') });
-  }
-});
-
-router.get('/leads/merge-candidates', async (req, res) => {
-  if (!ensureAdministrationModuleAccess(req, res)) return;
-  try {
-    const term = String(req.query.q ?? '').trim();
-    if (term.length < 2) return res.json([]);
-    const like = `%${term.toLowerCase()}%`;
-    const candidates = await query(
-      `${leadMergeCandidateSelect(`
-        COALESCE(l.is_archived, false) = false
-        AND (
-          LOWER(l.contact_name) LIKE $1
-          OR LOWER(COALESCE(l.student_name, '')) LIKE $1
-          OR LOWER(COALESCE(l.phone, '')) LIKE $1
-          OR LOWER(COALESCE(l.messenger, '')) LIKE $1
-          OR EXISTS (
-            SELECT 1
-            FROM academy_lead_phones phone
-            WHERE phone.lead_id = l.id AND LOWER(phone.phone) LIKE $1
-          )
-        )
-      `)}
-       ORDER BY l.updated_at DESC NULLS LAST, l.id DESC
-       LIMIT 10`,
-      [like],
-    );
-    res.json(candidates);
-  } catch (error) {
-    logger.error('Failed to search lead merge candidates', { error });
-    res.status(500).json({ error: 'leadMergeSearchFailed' });
-  }
-});
-
-router.get('/leads/merge-preview', async (req, res) => {
-  if (!ensureAdministrationModuleAccess(req, res)) return;
-  try {
-    const firstLeadId = parseId(req.query.firstLeadId);
-    const secondLeadId = parseId(req.query.secondLeadId);
-    if (!firstLeadId || !secondLeadId || firstLeadId === secondLeadId) {
-      return res.status(400).json({ error: 'leadMergeRequiresDifferentLeads' });
-    }
-    const leads = await getLeadMergeCandidates([firstLeadId, secondLeadId]);
-    if (leads.length !== 2) return res.status(404).json({ error: 'leadMergeLeadNotFound' });
-    res.json({ leads });
-  } catch (error: any) {
-    logger.error('Failed to preview lead merge', { error });
-    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'leadMergePreviewFailed') });
-  }
-});
-
-router.post('/leads/merge', async (req, res) => {
-  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
-  try {
-    const retainedLeadId = parseId(req.body.retainedLeadId);
-    const duplicateLeadId = parseId(req.body.duplicateLeadId);
-    if (!retainedLeadId || !duplicateLeadId || retainedLeadId === duplicateLeadId) {
-      return res.status(400).json({ error: 'leadMergeRequiresDifferentLeads' });
-    }
-    const result = await mergeLeadRecords(req, retainedLeadId, duplicateLeadId);
-    const [visibleLead] = await applyLeadVisibilityForActor({
-      userId: req.user!.id,
-      module: String(req.user!.module),
-      modules: getAssignedModules(req.user),
-      scopeModule: 'sales',
-    }, [result.retainedLead]);
-    res.json({ ...result, retainedLead: visibleLead });
-  } catch (error: any) {
-    logger.error('Failed to merge leads', { error });
-    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'leadMergeFailed') });
-  }
-});
-
-router.post('/leads/merge-draft', async (req, res) => {
-  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
-  try {
-    const retainedLeadId = parseId(req.body.retainedLeadId);
-    const draft = req.body.draft && typeof req.body.draft === 'object' ? req.body.draft : null;
-    if (!retainedLeadId || !draft) {
-      return res.status(400).json({ error: 'invalidData' });
-    }
-    const result = await mergeLeadDraftIntoExisting(req, retainedLeadId, draft);
-    if (result.assignedManager) {
-      await createNotification(
-        result.assignedManager.id,
-        'Вам назначен лид',
-        leadContactSummary(result.retainedLead),
-        'lead',
-        retainedLeadId,
-      );
-    }
-    res.json(await applyLeadVisibilityForRequest(req, result.retainedLead));
-  } catch (error: any) {
-    logger.error('Failed to merge lead draft', { error });
-    res.status(error.statusCode || 500).json({
-      error: getPublicErrorMessage(error, 'leadMergeFailed'),
-      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
-    });
   }
 });
 
@@ -731,297 +624,6 @@ router.get('/leads/:id', async (req, res) => {
   }
 });
 
-router.post('/leads/:id/tags', async (req, res) => {
-  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
-  try {
-    const leadId = parseId(req.params.id);
-    if (!leadId) return res.status(400).json({ error: 'Invalid lead id' });
-
-    const usesExistingTag = req.body?.tagId !== undefined;
-    const tagId = usesExistingTag ? parseId(req.body.tagId) : null;
-    const normalizedTag = usesExistingTag ? null : normalizeLeadTagName(req.body?.name);
-    if ((usesExistingTag && !tagId) || (!usesExistingTag && !normalizedTag)) {
-      return res.status(400).json({ error: 'leadTagNameInvalid' });
-    }
-
-    const initialLead = await getLead(leadId);
-    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
-
-    const result = await withTransaction(async () => {
-      const lockedLead = await getLockedLeadWithSource(leadId);
-      if (!lockedLead) {
-        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
-      }
-      if (!canMutateLeadRow(req, lockedLead)) {
-        throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
-      }
-
-      let tag: Row | undefined;
-      if (tagId) {
-        tag = await queryOne(
-          `SELECT *
-           FROM academy_lead_tags
-           WHERE id = $1
-           FOR SHARE`,
-          [tagId],
-        );
-        if (!tag) {
-          throw Object.assign(new Error('leadTagNotFound'), { statusCode: 404 });
-        }
-      } else if (normalizedTag) {
-        if (leadTagNameKey(lockedLead.sourceName) === normalizedTag.normalizedName) {
-          return {
-            automatic: true,
-            created: false,
-            tag: { id: null, tagId: null, name: lockedLead.sourceName },
-          };
-        }
-
-        tag = await queryOne(
-          `INSERT INTO academy_lead_tags
-             (name, normalized_name, created_by)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (normalized_name) DO NOTHING
-           RETURNING *`,
-          [normalizedTag.name, normalizedTag.normalizedName, req.user!.id],
-        );
-        tag ??= await queryOne(
-          `SELECT *
-           FROM academy_lead_tags
-           WHERE normalized_name = $1
-           FOR SHARE`,
-          [normalizedTag.normalizedName],
-        );
-      }
-
-      if (!tag) {
-        throw Object.assign(new Error('leadTagNotFound'), { statusCode: 404 });
-      }
-      if (leadTagNameKey(lockedLead.sourceName) === leadTagNameKey(tag.name)) {
-        return {
-          automatic: true,
-          created: false,
-          tag: { id: null, tagId: null, name: lockedLead.sourceName },
-        };
-      }
-
-      const insertedAssignment = await queryOne(
-        `INSERT INTO academy_lead_tag_assignments
-           (lead_id, tag_id, created_by)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (lead_id, tag_id) DO NOTHING
-         RETURNING *`,
-        [leadId, tag.id, req.user!.id],
-      );
-      const assignment = insertedAssignment ?? await queryOne(
-        `SELECT *
-         FROM academy_lead_tag_assignments
-         WHERE lead_id = $1 AND tag_id = $2
-         FOR SHARE`,
-        [leadId, tag.id],
-      );
-      if (!assignment) {
-        throw Object.assign(new Error('leadTagAddFailed'), { statusCode: 409 });
-      }
-
-      const responseTag = {
-        id: Number(assignment.id),
-        tagId: Number(tag.id),
-        name: String(tag.name),
-      };
-      if (insertedAssignment) {
-        await createAudit(req, 'ADD_ACADEMY_LEAD_TAG', 'academy_lead', leadId, responseTag);
-      }
-      return {
-        automatic: false,
-        created: Boolean(insertedAssignment),
-        tag: responseTag,
-      };
-    });
-
-    res.status(result.created ? 201 : 200).json(result);
-  } catch (error: any) {
-    logger.error('Failed to add lead tag', { error, leadId: req.params.id });
-    res.status(error.statusCode || 500).json({
-      error: getPublicErrorMessage(error, 'leadTagAddFailed'),
-    });
-  }
-});
-
-router.delete('/leads/:id/tags/:assignmentId', async (req, res) => {
-  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
-  try {
-    const leadId = parseId(req.params.id);
-    const assignmentId = parseId(req.params.assignmentId);
-    if (!leadId || !assignmentId) {
-      return res.status(400).json({ error: 'invalidData' });
-    }
-
-    const initialLead = await getLead(leadId);
-    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
-
-    const removedTag = await withTransaction(async () => {
-      const lockedLead = await getLockedLeadWithSource(leadId);
-      if (!lockedLead) {
-        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
-      }
-      if (!canMutateLeadRow(req, lockedLead)) {
-        throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
-      }
-
-      // Automatic tags are derived from academy_leads.source_id and never have
-      // an assignment row. This endpoint can therefore only remove a manual link.
-      const assignment = await queryOne(
-        `SELECT assignment.id, tag.id AS tag_id, tag.name
-         FROM academy_lead_tag_assignments assignment
-         JOIN academy_lead_tags tag ON tag.id = assignment.tag_id
-         WHERE assignment.id = $1 AND assignment.lead_id = $2
-         FOR UPDATE OF assignment`,
-        [assignmentId, leadId],
-      );
-      if (!assignment) {
-        throw Object.assign(new Error('leadTagNotFound'), { statusCode: 404 });
-      }
-
-      await query(
-        `DELETE FROM academy_lead_tag_assignments
-         WHERE id = $1 AND lead_id = $2`,
-        [assignmentId, leadId],
-      );
-      const responseTag = {
-        id: Number(assignment.id),
-        tagId: Number(assignment.tagId),
-        name: String(assignment.name),
-      };
-      await createAudit(req, 'REMOVE_ACADEMY_LEAD_TAG', 'academy_lead', leadId, undefined, responseTag);
-      return responseTag;
-    });
-
-    res.json({ success: true, tag: removedTag });
-  } catch (error: any) {
-    logger.error('Failed to remove lead tag', { error, leadId: req.params.id });
-    res.status(error.statusCode || 500).json({
-      error: getPublicErrorMessage(error, 'leadTagRemoveFailed'),
-    });
-  }
-});
-
-router.post('/leads/:id/comments', async (req, res) => {
-  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
-  try {
-    const id = parseId(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-    const body = nullableText(req.body.body);
-    if (!body) return res.status(400).json({ error: 'leadCommentRequired' });
-
-    const initialLead = await getLead(id);
-    if (!initialLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, initialLead)) return;
-
-    const comment = await withTransaction<Row & { authorName: string | null }>(async () => {
-      const lockedLead = await queryOne(
-        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
-        [id],
-      );
-      if (!lockedLead) {
-        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
-      }
-      if (!canMutateLeadRow(req, lockedLead)) {
-        throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
-      }
-
-      const created = await insertRow('academy_lead_comments', {
-        leadId: id,
-        authorId: req.user!.id,
-        body,
-      });
-      await updateRow('academy_leads', id, { comment: body });
-      return {
-        ...created,
-        authorName: req.user!.fullName ?? null,
-      };
-    });
-
-    await createAudit(req, 'ADD_ACADEMY_LEAD_COMMENT', 'academy_lead', id, {
-      commentId: comment.id,
-    });
-    res.status(201).json(comment);
-  } catch (error: any) {
-    logger.error('Failed to add lead comment', { error, leadId: req.params.id });
-    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'leadCommentAddFailed') });
-  }
-});
-
-router.post('/leads/:id/assign', async (req, res) => {
-  if (!ensureModuleAccess(req, res, new Set(['administration', 'sales']), 'Lead assignment access required')) return;
-  try {
-    const id = parseId(req.params.id);
-    const managerId = parseId(req.body.managerId);
-    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-    if (!managerId) return res.status(400).json({ error: 'Active account manager is required' });
-
-    const oldLead = await getLead(id);
-    if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
-
-    const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyModule(req.user, 'marketing');
-    if (!canAssignAnyManager && Number(managerId) !== Number(req.user!.id)) {
-      return res.status(403).json({ error: 'Only leadership can assign a lead to another manager' });
-    }
-
-    const manager = await getActiveSalesManager(managerId);
-    const lead = await reassignLead(req, oldLead, manager, nullableText(req.body.comment));
-    await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
-    res.json(await applyLeadVisibilityForRequest(req, lead));
-  } catch (error: any) {
-    logger.error('Failed to assign lead', { error });
-    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to assign lead') });
-  }
-});
-
-router.delete('/leads/:id', async (req, res) => {
-  if (!ensureAdministrationModuleAccess(req, res)) return;
-  try {
-    const id = parseId(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-
-    const lead = await getLead(id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-
-    const deletedTaskRows = await withTransaction(async () => {
-      const taskRows = await query<{ id: number }>(
-        `DELETE FROM academy_tasks
-         WHERE entity_type = 'lead' AND entity_id = $1
-         RETURNING id`,
-        [id],
-      );
-      const deletedLead = await queryOne(
-        `DELETE FROM academy_leads
-         WHERE id = $1
-         RETURNING id`,
-        [id],
-      );
-      if (!deletedLead) {
-        throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
-      }
-      return taskRows;
-    });
-
-    await createAudit(req, 'DELETE_ACADEMY_LEAD', 'academy_lead', id, {
-      deletedTaskCount: deletedTaskRows.length,
-    }, lead);
-    res.json({ ok: true, deletedTaskCount: deletedTaskRows.length });
-  } catch (error: any) {
-    logger.error('Failed to delete lead', { error });
-    const isForeignKeyConflict = error?.code === '23503';
-    res.status(error.statusCode || (isForeignKeyConflict ? 409 : 500)).json({
-      error: isForeignKeyConflict ? 'resourceInUse' : getPublicErrorMessage(error, 'Failed to delete lead'),
-    });
-  }
-});
-
 router.post('/leads/:id/groups', async (req, res) => {
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead group access required')) return;
   try {
@@ -1043,7 +645,7 @@ router.post('/leads/:id/groups', async (req, res) => {
       if (!lockedLead) {
         throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
       }
-      if (!canMutateLeadRow(req, lockedLead)) {
+      if (!canMutateLeadRow(req.actor!, lockedLead)) {
         throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
       }
       const student = await queryOne(
@@ -1074,7 +676,7 @@ router.post('/leads/:id/groups', async (req, res) => {
       return lockedLead;
     });
 
-    await createAudit(req, 'ADD_ACADEMY_LEAD_GROUP', 'academy_lead', leadId, {
+    await createAudit(req.actor!, 'ADD_ACADEMY_LEAD_GROUP', 'academy_lead', leadId, {
       groupId,
       isPrimary: makePrimary || !initialLead.enrolledGroupId,
     });
@@ -1105,7 +707,7 @@ router.delete('/leads/:id/groups/:groupId', async (req, res) => {
       if (!lockedLead) {
         throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
       }
-      if (!canMutateLeadRow(req, lockedLead)) {
+      if (!canMutateLeadRow(req.actor!, lockedLead)) {
         throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
       }
       const student = await queryOne(
@@ -1161,7 +763,7 @@ router.delete('/leads/:id/groups/:groupId', async (req, res) => {
       });
     });
 
-    await createAudit(req, 'REMOVE_ACADEMY_LEAD_GROUP', 'academy_lead', leadId, { groupId });
+    await createAudit(req.actor!, 'REMOVE_ACADEMY_LEAD_GROUP', 'academy_lead', leadId, { groupId });
     res.json(lead);
   } catch (error: any) {
     logger.error('Failed to remove lead group', { error });
@@ -1215,7 +817,7 @@ router.post('/leads/:id/archive', async (req, res) => {
           manager,
           nullableText(req.body.assignmentComment) ?? 'Присвоено себе перед архивированием',
         );
-        await createAudit(req, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', assignedLead.id, assignedLead, leadBeforeArchive);
+        await createAudit(req.actor!, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', assignedLead.id, assignedLead, leadBeforeArchive);
         leadBeforeArchive = assignedLead;
       }
 
@@ -1229,7 +831,7 @@ router.post('/leads/:id/archive', async (req, res) => {
         throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
       }
 
-      await createAudit(req, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, leadBeforeArchive);
+      await createAudit(req.actor!, 'ARCHIVE_ACADEMY_LEAD', 'academy_lead', archived.id, archived, leadBeforeArchive);
     });
 
     res.json(await getLead(id) ?? archived);
@@ -1293,10 +895,10 @@ router.post('/leads/:id/restore', async (req, res) => {
         req.user!.id,
         `Восстановлен из архива${oldLead.archiveReason ? `: ${oldLead.archiveReason}` : ''}`,
       );
-      await handleLeadStatusEffects(req, restored, oldLead.statusCode);
+      await handleLeadStatusEffects(req.actor!, restored, oldLead.statusCode);
     }
 
-    await createAudit(req, 'RESTORE_ACADEMY_LEAD', 'academy_lead', restored.id, restored, oldLead);
+    await createAudit(req.actor!, 'RESTORE_ACADEMY_LEAD', 'academy_lead', restored.id, restored, oldLead);
     res.json(await getLead(id) ?? restored);
   } catch (error: any) {
     logger.error('Failed to restore lead', { error });
@@ -1401,7 +1003,7 @@ router.patch('/leads/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only leadership can assign a lead to another manager' });
     }
     const managerId = requestedManagerId
-      ? await resolveLeadManagerId(req, requestedManagerId)
+      ? await resolveLeadManagerId(req.actor!, requestedManagerId)
       : undefined;
     if (nextStatus !== oldLead.statusCode && !oldLead.managerId && !managerId) {
       return res.status(409).json({ error: 'leadRequiresResponsibleManager' });
@@ -1418,7 +1020,7 @@ router.patch('/leads/:id', async (req, res) => {
     if (duplicate) {
       return res.status(409).json({
         error: 'clientAlreadyExists',
-        duplicate: duplicateHintForRequest(req, duplicate),
+        duplicate: duplicateHintForRequest(req.actor!, duplicate),
       });
     }
     const updates: Row = {
@@ -1486,7 +1088,7 @@ router.patch('/leads/:id', async (req, res) => {
       if (!lockedLead) {
         throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
       }
-      if (!canMutateLeadRow(req, lockedLead)) {
+      if (!canMutateLeadRow(req.actor!, lockedLead)) {
         throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
       }
       const lockedStudent = hasRequestedGroup
@@ -1678,7 +1280,7 @@ router.patch('/leads/:id', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     if (oldLead.statusCode !== lead.statusCode) {
-      await handleLeadStatusEffects(req, lead, oldLead.statusCode);
+      await handleLeadStatusEffects(req.actor!, lead, oldLead.statusCode);
     }
 
     if (manager && managerChanged && didChangeManager) {
@@ -1691,13 +1293,13 @@ router.patch('/leads/:id', async (req, res) => {
       );
     }
 
-    await createAudit(req, 'UPDATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
+    await createAudit(req.actor!, 'UPDATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead, oldLead);
     res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error: any) {
     logger.error('Failed to update lead', { error });
     res.status(error.statusCode || 500).json({
       error: getPublicErrorMessage(error, 'Failed to update lead'),
-      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req, error.duplicate) } : {}),
+      ...(error.duplicate ? { duplicate: duplicateHintForRequest(req.actor!, error.duplicate) } : {}),
     });
   }
 });
@@ -1772,7 +1374,7 @@ router.post('/leads/:id/demo-attendance', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (oldLead.statusCode !== nextStatus) {
       await createStageHistory(id, oldLead.statusCode, nextStatus, req.user!.id, 'Отмечено посещение демо');
-      await handleLeadStatusEffects(req, lead, oldLead.statusCode);
+      await handleLeadStatusEffects(req.actor!, lead, oldLead.statusCode);
     }
     res.json(await applyLeadVisibilityForRequest(req, lead));
   } catch (error) {
@@ -1798,7 +1400,7 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
       if (!paidPayment) {
         throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
       }
-      return createStudentFromLead(req, id, Number(paidPayment.id));
+      return createStudentFromLead(req.actor!, id, Number(paidPayment.id));
     });
     res.status(201).json(student);
   } catch (error: any) {
@@ -1919,7 +1521,7 @@ router.post('/leads/:id/students', async (req, res) => {
     });
     const updatedLead = await getLead(leadId);
     if (updatedLead && String(updatedLead.statusCode) !== String(initialLead.statusCode)) {
-      await handleLeadStatusEffects(req, updatedLead, String(initialLead.statusCode));
+      await handleLeadStatusEffects(req.actor!, updatedLead, String(initialLead.statusCode));
     }
     const enriched = await queryOne(
       `SELECT student.*,
@@ -1934,7 +1536,7 @@ router.post('/leads/:id/students', async (req, res) => {
        WHERE student.id = $1`,
       [student.id],
     );
-    await createAudit(req, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, enriched ?? student);
+    await createAudit(req.actor!, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, enriched ?? student);
     res.status(201).json(enriched ?? student);
   } catch (error: any) {
     logger.error('Failed to create student from lead card', { error });

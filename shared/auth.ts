@@ -1,7 +1,21 @@
-import type { User } from "./schema";
 import type { AcademyAccessModule } from "./academy";
 
-export type SanitizedUser = Omit<User, "password" | "credentialPasswordCiphertext"> & {
+export type SanitizedUser = {
+  id: number;
+  email: string;
+  fullName: string;
+  phone: string | null;
+  onlinePbxExtension: string | null;
+  dateOfBirth: Date | string | null;
+  position: string | null;
+  module: string;
+  hasReportAccess: boolean | null;
+  isActive: boolean | null;
+  isOnline: boolean | null;
+  onlinePbxIncomingEnabled: boolean;
+  lastSeenAt: Date | string | null;
+  createdAt: Date | string | null;
+  updatedAt: Date | string | null;
   modules?: AcademyAccessModule[];
 };
 

@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { notifications, type Notification, type InsertNotification } from '@shared/schema';
+import { notifications, type Notification, type InsertNotification } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 class NotificationStorage {

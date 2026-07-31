@@ -1,5 +1,5 @@
 import { addDays, addMinutes, differenceInCalendarDays, startOfDay } from 'date-fns';
-import type { AcademyScheduleItem } from '@shared/schema';
+import type { AcademyScheduleItem } from '@shared/scheduling';
 
 export interface SalesScheduleGroup {
   id: number;

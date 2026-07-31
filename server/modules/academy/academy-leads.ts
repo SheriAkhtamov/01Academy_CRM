@@ -1,87 +1,19 @@
-import { Router } from 'express';
-import { AsyncLocalStorage } from 'node:async_hooks';
-import type { PoolClient } from 'pg';
-import { pool } from '../../db';
-import { appConfig } from '../../config';
-import { requireAuth } from '../../middleware/auth.middleware';
-import { storage } from '../../storage';
-import { logger } from '../../lib/logger';
-import { getPublicErrorMessage } from '../../lib/http-errors';
-import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import {
-  getZonedDateTimeParts,
-  getZonedDateOnlyRange,
-  getZonedDayRange,
-  getZonedMonthRange,
-  zonedWallClockToInstant,
-} from '../../lib/academy-time';
-import {
-  buildRecurringLessonSchedule,
-  type CalendarDate,
-} from '../../lib/lesson-schedule';
-import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
-import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
-import { syncLeadSourceChannel } from '../../services/lead-channels';
-import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
-import {
-  CHURN_REASONS,
-  FINAL_PROJECT_STATUSES,
-  GROUP_STATUSES,
-  LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
-  LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
-  PAYMENT_METHODS,
-  PAYMENT_STATUSES,
-  PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
-  STUDENT_STATUSES,
-  TARGET_ATTENDANCE_PERCENT,
-  TARGET_CAC_UZS,
-  TARGET_LTV_CAC_RATIO,
-  TARGET_NPS,
-  TARGET_ROAS,
   addDays,
   addMinutes,
   buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
-  calculateAvgDealCycleDays,
-  calculateAvgStudyMonths,
-  calculateCac,
-  calculateLtv,
-  calculateNps,
   calculateProgressPercent,
-  calculateRoas,
-  calculateTrend,
-  canAccessAcademyModule,
-  getAssignedModules,
-  getComputedPaymentStatus,
-  hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
   resolveReferralLevel,
   resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
-  validateLeadStatusTransition } from '@shared/academy';
-import {
-  getGroupScheduleValidationError,
-  getMinimumGroupEndDate,
-  normalizeWeeklySchedule,
-  parseScheduleTimeToMinutes,
-  scheduleIntervalsOverlap,
-  weeklySchedulesOverlap,
-  type NormalizedWeeklyScheduleItem,
-} from '@shared/scheduling';
-import {
-  leadTagNameKey,
-  normalizeLeadTagName,
-  type LeadTagOption,
-} from '@shared/lead-tags';
-
+} from '@shared/academy';
+import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import {
   ACADEMY_REFERRAL_ADVISORY_LOCK,
   ACADEMY_TIME_ZONE,
@@ -118,6 +50,11 @@ import {
 import {
   TEMPLATE_SOURCE_PREFIXES,
 } from './academy-scheduling';
+import {
+  actorContextFrom,
+  type ActorSource,
+} from '../leads/domain/actor-context';
+import { duplicateHintForActor } from '../leads/domain/access-policy';
 
 export const buildTemplateSourceCode = (prefix: string, suffix: string) => {
   const slug = suffix
@@ -306,14 +243,8 @@ export const findDuplicate = async (
   );
 };
 
-export const duplicateHintForRequest = (req: any, duplicate: Row | null | undefined) => {
-  if (!duplicate) return duplicate;
-  return {
-    ...duplicate,
-    canMerge: duplicate.entityType === 'lead'
-      && duplicate.isArchived !== true
-      && canMutateLeadRow(req, duplicate),
-  };
+export const duplicateHintForRequest = (source: ActorSource, duplicate: Row | null | undefined) => {
+  return duplicateHintForActor(actorContextFrom(source), duplicate);
 };
 
 export const usefulLeadValue = <T>(value: T | null | undefined): value is T => (
@@ -399,10 +330,11 @@ export type LeadMergeResult = {
 };
 
 export const mergeLeadRecords = async (
-  req: any,
+  source: ActorSource,
   retainedLeadId: number,
   duplicateLeadId: number,
 ): Promise<LeadMergeResult> => withTransaction(async () => {
+  const actor = actorContextFrom(source);
   if (retainedLeadId === duplicateLeadId) {
     throw Object.assign(new Error('leadMergeRequiresDifferentLeads'), { statusCode: 400 });
   }
@@ -430,7 +362,7 @@ export const mergeLeadRecords = async (
   if (retainedLead.isArchived || duplicateLead.isArchived) {
     throw Object.assign(new Error('leadMergeActiveLeadsOnly'), { statusCode: 409 });
   }
-  if (!canMutateLeadRow(req, retainedLead) || !canMutateLeadRow(req, duplicateLead)) {
+  if (!canMutateLeadRow(actor, retainedLead) || !canMutateLeadRow(actor, duplicateLead)) {
     throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
   }
 
@@ -757,11 +689,11 @@ export const mergeLeadRecords = async (
     isArchived: true,
     archiveReason: 'duplicate_or_invalid',
     archivedAt: new Date(),
-    archivedBy: req.user!.id,
+    archivedBy: actor.userId,
   });
 
   await insertRow('audit_logs', {
-    userId: req.user!.id,
+    userId: actor.userId,
     action: 'MERGE_ACADEMY_LEADS',
     entityType: 'academy_lead',
     entityId: retainedLeadId,
@@ -818,10 +750,11 @@ export type LeadDraftMergeResult = {
 };
 
 export const mergeLeadDraftIntoExisting = async (
-  req: any,
+  source: ActorSource,
   retainedLeadId: number,
   draft: Row,
 ): Promise<LeadDraftMergeResult> => withTransaction(async () => {
+  const actor = actorContextFrom(source);
   await query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
     `academy-lead-merge:${retainedLeadId}`,
   ]);
@@ -835,7 +768,7 @@ export const mergeLeadDraftIntoExisting = async (
   if (retainedLead.isArchived) {
     throw Object.assign(new Error('leadMergeActiveLeadsOnly'), { statusCode: 409 });
   }
-  if (!canMutateLeadRow(req, retainedLead)) {
+  if (!canMutateLeadRow(actor, retainedLead)) {
     throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
   }
 
@@ -889,7 +822,7 @@ export const mergeLeadDraftIntoExisting = async (
 
   const requestedManagerId = retainedLead.managerId
     ? null
-    : await resolveLeadManagerId(req, draft.managerId);
+    : await resolveLeadManagerId(actor, draft.managerId);
   const assignedManager = requestedManagerId
     ? await getActiveSalesManager(requestedManagerId, true)
     : null;
@@ -936,7 +869,7 @@ export const mergeLeadDraftIntoExisting = async (
   if (draftComment) {
     await insertRow('academy_lead_comments', {
       leadId: retainedLeadId,
-      authorId: req.user!.id,
+      authorId: actor.userId,
       body: draftComment,
     });
   }
@@ -946,7 +879,7 @@ export const mergeLeadDraftIntoExisting = async (
          (lead_id, group_id, created_by)
        VALUES ($1, $2, $3)
        ON CONFLICT (lead_id, group_id) DO NOTHING`,
-      [retainedLeadId, nextEnrolledGroupId, req.user!.id],
+      [retainedLeadId, nextEnrolledGroupId, actor.userId],
     );
   }
   await syncLeadPhones(retainedLeadId, phoneValuesToSave);
@@ -959,7 +892,7 @@ export const mergeLeadDraftIntoExisting = async (
 
   if (assignedManager) {
     await syncLeadManagerAssignment(
-      req,
+      actor,
       retainedLead,
       assignedManager,
       'Ответственный назначен при объединении новой заявки с существующим лидом',
@@ -967,7 +900,7 @@ export const mergeLeadDraftIntoExisting = async (
   }
 
   await insertRow('audit_logs', {
-    userId: req.user!.id,
+    userId: actor.userId,
     action: 'MERGE_ACADEMY_LEAD_DRAFT',
     entityType: 'academy_lead',
     entityId: retainedLeadId,
@@ -1087,11 +1020,12 @@ export const syncLeadOwnedNotifications = async (managerId: number, leadIds: num
 };
 
 export const syncLeadManagerAssignment = async (
-  req: any,
+  source: ActorSource,
   lead: Row,
   manager: { id: number; fullName: string },
   comment?: string | null,
 ) => {
+  const actor = actorContextFrom(source);
   await query(
     `UPDATE academy_students
      SET manager_id = $1, updated_at = NOW()
@@ -1123,17 +1057,18 @@ export const syncLeadManagerAssignment = async (
     leadId: lead.id,
     fromManagerId: lead.managerId ?? null,
     toManagerId: manager.id,
-    changedBy: req.user!.id,
+    changedBy: actor.userId,
     comment: comment ?? null,
   });
 };
 
 export const reassignLead = async (
-  req: any,
+  source: ActorSource,
   lead: Row,
   manager: { id: number; fullName: string },
   comment?: string | null,
 ): Promise<Row> => {
+  const actor = actorContextFrom(source);
   let assignmentChanged = false;
   const updatedLead = await withTransaction(async () => {
     const lockedManager = await getActiveSalesManager(manager.id, true);
@@ -1144,7 +1079,7 @@ export const reassignLead = async (
     if (!lockedLead) {
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
-    if (!canAccessLeadRow(req, lockedLead)) {
+    if (!canAccessLeadRow(actor, lockedLead)) {
       throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
     }
     if (Number(lockedLead.managerId) === Number(lockedManager.id)) {
@@ -1156,7 +1091,7 @@ export const reassignLead = async (
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
 
-    await syncLeadManagerAssignment(req, lockedLead, lockedManager, comment);
+    await syncLeadManagerAssignment(actor, lockedLead, lockedManager, comment);
     assignmentChanged = true;
 
     return { ...updated, managerName: lockedManager.fullName };
@@ -1453,9 +1388,10 @@ export const advanceStudentNextPaymentAt = async (
   );
 };
 
-export const createStudentFromLead = async (req: any, leadId: number, paymentId?: number | null): Promise<Row> => {
+export const createStudentFromLead = async (source: ActorSource, leadId: number, paymentId?: number | null): Promise<Row> => {
+  const actor = actorContextFrom(source);
   if (!transactionContext.getStore()) {
-    return withTransaction(() => createStudentFromLead(req, leadId, paymentId));
+    return withTransaction(() => createStudentFromLead(actor, leadId, paymentId));
   }
 
   await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId]);
@@ -1510,7 +1446,7 @@ export const createStudentFromLead = async (req: any, leadId: number, paymentId?
     }
     if (lead.statusCode !== 'paid') {
       await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
-      await createStageHistory(lead.id, lead.statusCode, 'paid', req.user!.id, 'Подтверждена оплата существующего клиента');
+      await createStageHistory(lead.id, lead.statusCode, 'paid', actor.userId, 'Подтверждена оплата существующего клиента');
     }
     return resolvedStudent;
   }
@@ -1541,7 +1477,7 @@ export const createStudentFromLead = async (req: any, leadId: number, paymentId?
     courseId: enrolledGroup?.courseId ?? lead.courseId ?? course?.id ?? null,
     schoolId: enrolledGroup?.schoolId ?? lead.schoolId ?? null,
     groupId: lead.enrolledGroupId ?? null,
-    managerId: lead.managerId ?? req.user!.id,
+    managerId: lead.managerId ?? actor.userId,
     status: 'studying',
     enrolledAt: new Date(),
     nextPaymentAt,
@@ -1567,7 +1503,7 @@ export const createStudentFromLead = async (req: any, leadId: number, paymentId?
       student.id,
       student.groupId,
       student.enrolledAt ?? new Date(),
-      req.user!.id,
+      actor.userId,
       reservedGroupIds,
     ],
   );
@@ -1582,7 +1518,7 @@ export const createStudentFromLead = async (req: any, leadId: number, paymentId?
   }
 
   await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
-  await createStageHistory(lead.id, lead.statusCode, 'paid', req.user!.id, 'Автоматическое создание ученика после оплаты');
+  await createStageHistory(lead.id, lead.statusCode, 'paid', actor.userId, 'Автоматическое создание ученика после оплаты');
 
   if (lead.referrerStudentId && Number(lead.referrerStudentId) !== Number(student.id)) {
     await insertRow('academy_referral_rewards', {
@@ -1597,7 +1533,7 @@ export const createStudentFromLead = async (req: any, leadId: number, paymentId?
   await createOutbox('whatsapp', lead.phone, `Добро пожаловать в 01 Academy, ${student.studentName}!`, {
     entityType: 'student',
     entityId: student.id });
-  await createAudit(req, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
+  await createAudit(actor, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
   return student;
 };
 
@@ -1666,12 +1602,13 @@ export const consumeReferralBenefit = async (
   return benefit;
 };
 
-export const ensureFreeMonthBenefit = async (req: any, options: {
+export const ensureFreeMonthBenefit = async (source: ActorSource, options: {
   referrerId: number;
   paidReferrals: number;
   sourceReferralRewardId: number;
   sourcePaymentId: number;
 }) => {
+  const actor = actorContextFrom(source);
   const grant = await ensureReferralBenefit({
     studentId: options.referrerId,
     benefitType: 'free_month',
@@ -1719,7 +1656,7 @@ export const ensureFreeMonthBenefit = async (req: any, options: {
       status: 'paid',
       paidUntil: referrer.coverageEnd,
       comment: 'Бесплатный месяц по реферальной программе',
-      confirmedBy: req.user!.id,
+      confirmedBy: actor.userId,
     });
   } else if (!freePayment.paidUntil) {
     freePayment = await updateRow('academy_payments', Number(freePayment.id), {
@@ -1738,7 +1675,8 @@ export const ensureFreeMonthBenefit = async (req: any, options: {
 // separate one-time ledger: milestone 1 is pending until the referrer's next
 // payment, milestone 3 is consumed by one free-month payment, and milestone 5
 // remains a pending AI Ambassador training entitlement.
-export const applyReferralRewards = async (req: any, studentId: number, leadId: number | null, paymentId: number) => {
+export const applyReferralRewards = async (source: ActorSource, studentId: number, leadId: number | null, paymentId: number) => {
+  const actor = actorContextFrom(source);
   const lead = leadId
     ? await queryOne(`SELECT id, referrer_student_id FROM academy_leads WHERE id = $1`, [leadId])
     : null;
@@ -1791,7 +1729,7 @@ export const applyReferralRewards = async (req: any, studentId: number, leadId: 
     }
   }
   if (milestoneBenefit === 'free_month') {
-    await ensureFreeMonthBenefit(req, {
+    await ensureFreeMonthBenefit(actor, {
       referrerId,
       paidReferrals,
       sourceReferralRewardId,
@@ -1818,8 +1756,9 @@ export const applyReferralRewards = async (req: any, studentId: number, leadId: 
   }
 };
 
-export const handleLeadStatusEffects = async (req: any, lead: Row, previousStatus?: string | null) => {
-  const managerId = lead.managerId ?? req.user!.id;
+export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, previousStatus?: string | null) => {
+  const actor = actorContextFrom(source);
+  const managerId = lead.managerId ?? actor.userId;
   const now = new Date();
 
   if (lead.statusCode === 'new_request') {

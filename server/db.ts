@@ -1,7 +1,7 @@
 import { Pool, defaults, types } from 'pg';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { logger } from './lib/logger';
-import * as schema from "@shared/schema";
+import * as schema from "./db/schema";
 import { appConfig } from './config';
 
 if (!appConfig.database.url) {

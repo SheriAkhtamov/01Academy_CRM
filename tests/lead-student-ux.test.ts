@@ -13,6 +13,10 @@ const studentDialog = readFileSync(
   new URL('../client/src/components/ux/CreateLeadStudentDialog.tsx', import.meta.url),
   'utf8',
 );
+const leadsApi = readFileSync(
+  new URL('../client/src/features/leads/api.ts', import.meta.url),
+  'utf8',
+);
 const telephonyWidget = readFileSync(
   new URL('../client/src/components/telephony/TelephonyWidget.tsx', import.meta.url),
   'utf8',
@@ -37,7 +41,8 @@ describe('lead and student UX separation', () => {
   it('provides an explicit multi-student creation flow with group enrollment', () => {
     expect(leadSheet).toContain('<CreateLeadStudentDialog');
     expect(studentDialog).toContain('groupIds: z.array(z.string()).min(1');
-    expect(studentDialog).toContain('`/api/academy/leads/${leadId}/students`');
+    expect(studentDialog).toContain('leadsApi.createStudent<CreatedLeadStudent>');
+    expect(leadsApi).toContain('`/api/academy/leads/${leadId}/students`');
     expect(studentDialog).toContain('primaryGroupId: Number(values.primaryGroupId)');
   });
 

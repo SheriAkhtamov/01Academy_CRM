@@ -8,7 +8,7 @@ const terminologyMigrationPath = path.join(
   repositoryRoot,
   "migrations/0073_rename_workspaces_to_modules.sql",
 );
-const schemaPath = path.join(repositoryRoot, "shared/schema.ts");
+const schemaPath = path.join(repositoryRoot, "server/db/schema/index.ts");
 const journalPath = path.join(repositoryRoot, "migrations/meta/_journal.json");
 
 describe("finance access module migration", () => {

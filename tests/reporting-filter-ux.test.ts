@@ -14,6 +14,7 @@ const academyRoutes = readAcademyModuleSource();
 const chartShell = read('../client/src/components/ux/analytics/AnalyticsChartCard.tsx');
 const salesCharts = read('../client/src/components/ux/DashboardCharts.tsx');
 const teacherCharts = read('../client/src/components/ux/analytics/TeacherAnalyticsCharts.tsx');
+const teacherOverview = read('../client/src/components/ux/analytics/TeacherOverviewKpis.tsx');
 const marketingCharts = read('../client/src/components/ux/analytics/MarketingAnalyticsCharts.tsx');
 const financeCharts = read('../client/src/components/ux/analytics/FinanceAnalyticsCharts.tsx');
 const adminHealthChart = read('../client/src/components/ux/analytics/AdminOperationalHealthChart.tsx');
@@ -56,7 +57,7 @@ describe('dashboard period filters and simplified actions', () => {
   });
 
   it('gives every requested overview diverse, accessible analytics instead of number-only cards', () => {
-    expect(sales).toContain('<DashboardCharts');
+    expect(sales).toContain('<SalesOverviewSection');
     expect(teacher).toContain('<TeacherAnalyticsCharts');
     expect(marketing).toContain('<MarketingAnalyticsCharts');
     expect(finance).toContain('<FinanceAnalyticsCharts');
@@ -102,7 +103,7 @@ describe('dashboard period filters and simplified actions', () => {
     expect(marketingCharts).toContain('hasConversionCohort ? (');
     expect(financeCharts).toContain('hasContributionData ? (');
     expect(salesOverviewMetrics).toContain('showValue={conversionLeadCount > 0}');
-    expect(teacher).toContain("avgAttendance == null ? t('noData')");
+    expect(teacherOverview).toContain("data.avgAttendance == null ? t('noData')");
     expect(marketing).toContain("overviewFunnel.find((stage) => stage.code === 'demo_invited')");
     expect(marketing).toContain("overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')");
     expect(finance).toContain("dashboard.data.summary.revenue > 0 ? `${dashboard.data.summary.marginPercent}%` : t('noData')");

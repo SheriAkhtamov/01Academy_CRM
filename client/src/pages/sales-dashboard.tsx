@@ -4,9 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { useLocation, useSearch } from 'wouter';
 import { z } from 'zod';
-import { apiRequest } from '@/lib/queryClient';
 import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import { leadsApi } from '@/features/leads/api';
+import { invalidateSalesLeadData, salesQueryKeys } from '@/features/sales/queries';
+import {
+  SalesOverviewSection,
+  SalesPipelineSection,
+} from '@/features/sales/ui/SalesSections';
+import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,14 +48,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { DataTable } from '@/components/ux/DataTable';
-import { KanbanBoard } from '@/components/ux/KanbanBoard';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
-import { DashboardCharts } from '@/components/ux/DashboardCharts';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
@@ -71,7 +74,6 @@ import {
 import {
   AlertCircle,
   Archive,
-  ExternalLink,
   Plus,
   RotateCcw,
   TrendingUp,
@@ -223,7 +225,10 @@ const uniquePhoneNumbers = (values: string[]) => {
 
 const createLeadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
-  phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
+  phoneNumbers: z.array(optionalPhoneString).min(1).refine(
+    uniquePhoneNumbers,
+    formValidationTranslationKeys[0],
+  ),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   managerId: z.string().min(1, 'fillRequiredFields'),
   comment: z.string(),
@@ -531,7 +536,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }, [pagePath, routeSearch, setLocation]);
 
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
-    queryKey: ['/api/academy/modules/sales'],
+    queryKey: salesQueryKeys.module,
   });
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ['/api/users'],
@@ -550,10 +555,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return code;
   };
 
-  const invalidate = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
-    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales/metrics'] }),
-  ]);
+  const invalidate = () => invalidateSalesLeadData(queryClient);
   const currentSalesManagerId = hasSalesModule && user?.id ? String(user.id) : '';
   const leadFormDefaults = useMemo<CreateLeadFormValues>(() => ({
     ...EMPTY_LEAD_FORM,
@@ -732,10 +734,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const mergeLeadDraft = useMutation({
     mutationFn: ({ retainedLeadId, values }: { retainedLeadId: number; values: CreateLeadFormValues }) =>
-      apiRequest('POST', '/api/academy/leads/merge-draft', {
-        retainedLeadId,
-        draft: createLeadPayload(values),
-      }),
+      leadsApi.mergeDraft<Lead>({ retainedLeadId, draft: createLeadPayload(values) }),
     onSuccess: (retainedLead: Lead) => {
       toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
       leadForm.reset(leadFormDefaults);
@@ -753,7 +752,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const updateLead = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
-      apiRequest('PATCH', `/api/academy/leads/${id}`, payload),
+      leadsApi.update<Lead>(id, payload),
     onSuccess: () => {
       toast({ title: t('statusUpdated') });
       invalidate();
@@ -763,7 +762,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const assignAndMoveLead = useMutation({
     mutationFn: ({ leadId, statusCode, managerId }: { leadId: number; statusCode: string; managerId: number }) =>
-      apiRequest('PATCH', `/api/academy/leads/${leadId}`, { statusCode, managerId }),
+      leadsApi.update<Lead>(leadId, { statusCode, managerId }),
     onSuccess: () => {
       setPendingLeadMove(null);
       setPendingLeadMoveManagerId('');
@@ -779,7 +778,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const archiveLead = useMutation({
     mutationFn: ({ id, reason, customReason, assignToSelf }: { id: number; reason: string; customReason?: string; assignToSelf?: boolean }) =>
-      apiRequest('POST', `/api/academy/leads/${id}/archive`, { reason, customReason, assignToSelf }),
+      leadsApi.archive<Lead>(id, { reason, customReason, assignToSelf }),
     onSuccess: (_lead, variables) => {
       toast({ title: variables.assignToSelf ? t('leadAssignedAndArchived') : t('leadArchived') });
       setArchiveDialogLead(null);
@@ -797,7 +796,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const restoreLead = useMutation({
     mutationFn: ({ id, statusCode }: { id: number; statusCode: string }) =>
-      apiRequest('POST', `/api/academy/leads/${id}/restore`, { statusCode }),
+      leadsApi.restore<Lead>(id, { statusCode }),
     onSuccess: () => {
       toast({ title: t('leadRestored') });
       invalidate();
@@ -807,7 +806,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const updateStudentStatus = useMutation({
     mutationFn: ({ id, status, exitReason }: { id: number; status: string; exitReason?: string }) =>
-      apiRequest('PATCH', `/api/academy/students/${id}/status`, { status, exitReason }),
+      studentsApi.updateStatus<Student>(id, status, exitReason),
     onSuccess: (student) => {
       toast({ title: ceoCopy.student.updated });
       setSelectedStudent((current) => current?.id === student.id ? { ...current, ...student } : current);
@@ -818,7 +817,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const addStudentGroup = useMutation({
     mutationFn: ({ id, groupId, isPrimary }: { id: number; groupId: number; isPrimary?: boolean }) =>
-      apiRequest('POST', `/api/academy/students/${id}/groups`, { groupId, isPrimary }),
+      studentsApi.addGroup<Student>(id, groupId, isPrimary),
     onSuccess: () => {
       toast({ title: t('studentGroupAdded') });
       invalidate();
@@ -832,7 +831,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const removeStudentGroup = useMutation({
     mutationFn: ({ id, groupId }: { id: number; groupId: number }) =>
-      apiRequest('DELETE', `/api/academy/students/${id}/groups/${groupId}`),
+      studentsApi.removeGroup<Student>(id, groupId),
     onSuccess: () => {
       toast({ title: t('studentGroupRemoved') });
       invalidate();
@@ -938,7 +937,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       void requestLeadStatusChange(lead.id, 'qualified');
       return;
     }
-  }, [openLead, requestLeadStatusChange, setLocation, startOnlinePbxCall, t, toast]);
+  }, [openLead, requestLeadStatusChange, setLocation, startOnlinePbxCall, t]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
@@ -1079,10 +1078,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             conversionLeadCount={managerStats.newLeadsPeriod}
             conversionRate={managerStats.conversionRate}
           />
-          <OverviewTab
+          <SalesOverviewSection
             payments={periodPayments}
             leads={periodLeads}
-            managerFunnel={managerFunnel}
+            funnel={managerFunnel}
             reportingRange={reportingRange}
             leadStatusName={leadStatusName}
             statusColor={leadStatusColor}
@@ -1092,8 +1091,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       ) : null}
 
       {section === 'pipeline' ? (
-        <PipelineTab
-          t={t}
+        <SalesPipelineSection
           leadStatusName={leadStatusName}
           leads={pipelineLeads}
           activePipelineStatuses={activePipelineStatuses}
@@ -1286,84 +1284,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   );
 }
 // ---- Sub-components for tabs ----
-
-function OverviewTab({
-  payments,
-  leads,
-  managerFunnel,
-  reportingRange,
-  leadStatusName,
-  statusColor,
-  money,
-}: {
-  payments: any[];
-  leads: Lead[];
-  managerFunnel: Array<{ code: string; count: number; color: string }>;
-  reportingRange: { from: string; to: string };
-  leadStatusName: (code: string) => string;
-  statusColor: (code: string) => string;
-  money: (value: number | string | null | undefined) => string;
-}) {
-  return (
-    <DashboardCharts
-      payments={payments}
-      leads={leads}
-      funnel={managerFunnel}
-      reportingRange={reportingRange}
-      leadStatusName={leadStatusName}
-      statusColor={statusColor}
-      money={money}
-    />
-  );
-}
-
-function PipelineTab({
-  t,
-  leadStatusName,
-  leads,
-  activePipelineStatuses,
-  onLeadClick,
-  onQuickAction,
-  onArchiveLead,
-  onStatusChange,
-  isPending,
-  showManager,
-}: {
-  t: (key: TranslationKey) => string;
-  leadStatusName: (code: string) => string;
-  leads: Lead[];
-  activePipelineStatuses: PipelineStatus[];
-  onLeadClick: (lead: Lead) => void;
-  onQuickAction: (action: QuickAction, lead: Lead) => void;
-  onArchiveLead: (lead: Lead) => void;
-  onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
-  isPending: boolean;
-  showManager: boolean;
-}) {
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <KanbanBoard
-        statuses={activePipelineStatuses.map((status) => ({
-          code: status.code,
-          name: leadStatusName(status.code),
-          color: status.color,
-          sortOrder: status.sortOrder,
-        }))}
-        leads={leads.map((lead) => ({
-          ...lead,
-          statusCode: lead.statusCode,
-        }))}
-        onStatusChange={onStatusChange}
-        onQuickAction={(action, lead) => onQuickAction(action, lead as Lead)}
-        onArchiveLead={(lead) => onArchiveLead(lead as Lead)}
-        onLeadClick={(lead) => onLeadClick(lead as Lead)}
-        isPending={isPending}
-        showPaymentAction
-        showManager={showManager}
-      />
-    </div>
-  );
-}
 
 function ArchiveTab({
   t,

@@ -6,7 +6,7 @@ import {
     type User,
     type InsertUser,
     type SavedAccount,
-} from '@shared/schema';
+} from '../db/schema';
 import { ACADEMY_ACCESS_MODULES, type AcademyAccessModule } from '@shared/academy';
 import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
 

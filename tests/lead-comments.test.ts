@@ -6,10 +6,14 @@ const migration = readFileSync(
   new URL('../migrations/0063_add_lead_comment_history.sql', import.meta.url),
   'utf8',
 );
-const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const routes = readAcademyModuleSource();
 const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
+  'utf8',
+);
+const leadActivity = readFileSync(
+  new URL('../client/src/features/leads/ui/LeadActivity.tsx', import.meta.url),
   'utf8',
 );
 const leadImport = readFileSync(
@@ -50,9 +54,10 @@ describe('lead comment history', () => {
 
   it('uses a separate composer and includes comments in the activity timeline', () => {
     expect(leadSheet).toContain('<LeadCommentsCard');
-    expect(leadSheet).toContain("apiRequest('POST', `/api/academy/leads/${leadId}/comments`, { body })");
-    expect(leadSheet).toContain('...(lead.comments ?? []).map((item) => ({');
-    expect(leadSheet).toContain('dateTime(comment.createdAt)');
+    expect(leadSheet).toContain('leadsApi.addComment(leadId!, { body })');
+    expect(leadSheet).not.toContain("apiRequest('POST', `/api/academy/leads/${leadId}/comments`");
+    expect(leadActivity).toContain('...(lead.comments ?? []).map((item) => ({');
+    expect(leadActivity).toContain('dateTime(comment.createdAt)');
     expect(leadSheet).not.toContain('comment: lead.comment ??');
   });
 

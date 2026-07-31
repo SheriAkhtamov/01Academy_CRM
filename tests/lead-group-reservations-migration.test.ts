@@ -6,7 +6,7 @@ const migration = readFileSync(
   new URL('../migrations/0050_add_lead_group_reservations.sql', import.meta.url),
   'utf8',
 );
-const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const routes = readAcademyModuleSource();
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),

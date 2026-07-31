@@ -10,13 +10,13 @@
 ## Направление зависимостей
 
 ```text
-client/app ──> client/pages ──> client/features ──> client/components
-      │                                      │
-      └──────────────────────────────────────┴──> shared
+client page composition → feature hooks → typed feature API → Query cache → feature UI
+          └──────────────────────────────────────────────────────────────→ shared contracts
 
-server/app ──> server/routes ──> server/modules ──> server/services/storage
-      │                                      │
-      └────────> infrastructure/realtime ────┴──> shared
+HTTP/Zod → ActorContext → application use case → UnitOfWork/repositories
+                                              → domain events/outbox
+                                              → after-commit handlers
+                                              → presenter
 ```
 
 Правила:
@@ -27,6 +27,11 @@ server/app ──> server/routes ──> server/modules ──> server/services/
 - feature-модули клиента не импортируют страницы и app composition;
 - циклические импорты запрещены;
 - composition root должен оставаться небольшим.
+- HTTP-адаптеры не импортируют БД или storage;
+- application/domain не импортируют Express и infrastructure;
+- страницы и общие UI-компоненты не выполняют transport-вызовы для
+  мигрированных feature-срезов;
+- Drizzle-схема является server-only и не экспортируется в client/shared.
 
 Эти правила проверяет `npm run check:architecture`.
 
@@ -56,6 +61,35 @@ HTTP-адаптер отвечает за разбор запроса и код 
 находиться в доменном модуле, а SQL/транзакционная операция — в repository или
 storage слое. Новую функциональность нельзя добавлять непосредственно в
 composition root.
+
+### Эталонный lead-срез
+
+Новая граница находится в `server/modules/leads`:
+
+- `domain/actor-context.ts` нормализует пользователя, назначенные модули и
+  права; application-код получает `ActorContext`, а не Express `Request`;
+- `domain/access-policy.ts` содержит чистые правила видимости и изменения
+  лида, включая безопасное duplicate metadata;
+- `application/*-service.ts` содержит use cases назначения, merge,
+  тегов/комментариев и удаления;
+- `application/ports.ts` описывает узкие repository и side-effect ports;
+- `infrastructure/legacy-*-repository.ts` инкапсулирует совместимый PostgreSQL
+  persistence на время последовательного переноса оставшихся lead-команд;
+- `http/*.router.ts` только валидирует Zod-контракт, создаёт `ActorContext`,
+  вызывает use case и формирует прежний HTTP-ответ;
+- `infrastructure/unit-of-work.ts` запускает очередь after-commit только после
+  успешного завершения транзакции и отбрасывает её при rollback.
+
+Маршруты merge, assignment, tags/comments и delete уже проходят через эту
+границу. Оставшиеся совместимые lead handlers продолжают жить в academy-фасаде
+под ratchet-ограничением и переносятся тем же шаблоном без изменения URL,
+JSON, прав или транзакционных границ.
+
+### Persistence
+
+Drizzle-описания находятся в `server/db/schema/index.ts`. `shared` содержит
+только DTO, Zod-контракты и чистые типы. Перемещение схемы не является SQL-
+миграцией и не меняет PostgreSQL.
 
 ### API-контракты
 
@@ -92,12 +126,25 @@ filtering. Route и service модули не устанавливают transpo
 `Dialog`, `Sheet` или `AlertDialog`; архитектурный рефакторинг не меняет этот
 UX-паттерн.
 
+Для лидов `features/leads/api.ts` является единственной transport-границей,
+`features/leads/queries.ts` хранит hooks и общую invalidation, а
+`features/sales/queries.ts` объединяет invalidation lead-кэша с read model
+модуля продаж. Платежи, board-задачи и ученики используют собственные
+минимальные typed API и не включаются в leads API.
+
+Overview и Kanban вынесены из страницы в section-контейнеры
+`features/sales/ui/SalesSections.tsx`; комментарии и timeline вынесены из
+`LeadDetailSheet` в `features/leads/ui/LeadActivity.tsx`. Карточка лида при этом
+остаётся `Sheet`, merge/create/convert — `Dialog`, а удаление требует
+confirmation dialog.
+
 ## Тестовая стратегия
 
 1. Чистые доменные функции — unit-тесты.
 2. Route + mocked ports — HTTP integration-тесты.
 3. PostgreSQL-инварианты — migration/integration-тесты.
-4. Компоненты — DOM-тесты по поведению, без проверки строк исходного кода.
+4. Новые компонентные регрессии — jsdom + Testing Library по поведению;
+   старые source-characterization тесты удаляются по мере миграции сценариев.
 5. Критические пользовательские сценарии — отдельные end-to-end тесты.
 6. TypeScript, i18n, a11y, архитектурные границы и bundle — обязательные CI-gates.
 
@@ -107,3 +154,12 @@ UX-паттерн.
 контракт → route → service → repository → feature API → UI. Публичный URL,
 схема ответа и пользовательский сценарий сохраняются, пока изменение контракта
 не согласовано отдельно.
+
+Ratchet в `scripts/check-architecture.mjs` разрешает только уже существующие
+legacy-нарушения и запрещает добавлять новые. После миграции endpoint или UI-
+сценария соответствующая запись уменьшается либо удаляется. Термин
+`module/modules` используется на всех актуальных границах домена.
+
+ESLint также работает как ratchet: текущий legacy-бюджет hook-предупреждений
+зафиксирован параметром `--max-warnings`, rules-of-hooks и новые a11y-ошибки
+блокируют `npm run check` сразу.

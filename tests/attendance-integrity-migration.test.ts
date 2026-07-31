@@ -5,7 +5,7 @@ const migration = readFileSync(
   new URL('../migrations/0043_enforce_attendance_integrity.sql', import.meta.url),
   'utf8',
 );
-const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
   'utf8',

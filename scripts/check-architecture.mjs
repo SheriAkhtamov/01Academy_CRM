@@ -7,23 +7,23 @@ const sourceRoots = ['client/src', 'server', 'shared'];
 const sourceExtensions = ['.ts', '.tsx'];
 
 const legacyLineBudgets = new Map(Object.entries({
-  'client/src/components/ux/LeadDetailSheet.tsx': 2_100,
+  'client/src/components/ux/LeadDetailSheet.tsx': 1_900,
   'client/src/lib/i18n.ts': 2_500,
   'client/src/pages/academy-settings.tsx': 2_300,
   'client/src/pages/admin.tsx': 1_600,
   'client/src/pages/admin/AdminDashboardPage.tsx': 1_100,
   'client/src/pages/finance-center.tsx': 850,
   'client/src/pages/marketing-module.tsx': 950,
-  'client/src/pages/sales-dashboard.tsx': 1_900,
+  'client/src/pages/sales-dashboard.tsx': 1_800,
   'client/src/pages/sales/InstagramMessagesPage.tsx': 2_850,
   'client/src/pages/teacher-module.tsx': 2_100,
-  'server/modules/academy/academy-leads.ts': 1_900,
-  'server/modules/academy/leads.router.ts': 2_000,
+  'server/modules/academy/academy-leads.ts': 1_850,
+  'server/modules/academy/leads.router.ts': 1_600,
   'server/modules/academy/operations.router.ts': 1_300,
   'server/routes/telephony.routes.ts': 1_650,
   'server/routes/user.routes.ts': 1_300,
   'server/services/instagram.ts': 2_700,
-  'shared/schema.ts': 1_650,
+  'server/db/schema/index.ts': 1_620,
 }));
 
 const compositionBudgets = new Map(Object.entries({
@@ -33,6 +33,58 @@ const compositionBudgets = new Map(Object.entries({
   'server/routes/index.ts': 80,
   'server/modules/academy/academy.router.ts': 100,
 }));
+
+// Ratchets let legacy code shrink incrementally without allowing new boundary
+// leaks. Remove an entry (or lower its count) as each vertical slice migrates.
+const clientTransportRatchet = new Map(Object.entries({
+  'client/src/components/Header.tsx': 3,
+  'client/src/components/modals/SettingsModal.tsx': 1,
+  'client/src/components/telephony/CallRecordingPlayer.tsx': 1,
+  'client/src/components/telephony/TelephonyWidget.tsx': 1,
+  'client/src/components/ux/AdminScheduleCalendar.tsx': 1,
+  'client/src/components/ux/AvailabilityCalendar.tsx': 1,
+  'client/src/components/ux/CommandPalette.tsx': 1,
+  'client/src/components/ux/SalesOverviewMetrics.tsx': 1,
+  'client/src/components/ux/board/CreateTaskDialog.tsx': 1,
+  'client/src/components/ux/board/TaskDetailSheet.tsx': 10,
+  'client/src/contexts/TelephonyContext.tsx': 5,
+  'client/src/pages/academy-settings.tsx': 16,
+  'client/src/pages/academy.tsx': 3,
+  'client/src/pages/admin-leads.tsx': 3,
+  'client/src/pages/admin.tsx': 7,
+  'client/src/pages/admin/AdminDashboardPage.tsx': 2,
+  'client/src/pages/admin/audit.tsx': 1,
+  'client/src/pages/finance-center.tsx': 11,
+  'client/src/pages/marketing-module.tsx': 3,
+  'client/src/pages/sales/CallJournalPage.tsx': 1,
+  'client/src/pages/sales/InstagramMessagesPage.tsx': 7,
+  'client/src/pages/tasks.tsx': 1,
+  'client/src/pages/teacher-module.tsx': 3,
+}));
+
+const serverPersistenceRatchet = new Map(Object.entries({
+  'server/modules/academy/academy-analytics.ts': 2,
+  'server/modules/academy/academy-core.ts': 2,
+  'server/modules/academy/academy-leads.ts': 2,
+  'server/modules/academy/academy-route-support.ts': 2,
+  'server/modules/academy/academy-scheduling.ts': 2,
+  'server/modules/academy/crud-router.ts': 2,
+  'server/modules/academy/leads.router.ts': 2,
+  'server/modules/academy/learning.router.ts': 2,
+  'server/modules/academy/module.router.ts': 2,
+  'server/modules/academy/operations.router.ts': 2,
+  'server/modules/academy/resources.router.ts': 2,
+  'server/routes/auth.routes.ts': 2,
+  'server/routes/board.routes.ts': 2,
+  'server/routes/finance.routes.ts': 1,
+  'server/routes/incoming.routes.ts': 1,
+  'server/routes/message.routes.ts': 1,
+  'server/routes/notifications.routes.ts': 1,
+  'server/routes/telephony.routes.ts': 1,
+  'server/routes/user.routes.ts': 2,
+}));
+
+const countMatches = (source, pattern) => [...source.matchAll(pattern)].length;
 
 const walk = (directory) => {
   const files = [];
@@ -79,6 +131,69 @@ for (const file of files) {
   const source = fs.readFileSync(file, 'utf8');
   const from = relativePath(file);
   const dependencies = [];
+
+  if (
+    from.startsWith('client/src/pages/')
+    || from.startsWith('client/src/components/')
+    || from.startsWith('client/src/contexts/')
+  ) {
+    const transportCalls = countMatches(source, /\b(?:apiRequest|fetch)\s*\(/g);
+    const allowedCalls = clientTransportRatchet.get(from) ?? 0;
+    if (transportCalls > allowedCalls) {
+      failures.push(
+        `${from}: ${transportCalls} direct transport call(s) exceeds ratchet ${allowedCalls}; `
+        + 'move network access into a feature API',
+      );
+    }
+  }
+
+  if (
+    from.startsWith('client/src/features/')
+    && /\/(?:components|ui)\//.test(from)
+    && /\b(?:apiRequest|fetch)\s*\(/.test(source)
+  ) {
+    failures.push(`${from}: feature UI must use feature hooks instead of direct transport calls`);
+  }
+
+  const persistenceImports = [...source.matchAll(importPattern)].filter((match) => {
+    const specifier = match[1] ?? match[2] ?? '';
+    return /(?:^|\/)(?:db|storage)(?:\/|$)/.test(specifier);
+  }).length;
+  const allowedPersistenceImports = serverPersistenceRatchet.get(from) ?? 0;
+  if (
+    (from.startsWith('server/routes/') || from.startsWith('server/modules/'))
+    && persistenceImports > allowedPersistenceImports
+  ) {
+    failures.push(
+      `${from}: ${persistenceImports} direct persistence import(s) exceeds ratchet `
+      + `${allowedPersistenceImports}; depend on an application port instead`,
+    );
+  }
+
+  if (
+    /server\/modules\/[^/]+\/(?:domain|application)\//.test(from)
+    && /from ['"][^'"]*(?:express|\/db|\/storage|\/infrastructure)[^'"]*['"]/.test(source)
+  ) {
+    failures.push(`${from}: domain/application code must not depend on HTTP or infrastructure`);
+  }
+
+  if (
+    /server\/modules\/[^/]+\/http\//.test(from)
+    && /from ['"][^'"]*(?:\/db|\/storage)[^'"]*['"]/.test(source)
+  ) {
+    failures.push(`${from}: HTTP adapters must not import persistence directly`);
+  }
+
+  if (
+    from.startsWith('client/')
+    && /@shared\/schema/.test(source)
+  ) {
+    failures.push(`${from}: client code must use shared contracts, not the persistence schema`);
+  }
+
+  if (from.startsWith('shared/') && /from ['"]drizzle-(?:orm|zod)/.test(source)) {
+    failures.push(`${from}: shared code must not depend on persistence libraries`);
+  }
 
   for (const match of source.matchAll(importPattern)) {
     const specifier = match[1] ?? match[2];

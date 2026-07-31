@@ -16,7 +16,7 @@ import {
     type AcademyAccessModule,
     type AcademyModule,
 } from '@shared/academy';
-import type { AcademyScheduleItem } from '@shared/schema';
+import type { AcademyScheduleItem } from '@shared/scheduling';
 import { getPasswordPolicyError } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';

@@ -11,7 +11,7 @@ const migration = readFileSync(
   new URL('../migrations/0068_add_lead_tags.sql', import.meta.url),
   'utf8',
 );
-const schema = readFileSync(new URL('../shared/schema.ts', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const routes = readAcademyModuleSource();
 const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),

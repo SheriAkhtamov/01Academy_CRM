@@ -1,8 +1,76 @@
-import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
+import type {
+  ArchiveLeadRequest,
+  AssignLeadRequest,
+  CreateAcademyLeadRequest,
+  CreateLeadStudentRequest,
+  LeadCommentRequest,
+  LeadTagRequest,
+  MergeLeadDraftRequest,
+  MergeLeadIds,
+  RestoreLeadRequest,
+  UpdateAcademyLeadRequest,
+} from '@shared/contracts/academy-leads';
 import { apiRequest } from '@/lib/queryClient';
+
+export type LeadIdentifier = number;
 
 export const leadsApi = {
   create: (input: CreateAcademyLeadRequest) => (
     apiRequest('POST', '/api/academy/leads', input)
+  ),
+  getById: <T>(leadId: LeadIdentifier) => (
+    apiRequest('GET', `/api/academy/leads/${leadId}`) as Promise<T>
+  ),
+  update: <T>(leadId: LeadIdentifier, input: UpdateAcademyLeadRequest) => (
+    apiRequest('PATCH', `/api/academy/leads/${leadId}`, input) as Promise<T>
+  ),
+  assign: <T>(leadId: LeadIdentifier, input: AssignLeadRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/assign`, input) as Promise<T>
+  ),
+  archive: <T>(leadId: LeadIdentifier, input: ArchiveLeadRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/archive`, input) as Promise<T>
+  ),
+  restore: <T>(leadId: LeadIdentifier, input: RestoreLeadRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/restore`, input) as Promise<T>
+  ),
+  merge: <T>(input: MergeLeadIds) => (
+    apiRequest('POST', '/api/academy/leads/merge', input) as Promise<T>
+  ),
+  mergeDraft: <T>(input: MergeLeadDraftRequest) => (
+    apiRequest('POST', '/api/academy/leads/merge-draft', input) as Promise<T>
+  ),
+  searchMergeCandidates: <T>(search: string) => (
+    apiRequest(
+      'GET',
+      `/api/academy/leads/merge-candidates?q=${encodeURIComponent(search)}`,
+    ) as Promise<T>
+  ),
+  getMergePreview: <T>(firstLeadId: number, secondLeadId: number) => (
+    apiRequest(
+      'GET',
+      `/api/academy/leads/merge-preview?firstLeadId=${firstLeadId}&secondLeadId=${secondLeadId}`,
+    ) as Promise<T>
+  ),
+  addTag: <T>(leadId: number, input: LeadTagRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/tags`, input) as Promise<T>
+  ),
+  removeTag: <T>(leadId: number, assignmentId: number) => (
+    apiRequest('DELETE', `/api/academy/leads/${leadId}/tags/${assignmentId}`) as Promise<T>
+  ),
+  addComment: <T>(leadId: number, input: LeadCommentRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/comments`, input) as Promise<T>
+  ),
+  createStudent: <T>(leadId: number, input: CreateLeadStudentRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/students`, input) as Promise<T>
+  ),
+};
+
+export const leadQueryKeys = {
+  all: ['/api/academy/leads'] as const,
+  detail: (leadId: number | null) => ['/api/academy/leads', leadId] as const,
+  tags: ['/api/academy/lead-tags'] as const,
+  mergeCandidates: (search: string) => ['/api/academy/leads/merge-candidates', search] as const,
+  mergePreview: (firstLeadId?: number, secondLeadId?: number) => (
+    ['/api/academy/leads/merge-preview', firstLeadId, secondLeadId] as const
   ),
 };

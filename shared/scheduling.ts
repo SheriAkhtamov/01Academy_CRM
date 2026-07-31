@@ -6,6 +6,14 @@ export interface WeeklyScheduleItemInput {
   schoolId?: unknown;
 }
 
+export interface AcademyScheduleItem {
+  dayOfWeek: number;
+  time?: string;
+  startTime?: string;
+  endTime?: string;
+  schoolId?: number | null;
+}
+
 export interface NormalizedWeeklyScheduleItem {
   dayOfWeek: number;
   startMinutes: number;

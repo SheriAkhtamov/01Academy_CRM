@@ -33,6 +33,20 @@ const localizeApiErrorMessage = (message: string, status: number) => {
     return onlinePbxErrors[normalized as keyof typeof onlinePbxErrors];
   }
 
+  const demoLessonErrors = {
+    failedToLoadDemoLessons: i18n.t("failedToLoadDemoLessons"),
+    failedToCreateDemoLesson: i18n.t("failedToCreateDemoLesson"),
+    failedToCancelDemoLesson: i18n.t("failedToCancelDemoLesson"),
+    failedToUpdateDemoAttendance: i18n.t("failedToUpdateDemoAttendance"),
+    demoRoomRequired: i18n.t("demoRoomRequired"),
+    demoOnlineRoomNotAllowed: i18n.t("demoOnlineRoomNotAllowed"),
+    demoCapacityExceeded: i18n.t("demoCapacityExceeded"),
+    duplicateDemoParticipants: i18n.t("duplicateDemoParticipants"),
+  } as const;
+  if (normalized in demoLessonErrors) {
+    return demoLessonErrors[normalized as keyof typeof demoLessonErrors];
+  }
+
   if (normalized in translations) {
     return i18n.t(normalized as keyof typeof translations);
   }

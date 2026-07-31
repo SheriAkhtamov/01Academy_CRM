@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ACADEMY_MODULES } from "../../../shared/academy";
 import { isOnlinePbxExtension } from "../../../shared/telephony";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
+import { createAcademyDemoTables } from "./demo-lessons";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
@@ -522,6 +523,15 @@ export const academyLessons = pgTable("academy_lessons", {
   roomIdx: index("academy_lessons_room_idx").on(table.roomId),
   teacherIdx: index("academy_lessons_teacher_idx").on(table.teacherId),
 }));
+
+export const { academyDemoLessons, academyDemoLessonParticipants } = createAcademyDemoTables({
+  courseId: academyCourses.id,
+  schoolId: academySchools.id,
+  roomId: academyRooms.id,
+  teacherId: academyTeachers.id,
+  leadId: academyLeads.id,
+  userId: users.id,
+});
 
 export const academyLessonStatusHistory = pgTable("academy_lesson_status_history", {
   id: serial("id").primaryKey(),

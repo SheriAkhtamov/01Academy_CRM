@@ -20,6 +20,7 @@ import { registerAcademyLeadRoutes } from './leads.router';
 import { registerAcademyLearningRoutes } from './learning.router';
 import { registerAcademyOperationsRoutes } from './operations.router';
 import { registerAcademyResourceRoutes } from './resources.router';
+import { registerAcademyDemoLessonRoutes } from './demo-lessons.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -53,5 +54,6 @@ registerAcademyLeadRoutes(router);
 registerAcademyLearningRoutes(router);
 registerAcademyOperationsRoutes(router);
 registerAcademyResourceRoutes(router);
+registerAcademyDemoLessonRoutes(router);
 
 export default router;

@@ -89,6 +89,10 @@ type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
 interface Lead {
   id: number;
   contactName: string;
+  studentName?: string | null;
+  studentAge?: number;
+  courseId?: number | null;
+  schoolId?: number | null;
   phone?: string | null;
   phoneNumbers?: string[];
   messenger?: string | null;
@@ -1130,6 +1134,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           lessons={data.lessons ?? []}
           courses={data.courses ?? []}
           schools={data.schools ?? []}
+          leads={pipelineLeads}
         />
       ) : null}
 
@@ -1263,6 +1268,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         onOpenChange={handleLeadSheetState}
         initialTab={leadSheetTab}
         courses={data.courses ?? []}
+        schools={data.schools ?? []}
+        demoLeads={pipelineLeads}
         groups={data.groups ?? []}
         sources={data.sources ?? []}
         statuses={data.statuses ?? []}

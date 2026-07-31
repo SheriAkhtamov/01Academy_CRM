@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDays, format, startOfDay } from 'date-fns';
 import { enUS, ru } from 'date-fns/locale';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import {
+  demoLessonsApi,
+  type AvailabilityResponse,
+  type AvailabilitySlot,
+} from '@/features/demo-lessons/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,24 +21,14 @@ import {
   UserRoundCheck,
 } from 'lucide-react';
 
-interface AvailabilitySlot {
-  startsAt: string;
-  endsAt: string;
-  teacherId: number;
-  teacherName: string;
-  availableTeacherCount: number;
-}
-
-interface AvailabilityResponse {
-  durationMinutes: number;
-  slots: AvailabilitySlot[];
-}
-
 interface AvailabilityCalendarProps {
   schoolId?: number | null;
   courseId?: number | null;
-  value?: string;
-  onChange: (value: string) => void;
+  value?: AvailabilitySlot | null;
+  onChange: (value: AvailabilitySlot | null) => void;
+  format?: 'offline' | 'online';
+  participantCount?: number;
+  participantIds?: number[];
   excludeLeadId?: number | null;
   className?: string;
 }
@@ -46,13 +40,16 @@ export function AvailabilityCalendar({
   courseId,
   value,
   onChange,
+  format: demoFormat = 'offline',
+  participantCount = 1,
+  participantIds = [],
   excludeLeadId,
   className,
 }: AvailabilityCalendarProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? ru : enUS;
   const [weekStart, setWeekStart] = useState(() => startOfDay(new Date()));
-  const selectedValueDate = value ? new Date(value) : null;
+  const selectedValueDate = value ? new Date(value.startsAt) : null;
   const [selectedDateKey, setSelectedDateKey] = useState(() =>
     selectedValueDate && !Number.isNaN(selectedValueDate.getTime())
       ? localDateKey(selectedValueDate)
@@ -61,17 +58,17 @@ export function AvailabilityCalendar({
   const from = localDateKey(weekStart);
 
   const availability = useQuery<AvailabilityResponse>({
-    queryKey: ['/api/academy/availability/slots', schoolId, courseId, from, excludeLeadId],
-    queryFn: () => {
-      const params = new URLSearchParams({
-        schoolId: String(schoolId),
-        courseId: String(courseId),
-        from,
-        days: '7',
-      });
-      if (excludeLeadId) params.set('excludeLeadId', String(excludeLeadId));
-      return apiRequest('GET', `/api/academy/availability/slots?${params.toString()}`);
-    },
+    queryKey: ['/api/academy/availability/slots', schoolId, courseId, from, demoFormat, participantCount, participantIds.join(','), excludeLeadId],
+    queryFn: () => demoLessonsApi.availability({
+      schoolId: Number(schoolId),
+      courseId: Number(courseId),
+      from,
+      days: 7,
+      format: demoFormat,
+      participantCount,
+      participantIds,
+      excludeLeadId,
+    }),
     enabled: Boolean(schoolId && courseId),
   });
 
@@ -93,7 +90,7 @@ export function AvailabilityCalendar({
 
   useEffect(() => {
     if (value) {
-      const date = new Date(value);
+      const date = new Date(value.startsAt);
       if (!Number.isNaN(date.getTime())) {
         setSelectedDateKey(localDateKey(date));
         const currentWeekEnd = addDays(weekStart, 7);
@@ -125,7 +122,7 @@ export function AvailabilityCalendar({
           <p className="text-sm font-semibold text-foreground">{t('availableSlots')}</p>
           <p className="text-xs text-muted-foreground">
             {availability.data
-              ? `${t('singleRoomRule')} · ${availability.data.durationMinutes} ${t('minuteShort')}`
+              ? `${t('resourceConflictRule')} · ${availability.data.durationMinutes} ${t('minuteShort')}`
               : t('checkingAvailability')}
           </p>
         </div>
@@ -205,7 +202,9 @@ export function AvailabilityCalendar({
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {selectedSlots.map((slot) => {
               const selected = value
-                ? new Date(value).getTime() === new Date(slot.startsAt).getTime()
+                ? new Date(value.startsAt).getTime() === new Date(slot.startsAt).getTime()
+                  && Number(value.teacherId) === Number(slot.teacherId)
+                  && Number(value.roomId ?? 0) === Number(slot.roomId ?? 0)
                 : false;
               return (
                 <Button
@@ -213,7 +212,7 @@ export function AvailabilityCalendar({
                   type="button"
                   variant={selected ? 'default' : 'outline'}
                   className="h-auto justify-start gap-3 px-3 py-3"
-                  onClick={() => onChange(slot.startsAt)}
+                  onClick={() => onChange(slot)}
                 >
                   <Clock3 />
                   <span className="flex min-w-0 flex-col items-start">
@@ -221,7 +220,10 @@ export function AvailabilityCalendar({
                       {format(new Date(slot.startsAt), 'HH:mm')}–{format(new Date(slot.endsAt), 'HH:mm')}
                     </span>
                     <span className={cn('truncate text-[10px]', selected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
-                      {slot.availableTeacherCount} {t('teachersAvailableShort')}
+                      {slot.teacherName}
+                    </span>
+                    <span className={cn('truncate text-[10px]', selected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
+                      {demoFormat === 'online' ? t('online') : slot.roomName ?? t('roomNotFound')}
                     </span>
                   </span>
                 </Button>
@@ -241,9 +243,9 @@ export function AvailabilityCalendar({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">
             <CalendarDays data-icon="inline-start" />
-            {format(new Date(value), 'd MMMM, HH:mm', { locale })}
+            {format(new Date(value.startsAt), 'd MMMM, HH:mm', { locale })}
           </Badge>
-          <Button type="button" variant="ghost" size="sm" onClick={() => onChange('')}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange(null)}>
             {t('clearSelection')}
           </Button>
         </div>

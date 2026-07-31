@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, DoorOpen, UsersRound } from 'lucide-react';
+import { CalendarDays, DoorOpen, UsersRound, Wifi } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,25 +43,39 @@ interface ResourceLesson {
   durationMinutes?: number | null;
 }
 
+interface ResourceDemoLesson {
+  id: number;
+  courseName?: string | null;
+  teacherName?: string | null;
+  scheduledAt: string;
+  durationMinutes?: number | null;
+  participantCount?: number | null;
+  status?: string | null;
+}
+
 interface ResourceRoom {
   id: number;
   name: string;
   capacity: number;
+  isOnline?: boolean;
   groups: ResourceGroup[];
   lessons: ResourceLesson[];
+  demos: ResourceDemoLesson[];
 }
 
 interface ResourceScheduleResponse {
   date: string;
   rooms: ResourceRoom[];
+  onlineDemos?: ResourceDemoLesson[];
 }
 
 interface CalendarEvent {
   id: string;
-  source: 'group' | 'lesson';
+  source: 'group' | 'lesson' | 'demo';
   name: string;
   courseName?: string | null;
   teacherName?: string | null;
+  participantCount?: number | null;
   startMinutes: number;
   endMinutes: number;
 }
@@ -127,7 +141,23 @@ const buildRoomEvents = (room: ResourceRoom, selectedDate: string): CalendarEven
     }];
   });
 
-  return [...recurring, ...lessons]
+  const demos = (room.demos ?? []).flatMap((demo) => {
+    const startsAt = new Date(demo.scheduledAt);
+    if (Number.isNaN(startsAt.getTime())) return [];
+    const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+    return [{
+      id: `demo-${demo.id}`,
+      source: 'demo' as const,
+      name: 'demoLesson',
+      courseName: demo.courseName,
+      teacherName: demo.teacherName,
+      participantCount: demo.participantCount,
+      startMinutes,
+      endMinutes: startMinutes + Number(demo.durationMinutes ?? 60),
+    }];
+  });
+
+  return [...recurring, ...lessons, ...demos]
     .filter((event) => event.endMinutes > START_HOUR * 60 && event.startMinutes < END_HOUR * 60)
     .sort((left, right) => left.startMinutes - right.startMinutes || left.name.localeCompare(right.name));
 };
@@ -153,6 +183,20 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
     ),
     enabled: Boolean(schoolId && selectedDate),
   });
+  const resourceRows = useMemo(() => {
+    const rooms = schedule.data?.rooms ?? [];
+    const onlineDemos = schedule.data?.onlineDemos ?? [];
+    if (onlineDemos.length === 0) return rooms;
+    return [...rooms, {
+      id: -1,
+      name: t('online'),
+      capacity: 0,
+      isOnline: true,
+      groups: [],
+      lessons: [],
+      demos: onlineDemos,
+    }];
+  }, [schedule.data?.onlineDemos, schedule.data?.rooms, t]);
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -201,24 +245,29 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
               </AlertDescription>
             </Alert>
           </div>
-        ) : schedule.data?.rooms.length ? (
+        ) : resourceRows.length ? (
           <div className="overflow-x-auto">
             <div className="min-w-[980px]">
               <div className="grid grid-cols-[13rem_repeat(12,minmax(5rem,1fr))] border-b border-border bg-muted/40">
-                <div className="px-4 py-3 text-xs font-medium text-muted-foreground">{t('rooms')}</div>
+                <div className="px-4 py-3 text-xs font-medium text-muted-foreground">{t('scheduleResources')}</div>
                 {HOURS.map((hour) => (
                   <div key={hour} className="border-l border-border px-2 py-3 text-center text-xs font-medium tabular-nums text-muted-foreground">
                     {String(hour).padStart(2, '0')}:00
                   </div>
                 ))}
               </div>
-              {schedule.data.rooms.map((room) => {
+              {resourceRows.map((room) => {
                 const events = buildRoomEvents(room, selectedDate);
                 return (
                   <div key={room.id} className="grid grid-cols-[13rem_minmax(0,1fr)] border-b border-border last:border-b-0">
                     <div className="flex flex-col justify-center gap-1 border-r border-border bg-card px-4 py-3">
-                      <span className="flex items-center gap-2 font-medium text-foreground"><DoorOpen />{room.name}</span>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground"><UsersRound />{room.capacity} {t('students')}</span>
+                      <span className="flex items-center gap-2 font-medium text-foreground">
+                        {room.isOnline ? <Wifi /> : <DoorOpen />}{room.name}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        {room.isOnline ? <Wifi /> : <UsersRound />}
+                        {room.isOnline ? t('demoOnlineLocation') : `${room.capacity} ${t('students')}`}
+                      </span>
                     </div>
                     <div className="relative min-h-24 bg-card">
                       <div className="absolute inset-0 grid grid-cols-12" aria-hidden="true">
@@ -235,14 +284,23 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
                             className={cn(
                               'absolute top-3 z-10 flex h-[calc(100%-1.5rem)] min-w-16 flex-col justify-center rounded-md border px-2 py-1 text-left shadow-sm',
                               event.source === 'lesson'
-                                ? 'border-amber-300 bg-amber-50 text-amber-950'
-                                : 'border-primary/30 bg-primary/10 text-primary',
+                                ? 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100'
+                                : event.source === 'demo'
+                                  ? 'border-violet-300 bg-violet-50 text-violet-950 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-100'
+                                  : 'border-primary/30 bg-primary/10 text-primary',
                             )}
                             style={{ left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` }}
-                            title={`${event.name} · ${event.courseName ?? ''} · ${event.teacherName ?? ''}`}
+                            title={`${event.source === 'demo' ? t('demoLesson') : event.name} · ${event.courseName ?? ''} · ${event.teacherName ?? ''}`}
                           >
-                            <span className="truncate text-xs font-semibold">{event.name}</span>
+                            <span className="truncate text-xs font-semibold">
+                              {event.source === 'demo' ? t('demoLesson') : event.name}
+                            </span>
                             <span className="truncate text-[11px] opacity-80">{event.courseName ?? '—'} · {event.teacherName ?? t('notAssigned')}</span>
+                            {event.source === 'demo' ? (
+                              <span className="truncate text-[10px] opacity-75">
+                                {event.participantCount ?? 0} {t('demoParticipantsShort')}
+                              </span>
+                            ) : null}
                           </article>
                         );
                       })}

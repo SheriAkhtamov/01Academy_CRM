@@ -45,6 +45,18 @@ export interface SalesScheduleSchool {
   name: string;
 }
 
+export interface SalesScheduleDemoLesson {
+  id: number;
+  courseName?: string | null;
+  schoolName?: string | null;
+  roomName?: string | null;
+  teacherName?: string | null;
+  scheduledAt: string;
+  durationMinutes?: number | null;
+  status?: string | null;
+  participants?: Array<{ leadId: number }>;
+}
+
 export interface SalesScheduleFilterCourse {
   key: string;
   id: number | null;
@@ -61,7 +73,7 @@ export interface SalesScheduleFilterSchool {
 
 export interface SalesScheduleEvent {
   id: string;
-  source: 'lesson' | 'recurring';
+  source: 'lesson' | 'recurring' | 'demo';
   groupId: number;
   groupName: string;
   courseName?: string | null;
@@ -70,11 +82,46 @@ export interface SalesScheduleEvent {
   topic?: string | null;
   availableSeats?: number | null;
   maxStudents?: number | null;
+  demoLessonId?: number | null;
+  roomName?: string | null;
+  participantCount?: number | null;
   startsAt: Date;
   endsAt: Date;
   dayIndex: number;
   startMinutes: number;
   endMinutes: number;
+}
+
+export function buildSalesDemoScheduleEvents(
+  demos: SalesScheduleDemoLesson[],
+  weekStart: Date,
+): SalesScheduleEvent[] {
+  const normalizedWeekStart = startOfDay(weekStart);
+  const weekEnd = addDays(normalizedWeekStart, 7);
+  return demos.flatMap((demo) => {
+    if (demo.status === 'cancelled') return [];
+    const startsAt = new Date(demo.scheduledAt);
+    if (Number.isNaN(startsAt.getTime()) || startsAt < normalizedWeekStart || startsAt >= weekEnd) return [];
+    const durationMinutes = Math.max(15, Number(demo.durationMinutes || 60));
+    const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+    return [{
+      id: `demo-${demo.id}`,
+      source: 'demo' as const,
+      groupId: 0,
+      groupName: 'demoLesson',
+      courseName: demo.courseName,
+      teacherName: demo.teacherName,
+      schoolName: demo.schoolName,
+      roomName: demo.roomName,
+      participantCount: demo.participants?.length ?? 0,
+      demoLessonId: demo.id,
+      startsAt,
+      endsAt: addMinutes(startsAt, durationMinutes),
+      dayIndex: differenceInCalendarDays(startsAt, normalizedWeekStart),
+      startMinutes,
+      endMinutes: startMinutes + durationMinutes,
+    }];
+  });
 }
 
 export interface PositionedScheduleEvent extends SalesScheduleEvent {

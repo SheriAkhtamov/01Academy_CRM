@@ -519,6 +519,13 @@
       "when": 1787328000000,
       "tag": "0073_rename_workspaces_to_modules",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1787414400000,
+      "tag": "0074_add_demo_lessons",
+      "breakpoints": true
     }
   ]
 }

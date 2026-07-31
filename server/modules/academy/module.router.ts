@@ -201,12 +201,23 @@ router.get('/availability/slots', async (req, res) => {
     }
     const requestedFrom = parseDateOnly(req.query.from) ?? startOfAcademyDay(new Date());
     const days = Math.min(21, Math.max(1, Number(req.query.days) || 7));
+    const format = req.query.format === 'online' ? 'online' : 'offline';
+    const participantCount = Math.min(100, Math.max(1, Number(req.query.participantCount) || 1));
+    const participantIds = String(req.query.participantIds ?? '')
+      .split(',')
+      .map((value) => Number(value))
+      .filter((value) => Number.isSafeInteger(value) && value > 0)
+      .slice(0, 100);
     const result = await listAvailableSchoolSlots({
       schoolId,
       courseId,
       from: requestedFrom,
       days,
+      format,
+      participantCount,
+      participantIds,
       excludeLeadId: parseId(req.query.excludeLeadId),
+      excludeDemoLessonId: parseId(req.query.excludeDemoLessonId),
     });
     res.json(result);
   } catch (error: any) {
@@ -399,7 +410,7 @@ router.get('/schedule/resource', async (req, res) => {
     const selectedDate = parseDateOnly(req.query.date) ?? startOfAcademyDay(new Date());
     const nextDate = getZonedDayRange(selectedDate, ACADEMY_TIME_ZONE, 1).start;
 
-    const [school, rooms, groups, lessons] = await Promise.all([
+    const [school, rooms, groups, lessons, demos] = await Promise.all([
       queryOne(`SELECT id, name FROM academy_schools WHERE id = $1`, [schoolId]),
       query(`SELECT * FROM academy_rooms WHERE school_id = $1 AND is_active = true ORDER BY name`, [schoolId]),
       query(
@@ -425,6 +436,22 @@ router.get('/schedule/resource', async (req, res) => {
          ORDER BY l.room_id, l.scheduled_at`,
         [schoolId, selectedDate, nextDate],
       ),
+      query(
+        `SELECT demo.*, c.name AS course_name, t.full_name AS teacher_name,
+                COUNT(participant.id)::int AS participant_count
+         FROM academy_demo_lessons demo
+         JOIN academy_courses c ON c.id = demo.course_id
+         JOIN academy_teachers t ON t.id = demo.teacher_id
+         LEFT JOIN academy_demo_lesson_participants participant
+           ON participant.demo_lesson_id = demo.id AND participant.status <> 'cancelled'
+         WHERE demo.school_id = $1
+           AND demo.status <> 'cancelled'
+           AND demo.scheduled_at >= $2
+           AND demo.scheduled_at < $3
+         GROUP BY demo.id, c.name, t.full_name
+         ORDER BY demo.room_id, demo.scheduled_at`,
+        [schoolId, selectedDate, nextDate],
+      ),
     ]);
     if (!school) return res.status(404).json({ error: 'resourceNotFound' });
 
@@ -435,7 +462,9 @@ router.get('/schedule/resource', async (req, res) => {
         ...room,
         groups: groups.filter((group) => Number(group.roomId) === Number(room.id)),
         lessons: lessons.filter((lesson) => Number(lesson.roomId) === Number(room.id)),
+        demos: demos.filter((demo) => Number(demo.roomId) === Number(room.id)),
       })),
+      onlineDemos: demos.filter((demo) => demo.format === 'online'),
     });
   } catch (error) {
     logger.error('Failed to fetch resource schedule', { error });

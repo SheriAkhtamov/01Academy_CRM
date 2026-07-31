@@ -17,6 +17,7 @@ import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
 import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
+import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   LeadMergeConflictDialog,
@@ -78,6 +79,7 @@ import {
   Clock3,
   CreditCard,
   CalendarClock,
+  CalendarPlus2,
   ExternalLink,
   History,
   Loader2,
@@ -106,10 +108,11 @@ import {
 import type { TelephonyCallStatus } from '@/lib/telephony';
 
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
-
 interface LeadDetails {
   id: number;
   contactName: string;
+  courseId?: number | null;
+  schoolId?: number | null;
   phone?: string | null;
   phoneNumbers?: string[];
   sourceId?: number | null;
@@ -117,6 +120,7 @@ interface LeadDetails {
   sourceChannel?: string | null;
   tags?: LeadTagView[];
   statusCode: string;
+  isArchived?: boolean;
   managerId?: number | null;
   managerName?: string | null;
   comment?: string | null;
@@ -222,6 +226,8 @@ interface LeadDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   initialTab?: LeadSheetTab;
   courses: Array<{ id: number; name: string }>;
+  schools?: Array<{ id: number; name: string; isActive?: boolean }>;
+  demoLeads?: DemoLessonDialogLead[];
   groups: Array<{
     id: number;
     name: string;
@@ -248,7 +254,6 @@ interface DuplicateLeadHint extends LeadMergeDialogLead {
   leadId?: number | null;
   statusCode?: string | null;
 }
-
 const optionalNumberString = z.string().refine(
   (value) => value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0),
   'invalidData',
@@ -258,7 +263,6 @@ const optionalPhoneString = z.string().trim().refine(
   (value) => value === '' || value.length >= 7,
   'invalidData',
 );
-
 const phoneKey = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '');
 const compactPhoneNumbers = (values: string[]) => {
   const seen = new Set<string>();
@@ -747,6 +751,9 @@ export function LeadDetailSheet({
   onOpenChange,
   initialTab = 'deal',
   groups,
+  courses,
+  schools = [],
+  demoLeads = [],
   sources,
   statuses,
   managers,
@@ -764,6 +771,7 @@ export function LeadDetailSheet({
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
+  const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
 
@@ -1185,6 +1193,12 @@ export function LeadDetailSheet({
                           {t('writeShort')}
                           {messageTarget.external ? <ExternalLink data-icon="inline-end" /> : null}
                         </a>
+                      </Button>
+                    ) : null}
+                    {!lead.isArchived && lead.statusCode !== 'paid' ? (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setCreateDemoOpen(true)}>
+                        <CalendarPlus2 data-icon="inline-start" />
+                        {t('bookDemoLesson')}
                       </Button>
                     ) : null}
                     <Button size="sm" onClick={() => setActiveTab('payment')}>
@@ -1837,6 +1851,18 @@ export function LeadDetailSheet({
             await leadQuery.refetch();
             onChanged();
           }}
+        />
+      ) : null}
+      {lead ? (
+        <DemoLessonDialog
+          open={createDemoOpen}
+          onOpenChange={setCreateDemoOpen}
+          leads={demoLeads}
+          courses={courses}
+          schools={schools}
+          initialLeadId={lead.id}
+          initialSchoolId={lead.schoolId}
+          onCreated={onChanged}
         />
       ) : null}
       <LeadMergeConflictDialog

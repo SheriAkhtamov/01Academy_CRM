@@ -270,6 +270,7 @@ export const findAvailableTeacher = async (options: {
   durationMinutes: number;
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
+  excludeDemoLessonId?: number | null;
 }) => {
   const candidates = await query(
     `SELECT t.*,
@@ -344,18 +345,31 @@ export const findAvailableTeacher = async (options: {
       );
     if (groupConflict) continue;
 
-    const conflict = await queryOne(
-      `SELECT id
-       FROM academy_lessons
-       WHERE teacher_id = $1
-         AND status <> 'cancelled'
-         AND scheduled_at < $3
-         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
-         AND ($4::int IS NULL OR id <> $4)
-       LIMIT 1`,
-      [teacher.id, options.scheduledAt, lessonEnd, options.excludeLessonId ?? null],
-    );
-    if (!conflict) return teacher;
+    const [lessonConflict, demoConflict] = await Promise.all([
+      queryOne(
+        `SELECT id
+         FROM academy_lessons
+         WHERE teacher_id = $1
+           AND status <> 'cancelled'
+           AND scheduled_at < $3
+           AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+           AND ($4::int IS NULL OR id <> $4)
+         LIMIT 1`,
+        [teacher.id, options.scheduledAt, lessonEnd, options.excludeLessonId ?? null],
+      ),
+      queryOne(
+        `SELECT id
+         FROM academy_demo_lessons
+         WHERE teacher_id = $1
+           AND status = 'scheduled'
+           AND scheduled_at < $3
+           AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+           AND ($4::int IS NULL OR id <> $4)
+         LIMIT 1`,
+        [teacher.id, options.scheduledAt, lessonEnd, options.excludeDemoLessonId ?? null],
+      ),
+    ]);
+    if (!lessonConflict && !demoConflict) return teacher;
   }
 
   return null;
@@ -397,8 +411,8 @@ export const findTeacherForGroupSchedule = async (options: {
   const rangeEnd = options.endDate
     ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
     : null;
-  const existingLessons = teacherIds.length > 0
-    ? await query(
+  const [existingLessons, existingDemos] = teacherIds.length > 0
+    ? await Promise.all([query(
       `SELECT teacher_id, scheduled_at, duration_minutes
        FROM academy_lessons
        WHERE teacher_id = ANY($1::int[])
@@ -406,8 +420,16 @@ export const findTeacherForGroupSchedule = async (options: {
          AND scheduled_at >= $2
          AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
       [teacherIds, rangeStart, rangeEnd],
-    )
-    : [];
+    ), query(
+      `SELECT teacher_id, scheduled_at, duration_minutes
+       FROM academy_demo_lessons
+       WHERE teacher_id = ANY($1::int[])
+         AND status = 'scheduled'
+         AND scheduled_at >= $2
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+      [teacherIds, rangeStart, rangeEnd],
+    )])
+    : [[], []];
 
   for (const teacher of candidates) {
     const schoolIds = readJsonArray(teacher.schoolIds).map(Number);
@@ -458,7 +480,20 @@ export const findTeacherForGroupSchedule = async (options: {
           && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
         );
       });
-    if (!hasLessonConflict) return teacher;
+    const hasDemoConflict = existingDemos
+      .filter((demo) => Number(demo.teacherId) === Number(teacher.id))
+      .some((demo) => {
+        const scheduledAt = new Date(demo.scheduledAt);
+        const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
+          scheduledAt,
+          Number(demo.durationMinutes || 60),
+        );
+        return requestedSchedule.some((item) =>
+          item.dayOfWeek === dayOfWeek
+          && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
+        );
+      });
+    if (!hasLessonConflict && !hasDemoConflict) return teacher;
   }
 
   return null;
@@ -539,16 +574,27 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
   const rangeEnd = options.endDate
     ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
     : null;
-  const existingLessons = await query(
-    `SELECT scheduled_at, duration_minutes
-     FROM academy_lessons
-     WHERE teacher_id = $1
-       AND status <> 'cancelled'
-       AND scheduled_at >= $2
-       AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-    [options.teacherId, rangeStart, rangeEnd],
-  );
-  const lessonConflict = existingLessons.some((lesson) => {
+  const [existingLessons, existingDemos] = await Promise.all([
+    query(
+      `SELECT scheduled_at, duration_minutes
+       FROM academy_lessons
+       WHERE teacher_id = $1
+         AND status <> 'cancelled'
+         AND scheduled_at >= $2
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+      [options.teacherId, rangeStart, rangeEnd],
+    ),
+    query(
+      `SELECT scheduled_at, duration_minutes
+       FROM academy_demo_lessons
+       WHERE teacher_id = $1
+         AND status = 'scheduled'
+         AND scheduled_at >= $2
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+      [options.teacherId, rangeStart, rangeEnd],
+    ),
+  ]);
+  const scheduledConflict = [...existingLessons, ...existingDemos].some((lesson) => {
     const scheduledAt = new Date(lesson.scheduledAt);
     const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
       scheduledAt,
@@ -559,7 +605,7 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
       && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
     );
   });
-  if (lessonConflict) {
+  if (scheduledConflict) {
     throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
   }
 
@@ -575,6 +621,7 @@ export const assertTeacherCanLeadLesson = async (options: {
   durationMinutes: number;
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
+  excludeDemoLessonId?: number | null;
 }) => {
   const teacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [options.teacherId]);
   if (!teacher) throw Object.assign(new Error('teacherNotFound'), { statusCode: 404 });
@@ -607,7 +654,7 @@ export const assertTeacherCanLeadLesson = async (options: {
     throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
   }
 
-  const [lessonConflict, groups] = await Promise.all([
+  const [lessonConflict, demoConflict, groups] = await Promise.all([
     queryOne(
       `SELECT id
        FROM academy_lessons
@@ -618,6 +665,17 @@ export const assertTeacherCanLeadLesson = async (options: {
          AND ($4::int IS NULL OR id <> $4)
        LIMIT 1`,
       [options.teacherId, startsAt, endsAt, options.excludeLessonId ?? null],
+    ),
+    queryOne(
+      `SELECT id
+       FROM academy_demo_lessons
+       WHERE teacher_id = $1
+         AND status = 'scheduled'
+         AND scheduled_at < $3
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+         AND ($4::int IS NULL OR id <> $4)
+       LIMIT 1`,
+      [options.teacherId, startsAt, endsAt, options.excludeDemoLessonId ?? null],
     ),
     query(
       `SELECT *
@@ -641,7 +699,7 @@ export const assertTeacherCanLeadLesson = async (options: {
       endMinutes,
     )
   );
-  if (lessonConflict || recurringConflict) {
+  if (lessonConflict || demoConflict || recurringConflict) {
     throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
   }
   await ensureTeacherCourseAssignment(teacher, options.courseId);
@@ -707,16 +765,27 @@ export const assertRoomScheduleAvailable = async (options: {
   const rangeEnd = options.endDate
     ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
     : null;
-  const lessons = await query(
-    `SELECT scheduled_at, duration_minutes
-     FROM academy_lessons
-     WHERE room_id = $1
-       AND status <> 'cancelled'
-       AND scheduled_at >= $2
-       AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-    [options.roomId, rangeStart, rangeEnd],
-  );
-  const lessonConflict = lessons.some((lesson) => {
+  const [lessons, demos] = await Promise.all([
+    query(
+      `SELECT scheduled_at, duration_minutes
+       FROM academy_lessons
+       WHERE room_id = $1
+         AND status <> 'cancelled'
+         AND scheduled_at >= $2
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+      [options.roomId, rangeStart, rangeEnd],
+    ),
+    query(
+      `SELECT scheduled_at, duration_minutes
+       FROM academy_demo_lessons
+       WHERE room_id = $1
+         AND status = 'scheduled'
+         AND scheduled_at >= $2
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
+      [options.roomId, rangeStart, rangeEnd],
+    ),
+  ]);
+  const lessonConflict = [...lessons, ...demos].some((lesson) => {
     const scheduledAt = new Date(lesson.scheduledAt);
     const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
       scheduledAt,
@@ -739,6 +808,7 @@ export const assertLessonRoomAvailable = async (options: {
   durationMinutes: number;
   excludeLessonId?: number | null;
   excludeGroupId?: number | null;
+  excludeDemoLessonId?: number | null;
 }) => {
   await assertActiveRoomInSchool(options.roomId, options.schoolId);
   const startsAt = new Date(options.scheduledAt);
@@ -748,7 +818,7 @@ export const assertLessonRoomAvailable = async (options: {
     options.durationMinutes,
   );
 
-  const [lessonConflict, groupLessonConflict, groups] = await Promise.all([
+  const [lessonConflict, demoConflict, groupLessonConflict, groups] = await Promise.all([
     queryOne(
       `SELECT id FROM academy_lessons
        WHERE room_id = $1
@@ -758,6 +828,16 @@ export const assertLessonRoomAvailable = async (options: {
          AND ($4::int IS NULL OR id <> $4)
        LIMIT 1`,
       [options.roomId, startsAt, endsAt, options.excludeLessonId ?? null],
+    ),
+    queryOne(
+      `SELECT id FROM academy_demo_lessons
+       WHERE room_id = $1
+         AND status = 'scheduled'
+         AND scheduled_at < $3
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+         AND ($4::int IS NULL OR id <> $4)
+       LIMIT 1`,
+      [options.roomId, startsAt, endsAt, options.excludeDemoLessonId ?? null],
     ),
     options.excludeGroupId
       ? queryOne(
@@ -782,6 +862,7 @@ export const assertLessonRoomAvailable = async (options: {
   ]);
 
   if (lessonConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
+  if (demoConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
   if (groupLessonConflict) {
     throw Object.assign(new Error('groupLessonOverlap'), { statusCode: 409 });
   }
@@ -807,9 +888,13 @@ export const listAvailableSchoolSlots = async (options: {
   courseId: number;
   from: Date;
   days: number;
+  format?: 'offline' | 'online';
+  participantCount?: number;
+  participantIds?: number[];
   excludeLeadId?: number | null;
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
+  excludeDemoLessonId?: number | null;
 }) => {
   const course = await queryOne(`SELECT * FROM academy_courses WHERE id = $1 AND is_active = true`, [options.courseId]);
   if (!course) throw Object.assign(new Error('Course not found'), { statusCode: 404 });
@@ -817,9 +902,11 @@ export const listAvailableSchoolSlots = async (options: {
   if (!school) throw Object.assign(new Error('School not found'), { statusCode: 404 });
 
   const durationMinutes = Math.max(15, Number(course.lessonDurationMinutes || 60));
+  const format = options.format === 'online' ? 'online' : 'offline';
+  const participantCount = Math.max(1, Number(options.participantCount) || 1);
   const rangeStart = startOfAcademyDay(options.from);
   const rangeEnd = getZonedDayRange(rangeStart, ACADEMY_TIME_ZONE, options.days).start;
-  const teachers = await query(
+  const [teachers, rooms] = await Promise.all([query(
     `SELECT t.*,
         (SELECT COUNT(*)::int FROM academy_lessons l
          WHERE l.teacher_id = t.id AND l.status = 'scheduled' AND l.scheduled_at >= NOW()) AS upcoming_lessons
@@ -828,10 +915,17 @@ export const listAvailableSchoolSlots = async (options: {
        AND t.course_ids @> $1::jsonb
      ORDER BY upcoming_lessons, t.id`,
     [JSON.stringify([options.courseId])],
-  );
+  ), format === 'offline'
+    ? query(
+      `SELECT * FROM academy_rooms
+       WHERE school_id = $1 AND is_active = true AND capacity >= $2
+       ORDER BY capacity, name, id`,
+      [options.schoolId, participantCount],
+    )
+    : Promise.resolve([])]);
   const teacherIds = teachers.map((teacher) => Number(teacher.id));
 
-  const [lessons, groups, demos] = await Promise.all([
+  const [lessons, groups, demos, legacyDemos] = await Promise.all([
     query(
       `SELECT * FROM academy_lessons
        WHERE status <> 'cancelled'
@@ -849,22 +943,51 @@ export const listAvailableSchoolSlots = async (options: {
       [options.schoolId, teacherIds, options.excludeGroupId ?? null],
     ),
     query(
-      `SELECT l.id, l.demo_at, COALESCE(c.lesson_duration_minutes, $4)::int AS duration_minutes
+      `SELECT demo.*,
+          ARRAY(
+            SELECT participant.lead_id
+            FROM academy_demo_lesson_participants participant
+            WHERE participant.demo_lesson_id = demo.id
+              AND participant.status <> 'cancelled'
+          ) AS participant_lead_ids
+       FROM academy_demo_lessons demo
+       WHERE status = 'scheduled'
+         AND scheduled_at < $2
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $1
+         AND (school_id = $3 OR teacher_id = ANY($4::int[]))
+         AND ($5::int IS NULL OR id <> $5)`,
+      [rangeStart, rangeEnd, options.schoolId, teacherIds, options.excludeDemoLessonId ?? null],
+    ),
+    query(
+      `SELECT l.id, l.demo_at, l.demo_format,
+              COALESCE(c.lesson_duration_minutes, $4)::int AS duration_minutes
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = COALESCE(l.demo_course_id, l.course_id)
        WHERE l.school_id = $1
          AND l.demo_at >= $2
          AND l.demo_at < $3
-         AND COALESCE(l.demo_format, 'offline') <> 'online'
          AND COALESCE(l.demo_attended, false) = false
          AND l.status_code <> 'not_now'
          AND COALESCE(l.is_archived, false) = false
+         AND NOT EXISTS (
+           SELECT 1
+           FROM academy_demo_lesson_participants participant
+           JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
+           WHERE participant.lead_id = l.id
+             AND demo.status = 'scheduled'
+             AND demo.scheduled_at = l.demo_at
+         )
          AND ($5::int IS NULL OR l.id <> $5)`,
       [options.schoolId, rangeStart, rangeEnd, durationMinutes, options.excludeLeadId ?? null],
     ),
   ]);
 
-  const slots = new Map<number, Row>();
+  type AvailableSlot = Row & {
+    teacherIds: Set<number>;
+    roomIds: Set<number>;
+    optionKeys: Set<string>;
+  };
+  const slots = new Map<number, AvailableSlot>();
   const now = new Date();
 
   for (let offset = 0; offset < options.days; offset += 1) {
@@ -896,33 +1019,6 @@ export const listAvailableSchoolSlots = async (options: {
           const endsAt = addMinutes(startsAt, durationMinutes);
           const slotKey = startsAt.getTime();
 
-          const roomBusyByLesson = lessons.some((lesson) => {
-            if (Number(lesson.schoolId) !== options.schoolId) return false;
-            const lessonStart = new Date(lesson.scheduledAt);
-            const lessonEnd = addMinutes(lessonStart, Number(lesson.durationMinutes || 60));
-            return startsAt < lessonEnd && endsAt > lessonStart;
-          });
-          const roomBusyByDemo = demos.some((demo) => {
-            const demoStart = new Date(demo.demoAt);
-            const demoEnd = addMinutes(demoStart, Number(demo.durationMinutes || durationMinutes));
-            return startsAt < demoEnd && endsAt > demoStart;
-          });
-          const roomBusyByGroup = groups.some((group) => {
-            if (Number(group.schoolId) !== options.schoolId) return false;
-            if (!isDateInsideInclusiveDayRange(
-              startsAt,
-              group.startDate ? new Date(group.startDate) : null,
-              group.endDate ? new Date(group.endDate) : null,
-            )) return false;
-            return scheduleConflictsWithSlot(
-              normalizeScheduleItems(group.schedule),
-              dayOfWeek,
-              startMinutes,
-              startMinutes + durationMinutes,
-            );
-          });
-          if (roomBusyByLesson || roomBusyByDemo || roomBusyByGroup) continue;
-
           const teacherBusyByLesson = lessons.some((lesson) => {
             if (Number(lesson.teacherId) !== Number(teacher.id)) return false;
             const lessonStart = new Date(lesson.scheduledAt);
@@ -943,19 +1039,99 @@ export const listAvailableSchoolSlots = async (options: {
               startMinutes + durationMinutes,
             );
           });
-          if (teacherBusyByLesson || teacherBusyByGroup) continue;
+          const teacherBusyByDemo = demos.some((demo) => {
+            if (Number(demo.teacherId) !== Number(teacher.id)) return false;
+            const demoStart = new Date(demo.scheduledAt);
+            const demoEnd = addMinutes(demoStart, Number(demo.durationMinutes || durationMinutes));
+            return startsAt < demoEnd && endsAt > demoStart;
+          });
+          const participantBusyByDemo = demos.some((demo) => {
+            const participantLeadIds = Array.isArray(demo.participantLeadIds)
+              ? demo.participantLeadIds.map(Number)
+              : [];
+            if (!(options.participantIds ?? []).some((leadId) => participantLeadIds.includes(leadId))) return false;
+            const demoStart = new Date(demo.scheduledAt);
+            const demoEnd = addMinutes(demoStart, Number(demo.durationMinutes || durationMinutes));
+            return startsAt < demoEnd && endsAt > demoStart;
+          });
+          const participantBusyByLegacyDemo = legacyDemos.some((demo) => {
+            if (!(options.participantIds ?? []).includes(Number(demo.id))) return false;
+            const demoStart = new Date(demo.demoAt);
+            const demoEnd = addMinutes(demoStart, Number(demo.durationMinutes || durationMinutes));
+            return startsAt < demoEnd && endsAt > demoStart;
+          });
+          if (
+            teacherBusyByLesson
+            || teacherBusyByGroup
+            || teacherBusyByDemo
+            || participantBusyByDemo
+            || participantBusyByLegacyDemo
+          ) continue;
 
-          const existing = slots.get(slotKey);
-          if (existing) {
-            existing.availableTeacherCount += 1;
-          } else {
-            slots.set(slotKey, {
-              startsAt: startsAt.toISOString(),
-              endsAt: endsAt.toISOString(),
-              teacherId: Number(teacher.id),
-              teacherName: teacher.fullName,
-              availableTeacherCount: 1,
+          const candidateRooms = format === 'online' ? [null] : rooms;
+          for (const room of candidateRooms) {
+            const roomId = room ? Number(room.id) : null;
+            const roomBusyByLesson = roomId !== null && lessons.some((lesson) => {
+              if (Number(lesson.roomId) !== roomId) return false;
+              const lessonStart = new Date(lesson.scheduledAt);
+              const lessonEnd = addMinutes(lessonStart, Number(lesson.durationMinutes || 60));
+              return startsAt < lessonEnd && endsAt > lessonStart;
             });
+            const roomBusyByDemo = roomId !== null && demos.some((demo) => {
+              if (Number(demo.roomId) !== roomId) return false;
+              const demoStart = new Date(demo.scheduledAt);
+              const demoEnd = addMinutes(demoStart, Number(demo.durationMinutes || durationMinutes));
+              return startsAt < demoEnd && endsAt > demoStart;
+            });
+            const roomBusyByLegacyDemo = roomId !== null && legacyDemos.some((demo) => {
+              if (demo.demoFormat === 'online') return false;
+              const demoStart = new Date(demo.demoAt);
+              const demoEnd = addMinutes(demoStart, Number(demo.durationMinutes || durationMinutes));
+              return startsAt < demoEnd && endsAt > demoStart;
+            });
+            const roomBusyByGroup = roomId !== null && groups.some((group) => {
+              if (Number(group.roomId) !== roomId) return false;
+              if (!isDateInsideInclusiveDayRange(
+                startsAt,
+                group.startDate ? new Date(group.startDate) : null,
+                group.endDate ? new Date(group.endDate) : null,
+              )) return false;
+              return scheduleConflictsWithSlot(
+                normalizeScheduleItems(group.schedule),
+                dayOfWeek,
+                startMinutes,
+                startMinutes + durationMinutes,
+              );
+            });
+            if (roomBusyByLesson || roomBusyByDemo || roomBusyByLegacyDemo || roomBusyByGroup) continue;
+
+            const optionKey = `${teacher.id}:${roomId ?? 'online'}`;
+            const existing = slots.get(slotKey);
+            if (existing) {
+              if (existing.optionKeys.has(optionKey)) continue;
+              existing.optionKeys.add(optionKey);
+              existing.teacherIds.add(Number(teacher.id));
+              if (roomId) existing.roomIds.add(roomId);
+              existing.availableTeacherCount = existing.teacherIds.size;
+              existing.availableRoomCount = format === 'online' ? 0 : existing.roomIds.size;
+              existing.availableOptionCount = existing.optionKeys.size;
+            } else {
+              slots.set(slotKey, {
+                startsAt: startsAt.toISOString(),
+                endsAt: endsAt.toISOString(),
+                teacherId: Number(teacher.id),
+                teacherName: teacher.fullName,
+                roomId,
+                roomName: room?.name ?? null,
+                roomCapacity: room ? Number(room.capacity) : null,
+                availableTeacherCount: 1,
+                availableRoomCount: roomId ? 1 : 0,
+                availableOptionCount: 1,
+                teacherIds: new Set([Number(teacher.id)]),
+                roomIds: roomId ? new Set([roomId]) : new Set(),
+                optionKeys: new Set([optionKey]),
+              });
+            }
           }
         }
       }
@@ -968,9 +1144,11 @@ export const listAvailableSchoolSlots = async (options: {
     durationMinutes,
     from: rangeStart.toISOString(),
     days: options.days,
+    format,
     slots: [...slots.values()]
       .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
-      .slice(0, 250),
+      .slice(0, 250)
+      .map(({ teacherIds: _teacherIds, roomIds: _roomIds, optionKeys: _optionKeys, ...slot }) => slot),
   };
 };
 
@@ -981,6 +1159,7 @@ export const assertBookableOfflineSlot = async (options: {
   excludeLeadId?: number | null;
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
+  excludeDemoLessonId?: number | null;
 }) => {
   const result = await listAvailableSchoolSlots({
     schoolId: options.schoolId,
@@ -990,6 +1169,7 @@ export const assertBookableOfflineSlot = async (options: {
     excludeLeadId: options.excludeLeadId,
     excludeGroupId: options.excludeGroupId,
     excludeLessonId: options.excludeLessonId,
+    excludeDemoLessonId: options.excludeDemoLessonId,
   });
   const selected = result.slots.find((slot) =>
     new Date(slot.startsAt).getTime() === options.startsAt.getTime()

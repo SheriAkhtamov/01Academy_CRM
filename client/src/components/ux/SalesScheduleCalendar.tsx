@@ -1,5 +1,6 @@
 /* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   addDays,
   addWeeks,
@@ -18,6 +19,7 @@ import {
   Clock3,
   MapPin,
   Minus,
+  Plus,
   UserRoundCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,8 +40,19 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useTranslation } from '@/hooks/useTranslation';
+import {
+  demoLessonQueryKeys,
+  demoLessonsApi,
+  type DemoLesson,
+} from '@/features/demo-lessons/api';
+import {
+  DemoLessonDialog,
+  type DemoLessonDialogLead,
+} from '@/components/ux/DemoLessonDialog';
+import { DemoLessonDetailsDialog } from '@/components/ux/DemoLessonDetailsDialog';
 import { cn } from '@/lib/utils';
 import {
+  buildSalesDemoScheduleEvents,
   buildSalesScheduleFilterTree,
   buildSalesScheduleEvents,
   getGroupSelectionState,
@@ -57,6 +70,7 @@ interface SalesScheduleCalendarProps {
   lessons: SalesScheduleLesson[];
   courses: SalesScheduleCourse[];
   schools: SalesScheduleSchool[];
+  leads: DemoLessonDialogLead[];
 }
 
 const DEFAULT_START_HOUR = 9;
@@ -129,6 +143,7 @@ export function SalesScheduleCalendar({
   lessons,
   courses,
   schools,
+  leads,
 }: SalesScheduleCalendarProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? ru : enUS;
@@ -138,6 +153,21 @@ export function SalesScheduleCalendar({
   );
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [now, setNow] = useState(() => new Date());
+  const [createDemoOpen, setCreateDemoOpen] = useState(false);
+  const [selectedDemoId, setSelectedDemoId] = useState<number | null>(null);
+  const weekEnd = useMemo(() => addWeeks(weekStart, 1), [weekStart]);
+  const demosQuery = useQuery<DemoLesson[]>({
+    queryKey: [...demoLessonQueryKeys.all, weekStart.toISOString(), weekEnd.toISOString()],
+    queryFn: () => demoLessonsApi.list({
+      from: weekStart.toISOString(),
+      to: weekEnd.toISOString(),
+    }),
+  });
+  const demos = useMemo(() => demosQuery.data ?? [], [demosQuery.data]);
+  const selectedDemo = useMemo(
+    () => demos.find((demo) => demo.id === selectedDemoId) ?? null,
+    [demos, selectedDemoId],
+  );
   const dayNames = [
     t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
     t('fridayShort'), t('saturdayShort'), t('sundayShort'),
@@ -180,9 +210,16 @@ export function SalesScheduleCalendar({
     () => buildSalesScheduleEvents({ groups: scheduleGroups, lessons, weekStart }),
     [lessons, scheduleGroups, weekStart],
   );
+  const demoEvents = useMemo(
+    () => buildSalesDemoScheduleEvents(demos, weekStart),
+    [demos, weekStart],
+  );
   const visibleEvents = useMemo(
-    () => allEvents.filter((event) => selectedGroupIds.has(event.groupId)),
-    [allEvents, selectedGroupIds],
+    () => [
+      ...allEvents.filter((event) => selectedGroupIds.has(event.groupId)),
+      ...demoEvents,
+    ],
+    [allEvents, demoEvents, selectedGroupIds],
   );
   const positionedEvents = useMemo(
     () => days.flatMap((_, dayIndex) => positionOverlappingScheduleEvents(
@@ -415,6 +452,9 @@ export function SalesScheduleCalendar({
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-1">
+            <Button type="button" size="sm" onClick={() => setCreateDemoOpen(true)}>
+              <Plus data-icon="inline-start" />{t('createDemoLesson')}
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -515,26 +555,40 @@ export function SalesScheduleCalendar({
                 <TooltipProvider delayDuration={800}>
                   {positionedEvents.map((event) => {
                     const groupIndex = groupIndexById.get(event.groupId) ?? 0;
-                    const tone = GROUP_TONES[groupIndex % GROUP_TONES.length];
+                    const tone = event.source === 'demo'
+                      ? GROUP_TONES[3]
+                      : GROUP_TONES[groupIndex % GROUP_TONES.length];
                     const compact = event.endMinutes - event.startMinutes < 60;
+                    const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
                     return (
                       <Tooltip key={event.id}>
                         <TooltipTrigger asChild>
                           <article
                             tabIndex={0}
-                            className="absolute z-10 overflow-hidden rounded-md border px-2 py-1.5 text-left shadow-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                            role={event.source === 'demo' ? 'button' : undefined}
+                            className={cn(
+                              'absolute z-10 overflow-hidden rounded-md border px-2 py-1.5 text-left shadow-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                              event.source === 'demo' && 'cursor-pointer',
+                            )}
                             style={{
                               ...getEventPositionStyle(event, startHour),
                               backgroundColor: tone.background,
                               borderColor: tone.border,
                               color: tone.foreground,
                             }}
-                            aria-label={`${formatMinutes(event.startMinutes)}–${formatMinutes(event.endMinutes)}, ${event.groupName}`}
+                            aria-label={`${formatMinutes(event.startMinutes)}–${formatMinutes(event.endMinutes)}, ${eventName}`}
+                            onClick={event.demoLessonId ? () => setSelectedDemoId(event.demoLessonId ?? null) : undefined}
+                            onKeyDown={event.demoLessonId ? (keyboardEvent) => {
+                              if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+                                keyboardEvent.preventDefault();
+                                setSelectedDemoId(event.demoLessonId ?? null);
+                              }
+                            } : undefined}
                           >
                             <p className="truncate text-[11px] font-semibold tabular-nums">
                               {formatMinutes(event.startMinutes)}–{formatMinutes(event.endMinutes)}
                             </p>
-                            <p className="truncate text-xs font-semibold">{event.groupName}</p>
+                            <p className="truncate text-xs font-semibold">{eventName}</p>
                             {!compact ? (
                               <>
                                 <p className="truncate text-[11px] opacity-80">
@@ -543,6 +597,11 @@ export function SalesScheduleCalendar({
                                 <p className="truncate text-[10px] opacity-75">
                                   {event.teacherName || t('teacherWillBeAssigned')}
                                 </p>
+                                {event.source === 'demo' ? (
+                                  <p className="truncate text-[10px] opacity-75">
+                                    {event.participantCount ?? 0} {t('demoParticipantsShort')}
+                                  </p>
+                                ) : null}
                                 {event.availableSeats !== null && event.availableSeats !== undefined ? (
                                   <p className="truncate text-[10px] opacity-75">
                                     {event.availableSeats}/{event.maxStudents ?? 12} {t('seatsAvailable')}
@@ -555,7 +614,7 @@ export function SalesScheduleCalendar({
                         <TooltipContent side="right" className="max-w-72">
                           <div className="flex flex-col gap-2">
                             <div>
-                              <p className="font-semibold">{event.groupName}</p>
+                              <p className="font-semibold">{eventName}</p>
                               <p className="text-xs text-muted-foreground">
                                 {event.topic || event.courseName || t('lessonColumn')}
                               </p>
@@ -572,6 +631,18 @@ export function SalesScheduleCalendar({
                               <div className="flex items-center gap-2 text-xs">
                                 <MapPin className="size-3.5" />
                                 {event.schoolName}
+                              </div>
+                            ) : null}
+                            {event.source === 'demo' && event.roomName ? (
+                              <div className="flex items-center gap-2 text-xs">
+                                <MapPin className="size-3.5" />
+                                {event.roomName}
+                              </div>
+                            ) : null}
+                            {event.source === 'demo' ? (
+                              <div className="flex items-center gap-2 text-xs">
+                                <UserRoundCheck className="size-3.5" />
+                                {event.participantCount ?? 0} {t('demoParticipantsShort')}
                               </div>
                             ) : null}
                             {event.availableSeats !== null && event.availableSeats !== undefined ? (
@@ -597,14 +668,14 @@ export function SalesScheduleCalendar({
                   </div>
                 ) : null}
 
-                {selectedGroupIds.size === 0 || positionedEvents.length === 0 ? (
+                {positionedEvents.length === 0 ? (
                   <div
                     className="absolute inset-x-20 top-20 z-10 flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card/95 p-5 text-center"
                   >
                     <CalendarDays className="text-muted-foreground" />
                     <p className="text-sm font-medium">{t('noLessonsThisWeek')}</p>
                     <p className="max-w-md text-xs text-muted-foreground">
-                      {selectedGroupIds.size === 0
+                      {selectedGroupIds.size === 0 && demos.length === 0
                         ? t('selectGroupsToSeeSchedule')
                         : t('noLessonsThisWeekDescription')}
                     </p>
@@ -615,6 +686,23 @@ export function SalesScheduleCalendar({
           </div>
         </CardContent>
       </Card>
+
+      <DemoLessonDialog
+        open={createDemoOpen}
+        onOpenChange={setCreateDemoOpen}
+        leads={leads}
+        courses={courses.flatMap((course) => (
+          course.name ? [{ id: course.id, name: course.name }] : []
+        ))}
+        schools={schools}
+      />
+      <DemoLessonDetailsDialog
+        demo={selectedDemo}
+        open={Boolean(selectedDemo)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setSelectedDemoId(null);
+        }}
+      />
     </div>
   );
 }

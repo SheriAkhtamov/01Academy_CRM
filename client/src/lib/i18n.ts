@@ -655,6 +655,34 @@ export const translations = {
     ru: 'За выбранный период отказов целевых лидов нет.',
   },
   studentsForPeriod: { en: 'New students in period', ru: 'Новые ученики за период' },
+  metricsDynamicsTitle: {
+    en: 'Lead dynamics',
+    ru: 'Динамика лидов',
+  },
+  metricsDynamicsDescription: {
+    en: 'Daily new leads, processed actions and successful calls',
+    ru: 'Новые лиды, обработки и дозвоны по дням месяца',
+  },
+  metricStructureTitle: {
+    en: 'Activity structure',
+    ru: 'Структура активности',
+  },
+  metricStructureDescription: {
+    en: 'Distribution of the period metrics',
+    ru: 'Распределение показателей периода',
+  },
+  metricFlowTitle: {
+    en: 'Lead processing funnel',
+    ru: 'Воронка обработки лидов',
+  },
+  metricFlowDescription: {
+    en: 'Conversion between the funnel stages',
+    ru: 'Конверсия между этапами воронки',
+  },
+  previousPeriodLabel: {
+    en: 'vs previous period',
+    ru: 'к прошлому периоду',
+  },
   conversionForPeriod: { en: 'Conversion in period', ru: 'Конверсия за период' },
   paidCustomersForPeriod: { en: 'New paid customers', ru: 'Новые оплатившие клиенты' },
   revenueForPeriod: { en: 'Revenue in period', ru: 'Выручка за период' },

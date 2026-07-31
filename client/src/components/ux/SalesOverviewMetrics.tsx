@@ -1,24 +1,34 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
-  BadgeCheck,
-  CalendarCheck,
+  ArrowDown,
+  ArrowUp,
   ChevronRight,
-  ClipboardCheck,
   GraduationCap,
   Megaphone,
+  Minus,
   Percent,
   PhoneCall,
-  RefreshCcw,
   UserCheck,
-  UserX,
   type LucideIcon,
 } from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -36,8 +46,12 @@ import {
   reportingRangeQuery,
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
+import {
+  analyticsAxisTick,
+  analyticsTooltipStyle,
+} from '@/components/ux/analytics/AnalyticsChartCard';
 
-interface SalesDashboardMetrics {
+interface SalesDashboardCoreMetrics {
   newLeads: number;
   processedLeads: number;
   reachedLeads: number;
@@ -51,11 +65,27 @@ interface SalesDashboardMetrics {
   }>;
 }
 
+interface SalesDashboardDailyPoint {
+  date: string;
+  newLeads: number;
+  processedLeads: number;
+  reachedLeads: number;
+}
+
+interface SalesDashboardMetrics extends SalesDashboardCoreMetrics {
+  previous: SalesDashboardCoreMetrics;
+  previousRange: { from: string; to: string };
+  daily: SalesDashboardDailyPoint[];
+}
+
 type SalesOverviewMetricsProps = {
   reportingRange: Pick<ReportingDateRange, 'from' | 'to'>;
   isAdministrationModule: boolean;
   activeLeads: number;
+  activeLeadsPrevious: number;
   totalStudents: number;
+  totalStudentsPrevious: number;
+  conversionRatePrevious: number;
   conversionLeadCount: number;
   conversionRate: number;
 };
@@ -64,42 +94,59 @@ const archiveReasonTranslationKeys = Object.fromEntries(
   LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
 ) as Record<string, TranslationKey>;
 
-type Tone = 'primary' | 'emerald' | 'amber' | 'red' | 'slate';
+const TREND_ICONS = {
+  up: ArrowUp,
+  down: ArrowDown,
+  flat: Minus,
+} as const;
 
-const TONE_ICON: Record<Tone, string> = {
-  primary: 'bg-primary/10 text-primary',
-  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  red: 'bg-red-500/10 text-red-600 dark:text-red-400',
-  slate: 'bg-muted text-muted-foreground',
+const dayCountInRange = (range: Pick<ReportingDateRange, 'from' | 'to'>) => {
+  const from = new Date(`${range.from}T00:00:00Z`).getTime();
+  const to = new Date(`${range.to}T00:00:00Z`).getTime();
+  return Math.max(1, Math.round((to - from) / 86_400_000) + 1);
 };
 
-const TONE_BAR: Record<Tone, string> = {
-  primary: 'bg-primary',
-  emerald: 'bg-emerald-500',
-  amber: 'bg-amber-500',
-  red: 'bg-red-500',
-  slate: 'bg-muted-foreground/40',
-};
+const funnelStageTone = [
+  'bg-[var(--chart-2)]',
+  'bg-[var(--chart-2)]',
+  'bg-[var(--chart-1)]',
+  'bg-[var(--chart-1)]',
+  'bg-[var(--chart-3)]',
+];
 
-const TONE_RING: Record<Tone, string> = {
-  primary: 'stroke-primary',
-  emerald: 'stroke-emerald-500',
-  amber: 'stroke-amber-500',
-  red: 'stroke-red-500',
-  slate: 'stroke-muted-foreground/40',
-};
-
-function conversionTone(conversionLeadCount: number, conversionRate: number): Tone {
-  if (conversionLeadCount === 0) return 'slate';
-  if (conversionRate >= 30) return 'emerald';
-  if (conversionRate >= 15) return 'amber';
-  return 'red';
+function TrendBadge({ delta, invert = false }: { delta: number | null; invert?: boolean }) {
+  const { t } = useTranslation();
+  if (delta === null || delta === 0) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground"
+        title={t('previousPeriodLabel')}
+      >
+        <Minus className="size-3" aria-hidden="true" />0
+      </span>
+    );
+  }
+  const positive = invert ? delta < 0 : delta > 0;
+  const Icon = delta > 0 ? TREND_ICONS.up : TREND_ICONS.down;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
+        positive
+          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          : 'bg-red-500/10 text-red-600 dark:text-red-400',
+      )}
+      title={t('previousPeriodLabel')}
+    >
+      <Icon className="size-3" aria-hidden="true" />
+      {delta > 0 ? '+' : ''}{delta}
+    </span>
+  );
 }
 
-function ConversionRing({ percent, tone }: { percent: number | null; tone: Tone }) {
-  const size = 104;
-  const stroke = 10;
+function ConversionRing({ percent, showValue }: { percent: number | null; showValue: boolean }) {
+  const size = 168;
+  const stroke = 14;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = percent === null ? 0 : Math.max(0, Math.min(100, percent));
@@ -123,177 +170,38 @@ function ConversionRing({ percent, tone }: { percent: number | null; tone: Tone 
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference - (clamped / 100) * circumference}
-          className={cn('transition-[stroke-dashoffset] duration-700 ease-out', TONE_RING[tone])}
+          className="stroke-[var(--primary-500)] transition-[stroke-dashoffset] duration-700 ease-out"
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-xl font-bold tabular-nums text-foreground">
-          {percent === null ? '—' : `${percent}%`}
-        </span>
+        {showValue ? (
+          <span className="text-4xl font-bold tabular-nums tracking-tight text-foreground">
+            {percent ?? 0}%
+          </span>
+        ) : (
+          <span className="text-4xl font-bold tabular-nums text-muted-foreground">—</span>
+        )}
       </div>
     </div>
   );
 }
 
-function HeroCard({
-  title,
-  hint,
-  icon: Icon,
-  tone,
-  isLoading = false,
-  value,
-  children,
-}: {
-  title: string;
-  hint: string;
-  icon: LucideIcon;
-  tone: Tone;
-  isLoading?: boolean;
-  value?: string | number;
-  children?: React.ReactNode;
-}) {
+function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
-      <CardContent className="flex h-full items-center gap-4 p-4 sm:p-5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', TONE_ICON[tone])}>
-              <Icon className="size-4" aria-hidden="true" />
-            </span>
-            <p className="truncate text-sm font-medium text-muted-foreground" title={title}>
-              {title}
-            </p>
-          </div>
-          <div className="mt-3">
-            {isLoading ? (
-              <Skeleton className="h-9 w-24 rounded-md" />
-            ) : value !== undefined ? (
-              <div className="text-[32px] font-bold leading-none tracking-tight tabular-nums text-foreground">
-                {value}
-              </div>
-            ) : null}
-          </div>
-          <p className="mt-1.5 truncate text-xs text-muted-foreground" title={hint}>
-            {hint}
-          </p>
-        </div>
-        {children}
-      </CardContent>
-    </Card>
+    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+      {children}
+    </p>
   );
-}
-
-function MetricCard({
-  title,
-  hint,
-  value,
-  icon: Icon,
-  tone,
-  share = null,
-  isLoading = false,
-  onClick,
-  actionLabel,
-  className,
-  children,
-}: {
-  title: string;
-  hint: string;
-  value: string | number;
-  icon: LucideIcon;
-  tone: Tone;
-  share?: number | null;
-  isLoading?: boolean;
-  onClick?: () => void;
-  actionLabel?: string;
-  className?: string;
-  children?: React.ReactNode;
-}) {
-  const { t } = useTranslation();
-  const content = (
-    <Card
-      className={cn(
-        'h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md',
-        onClick && 'text-left',
-      )}
-    >
-      <CardContent className="flex h-full flex-col p-4">
-        <div className="flex items-center gap-2">
-          <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', TONE_ICON[tone])}>
-            <Icon className="size-4" aria-hidden="true" />
-          </span>
-          <p className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground" title={title}>
-            {title}
-          </p>
-          {onClick ? (
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          ) : null}
-        </div>
-        <div className="mt-3">
-          {isLoading ? (
-            <Skeleton className="h-8 w-20 rounded-md" />
-          ) : (
-            <div className="text-[26px] font-bold leading-none tracking-tight tabular-nums text-foreground">
-              {value}
-            </div>
-          )}
-        </div>
-        {share !== null && !isLoading ? (
-          <div className="mt-3 flex items-center gap-2">
-            <div
-              className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-valuenow={share}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`${title}: ${share}%`}
-            >
-              <span
-                className={cn('block h-full rounded-full', TONE_BAR[tone])}
-                style={{ width: `${share}%` }}
-              />
-            </div>
-            <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
-              {share}%
-            </span>
-          </div>
-        ) : (
-          <p className="mt-3 truncate text-xs text-muted-foreground" title={hint}>
-            {hint}
-          </p>
-        )}
-        {children}
-      </CardContent>
-    </Card>
-  );
-
-  if (!onClick) return <div className={className}>{content}</div>;
-
-  return (
-    <button
-      type="button"
-      className={cn(
-        'h-full w-full rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        className,
-      )}
-      onClick={onClick}
-      aria-label={actionLabel ?? title}
-      aria-haspopup="dialog"
-    >
-      {content}
-    </button>
-  );
-}
-
-function shareOf(part: number | undefined, total: number | undefined): number | null {
-  if (!total || total <= 0 || part === undefined) return null;
-  return Math.min(100, Math.round((part / total) * 100));
 }
 
 export function SalesOverviewMetrics({
   reportingRange,
   isAdministrationModule,
   activeLeads,
+  activeLeadsPrevious,
   totalStudents,
+  totalStudentsPrevious,
+  conversionRatePrevious,
   conversionLeadCount,
   conversionRate,
 }: SalesOverviewMetricsProps) {
@@ -321,6 +229,101 @@ export function SalesOverviewMetrics({
       share: targetRefusals > 0 ? Math.round((item.count / targetRefusals) * 100) : 0,
     }));
 
+  const daysTotal = useMemo(() => dayCountInRange(reportingRange), [reportingRange]);
+  const dailyData = useMemo(() => {
+    return (metrics?.daily ?? []).map((point) => ({
+      ...point,
+      label: point.date.slice(-5).split('-').reverse().join('.'),
+    }));
+  }, [metrics?.daily]);
+
+  const funnelStages = useMemo(() => {
+    const stages: Array<{
+      label: string;
+      hint: string;
+      value: number | undefined;
+      tone: string;
+    }> = [
+      { label: t('newLeads'), hint: t('dataForSelectedPeriod'), value: metrics?.newLeads, tone: funnelStageTone[0]! },
+      { label: t('processedLeads'), hint: t('processedLeadsDetail'), value: metrics?.processedLeads, tone: funnelStageTone[1]! },
+      { label: t('reachedLeads'), hint: t('reachedLeadsDetail'), value: metrics?.reachedLeads, tone: funnelStageTone[2]! },
+      { label: t('qualifiedLeads'), hint: t('qualifiedLeadsDetail'), value: metrics?.qualifiedLeads, tone: funnelStageTone[3]! },
+      { label: t('demoBookings'), hint: t('demoBookingsDetail'), value: metrics?.demoBookings, tone: funnelStageTone[4]! },
+    ];
+    return stages;
+  }, [metrics, t]);
+
+  const activityMixData = useMemo(() => {
+    if (!metrics) return [];
+    const items = [
+      { name: t('processedLeads'), value: metrics.processedLeads, fill: 'var(--chart-2)' },
+      { name: t('repeatCallLeads'), value: metrics.repeatCallLeads, fill: 'var(--chart-3)' },
+      { name: t('studentsForPeriod'), value: totalStudents, fill: 'var(--chart-1)' },
+      { name: t('targetRefusals'), value: metrics.targetRefusals, fill: 'var(--chart-5)' },
+    ].filter((item) => item.value > 0);
+    return items;
+  }, [metrics, totalStudents, t]);
+
+  const activityMixTotal = useMemo(
+    () => activityMixData.reduce((sum, item) => sum + item.value, 0),
+    [activityMixData],
+  );
+
+  const deltaOf = (current: number, previous: number | undefined, deltaMode: 'absolute' | 'percent' = 'absolute') => {
+    if (previous === undefined) return null;
+    if (deltaMode === 'percent') return Math.round(current - previous);
+    return current - previous;
+  };
+
+  const summaryCards: Array<{
+    id: string;
+    title: string;
+    iconTitle?: string;
+    icon: LucideIcon;
+    iconClass: string;
+    value: number;
+    delta: number | null;
+    invert?: boolean;
+    isLoading?: boolean;
+  }> = [
+    {
+      id: 'newLeads',
+      title: t('newLeads'),
+      icon: Megaphone,
+      iconClass: 'bg-[var(--primary-500)]/10 text-[var(--primary-500)]',
+      value: metrics?.newLeads ?? 0,
+      delta: deltaOf(metrics?.newLeads ?? 0, metrics?.previous.newLeads),
+      isLoading,
+    },
+    {
+      id: 'activeLeads',
+      title: isAdministrationModule ? t('activeLeads') : t('activeMyLeads'),
+      iconTitle: t('inSalesPipeline'),
+      icon: UserCheck,
+      iconClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+      value: activeLeads,
+      delta: deltaOf(activeLeads, activeLeadsPrevious),
+    },
+    {
+      id: 'repeatCallLeads',
+      title: t('repeatCallLeads'),
+      iconTitle: t('repeatCallLeadsDetail'),
+      icon: PhoneCall,
+      iconClass: 'bg-[var(--chart-2)]/10 text-[var(--chart-2)]',
+      value: metrics?.repeatCallLeads ?? 0,
+      delta: deltaOf(metrics?.repeatCallLeads ?? 0, metrics?.previous.repeatCallLeads),
+      isLoading,
+    },
+    {
+      id: 'studentsForPeriod',
+      title: t('studentsForPeriod'),
+      icon: GraduationCap,
+      iconClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+      value: totalStudents,
+      delta: deltaOf(totalStudents, totalStudentsPrevious),
+    },
+  ];
+
   return (
     <>
       {metricsQuery.isError ? (
@@ -341,124 +344,343 @@ export function SalesOverviewMetrics({
         </Alert>
       ) : null}
 
-      <div className="space-y-3" aria-busy={metricsQuery.isPending}>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <HeroCard
-            title={t('conversionForPeriod')}
-            hint={t('paidOverAllLeads')}
-            icon={Percent}
-            tone={conversionTone(conversionLeadCount, conversionRate)}
-          >
-            <ConversionRing
-              percent={conversionLeadCount > 0 ? conversionRate : null}
-              tone={conversionTone(conversionLeadCount, conversionRate)}
-            />
-          </HeroCard>
-          <HeroCard
-            title={t('newLeads')}
-            hint={t('dataForSelectedPeriod')}
-            icon={Megaphone}
-            tone="primary"
-            isLoading={isLoading}
-            value={newLeads ?? 0}
-          />
-          <HeroCard
-            title={isAdministrationModule ? t('activeLeads') : t('activeMyLeads')}
-            hint={t('inSalesPipeline')}
-            icon={UserCheck}
-            tone="amber"
-            value={activeLeads}
-          />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12" aria-busy={metricsQuery.isPending}>
+        {/* Conversion hero */}
+        <Card className="overflow-hidden border-border/60 bg-gradient-to-br from-[var(--primary-500)]/[0.07] via-card to-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-5">
+          <CardContent className="flex h-full flex-col justify-between gap-6 p-5 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-500)]/10 text-[var(--primary-500)]">
+                  <Percent className="size-4.5" aria-hidden="true" />
+                </span>
+                <p className="text-sm font-medium text-muted-foreground">{t('conversionForPeriod')}</p>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">{t('paidOverAllLeads')}</p>
+              <div className="mt-4">
+                <TrendBadge delta={deltaOf(conversionRate, conversionRatePrevious)} />
+              </div>
+            </div>
+            <ConversionRing percent={conversionRate} showValue={conversionLeadCount > 0} />
+          </CardContent>
+        </Card>
+
+        {/* Summary KPI cards */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:col-span-7" role="group" aria-label={t('periodMetricsGroup')}>
+          {summaryCards.map((card) => (
+            <Card
+              key={card.id}
+              className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md"
+            >
+              <CardContent className="flex h-full flex-col justify-between p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm font-medium text-muted-foreground" title={card.iconTitle ?? card.title}>
+                    {card.title}
+                  </p>
+                  <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', card.iconClass)}>
+                    <card.icon className="size-4" aria-hidden="true" />
+                  </span>
+                </div>
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  {card.isLoading ? (
+                    <Skeleton className="h-8 w-20 rounded-md" />
+                  ) : (
+                    <div className="text-[28px] font-bold leading-none tracking-tight tabular-nums text-foreground">
+                      {card.value}
+                    </div>
+                  )}
+                  <TrendBadge delta={card.delta} invert={card.invert} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" role="group" aria-label={t('periodMetricsGroup')}>
-          <MetricCard
-            title={t('processedLeads')}
-            hint={t('processedLeadsDetail')}
-            value={metrics?.processedLeads ?? 0}
-            icon={ClipboardCheck}
-            tone="primary"
-            share={shareOf(metrics?.processedLeads, newLeads)}
-            isLoading={isLoading}
-          />
-          <MetricCard
-            title={t('reachedLeads')}
-            hint={t('reachedLeadsDetail')}
-            value={metrics?.reachedLeads ?? 0}
-            icon={PhoneCall}
-            tone="emerald"
-            share={shareOf(metrics?.reachedLeads, newLeads)}
-            isLoading={isLoading}
-          />
-          <MetricCard
-            title={t('qualifiedLeads')}
-            hint={t('qualifiedLeadsDetail')}
-            value={metrics?.qualifiedLeads ?? 0}
-            icon={BadgeCheck}
-            tone="emerald"
-            share={shareOf(metrics?.qualifiedLeads, newLeads)}
-            isLoading={isLoading}
-          />
-          <MetricCard
-            title={t('demoBookings')}
-            hint={t('demoBookingsDetail')}
-            value={metrics?.demoBookings ?? 0}
-            icon={CalendarCheck}
-            tone="amber"
-            share={shareOf(metrics?.demoBookings, newLeads)}
-            isLoading={isLoading}
-          />
-          <MetricCard
-            title={t('repeatCallLeads')}
-            hint={t('repeatCallLeadsDetail')}
-            value={metrics?.repeatCallLeads ?? 0}
-            icon={RefreshCcw}
-            tone="amber"
-            share={shareOf(metrics?.repeatCallLeads, newLeads)}
-            isLoading={isLoading}
-          />
-          <MetricCard
-            title={t('studentsForPeriod')}
-            hint={t('dataForSelectedPeriod')}
-            value={totalStudents}
-            icon={GraduationCap}
-            tone="emerald"
-          />
-          <MetricCard
-            title={t('targetRefusals')}
-            hint={t('targetRefusalsDetail')}
-            value={targetRefusals}
-            icon={UserX}
-            tone="red"
-            isLoading={isLoading}
-            onClick={() => setTargetRefusalDialogOpen(true)}
-            actionLabel={t('targetRefusalReasonsTitle')}
-            className="sm:col-span-2 xl:col-span-3"
-          >
-            {refusalReasonPreview.length ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {refusalReasonPreview.map((item) => (
-                  <div key={item.reason} className="min-w-0 rounded-lg border border-border/60 bg-muted/30 p-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="truncate font-medium" title={archiveReasonName(item.reason)}>
-                        {archiveReasonName(item.reason)}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {item.count} · {item.share}%
-                      </span>
-                    </div>
-                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                      <span
-                        className="block h-full rounded-full bg-red-500"
-                        style={{ width: `${item.share}%` }}
-                      />
-                    </div>
-                  </div>
+        {/* Lead processing funnel */}
+        <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-7">
+          <CardHeader className="px-5 pb-2 pt-4">
+            <SectionTitle>{t('metricFlowTitle')}</SectionTitle>
+            <CardDescription>{t('metricFlowDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 pt-0">
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }, (_, index) => (
+                  <Skeleton key={index} className="h-9 w-full rounded-lg" />
                 ))}
               </div>
-            ) : null}
-          </MetricCard>
-        </div>
+            ) : (
+              <ol className="space-y-2.5">
+                  {funnelStages.map((stage, index) => {
+                  const base = funnelStages[0]?.value ?? 0;
+                  const value = stage.value ?? 0;
+                  const totalShare = newLeads && newLeads > 0 ? Math.round((value / newLeads) * 100) : 0;
+                  const previousValue = index > 0 ? (funnelStages[index - 1]?.value ?? 0) : undefined;
+                  const stepShare = previousValue && previousValue > 0 ? Math.round((value / previousValue) * 100) : null;
+                  const width = Math.max(3, Math.min(100, base > 0 ? (value / base) * 100 : 0));
+                  return (
+                    <li key={stage.label} className="group">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="w-32 shrink-0 truncate text-xs font-medium text-muted-foreground sm:w-40"
+                          title={stage.hint}
+                        >
+                          {stage.label}
+                        </span>
+                        <div
+                          className="relative h-7 min-w-0 flex-1 overflow-hidden rounded-lg bg-muted/70"
+                          role="progressbar"
+                          aria-valuenow={value}
+                          aria-valuemin={0}
+                          aria-valuemax={Math.max(1, base)}
+                          aria-label={`${stage.label}: ${value}`}
+                          title={stage.hint}
+                        >
+                          <span
+                            className={cn('block h-full rounded-lg opacity-90 transition-[width] duration-500 group-hover:opacity-100', stage.tone)}
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+                        <span className="w-16 shrink-0 text-right text-sm font-bold tabular-nums text-foreground">
+                          {value}
+                        </span>
+                        <span className="hidden w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:block">
+                          {index === 0 ? '—' : stepShare === null ? '—' : `${stepShare}%`}
+                        </span>
+                        <span className="hidden w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground md:block">
+                          {index === 0 ? '100%' : `${totalShare}%`}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Daily activity dynamics */}
+        <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-5">
+          <CardHeader className="px-5 pb-2 pt-4">
+            <SectionTitle>{t('metricsDynamicsTitle')}</SectionTitle>
+            <CardDescription>{t('metricsDynamicsDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="px-3 pb-3 pt-1">
+            {isLoading ? (
+              <Skeleton className="h-[220px] w-full rounded-lg" />
+            ) : (
+              <div className="h-[220px] min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dailyData} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="overviewDailyNew" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--primary-500)" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="var(--primary-500)" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="overviewDailyProcessed" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.28} />
+                        <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 4" vertical={false} stroke="var(--border)" />
+                    <XAxis
+                      dataKey="label"
+                      axisLine={false}
+                      tickLine={false}
+                      minTickGap={20}
+                      interval="preserveStartEnd"
+                      tick={analyticsAxisTick}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={analyticsAxisTick}
+                      width={40}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={analyticsTooltipStyle}
+                      formatter={(value: number, name: string) => [
+                        value,
+                        name === 'newLeads' ? t('newLeads') : name === 'reachedLeads' ? t('reachedLeads') : t('processedLeads'),
+                      ]}
+                      labelFormatter={(_label, payload) => {
+                        const point = payload?.[0]?.payload as SalesDashboardDailyPoint | undefined;
+                        return point?.date ?? String(_label);
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="newLeads"
+                      name="newLeads"
+                      stroke="var(--primary-500)"
+                      strokeWidth={2.2}
+                      fill="url(#overviewDailyNew)"
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="processedLeads"
+                      name="processedLeads"
+                      stroke="var(--chart-2)"
+                      strokeWidth={2}
+                      fill="url(#overviewDailyProcessed)"
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="reachedLeads"
+                      name="reachedLeads"
+                      stroke="var(--chart-1)"
+                      strokeWidth={1.8}
+                      fill="none"
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+              {[
+                { label: t('newLeads'), color: 'var(--primary-500)' },
+                { label: t('processedLeads'), color: 'var(--chart-2)' },
+                { label: t('reachedLeads'), color: 'var(--chart-1)' },
+              ].map((item) => (
+                <span key={item.label} className="inline-flex items-center gap-1.5">
+                  <span className="h-0.5 w-3 rounded-full" style={{ backgroundColor: item.color }} aria-hidden="true" />
+                  {item.label}
+                </span>
+              ))}
+              <span className="ml-auto tabular-nums text-[11px] text-muted-foreground/70">{daysTotal}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Activity structure donut */}
+        <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-4">
+          <CardHeader className="px-5 pb-2 pt-4">
+            <SectionTitle>{t('metricStructureTitle')}</SectionTitle>
+            <CardDescription>{t('metricStructureDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pb-4 pt-1">
+            {isLoading ? (
+              <Skeleton className="h-[176px] w-full rounded-lg" />
+            ) : activityMixTotal > 0 ? (
+              <div className="flex items-center gap-4">
+                <div className="relative h-[168px] w-[168px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={activityMixData}
+                        dataKey="value"
+                        nameKey="name"
+                        isAnimationActive={false}
+                        innerRadius={54}
+                        outerRadius={78}
+                        paddingAngle={2}
+                        stroke="var(--card)"
+                        strokeWidth={3}
+                      >
+                        {activityMixData.map((item) => (
+                          <Cell key={item.name} fill={item.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => [value]} contentStyle={analyticsTooltipStyle} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-bold tabular-nums">{activityMixTotal}</span>
+                    <span className="text-[11px] text-muted-foreground">{t('navLeads')}</span>
+                  </div>
+                </div>
+                <ul className="min-w-0 flex-1 space-y-2">
+                  {activityMixData.map((item) => (
+                    <li key={item.name} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.fill }} aria-hidden="true" />
+                        <span className="truncate" title={item.name}>{item.name}</span>
+                      </span>
+                      <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                        {item.value} · {Math.round((item.value / activityMixTotal) * 100)}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">{t('noData')}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Qualified refusals card */}
+        <button
+          type="button"
+          className="h-full w-full rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 xl:col-span-4"
+          onClick={() => setTargetRefusalDialogOpen(true)}
+          aria-label={t('targetRefusalReasonsTitle')}
+          aria-haspopup="dialog"
+        >
+          <Card className="h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+            <CardHeader className="px-5 pb-1 pt-4">
+              <div className="flex items-center justify-between gap-2">
+                <SectionTitle>{t('targetRefusals')}</SectionTitle>
+                <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+              </div>
+              <CardDescription>{t('targetRefusalsDetail')}</CardDescription>
+            </CardHeader>
+            <CardContent className="px-5 pb-4 pt-1">
+              {isLoading ? (
+                <Skeleton className="h-8 w-16 rounded-md" />
+              ) : (
+                <div className="flex items-end justify-between gap-3">
+                  <span className="text-[30px] font-bold leading-none tracking-tight tabular-nums text-foreground">
+                    {targetRefusals}
+                  </span>
+                  <TrendBadge delta={deltaOf(targetRefusals, metrics?.previous.targetRefusals)} invert />
+                </div>
+              )}
+              {refusalReasonPreview.length ? (
+                <div className="mt-3 space-y-2.5">
+                  <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                    {refusalReasonPreview.map((item, index) => (
+                      <span
+                        key={item.reason}
+                        className={cn(
+                          'h-full',
+                          index === 0 ? 'bg-red-500' : index === 1 ? 'bg-red-400' : 'bg-red-300',
+                        )}
+                        style={{ width: `${item.share}%` }}
+                      />
+                    ))}
+                  </div>
+                  <ul className="space-y-1">
+                    {refusalReasonPreview.map((item, index) => (
+                      <li key={item.reason} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                          <span
+                            className={cn(
+                              'size-2.5 shrink-0 rounded-full',
+                              index === 0 ? 'bg-red-500' : index === 1 ? 'bg-red-400' : 'bg-red-300',
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span className="truncate" title={archiveReasonName(item.reason)}>
+                            {archiveReasonName(item.reason)}
+                          </span>
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {item.count} · {item.share}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-muted-foreground">{t('targetRefusalReasonsEmpty')}</p>
+              )}
+            </CardContent>
+          </Card>
+        </button>
       </div>
 
       <Dialog open={targetRefusalDialogOpen} onOpenChange={setTargetRefusalDialogOpen}>

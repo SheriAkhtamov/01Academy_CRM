@@ -58,7 +58,7 @@ import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
-import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
+import { addReportingDays, isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -650,6 +650,23 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
     [overviewLeads, reportingRange],
   );
+  const previousRange = useMemo(() => {
+    const fromDate = new Date(`${reportingRange.from}T00:00:00Z`).getTime();
+    const toDate = new Date(`${reportingRange.to}T00:00:00Z`).getTime();
+    const days = Math.max(1, Math.round((toDate - fromDate) / 86_400_000) + 1);
+    return {
+      from: addReportingDays(reportingRange.from, -days),
+      to: addReportingDays(reportingRange.from, -1),
+    };
+  }, [reportingRange]);
+  const previousPeriodLeads = useMemo(
+    () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, previousRange)),
+    [overviewLeads, previousRange],
+  );
+  const previousPeriodStudents = useMemo(
+    () => myStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, previousRange)),
+    [myStudents, previousRange],
+  );
   const periodStudents = useMemo(
     () => myStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)),
     [myStudents, reportingRange],
@@ -673,8 +690,25 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     const totalManagedLeads = periodLeads.length;
     const conversionRate = totalManagedLeads > 0 ? Math.round((paidLeads / totalManagedLeads) * 100) : 0;
 
-    return { newLeadsPeriod, activeLeads, totalStudents, conversionRate };
-  }, [activePipelineCodes, periodLeads, periodStudents]);
+    const previousActiveLeads = previousPeriodLeads.filter(
+      (lead) => !lead.isArchived && lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
+    ).length;
+    const previousTotalStudents = previousPeriodStudents.length;
+    const previousPaidLeads = previousPeriodLeads.filter((lead) => lead.statusCode === 'paid').length;
+    const previousConversionRate = previousPeriodLeads.length > 0
+      ? Math.round((previousPaidLeads / previousPeriodLeads.length) * 100)
+      : 0;
+
+    return {
+      newLeadsPeriod,
+      activeLeads,
+      totalStudents,
+      conversionRate,
+      activeLeadsPrevious: previousActiveLeads,
+      totalStudentsPrevious: previousTotalStudents,
+      conversionRatePrevious: previousConversionRate,
+    };
+  }, [activePipelineCodes, periodLeads, periodStudents, previousPeriodLeads, previousPeriodStudents]);
 
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => leadsApi.create(createLeadPayload(values)),
@@ -1038,7 +1072,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             reportingRange={reportingRange}
             isAdministrationModule={isAdministrationModule}
             activeLeads={managerStats.activeLeads}
+            activeLeadsPrevious={managerStats.activeLeadsPrevious}
             totalStudents={managerStats.totalStudents}
+            totalStudentsPrevious={managerStats.totalStudentsPrevious}
+            conversionRatePrevious={managerStats.conversionRatePrevious}
             conversionLeadCount={managerStats.newLeadsPeriod}
             conversionRate={managerStats.conversionRate}
           />

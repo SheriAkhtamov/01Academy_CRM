@@ -6,6 +6,16 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -14,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { getInitials } from '@/lib/auth';
-import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   BookOpen,
   Calendar,
@@ -59,6 +69,7 @@ export function StudentDetailSheet({
   dateTime,
 }: StudentDetailSheetProps) {
   const { t } = useTranslation();
+  const ceoCopy = useCeoCopy();
   const onlinePbxCall = useOnlinePbxCall();
   const [activeTab, setActiveTab] = useState('info');
   const [statusDraft, setStatusDraft] = useState(String(student?.status ?? 'studying'));
@@ -66,6 +77,8 @@ export function StudentDetailSheet({
   const [savingStatus, setSavingStatus] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [groupMutation, setGroupMutation] = useState<string | null>(null);
+  const [confirmRemoveGroupId, setConfirmRemoveGroupId] = useState<number | null>(null);
+  const [confirmExpel, setConfirmExpel] = useState(false);
   // Hold onto the last non-null student so the sheet can animate out on close
   // instead of unmounting the instant the parent clears the selection.
   const [heldStudent, setHeldStudent] = useState(student);
@@ -76,6 +89,8 @@ export function StudentDetailSheet({
   useEffect(() => {
     if (open) setActiveTab('info');
     setSelectedGroupId('');
+    setConfirmRemoveGroupId(null);
+    setConfirmExpel(false);
   }, [open, student?.id]);
 
   useEffect(() => {
@@ -105,6 +120,32 @@ export function StudentDetailSheet({
     && ['open', 'in_progress'].includes(String(group.status))
   ));
   const studentGroupNames = studentGroups.map((group: any) => group.groupName).filter(Boolean);
+
+  const handleSaveStatus = async () => {
+    if (!onUpdateStatus) return;
+    setSavingStatus(true);
+    try {
+      await onUpdateStatus(currentStudent.id, statusDraft, exitReason || undefined);
+    } catch {
+      // The parent mutation owns the user-facing error toast.
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
+  const handleConfirmRemoveGroup = async () => {
+    if (confirmRemoveGroupId === null || !onRemoveGroup) return;
+    const groupId = confirmRemoveGroupId;
+    setConfirmRemoveGroupId(null);
+    setGroupMutation(`remove-${groupId}`);
+    try {
+      await onRemoveGroup(currentStudent.id, groupId);
+    } catch {
+      // The parent mutation owns the user-facing error toast.
+    } finally {
+      setGroupMutation(null);
+    }
+  };
 
   const projects = data?.projects?.filter((project: any) => project.studentId === currentStudent.id) ?? [];
   const payments = data?.payments?.filter((payment: any) => payment.studentId === currentStudent.id) ?? [];
@@ -284,14 +325,11 @@ export function StudentDetailSheet({
                   className="mt-3"
                   size="sm"
                   disabled={savingStatus || (['paused', 'expelled'].includes(statusDraft) && !exitReason)}
-                  onClick={async () => {
-                    setSavingStatus(true);
-                    try {
-                      await onUpdateStatus(currentStudent.id, statusDraft, exitReason || undefined);
-                    } catch {
-                      // The parent mutation owns the user-facing error toast.
-                    } finally {
-                      setSavingStatus(false);
+                  onClick={() => {
+                    if (statusDraft === 'expelled' && statusDraft !== String(currentStudent.status ?? 'studying')) {
+                      setConfirmExpel(true);
+                    } else {
+                      void handleSaveStatus();
                     }
                   }}
                 >
@@ -373,16 +411,7 @@ export function StudentDetailSheet({
                           size="sm"
                           variant="ghost"
                           disabled={groupMutation !== null || (currentStudent.status === 'studying' && studentGroups.length <= 1)}
-                          onClick={async () => {
-                            setGroupMutation(`remove-${group.groupId}`);
-                            try {
-                              await onRemoveGroup(currentStudent.id, Number(group.groupId));
-                            } catch {
-                              // The parent mutation owns the user-facing error toast.
-                            } finally {
-                              setGroupMutation(null);
-                            }
-                          }}
+                          onClick={() => setConfirmRemoveGroupId(Number(group.groupId))}
                         >
                           {t('removeFromGroup')}
                         </Button>
@@ -477,6 +506,34 @@ export function StudentDetailSheet({
           </TabsContent>
         </Tabs>
       </SheetContent>
+
+      <AlertDialog open={confirmRemoveGroupId !== null} onOpenChange={(open) => { if (!open) setConfirmRemoveGroupId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('removeFromGroupTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('removeFromGroupConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => void handleConfirmRemoveGroup()}>{t('delete')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmExpel} onOpenChange={setConfirmExpel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('expelStudentTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('expelStudentConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => { setConfirmExpel(false); void handleSaveStatus(); }}>
+              {t('expelStudentTitle')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }

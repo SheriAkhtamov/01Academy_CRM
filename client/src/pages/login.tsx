@@ -14,11 +14,6 @@ import Logo from '@/components/Logo';
 import { devLog } from '@/lib/debug';
 import { useLocation } from 'wouter';
 
-const loginSchema = z.object({
-  login: z.string().min(1, 'loginOrEmailRequired'),
-  password: z.string().min(1, 'passwordRequired'),
-});
-
 export default function Login() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,6 +21,10 @@ export default function Login() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const loginSchema = z.object({
+    login: z.string().min(1, t('loginOrEmailRequired')),
+    password: z.string().min(1, t('passwordRequired')),
+  });
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),

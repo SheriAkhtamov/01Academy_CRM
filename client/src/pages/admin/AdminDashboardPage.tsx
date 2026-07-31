@@ -57,7 +57,7 @@ import { AnalyticsChartEmpty } from '@/components/ux/analytics/AnalyticsChartCar
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
-import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   reportingRangeForPreset,
   reportingRangeQuery,
@@ -153,12 +153,12 @@ interface AdministrationDashboardData {
   generatedAt: string;
 }
 
-const CHURN_LABELS: Record<string, string> = {
-  relocation: ceoCopy.student.relocation,
-  price: ceoCopy.student.price,
-  quality: ceoCopy.student.quality,
-  schedule_conflict: ceoCopy.student.scheduleConflict,
-  lost_interest: ceoCopy.student.lostInterest,
+const CHURN_LABEL_KEYS: Record<string, TranslationKey> = {
+  relocation: 'studentChurnRelocation',
+  price: 'studentChurnPrice',
+  quality: 'studentChurnQuality',
+  schedule_conflict: 'studentChurnScheduleConflict',
+  lost_interest: 'studentChurnLostInterest',
 };
 
 const CHURN_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#0891b2'];
@@ -288,6 +288,7 @@ function DashboardSkeleton() {
 
 export default function AdminDashboardPage() {
   const { t, language } = useTranslation();
+  const ceoCopy = useCeoCopy();
   const [, navigate] = useLocation();
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
   const reportingQuery = reportingRangeQuery(reportingRange);
@@ -385,7 +386,7 @@ export default function AdminDashboardPage() {
   const revenueProgress = revenuePlan > 0 ? Math.min(100, Math.round((summary.revenueMonth / revenuePlan) * 100)) : 0;
   const leadsProgress = leadsPlan > 0 ? Math.min(100, Math.round((summary.newLeadsMonth / leadsPlan) * 100)) : 0;
   const churnData = Object.entries(data.churnByReason ?? {}).map(([reason, value], index) => ({
-    name: CHURN_LABELS[reason] ?? reason,
+    name: CHURN_LABEL_KEYS[reason] ? t(CHURN_LABEL_KEYS[reason]) : reason,
     value,
     color: CHURN_COLORS[index % CHURN_COLORS.length],
   }));

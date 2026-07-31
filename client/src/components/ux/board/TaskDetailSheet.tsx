@@ -138,6 +138,12 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     const [commentText, setCommentText] = useState('');
     const [checklistText, setChecklistText] = useState('');
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [pendingDelete, setPendingDelete] = useState<
+        | { kind: 'comment'; id: number }
+        | { kind: 'checklist'; id: number }
+        | { kind: 'attachment'; id: number }
+        | null
+    >(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -145,6 +151,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
         setCommentText('');
         setChecklistText('');
         setConfirmDelete(false);
+        setPendingDelete(null);
     }, [taskId, open]);
 
     useEffect(() => {
@@ -244,6 +251,22 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
         onSuccess: () => invalidate(),
         onError,
     });
+
+    const handleConfirmPendingDelete = () => {
+        if (!pendingDelete) return;
+        if (pendingDelete.kind === 'comment') deleteCommentMutation.mutate(pendingDelete.id);
+        else if (pendingDelete.kind === 'checklist') deleteChecklistMutation.mutate(pendingDelete.id);
+        else deleteAttachmentMutation.mutate(pendingDelete.id);
+        setPendingDelete(null);
+    };
+
+    const pendingDeleteMeta = pendingDelete
+        ? pendingDelete.kind === 'comment'
+            ? { title: t('deleteCommentTitle'), description: t('deleteCommentConfirm') }
+            : pendingDelete.kind === 'checklist'
+                ? { title: t('deleteChecklistItemTitle'), description: t('deleteChecklistItemConfirm') }
+                : { title: t('deleteAttachmentTitle'), description: t('deleteAttachmentConfirm') }
+        : null;
 
     const priorityMeta = task ? PRIORITY_META[task.priority] : null;
     const checklistDone = task?.checklist.filter((c) => c.isDone).length ?? 0;
@@ -448,7 +471,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt)}</span>
                                                         </div>
                                                         {user && (user.id === c.author?.id || isTaskSupervisor) ? (
-                                                            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => deleteCommentMutation.mutate(c.id)}><Trash2 className="size-3.5" /></Button>
+                                                            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => setPendingDelete({ kind: 'comment', id: c.id })}><Trash2 className="size-3.5" /></Button>
                                                         ) : null}
                                                     </div>
                                                     <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{c.body}</p>
@@ -477,7 +500,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                 <li key={item.id} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60">
                                                     <Checkbox checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
                                                     <span className={cn('flex-1 text-sm', item.isDone && 'text-muted-foreground line-through')}>{item.content}</span>
-                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-0 group-hover:opacity-100" onClick={() => deleteChecklistMutation.mutate(item.id)}><Trash2 className="size-3.5" /></Button>
+                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-0 group-hover:opacity-100" onClick={() => setPendingDelete({ kind: 'checklist', id: item.id })}><Trash2 className="size-3.5" /></Button>
                                                 </li>
                                             ))}
                                         </ul>
@@ -510,7 +533,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground"><Download className="size-3.5" /></Button>
                                                     </a>
                                                     {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isTaskSupervisor) ? (
-                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => deleteAttachmentMutation.mutate(a.id)}><Trash2 className="size-3.5" /></Button>
+                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={() => setPendingDelete({ kind: 'attachment', id: a.id })}><Trash2 className="size-3.5" /></Button>
                                                     ) : null}
                                                 </li>
                                             ))}
@@ -550,6 +573,19 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                     </>
                 )}
             </SheetContent>
+
+            <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{pendingDeleteMeta?.title}</AlertDialogTitle>
+                        <AlertDialogDescription>{pendingDeleteMeta?.description}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                        <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleConfirmPendingDelete}>{t('delete')}</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
                 <AlertDialogContent>

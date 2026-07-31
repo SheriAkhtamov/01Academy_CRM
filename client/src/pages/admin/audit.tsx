@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
-import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useCeoCopy } from '@/hooks/useCeoCopy';
 
 interface AuditLog {
   id: number;
@@ -42,20 +42,22 @@ interface AuditData {
   employees: Array<{ id: number; fullName: string; module: string }>;
 }
 
-const actionLabel = (action: string) => {
-  if (action.startsWith('CREATE')) return ceoCopy.audit.created;
-  if (action.startsWith('DELETE')) return ceoCopy.audit.deleted;
-  if (action.includes('REFUND')) return ceoCopy.audit.refund;
-  if (action.includes('APPROVE')) return ceoCopy.audit.approved;
-  if (action.startsWith('UPDATE')) return ceoCopy.audit.changed;
+type AuditCopy = ReturnType<typeof useCeoCopy>['audit'];
+
+const actionLabel = (action: string, copy: AuditCopy) => {
+  if (action.startsWith('CREATE')) return copy.created;
+  if (action.startsWith('DELETE')) return copy.deleted;
+  if (action.includes('REFUND')) return copy.refund;
+  if (action.includes('APPROVE')) return copy.approved;
+  if (action.startsWith('UPDATE')) return copy.changed;
   return action.replace(/_/g, ' ');
 };
 
-const entityLabel = (entity: string) => ({
-  academy_lead: ceoCopy.audit.lead, academy_leads: ceoCopy.audit.lead, academy_student: ceoCopy.audit.student, academy_students: ceoCopy.audit.student,
-  academy_payment: ceoCopy.audit.payment, academy_payments: ceoCopy.audit.payment, academy_group: ceoCopy.audit.group, academy_groups: ceoCopy.audit.group,
-  academy_lesson: ceoCopy.audit.schedule, academy_lessons: ceoCopy.audit.schedule, academy_marketing_expense: ceoCopy.audit.expense,
-  academy_task: ceoCopy.audit.task, academy_company_settings: ceoCopy.audit.kpi,
+const entityLabel = (entity: string, copy: AuditCopy) => ({
+  academy_lead: copy.lead, academy_leads: copy.lead, academy_student: copy.student, academy_students: copy.student,
+  academy_payment: copy.payment, academy_payments: copy.payment, academy_group: copy.group, academy_groups: copy.group,
+  academy_lesson: copy.schedule, academy_lessons: copy.schedule, academy_marketing_expense: copy.expense,
+  academy_task: copy.task, academy_company_settings: copy.kpi,
 }[entity] ?? entity.replace(/_/g, ' '));
 
 const jsonObject = (value: unknown): Record<string, unknown> => {
@@ -64,14 +66,15 @@ const jsonObject = (value: unknown): Record<string, unknown> => {
   return unwrapped as Record<string, unknown>;
 };
 
-const presentValue = (value: unknown) => {
+const presentValue = (value: unknown, copy: AuditCopy) => {
   if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'boolean') return value ? ceoCopy.audit.yes : ceoCopy.audit.no;
+  if (typeof value === 'boolean') return value ? copy.yes : copy.no;
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 };
 
 export default function AuditPage() {
+  const ceoCopy = useCeoCopy();
   const [tab, setTab] = useState('audit');
   const [userId, setUserId] = useState('all');
   const [action, setAction] = useState('all');
@@ -141,7 +144,7 @@ export default function AuditPage() {
                 <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.date}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.employee}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.action}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.object}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.changes}</th><th className="w-12 px-3 py-3" /></tr></thead>
                   <tbody>
-                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ?? '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType)}</span>{log.entityId ? <span className="ml-1 text-muted-foreground">#{log.entityId}</span> : null}</td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
+                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ?? '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action, ceoCopy.audit)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType, ceoCopy.audit)}</span>{log.entityId ? <span className="ml-1 text-muted-foreground">#{log.entityId}</span> : null}</td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
                     {!isLoading && (data?.logs.length ?? 0) === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noResults}</td></tr> : null}
                   </tbody>
                 </table>
@@ -161,8 +164,8 @@ export default function AuditPage() {
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          <SheetHeader><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType)} #${selected.entityId ?? '—'} · ${new Date(selected.createdAt).toLocaleString('ru-RU')}` : ''}</SheetDescription></SheetHeader>
-          {selected ? <div className="mt-6 overflow-hidden rounded-lg border border-border/70"><div className="grid grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="grid grid-cols-[140px_1fr_1fr] border-b border-border/60 last:border-0 text-sm"><div className="break-words p-3 font-medium">{field}</div><div className="break-words border-l border-border/60 p-3 text-muted-foreground">{presentValue(oldValues[field])}</div><div className="break-words border-l border-border/60 p-3">{presentValue(newValues[field])}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div> : null}
+          <SheetHeader><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType, ceoCopy.audit)} #${selected.entityId ?? '—'} · ${new Date(selected.createdAt).toLocaleString('ru-RU')}` : ''}</SheetDescription></SheetHeader>
+          {selected ? <div className="mt-6 overflow-hidden rounded-lg border border-border/70"><div className="grid grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="grid grid-cols-[140px_1fr_1fr] border-b border-border/60 last:border-0 text-sm"><div className="break-words p-3 font-medium">{field}</div><div className="break-words border-l border-border/60 p-3 text-muted-foreground">{presentValue(oldValues[field], ceoCopy.audit)}</div><div className="break-words border-l border-border/60 p-3">{presentValue(newValues[field], ceoCopy.audit)}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div> : null}
         </SheetContent>
       </Sheet>
     </ModulePage>

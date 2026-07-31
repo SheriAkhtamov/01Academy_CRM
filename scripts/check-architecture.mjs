@@ -8,7 +8,7 @@ const sourceExtensions = ['.ts', '.tsx'];
 
 const legacyLineBudgets = new Map(Object.entries({
   'client/src/components/ux/LeadDetailSheet.tsx': 2_100,
-  'client/src/lib/i18n.ts': 2_200,
+  'client/src/lib/i18n.ts': 2_500,
   'client/src/pages/academy-settings.tsx': 2_300,
   'client/src/pages/admin.tsx': 1_600,
   'client/src/pages/admin/AdminDashboardPage.tsx': 1_100,

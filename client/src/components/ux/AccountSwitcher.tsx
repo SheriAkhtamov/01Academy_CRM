@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserPlus, Check, Loader2, Trash2, ArrowLeftRight } from 'lucide-react';
 import AddAccountModal from '@/components/modals/AddAccountModal';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function AccountSwitcher() {
   const { user } = useAuth();
@@ -23,6 +24,7 @@ export default function AccountSwitcher() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [accountToRemove, setAccountToRemove] = useState<SavedAccountEntry | null>(null);
 
   const handleSwitch = async (account: SavedAccountEntry) => {
     try {
@@ -34,23 +36,30 @@ export default function AccountSwitcher() {
     } catch (err: any) {
       toast({
         title: t('error'),
-        description: err?.message || 'Failed to switch account',
+        description: err?.message || t('switchAccountFailed'),
         variant: 'destructive',
       });
     }
   };
 
-  const handleRemove = async (account: SavedAccountEntry, e: React.MouseEvent) => {
+  const handleRemoveClick = (account: SavedAccountEntry, e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
+    setAccountToRemove(account);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!accountToRemove) return;
     try {
-      await removeAccount(account);
+      await removeAccount(accountToRemove);
       toast({
         title: t('accountRemoved'),
       });
+      setAccountToRemove(null);
     } catch (err: any) {
       toast({
         title: t('error'),
-        description: err?.message || 'Failed to remove account',
+        description: err?.message || t('removeAccountFailed'),
         variant: 'destructive',
       });
     }
@@ -124,7 +133,7 @@ export default function AccountSwitcher() {
                       <Loader2 className="h-4 w-4 animate-spin shrink-0" />
                     ) : (
                       <button
-                        onClick={(e) => handleRemove(account, e)}
+                        onClick={(e) => handleRemoveClick(account, e)}
                         className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
                         title={t('removeAccount')}
                       >
@@ -146,6 +155,19 @@ export default function AccountSwitcher() {
       </DropdownMenu>
 
       <AddAccountModal open={showAddModal} onOpenChange={setShowAddModal} />
+
+      <ConfirmDialog
+        open={accountToRemove !== null}
+        onOpenChange={(open) => { if (!open && !isRemoving) setAccountToRemove(null); }}
+        title={t('removeAccountTitle')}
+        description={accountToRemove
+          ? `${t('removeAccountConfirm')} (${accountToRemove.accountUser.fullName})`
+          : ''}
+        confirmLabel={t('delete')}
+        variant="destructive"
+        isPending={isRemoving}
+        onConfirm={() => void handleConfirmRemove()}
+      />
     </>
   );
 }

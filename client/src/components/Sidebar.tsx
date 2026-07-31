@@ -46,7 +46,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { financeCopy } from '@/lib/financeCenter';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 
@@ -67,6 +67,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { t } = useTranslation();
+  const ceoCopy = useCeoCopy();
   const finance = financeCopy(t);
   const hasSalesModule = canAccessAcademyModule(user, 'sales');
   const { data: missedCallUnread = { count: 0 } } = useQuery({

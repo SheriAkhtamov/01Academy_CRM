@@ -10,6 +10,7 @@ import {
   switchAccount,
   removeSavedAccount,
 } from '@/lib/session';
+import { useTranslation } from '@/hooks/useTranslation';
 
 const STORAGE_KEY_TOKENS = 'academy-saved-account-tokens';
 const linkTokenKey = (savedAccountId: number) => `link:${savedAccountId}`;
@@ -71,6 +72,7 @@ interface UseAccountsReturn {
 
 export function useAccounts(): UseAccountsReturn {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const { data: accounts = [], isLoading } = useQuery<SavedAccountEntry[]>({
     queryKey: SAVED_ACCOUNTS_QUERY_KEY,
@@ -93,7 +95,7 @@ export function useAccounts(): UseAccountsReturn {
     mutationFn: async (account: SavedAccountEntry) => {
       const tokenCandidates = getTokenCandidates(account);
       if (tokenCandidates.length === 0) {
-        throw new Error('No token found for this account. Please re-add the account.');
+        throw new Error(t('accountTokenMissing'));
       }
       const result = await switchAccount(tokenCandidates, account.accountUser.id);
       const matchedToken = tokenCandidates[result.matchedTokenIndex];

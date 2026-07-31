@@ -18,6 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck, UserPlus, ArrowLeftRight, Loader2, Check } from 'lucide-react';
 import ChatSheet from './ux/ChatSheet';
+import ConfirmDialog from './ConfirmDialog';
 import SettingsModal from './modals/SettingsModal';
 import AddAccountModal from './modals/AddAccountModal';
 import { CommandPalette } from './ux/CommandPalette';
@@ -29,6 +30,7 @@ import {
   totalUnreadMessages,
 } from '@/features/messages/api';
 import type { ConversationUserDto } from '@shared/contracts/messages';
+import type { SavedAccountEntry } from '@shared/auth';
 
 interface HeaderProps {
   title?: string;
@@ -43,13 +45,15 @@ export default function Header({
 }: HeaderProps) {
   const { logout, user } = useAuth();
   const { t } = useTranslation();
-  const { accounts, switchToAccount, removeAccount, isSwitching } = useAccounts();
+  const { accounts, switchToAccount, removeAccount, isSwitching, isRemoving } = useAccounts();
   const { toast } = useToast();
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAccountList, setShowAccountList] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [notificationToDelete, setNotificationToDelete] = useState<number | null>(null);
+  const [accountToRemove, setAccountToRemove] = useState<SavedAccountEntry | null>(null);
   const queryClient = useQueryClient();
 
   const { data: notifications = [] } = useQuery<any[]>({
@@ -87,17 +91,36 @@ export default function Header({
       apiRequest('DELETE', `/api/notifications/${notificationId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+      setNotificationToDelete(null);
     },
   });
 
   const handleDeleteNotification = (notificationId: number, event: React.MouseEvent) => {
     event.stopPropagation();
-    deleteNotificationMutation.mutate(notificationId);
+    event.preventDefault();
+    setNotificationToDelete(notificationId);
   };
 
   const handleMarkRead = (notificationId: number, event: React.MouseEvent) => {
     event.stopPropagation();
     markReadMutation.mutate(notificationId);
+  };
+
+  const handleConfirmRemoveAccount = async () => {
+    const account = accountToRemove;
+    if (!account) return;
+
+    try {
+      await removeAccount(account);
+      toast({ title: t('accountRemoved') });
+      setAccountToRemove(null);
+    } catch (err: any) {
+      toast({
+        title: t('error'),
+        description: err?.message || t('removeAccountFailed'),
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -307,14 +330,10 @@ export default function Header({
                             <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
                           ) : (
                             <button
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                try {
-                                  await removeAccount(account);
-                                  toast({ title: t('accountRemoved') });
-                                } catch (err: any) {
-                                  toast({ title: t('error'), description: err?.message, variant: 'destructive' });
-                                }
+                                e.preventDefault();
+                                setAccountToRemove(account);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
                               aria-label={t('removeAccount')}
@@ -368,6 +387,34 @@ export default function Header({
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
+      />
+
+      <ConfirmDialog
+        open={notificationToDelete !== null}
+        onOpenChange={(open) => { if (!open && !deleteNotificationMutation.isPending) setNotificationToDelete(null); }}
+        title={t('deleteNotificationTitle')}
+        description={t('deleteNotificationConfirm')}
+        confirmLabel={t('delete')}
+        variant="destructive"
+        isPending={deleteNotificationMutation.isPending}
+        keepOpenOnConfirm
+        onConfirm={() => {
+          if (notificationToDelete !== null) deleteNotificationMutation.mutate(notificationToDelete);
+        }}
+      />
+
+      <ConfirmDialog
+        open={accountToRemove !== null}
+        onOpenChange={(open) => { if (!open && !isRemoving) setAccountToRemove(null); }}
+        title={t('removeAccountTitle')}
+        description={accountToRemove
+          ? `${t('removeAccountConfirm')} (${accountToRemove.accountUser.fullName})`
+          : ''}
+        confirmLabel={t('delete')}
+        variant="destructive"
+        isPending={isRemoving}
+        keepOpenOnConfirm
+        onConfirm={() => void handleConfirmRemoveAccount()}
       />
     </>
   );

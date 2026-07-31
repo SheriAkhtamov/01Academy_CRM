@@ -31,19 +31,36 @@ const nonLocalizedValueKeys = new Set([
   'uzbekLang',
 ]);
 const hardcodedTextAllowlist = new Set(['.csv', 'Enter', 'K', 'Telegram', 'WhatsApp', 'x']);
+const nonLocalizedContentArrays = new Set(['DEFAULT_QUICK_REPLIES']);
 const uiTextProperties = new Set([
+  'alt',
+  'ariaLabel',
   'cancelLabel',
+  'caption',
   'description',
   'detail',
   'emptyText',
   'header',
   'label',
   'message',
+  'placeholder',
   'subtitle',
   'text',
   'title',
+  'tooltip',
 ]);
-const uiTextAttributes = new Set(['alt', 'aria-label', 'placeholder', 'title']);
+const uiTextAttributes = new Set([
+  'alt',
+  'aria-label',
+  'aria-description',
+  'aria-placeholder',
+  'ariaLabel',
+  'label',
+  'placeholder',
+  'title',
+]);
+const uiTextCallNames = new Set(['alert', 'confirm', 'prompt', 'toast']);
+const technicalLogCallNames = new Set(['devDebug', 'devError', 'devLog', 'devWarn']);
 
 const unwrapExpression = (expression) => {
   let current = expression;
@@ -66,6 +83,14 @@ const getPropertyName = (name) => {
   return null;
 };
 
+const isUiTextPropertyName = (name) => (
+  Boolean(name) &&
+  (
+    uiTextProperties.has(name) ||
+    /(?:Alt|Caption|Description|Detail|EmptyText|Header|Label|Message|Placeholder|Subtitle|Text|Title|Tooltip)$/.test(name)
+  )
+);
+
 const getLineColumn = (sourceFile, node) => {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
   return `${position.line + 1}:${position.character + 1}`;
@@ -81,7 +106,7 @@ const collectFiles = (directory, options = {}) => {
       const entryPath = path.join(currentDirectory, entry.name);
       if (entry.isDirectory()) {
         walk(entryPath);
-      } else if (/\.(ts|tsx)$/.test(entry.name)) {
+      } else if (/\.(js|jsx|ts|tsx)$/.test(entry.name)) {
         files.push(entryPath);
       }
     }
@@ -98,7 +123,13 @@ const parseSourceFile = (filePath) => {
     source,
     ts.ScriptTarget.Latest,
     true,
-    filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    filePath.endsWith('.tsx')
+      ? ts.ScriptKind.TSX
+      : filePath.endsWith('.jsx')
+        ? ts.ScriptKind.JSX
+        : filePath.endsWith('.js')
+          ? ts.ScriptKind.JS
+          : ts.ScriptKind.TS,
   );
 };
 
@@ -380,6 +411,25 @@ const collectHardcodedClientText = (files) => {
     return false;
   };
 
+  const isInsideTechnicalLogCall = (node) => {
+    let current = node.parent;
+    while (current && !ts.isStatement(current)) {
+      if (ts.isCallExpression(current)) {
+        const expression = current.expression;
+        const isConsoleCall =
+          ts.isPropertyAccessExpression(expression) &&
+          ts.isIdentifier(expression.expression) &&
+          expression.expression.text === 'console';
+        const isDevLogCall =
+          ts.isIdentifier(expression) &&
+          technicalLogCallNames.has(expression.text);
+        if (isConsoleCall || isDevLogCall) return true;
+      }
+      current = current.parent;
+    }
+    return false;
+  };
+
   const isRenderedExpressionText = (node) => {
     let current = node;
     while (current.parent && !ts.isStatement(current.parent)) {
@@ -391,6 +441,85 @@ const collectHardcodedClientText = (files) => {
         ts.isParenthesizedExpression(parent) ||
         ts.isAsExpression(parent) ||
         (ts.isSatisfiesExpression && ts.isSatisfiesExpression(parent))
+      ) {
+        current = parent;
+        continue;
+      }
+      if (ts.isConditionalExpression(parent)) {
+        if (parent.condition === current) return false;
+        current = parent;
+        continue;
+      }
+      if (ts.isBinaryExpression(parent)) {
+        const operator = parent.operatorToken.kind;
+        if (
+          operator !== ts.SyntaxKind.BarBarToken &&
+          operator !== ts.SyntaxKind.QuestionQuestionToken &&
+          operator !== ts.SyntaxKind.PlusToken
+        ) {
+          return false;
+        }
+        current = parent;
+        continue;
+      }
+      return false;
+    }
+    return false;
+  };
+
+  const isUiAttributeExpressionText = (node) => {
+    let current = node;
+    while (current.parent && !ts.isStatement(current.parent)) {
+      const parent = current.parent;
+      if (ts.isJsxExpression(parent) && ts.isJsxAttribute(parent.parent)) {
+        return uiTextAttributes.has(parent.parent.name.text);
+      }
+      if (
+        ts.isParenthesizedExpression(parent) ||
+        ts.isAsExpression(parent) ||
+        (ts.isSatisfiesExpression && ts.isSatisfiesExpression(parent)) ||
+        ts.isTemplateExpression(parent)
+      ) {
+        current = parent;
+        continue;
+      }
+      if (ts.isConditionalExpression(parent)) {
+        if (parent.condition === current) return false;
+        current = parent;
+        continue;
+      }
+      if (ts.isBinaryExpression(parent)) {
+        const operator = parent.operatorToken.kind;
+        if (
+          operator !== ts.SyntaxKind.BarBarToken &&
+          operator !== ts.SyntaxKind.QuestionQuestionToken &&
+          operator !== ts.SyntaxKind.PlusToken
+        ) {
+          return false;
+        }
+        current = parent;
+        continue;
+      }
+      return false;
+    }
+    return false;
+  };
+
+  const isUiPropertyExpressionText = (node) => {
+    let current = node;
+    while (current.parent && !ts.isStatement(current.parent)) {
+      const parent = current.parent;
+      if (
+        ts.isPropertyAssignment(parent) &&
+        parent.initializer === current
+      ) {
+        return isUiTextPropertyName(getPropertyName(parent.name));
+      }
+      if (
+        ts.isParenthesizedExpression(parent) ||
+        ts.isAsExpression(parent) ||
+        (ts.isSatisfiesExpression && ts.isSatisfiesExpression(parent)) ||
+        ts.isTemplateExpression(parent)
       ) {
         current = parent;
         continue;
@@ -432,21 +561,42 @@ const collectHardcodedClientText = (files) => {
     const visit = (node) => {
       if (ts.isJsxText(node)) {
         report(node, node.getText(sourceFile));
-      } else if (ts.isStringLiteralLike(node) && !isInsideTranslationCall(node)) {
+      } else if (
+        ts.isStringLiteralLike(node) &&
+        !isInsideTranslationCall(node) &&
+        !isInsideTechnicalLogCall(node)
+      ) {
         const parent = node.parent;
         if (ts.isJsxAttribute(parent) && uiTextAttributes.has(parent.name.text)) {
           report(node, node.text);
-        } else if (ts.isPropertyAssignment(parent) && uiTextProperties.has(getPropertyName(parent.name))) {
+        } else if (ts.isPropertyAssignment(parent) && isUiTextPropertyName(getPropertyName(parent.name))) {
+          report(node, node.text);
+        } else if (
+          ts.isBindingElement(parent) &&
+          parent.initializer === node &&
+          isUiTextPropertyName(parent.name.getText(sourceFile))
+        ) {
           report(node, node.text);
         } else if (ts.isArrayLiteralExpression(parent)) {
           const declaration = parent.parent;
-          if (
+          const declarationName = ts.isVariableDeclaration(declaration)
+            ? declaration.name.getText(sourceFile)
+            : null;
+          if (declarationName && nonLocalizedContentArrays.has(declarationName)) {
+            // Seeded message content is editable user data, not interface chrome.
+          } else if (
             ts.isVariableDeclaration(declaration) &&
             /headers?/i.test(declaration.name.getText(sourceFile))
           ) {
             report(node, node.text);
+          } else if (cyrillicPattern.test(node.text)) {
+            report(node, node.text);
           }
-        } else if (isRenderedExpressionText(node)) {
+        } else if (
+          isRenderedExpressionText(node) ||
+          isUiAttributeExpressionText(node) ||
+          isUiPropertyExpressionText(node)
+        ) {
           report(node, node.text);
         } else if (cyrillicPattern.test(node.text)) {
           report(node, node.text);
@@ -455,15 +605,33 @@ const collectHardcodedClientText = (files) => {
         const parent = node.parent;
         const isUiTemplate =
           isRenderedExpressionText(node) ||
+          isUiAttributeExpressionText(node) ||
+          isUiPropertyExpressionText(node) ||
           (
             ts.isPropertyAssignment(parent) &&
-            uiTextProperties.has(getPropertyName(parent.name))
+            isUiTextPropertyName(getPropertyName(parent.name))
           );
         if (isUiTemplate) {
           report(node.head, node.head.text);
           for (const span of node.templateSpans) {
             report(span.literal, span.literal.text);
           }
+        }
+      } else if (ts.isCallExpression(node)) {
+        const callName = ts.isIdentifier(node.expression)
+          ? node.expression.text
+          : ts.isPropertyAccessExpression(node.expression)
+            ? node.expression.name.text
+            : null;
+        const firstArgument = node.arguments[0];
+        if (
+          callName &&
+          uiTextCallNames.has(callName) &&
+          firstArgument &&
+          ts.isStringLiteralLike(firstArgument) &&
+          !isInsideTranslationCall(firstArgument)
+        ) {
+          report(firstArgument, firstArgument.text);
         }
       }
 
@@ -479,7 +647,7 @@ const collectHardcodedClientText = (files) => {
 const main = () => {
   const translationAudit = readTranslations();
   const allClientFiles = collectFiles(clientSrcDir);
-  const appFiles = collectFiles(clientSrcDir, { ignoreClientUi: true });
+  const appFiles = collectFiles(clientSrcDir);
   const serverFiles = collectFiles(serverDir);
   const sharedFiles = collectFiles(sharedDir);
   const referenceAudit = collectTranslationReferences(

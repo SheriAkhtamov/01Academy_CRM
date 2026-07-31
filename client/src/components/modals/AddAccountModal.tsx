@@ -59,8 +59,10 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
       form.reset();
       onOpenChange(false);
     } catch (err: any) {
-      const message = err?.rawMessage || err?.message || 'Failed to add account';
-      setError(typeof message === 'string' ? message : 'Failed to add account');
+      const message = typeof err?.message === 'string' && err.message.trim()
+        ? err.message
+        : t('addAccountFailed');
+      setError(message);
     }
   };
 

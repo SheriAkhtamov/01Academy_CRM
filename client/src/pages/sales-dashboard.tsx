@@ -8,7 +8,7 @@ import { apiRequest } from '@/lib/queryClient';
 import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import { leadsApi } from '@/features/leads/api';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/lib/i18n';
+import { translations, type TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { toast } from '@/hooks/use-toast';
@@ -55,7 +55,7 @@ import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChar
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
-import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
@@ -245,7 +245,10 @@ function LocalizedFormMessage() {
   const { t } = useTranslation();
   const { error, formMessageId } = useFormField();
   if (!error?.message) return null;
-  const key = String(error.message) as TranslationKey;
+  const message = String(error.message);
+  const key = Object.prototype.hasOwnProperty.call(translations, message)
+    ? message as TranslationKey
+    : 'invalidData';
 
   return (
     <p id={formMessageId} className="text-sm font-medium text-destructive">
@@ -471,6 +474,7 @@ function AssignLeadBeforeMoveDialog({
 
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t, language } = useTranslation();
+  const ceoCopy = useCeoCopy();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
   const { startCall: startOnlinePbxCall } = useOnlinePbxCall();

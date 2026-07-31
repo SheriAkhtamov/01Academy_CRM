@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 
 export interface WeekScheduleItem {
@@ -40,12 +41,16 @@ export function WeekScheduleEditor({
   dayNames,
   schools = [],
   showSchool = false,
-  allSchoolsLabel = 'All schools',
-  startLabel = 'Start',
-  endLabel = 'End',
+  allSchoolsLabel,
+  startLabel,
+  endLabel,
   disabled = false,
   className,
 }: WeekScheduleEditorProps) {
+  const { t } = useTranslation();
+  const resolvedAllSchoolsLabel = allSchoolsLabel ?? t('allSchools');
+  const resolvedStartLabel = startLabel ?? t('start');
+  const resolvedEndLabel = endLabel ?? t('end');
   const updateDay = (dayOfWeek: number, patch: Partial<WeekScheduleItem>) => {
     const existing = value.find((item) => item.dayOfWeek === dayOfWeek);
     const next = existing
@@ -93,14 +98,14 @@ export function WeekScheduleEditor({
             </div>
             <Input
               type="time"
-              aria-label={`${dayName}: ${startLabel}`}
+              aria-label={`${dayName}: ${resolvedStartLabel}`}
               value={item?.startTime ?? ''}
               disabled={!enabled || disabled}
               onChange={(event) => updateDay(dayOfWeek, { startTime: event.target.value })}
             />
             <Input
               type="time"
-              aria-label={`${dayName}: ${endLabel}`}
+              aria-label={`${dayName}: ${resolvedEndLabel}`}
               value={item?.endTime ?? ''}
               disabled={!enabled || disabled}
               onChange={(event) => updateDay(dayOfWeek, { endTime: event.target.value })}
@@ -118,7 +123,7 @@ export function WeekScheduleEditor({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="all">{allSchoolsLabel}</SelectItem>
+                    <SelectItem value="all">{resolvedAllSchoolsLabel}</SelectItem>
                     {schools.map((school) => (
                       <SelectItem key={school.id} value={String(school.id)}>
                         {school.name}

@@ -47,7 +47,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
-import { ceoCopy } from '@/components/ui/ceo-copy';
+import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   WeekScheduleEditor,
   type WeekScheduleItem,
@@ -336,6 +336,7 @@ interface AcademySettingsProps {
 
 export default function AcademySettings({ mode = 'academy' }: AcademySettingsProps) {
   const { t, language } = useTranslation();
+  const ceoCopy = useCeoCopy();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const [, navigate] = useLocation();
@@ -376,6 +377,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     status: PipelineStatus;
     leadCount: number;
   } | null>(null);
+  const [archiveGroupTarget, setArchiveGroupTarget] = useState<Group | null>(null);
   const [pipelineTransferTargetId, setPipelineTransferTargetId] = useState('');
 
   const configuration = useQuery<ConfigurationData>({
@@ -633,6 +635,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         title: t('groupArchived'),
         description: group.name,
       });
+      setArchiveGroupTarget(null);
       void invalidate();
     },
     onError: (error: Error) => {
@@ -1280,7 +1283,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 size="sm"
                 className="min-h-11"
                 disabled={archiveGroup.isPending}
-                onClick={() => archiveGroup.mutate(row)}
+                onClick={() => setArchiveGroupTarget(row)}
               >
                 {isArchiving ? (
                   <Loader2 className="animate-spin" data-icon="inline-start" />
@@ -2212,6 +2215,23 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(archiveGroupTarget)}
+        onOpenChange={(open) => {
+          if (!open && !archiveGroup.isPending) setArchiveGroupTarget(null);
+        }}
+        title={t('archiveGroupTitle')}
+        description={archiveGroupTarget
+          ? `${t('archiveGroupConfirm')} “${archiveGroupTarget.name}”`
+          : ''}
+        confirmLabel={t('archiveGroup')}
+        variant="destructive"
+        isPending={archiveGroup.isPending}
+        onConfirm={() => {
+          if (archiveGroupTarget) archiveGroup.mutate(archiveGroupTarget);
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}

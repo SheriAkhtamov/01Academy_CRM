@@ -8,11 +8,12 @@ import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
-import type { TranslationKey } from '@/lib/i18n';
+import { translations, type TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
 import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import {
   LeadMergeConflictDialog,
@@ -349,7 +350,10 @@ function LocalizedFormMessage() {
   const { t } = useTranslation();
   const { error, formMessageId } = useFormField();
   if (!error?.message) return null;
-  const key = String(error.message) as TranslationKey;
+  const message = String(error.message);
+  const key = Object.prototype.hasOwnProperty.call(translations, message)
+    ? message as TranslationKey
+    : 'invalidData';
   return (
     <p id={formMessageId} className="text-sm font-medium text-destructive">
       {t(key)}
@@ -390,6 +394,7 @@ function LeadTagsEditor({
   const [customTagName, setCustomTagName] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const [tagToRemove, setTagToRemove] = useState<LeadTagView | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = `lead-${leadId}-tag-options`;
@@ -485,6 +490,7 @@ function LeadTagsEditor({
     mutationFn: (tag: LeadTagView) =>
       apiRequest('DELETE', `/api/academy/leads/${leadId}/tags/${tag.id}`),
     onSuccess: async () => {
+      setTagToRemove(null);
       await refreshTags();
       toast({ title: t('leadTagRemoved') });
     },
@@ -608,7 +614,10 @@ function LeadTagsEditor({
                   className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
                   aria-label={`${t('removeLeadTag')} ${tag.name}`}
                   disabled={isBusy}
-                  onClick={() => removeTag.mutate(tag)}
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    setTagToRemove(tag);
+                  }}
                 >
                   {isRemoving ? (
                     <Loader2 className="size-3 animate-spin" aria-hidden="true" />
@@ -710,6 +719,24 @@ function LeadTagsEditor({
           </div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={tagToRemove !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !removeTag.isPending) setTagToRemove(null);
+        }}
+        title={t('removeLeadTag')}
+        description={tagToRemove
+          ? t('removeLeadTagConfirm').replace('{tag}', tagToRemove.name)
+          : ''}
+        confirmLabel={t('delete')}
+        variant="destructive"
+        isPending={removeTag.isPending}
+        keepOpenOnConfirm
+        onConfirm={() => {
+          if (tagToRemove) removeTag.mutate(tagToRemove);
+        }}
+      />
     </div>
   );
 }

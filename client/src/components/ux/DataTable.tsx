@@ -139,7 +139,12 @@ export function DataTable<T extends Record<string, any>>({
                   key={column.key}
                   tabIndex={column.sortable ? 0 : undefined}
                   role={column.sortable ? 'button' : undefined}
-                  aria-label={column.sortable ? `Sort by ${column.key}` : undefined}
+                  aria-label={column.sortable
+                    ? t('sortByColumn').replace(
+                        '{column}',
+                        typeof column.header === 'string' ? column.header : column.key,
+                      )
+                    : undefined}
                   onKeyDown={(e) => {
                     if (column.sortable && (e.key === 'Enter' || e.key === ' ')) {
                       e.preventDefault();

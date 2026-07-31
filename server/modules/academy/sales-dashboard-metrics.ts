@@ -311,7 +311,7 @@ const buildSalesDashboardDailySeries = async (
          WHERE student.created_at >= $1
            AND student.created_at < $2
          UNION ALL
-         SELECT lead.archived_at AS happened_at,
+         SELECT source_lead.archived_at AS happened_at,
                 lead.id AS lead_id
          FROM visible_leads lead
          JOIN academy_leads source_lead ON source_lead.id = lead.id

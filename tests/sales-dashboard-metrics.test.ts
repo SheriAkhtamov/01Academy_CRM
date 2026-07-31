@@ -35,6 +35,11 @@ describe('sales dashboard operational metrics', () => {
     expect(metrics).toContain('lead.archived_at >= $1');
   });
 
+  it('reads archive timestamps from the joined lead in the daily activity query', () => {
+    expect(metrics).toContain('SELECT source_lead.archived_at AS happened_at');
+    expect(metrics).not.toContain('SELECT lead.archived_at AS happened_at');
+  });
+
   it('distinguishes conversations, repeat attempts, qualification, and demo bookings', () => {
     expect(metrics).toContain('phone_call.answered_at IS NOT NULL OR phone_call.talk_seconds > 0');
     expect(metrics).toContain('calls.attempts BETWEEN 2 AND 5');

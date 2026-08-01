@@ -22,6 +22,7 @@ import {
   Phone,
   Send,
   Archive,
+  CalendarPlus2,
   UserPlus,
   Wallet,
 } from 'lucide-react';
@@ -45,6 +46,10 @@ import {
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
+import {
+  DemoLessonEnrollmentDialog,
+  type DemoLessonEnrollmentLead,
+} from '@/components/ux/DemoLessonEnrollmentDialog';
 
 export interface KanbanStatus {
   code: string;
@@ -56,6 +61,9 @@ export interface KanbanStatus {
 export interface KanbanLead {
   id: number;
   contactName: string;
+  studentName?: string | null;
+  courseId?: number | null;
+  schoolId?: number | null;
   phone?: string | null;
   messenger?: string | null;
   courseName?: string;
@@ -99,6 +107,7 @@ interface LeadCardContentProps {
   currentStatus: KanbanStatus;
   onQuickAction?: KanbanBoardProps['onQuickAction'];
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
+  onEnrollDemo?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
@@ -110,6 +119,7 @@ function LeadCardContent({
   currentStatus,
   onQuickAction,
   onArchiveLead,
+  onEnrollDemo,
   isPending,
   showPaymentAction,
   showManager,
@@ -197,6 +207,17 @@ function LeadCardContent({
         onTouchStart={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
+        {canArchive && onEnrollDemo ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => onEnrollDemo?.(lead)}
+            disabled={isPending}
+          >
+            <CalendarPlus2 data-icon="inline-start" /> {t('enrollInDemoLesson')}
+          </Button>
+        ) : null}
         {showPaymentAction ? (
           <Button
             variant="ghost"
@@ -283,6 +304,7 @@ interface KanbanColumnProps {
   leads: KanbanLead[];
   onQuickAction?: KanbanBoardProps['onQuickAction'];
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
+  onEnrollDemo?: LeadCardContentProps['onEnrollDemo'];
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
@@ -295,6 +317,7 @@ function KanbanColumn({
   leads,
   onQuickAction,
   onArchiveLead,
+  onEnrollDemo,
   isPending,
   showPaymentAction,
   showManager,
@@ -350,6 +373,7 @@ function KanbanColumn({
             currentStatus={status}
             onQuickAction={onQuickAction}
             onArchiveLead={onArchiveLead}
+            onEnrollDemo={onEnrollDemo}
             isPending={isPending}
             showPaymentAction={showPaymentAction}
             showManager={showManager}
@@ -384,6 +408,7 @@ export function KanbanBoard({
   const { t } = useTranslation();
   const [boardLeads, setBoardLeads] = useState(leads);
   const [activeLeadId, setActiveLeadId] = useState<number | null>(null);
+  const [demoEnrollmentLead, setDemoEnrollmentLead] = useState<DemoLessonEnrollmentLead | null>(null);
   const latestLeadsRef = useRef(leads);
   const pendingMovesRef = useRef(new Map<number, OptimisticChange<string>>());
   const nextMoveTokenRef = useRef(0);
@@ -486,6 +511,7 @@ export function KanbanBoard({
                 leads={boardLeads.filter((lead) => lead.statusCode === status.code)}
                 onQuickAction={onQuickAction}
                 onArchiveLead={onArchiveLead}
+                onEnrollDemo={setDemoEnrollmentLead}
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
@@ -507,6 +533,7 @@ export function KanbanBoard({
                 currentStatus={statusesByCode.get(activeLead.statusCode) ?? statuses[0]}
                 onQuickAction={undefined}
                 onArchiveLead={undefined}
+                onEnrollDemo={undefined}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
                 t={t}
@@ -515,6 +542,13 @@ export function KanbanBoard({
           ) : null}
         </DragOverlayPortal>
       </DndContext>
+      <DemoLessonEnrollmentDialog
+        open={Boolean(demoEnrollmentLead)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDemoEnrollmentLead(null);
+        }}
+        lead={demoEnrollmentLead}
+      />
     </div>
   );
 }

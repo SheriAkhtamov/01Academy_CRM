@@ -71,6 +71,11 @@ export const demoLessonAttendanceSchema = z.object({
     .refine((items) => new Set(items.map((item) => item.leadId)).size === items.length, 'duplicateDemoParticipants'),
 });
 
+export const demoLessonEnrollmentSchema = z.object({
+  leadIds: participantIds(1),
+});
+
 export type DemoLessonMutation = z.infer<typeof demoLessonMutationSchema>;
 export type DemoLessonAttendance = z.infer<typeof demoLessonAttendanceSchema>;
+export type DemoLessonEnrollment = z.infer<typeof demoLessonEnrollmentSchema>;
 export type DemoLessonResourceAvailabilityRequest = z.infer<typeof demoLessonResourceAvailabilitySchema>;

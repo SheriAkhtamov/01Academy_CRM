@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  demoLessonEnrollmentSchema,
   demoLessonMutationSchema,
   demoLessonResourceAvailabilitySchema,
 } from '../shared/contracts/demo-lessons';
 import { buildSalesDemoScheduleEvents } from '../client/src/lib/salesSchedule';
+import { getDemoEnrollmentState } from '../client/src/components/ux/DemoLessonEnrollmentDialog';
+import type { DemoLesson } from '../client/src/features/demo-lessons/api';
 
 const migration = readFileSync(
   new URL('../migrations/0074_add_demo_lessons.sql', import.meta.url),
@@ -36,6 +39,14 @@ const createDialog = readFileSync(
 );
 const detailsDialog = readFileSync(
   new URL('../client/src/components/ux/DemoLessonDetailsDialog.tsx', import.meta.url),
+  'utf8',
+);
+const enrollmentDialog = readFileSync(
+  new URL('../client/src/components/ux/DemoLessonEnrollmentDialog.tsx', import.meta.url),
+  'utf8',
+);
+const kanbanBoard = readFileSync(
+  new URL('../client/src/components/ux/KanbanBoard.tsx', import.meta.url),
   'utf8',
 );
 
@@ -88,6 +99,8 @@ describe('demo lessons', () => {
       format: 'offline',
       participantIds: [],
     }).success).toBe(true);
+    expect(demoLessonEnrollmentSchema.safeParse({ leadIds: [10] }).success).toBe(true);
+    expect(demoLessonEnrollmentSchema.safeParse({ leadIds: [10, 10] }).success).toBe(false);
   });
 
   it('rechecks all resources under the academy scheduling lock', () => {
@@ -99,6 +112,10 @@ describe('demo lessons', () => {
     expect(routes).toContain("router.post('/demo-lessons/resource-availability'");
     expect(routes).toContain("router.post('/demo-lessons/:id/cancel'");
     expect(routes).toContain("router.post('/demo-lessons/:id/attendance'");
+    expect(routes).toContain("router.post('/demo-lessons/:id/participants'");
+    expect(routes).toContain('ADD_ACADEMY_DEMO_PARTICIPANTS');
+    expect(routes).toContain('demoParticipantAlreadyEnrolled');
+    expect(routes).toContain('Number(activeParticipants?.count ?? 0) + leads.length');
     expect(scheduling).toContain('FROM academy_demo_lessons');
     expect(scheduling).toContain('Number(lesson.roomId) !== roomId');
     expect(routes).toContain('legacyConflict');
@@ -108,6 +125,38 @@ describe('demo lessons', () => {
     expect(resourceAvailability).toContain("status IN ('open', 'in_progress')");
     expect(resourceAvailability).toContain('busyTeacherIds');
     expect(resourceAvailability).toContain('busyRoomIds');
+  });
+
+  it('disables enrollment when the lead is already booked, the demo is full, or times overlap', () => {
+    const target: DemoLesson = {
+      id: 1,
+      courseId: 1,
+      schoolId: 1,
+      teacherId: 1,
+      scheduledAt: '2030-07-15T05:00:00.000Z',
+      durationMinutes: 60,
+      format: 'offline',
+      capacity: 2,
+      status: 'scheduled',
+      participants: [],
+    };
+    expect(getDemoEnrollmentState(target, 10, [target], 0)).toBe('available');
+    expect(getDemoEnrollmentState({
+      ...target,
+      participants: [{ id: 1, leadId: 10, status: 'invited' }],
+    }, 10, [target], 0)).toBe('already_enrolled');
+    expect(getDemoEnrollmentState({
+      ...target,
+      capacity: 1,
+      participants: [{ id: 1, leadId: 11, status: 'confirmed' }],
+    }, 10, [target], 0)).toBe('full');
+    const overlapping: DemoLesson = {
+      ...target,
+      id: 2,
+      scheduledAt: '2030-07-15T05:30:00.000Z',
+      participants: [{ id: 2, leadId: 10, status: 'invited' }],
+    };
+    expect(getDemoEnrollmentState(target, 10, [target, overlapping], 0)).toBe('lead_busy');
   });
 
   it('renders demo events alongside lessons in the weekly calendar', () => {
@@ -144,5 +193,15 @@ describe('demo lessons', () => {
     expect(detailsDialog).toContain('<AlertDialog');
     expect(detailsDialog).toContain("t('cancelDemoLessonTitle')");
     expect(detailsDialog).toContain('cancelReason.trim()');
+  });
+
+  it('enrolls directly from lead cards through an existing-demo dialog without creating a student', () => {
+    expect(kanbanBoard).toContain("t('enrollInDemoLesson')");
+    expect(kanbanBoard).toContain('<DemoLessonEnrollmentDialog');
+    expect(enrollmentDialog).toContain('<Dialog');
+    expect(enrollmentDialog).toContain('demoLessonsApi.list');
+    expect(enrollmentDialog).toContain('demoLessonsApi.enroll');
+    expect(enrollmentDialog).not.toContain('studentsApi');
+    expect(enrollmentDialog).not.toContain('CreateLeadStudentDialog');
   });
 });

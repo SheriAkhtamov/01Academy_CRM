@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   demoLessonAttendanceSchema,
   demoLessonCancelSchema,
+  demoLessonEnrollmentSchema,
   demoLessonMutationSchema,
   demoLessonResourceAvailabilitySchema,
   type DemoLessonMutation,
@@ -396,6 +397,104 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       logger.error('Failed to create demo lesson', { error });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, 'failedToCreateDemoLesson'),
+      });
+    }
+  });
+
+  router.post('/demo-lessons/:id/participants', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const id = Number(req.params.id);
+    const parsed = demoLessonEnrollmentSchema.safeParse(req.body);
+    if (!Number.isSafeInteger(id) || id < 1 || !parsed.success) {
+      return res.status(400).json({
+        error: parsed.success ? 'invalidData' : parsed.error.issues[0]?.message || 'invalidData',
+      });
+    }
+    try {
+      await loadMutableLeads(req, parsed.data.leadIds);
+      const enrolled = await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+        const demo = await queryOne(
+          `SELECT demo.*, school.name AS school_name, room.name AS room_name
+           FROM academy_demo_lessons demo
+           JOIN academy_schools school ON school.id = demo.school_id
+           LEFT JOIN academy_rooms room ON room.id = demo.room_id
+           WHERE demo.id = $1
+           FOR UPDATE OF demo`,
+          [id],
+        );
+        if (!demo) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (demo.status !== 'scheduled' || new Date(demo.scheduledAt).getTime() <= Date.now()) {
+          throw Object.assign(new Error('demoEnrollmentClosed'), { statusCode: 409 });
+        }
+
+        const leads = await loadMutableLeads(req, parsed.data.leadIds, true);
+        const existingParticipants = await query(
+          `SELECT * FROM academy_demo_lesson_participants
+           WHERE demo_lesson_id = $1 AND lead_id = ANY($2::int[])
+           ORDER BY lead_id
+           FOR UPDATE`,
+          [id, parsed.data.leadIds],
+        );
+        if (existingParticipants.some((participant) => participant.status !== 'cancelled')) {
+          throw Object.assign(new Error('demoParticipantAlreadyEnrolled'), { statusCode: 409 });
+        }
+        const activeParticipants = await queryOne<{ count: number }>(
+          `SELECT COUNT(*)::int AS count
+           FROM academy_demo_lesson_participants
+           WHERE demo_lesson_id = $1 AND status <> 'cancelled'`,
+          [id],
+        );
+        if (Number(activeParticipants?.count ?? 0) + leads.length > Number(demo.capacity)) {
+          throw Object.assign(new Error('demoCapacityExceeded'), { statusCode: 409 });
+        }
+
+        await assertParticipantAvailability(
+          parsed.data.leadIds,
+          new Date(demo.scheduledAt),
+          Number(demo.durationMinutes),
+          id,
+        );
+        const existingByLeadId = new Map(
+          existingParticipants.map((participant) => [Number(participant.leadId), participant]),
+        );
+        for (const lead of leads) {
+          const existing = existingByLeadId.get(Number(lead.id));
+          if (existing) {
+            await updateRow('academy_demo_lesson_participants', Number(existing.id), {
+              status: 'invited',
+              result: null,
+            });
+          } else {
+            await insertRow('academy_demo_lesson_participants', {
+              demoLessonId: id,
+              leadId: lead.id,
+              status: 'invited',
+            });
+          }
+        }
+        const location = demo.format === 'online'
+          ? 'online'
+          : `${demo.schoolName}, ${demo.roomName ?? ''}`;
+        for (const lead of leads) {
+          await syncLeadInvitation(req, lead, demo, location);
+        }
+        await createAudit(
+          req.actor!,
+          'ADD_ACADEMY_DEMO_PARTICIPANTS',
+          'academy_demo_lesson',
+          id,
+          { demoLessonId: id, leadIds: parsed.data.leadIds },
+          demo,
+        );
+        return demo;
+      });
+      const responseDemo = await getDemoLesson(id) ?? enrolled;
+      res.json(presentDemoLesson(req, responseDemo));
+    } catch (error: any) {
+      logger.error('Failed to enroll demo lesson participant', { error });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToEnrollDemoParticipant'),
       });
     }
   });

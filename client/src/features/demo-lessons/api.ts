@@ -1,5 +1,6 @@
 import type {
   DemoLessonAttendance,
+  DemoLessonEnrollment,
   DemoLessonMutation,
   DemoLessonResourceAvailabilityRequest,
 } from '@shared/contracts/demo-lessons';
@@ -79,6 +80,7 @@ export const demoLessonQueryKeys = {
   all: ['/api/academy/demo-lessons'] as const,
   availability: ['/api/academy/availability/slots'] as const,
   resourceAvailability: ['/api/academy/demo-lessons/resource-availability'] as const,
+  enrollment: ['/api/academy/demo-lessons', 'enrollment'] as const,
 };
 
 export const demoLessonsApi = {
@@ -113,6 +115,9 @@ export const demoLessonsApi = {
   },
   create: (payload: DemoLessonMutation) => (
     apiRequest('POST', '/api/academy/demo-lessons', payload) as Promise<DemoLesson>
+  ),
+  enroll: (id: number, payload: DemoLessonEnrollment) => (
+    apiRequest('POST', `/api/academy/demo-lessons/${id}/participants`, payload) as Promise<DemoLesson>
   ),
   resourceAvailability: (payload: DemoLessonResourceAvailabilityRequest) => (
     apiRequest('POST', '/api/academy/demo-lessons/resource-availability', payload) as Promise<DemoResourceAvailability>

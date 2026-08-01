@@ -17,9 +17,9 @@ const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
   'utf8',
 );
-const leadTagsEditor = leadSheet.slice(
-  leadSheet.indexOf('function LeadTagsEditor'),
-  leadSheet.indexOf('export function LeadDetailSheet'),
+const leadTagsEditor = readFileSync(
+  new URL('../client/src/components/ux/lead/LeadTagsEditor.tsx', import.meta.url),
+  'utf8',
 );
 const kanban = readFileSync(
   new URL('../client/src/components/ux/KanbanBoard.tsx', import.meta.url),

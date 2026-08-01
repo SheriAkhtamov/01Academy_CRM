@@ -1,3 +1,4 @@
+import { useMemo, useState, type ReactNode } from 'react';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
+import type { TranslationKey } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import {
   formatCallDuration,
   telephonyStatusTranslationKey,
@@ -17,6 +20,7 @@ import {
   History,
   Loader2,
   MessageSquare,
+  MessagesSquare,
   Phone,
   UserRoundCog,
 } from 'lucide-react';
@@ -158,48 +162,113 @@ export function LeadCommentsCard({
   );
 }
 
+type ActivityKind = 'comment' | 'status' | 'communication' | 'call' | 'assignment' | 'payment';
+
+type ActivityItem = {
+  id: string;
+  kind: ActivityKind;
+  at?: string | null;
+  title: string;
+  text?: string | null;
+  callId: number | null;
+  hasRecording: boolean;
+};
+
+type ActivityFilterId = 'all' | 'comments' | 'calls' | 'stages' | 'payments' | 'other';
+
+const ACTIVITY_FILTER_LABEL_KEYS = {
+  all: 'allConversations',
+  comments: 'commentsLabel',
+  calls: 'activityFilterCalls',
+  stages: 'activityFilterStages',
+  payments: 'navPayments',
+  other: 'financeCenterOther',
+} as const satisfies Record<ActivityFilterId, TranslationKey>;
+
+const ACTIVITY_FILTERS: Array<{
+  id: ActivityFilterId;
+  kinds: ActivityKind[] | null;
+}> = [
+  { id: 'all', kinds: null },
+  { id: 'comments', kinds: ['comment'] },
+  { id: 'calls', kinds: ['call'] },
+  { id: 'stages', kinds: ['status'] },
+  { id: 'payments', kinds: ['payment'] },
+  { id: 'other', kinds: ['communication', 'assignment'] },
+];
+
+const ACTIVITY_KIND_ICONS: Record<ActivityKind, typeof MessageSquare> = {
+  comment: MessageSquare,
+  status: History,
+  communication: MessagesSquare,
+  call: Phone,
+  assignment: UserRoundCog,
+  payment: CreditCard,
+};
+
+const ACTIVITY_KIND_STYLES: Record<ActivityKind, string> = {
+  comment: 'bg-slate-100 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300',
+  status: 'bg-violet-100 text-violet-600 dark:bg-violet-950/60 dark:text-violet-300',
+  communication: 'bg-sky-100 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300',
+  call: 'bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300',
+  assignment: 'bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300',
+  payment: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300',
+};
+
+const dayKeyOf = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+};
+
 export function ActivityTimeline({
   lead,
   dateTime,
   leadStatusName,
   money,
+  composer,
 }: {
   lead: LeadActivityData;
   dateTime: (value: string | null | undefined) => string;
   leadStatusName: (code: string) => string;
   money: (value: number | string | null | undefined) => string;
+  composer?: ReactNode;
 }) {
-  const { t } = useTranslation();
-  const items = [
-    ...(lead.comments ?? []).map((item) => ({
+  const { t, language } = useTranslation();
+  const [activeFilter, setActiveFilter] = useState<ActivityFilterId>('all');
+
+  const items = useMemo<ActivityItem[]>(() => [
+    ...(lead.comments ?? []).map((item): ActivityItem => ({
       id: `lead-comment-${item.id}`,
+      kind: 'comment',
       at: item.createdAt,
       title: item.authorName ? `${t('comment')} · ${item.authorName}` : t('comment'),
       text: item.body,
-      icon: MessageSquare,
       callId: null,
       hasRecording: false,
     })),
-    ...(lead.history ?? []).map((item) => ({
+    ...(lead.history ?? []).map((item): ActivityItem => ({
       id: `history-${item.id}`,
+      kind: 'status',
       at: item.enteredAt,
       title: leadStatusName(item.toStatusCode),
       text: item.comment,
-      icon: History,
       callId: null,
       hasRecording: false,
     })),
-    ...(lead.communications ?? []).map((item) => ({
+    ...(lead.communications ?? []).map((item): ActivityItem => ({
       id: `communication-${item.id}`,
+      kind: 'communication',
       at: item.createdAt,
       title: `${t('contact')}: ${item.channel}`,
       text: [item.result, item.comment].filter(Boolean).join(' — '),
-      icon: MessageSquare,
       callId: null,
       hasRecording: false,
     })),
-    ...(lead.calls ?? []).map((item) => ({
+    ...(lead.calls ?? []).map((item): ActivityItem => ({
       id: `call-${item.id}`,
+      kind: 'call',
       at: item.startedAt,
       title: `${item.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}: ${t(telephonyStatusTranslationKey(item.status))}`,
       text: [
@@ -207,12 +276,12 @@ export function ActivityTimeline({
         `${t('talkTime')}: ${formatCallDuration(item.talkSeconds)}`,
         item.hangupCause,
       ].filter(Boolean).join(' • '),
-      icon: Phone,
       callId: item.id,
       hasRecording: item.hasRecording,
     })),
-    ...(lead.assignmentHistory ?? []).map((item) => ({
+    ...(lead.assignmentHistory ?? []).map((item): ActivityItem => ({
       id: `assignment-${item.id}`,
+      kind: 'assignment',
       at: item.createdAt,
       title: t('leadTransferred'),
       text: [
@@ -220,63 +289,165 @@ export function ActivityTimeline({
         item.changedByName ? `${t('changedBy')}: ${item.changedByName}` : null,
         item.comment,
       ].filter(Boolean).join(' • '),
-      icon: UserRoundCog,
       callId: null,
       hasRecording: false,
     })),
-    ...(lead.payments ?? []).map((item) => ({
+    ...(lead.payments ?? []).map((item): ActivityItem => ({
       id: `payment-${item.id}`,
+      kind: 'payment',
       at: item.paidAt ?? item.createdAt,
       title: `${t('payment')}: ${money(item.amountUzs)}`,
       text: item.method,
-      icon: CreditCard,
       callId: null,
       hasRecording: false,
     })),
   ].sort((left, right) => (
     new Date(right.at ?? 0).getTime() - new Date(left.at ?? 0).getTime()
-  ));
+  )), [lead, leadStatusName, money, t]);
+
+  const countByFilter = useMemo(() => {
+    const counts = new Map<ActivityFilterId, number>();
+    ACTIVITY_FILTERS.forEach((filter) => {
+      counts.set(filter.id, filter.kinds === null
+        ? items.length
+        : items.filter((item) => filter.kinds!.includes(item.kind)).length);
+    });
+    return counts;
+  }, [items]);
+
+  const activeKinds = ACTIVITY_FILTERS.find((filter) => filter.id === activeFilter)?.kinds ?? null;
+  const visibleItems = activeKinds === null
+    ? items
+    : items.filter((item) => activeKinds.includes(item.kind));
+
+  const dayLabelOf = (value?: string | null) => {
+    if (!value) return t('noData');
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return t('noData');
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (day.getTime() === today.getTime()) return t('today');
+    if (day.getTime() === yesterday.getTime()) return t('yesterday');
+    return new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
+      day: 'numeric',
+      month: 'long',
+      ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+    }).format(date);
+  };
+
+  const dayGroups = useMemo(() => {
+    const groups: Array<{ key: string; at?: string | null; items: ActivityItem[] }> = [];
+    visibleItems.forEach((item) => {
+      const key = dayKeyOf(item.at) ?? 'unknown';
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.key === key) {
+        lastGroup.items.push(item);
+      } else {
+        groups.push({ key, at: item.at, items: [item] });
+      }
+    });
+    return groups;
+  }, [visibleItems]);
 
   return (
-    <Card>
-      <CardHeader><CardTitle>{t('activityHistory')}</CardTitle></CardHeader>
-      <CardContent className="flex flex-col gap-0">
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('noActivityYet')}</p>
-        ) : (
-          <ol className="flex flex-col">
-            {items.map((item, index) => {
-              const Icon = item.icon;
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-muted/20">
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+            <History className="size-4" aria-hidden="true" />
+          </span>
+          {t('activityHistory')}
+          {items.length > 0 ? <Badge variant="secondary">{items.length}</Badge> : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-5">
+        {composer}
+
+        {items.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('activityHistory')}>
+            {ACTIVITY_FILTERS.map((filter) => {
+              const count = countByFilter.get(filter.id) ?? 0;
+              if (filter.id !== 'all' && count === 0) return null;
+              const isActive = filter.id === activeFilter;
               return (
-                <li key={item.id} className="relative flex gap-3 pb-3 last:pb-0">
-                  {index !== items.length - 1 ? (
-                    <span
-                      aria-hidden
-                      className="absolute bottom-0 left-[18px] top-9 w-px bg-border"
-                    />
-                  ) : null}
-                  <div className="relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
-                    <Icon className="size-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1 pt-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium leading-tight">{item.title}</p>
-                      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                        <Clock3 className="size-3" />
-                        {dateTime(item.at)}
-                      </span>
-                    </div>
-                    {item.text ? (
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.text}</p>
-                    ) : null}
-                    {item.callId && item.hasRecording ? (
-                      <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />
-                    ) : null}
-                  </div>
-                </li>
+                <button
+                  key={filter.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isActive
+                      ? 'border-primary/30 bg-primary/10 text-primary-700'
+                      : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
+                  onClick={() => setActiveFilter(filter.id)}
+                >
+                  {t(ACTIVITY_FILTER_LABEL_KEYS[filter.id])}
+                  <span className="tabular-nums opacity-70">{count}</span>
+                </button>
               );
             })}
-          </ol>
+          </div>
+        ) : null}
+
+        {visibleItems.length === 0 ? (
+          <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-8 text-center">
+            <History className="mb-2 size-6 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">{t('noActivityYet')}</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {dayGroups.map((group) => (
+              <section key={`${group.key}-${group.items[0]?.id}`}>
+                <div className="mb-2 flex items-center gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {dayLabelOf(group.at)}
+                  </span>
+                  <span aria-hidden className="h-px flex-1 bg-border" />
+                </div>
+                <ol className="flex flex-col">
+                  {group.items.map((item, index) => {
+                    const Icon = ACTIVITY_KIND_ICONS[item.kind];
+                    return (
+                      <li key={item.id} className="relative flex gap-3 pb-4 last:pb-0">
+                        {index !== group.items.length - 1 ? (
+                          <span
+                            aria-hidden
+                            className="absolute bottom-0 left-4 top-9 w-px bg-border"
+                          />
+                        ) : null}
+                        <div
+                          className={cn(
+                            'relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full ring-2 ring-background',
+                            ACTIVITY_KIND_STYLES[item.kind],
+                          )}
+                        >
+                          <Icon className="size-4" aria-hidden="true" />
+                        </div>
+                        <div className="min-w-0 flex-1 pt-0.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-sm font-medium leading-tight">{item.title}</p>
+                            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                              <Clock3 className="size-3" aria-hidden="true" />
+                              {dateTime(item.at)}
+                            </span>
+                          </div>
+                          {item.text ? (
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.text}</p>
+                          ) : null}
+                          {item.callId && item.hasRecording ? (
+                            <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            ))}
+          </div>
         )}
       </CardContent>
     </Card>

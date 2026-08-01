@@ -49,8 +49,8 @@ describe('dashboard period filters and simplified actions', () => {
   });
 
   it('keeps only comments and history in lead activity', () => {
-    expect(leadSheet).toContain('<LeadCommentsCard');
     expect(leadSheet).toContain('<ActivityTimeline');
+    expect(leadSheet).toContain('composer={(');
     expect(leadSheet).not.toContain("t('recordContact')");
     expect(leadSheet).not.toContain('name="channel"');
     expect(leadSheet).not.toContain('name="result"');

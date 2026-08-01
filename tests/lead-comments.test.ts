@@ -53,10 +53,11 @@ describe('lead comment history', () => {
   });
 
   it('uses a separate composer and includes comments in the activity timeline', () => {
-    expect(leadSheet).toContain('<LeadCommentsCard');
+    expect(leadSheet).toContain('composer={(');
+    expect(leadSheet).toContain("t('addCommentPlaceholder')");
     expect(leadSheet).toContain('leadsApi.addComment(leadId!, { body })');
     expect(leadSheet).not.toContain("apiRequest('POST', `/api/academy/leads/${leadId}/comments`");
-    expect(leadActivity).toContain('...(lead.comments ?? []).map((item) => ({');
+    expect(leadActivity).toContain('...(lead.comments ?? []).map((item): ActivityItem => ({');
     expect(leadActivity).toContain('dateTime(comment.createdAt)');
     expect(leadSheet).not.toContain('comment: lead.comment ??');
   });

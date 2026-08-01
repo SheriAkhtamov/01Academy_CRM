@@ -1,24 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { Link } from 'wouter';
 import { z } from 'zod';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateLeadData, useLeadDetailsQuery } from '@/features/leads/queries';
-import { ActivityTimeline, LeadCommentsCard } from '@/features/leads/ui/LeadActivity';
+import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { paymentsApi } from '@/features/payments/api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
-import { translations, type TranslationKey } from '@/lib/i18n';
+import type { TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
-import { PhoneInput } from '@/components/ux/FormattedInputs';
+import { cn } from '@/lib/utils';
+import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
 import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
-import ConfirmDialog from '@/components/ConfirmDialog';
+import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
+import {
+  LeadStageStepper,
+  LocalizedFormMessage,
+  SegmentedControl,
+  TabCount,
+} from '@/components/ux/lead/LeadSheetControls';
 import {
   LeadMergeConflictDialog,
   type LeadMergeDialogLead,
@@ -44,7 +51,6 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  useFormField,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
@@ -74,37 +80,33 @@ import {
 } from '@/lib/leadContact';
 import {
   AlertCircle,
+  Banknote,
+  Briefcase,
   CheckCircle2,
   ClipboardList,
   Clock3,
+  Copy,
   CreditCard,
   CalendarClock,
   CalendarPlus2,
   ExternalLink,
   History,
   Loader2,
-  LockKeyhole,
   MessageSquare,
   Phone,
   Plus,
   Save,
   Trash2,
+  Undo2,
   UserRoundCog,
   UserRound,
   GraduationCap,
-  Tag,
   Users,
-  X,
+  Wallet,
 } from 'lucide-react';
 import { LEAD_STATUSES, PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 import type { LeadChannelView } from '@shared/lead-channels';
-import {
-  MAX_LEAD_TAG_NAME_LENGTH,
-  leadTagNameKey,
-  normalizeLeadTagName,
-  type LeadTagOption,
-  type LeadTagView,
-} from '@shared/lead-tags';
+import type { LeadTagView } from '@shared/lead-tags';
 import type { TelephonyCallStatus } from '@/lib/telephony';
 
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
@@ -239,7 +241,14 @@ interface LeadDetailSheetProps {
     maxStudents?: number;
   }>;
   sources: Array<{ id: number; name: string }>;
-  statuses: Array<{ code: string; name: string; isActive?: boolean }>;
+  statuses: Array<{
+    code: string;
+    name: string;
+    isActive?: boolean;
+    isPipeline?: boolean;
+    color?: string;
+    sortOrder?: number;
+  }>;
   managers: Array<{ id: number; fullName: string }>;
   currentUserId?: number;
   leadStatusName: (code: string) => string;
@@ -353,398 +362,6 @@ const nextPaymentDate = (payments?: LeadDetails['payments']) => {
   return toInputDate(new Date(baseTimestamp + 30 * 24 * 60 * 60 * 1000).toISOString());
 };
 
-function LocalizedFormMessage() {
-  const { t } = useTranslation();
-  const { error, formMessageId } = useFormField();
-  if (!error?.message) return null;
-  const message = String(error.message);
-  const key = Object.prototype.hasOwnProperty.call(translations, message)
-    ? message as TranslationKey
-    : 'invalidData';
-  return (
-    <p id={formMessageId} className="text-sm font-medium text-destructive">
-      {t(key)}
-    </p>
-  );
-}
-
-interface LeadTagsEditorProps {
-  leadId: number;
-  automaticTag?: string | null;
-  tags?: LeadTagView[];
-  onChanged: () => void;
-  onDropdownOpenChange: (open: boolean) => void;
-}
-
-type LeadTagSuggestion =
-  | {
-      key: string;
-      kind: 'existing';
-      name: string;
-      option: LeadTagOption;
-    }
-  | {
-      key: string;
-      kind: 'create';
-      name: string;
-    };
-
-function LeadTagsEditor({
-  leadId,
-  automaticTag,
-  tags = [],
-  onChanged,
-  onDropdownOpenChange,
-}: LeadTagsEditorProps) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [customTagName, setCustomTagName] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
-  const [tagToRemove, setTagToRemove] = useState<LeadTagView | null>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listboxId = `lead-${leadId}-tag-options`;
-
-  const tagOptionsQuery = useQuery<LeadTagOption[]>({
-    queryKey: ['/api/academy/lead-tags'],
-  });
-
-  const automaticTagKey = leadTagNameKey(automaticTag);
-  const manualTags = tags;
-  const assignedTagKeys = useMemo(
-    () => new Set([
-      automaticTagKey,
-      ...tags.map((tag) => leadTagNameKey(tag.name)),
-    ].filter(Boolean)),
-    [automaticTagKey, tags],
-  );
-  const availableOptions = useMemo(
-    () => (tagOptionsQuery.data ?? []).filter((option) => (
-      !assignedTagKeys.has(leadTagNameKey(option.name))
-    )),
-    [assignedTagKeys, tagOptionsQuery.data],
-  );
-  const normalizedCustomTag = normalizeLeadTagName(customTagName);
-  const customTagKey = normalizedCustomTag?.normalizedName ?? '';
-  const matchingOptions = useMemo(
-    () => availableOptions
-      .filter((option) => (
-        !customTagKey || leadTagNameKey(option.name).includes(customTagKey)
-      ))
-      .slice(0, 8),
-    [availableOptions, customTagKey],
-  );
-  const exactOption = availableOptions.find(
-    (option) => leadTagNameKey(option.name) === customTagKey,
-  );
-  const canAddCustomTag = Boolean(
-    normalizedCustomTag
-      && !assignedTagKeys.has(normalizedCustomTag.normalizedName)
-      && !exactOption,
-  );
-  const suggestions: LeadTagSuggestion[] = [
-    ...(normalizedCustomTag && canAddCustomTag
-      ? [{
-          key: `create:${normalizedCustomTag.normalizedName}`,
-          kind: 'create' as const,
-          name: normalizedCustomTag.name,
-        }]
-      : []),
-    ...matchingOptions.map((option) => ({
-      key: option.id === null
-        ? `source:${leadTagNameKey(option.name)}`
-        : `tag:${option.id}`,
-      kind: 'existing' as const,
-      name: option.name,
-      option,
-    })),
-  ];
-  const resolvedActiveSuggestionIndex = suggestions.length === 0
-    ? -1
-    : Math.min(activeSuggestionIndex, suggestions.length - 1);
-  const activeSuggestion = suggestions[resolvedActiveSuggestionIndex];
-
-  const refreshTags = async () => {
-    await invalidateLeadData(queryClient, leadId);
-    onChanged();
-  };
-
-  const addTag = useMutation({
-    mutationFn: (payload: { tagId: number } | { name: string }) =>
-      leadsApi.addTag<{ created?: boolean }>(leadId, payload),
-    onSuccess: async (result: { created?: boolean }) => {
-      setCustomTagName('');
-      setIsOpen(false);
-      onDropdownOpenChange(false);
-      setActiveSuggestionIndex(0);
-      await refreshTags();
-      toast({
-        title: result.created ? t('leadTagAdded') : t('leadTagAlreadyAssigned'),
-      });
-    },
-    onError: (error: Error) => toast({
-      title: t('leadTagAddFailed'),
-      description: error.message,
-      variant: 'destructive',
-    }),
-  });
-
-  const removeTag = useMutation({
-    mutationFn: (tag: LeadTagView) =>
-      leadsApi.removeTag(leadId, tag.id),
-    onSuccess: async () => {
-      setTagToRemove(null);
-      await refreshTags();
-      toast({ title: t('leadTagRemoved') });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: t('leadTagRemoveFailed'),
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-  const isBusy = addTag.isPending || removeTag.isPending;
-  const setDropdownOpen = (nextOpen: boolean) => {
-    setIsOpen(nextOpen);
-    onDropdownOpenChange(nextOpen);
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!editorRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-        onDropdownOpenChange(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
-  }, [isOpen, onDropdownOpenChange]);
-
-  const submitSuggestion = (suggestion: LeadTagSuggestion | undefined) => {
-    if (!suggestion || isBusy) return;
-    if (suggestion.kind === 'existing') {
-      addTag.mutate(
-        suggestion.option.id === null
-          ? { name: suggestion.option.name }
-          : { tagId: suggestion.option.id },
-      );
-      return;
-    }
-    addTag.mutate({ name: suggestion.name });
-  };
-
-  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      setDropdownOpen(true);
-      if (suggestions.length === 0) return;
-      setActiveSuggestionIndex((current) => {
-        const direction = event.key === 'ArrowDown' ? 1 : -1;
-        return (current + direction + suggestions.length) % suggestions.length;
-      });
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      submitSuggestion(activeSuggestion);
-    }
-  };
-
-  return (
-    <div
-      ref={editorRef}
-      className="mt-3 text-left"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setDropdownOpen(false);
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && isOpen) {
-          event.preventDefault();
-          setDropdownOpen(false);
-        }
-      }}
-    >
-      <label
-        htmlFor={`lead-${leadId}-tag-input`}
-        className="mb-1.5 flex items-center gap-1 text-xs font-medium text-foreground"
-      >
-        <Tag className="size-3.5" aria-hidden="true" />
-        {t('leadTags')}
-      </label>
-      <span id={`lead-${leadId}-tag-hint`} className="sr-only">
-        {t('leadTagsHint')}
-      </span>
-
-      <div className="relative">
-        <div
-          className="flex min-h-10 w-full cursor-text flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 shadow-2xs transition-[border-color,box-shadow] hover:border-primary/50 focus-within:border-primary-500 focus-within:ring-4 focus-within:ring-primary/15"
-          onMouseDown={(event) => {
-            const target = event.target as Element;
-            if (target.closest('button, input')) return;
-            event.preventDefault();
-            inputRef.current?.focus();
-          }}
-        >
-          {automaticTag ? (
-            <Badge
-              variant="outline"
-              className="h-6 max-w-full shrink-0 gap-1 px-2 py-0"
-              title={t('automaticTag')}
-            >
-              <span className="truncate">{automaticTag}</span>
-              <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
-              <span className="sr-only">{t('automaticTag')}</span>
-            </Badge>
-          ) : null}
-          {manualTags.map((tag) => {
-            const isRemoving = removeTag.isPending && removeTag.variables?.id === tag.id;
-            return (
-              <Badge
-                key={tag.id}
-                variant="secondary"
-                className="h-6 max-w-full shrink-0 gap-1 py-0 pl-2 pr-1"
-              >
-                <span className="truncate">{tag.name}</span>
-                <button
-                  type="button"
-                  className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
-                  aria-label={`${t('removeLeadTag')} ${tag.name}`}
-                  disabled={isBusy}
-                  onClick={() => {
-                    setDropdownOpen(false);
-                    setTagToRemove(tag);
-                  }}
-                >
-                  {isRemoving ? (
-                    <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <X className="size-3" aria-hidden="true" />
-                  )}
-                </button>
-              </Badge>
-            );
-          })}
-
-          <input
-            ref={inputRef}
-            id={`lead-${leadId}-tag-input`}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-controls={listboxId}
-            aria-expanded={isOpen}
-            aria-activedescendant={
-              isOpen && activeSuggestion
-                ? `${listboxId}-option-${resolvedActiveSuggestionIndex}`
-                : undefined
-            }
-            aria-describedby={`lead-${leadId}-tag-hint`}
-            autoComplete="off"
-            className="h-6 min-w-32 flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-wait"
-            value={customTagName}
-            maxLength={MAX_LEAD_TAG_NAME_LENGTH}
-            placeholder={t('customTagPlaceholder')}
-            disabled={isBusy}
-            onFocus={() => {
-              setActiveSuggestionIndex(0);
-              setDropdownOpen(true);
-            }}
-            onChange={(event) => {
-              setCustomTagName(event.target.value);
-              setActiveSuggestionIndex(0);
-              setDropdownOpen(true);
-            }}
-            onKeyDown={handleInputKeyDown}
-          />
-          {addTag.isPending || tagOptionsQuery.isLoading ? (
-            <Loader2 className="mr-1 size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
-          ) : null}
-        </div>
-
-        {isOpen ? (
-          <div
-            id={listboxId}
-            role="listbox"
-            aria-label={t('selectTag')}
-            className="absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-          >
-            {tagOptionsQuery.isLoading ? (
-              <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                {t('loading')}
-              </div>
-            ) : null}
-            {tagOptionsQuery.isError ? (
-              <div className="px-2 py-2 text-sm text-destructive">
-                {t('leadTagsLoadFailed')}
-              </div>
-            ) : null}
-            {suggestions.map((suggestion, index) => (
-              <button
-                key={suggestion.key}
-                id={`${listboxId}-option-${index}`}
-                type="button"
-                role="option"
-                tabIndex={-1}
-                aria-selected={index === resolvedActiveSuggestionIndex}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground aria-selected:bg-accent aria-selected:text-accent-foreground"
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setActiveSuggestionIndex(index)}
-                onClick={() => submitSuggestion(suggestion)}
-              >
-                {suggestion.kind === 'create' ? (
-                  <Plus className="size-4 shrink-0" aria-hidden="true" />
-                ) : (
-                  <Tag className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                )}
-                <span className="min-w-0 flex-1 truncate">
-                  {suggestion.kind === 'create'
-                    ? `${t('addTag')}: “${suggestion.name}”`
-                    : suggestion.name}
-                </span>
-              </button>
-            ))}
-            {!tagOptionsQuery.isLoading
-              && !tagOptionsQuery.isError
-              && suggestions.length === 0 ? (
-                <div className="px-2 py-2 text-sm text-muted-foreground">
-                  {customTagKey && assignedTagKeys.has(customTagKey)
-                    ? t('leadTagAlreadyAssigned')
-                    : t('noTagOptions')}
-                </div>
-              ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      <ConfirmDialog
-        open={tagToRemove !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen && !removeTag.isPending) setTagToRemove(null);
-        }}
-        title={t('removeLeadTag')}
-        description={tagToRemove
-          ? t('removeLeadTagConfirm').replace('{tag}', tagToRemove.name)
-          : ''}
-        confirmLabel={t('delete')}
-        variant="destructive"
-        isPending={removeTag.isPending}
-        keepOpenOnConfirm
-        onConfirm={() => {
-          if (tagToRemove) removeTag.mutate(tagToRemove);
-        }}
-      />
-    </div>
-  );
-}
-
 export function LeadDetailSheet({
   leadId,
   open,
@@ -764,7 +381,7 @@ export function LeadDetailSheet({
   onChanged,
   onMerged,
 }: LeadDetailSheetProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const onlinePbxCall = useOnlinePbxCall();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
@@ -977,6 +594,21 @@ export function LeadDetailSheet({
     },
   });
 
+  const changeStage = useMutation({
+    mutationFn: (statusCode: string) => leadsApi.update<LeadDetails>(leadId!, {
+      statusCode,
+      expectedUpdatedAt: leadQuery.data?.updatedAt,
+    }),
+    onSuccess: async () => {
+      await finishMutation(t('statusUpdated'));
+    },
+    onError: (error: Error) => toast({
+      title: t('statusNotUpdated'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
   const addLeadComment = useMutation({
     mutationFn: (body: string) =>
       leadsApi.addComment(leadId!, { body }),
@@ -1063,6 +695,83 @@ export function LeadDetailSheet({
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
 
+  const copyPhone = async (phone: string) => {
+    try {
+      await navigator.clipboard.writeText(phone);
+      toast({ title: t('phoneCopied'), description: phone });
+    } catch {
+      toast({ title: t('copyFailed'), variant: 'destructive' });
+    }
+  };
+
+  const handleStageSelect = (statusCode: string) => {
+    if (!lead || changeStage.isPending) return;
+    if (statusCode === lead.statusCode) return;
+    if (statusCode === 'paid') {
+      setActiveTab('payment');
+      return;
+    }
+    if (lead.statusCode === 'paid' || lead.isArchived) return;
+    if (!lead.managerId) {
+      toast({
+        title: t('leadRequiresResponsibleManager'),
+        description: t('assignManagerBeforeStage'),
+        variant: 'destructive',
+      });
+      return;
+    }
+    changeStage.mutate(statusCode);
+  };
+
+  const dealFormDirty = leadForm.formState.isDirty;
+  const activityCount = lead
+    ? (lead.comments?.length ?? 0)
+      + (lead.history?.length ?? 0)
+      + (lead.communications?.length ?? 0)
+      + (lead.calls?.length ?? 0)
+      + (lead.assignmentHistory?.length ?? 0)
+      + (lead.payments?.length ?? 0)
+    : 0;
+  const paymentsCount = lead?.payments?.length ?? 0;
+  const openTasks = (lead?.tasks ?? []).filter((task) => task.status !== 'done');
+  const hasOverdueTask = openTasks.some((task) => (
+    Boolean(task.dueAt) && new Date(task.dueAt!).getTime() < Date.now()
+  ));
+
+  const totalPaidUzs = (lead?.payments ?? [])
+    .filter((payment) => payment.status === 'paid')
+    .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
+  const latestPaidUntil = (lead?.payments ?? []).reduce<string | null>((latest, payment) => {
+    if (!payment.paidUntil) return latest;
+    const timestamp = new Date(payment.paidUntil).getTime();
+    if (!Number.isFinite(timestamp)) return latest;
+    if (!latest || timestamp > new Date(latest).getTime()) return payment.paidUntil;
+    return latest;
+  }, null);
+
+  const dateOnly = (value: string | null | undefined) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US');
+  };
+
+  const paymentMethodLabel = (method?: string | null) => (
+    method && method in paymentMethodTranslationKeys
+      ? t(paymentMethodTranslationKeys[method as keyof typeof paymentMethodTranslationKeys])
+      : method ?? ''
+  );
+  const paymentTypeLabel = (type?: string | null) => (
+    type && type in paymentTypeTranslationKeys
+      ? t(paymentTypeTranslationKeys[type as keyof typeof paymentTypeTranslationKeys])
+      : type ?? ''
+  );
+  const paymentDiscountLabel = (discount?: string | null) => (
+    discount && discount in paymentDiscountTranslationKeys
+      ? t(paymentDiscountTranslationKeys[discount as keyof typeof paymentDiscountTranslationKeys])
+      : discount ?? ''
+  );
+
   return (
     <Sheet
       open={open}
@@ -1072,7 +781,7 @@ export function LeadDetailSheet({
       }}
     >
       <SheetContent
-        className="w-full overflow-y-auto p-0 sm:max-w-3xl"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         onEscapeKeyDown={(event) => {
           if (tagDropdownOpen) event.preventDefault();
         }}
@@ -1093,140 +802,204 @@ export function LeadDetailSheet({
             </Alert>
           </div>
         ) : leadQuery.isLoading || !lead ? (
-          <div className="flex flex-col gap-5 p-6">
+          <div className="flex flex-col gap-4 overflow-y-auto p-6">
             <SheetTitle className="sr-only">{t('lead')}</SheetTitle>
             <SheetDescription className="sr-only">{t('loading')}</SheetDescription>
-            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-9 w-full" />
             <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-80 w-full" />
+            <Skeleton className="h-72 w-full" />
           </div>
         ) : (
           <>
-            <SheetHeader className="border-b border-border bg-muted/30 p-6 pr-14">
-              <div className="flex items-start gap-4">
-                <Avatar className="size-12 border border-border bg-background">
+            <SheetHeader className="shrink-0 space-y-3 border-b border-border bg-muted/30 px-6 pb-4 pr-14 pt-5 text-left">
+              <div className="flex items-start gap-3">
+                <Avatar className="size-11 border border-border bg-background">
                   <AvatarFallback>{getInitials(lead.contactName)}</AvatarFallback>
                 </Avatar>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <SheetTitle className="truncate text-xl">{lead.contactName}</SheetTitle>
-                    <Badge variant={lead.statusCode === 'paid' ? 'success' : 'secondary'}>
-                      {leadStatusName(lead.statusCode)}
-                    </Badge>
+                    <SheetTitle className="truncate text-lg leading-tight">{lead.contactName}</SheetTitle>
+                    {lead.statusCode === 'paid' ? (
+                      <Badge variant="success">
+                        <CheckCircle2 className="size-3" aria-hidden="true" />
+                        {leadStatusName('paid')}
+                      </Badge>
+                    ) : null}
+                    {lead.isArchived ? (
+                      <Badge variant="outline">{t('leadInArchive')}</Badge>
+                    ) : null}
                   </div>
                   <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
 
-                  {/* Meta chips: only meaningful info shown, faded dots removed */}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {/* Contact + meta chips; phone chips copy the number on click */}
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
                     {visiblePhoneNumbers.length > 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Phone className="size-3.5" />
-                        {visiblePhoneNumbers.join(', ')}
-                      </span>
+                      visiblePhoneNumbers.map((phone) => (
+                        <button
+                          key={phone}
+                          type="button"
+                          title={t('clickToCopy')}
+                          className="group/phone inline-flex max-w-full items-center gap-1.5 rounded-md bg-background/80 px-2 py-1 text-xs font-medium text-foreground/80 shadow-2xs ring-1 ring-border transition-colors hover:bg-background hover:text-foreground"
+                          onClick={() => copyPhone(phone)}
+                        >
+                          <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                          <span className="truncate tabular-nums">{phone}</span>
+                          <Copy className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/phone:opacity-100" aria-hidden="true" />
+                          <span className="sr-only">{t('clickToCopy')}</span>
+                        </button>
+                      ))
                     ) : (
-                      <span className="inline-flex items-center gap-1 italic">{t('leadSheetNoContactInfo')}</span>
+                      <span className="px-1 text-xs italic text-muted-foreground">{t('leadSheetNoContactInfo')}</span>
                     )}
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground"
+                      title={t('manager')}
+                    >
+                      <UserRoundCog className="size-3.5" aria-hidden="true" />
+                      <span className="sr-only">{t('manager')}: </span>
+                      {lead.managerName || t('notAssigned')}
+                    </span>
+                    {lead.firstContactAt ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground"
+                        title={t('leadStatusFirstContact')}
+                      >
+                        <CalendarClock className="size-3.5" aria-hidden="true" />
+                        <span className="sr-only">{t('leadStatusFirstContact')}: </span>
+                        {dateTime(lead.firstContactAt)}
+                      </span>
+                    ) : null}
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground"
+                      title={t('leadSheetCreated')}
+                    >
+                      <Clock3 className="size-3.5" aria-hidden="true" />
+                      <span className="sr-only">{t('leadSheetCreated')}: </span>
+                      {dateTime(lead.createdAt)}
+                    </span>
                     {(lead.students ?? []).length > 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        <GraduationCap className="size-3.5" />
+                      <span className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground">
+                        <GraduationCap className="size-3.5" aria-hidden="true" />
                         {lead.students?.length ?? 0} {t('studentsCount')}
                       </span>
                     ) : null}
                   </div>
-
-                  {/* Manager line — single clean row */}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <UserRoundCog className="size-3.5" />
-                      <span className="text-foreground/80">{t('manager')}:</span>
-                      <span>{lead.managerName || t('notAssigned')}</span>
-                    </span>
-                    {lead.firstContactAt ? (
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="size-3.5" />
-                        <span className="text-foreground/80">{t('leadStatusFirstContact')}:</span>
-                        {dateTime(lead.firstContactAt)}
-                      </span>
-                    ) : null}
-                    <span className="inline-flex items-center gap-1">
-                      <Clock3 className="size-3.5" />
-                      <span className="text-foreground/80">{t('leadSheetCreated')}:</span>
-                      {dateTime(lead.createdAt)}
-                    </span>
-                  </div>
-
-                  <LeadTagsEditor
-                    leadId={lead.id}
-                    automaticTag={lead.sourceName}
-                    tags={lead.tags}
-                    onChanged={onChanged}
-                    onDropdownOpenChange={setTagDropdownOpen}
-                  />
-
-                  {/* Quick actions — single prominent CTA + secondary outline buttons */}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <LeadChannelLinks channels={lead.channels} leadId={lead.id} />
-                    {primaryPhone ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={onlinePbxCall.isPending}
-                        onClick={() => onlinePbxCall.startCall(primaryPhone)}
-                      >
-                        {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
-                          <Loader2 className="animate-spin" data-icon="inline-start" />
-                        ) : (
-                          <Phone data-icon="inline-start" />
-                        )}
-                        {t('callShort')}
-                      </Button>
-                    ) : null}
-                    {messageTarget ? (
-                      <Button asChild size="sm" variant="outline">
-                        <a
-                          href={messageTarget.href}
-                          target={messageTarget.external ? '_blank' : undefined}
-                          rel={messageTarget.external ? 'noreferrer' : undefined}
-                        >
-                          <MessageSquare data-icon="inline-start" />
-                          {t('writeShort')}
-                          {messageTarget.external ? <ExternalLink data-icon="inline-end" /> : null}
-                        </a>
-                      </Button>
-                    ) : null}
-                    {!lead.isArchived && lead.statusCode !== 'paid' ? (
-                      <Button type="button" size="sm" variant="outline" onClick={() => setCreateDemoOpen(true)}>
-                        <CalendarPlus2 data-icon="inline-start" />
-                        {t('bookDemoLesson')}
-                      </Button>
-                    ) : null}
-                    <Button size="sm" onClick={() => setActiveTab('payment')}>
-                      <CreditCard data-icon="inline-start" />
-                      {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
-                    </Button>
-                  </div>
                 </div>
+              </div>
+
+              <LeadTagsEditor
+                leadId={lead.id}
+                automaticTag={lead.sourceName}
+                tags={lead.tags}
+                onChanged={onChanged}
+                onDropdownOpenChange={setTagDropdownOpen}
+              />
+
+              <LeadStageStepper
+                statuses={statuses}
+                currentStatusCode={lead.statusCode}
+                isLocked={lead.statusCode === 'paid' || Boolean(lead.isArchived)}
+                pendingStatusCode={changeStage.isPending ? (changeStage.variables ?? null) : null}
+                leadStatusName={leadStatusName}
+                onSelectStage={handleStageSelect}
+              />
+
+              {/* Quick actions — single prominent CTA + secondary outline buttons */}
+              <div className="flex flex-wrap gap-2">
+                <LeadChannelLinks channels={lead.channels} leadId={lead.id} />
+                {primaryPhone ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={onlinePbxCall.isPending}
+                    onClick={() => onlinePbxCall.startCall(primaryPhone)}
+                  >
+                    {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ) : (
+                      <Phone data-icon="inline-start" />
+                    )}
+                    {t('callShort')}
+                  </Button>
+                ) : null}
+                {messageTarget ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a
+                      href={messageTarget.href}
+                      target={messageTarget.external ? '_blank' : undefined}
+                      rel={messageTarget.external ? 'noreferrer' : undefined}
+                    >
+                      <MessageSquare data-icon="inline-start" />
+                      {t('writeShort')}
+                      {messageTarget.external ? <ExternalLink data-icon="inline-end" /> : null}
+                    </a>
+                  </Button>
+                ) : null}
+                {!lead.isArchived && lead.statusCode !== 'paid' ? (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setCreateDemoOpen(true)}>
+                    <CalendarPlus2 data-icon="inline-start" />
+                    {t('bookDemoLesson')}
+                  </Button>
+                ) : null}
+                <Button size="sm" onClick={() => setActiveTab('payment')}>
+                  <CreditCard data-icon="inline-start" />
+                  {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
+                </Button>
               </div>
             </SheetHeader>
 
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as LeadSheetTab)}>
-              <div className="sticky top-0 z-10 border-b border-border bg-background px-6 py-3">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as LeadSheetTab)}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="shrink-0 border-b border-border bg-background px-6 py-2.5">
                 <TabsList className="flex h-auto w-full justify-start overflow-x-auto">
-                  <TabsTrigger value="deal" className="shrink-0 gap-1.5"><UserRound data-icon="inline-start" />{t('dealTab')}</TabsTrigger>
-                  <TabsTrigger value="activity" className="shrink-0 gap-1.5"><History data-icon="inline-start" />{t('activityTab')}</TabsTrigger>
-                  <TabsTrigger value="payment" className="shrink-0 gap-1.5"><CreditCard data-icon="inline-start" />{t('payment')}</TabsTrigger>
-                  <TabsTrigger value="tasks" className="shrink-0 gap-1.5"><ClipboardList data-icon="inline-start" />{t('leadTasks')}</TabsTrigger>
+                  <TabsTrigger value="deal" className="shrink-0 gap-1.5">
+                    <UserRound data-icon="inline-start" />
+                    {t('dealTab')}
+                    {dealFormDirty ? (
+                      <span
+                        className="size-1.5 rounded-full bg-amber-500"
+                        title={t('unsavedChanges')}
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </TabsTrigger>
+                  <TabsTrigger value="activity" className="shrink-0 gap-1.5">
+                    <History data-icon="inline-start" />
+                    {t('activityTab')}
+                    <TabCount value={activityCount} />
+                  </TabsTrigger>
+                  <TabsTrigger value="payment" className="shrink-0 gap-1.5">
+                    <CreditCard data-icon="inline-start" />
+                    {t('payment')}
+                    <TabCount value={paymentsCount} />
+                  </TabsTrigger>
+                  <TabsTrigger value="tasks" className="shrink-0 gap-1.5">
+                    <ClipboardList data-icon="inline-start" />
+                    {t('leadTasks')}
+                    <TabCount value={openTasks.length} tone={hasOverdueTask ? 'warning' : undefined} />
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
-              <div className="p-6">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
                 <TabsContent value="deal" className="mt-0 space-y-5">
                   <Form {...leadForm}>
                     <form className="flex flex-col gap-5" onSubmit={leadForm.handleSubmit((values) => updateLead.mutate(values))}>
-                      <Card>
-                        <CardHeader><CardTitle>{t('contactInformation')}</CardTitle></CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Card className="overflow-hidden">
+                        <CardHeader className="border-b border-border/60 bg-muted/20">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                              <UserRound className="size-4" aria-hidden="true" />
+                            </span>
+                            {t('contactInformation')}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-4 pt-5 md:grid-cols-2">
                           {(lead.channels ?? []).length > 0 ? (
                             <FormItem className="md:col-span-2">
                               <FormLabel>{t('contactChannels')}</FormLabel>
@@ -1305,15 +1078,15 @@ export function LeadDetailSheet({
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel>{t('communicationLanguage')}</FormLabel>
-                                <Select value={field.value} onValueChange={field.onChange}>
-                                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      <SelectItem value="ru">{t('russian')}</SelectItem>
-                                      <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
+                                <SegmentedControl
+                                  ariaLabel={t('communicationLanguage')}
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  options={[
+                                    { value: 'ru', label: t('russian') },
+                                    { value: 'uz', label: t('uzbekLang') },
+                                  ]}
+                                />
                                 <LocalizedFormMessage />
                               </FormItem>
                             )}
@@ -1322,10 +1095,12 @@ export function LeadDetailSheet({
                       </Card>
 
                       <Card className="overflow-hidden">
-                        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 bg-muted/20">
+                        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 border-b border-border/60 bg-muted/20">
                           <div>
-                            <CardTitle className="flex items-center gap-2">
-                              <GraduationCap className="size-5 text-primary" />
+                            <CardTitle className="flex items-center gap-2 text-base">
+                              <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                                <GraduationCap className="size-4" aria-hidden="true" />
+                              </span>
                               {t('students')}
                               <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
                             </CardTitle>
@@ -1350,7 +1125,7 @@ export function LeadDetailSheet({
                               {lead.students?.map((student) => {
                                 const studentGroups = student.groups ?? [];
                                 return (
-                                  <div key={student.id} className="flex items-start gap-3 px-5 py-4">
+                                  <div key={student.id} className="flex items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/30">
                                     <Avatar className="size-10 border border-border bg-primary/5">
                                       <AvatarFallback className="text-primary">{getInitials(student.studentName || t('student'))}</AvatarFallback>
                                     </Avatar>
@@ -1380,35 +1155,16 @@ export function LeadDetailSheet({
                         </CardContent>
                       </Card>
 
-                      <Card>
-                        <CardHeader><CardTitle>{t('dealDetails')}</CardTitle></CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          <FormItem>
-                            <FormLabel>{t('responsibleManager')}</FormLabel>
-                            <Select
-                              value={lead.managerId ? String(lead.managerId) : undefined}
-                              onValueChange={(value) => {
-                                const nextManagerId = Number(value);
-                                if (nextManagerId !== Number(lead.managerId)) setPendingManagerId(nextManagerId);
-                              }}
-                              disabled={assignLead.isPending}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={t('selectManager')} />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectGroup>
-                                  {managers.map((manager) => (
-                                    <SelectItem key={manager.id} value={String(manager.id)}>
-                                      {manager.fullName}
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
-                          </FormItem>
+                      <Card className="overflow-hidden">
+                        <CardHeader className="border-b border-border/60 bg-muted/20">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                              <Briefcase className="size-4" aria-hidden="true" />
+                            </span>
+                            {t('dealDetails')}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-4 pt-5 md:grid-cols-2">
                           <FormField
                             control={leadForm.control}
                             name="statusCode"
@@ -1467,49 +1223,162 @@ export function LeadDetailSheet({
                             render={({ field, fieldState }) => (
                               <FormItem>
                                 <FormLabel>{t('expectedPayment')}</FormLabel>
-                                <FormControl><Input {...field} type="number" min="0" aria-invalid={fieldState.invalid} /></FormControl>
+                                <FormControl>
+                                  <CurrencyInput
+                                    value={field.value}
+                                    onValueChange={field.onChange}
+                                    aria-invalid={fieldState.invalid}
+                                  />
+                                </FormControl>
                                 <LocalizedFormMessage />
                               </FormItem>
                             )}
                           />
+                          <FormItem>
+                            <FormLabel>{t('responsibleManager')}</FormLabel>
+                            <Select
+                              value={lead.managerId ? String(lead.managerId) : undefined}
+                              onValueChange={(value) => {
+                                const nextManagerId = Number(value);
+                                if (nextManagerId !== Number(lead.managerId)) setPendingManagerId(nextManagerId);
+                              }}
+                              disabled={assignLead.isPending}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={t('selectManager')} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectGroup>
+                                  {managers.map((manager) => (
+                                    <SelectItem key={manager.id} value={String(manager.id)}>
+                                      {manager.fullName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">{t('managerTransferHint')}</p>
+                          </FormItem>
                         </CardContent>
                       </Card>
 
-                      <div className="flex justify-end">
-                        <Button type="submit" disabled={updateLead.isPending}>
-                          <Save data-icon="inline-start" />
-                          {updateLead.isPending ? t('saving') : t('saveChanges')}
-                        </Button>
-                      </div>
+                      {dealFormDirty || updateLead.isPending ? (
+                        <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-0 flex flex-wrap items-center gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
+                          <span className="size-2 shrink-0 animate-pulse rounded-full bg-amber-500" aria-hidden="true" />
+                          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{t('unsavedChanges')}</p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={updateLead.isPending}
+                            onClick={() => leadForm.reset(leadToFormValues(lead))}
+                          >
+                            <Undo2 data-icon="inline-start" />
+                            {t('undoChanges')}
+                          </Button>
+                          <Button type="submit" size="sm" disabled={updateLead.isPending}>
+                            {updateLead.isPending ? (
+                              <Loader2 className="animate-spin" data-icon="inline-start" />
+                            ) : (
+                              <Save data-icon="inline-start" />
+                            )}
+                            {updateLead.isPending ? t('saving') : t('saveChanges')}
+                          </Button>
+                        </div>
+                      ) : null}
                     </form>
                   </Form>
                 </TabsContent>
 
                 <TabsContent value="activity" className="mt-0">
-                  <div className="flex flex-col gap-5">
-                    <LeadCommentsCard
-                      comments={lead.comments ?? []}
-                      draft={commentDraft}
-                      isPending={addLeadComment.isPending}
-                      dateTime={dateTime}
-                      onDraftChange={setCommentDraft}
-                      onSubmit={() => {
-                        const body = commentDraft.trim();
-                        if (body) addLeadComment.mutate(body);
-                      }}
-                    />
-
-                    <ActivityTimeline
-                      lead={lead}
-                      dateTime={dateTime}
-                      leadStatusName={leadStatusName}
-                      money={money}
-                    />
-                  </div>
+                  <ActivityTimeline
+                    lead={lead}
+                    dateTime={dateTime}
+                    leadStatusName={leadStatusName}
+                    money={money}
+                    composer={(
+                      <form
+                        className="rounded-xl border border-border bg-muted/20 p-3 transition-colors focus-within:border-primary/40 focus-within:bg-background"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const body = commentDraft.trim();
+                          if (body && !addLeadComment.isPending) addLeadComment.mutate(body);
+                        }}
+                      >
+                        <Textarea
+                          value={commentDraft}
+                          onChange={(event) => setCommentDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                              event.preventDefault();
+                              const body = commentDraft.trim();
+                              if (body && !addLeadComment.isPending) addLeadComment.mutate(body);
+                            }
+                          }}
+                          placeholder={t('addCommentPlaceholder')}
+                          rows={3}
+                          className="resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0"
+                        />
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <span className="text-xs text-muted-foreground/70">{t('ctrlEnterToSend')}</span>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={addLeadComment.isPending || !commentDraft.trim()}
+                          >
+                            {addLeadComment.isPending ? (
+                              <Loader2 className="animate-spin" data-icon="inline-start" />
+                            ) : (
+                              <MessageSquare data-icon="inline-start" />
+                            )}
+                            {t('send')}
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  />
                 </TabsContent>
 
                 <TabsContent value="payment" className="mt-0">
                   <div className="flex flex-col gap-5">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                          <Banknote className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs text-muted-foreground">{t('expectedPayment')}</p>
+                          <p className="truncate text-sm font-semibold tabular-nums">
+                            {lead.expectedPaymentUzs || lead.offerPriceUzs
+                              ? money(lead.expectedPaymentUzs ?? lead.offerPriceUzs)
+                              : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <Wallet className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs text-muted-foreground">{t('totalPaidLabel')}</p>
+                          <p className="truncate text-sm font-semibold tabular-nums">
+                            {totalPaidUzs > 0 ? money(totalPaidUzs) : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300">
+                          <CalendarClock className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs text-muted-foreground">{t('paidUntil')}</p>
+                          <p className="truncate text-sm font-semibold tabular-nums">{dateOnly(latestPaidUntil)}</p>
+                        </div>
+                      </div>
+                    </div>
+
                     {lead.statusCode === 'paid' ? (
                       <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
                         <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
@@ -1518,13 +1387,16 @@ export function LeadDetailSheet({
                     ) : (
                       <p className="text-sm text-muted-foreground">{t('leadSheetPaymentFormHint')}</p>
                     )}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>
+                    <Card className="overflow-hidden">
+                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                            <CreditCard className="size-4" aria-hidden="true" />
+                          </span>
                           {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment')}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="pt-5">
                         {(lead.students ?? []).length === 0 ? (
                           <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-8 text-center">
                             <GraduationCap className="mb-3 size-8 text-muted-foreground" />
@@ -1566,7 +1438,24 @@ export function LeadDetailSheet({
                               render={({ field, fieldState }) => (
                                 <FormItem>
                                   <FormLabel>{t('amount')}</FormLabel>
-                                  <FormControl><Input {...field} type="number" min="1" aria-invalid={fieldState.invalid} /></FormControl>
+                                  <FormControl>
+                                    <CurrencyInput
+                                      value={field.value}
+                                      onValueChange={field.onChange}
+                                      aria-invalid={fieldState.invalid}
+                                    />
+                                  </FormControl>
+                                  <LocalizedFormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={paymentForm.control}
+                              name="paidUntil"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('paidUntil')}</FormLabel>
+                                  <FormControl><Input {...field} type="date" /></FormControl>
                                   <LocalizedFormMessage />
                                 </FormItem>
                               )}
@@ -1575,20 +1464,17 @@ export function LeadDetailSheet({
                               control={paymentForm.control}
                               name="method"
                               render={({ field }) => (
-                                <FormItem>
+                                <FormItem className="md:col-span-2">
                                   <FormLabel>{t('paymentMethod')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {PAYMENT_METHODS.map((method) => (
-                                          <SelectItem key={method} value={method}>
-                                            {t(paymentMethodTranslationKeys[method])}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
+                                  <SegmentedControl
+                                    ariaLabel={t('paymentMethod')}
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    options={PAYMENT_METHODS.map((method) => ({
+                                      value: method,
+                                      label: t(paymentMethodTranslationKeys[method]),
+                                    }))}
+                                  />
                                   <LocalizedFormMessage />
                                 </FormItem>
                               )}
@@ -1639,17 +1525,6 @@ export function LeadDetailSheet({
                             />
                             <FormField
                               control={paymentForm.control}
-                              name="paidUntil"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('paidUntil')}</FormLabel>
-                                  <FormControl><Input {...field} type="date" /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
                               name="comment"
                               render={({ field }) => (
                                 <FormItem className="md:col-span-2">
@@ -1674,21 +1549,41 @@ export function LeadDetailSheet({
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardHeader><CardTitle>{t('paymentHistory')}</CardTitle></CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
+                    <Card className="overflow-hidden">
+                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                            <Wallet className="size-4" aria-hidden="true" />
+                          </span>
+                          {t('paymentHistory')}
+                          {paymentsCount > 0 ? <Badge variant="secondary">{paymentsCount}</Badge> : null}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-0 divide-y divide-border pt-5">
                         {(lead.payments ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noPayments')}</p>
                         ) : (
                           lead.payments?.map((payment) => (
                             <div key={payment.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                              <div className="min-w-0">
-                                <p className="font-medium">{money(payment.amountUzs)}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {[payment.method, payment.type, payment.discount].filter(Boolean).join(' · ')}
-                                </p>
-                                {payment.studentName ? <p className="mt-1 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
-                                {payment.comment ? <p className="mt-1 text-xs text-muted-foreground">{payment.comment}</p> : null}
+                              <div className="flex min-w-0 items-start gap-3">
+                                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                  <CreditCard className="size-4" aria-hidden="true" />
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="font-semibold tabular-nums">{money(payment.amountUzs)}</p>
+                                  <p className="mt-0.5 text-xs text-muted-foreground">
+                                    {[
+                                      paymentMethodLabel(payment.method),
+                                      paymentTypeLabel(payment.type),
+                                      payment.discount && payment.discount !== 'none'
+                                        ? paymentDiscountLabel(payment.discount)
+                                        : null,
+                                    ].filter(Boolean).join(' · ')}
+                                  </p>
+                                  {payment.studentName ? <p className="mt-0.5 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
+                                  {payment.paidUntil ? <p className="mt-0.5 text-xs text-muted-foreground">{t('paidUntil')}: {dateOnly(payment.paidUntil)}</p> : null}
+                                  {payment.comment ? <p className="mt-0.5 text-xs text-muted-foreground">{payment.comment}</p> : null}
+                                </div>
                               </div>
                               <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                                 <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : 'warning'}>
@@ -1722,9 +1617,16 @@ export function LeadDetailSheet({
                         </Link>
                       </Button>
                     </div>
-                    <Card>
-                      <CardHeader><CardTitle>{t('newTask')}</CardTitle></CardHeader>
-                      <CardContent>
+                    <Card className="overflow-hidden">
+                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                            <Plus className="size-4" aria-hidden="true" />
+                          </span>
+                          {t('newTask')}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-5">
                         <Form {...taskForm}>
                           <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={taskForm.handleSubmit((values) => createTask.mutate(values))}>
                             <FormField
@@ -1771,39 +1673,83 @@ export function LeadDetailSheet({
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardHeader><CardTitle>{t('leadTasks')}</CardTitle></CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
+                    <Card className="overflow-hidden">
+                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
+                            <ClipboardList className="size-4" aria-hidden="true" />
+                          </span>
+                          {t('leadTasks')}
+                          {(lead.tasks ?? []).length > 0 ? (
+                            <Badge variant="secondary">{(lead.tasks ?? []).length}</Badge>
+                          ) : null}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-0 divide-y divide-border pt-5">
                         {(lead.tasks ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
                         ) : (
-                          lead.tasks?.map((task) => (
-                            <div key={task.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">{task.title}</p>
-                                {task.description ? <p className="mt-1 text-xs text-muted-foreground">{task.description}</p> : null}
-                              </div>
-                              <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                                <Badge variant={task.status === 'done' ? 'success' : 'outline'}>
-                                  {task.status === 'done' ? t('taskDone') : t('taskInProgress')}
-                                </Badge>
-                                {task.dueAt ? <p className="text-xs text-muted-foreground">{dateTime(task.dueAt)}</p> : null}
-                                {task.status !== 'done' ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 px-2"
-                                    disabled={updateTask.isPending}
-                                    onClick={() => updateTask.mutate(task.id)}
+                          lead.tasks?.map((task) => {
+                            const isDone = task.status === 'done';
+                            const isOverdue = !isDone
+                              && Boolean(task.dueAt)
+                              && new Date(task.dueAt!).getTime() < Date.now();
+                            return (
+                              <div key={task.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <span
+                                    className={cn(
+                                      'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full',
+                                      isDone
+                                        ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                        : isOverdue
+                                          ? 'bg-destructive/10 text-destructive'
+                                          : 'bg-muted text-muted-foreground',
+                                    )}
                                   >
-                                    <CheckCircle2 data-icon="inline-start" />
-                                    {t('completeTask')}
-                                  </Button>
-                                ) : null}
+                                    {isDone
+                                      ? <CheckCircle2 className="size-4" aria-hidden="true" />
+                                      : <ClipboardList className="size-4" aria-hidden="true" />}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className={cn('truncate text-sm font-medium', isDone && 'text-muted-foreground line-through')}>
+                                      {task.title}
+                                    </p>
+                                    {task.description ? <p className="mt-1 text-xs text-muted-foreground">{task.description}</p> : null}
+                                    {task.dueAt ? (
+                                      <p
+                                        className={cn(
+                                          'mt-1 inline-flex items-center gap-1 text-xs',
+                                          isOverdue ? 'font-medium text-destructive' : 'text-muted-foreground',
+                                        )}
+                                      >
+                                        <Clock3 className="size-3" aria-hidden="true" />
+                                        {dateTime(task.dueAt)}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                                  <Badge variant={isDone ? 'success' : isOverdue ? 'destructive' : 'outline'}>
+                                    {isDone ? t('taskDone') : isOverdue ? t('taskOverdue') : t('taskInProgress')}
+                                  </Badge>
+                                  {!isDone ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2"
+                                      disabled={updateTask.isPending}
+                                      onClick={() => updateTask.mutate(task.id)}
+                                    >
+                                      <CheckCircle2 data-icon="inline-start" />
+                                      {t('completeTask')}
+                                    </Button>
+                                  ) : null}
+                                </div>
                               </div>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </CardContent>
                     </Card>

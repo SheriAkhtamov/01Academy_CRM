@@ -80,6 +80,7 @@ import {
 } from '@/lib/leadContact';
 import {
   AlertCircle,
+  ArrowRight,
   Banknote,
   Briefcase,
   CheckCircle2,
@@ -388,6 +389,7 @@ export function LeadDetailSheet({
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const studentsCardRef = useRef<HTMLDivElement | null>(null);
 
   const leadQuery = useLeadDetailsQuery<LeadDetails>(leadId, open);
 
@@ -682,6 +684,13 @@ export function LeadDetailSheet({
     } catch {
       toast({ title: t('copyFailed'), variant: 'destructive' });
     }
+  };
+
+  const goToStudents = () => {
+    setActiveTab('deal');
+    setTimeout(() => {
+      studentsCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
   };
 
   const dealFormDirty = leadForm.formState.isDirty;
@@ -1037,7 +1046,7 @@ export function LeadDetailSheet({
                         </CardContent>
                       </Card>
 
-                      <Card className="overflow-hidden">
+                      <Card ref={studentsCardRef} className="scroll-mt-4 overflow-hidden">
                         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
                           <div>
                             <CardTitle className="flex items-center gap-2 text-base">
@@ -1293,9 +1302,9 @@ export function LeadDetailSheet({
                         <GraduationCap className="mb-3 size-8 text-muted-foreground" aria-hidden="true" />
                         <p className="font-medium">{t('studentRequiredForPayment')}</p>
                         <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('studentRequiredForPaymentHint')}</p>
-                        <Button type="button" className="mt-4" onClick={() => setCreateStudentOpen(true)}>
-                          <Plus data-icon="inline-start" />
-                          {t('createStudent')}
+                        <Button type="button" variant="outline" className="mt-4" onClick={goToStudents}>
+                          {t('goToStudents')}
+                          <ArrowRight data-icon="inline-end" />
                         </Button>
                       </div>
                     ) : (

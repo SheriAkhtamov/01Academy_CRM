@@ -467,11 +467,12 @@ export const translations = {
     en: 'Optional. The contact phone remains in the lead profile.',
     ru: 'Необязательно. Телефон контактного лица остаётся в карточке лида.',
   },
-  studentRequiredForPayment: { en: 'Create a student before recording a payment', ru: 'Сначала создайте ученика' },
+  studentRequiredForPayment: { en: 'A student is needed to record a payment', ru: 'Для оплаты нужен ученик' },
   studentRequiredForPaymentHint: {
-    en: 'Payments are recorded for a specific student so education and finance data do not get mixed up.',
-    ru: 'Оплата должна относиться к конкретному ученику, чтобы учебные и финансовые данные не смешивались.',
+    en: 'Payments are recorded for a specific student so education and finance data do not get mixed up. Add a student in the Deal tab.',
+    ru: 'Оплата должна относиться к конкретному ученику, чтобы учебные и финансовые данные не смешивались. Добавьте ученика на вкладке «Сделка».',
   },
+  goToStudents: { en: 'Go to students', ru: 'Перейти к ученикам' },
   studentSelectionRequired: { en: 'Select a student', ru: 'Выберите ученика' },
 
   // UX improvements

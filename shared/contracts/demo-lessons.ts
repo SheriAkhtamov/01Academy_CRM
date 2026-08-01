@@ -11,6 +11,8 @@ export const DEMO_PARTICIPANT_STATUSES = [
 ] as const;
 
 const entityId = z.coerce.number().int().positive();
+const participantIds = (minimum: number) => z.array(entityId).min(minimum).max(100)
+  .refine((ids) => new Set(ids).size === ids.length, 'duplicateDemoParticipants');
 
 export const demoLessonMutationSchema = z.object({
   courseId: entityId,
@@ -21,8 +23,7 @@ export const demoLessonMutationSchema = z.object({
   durationMinutes: z.coerce.number().int().min(15).max(480),
   format: z.enum(DEMO_LESSON_FORMATS).default('offline'),
   capacity: z.coerce.number().int().min(1).max(100),
-  participantIds: z.array(entityId).min(1).max(100)
-    .refine((ids) => new Set(ids).size === ids.length, 'duplicateDemoParticipants'),
+  participantIds: participantIds(1),
   notes: z.string().trim().max(2_000).nullable().optional(),
 }).superRefine((value, context) => {
   if (value.format === 'offline' && !value.roomId) {
@@ -48,6 +49,15 @@ export const demoLessonMutationSchema = z.object({
   }
 });
 
+export const demoLessonResourceAvailabilitySchema = z.object({
+  courseId: entityId,
+  schoolId: entityId,
+  scheduledAt: z.string().datetime({ offset: true }),
+  durationMinutes: z.coerce.number().int().min(15).max(480),
+  format: z.enum(DEMO_LESSON_FORMATS).default('offline'),
+  participantIds: participantIds(0).default([]),
+});
+
 export const demoLessonCancelSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
@@ -63,3 +73,4 @@ export const demoLessonAttendanceSchema = z.object({
 
 export type DemoLessonMutation = z.infer<typeof demoLessonMutationSchema>;
 export type DemoLessonAttendance = z.infer<typeof demoLessonAttendanceSchema>;
+export type DemoLessonResourceAvailabilityRequest = z.infer<typeof demoLessonResourceAvailabilitySchema>;

@@ -622,6 +622,9 @@ export const assertTeacherCanLeadLesson = async (options: {
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
   excludeDemoLessonId?: number | null;
+  enforceAssignments?: boolean;
+  enforceAvailability?: boolean;
+  conflictError?: string;
 }) => {
   const teacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [options.teacherId]);
   if (!teacher) throw Object.assign(new Error('teacherNotFound'), { statusCode: 404 });
@@ -632,8 +635,9 @@ export const assertTeacherCanLeadLesson = async (options: {
   const courseIds = readJsonArray(teacher.courseIds).map(Number);
   const schoolIds = readJsonArray(teacher.schoolIds).map(Number);
   if (
-    (courseIds.length > 0 && !courseIds.includes(options.courseId))
-    || (schoolIds.length > 0 && !schoolIds.includes(options.schoolId))
+    options.enforceAssignments !== false
+    && ((courseIds.length > 0 && !courseIds.includes(options.courseId))
+    || (schoolIds.length > 0 && !schoolIds.includes(options.schoolId)))
   ) {
     throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
   }
@@ -644,7 +648,7 @@ export const assertTeacherCanLeadLesson = async (options: {
     startsAt,
     options.durationMinutes,
   );
-  if (!scheduleCoversSlot(
+  if (options.enforceAvailability !== false && !scheduleCoversSlot(
     getTeacherAvailability(teacher, options.durationMinutes),
     dayOfWeek,
     startMinutes,
@@ -700,9 +704,9 @@ export const assertTeacherCanLeadLesson = async (options: {
     )
   );
   if (lessonConflict || demoConflict || recurringConflict) {
-    throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
+    throw Object.assign(new Error(options.conflictError ?? 'teacherUnavailableForLesson'), { statusCode: 409 });
   }
-  await ensureTeacherCourseAssignment(teacher, options.courseId);
+  if (options.enforceAssignments !== false) await ensureTeacherCourseAssignment(teacher, options.courseId);
   return teacher;
 };
 

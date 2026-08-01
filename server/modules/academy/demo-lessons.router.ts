@@ -3,6 +3,7 @@ import {
   demoLessonAttendanceSchema,
   demoLessonCancelSchema,
   demoLessonMutationSchema,
+  demoLessonResourceAvailabilitySchema,
   type DemoLessonMutation,
 } from '@shared/contracts/demo-lessons';
 import { hasLeadershipAccess } from '@shared/academy';
@@ -29,6 +30,7 @@ import {
   createStageHistory,
   handleLeadStatusEffects,
 } from './academy-leads';
+import { getDemoResourceAvailability } from './demo-resource-availability';
 
 const getDemoLesson = async (id: number) => queryOne(
   `SELECT demo.*,
@@ -165,6 +167,20 @@ const assertParticipantAvailability = async (
   }
 };
 
+const hasParticipantConflict = async (
+  leadIds: number[],
+  startsAt: Date,
+  durationMinutes: number,
+) => {
+  try {
+    await assertParticipantAvailability(leadIds, startsAt, durationMinutes);
+    return false;
+  } catch (error: any) {
+    if (error?.message === 'demoParticipantBusy') return true;
+    throw error;
+  }
+};
+
 const assertDemoResources = async (
   input: DemoLessonMutation,
   excludeDemoLessonId?: number | null,
@@ -188,6 +204,9 @@ const assertDemoResources = async (
     scheduledAt: startsAt,
     durationMinutes: input.durationMinutes,
     excludeDemoLessonId,
+    enforceAssignments: false,
+    enforceAvailability: false,
+    conflictError: 'demoTeacherBusy',
   });
 
   let room: Row | null = null;
@@ -289,6 +308,36 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       logger.error('Failed to fetch demo lessons', { error });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, 'failedToLoadDemoLessons'),
+      });
+    }
+  });
+
+  router.post('/demo-lessons/resource-availability', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const parsed = demoLessonResourceAvailabilitySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'invalidData' });
+    }
+    try {
+      if (parsed.data.participantIds.length > 0) {
+        await loadMutableLeads(req, parsed.data.participantIds);
+      }
+      const startsAt = new Date(parsed.data.scheduledAt);
+      const [resources, participantConflict] = await Promise.all([
+        getDemoResourceAvailability(parsed.data),
+        parsed.data.participantIds.length > 0
+          ? hasParticipantConflict(
+            parsed.data.participantIds,
+            startsAt,
+            parsed.data.durationMinutes,
+          )
+          : Promise.resolve(false),
+      ]);
+      res.json({ ...resources, participantConflict });
+    } catch (error: any) {
+      logger.error('Failed to check demo resource availability', { error });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToCheckDemoAvailability'),
       });
     }
   });

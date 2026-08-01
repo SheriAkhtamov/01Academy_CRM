@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { demoLessonMutationSchema } from '../shared/contracts/demo-lessons';
+import {
+  demoLessonMutationSchema,
+  demoLessonResourceAvailabilitySchema,
+} from '../shared/contracts/demo-lessons';
 import { buildSalesDemoScheduleEvents } from '../client/src/lib/salesSchedule';
 
 const migration = readFileSync(
@@ -21,6 +24,10 @@ const routes = readFileSync(
 );
 const scheduling = readFileSync(
   new URL('../server/modules/academy/academy-scheduling.ts', import.meta.url),
+  'utf8',
+);
+const resourceAvailability = readFileSync(
+  new URL('../server/modules/academy/demo-resource-availability.ts', import.meta.url),
   'utf8',
 );
 const createDialog = readFileSync(
@@ -73,6 +80,14 @@ describe('demo lessons', () => {
     });
     expect(duplicate.success).toBe(false);
     expect(duplicate.error?.issues[0]?.message).toBe('duplicateDemoParticipants');
+    expect(demoLessonResourceAvailabilitySchema.safeParse({
+      courseId: 1,
+      schoolId: 2,
+      scheduledAt: validMutation.scheduledAt,
+      durationMinutes: 45,
+      format: 'offline',
+      participantIds: [],
+    }).success).toBe(true);
   });
 
   it('rechecks all resources under the academy scheduling lock', () => {
@@ -81,12 +96,18 @@ describe('demo lessons', () => {
     expect(routes).toContain('assertLessonRoomAvailable');
     expect(routes).toContain('assertParticipantAvailability');
     expect(routes).toContain("router.post('/demo-lessons'");
+    expect(routes).toContain("router.post('/demo-lessons/resource-availability'");
     expect(routes).toContain("router.post('/demo-lessons/:id/cancel'");
     expect(routes).toContain("router.post('/demo-lessons/:id/attendance'");
     expect(scheduling).toContain('FROM academy_demo_lessons');
     expect(scheduling).toContain('Number(lesson.roomId) !== roomId');
     expect(routes).toContain('legacyConflict');
     expect(scheduling).toContain('participantBusyByLegacyDemo');
+    expect(resourceAvailability).toContain('FROM academy_lessons');
+    expect(resourceAvailability).toContain('FROM academy_demo_lessons');
+    expect(resourceAvailability).toContain("status IN ('open', 'in_progress')");
+    expect(resourceAvailability).toContain('busyTeacherIds');
+    expect(resourceAvailability).toContain('busyRoomIds');
   });
 
   it('renders demo events alongside lessons in the weekly calendar', () => {
@@ -114,7 +135,11 @@ describe('demo lessons', () => {
 
   it('keeps creation and cancellation inside explicit modal flows', () => {
     expect(createDialog).toContain('<Dialog');
-    expect(createDialog).toContain('<AvailabilityCalendar');
+    expect(createDialog).toContain('id="demo-teacher"');
+    expect(createDialog).toContain('id="demo-date"');
+    expect(createDialog).toContain('id="demo-time"');
+    expect(createDialog).toContain('id="demo-room"');
+    expect(createDialog).toContain('resourceAvailability');
     expect(createDialog).toContain("t('bookDemoLesson')");
     expect(detailsDialog).toContain('<AlertDialog');
     expect(detailsDialog).toContain("t('cancelDemoLessonTitle')");

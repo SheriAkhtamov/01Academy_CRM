@@ -1,6 +1,7 @@
 import type {
   DemoLessonAttendance,
   DemoLessonMutation,
+  DemoLessonResourceAvailabilityRequest,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -54,9 +55,30 @@ export interface AvailabilityResponse {
   slots: AvailabilitySlot[];
 }
 
+export interface DemoResourceAvailability {
+  teachers: Array<{
+    id: number;
+    fullName: string;
+    status: string;
+    available: boolean;
+    reason: 'busy' | 'inactive' | null;
+  }>;
+  rooms: Array<{
+    id: number;
+    name: string;
+    schoolId: number;
+    capacity: number;
+    isActive: boolean;
+    available: boolean;
+    reason: 'busy' | 'inactive' | 'too_small' | null;
+  }>;
+  participantConflict: boolean;
+}
+
 export const demoLessonQueryKeys = {
   all: ['/api/academy/demo-lessons'] as const,
   availability: ['/api/academy/availability/slots'] as const,
+  resourceAvailability: ['/api/academy/demo-lessons/resource-availability'] as const,
 };
 
 export const demoLessonsApi = {
@@ -91,6 +113,9 @@ export const demoLessonsApi = {
   },
   create: (payload: DemoLessonMutation) => (
     apiRequest('POST', '/api/academy/demo-lessons', payload) as Promise<DemoLesson>
+  ),
+  resourceAvailability: (payload: DemoLessonResourceAvailabilityRequest) => (
+    apiRequest('POST', '/api/academy/demo-lessons/resource-availability', payload) as Promise<DemoResourceAvailability>
   ),
   cancel: (id: number, reason: string) => (
     apiRequest('POST', `/api/academy/demo-lessons/${id}/cancel`, { reason }) as Promise<DemoLesson>

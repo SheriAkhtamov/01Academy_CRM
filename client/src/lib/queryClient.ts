@@ -35,6 +35,7 @@ const localizeApiErrorMessage = (message: string, status: number) => {
 
   const demoLessonErrors = {
     failedToLoadDemoLessons: i18n.t("failedToLoadDemoLessons"),
+    failedToCheckDemoAvailability: i18n.t("failedToCheckDemoAvailability"),
     failedToCreateDemoLesson: i18n.t("failedToCreateDemoLesson"),
     failedToCancelDemoLesson: i18n.t("failedToCancelDemoLesson"),
     failedToUpdateDemoAttendance: i18n.t("failedToUpdateDemoAttendance"),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import {
   closestCorners,
   DndContext,
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowRight,
+  MessageSquareText,
   MoreHorizontal,
   Phone,
   Send,
@@ -37,6 +38,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { leadDealAmount } from '@/lib/pipelineFilters';
 import { leadTagNameKey, type LeadTagView } from '@shared/lead-tags';
 import {
   finishOptimisticChange,
@@ -46,6 +48,12 @@ import {
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
+
+/**
+ * A pointer drag ends with a `click` on the card that started it. Without this
+ * grace window every successful drop would also open the lead sheet.
+ */
+const CLICK_AFTER_DRAG_MS = 250;
 import {
   DemoLessonEnrollmentDialog,
   type DemoLessonEnrollmentLead,
@@ -86,9 +94,11 @@ interface KanbanBoardProps {
   onQuickAction?: (action: 'qualify' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
   onArchiveLead?: (lead: KanbanLead) => void;
   onLeadClick?: (lead: KanbanLead) => void;
+  money: (value: number | string | null | undefined) => string;
   isPending?: boolean;
   showPaymentAction?: boolean;
   showManager?: boolean;
+  emptyState?: ReactNode;
 }
 
 const reconcileKanbanLeads = (
@@ -108,6 +118,7 @@ interface LeadCardContentProps {
   onQuickAction?: KanbanBoardProps['onQuickAction'];
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
   onEnrollDemo?: (lead: KanbanLead) => void;
+  money: KanbanBoardProps['money'];
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
@@ -120,6 +131,7 @@ function LeadCardContent({
   onQuickAction,
   onArchiveLead,
   onEnrollDemo,
+  money,
   isPending,
   showPaymentAction,
   showManager,
@@ -130,6 +142,8 @@ function LeadCardContent({
   const canCall = Boolean(visiblePhone);
   const canMessage = Boolean(leadMessageTarget(lead));
   const canArchive = currentStatus.code !== 'paid';
+  const amount = leadDealAmount(lead);
+  const comment = lead.comment?.trim();
   const stopCardInteraction = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
@@ -138,7 +152,10 @@ function LeadCardContent({
     <>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
+          <p
+            className="truncate text-sm font-medium text-foreground group-hover:text-primary"
+            title={lead.contactName}
+          >
             {lead.contactName}
           </p>
           {visiblePhone ? <div className="truncate text-xs text-muted-foreground">{visiblePhone}</div> : null}
@@ -149,14 +166,14 @@ function LeadCardContent({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 opacity-50 transition-opacity group-hover:opacity-100"
+                aria-label={t('actions')}
+                className="size-7 opacity-50 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 onPointerDown={(event) => event.stopPropagation()}
                 onMouseDown={(event) => event.stopPropagation()}
                 onTouchStart={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               >
                 <MoreHorizontal />
-                <span className="sr-only">{t('actions')}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -190,6 +207,10 @@ function LeadCardContent({
         </div>
       </div>
 
+      {amount > 0 ? (
+        <p className="mt-1.5 text-sm font-semibold tabular-nums text-foreground/90">{money(amount)}</p>
+      ) : null}
+
       <div className="mt-2 flex flex-wrap gap-1">
         {lead.courseName ? <Badge variant="secondary">{lead.courseName}</Badge> : null}
         {lead.sourceName ? <Badge variant="outline">{lead.sourceName}</Badge> : null}
@@ -199,6 +220,25 @@ function LeadCardContent({
         {lead.studentAge ? <Badge variant="outline">{lead.studentAge} {t('years')}</Badge> : null}
         {showManager && lead.managerName ? <Badge variant="outline">{t('managerLabel')} {lead.managerName}</Badge> : null}
       </div>
+
+      {comment ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+              <span className="sr-only">{t('comment')}: </span>
+              <MessageSquareText className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+              <span className="line-clamp-2 break-words">{comment}</span>
+            </p>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            align="start"
+            className="max-w-80 whitespace-pre-wrap break-words leading-relaxed"
+          >
+            {comment}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
 
       <div
         className="mt-3 flex flex-wrap gap-1"
@@ -247,11 +287,11 @@ function LeadCardContent({
 
 interface DraggableLeadCardProps extends LeadCardContentProps {
   onLeadClick?: KanbanBoardProps['onLeadClick'];
+  wasJustDragged: () => boolean;
 }
 
 function DraggableLeadCard(props: DraggableLeadCardProps) {
-  const { lead, currentStatus, isPending, t, onLeadClick } = props;
-  const comment = lead.comment?.trim();
+  const { lead, currentStatus, t, onLeadClick, wasJustDragged } = props;
   const {
     attributes,
     listeners,
@@ -260,10 +300,14 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
   } = useDraggable({
     id: `lead-${lead.id}`,
     data: { leadId: lead.id, statusCode: currentStatus.code },
-    disabled: isPending,
   });
 
-  const card = (
+  const openLead = () => {
+    if (wasJustDragged()) return;
+    onLeadClick?.(lead);
+  };
+
+  return (
     <div
       ref={setNodeRef}
       className={cn(
@@ -273,29 +317,18 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       aria-label={`${lead.contactName}. ${t('openLead')}`}
       {...attributes}
       {...listeners}
-      onClick={() => onLeadClick?.(lead)}
+      onClick={openLead}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') onLeadClick?.(lead);
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          openLead();
+          return;
+        }
         listeners?.onKeyDown?.(event);
       }}
     >
       <LeadCardContent {...props} />
     </div>
-  );
-
-  if (!comment) return card;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{card}</TooltipTrigger>
-      <TooltipContent
-        side="top"
-        align="start"
-        className="max-w-80 whitespace-pre-wrap break-words leading-relaxed"
-      >
-        {comment}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -305,11 +338,13 @@ interface KanbanColumnProps {
   onQuickAction?: KanbanBoardProps['onQuickAction'];
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
   onEnrollDemo?: LeadCardContentProps['onEnrollDemo'];
+  money: KanbanBoardProps['money'];
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
   t: (key: TranslationKey) => string;
   onLeadClick?: KanbanBoardProps['onLeadClick'];
+  wasJustDragged: () => boolean;
 }
 
 function KanbanColumn({
@@ -318,28 +353,28 @@ function KanbanColumn({
   onQuickAction,
   onArchiveLead,
   onEnrollDemo,
+  money,
   isPending,
   showPaymentAction,
   showManager,
   t,
   onLeadClick,
+  wasJustDragged,
 }: KanbanColumnProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: `status-${status.code}`,
     data: { statusCode: status.code },
-    disabled: isPending,
   });
 
-  const totalSum = useMemo(() => {
-    return leads.reduce((sum, lead) => {
-      const val = Number(lead.offerPriceUzs || lead.expectedPaymentUzs || 0);
-      return sum + (Number.isFinite(val) ? val : 0);
-    }, 0);
-  }, [leads]);
+  const totalSum = useMemo(
+    () => leads.reduce((sum, lead) => sum + leadDealAmount(lead), 0),
+    [leads],
+  );
 
   return (
-    <div
+    <section
       ref={setNodeRef}
+      aria-label={`${status.name} — ${leads.length}`}
       className={cn(
         'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200',
         isOver && 'border-primary ring-2 ring-primary/40 bg-primary/5 shadow-lg scale-[1.005]',
@@ -352,15 +387,17 @@ function KanbanColumn({
               className="size-2.5 shrink-0 rounded-full"
               style={{ backgroundColor: status.color }}
             />
-            <span className="truncate text-sm font-semibold text-foreground">{status.name}</span>
+            <span className="truncate text-sm font-semibold text-foreground" title={status.name}>
+              {status.name}
+            </span>
           </div>
           {totalSum > 0 ? (
-            <span className="text-[11px] font-medium text-muted-foreground/80 pl-4">
-              {new Intl.NumberFormat('ru-RU').format(totalSum)} {t('currencyUzs')}
+            <span className="pl-4 text-[11px] font-medium tabular-nums text-muted-foreground/80">
+              {money(totalSum)}
             </span>
           ) : null}
         </div>
-        <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-2 text-xs font-semibold text-muted-foreground shadow-2xs">
+        <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-2 text-xs font-semibold tabular-nums text-muted-foreground shadow-2xs">
           {leads.length}
         </span>
       </div>
@@ -374,23 +411,32 @@ function KanbanColumn({
             onQuickAction={onQuickAction}
             onArchiveLead={onArchiveLead}
             onEnrollDemo={onEnrollDemo}
+            money={money}
             isPending={isPending}
             showPaymentAction={showPaymentAction}
             showManager={showManager}
             t={t}
             onLeadClick={onLeadClick}
+            wasJustDragged={wasJustDragged}
           />
         ))}
         {leads.length === 0 ? (
-          <div className="flex min-h-56 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/45 px-5 py-8 text-center">
+          <div
+            className={cn(
+              'flex min-h-56 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/45 px-5 py-8 text-center transition-colors',
+              isOver && 'border-primary/60 bg-primary/5',
+            )}
+          >
             <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-muted">
               <ArrowRight className="text-muted-foreground/40" />
             </div>
-            <p className="text-xs text-muted-foreground">{t('noLeadsInStage')}</p>
+            <p className="text-xs text-muted-foreground">
+              {isOver ? t('pipelineDropHere') : t('noLeadsInStage')}
+            </p>
           </div>
         ) : null}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -401,9 +447,11 @@ export function KanbanBoard({
   onQuickAction,
   onArchiveLead,
   onLeadClick,
+  money,
   isPending,
   showPaymentAction = true,
   showManager = false,
+  emptyState,
 }: KanbanBoardProps) {
   const { t } = useTranslation();
   const [boardLeads, setBoardLeads] = useState(leads);
@@ -412,6 +460,7 @@ export function KanbanBoard({
   const latestLeadsRef = useRef(leads);
   const pendingMovesRef = useRef(new Map<number, OptimisticChange<string>>());
   const nextMoveTokenRef = useRef(0);
+  const dragEndedAtRef = useRef(0);
   latestLeadsRef.current = leads;
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -439,6 +488,11 @@ export function KanbanBoard({
   const activeLead = activeLeadId === null
     ? null
     : boardLeads.find((lead) => lead.id === activeLeadId) ?? null;
+
+  const wasJustDragged = useCallback(
+    () => Date.now() - dragEndedAtRef.current < CLICK_AFTER_DRAG_MS,
+    [],
+  );
 
   const moveLead = useCallback((leadId: number, statusCode: string) => {
     const lead = boardLeads.find((item) => item.id === leadId);
@@ -480,15 +534,25 @@ export function KanbanBoard({
     setActiveLeadId(Number(event.active.data.current?.leadId));
   }, []);
 
+  const handleDragCancel = useCallback(() => {
+    dragEndedAtRef.current = Date.now();
+    setActiveLeadId(null);
+  }, []);
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const leadId = Number(event.active.data.current?.leadId);
     const statusCode = String(event.over?.data.current?.statusCode ?? '');
+    dragEndedAtRef.current = Date.now();
     setActiveLeadId(null);
 
     if (Number.isFinite(leadId) && statusCode) {
       moveLead(leadId, statusCode);
     }
   }, [moveLead]);
+
+  if (leads.length === 0 && emptyState) {
+    return <>{emptyState}</>;
+  }
 
   return (
     <div
@@ -499,7 +563,7 @@ export function KanbanBoard({
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
-        onDragCancel={() => setActiveLeadId(null)}
+        onDragCancel={handleDragCancel}
         onDragEnd={handleDragEnd}
       >
         <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2">
@@ -512,11 +576,13 @@ export function KanbanBoard({
                 onQuickAction={onQuickAction}
                 onArchiveLead={onArchiveLead}
                 onEnrollDemo={setDemoEnrollmentLead}
+                money={money}
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
                 t={t}
                 onLeadClick={onLeadClick}
+                wasJustDragged={wasJustDragged}
               />
             ))}
           </div>
@@ -534,6 +600,7 @@ export function KanbanBoard({
                 onQuickAction={undefined}
                 onArchiveLead={undefined}
                 onEnrollDemo={undefined}
+                money={money}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
                 t={t}

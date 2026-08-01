@@ -14,9 +14,21 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
-import { PhoneInput } from '@/components/ux/FormattedInputs';
+import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
 import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
+import { LocalizedFormMessage } from '@/components/ux/lead/LocalizedFormMessage';
+import {
+  LeadPaymentTab,
+  paymentSchema,
+  paymentSummaryLine,
+  type PaymentFormValues,
+} from '@/components/ux/lead/LeadPaymentTab';
+import { LeadTasksTab, taskSchema, type TaskFormValues } from '@/components/ux/lead/LeadTasksTab';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
@@ -44,7 +56,6 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  useFormField,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
@@ -288,44 +299,7 @@ const leadSchema = z.object({
   expectedPaymentUzs: optionalNumberString,
 });
 
-const paymentSchema = z.object({
-  studentId: z.string().min(1, 'studentSelectionRequired'),
-  amountUzs: z.string().refine((value) => Number(value) > 0, 'fillRequiredFields'),
-  method: z.string().min(1, 'fillRequiredFields'),
-  type: z.string().min(1, 'fillRequiredFields'),
-  discount: z.string().min(1, 'fillRequiredFields'),
-  paidUntil: z.string(),
-  comment: z.string(),
-});
-
-const paymentDiscountTranslationKeys = {
-  promo_20: 'paymentDiscountPromo20',
-  family_15: 'paymentDiscountFamily15',
-  referral_15: 'paymentDiscountReferral15',
-  none: 'paymentDiscountNone',
-} as const satisfies Record<(typeof PAYMENT_DISCOUNTS)[number], TranslationKey>;
-
-const paymentMethodTranslationKeys = {
-  cash: 'paymentMethodCash',
-  transfer: 'paymentMethodTransfer',
-  card: 'paymentMethodCard',
-} as const satisfies Record<(typeof PAYMENT_METHODS)[number], TranslationKey>;
-
-const paymentTypeTranslationKeys = {
-  full: 'paymentTypeFull',
-  installment_1_2: 'paymentTypeInstallmentOne',
-  installment_2_2: 'paymentTypeInstallmentTwo',
-} as const satisfies Record<(typeof PAYMENT_TYPES)[number], TranslationKey>;
-
-const taskSchema = z.object({
-  title: z.string().trim().min(1, 'fillRequiredFields'),
-  deadlineAt: z.string(),
-  description: z.string(),
-});
-
 type LeadFormValues = z.infer<typeof leadSchema>;
-type PaymentFormValues = z.infer<typeof paymentSchema>;
-type TaskFormValues = z.infer<typeof taskSchema>;
 
 const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   contactName: lead.contactName ?? '',
@@ -353,18 +327,13 @@ const nextPaymentDate = (payments?: LeadDetails['payments']) => {
   return toInputDate(new Date(baseTimestamp + 30 * 24 * 60 * 60 * 1000).toISOString());
 };
 
-function LocalizedFormMessage() {
-  const { t } = useTranslation();
-  const { error, formMessageId } = useFormField();
-  if (!error?.message) return null;
-  const message = String(error.message);
-  const key = Object.prototype.hasOwnProperty.call(translations, message)
-    ? message as TranslationKey
-    : 'invalidData';
+/** Small count next to a tab label so managers see where the data is without clicking. */
+function TabCount({ value }: { value: number }) {
+  if (value <= 0) return null;
   return (
-    <p id={formMessageId} className="text-sm font-medium text-destructive">
-      {t(key)}
-    </p>
+    <span className="rounded-full bg-muted px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground">
+      {value}
+    </span>
   );
 }
 
@@ -965,11 +934,13 @@ export function LeadDetailSheet({
 
   const assignLead = useMutation({
     mutationFn: (managerId: number) => leadsApi.assign(leadId!, { managerId }),
+    // The sheet stays open: reassigning is part of working a deal, and closing
+    // it used to throw away whatever the manager was doing on the other tabs.
     onSuccess: async () => {
       setPendingManagerId(null);
       toast({ title: t('leadTransferred') });
+      await leadQuery.refetch();
       onChanged();
-      onOpenChange(false);
     },
     onError: (error: Error) => {
       setPendingManagerId(null);
@@ -1062,17 +1033,34 @@ export function LeadDetailSheet({
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
+  const isPaidLead = lead?.statusCode === 'paid';
+  const isDealDirty = leadForm.formState.isDirty;
+
+  const activityCount = lead
+    ? (lead.comments?.length ?? 0)
+      + (lead.history?.length ?? 0)
+      + (lead.communications?.length ?? 0)
+      + (lead.calls?.length ?? 0)
+      + (lead.assignmentHistory?.length ?? 0)
+      + (lead.payments?.length ?? 0)
+    : 0;
+  const openTaskCount = (lead?.tasks ?? []).filter((task) => task.status !== 'done').length;
+
+  // Editing the deal is the one destructive-on-close action in this sheet, so
+  // closing while the form is dirty asks before throwing the edits away.
+  const closeGuard = useUnsavedChangesGuard({
+    open,
+    isDirty: isDealDirty,
+    onOpenChange: (nextOpen) => {
+      if (!nextOpen) setTagDropdownOpen(false);
+      onOpenChange(nextOpen);
+    },
+  });
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) setTagDropdownOpen(false);
-        onOpenChange(nextOpen);
-      }}
-    >
+    <Sheet open={open} onOpenChange={closeGuard.handleOpenChange}>
       <SheetContent
-        className="w-full overflow-y-auto p-0 sm:max-w-3xl"
+        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         onEscapeKeyDown={(event) => {
           if (tagDropdownOpen) event.preventDefault();
         }}
@@ -1102,125 +1090,140 @@ export function LeadDetailSheet({
           </div>
         ) : (
           <>
-            <SheetHeader className="border-b border-border bg-muted/30 p-6 pr-14">
-              <div className="flex items-start gap-4">
-                <Avatar className="size-12 border border-border bg-background">
+            <SheetHeader className="shrink-0 space-y-3 border-b border-border bg-muted/30 px-6 pb-4 pr-14 pt-5">
+              <div className="flex items-start gap-3">
+                <Avatar className="size-11 border border-border bg-background">
                   <AvatarFallback>{getInitials(lead.contactName)}</AvatarFallback>
                 </Avatar>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <SheetTitle className="truncate text-xl">{lead.contactName}</SheetTitle>
-                    <Badge variant={lead.statusCode === 'paid' ? 'success' : 'secondary'}>
+                    <SheetTitle className="truncate text-lg">{lead.contactName}</SheetTitle>
+                    <Badge variant={isPaidLead ? 'success' : 'secondary'}>
                       {leadStatusName(lead.statusCode)}
                     </Badge>
                   </div>
                   <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
 
-                  {/* Meta chips: only meaningful info shown, faded dots removed */}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {/* One wrapped meta row keeps the header short on laptops and phones. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                     {visiblePhoneNumbers.length > 0 ? (
                       <span className="inline-flex items-center gap-1">
-                        <Phone className="size-3.5" />
+                        <Phone className="size-3.5" aria-hidden="true" />
                         {visiblePhoneNumbers.join(', ')}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 italic">{t('leadSheetNoContactInfo')}</span>
+                      <span className="italic">{t('leadSheetNoContactInfo')}</span>
                     )}
                     {(lead.students ?? []).length > 0 ? (
                       <span className="inline-flex items-center gap-1">
-                        <GraduationCap className="size-3.5" />
+                        <GraduationCap className="size-3.5" aria-hidden="true" />
                         {lead.students?.length ?? 0} {t('studentsCount')}
                       </span>
                     ) : null}
-                  </div>
-
-                  {/* Manager line — single clean row */}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
-                      <UserRoundCog className="size-3.5" />
-                      <span className="text-foreground/80">{t('manager')}:</span>
-                      <span>{lead.managerName || t('notAssigned')}</span>
+                      <UserRoundCog className="size-3.5" aria-hidden="true" />
+                      {lead.managerName || t('notAssigned')}
                     </span>
                     {lead.firstContactAt ? (
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="size-3.5" />
-                        <span className="text-foreground/80">{t('leadStatusFirstContact')}:</span>
+                      <span className="inline-flex items-center gap-1" title={t('leadStatusFirstContact')}>
+                        <CalendarClock className="size-3.5" aria-hidden="true" />
                         {dateTime(lead.firstContactAt)}
                       </span>
                     ) : null}
-                    <span className="inline-flex items-center gap-1">
-                      <Clock3 className="size-3.5" />
-                      <span className="text-foreground/80">{t('leadSheetCreated')}:</span>
+                    <span className="inline-flex items-center gap-1" title={t('leadSheetCreated')}>
+                      <Clock3 className="size-3.5" aria-hidden="true" />
                       {dateTime(lead.createdAt)}
                     </span>
                   </div>
-
-                  <LeadTagsEditor
-                    leadId={lead.id}
-                    automaticTag={lead.sourceName}
-                    tags={lead.tags}
-                    onChanged={onChanged}
-                    onDropdownOpenChange={setTagDropdownOpen}
-                  />
-
-                  {/* Quick actions — single prominent CTA + secondary outline buttons */}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <LeadChannelLinks channels={lead.channels} leadId={lead.id} />
-                    {primaryPhone ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={onlinePbxCall.isPending}
-                        onClick={() => onlinePbxCall.startCall(primaryPhone)}
-                      >
-                        {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
-                          <Loader2 className="animate-spin" data-icon="inline-start" />
-                        ) : (
-                          <Phone data-icon="inline-start" />
-                        )}
-                        {t('callShort')}
-                      </Button>
-                    ) : null}
-                    {messageTarget ? (
-                      <Button asChild size="sm" variant="outline">
-                        <a
-                          href={messageTarget.href}
-                          target={messageTarget.external ? '_blank' : undefined}
-                          rel={messageTarget.external ? 'noreferrer' : undefined}
-                        >
-                          <MessageSquare data-icon="inline-start" />
-                          {t('writeShort')}
-                          {messageTarget.external ? <ExternalLink data-icon="inline-end" /> : null}
-                        </a>
-                      </Button>
-                    ) : null}
-                    {!lead.isArchived && lead.statusCode !== 'paid' ? (
-                      <Button type="button" size="sm" variant="outline" onClick={() => setCreateDemoOpen(true)}>
-                        <CalendarPlus2 data-icon="inline-start" />
-                        {t('bookDemoLesson')}
-                      </Button>
-                    ) : null}
-                    <Button size="sm" onClick={() => setActiveTab('payment')}>
-                      <CreditCard data-icon="inline-start" />
-                      {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
-                    </Button>
-                  </div>
                 </div>
+              </div>
+
+              <LeadTagsEditor
+                leadId={lead.id}
+                automaticTag={lead.sourceName}
+                tags={lead.tags}
+                onChanged={onChanged}
+                onDropdownOpenChange={setTagDropdownOpen}
+              />
+
+              {/* Quick actions — what a manager does from any tab. */}
+              <div className="flex flex-wrap gap-2">
+                <LeadChannelLinks channels={lead.channels} leadId={lead.id} />
+                {primaryPhone ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={onlinePbxCall.isPending}
+                    onClick={() => onlinePbxCall.startCall(primaryPhone)}
+                  >
+                    {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ) : (
+                      <Phone data-icon="inline-start" />
+                    )}
+                    {t('callShort')}
+                  </Button>
+                ) : null}
+                {messageTarget ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a
+                      href={messageTarget.href}
+                      target={messageTarget.external ? '_blank' : undefined}
+                      rel={messageTarget.external ? 'noreferrer' : undefined}
+                    >
+                      <MessageSquare data-icon="inline-start" />
+                      {t('writeShort')}
+                      {messageTarget.external ? <ExternalLink data-icon="inline-end" /> : null}
+                    </a>
+                  </Button>
+                ) : null}
+                {!lead.isArchived && !isPaidLead ? (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setCreateDemoOpen(true)}>
+                    <CalendarPlus2 data-icon="inline-start" />
+                    {t('bookDemoLesson')}
+                  </Button>
+                ) : null}
+                <Button size="sm" onClick={() => setActiveTab('payment')}>
+                  <CreditCard data-icon="inline-start" />
+                  {isPaidLead ? t('recordAnotherPayment') : t('payment')}
+                </Button>
               </div>
             </SheetHeader>
 
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as LeadSheetTab)}>
-              <div className="sticky top-0 z-10 border-b border-border bg-background px-6 py-3">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as LeadSheetTab)}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="shrink-0 border-b border-border bg-background px-6 py-3">
                 <TabsList className="flex h-auto w-full justify-start overflow-x-auto">
-                  <TabsTrigger value="deal" className="shrink-0 gap-1.5"><UserRound data-icon="inline-start" />{t('dealTab')}</TabsTrigger>
-                  <TabsTrigger value="activity" className="shrink-0 gap-1.5"><History data-icon="inline-start" />{t('activityTab')}</TabsTrigger>
-                  <TabsTrigger value="payment" className="shrink-0 gap-1.5"><CreditCard data-icon="inline-start" />{t('payment')}</TabsTrigger>
-                  <TabsTrigger value="tasks" className="shrink-0 gap-1.5"><ClipboardList data-icon="inline-start" />{t('leadTasks')}</TabsTrigger>
+                  <TabsTrigger value="deal" className="shrink-0 gap-1.5">
+                    <UserRound data-icon="inline-start" />
+                    {t('dealTab')}
+                    {isDealDirty ? (
+                      <span className="size-1.5 rounded-full bg-primary" aria-label={t('unsavedChanges')} />
+                    ) : null}
+                  </TabsTrigger>
+                  <TabsTrigger value="activity" className="shrink-0 gap-1.5">
+                    <History data-icon="inline-start" />
+                    {t('activityTab')}
+                    <TabCount value={activityCount} />
+                  </TabsTrigger>
+                  <TabsTrigger value="payment" className="shrink-0 gap-1.5">
+                    <CreditCard data-icon="inline-start" />
+                    {t('payment')}
+                    <TabCount value={lead.payments?.length ?? 0} />
+                  </TabsTrigger>
+                  <TabsTrigger value="tasks" className="shrink-0 gap-1.5">
+                    <ClipboardList data-icon="inline-start" />
+                    {t('leadTasks')}
+                    <TabCount value={openTaskCount} />
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
-              <div className="p-6">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
                 <TabsContent value="deal" className="mt-0 space-y-5">
                   <Form {...leadForm}>
                     <form className="flex flex-col gap-5" onSubmit={leadForm.handleSubmit((values) => updateLead.mutate(values))}>
@@ -1250,12 +1253,19 @@ export function LeadDetailSheet({
                                 key={index}
                                 control={leadForm.control}
                                 name={`phoneNumbers.${index}`}
-                                render={({ field }) => (
+                                render={({ field, fieldState }) => (
                                   <FormItem>
                                     <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
                                     <div className="flex gap-2">
                                       <FormControl>
-                                        <PhoneInput value={field.value} onValueChange={field.onChange} />
+                                        <PhoneInput
+                                          ref={field.ref}
+                                          name={field.name}
+                                          value={field.value}
+                                          onBlur={field.onBlur}
+                                          onValueChange={field.onChange}
+                                          aria-invalid={fieldState.invalid}
+                                        />
                                       </FormControl>
                                       {phoneValues.length > 1 ? (
                                         <Button
@@ -1416,18 +1426,22 @@ export function LeadDetailSheet({
                               <FormItem>
                                 <FormLabel>{t('status')}</FormLabel>
                                 <Select value={field.value} onValueChange={(value) => {
+                                  // "Paid" is never set by hand — it is the result of
+                                  // recording a payment, so say that instead of silently
+                                  // jumping to another tab.
                                   if (value === 'paid') {
                                     setActiveTab('payment');
+                                    toast({ title: t('leadStatusPaidNeedsPayment') });
                                     return;
                                   }
                                   field.onChange(value);
-                                }} disabled={lead.statusCode === 'paid'}>
+                                }} disabled={isPaidLead}>
                                   <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                                   <SelectContent>
                                     <SelectGroup>
                                       {(statuses.length > 0 ? statuses : LEAD_STATUSES).filter((status) => (
                                         (!('isActive' in status) || status.isActive !== false) && (
-                                          lead.statusCode === 'paid'
+                                          isPaidLead
                                             ? status.code === 'paid'
                                             : status.code !== 'paid'
                                         )
@@ -1467,7 +1481,16 @@ export function LeadDetailSheet({
                             render={({ field, fieldState }) => (
                               <FormItem>
                                 <FormLabel>{t('expectedPayment')}</FormLabel>
-                                <FormControl><Input {...field} type="number" min="0" aria-invalid={fieldState.invalid} /></FormControl>
+                                <FormControl>
+                                  <CurrencyInput
+                                    ref={field.ref}
+                                    name={field.name}
+                                    value={field.value}
+                                    onBlur={field.onBlur}
+                                    onValueChange={field.onChange}
+                                    aria-invalid={fieldState.invalid}
+                                  />
+                                </FormControl>
                                 <LocalizedFormMessage />
                               </FormItem>
                             )}
@@ -1475,8 +1498,22 @@ export function LeadDetailSheet({
                         </CardContent>
                       </Card>
 
-                      <div className="flex justify-end">
-                        <Button type="submit" disabled={updateLead.isPending}>
+                      {/* Save stays reachable without scrolling back through the form. */}
+                      <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
+                        {isDealDirty ? (
+                          <p className="mr-auto text-sm text-muted-foreground">{t('unsavedChanges')}</p>
+                        ) : null}
+                        {isDealDirty ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={updateLead.isPending}
+                            onClick={() => leadForm.reset(leadToFormValues(lead))}
+                          >
+                            {t('reset')}
+                          </Button>
+                        ) : null}
+                        <Button type="submit" disabled={updateLead.isPending || !isDealDirty}>
                           <Save data-icon="inline-start" />
                           {updateLead.isPending ? t('saving') : t('saveChanges')}
                         </Button>
@@ -1509,305 +1546,29 @@ export function LeadDetailSheet({
                 </TabsContent>
 
                 <TabsContent value="payment" className="mt-0">
-                  <div className="flex flex-col gap-5">
-                    {lead.statusCode === 'paid' ? (
-                      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
-                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
-                        <span className="text-foreground/80">{t('recurringPaymentHint')}</span>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{t('leadSheetPaymentFormHint')}</p>
-                    )}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>
-                          {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment')}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {(lead.students ?? []).length === 0 ? (
-                          <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-8 text-center">
-                            <GraduationCap className="mb-3 size-8 text-muted-foreground" />
-                            <p className="font-medium">{t('studentRequiredForPayment')}</p>
-                            <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('studentRequiredForPaymentHint')}</p>
-                            <Button type="button" className="mt-4" onClick={() => setCreateStudentOpen(true)}>
-                              <Plus data-icon="inline-start" />
-                              {t('createStudent')}
-                            </Button>
-                          </div>
-                        ) : (
-                          <Form {...paymentForm}>
-                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit((values) => createPayment.mutate(values))}>
-                            <FormField
-                              control={paymentForm.control}
-                              name="studentId"
-                              render={({ field, fieldState }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('paymentStudent')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger aria-invalid={fieldState.invalid}><SelectValue placeholder={t('selectStudent')} /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {lead.students?.map((student) => (
-                                          <SelectItem key={student.id} value={String(student.id)}>
-                                            {student.studentName || `${t('student')} #${student.id}`}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="amountUzs"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{t('amount')}</FormLabel>
-                                  <FormControl><Input {...field} type="number" min="1" aria-invalid={fieldState.invalid} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="method"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('paymentMethod')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {PAYMENT_METHODS.map((method) => (
-                                          <SelectItem key={method} value={method}>
-                                            {t(paymentMethodTranslationKeys[method])}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="type"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('paymentType')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {PAYMENT_TYPES.map((type) => (
-                                          <SelectItem key={type} value={type}>
-                                            {t(paymentTypeTranslationKeys[type])}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="discount"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('discount')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {PAYMENT_DISCOUNTS.map((discount) => (
-                                          <SelectItem key={discount} value={discount}>
-                                            {t(paymentDiscountTranslationKeys[discount])}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="paidUntil"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('paidUntil')}</FormLabel>
-                                  <FormControl><Input {...field} type="date" /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="comment"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('comment')}</FormLabel>
-                                  <FormControl><Textarea {...field} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex flex-col items-end gap-2 md:col-span-2">
-                              <p className="text-right text-xs text-muted-foreground">
-                                {lead.statusCode === 'paid' ? t('recurringPaymentHint') : t('paymentCreatesClientHint')}
-                              </p>
-                              <Button type="submit" disabled={createPayment.isPending}>
-                                <CreditCard data-icon="inline-start" />
-                                {createPayment.isPending ? t('saving') : t('confirmPayment')}
-                              </Button>
-                            </div>
-                          </form>
-                          </Form>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader><CardTitle>{t('paymentHistory')}</CardTitle></CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
-                        {(lead.payments ?? []).length === 0 ? (
-                          <p className="py-3 text-sm text-muted-foreground">{t('noPayments')}</p>
-                        ) : (
-                          lead.payments?.map((payment) => (
-                            <div key={payment.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                              <div className="min-w-0">
-                                <p className="font-medium">{money(payment.amountUzs)}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {[payment.method, payment.type, payment.discount].filter(Boolean).join(' · ')}
-                                </p>
-                                {payment.studentName ? <p className="mt-1 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
-                                {payment.comment ? <p className="mt-1 text-xs text-muted-foreground">{payment.comment}</p> : null}
-                              </div>
-                              <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                                <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : 'warning'}>
-                                  {payment.status === 'paid'
-                                    ? t('paymentStatusPaid')
-                                    : payment.status === 'overdue'
-                                      ? t('paymentStatusOverdue')
-                                      : t('paymentStatusPending')}
-                                </Badge>
-                                <p className="text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.createdAt)}</p>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
+                  <LeadPaymentTab
+                    form={paymentForm}
+                    students={lead.students ?? []}
+                    payments={lead.payments ?? []}
+                    isPaidLead={isPaidLead}
+                    isPending={createPayment.isPending}
+                    onSubmit={(values) => createPayment.mutate(values)}
+                    onCreateStudent={() => setCreateStudentOpen(true)}
+                    dateTime={dateTime}
+                    money={money}
+                  />
                 </TabsContent>
 
                 <TabsContent value="tasks" className="mt-0">
-                  <div className="flex flex-col gap-5">
-                    <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{t('leadTasks')}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{t('leadTasksBoardHint')}</p>
-                      </div>
-                      <Button asChild type="button" variant="outline" size="sm" className="shrink-0 bg-background">
-                        <Link href="/tasks">
-                          <ExternalLink data-icon="inline-start" />
-                          {t('taskBoard')}
-                        </Link>
-                      </Button>
-                    </div>
-                    <Card>
-                      <CardHeader><CardTitle>{t('newTask')}</CardTitle></CardHeader>
-                      <CardContent>
-                        <Form {...taskForm}>
-                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={taskForm.handleSubmit((values) => createTask.mutate(values))}>
-                            <FormField
-                              control={taskForm.control}
-                              name="title"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{t('taskTitle')}</FormLabel>
-                                  <FormControl><Input {...field} aria-invalid={fieldState.invalid} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={taskForm.control}
-                              name="deadlineAt"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('deadline')}</FormLabel>
-                                  <FormControl><Input {...field} type="datetime-local" /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={taskForm.control}
-                              name="description"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('description')}</FormLabel>
-                                  <FormControl><Textarea {...field} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex justify-end md:col-span-2">
-                              <Button type="submit" disabled={createTask.isPending}>
-                                <ClipboardList data-icon="inline-start" />
-                                {t('createTask')}
-                              </Button>
-                            </div>
-                          </form>
-                        </Form>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader><CardTitle>{t('leadTasks')}</CardTitle></CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
-                        {(lead.tasks ?? []).length === 0 ? (
-                          <p className="py-3 text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
-                        ) : (
-                          lead.tasks?.map((task) => (
-                            <div key={task.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">{task.title}</p>
-                                {task.description ? <p className="mt-1 text-xs text-muted-foreground">{task.description}</p> : null}
-                              </div>
-                              <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                                <Badge variant={task.status === 'done' ? 'success' : 'outline'}>
-                                  {task.status === 'done' ? t('taskDone') : t('taskInProgress')}
-                                </Badge>
-                                {task.dueAt ? <p className="text-xs text-muted-foreground">{dateTime(task.dueAt)}</p> : null}
-                                {task.status !== 'done' ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 px-2"
-                                    disabled={updateTask.isPending}
-                                    onClick={() => updateTask.mutate(task.id)}
-                                  >
-                                    <CheckCircle2 data-icon="inline-start" />
-                                    {t('completeTask')}
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
+                  <LeadTasksTab
+                    form={taskForm}
+                    tasks={lead.tasks ?? []}
+                    isCreating={createTask.isPending}
+                    isCompleting={updateTask.isPending}
+                    onSubmit={(values) => createTask.mutate(values)}
+                    onCompleteTask={(taskId) => updateTask.mutate(taskId)}
+                    dateTime={dateTime}
+                  />
                 </TabsContent>
               </div>
             </Tabs>
@@ -1892,6 +1653,11 @@ export function LeadDetailSheet({
           if (!lead?.id || !duplicateHint?.id) return;
           mergeLeads.mutate({ retainedLeadId: Number(duplicateHint.id), duplicateLeadId: lead.id });
         }}
+      />
+      <UnsavedChangesDialog
+        open={closeGuard.confirmationOpen}
+        onOpenChange={closeGuard.setConfirmationOpen}
+        onDiscard={closeGuard.discardChanges}
       />
     </Sheet>
   );

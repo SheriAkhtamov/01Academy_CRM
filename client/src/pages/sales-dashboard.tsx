@@ -641,13 +641,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     [activePipelineStatuses],
   );
 
-  const activeLeadSources = useMemo(
-    (): Array<{ id: number; name: string }> => (data?.sources ?? [])
-      .filter((source: any) => source.isActive !== false)
-      .map((source: any) => ({ id: Number(source.id), name: String(source.name) })),
-    [data?.sources],
-  );
-
   const pipelineLeads = useMemo(
     () => myLeads.filter((lead) => !lead.isArchived && activePipelineCodes.has(lead.statusCode)),
     [activePipelineCodes, myLeads],
@@ -1106,13 +1099,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           leadStatusName={leadStatusName}
           leads={pipelineLeads}
           activePipelineStatuses={activePipelineStatuses}
-          managers={salesManagers}
-          sources={activeLeadSources}
-          money={money}
           onLeadClick={(lead) => openLead(lead.id)}
           onQuickAction={handleQuickAction}
           onArchiveLead={openArchiveDialog}
-          onCreateLead={() => setLeadDialogOpen(true)}
           onStatusChange={async (leadId, statusCode) => {
             if (statusCode === 'paid') {
               openLead(leadId, 'payment');

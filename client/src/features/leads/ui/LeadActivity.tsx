@@ -5,9 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/lib/i18n';
-import { paymentSummaryLine } from '@/components/ux/lead/LeadPaymentTab';
-import { useState } from 'react';
 import { getInitials } from '@/lib/auth';
 import {
   formatCallDuration,
@@ -68,8 +65,6 @@ export type LeadActivityData = {
     id: number;
     amountUzs: number;
     method: string;
-    type?: string | null;
-    discount?: string | null;
     paidAt?: string | null;
     createdAt?: string | null;
   }>;
@@ -91,12 +86,6 @@ export function LeadCommentsCard({
   onSubmit: () => void;
 }) {
   const { t } = useTranslation();
-  // The full thread lives in the timeline below; showing only the latest note
-  // here keeps the composer in view instead of repeating the same list twice.
-  const comment = comments.reduce<LeadComment | null>((latest, item) => {
-    if (!latest) return item;
-    return new Date(item.createdAt ?? 0) > new Date(latest.createdAt ?? 0) ? item : latest;
-  }, null);
 
   return (
     <Card className="overflow-hidden">
@@ -108,7 +97,7 @@ export function LeadCommentsCard({
         </CardTitle>
         <p className="text-sm text-muted-foreground">{t('leadCommentsHint')}</p>
       </CardHeader>
-      <CardContent className="space-y-4 pt-6">
+      <CardContent className="space-y-5 pt-6">
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -122,9 +111,7 @@ export function LeadCommentsCard({
             onKeyDown={(event) => {
               if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                 event.preventDefault();
-                if (!isPending && draft.trim()) {
-                  onSubmit();
-                }
+                if (!isPending && draft.trim()) onSubmit();
               }
             }}
             placeholder={t('addCommentPlaceholder')}
@@ -133,49 +120,43 @@ export function LeadCommentsCard({
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground/70">{t('ctrlEnterToSend')}</span>
             <Button type="submit" disabled={isPending || !draft.trim()}>
-              {isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <MessageSquare data-icon="inline-start" />}
+              {isPending
+                ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                : <MessageSquare data-icon="inline-start" />}
               {t('send')}
             </Button>
           </div>
         </form>
 
-        {comment ? (
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {t('leadLatestComment')}
-            </p>
-            <div className="mt-2 flex gap-3">
-              <Avatar className="size-8 shrink-0 border border-border">
-                <AvatarFallback>{getInitials(comment.authorName || t('unknown'))}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <p className="text-sm font-medium">{comment.authorName || t('unknown')}</p>
-                  <time className="text-xs text-muted-foreground">{dateTime(comment.createdAt)}</time>
-                </div>
-                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">{comment.body}</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+        {comments.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
             {t('noCommentsYet')}
           </p>
+        ) : (
+          <ol className="divide-y divide-border">
+            {comments.map((comment) => {
+              const authorName = comment.authorName || t('unknown');
+              return (
+                <li key={comment.id} className="flex gap-3 py-4 first:pt-0 last:pb-0">
+                  <Avatar className="size-9 shrink-0 border border-border">
+                    <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="text-sm font-medium">{authorName}</p>
+                      <time className="text-xs text-muted-foreground">{dateTime(comment.createdAt)}</time>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">{comment.body}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         )}
       </CardContent>
     </Card>
   );
 }
-
-type ActivityKind = 'comments' | 'calls' | 'changes' | 'payments';
-
-const ACTIVITY_FILTERS = [
-  { value: 'all', labelKey: 'activityFilterAll' },
-  { value: 'comments', labelKey: 'commentsLabel' },
-  { value: 'calls', labelKey: 'activityFilterCalls' },
-  { value: 'changes', labelKey: 'changes' },
-  { value: 'payments', labelKey: 'activityFilterPayments' },
-] as const satisfies ReadonlyArray<{ value: 'all' | ActivityKind; labelKey: TranslationKey }>;
 
 export function ActivityTimeline({
   lead,
@@ -189,11 +170,9 @@ export function ActivityTimeline({
   money: (value: number | string | null | undefined) => string;
 }) {
   const { t } = useTranslation();
-  const [activeFilter, setActiveFilter] = useState<'all' | ActivityKind>('all');
   const items = [
     ...(lead.comments ?? []).map((item) => ({
       id: `lead-comment-${item.id}`,
-      kind: 'comments' as ActivityKind,
       at: item.createdAt,
       title: item.authorName ? `${t('comment')} · ${item.authorName}` : t('comment'),
       text: item.body,
@@ -203,7 +182,6 @@ export function ActivityTimeline({
     })),
     ...(lead.history ?? []).map((item) => ({
       id: `history-${item.id}`,
-      kind: 'changes' as ActivityKind,
       at: item.enteredAt,
       title: leadStatusName(item.toStatusCode),
       text: item.comment,
@@ -213,7 +191,6 @@ export function ActivityTimeline({
     })),
     ...(lead.communications ?? []).map((item) => ({
       id: `communication-${item.id}`,
-      kind: 'calls' as ActivityKind,
       at: item.createdAt,
       title: `${t('contact')}: ${item.channel}`,
       text: [item.result, item.comment].filter(Boolean).join(' — '),
@@ -223,7 +200,6 @@ export function ActivityTimeline({
     })),
     ...(lead.calls ?? []).map((item) => ({
       id: `call-${item.id}`,
-      kind: 'calls' as ActivityKind,
       at: item.startedAt,
       title: `${item.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}: ${t(telephonyStatusTranslationKey(item.status))}`,
       text: [
@@ -237,7 +213,6 @@ export function ActivityTimeline({
     })),
     ...(lead.assignmentHistory ?? []).map((item) => ({
       id: `assignment-${item.id}`,
-      kind: 'changes' as ActivityKind,
       at: item.createdAt,
       title: t('leadTransferred'),
       text: [
@@ -251,10 +226,9 @@ export function ActivityTimeline({
     })),
     ...(lead.payments ?? []).map((item) => ({
       id: `payment-${item.id}`,
-      kind: 'payments' as ActivityKind,
       at: item.paidAt ?? item.createdAt,
       title: `${t('payment')}: ${money(item.amountUzs)}`,
-      text: paymentSummaryLine(item, t),
+      text: item.method,
       icon: CreditCard,
       callId: null,
       hasRecording: false,
@@ -263,51 +237,19 @@ export function ActivityTimeline({
     new Date(right.at ?? 0).getTime() - new Date(left.at ?? 0).getTime()
   ));
 
-  const counts = items.reduce<Record<string, number>>((totals, item) => {
-    totals[item.kind] = (totals[item.kind] ?? 0) + 1;
-    return totals;
-  }, {});
-  const visibleItems = activeFilter === 'all'
-    ? items
-    : items.filter((item) => item.kind === activeFilter);
-
   return (
     <Card>
-      <CardHeader className="gap-3">
-        <CardTitle>{t('activityHistory')}</CardTitle>
-        {items.length > 0 ? (
-          <div role="group" aria-label={t('activityHistory')} className="flex flex-wrap gap-1.5">
-            {ACTIVITY_FILTERS.map((filter) => {
-              const count = filter.value === 'all' ? items.length : counts[filter.value] ?? 0;
-              if (count === 0) return null;
-              return (
-                <Button
-                  key={filter.value}
-                  type="button"
-                  size="sm"
-                  variant={activeFilter === filter.value ? 'secondary' : 'ghost'}
-                  aria-pressed={activeFilter === filter.value}
-                  className="h-7 gap-1.5 px-2.5 text-xs"
-                  onClick={() => setActiveFilter(filter.value)}
-                >
-                  {t(filter.labelKey)}
-                  <span className="tabular-nums text-muted-foreground">{count}</span>
-                </Button>
-              );
-            })}
-          </div>
-        ) : null}
-      </CardHeader>
+      <CardHeader><CardTitle>{t('activityHistory')}</CardTitle></CardHeader>
       <CardContent className="flex flex-col gap-0">
-        {visibleItems.length === 0 ? (
+        {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('noActivityYet')}</p>
         ) : (
           <ol className="flex flex-col">
-            {visibleItems.map((item, index) => {
+            {items.map((item, index) => {
               const Icon = item.icon;
               return (
                 <li key={item.id} className="relative flex gap-3 pb-3 last:pb-0">
-                  {index !== visibleItems.length - 1 ? (
+                  {index !== items.length - 1 ? (
                     <span
                       aria-hidden
                       className="absolute bottom-0 left-[18px] top-9 w-px bg-border"

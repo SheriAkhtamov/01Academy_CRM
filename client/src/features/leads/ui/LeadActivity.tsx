@@ -352,17 +352,15 @@ export function ActivityTimeline({
   }, [visibleItems]);
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="bg-muted/20">
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-            <History className="size-4" aria-hidden="true" />
-          </span>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <History className="size-4 text-muted-foreground" aria-hidden="true" />
           {t('activityHistory')}
           {items.length > 0 ? <Badge variant="secondary">{items.length}</Badge> : null}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 pt-5">
+      <CardContent className="space-y-4">
         {composer}
 
         {items.length > 0 ? (
@@ -402,10 +400,10 @@ export function ActivityTimeline({
             {dayGroups.map((group) => (
               <section key={`${group.key}-${group.items[0]?.id}`}>
                 <div className="mb-2 flex items-center gap-3">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <span className="text-xs font-medium text-muted-foreground">
                     {dayLabelOf(group.at)}
                   </span>
-                  <span aria-hidden className="h-px flex-1 bg-border" />
+                  <span aria-hidden className="h-px flex-1 bg-border/70" />
                 </div>
                 <ol className="flex flex-col">
                   {group.items.map((item, index) => {

@@ -986,10 +986,6 @@ export const translations = {
   leadSaved: { en: 'Lead saved', ru: 'Лид сохранён' },
   leadInArchive: { en: 'Archived', ru: 'В архиве' },
   stageProgress: { en: 'Stage {current} of {total}', ru: 'Этап {current} из {total}' },
-  assignManagerBeforeStage: {
-    en: 'Assign a responsible manager to change the stage.',
-    ru: 'Чтобы менять этап, назначьте ответственного менеджера.',
-  },
   managerTransferHint: {
     en: 'The transfer is applied immediately after confirmation.',
     ru: 'Передача применяется сразу после подтверждения.',

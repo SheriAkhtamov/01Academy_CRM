@@ -98,13 +98,12 @@ import {
   Save,
   Trash2,
   Undo2,
-  UserRoundCog,
   UserRound,
   GraduationCap,
   Users,
   Wallet,
 } from 'lucide-react';
-import { LEAD_STATUSES, PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
+import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
 import type { TelephonyCallStatus } from '@/lib/telephony';
@@ -293,7 +292,6 @@ const leadSchema = z.object({
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   sourceId: z.string().min(1, 'fillRequiredFields'),
   language: z.string(),
-  statusCode: z.string(),
   expectedPaymentUzs: optionalNumberString,
 });
 
@@ -341,7 +339,6 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
   sourceId: lead.sourceId ? String(lead.sourceId) : '',
   language: lead.language ?? 'ru',
-  statusCode: lead.statusCode,
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
 });
 
@@ -401,7 +398,6 @@ export function LeadDetailSheet({
       phoneNumbers: [''],
       sourceId: '',
       language: 'ru',
-      statusCode: 'new_request',
       expectedPaymentUzs: '',
     },
   });
@@ -443,7 +439,6 @@ export function LeadDetailSheet({
       (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
       lead.sourceId ?? '',
       lead.language ?? '',
-      lead.statusCode,
       lead.expectedPaymentUzs ?? '',
     ].join('|');
   }, [leadQuery.data]);
@@ -594,21 +589,6 @@ export function LeadDetailSheet({
     },
   });
 
-  const changeStage = useMutation({
-    mutationFn: (statusCode: string) => leadsApi.update<LeadDetails>(leadId!, {
-      statusCode,
-      expectedUpdatedAt: leadQuery.data?.updatedAt,
-    }),
-    onSuccess: async () => {
-      await finishMutation(t('statusUpdated'));
-    },
-    onError: (error: Error) => toast({
-      title: t('statusNotUpdated'),
-      description: error.message,
-      variant: 'destructive',
-    }),
-  });
-
   const addLeadComment = useMutation({
     mutationFn: (body: string) =>
       leadsApi.addComment(leadId!, { body }),
@@ -702,25 +682,6 @@ export function LeadDetailSheet({
     } catch {
       toast({ title: t('copyFailed'), variant: 'destructive' });
     }
-  };
-
-  const handleStageSelect = (statusCode: string) => {
-    if (!lead || changeStage.isPending) return;
-    if (statusCode === lead.statusCode) return;
-    if (statusCode === 'paid') {
-      setActiveTab('payment');
-      return;
-    }
-    if (lead.statusCode === 'paid' || lead.isArchived) return;
-    if (!lead.managerId) {
-      toast({
-        title: t('leadRequiresResponsibleManager'),
-        description: t('assignManagerBeforeStage'),
-        variant: 'destructive',
-      });
-      return;
-    }
-    changeStage.mutate(statusCode);
   };
 
   const dealFormDirty = leadForm.formState.isDirty;
@@ -832,15 +793,15 @@ export function LeadDetailSheet({
                   </div>
                   <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
 
-                  {/* Contact + meta chips; phone chips copy the number on click */}
-                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
+                  {/* Phone chips copy the number on click */}
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {visiblePhoneNumbers.length > 0 ? (
                       visiblePhoneNumbers.map((phone) => (
                         <button
                           key={phone}
                           type="button"
                           title={t('clickToCopy')}
-                          className="group/phone inline-flex max-w-full items-center gap-1.5 rounded-md bg-background/80 px-2 py-1 text-xs font-medium text-foreground/80 shadow-2xs ring-1 ring-border transition-colors hover:bg-background hover:text-foreground"
+                          className="group/phone inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                           onClick={() => copyPhone(phone)}
                         >
                           <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -850,39 +811,26 @@ export function LeadDetailSheet({
                         </button>
                       ))
                     ) : (
-                      <span className="px-1 text-xs italic text-muted-foreground">{t('leadSheetNoContactInfo')}</span>
+                      <span className="text-xs italic text-muted-foreground">{t('leadSheetNoContactInfo')}</span>
                     )}
-                    <span
-                      className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground"
-                      title={t('manager')}
-                    >
-                      <UserRoundCog className="size-3.5" aria-hidden="true" />
-                      <span className="sr-only">{t('manager')}: </span>
-                      {lead.managerName || t('notAssigned')}
-                    </span>
+                  </div>
+
+                  {/* Quiet single-line meta */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    <span>{t('manager')}: {lead.managerName || t('notAssigned')}</span>
                     {lead.firstContactAt ? (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground"
-                        title={t('leadStatusFirstContact')}
-                      >
-                        <CalendarClock className="size-3.5" aria-hidden="true" />
-                        <span className="sr-only">{t('leadStatusFirstContact')}: </span>
-                        {dateTime(lead.firstContactAt)}
-                      </span>
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>{t('leadStatusFirstContact')}: {dateTime(lead.firstContactAt)}</span>
+                      </>
                     ) : null}
-                    <span
-                      className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground"
-                      title={t('leadSheetCreated')}
-                    >
-                      <Clock3 className="size-3.5" aria-hidden="true" />
-                      <span className="sr-only">{t('leadSheetCreated')}: </span>
-                      {dateTime(lead.createdAt)}
-                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{t('leadSheetCreated')}: {dateTime(lead.createdAt)}</span>
                     {(lead.students ?? []).length > 0 ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-1 text-xs text-muted-foreground">
-                        <GraduationCap className="size-3.5" aria-hidden="true" />
-                        {lead.students?.length ?? 0} {t('studentsCount')}
-                      </span>
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>{lead.students?.length ?? 0} {t('studentsCount')}</span>
+                      </>
                     ) : null}
                   </div>
                 </div>
@@ -899,10 +847,7 @@ export function LeadDetailSheet({
               <LeadStageStepper
                 statuses={statuses}
                 currentStatusCode={lead.statusCode}
-                isLocked={lead.statusCode === 'paid' || Boolean(lead.isArchived)}
-                pendingStatusCode={changeStage.isPending ? (changeStage.variables ?? null) : null}
                 leadStatusName={leadStatusName}
-                onSelectStage={handleStageSelect}
               />
 
               {/* Quick actions — single prominent CTA + secondary outline buttons */}
@@ -990,16 +935,14 @@ export function LeadDetailSheet({
                 <TabsContent value="deal" className="mt-0 space-y-5">
                   <Form {...leadForm}>
                     <form className="flex flex-col gap-5" onSubmit={leadForm.handleSubmit((values) => updateLead.mutate(values))}>
-                      <Card className="overflow-hidden">
-                        <CardHeader className="border-b border-border/60 bg-muted/20">
+                      <Card>
+                        <CardHeader>
                           <CardTitle className="flex items-center gap-2 text-base">
-                            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                              <UserRound className="size-4" aria-hidden="true" />
-                            </span>
+                            <UserRound className="size-4 text-muted-foreground" aria-hidden="true" />
                             {t('contactInformation')}
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-4 pt-5 md:grid-cols-2">
+                        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                           {(lead.channels ?? []).length > 0 ? (
                             <FormItem className="md:col-span-2">
                               <FormLabel>{t('contactChannels')}</FormLabel>
@@ -1095,12 +1038,10 @@ export function LeadDetailSheet({
                       </Card>
 
                       <Card className="overflow-hidden">
-                        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 border-b border-border/60 bg-muted/20">
+                        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
                           <div>
                             <CardTitle className="flex items-center gap-2 text-base">
-                              <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                                <GraduationCap className="size-4" aria-hidden="true" />
-                              </span>
+                              <GraduationCap className="size-4 text-muted-foreground" aria-hidden="true" />
                               {t('students')}
                               <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
                             </CardTitle>
@@ -1155,48 +1096,14 @@ export function LeadDetailSheet({
                         </CardContent>
                       </Card>
 
-                      <Card className="overflow-hidden">
-                        <CardHeader className="border-b border-border/60 bg-muted/20">
+                      <Card>
+                        <CardHeader>
                           <CardTitle className="flex items-center gap-2 text-base">
-                            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                              <Briefcase className="size-4" aria-hidden="true" />
-                            </span>
+                            <Briefcase className="size-4 text-muted-foreground" aria-hidden="true" />
                             {t('dealDetails')}
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-4 pt-5 md:grid-cols-2">
-                          <FormField
-                            control={leadForm.control}
-                            name="statusCode"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('status')}</FormLabel>
-                                <Select value={field.value} onValueChange={(value) => {
-                                  if (value === 'paid') {
-                                    setActiveTab('payment');
-                                    return;
-                                  }
-                                  field.onChange(value);
-                                }} disabled={lead.statusCode === 'paid'}>
-                                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      {(statuses.length > 0 ? statuses : LEAD_STATUSES).filter((status) => (
-                                        (!('isActive' in status) || status.isActive !== false) && (
-                                          lead.statusCode === 'paid'
-                                            ? status.code === 'paid'
-                                            : status.code !== 'paid'
-                                        )
-                                      )).map((status) => (
-                                        <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                                <LocalizedFormMessage />
-                              </FormItem>
-                            )}
-                          />
+                        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                           <FormField
                             control={leadForm.control}
                             name="sourceId"
@@ -1266,7 +1173,7 @@ export function LeadDetailSheet({
 
                       {dealFormDirty || updateLead.isPending ? (
                         <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-0 flex flex-wrap items-center gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
-                          <span className="size-2 shrink-0 animate-pulse rounded-full bg-amber-500" aria-hidden="true" />
+                          <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
                           <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{t('unsavedChanges')}</p>
                           <Button
                             type="button"
@@ -1344,10 +1251,8 @@ export function LeadDetailSheet({
                 <TabsContent value="payment" className="mt-0">
                   <div className="flex flex-col gap-5">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                          <Banknote className="size-4" aria-hidden="true" />
-                        </span>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+                        <Banknote className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <div className="min-w-0">
                           <p className="truncate text-xs text-muted-foreground">{t('expectedPayment')}</p>
                           <p className="truncate text-sm font-semibold tabular-nums">
@@ -1357,10 +1262,8 @@ export function LeadDetailSheet({
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
-                          <Wallet className="size-4" aria-hidden="true" />
-                        </span>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+                        <Wallet className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <div className="min-w-0">
                           <p className="truncate text-xs text-muted-foreground">{t('totalPaidLabel')}</p>
                           <p className="truncate text-sm font-semibold tabular-nums">
@@ -1368,10 +1271,8 @@ export function LeadDetailSheet({
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300">
-                          <CalendarClock className="size-4" aria-hidden="true" />
-                        </span>
+                      <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+                        <CalendarClock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <div className="min-w-0">
                           <p className="truncate text-xs text-muted-foreground">{t('paidUntil')}</p>
                           <p className="truncate text-sm font-semibold tabular-nums">{dateOnly(latestPaidUntil)}</p>
@@ -1380,34 +1281,32 @@ export function LeadDetailSheet({
                     </div>
 
                     {lead.statusCode === 'paid' ? (
-                      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
-                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                      <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                         <span className="text-foreground/80">{t('recurringPaymentHint')}</span>
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">{t('leadSheetPaymentFormHint')}</p>
                     )}
-                    <Card className="overflow-hidden">
-                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                    {(lead.students ?? []).length === 0 ? (
+                      <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-8 text-center">
+                        <GraduationCap className="mb-3 size-8 text-muted-foreground" aria-hidden="true" />
+                        <p className="font-medium">{t('studentRequiredForPayment')}</p>
+                        <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('studentRequiredForPaymentHint')}</p>
+                        <Button type="button" className="mt-4" onClick={() => setCreateStudentOpen(true)}>
+                          <Plus data-icon="inline-start" />
+                          {t('createStudent')}
+                        </Button>
+                      </div>
+                    ) : (
+                    <Card>
+                      <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                            <CreditCard className="size-4" aria-hidden="true" />
-                          </span>
+                          <CreditCard className="size-4 text-muted-foreground" aria-hidden="true" />
                           {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment')}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="pt-5">
-                        {(lead.students ?? []).length === 0 ? (
-                          <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-8 text-center">
-                            <GraduationCap className="mb-3 size-8 text-muted-foreground" />
-                            <p className="font-medium">{t('studentRequiredForPayment')}</p>
-                            <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('studentRequiredForPaymentHint')}</p>
-                            <Button type="button" className="mt-4" onClick={() => setCreateStudentOpen(true)}>
-                              <Plus data-icon="inline-start" />
-                              {t('createStudent')}
-                            </Button>
-                          </div>
-                        ) : (
+                      <CardContent>
                           <Form {...paymentForm}>
                           <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit((values) => createPayment.mutate(values))}>
                             <FormField
@@ -1545,28 +1444,26 @@ export function LeadDetailSheet({
                             </div>
                           </form>
                           </Form>
-                        )}
                       </CardContent>
                     </Card>
+                    )}
 
-                    <Card className="overflow-hidden">
-                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                    <Card>
+                      <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                            <Wallet className="size-4" aria-hidden="true" />
-                          </span>
+                          <Wallet className="size-4 text-muted-foreground" aria-hidden="true" />
                           {t('paymentHistory')}
                           {paymentsCount > 0 ? <Badge variant="secondary">{paymentsCount}</Badge> : null}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border pt-5">
+                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
                         {(lead.payments ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noPayments')}</p>
                         ) : (
                           lead.payments?.map((payment) => (
                             <div key={payment.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
                               <div className="flex min-w-0 items-start gap-3">
-                                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
                                   <CreditCard className="size-4" aria-hidden="true" />
                                 </span>
                                 <div className="min-w-0">
@@ -1605,7 +1502,7 @@ export function LeadDetailSheet({
 
                 <TabsContent value="tasks" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-medium">{t('leadTasks')}</p>
                         <p className="mt-1 text-sm text-muted-foreground">{t('leadTasksBoardHint')}</p>
@@ -1617,16 +1514,14 @@ export function LeadDetailSheet({
                         </Link>
                       </Button>
                     </div>
-                    <Card className="overflow-hidden">
-                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                    <Card>
+                      <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                            <Plus className="size-4" aria-hidden="true" />
-                          </span>
+                          <Plus className="size-4 text-muted-foreground" aria-hidden="true" />
                           {t('newTask')}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="pt-5">
+                      <CardContent>
                         <Form {...taskForm}>
                           <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={taskForm.handleSubmit((values) => createTask.mutate(values))}>
                             <FormField
@@ -1673,19 +1568,17 @@ export function LeadDetailSheet({
                       </CardContent>
                     </Card>
 
-                    <Card className="overflow-hidden">
-                      <CardHeader className="border-b border-border/60 bg-muted/20">
+                    <Card>
+                      <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary-700">
-                            <ClipboardList className="size-4" aria-hidden="true" />
-                          </span>
+                          <ClipboardList className="size-4 text-muted-foreground" aria-hidden="true" />
                           {t('leadTasks')}
                           {(lead.tasks ?? []).length > 0 ? (
                             <Badge variant="secondary">{(lead.tasks ?? []).length}</Badge>
                           ) : null}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border pt-5">
+                      <CardContent className="flex flex-col gap-0 divide-y divide-border">
                         {(lead.tasks ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
                         ) : (

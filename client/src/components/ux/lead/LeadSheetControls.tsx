@@ -4,7 +4,7 @@ import { translations, type TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useFormField } from '@/components/ui/form';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { LEAD_STATUSES } from '@shared/academy';
 
 export function LocalizedFormMessage() {
@@ -97,17 +97,11 @@ const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 export function LeadStageStepper({
   statuses,
   currentStatusCode,
-  isLocked,
-  pendingStatusCode,
   leadStatusName,
-  onSelectStage,
 }: {
   statuses: StepperStageSource[];
   currentStatusCode: string;
-  isLocked: boolean;
-  pendingStatusCode: string | null;
   leadStatusName: (code: string) => string;
-  onSelectStage: (code: string) => void;
 }) {
   const { t } = useTranslation();
 
@@ -130,62 +124,59 @@ export function LeadStageStepper({
   if (stages.length === 0) return null;
 
   const currentIndex = stages.findIndex((stage) => stage.code === currentStatusCode);
+  const currentStage = currentIndex >= 0 ? stages[currentIndex] : null;
+  const currentColor = HEX_COLOR_PATTERN.test(currentStage?.color ?? '')
+    ? currentStage!.color!
+    : '#64748b';
 
   return (
     <div>
       <div
         role="group"
         aria-label={t('pipelineStages')}
-        className="flex w-full items-stretch gap-1 overflow-x-auto pb-1"
+        className="flex w-full items-center gap-1"
       >
         {stages.map((stage, index) => {
           const reached = currentIndex >= 0 && index <= currentIndex;
           const isCurrent = index === currentIndex;
-          const isStagePending = pendingStatusCode === stage.code;
           const color = HEX_COLOR_PATTERN.test(stage.color ?? '') ? stage.color! : '#64748b';
           const stageName = leadStatusName(stage.code);
           return (
-            <button
+            <div
               key={stage.code}
-              type="button"
               title={stageName}
               aria-current={isCurrent ? 'step' : undefined}
-              disabled={isLocked || isCurrent || pendingStatusCode !== null}
               className={cn(
-                'inline-flex h-8 min-w-16 flex-1 select-none items-center justify-center rounded-md px-2 text-[11px] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                reached ? 'text-white shadow-2xs' : 'bg-muted text-muted-foreground',
-                !reached && !isLocked && pendingStatusCode === null
-                  && 'hover:bg-muted/70 hover:text-foreground',
-                isLocked && !reached && 'opacity-50',
-                isCurrent && 'cursor-default',
+                'min-w-3 flex-1 rounded-full transition-all',
+                isCurrent ? 'h-2' : 'h-1.5',
+                !reached && 'bg-border/70',
               )}
-              style={reached
-                ? {
-                    backgroundColor: color,
-                    ...(isCurrent
-                      ? { boxShadow: `0 0 0 2px var(--background), 0 0 0 4px ${color}66` }
-                      : {}),
-                  }
-                : undefined}
-              onClick={() => onSelectStage(stage.code)}
+              style={reached ? { backgroundColor: color } : undefined}
             >
-              {isStagePending ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <span className="truncate">{stageName}</span>
-              )}
-            </button>
+              <span className="sr-only">{stageName}</span>
+            </div>
           );
         })}
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
         {currentIndex >= 0 ? (
-          <span>
-            {t('stageProgress')
-              .replace('{current}', String(currentIndex + 1))
-              .replace('{total}', String(stages.length))}
-            <span className="font-medium text-foreground/80"> · {leadStatusName(currentStatusCode)}</span>
-          </span>
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className="size-2 rounded-full"
+                style={{ backgroundColor: currentColor }}
+              />
+              <span className="font-medium text-foreground/80">
+                {leadStatusName(currentStatusCode)}
+              </span>
+            </span>
+            <span>
+              {t('stageProgress')
+                .replace('{current}', String(currentIndex + 1))
+                .replace('{total}', String(stages.length))}
+            </span>
+          </>
         ) : (
           <Badge variant="secondary">{leadStatusName(currentStatusCode)}</Badge>
         )}

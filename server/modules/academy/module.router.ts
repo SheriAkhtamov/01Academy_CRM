@@ -553,7 +553,7 @@ router.get('/search', async (req, res) => {
       );
       const visibleRows = await applyLeadVisibilityForActor({
         userId: req.user!.id,
-        module: String(req.user!.module),
+        module: req.user!.module,
         modules: assignedModules,
         scopeModule: 'sales',
       }, rows);

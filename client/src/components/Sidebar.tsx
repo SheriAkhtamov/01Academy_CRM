@@ -7,7 +7,14 @@ import {
   formatUserModule,
   canAccessReports,
 } from '@/lib/auth';
-import { canAccessAcademyModule, getAssignedModules, hasFinanceAccess, type AcademyModule } from '@shared/academy';
+import {
+  canAccessAcademyModule,
+  getAssignedModules,
+  hasFinanceAccess,
+  hasLeadershipAccess,
+  type AcademyAccessModule,
+  type AcademyModule,
+} from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
@@ -18,42 +25,19 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  BarChart3,
-  Calendar,
-  Users,
   X,
-  GraduationCap,
-  Layers3,
-  ClipboardCheck,
-  Banknote,
-  ClipboardList,
-  HeartHandshake,
-  Plug,
-  Flame,
-  Megaphone,
   ChevronDown,
-  UserCheck,
-  SlidersHorizontal,
-  KanbanSquare,
-  MessagesSquare,
-  Archive,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Landmark,
-  ReceiptText,
-  WalletCards,
-  PhoneCall,
+  type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { useCeoCopy } from '@/hooks/useCeoCopy';
-import { financeCopy } from '@/lib/financeCenter';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
+import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 
 interface NavItem {
   name: string;
   href: string;
-  icon: any;
+  icon: LucideIcon;
   badgeCount?: number;
   badgeLabel?: string;
 }
@@ -67,8 +51,6 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { t } = useTranslation();
-  const ceoCopy = useCeoCopy();
-  const finance = financeCopy(t);
   const hasSalesModule = canAccessAcademyModule(user, 'sales');
   const { data: missedCallUnread = { count: 0 } } = useQuery({
     ...missedCallUnreadQueryOptions,
@@ -80,10 +62,10 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => (
     location.startsWith('/finance')
       ? {
-          [t('salesPipeline')]: true,
-          [t('teacherDepartmentModule')]: true,
-          [t('marketingTab')]: true,
-          [t('systemAdministration')]: true,
+          [t(MODULE_NAVIGATION.sales.nameKey)]: true,
+          [t(MODULE_NAVIGATION.teacher.nameKey)]: true,
+          [t(MODULE_NAVIGATION.marketing.nameKey)]: true,
+          [t(MODULE_NAVIGATION.administration.nameKey)]: true,
         }
       : {}
   ));
@@ -116,84 +98,37 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const buildSections = (): NavSection[] => {
-    const salesSection: NavSection = {
-      label: t('salesPipeline'),
-      items: [
-        { name: t('navDashboard'), href: '/sales', icon: BarChart3 },
-        { name: t('pipeline'), href: '/sales/pipeline', icon: Flame },
-        { name: t('leadArchive'), href: '/sales/archive', icon: Archive },
-        { name: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
-        { name: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-        { name: t('salesInbox'), href: '/sales/messages', icon: MessagesSquare },
-        {
-          name: t('callJournal'),
-          href: '/sales/calls',
-          icon: PhoneCall,
-          badgeCount: missedCallCount,
-          badgeLabel: missedCallsLabel,
-        },
-      ],
-    };
-
-    const teacherSection: NavSection = {
-      label: t('teacherDepartmentModule'),
-      items: [
-        { name: t('navDashboard'), href: '/teacher-module', icon: GraduationCap },
-        { name: t('schedule'), href: '/teacher-module/schedule', icon: Calendar },
-        { name: t('myGroups'), href: '/teacher-module/groups', icon: Layers3 },
-        { name: t('attendanceLabel'), href: '/teacher-module/attendance', icon: ClipboardCheck },
-      ],
-    };
-
-    const marketingSection: NavSection = {
-      label: t('marketingTab'),
-      items: [
-        { name: t('navDashboard'), href: '/marketing-module', icon: BarChart3 },
-        { name: t('leadSources'), href: '/marketing-module/sources', icon: Megaphone },
-        { name: t('conversionFunnel'), href: '/marketing-module/funnel', icon: Flame },
-        { name: t('warmBase'), href: '/marketing-module/warm-base', icon: Users },
-        { name: t('navReferrals'), href: '/marketing-module/referrals', icon: HeartHandshake },
-        { name: t('expenses'), href: '/marketing-module/expenses', icon: Banknote },
-      ],
-    };
-
-    const systemSection: NavSection = {
-      label: t('systemAdministration'),
-      items: [
-        { name: t('adminDashboardTitle'), href: '/admin', icon: BarChart3 },
-        { name: t('employees'), href: '/employees', icon: Users },
-        { name: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-        { name: t('salesSettings'), href: '/admin/sales-settings', icon: UserCheck },
-        { name: ceoCopy.module.audit, href: '/admin/audit', icon: ClipboardList },
-        { name: t('navIntegrations'), href: '/integrations', icon: Plug },
-      ],
-    };
-
-    const financeSection: NavSection = {
-      label: finance.module,
-      items: [
-        { name: finance.overview, href: '/finance', icon: Landmark },
-        { name: finance.income, href: '/finance/income', icon: ArrowDownToLine },
-        { name: finance.expenses, href: '/finance/expenses', icon: ArrowUpFromLine },
-        { name: finance.payroll, href: '/finance/payroll', icon: WalletCards },
-        { name: finance.transactions, href: '/finance/transactions', icon: ReceiptText },
-      ],
+    const moduleSection = (module: AcademyAccessModule): NavSection => {
+      const definition = MODULE_NAVIGATION[module];
+      return {
+        label: t(definition.nameKey),
+        items: definition.items.map((item) => ({
+          name: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)
+            ? 'allClients'
+            : item.labelKey),
+          href: item.href,
+          icon: item.icon,
+          ...(module === 'sales' && item.id === 'calls'
+            ? { badgeCount: missedCallCount, badgeLabel: missedCallsLabel }
+            : {}),
+        })),
+      };
     };
 
     return [
-      hasModule('sales') ? salesSection : null,
-      hasModule('teacher') ? teacherSection : null,
-      hasModule('marketing') ? marketingSection : null,
-      hasFinanceAccess(user) ? financeSection : null,
-      hasModule('administration') ? systemSection : null,
+      hasModule('sales') ? moduleSection('sales') : null,
+      hasModule('teacher') ? moduleSection('teacher') : null,
+      hasModule('marketing') ? moduleSection('marketing') : null,
+      hasFinanceAccess(user) ? moduleSection('finance') : null,
+      hasModule('administration') ? moduleSection('administration') : null,
     ].filter((section): section is NavSection => Boolean(section));
   };
 
   const sections = buildSections();
   const taskBoardItem: NavItem = {
-    name: t('taskBoard'),
-    href: '/tasks',
-    icon: KanbanSquare,
+    name: t(TASKS_NAVIGATION_ITEM.labelKey),
+    href: TASKS_NAVIGATION_ITEM.href,
+    icon: TASKS_NAVIGATION_ITEM.icon,
   };
 
   const toggleSection = (label: string) => {

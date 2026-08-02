@@ -7,6 +7,7 @@ import type {
 import {
   applyLeadVisibilityForActor,
   query,
+  type DatasetActor,
 } from '../../academy/academy-core';
 import {
   getLeadMergeCandidates,
@@ -15,7 +16,7 @@ import {
   mergeLeadRecords,
 } from '../../academy/academy-leads';
 
-const datasetActor = (actor: ActorContext) => ({
+const datasetActor = (actor: ActorContext): DatasetActor => ({
   userId: actor.userId,
   module: actor.primaryModule ?? '',
   modules: [...actor.modules],

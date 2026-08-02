@@ -234,8 +234,8 @@ const buildCredentialPayload = (user: {
     fullName: string;
     email: string;
     position?: string | null;
-    module: string;
-    modules?: string[] | null;
+    module: AcademyModule;
+    modules?: AcademyAccessModule[] | null;
 }, canViewPassword: boolean, fallbackPassword?: string) => ({
     id: user.id,
     fullName: user.fullName,
@@ -252,8 +252,8 @@ const buildCredentialPayload = (user: {
 const syncAcademyTeacherForUser = async (user: {
     id: number;
     fullName: string;
-    module: string;
-    modules?: string[] | null;
+    module: AcademyModule;
+    modules?: AcademyAccessModule[] | null;
     isActive?: boolean | null;
 }, executor: QueryExecutor = pool, settings: TeacherSettings = {}) => {
     const existing = await executor.query<{ id: number }>(

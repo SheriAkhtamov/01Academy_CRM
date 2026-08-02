@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -457,12 +458,12 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
 
   const avgDealCycle = summary.avgDealCycleDays ?? t('noData');
   const sectionTitle: Record<MarketingSection, string> = {
-    overview: t('marketingTab'),
-    sources: t('leadSources'),
-    funnel: t('conversionFunnel'),
-    warm: t('warmBase'),
-    referrals: t('navReferrals'),
-    expenses: t('expenses'),
+    overview: t(moduleSectionLabelKey('marketing', 'overview')),
+    sources: t(moduleSectionLabelKey('marketing', 'sources')),
+    funnel: t(moduleSectionLabelKey('marketing', 'funnel')),
+    warm: t(moduleSectionLabelKey('marketing', 'warm-leads')),
+    referrals: t(moduleSectionLabelKey('marketing', 'referrals')),
+    expenses: t(moduleSectionLabelKey('marketing', 'expenses')),
   };
 
   return (
@@ -471,7 +472,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         title={sectionTitle[section]}
         subtitle={t('channelsAndEfficiency')}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/marketing-module' },
+          { label: t(MODULE_NAVIGATION.marketing.nameKey), href: '/marketing-module' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={
@@ -693,7 +694,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
           </div>
         </TabsContent>
 
-        {/* ─── Tab: Warm Base ─── */}
+        {/* ─── Tab: Warm Leads ─── */}
         <TabsContent value="warm" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-4">
@@ -784,7 +785,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         <TabsContent value="expenses" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <CardTitle>{t('expenses')}</CardTitle>
+              <CardTitle>{t('marketingExpenses')}</CardTitle>
               <div className="flex items-center gap-2">
                 <Input
                   type="month"

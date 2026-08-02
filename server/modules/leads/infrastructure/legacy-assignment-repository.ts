@@ -7,6 +7,7 @@ import { canActorMutateLead } from '../domain/access-policy';
 import {
   applyLeadVisibilityForActor,
   createAudit,
+  type DatasetActor,
 } from '../../academy/academy-core';
 import {
   getActiveSalesManager,
@@ -14,7 +15,7 @@ import {
   reassignLead,
 } from '../../academy/academy-leads';
 
-const datasetActor = (actor: ActorContext) => ({
+const datasetActor = (actor: ActorContext): DatasetActor => ({
   userId: actor.userId,
   module: actor.primaryModule ?? '',
   modules: [...actor.modules],

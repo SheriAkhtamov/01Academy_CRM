@@ -1,4 +1,5 @@
 import type { TranslationKey } from '@/lib/i18n';
+import type { AcademyModule } from '@shared/academy';
 
 export type BoardStatus = 'backlog' | 'todo' | 'in_progress' | 'done' | 'accepted';
 export type BoardPriority = 'urgent' | 'normal' | 'low';
@@ -7,7 +8,7 @@ export interface UserMini {
     id: number;
     fullName: string;
     position: string | null;
-    module: string;
+    module: AcademyModule;
 }
 
 export interface TaskSummary {

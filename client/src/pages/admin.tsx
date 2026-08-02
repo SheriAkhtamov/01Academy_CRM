@@ -71,6 +71,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
+import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   ACADEMY_ACCESS_MODULES,
@@ -529,14 +530,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const primaryModuleOptions = [
-    { value: 'administration', label: t('administrationModule') },
-    { value: 'sales', label: t('salesDepartmentModule') },
-    { value: 'teacher', label: t('teacherDepartmentModule') },
-    { value: 'marketing', label: t('marketingDepartmentModule') },
+    { value: 'administration', label: t(MODULE_NAVIGATION.administration.nameKey) },
+    { value: 'sales', label: t(MODULE_NAVIGATION.sales.nameKey) },
+    { value: 'teacher', label: t(MODULE_NAVIGATION.teacher.nameKey) },
+    { value: 'marketing', label: t(MODULE_NAVIGATION.marketing.nameKey) },
   ] as const;
   const accessModuleOptions = [
     ...primaryModuleOptions,
-    { value: 'finance', label: t('financeCenterModule') },
+    { value: 'finance', label: t(MODULE_NAVIGATION.finance.nameKey) },
   ] as const;
   const primaryModuleValue = userForm.watch('module');
   const assignedModuleValues = userForm.watch('modules');
@@ -705,7 +706,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         title={isEmployeesPage ? t('employees') : t('administration')}
         subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminControlCenterSubtitle')}
         breadcrumbs={isEmployeesPage
-          ? [{ label: t('adminDashboardTitle'), href: '/admin' }, { label: t('employees') }]
+          ? [{ label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' }, { label: t('employees') }]
           : [{ label: t('administration') }]}
         actions={isEmployeesPage ? (
           <Button
@@ -1243,13 +1244,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">{t('administrationModule')}</span>
+                  <span className="text-sm text-slate-600">{t(MODULE_NAVIGATION.administration.nameKey)}</span>
                   <span className="text-sm font-medium">
                     {users.filter((u: any) => getAssignedModules(u).includes('administration')).length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">{t('salesDepartmentModule')}</span>
+                  <span className="text-sm text-slate-600">{t(MODULE_NAVIGATION.sales.nameKey)}</span>
                   <span className="text-sm font-medium">
                     {users.filter((u: any) => getAssignedModules(u).includes('sales')).length}
                   </span>

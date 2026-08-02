@@ -14,33 +14,24 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  BarChart3,
   BookOpen,
-  Calendar,
-  ClipboardCheck,
   Flame,
   GraduationCap,
-  HeartHandshake,
   Layers3,
   Loader2,
   Megaphone,
-  Plug,
   Search,
   Users,
   UserRoundCheck,
-  Wallet,
-  KanbanSquare,
-  ShieldCheck,
-  SlidersHorizontal,
-  MessagesSquare,
-  Archive,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Landmark,
-  ReceiptText,
 } from 'lucide-react';
-import { canAccessAcademyModule, hasFinanceAccess, type AcademyModule } from '@shared/academy';
-import { financeCopy } from '@/lib/financeCenter';
+import {
+  canAccessAcademyModule,
+  hasFinanceAccess,
+  hasLeadershipAccess,
+  type AcademyAccessModule,
+  type AcademyModule,
+} from '@shared/academy';
+import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 
 interface SearchItem {
   id: string;
@@ -67,7 +58,6 @@ interface CommandPaletteProps {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useTranslation();
-  const finance = useMemo(() => financeCopy(t), [t]);
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState('');
@@ -91,55 +81,42 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const navigationItems: SearchItem[] = useMemo(
     () => {
-      const administrationItems: SearchItem[] = [
-        { id: 'nav-admin', type: t('systemAdministration'), title: t('administration'), href: '/admin', icon: ShieldCheck },
-        { id: 'nav-employees', type: t('systemAdministration'), title: t('employees'), href: '/employees', icon: Users },
-        { id: 'nav-academy-configuration', type: t('systemAdministration'), title: t('academyConfiguration'), href: '/admin/academy-settings', icon: SlidersHorizontal },
-        { id: 'nav-sales-settings', type: t('systemAdministration'), title: t('salesSettings'), href: '/admin/sales-settings', icon: UserRoundCheck },
-        { id: 'nav-integrations', type: t('systemAdministration'), title: t('navIntegrations'), href: '/integrations', icon: Plug },
-      ];
-      const financeItems: SearchItem[] = [
-        { id: 'nav-finance', type: finance.module, title: finance.overview, href: '/finance', icon: Landmark },
-        { id: 'nav-finance-income', type: finance.module, title: finance.income, href: '/finance/income', icon: ArrowDownToLine },
-        { id: 'nav-finance-expenses', type: finance.module, title: finance.expenses, href: '/finance/expenses', icon: ArrowUpFromLine },
-        { id: 'nav-finance-payroll', type: finance.module, title: finance.payroll, href: '/finance/payroll', icon: Wallet },
-        { id: 'nav-finance-transactions', type: finance.module, title: finance.transactions, href: '/finance/transactions', icon: ReceiptText },
-      ];
-      const salesItems: SearchItem[] = [
-        { id: 'nav-sales', type: t('salesPipeline'), title: t('navDashboard'), href: '/sales', icon: BarChart3 },
-        { id: 'nav-sales-pipeline', type: t('pipeline'), title: t('pipeline'), href: '/sales/pipeline', icon: Flame },
-        { id: 'nav-sales-archive', type: t('salesPipeline'), title: t('leadArchive'), href: '/sales/archive', icon: Archive },
-        { id: 'nav-sales-schedule', type: t('salesPipeline'), title: t('salesSchedule'), href: '/sales/schedule', icon: Calendar },
-        { id: 'nav-sales-students', type: t('myStudents'), title: t('myStudents'), href: '/sales/clients', icon: GraduationCap },
-        { id: 'nav-sales-messages', type: t('salesPipeline'), title: t('salesInbox'), href: '/sales/messages', icon: MessagesSquare },
-      ];
-      const teacherItems: SearchItem[] = [
-        { id: 'nav-teacher', type: t('teacherDepartmentModule'), title: t('navDashboard'), href: '/teacher-module', icon: GraduationCap },
-        { id: 'nav-teacher-schedule', type: t('schedule'), title: t('schedule'), href: '/teacher-module/schedule', icon: Calendar },
-        { id: 'nav-teacher-groups', type: t('myGroups'), title: t('myGroups'), href: '/teacher-module/groups', icon: Layers3 },
-        { id: 'nav-teacher-attendance', type: t('attendanceLabel'), title: t('attendanceLabel'), href: '/teacher-module/attendance', icon: ClipboardCheck },
-      ];
-      const marketingItems: SearchItem[] = [
-        { id: 'nav-marketing', type: t('marketingTab'), title: t('navDashboard'), href: '/marketing-module', icon: BarChart3 },
-        { id: 'nav-marketing-sources', type: t('leadSources'), title: t('leadSources'), href: '/marketing-module/sources', icon: Megaphone },
-        { id: 'nav-marketing-funnel', type: t('conversionFunnel'), title: t('conversionFunnel'), href: '/marketing-module/funnel', icon: Flame },
-        { id: 'nav-marketing-warm', type: t('warmBase'), title: t('warmBase'), href: '/marketing-module/warm-base', icon: Users },
-        { id: 'nav-marketing-referrals', type: t('navReferrals'), title: t('navReferrals'), href: '/marketing-module/referrals', icon: HeartHandshake },
-        { id: 'nav-marketing-expenses', type: t('expenses'), title: t('expenses'), href: '/marketing-module/expenses', icon: Wallet },
+      const hasModule = (module: AcademyModule) => canAccessAcademyModule(user, module);
+      const visibleModules: AcademyAccessModule[] = [
+        'administration',
+        'finance',
+        'sales',
+        'teacher',
+        'marketing',
       ];
 
-      const hasModule = (module: AcademyModule) => canAccessAcademyModule(user, module);
+      const moduleItems = visibleModules.flatMap((module) => {
+        const canOpen = module === 'finance' ? hasFinanceAccess(user) : hasModule(module);
+        if (!canOpen) return [];
+        const definition = MODULE_NAVIGATION[module];
+        return definition.items.map((item) => ({
+          id: `nav-${module}-${item.id}`,
+          type: t(definition.nameKey),
+          title: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)
+            ? 'allClients'
+            : item.labelKey),
+          href: item.href,
+          icon: item.icon,
+        }));
+      });
 
       return [
-        ...(hasModule('administration') ? administrationItems : []),
-        ...(hasFinanceAccess(user) ? financeItems : []),
-        ...(hasModule('sales') ? salesItems : []),
-        ...(hasModule('teacher') ? teacherItems : []),
-        ...(hasModule('marketing') ? marketingItems : []),
-        { id: 'nav-task-board', type: t('taskBoard'), title: t('taskBoard'), href: '/tasks', icon: KanbanSquare },
+        ...moduleItems,
+        {
+          id: 'nav-tasks',
+          type: t(TASKS_NAVIGATION_ITEM.labelKey),
+          title: t(TASKS_NAVIGATION_ITEM.labelKey),
+          href: TASKS_NAVIGATION_ITEM.href,
+          icon: TASKS_NAVIGATION_ITEM.icon,
+        },
       ];
     },
-    [finance, t, user]
+    [t, user]
   );
 
   const normalizedSearch = search.trim().toLowerCase();
@@ -252,7 +229,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   className="cursor-pointer"
                 >
                   {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
-                  <span>{item.title}</span>
+                  <div className="min-w-0">
+                    <p className="truncate">{item.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{item.type}</p>
+                  </div>
                 </CommandItem>
               );
             })}

@@ -250,7 +250,7 @@ router.get('/leads', async (req, res) => {
     res.json(await applyLeadVisibilityForActor(
       {
         userId: req.user!.id,
-        module: String(req.user!.module),
+        module: req.user!.module,
         modules: assignedModules,
         scopeModule: 'sales',
       },
@@ -598,7 +598,7 @@ router.get('/leads/:id', async (req, res) => {
     ]);
     const [visibleLead] = await applyLeadVisibilityForActor({
       userId: req.user!.id,
-      module: String(req.user!.module),
+      module: req.user!.module,
       modules: getAssignedModules(req.user),
       scopeModule: 'sales',
     }, [lead]);

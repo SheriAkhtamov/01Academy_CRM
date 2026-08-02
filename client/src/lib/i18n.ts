@@ -223,8 +223,12 @@ export const translations = {
   marketingBySources: { en: 'Marketing by Sources (CPL / CAC / ROAS)', ru: 'Маркетинг по источникам (CPL / CAC / ROAS)' },
   marketingExpenseTitle: { en: 'Marketing Expense', ru: 'Маркетинговый расход' },
   marketingTab: { en: 'Marketing', ru: 'Маркетинг' },
+  marketingOverviewTitle: { en: 'Marketing Overview', ru: 'Обзор маркетинга' },
+  marketingFunnelSection: { en: 'Funnel & Conversion', ru: 'Воронка и конверсия' },
+  marketingReferrals: { en: 'Referral Program', ru: 'Реферальная программа' },
+  marketingExpenses: { en: 'Marketing Expenses', ru: 'Маркетинговые расходы' },
   messages: { en: 'Messages', ru: 'Сообщения' },
-  salesInbox: { en: 'Direct', ru: 'Входящие' },
+  salesInbox: { en: 'Inbox', ru: 'Входящие' },
   unreadMessageCount: {
     en: '{count} unread messages',
     ru: 'Непрочитанных сообщений: {count}',
@@ -234,7 +238,7 @@ export const translations = {
     ru: 'Работайте с диалогами из всех подключённых каналов в одном разделе.',
   },
   minutes: { en: ' min', ru: ' мин' },
-  navDashboard: { en: 'Dashboard', ru: 'Главный экран' },
+  salesOverviewTitle: { en: 'Sales Overview', ru: 'Обзор продаж' },
   salesOverviewSubtitle: {
     en: 'Key sales metrics for the selected period',
     ru: 'Ключевые показатели продаж за выбранный период',
@@ -364,7 +368,6 @@ export const translations = {
   roasLabel: { en: 'ROAS', ru: 'ROAS' },
   roasTarget: { en: 'target > 5x', ru: 'цель больше 5x' },
   russian: { en: 'Russian', ru: 'Русский' },
-  salesPipeline: { en: 'Sales Pipeline', ru: 'Воронка продаж' },
   saveChanges: { en: 'Save Changes', ru: 'Сохранить изменения' },
   saveExpense: { en: 'Save Expense', ru: 'Сохранить расход' },
   saving: { en: 'Saving...', ru: 'Сохранение...' },
@@ -407,7 +410,7 @@ export const translations = {
   uzs: { en: ' UZS', ru: ' сум' },
   validEmailRequired: { en: 'Valid email is required', ru: 'Требуется корректный адрес электронной почты' },
   viewCredentials: { en: 'View credentials', ru: 'Просмотр учётных данных' },
-  warmBase: { en: 'Warm Base', ru: 'Тёплая база' },
+  warmBase: { en: 'Warm Leads', ru: 'Тёплые лиды' },
 
   averageRatingLabel: { en: 'Average Rating:', ru: 'Средняя оценка:' },
   lessonProgress: { en: 'Lesson progress', ru: 'Прогресс занятий' },
@@ -579,7 +582,7 @@ export const translations = {
   returnTo: { en: 'Return to', ru: 'Вернуть в' },
   noLeadsInStage: { en: 'No leads in this stage', ru: 'В этапе нет лидов' },
   call: { en: 'Call', ru: 'Позвонить' },
-  callJournal: { en: 'Call journal', ru: 'Журнал вызовов' },
+  callJournal: { en: 'Call Log', ru: 'Журнал звонков' },
   callJournalDescription: {
     en: 'Incoming and outgoing calls, linked leads, talk time, and recordings.',
     ru: 'Входящие и исходящие звонки, связанные лиды, длительность разговоров и записи.',
@@ -806,7 +809,7 @@ export const translations = {
   assignToMeAndArchive: { en: 'Assign to me and archive', ru: 'Присвоить себе и архивировать' },
   assignToMeAndMove: { en: 'Assign to me and move', ru: 'Присвоить себе и перенести' },
   assignManagerAndMove: { en: 'Assign and move', ru: 'Назначить и перенести' },
-  leadArchive: { en: 'Archive', ru: 'Архив' },
+  leadArchive: { en: 'Lead Archive', ru: 'Архив лидов' },
   leadArchiveDescription: { en: 'Leads removed from the active pipeline are visible to every sales manager here.', ru: 'Здесь все менеджеры видят лидов, убранных из активной воронки.' },
   leadAssignedAndArchived: { en: 'Lead assigned to you and archived', ru: 'Лид присвоен вам и добавлен в архив' },
   leadAssignedAndMoved: { en: 'Responsible manager assigned and lead moved', ru: 'Ответственный назначен, лид перенесён' },
@@ -852,7 +855,7 @@ export const translations = {
   leadToPaidConversion: { en: 'Lead to Paid Conversion', ru: 'Конверсия лид → оплата' },
   myStudents: { en: 'My Clients', ru: 'Мои клиенты' },
   paymentStatus: { en: 'Payment Status', ru: 'Статус оплаты' },
-  pipeline: { en: 'Pipeline', ru: 'Воронка' },
+  pipeline: { en: 'Sales Pipeline', ru: 'Воронка продаж' },
   reset: { en: 'Reset', ru: 'Сбросить' },
   statusUpdated: { en: 'Status updated', ru: 'Статус обновлён' },
   taskUpdateFailed: { en: 'Task update failed', ru: 'Не удалось обновить задачу' },
@@ -888,6 +891,8 @@ export const translations = {
   monday: { en: 'Monday', ru: 'Понедельник' },
   mondayShort: { en: 'Mon', ru: 'Пн' },
   myGroups: { en: 'My Groups', ru: 'Мои группы' },
+  teacherPerformance: { en: 'My Performance', ru: 'Мои показатели' },
+  teacherSchedule: { en: 'My Schedule', ru: 'Моё расписание' },
   myGroupsCount: { en: 'My Groups', ru: 'Моих групп' },
   noGrades: { en: 'No ratings', ru: 'Нет оценок' },
   noGroups: { en: 'No groups', ru: 'Нет групп' },
@@ -917,7 +922,6 @@ export const translations = {
   sundayShort: { en: 'Sun', ru: 'Вс' },
   taskDone: { en: 'Done', ru: 'Выполнено' },
   taskInProgress: { en: 'In progress', ru: 'В работе' },
-  teacherModule: { en: 'Teacher module', ru: 'Модуль учителей' },
   thursday: { en: 'Thursday', ru: 'Четверг' },
   thursdayShort: { en: 'Thu', ru: 'Чт' },
   todayLessons: { en: 'Today lessons', ru: 'Занятия сегодня' },
@@ -936,8 +940,7 @@ export const translations = {
   employeeLoginHint: { en: 'After saving, copy the generated login and temporary password from the credentials window.', ru: 'После сохранения скопируйте сгенерированный логин и временный пароль из окна доступа.' },
   loginLabel: { en: 'Login', ru: 'Логин' },
   noModuleAssigned: { en: 'No module assigned', ru: 'Модуль не назначен' },
-  systemAdministration: { en: 'System Administration', ru: 'Администрирование системы' },
-  salesSettings: { en: 'Sales settings', ru: 'Настройки продаж' },
+  salesSettings: { en: 'Sales Management', ru: 'Управление продажами' },
   salesSettingsDescription: {
     en: 'Manage lead distribution, pipeline stages, and sales goals.',
     ru: 'Управляйте распределением лидов, этапами воронки и целями продаж.',
@@ -1137,7 +1140,7 @@ export const translations = {
   leadSheetPaymentFormHint: { en: 'Confirming the first payment turns this lead into a client.', ru: 'Подтверждение первой оплаты превращает лида в клиента.' },
 
   // UX improvements — academy configuration, schools, courses and scheduling
-  academyConfiguration: { en: 'Academy configuration', ru: 'Настройки академии' },
+  academyConfiguration: { en: 'Academy Structure', ru: 'Структура академии' },
   academyConfigurationDescription: { en: 'Manage schools, courses, study groups and resource schedules.', ru: 'Управляйте школами, курсами, учебными группами и расписанием ресурсов.' },
   activeCourse: { en: 'Active course', ru: 'Активный курс' },
   activeCourseDescription: { en: 'The course is available for enrollment and scheduling.', ru: 'Курс доступен для записи и планирования занятий.' },
@@ -1431,7 +1434,7 @@ export const translations = {
   editRoom: { en: 'Edit room', ru: 'Редактировать кабинет' },
   noRooms: { en: 'No rooms yet', ru: 'Кабинетов пока нет' },
   noRoomsDescription: { en: 'Add a room to a school before creating groups.', ru: 'Добавьте кабинет в филиал перед созданием групп.' },
-  resourceCalendar: { en: 'Resource calendar', ru: 'Шахматка кабинетов' },
+  resourceCalendar: { en: 'Resource Schedule', ru: 'Расписание ресурсов' },
   resourceCalendarDescription: { en: 'See lessons and demos by physical or online resource.', ru: 'Смотрите уроки и демо по физическим и онлайн-ресурсам.' },
   scheduleResources: { en: 'Resources', ru: 'Ресурсы' },
   roomAvailable: { en: 'Available', ru: 'Свободен' },
@@ -1500,7 +1503,7 @@ export const translations = {
   priorityNormal: { en: 'Normal priority', ru: 'Обычный приоритет' },
   priorityUrgent: { en: 'Urgent', ru: 'Срочно' },
   reopenTask: { en: 'Reopen task', ru: 'Вернуть в работу' },
-  taskBoard: { en: 'Task board', ru: 'Доска задач' },
+  taskBoard: { en: 'Tasks', ru: 'Задачи' },
   taskBoardSubtitle: { en: 'Plan work, assign owners, and track progress across teams.', ru: 'Планируйте работу, назначайте исполнителей и отслеживайте прогресс команд.' },
   taskAssignOtherEmployeesAdminOnly: { en: 'Only administrators can assign tasks to other employees.', ru: 'Назначать задачи другим сотрудникам могут только администраторы.' },
   taskDeletedToast: { en: 'Task deleted', ru: 'Задача удалена' },
@@ -1710,10 +1713,6 @@ export const translations = {
   weeklySchedule: { en: 'Weekly schedule', ru: 'Недельное расписание' },
 
   // UX improvements — persistent module identity
-  administrationModule: {
-    en: 'Administrator control center',
-    ru: 'Панель управления администратора',
-  },
   administrationModuleDescription: {
     en: 'Employees, academy structure, integrations, and system settings.',
     ru: 'Сотрудники, структура академии, интеграции и системные настройки.',
@@ -1722,11 +1721,7 @@ export const translations = {
     en: 'Current module',
     ru: 'Текущий модуль',
   },
-  marketingDepartmentModule: {
-    en: 'Marketing department',
-    ru: 'Отдел маркетинга',
-  },
-  marketingDepartmentModuleDescription: {
+  marketingModuleDescription: {
     en: 'Lead sources, funnel performance, expenses, and reports.',
     ru: 'Источники лидов, воронка, расходы и отчётность.',
   },
@@ -1734,19 +1729,11 @@ export const translations = {
     en: 'Open navigation',
     ru: 'Открыть навигацию',
   },
-  salesDepartmentModule: {
-    en: 'Sales department',
-    ru: 'Отдел продаж',
-  },
-  salesDepartmentModuleDescription: {
+  salesModuleDescription: {
     en: 'Leads, deals, clients, and manager tasks.',
     ru: 'Лиды, сделки, клиенты и задачи менеджера.',
   },
-  teacherDepartmentModule: {
-    en: 'Teachers department',
-    ru: 'Отдел учителей',
-  },
-  teacherWorkplaceModuleDescription: {
+  teacherModuleDescription: {
     en: 'Schedule, groups, attendance, and lesson ratings.',
     ru: 'Расписание, группы, посещаемость и оценки занятий.',
   },
@@ -1779,7 +1766,7 @@ export const translations = {
     en: 'All sales managers, leads, clients, and tasks.',
     ru: 'Все менеджеры, лиды, клиенты и задачи отдела продаж.',
   },
-  salesModule: { en: 'Sales module', ru: 'Модуль продаж' },
+  salesModule: { en: 'Sales', ru: 'Продажи' },
   activeLeads: { en: 'Active leads', ru: 'Активные лиды' },
   allClients: { en: 'All clients', ru: 'Все клиенты' },
   leadAssignment: { en: 'Lead assignment', ru: 'Распределение лидов' },
@@ -2055,7 +2042,7 @@ export const translations = {
   sortNewest: { en: 'Newest', ru: 'По времени' },
   jumpToBottom: { en: 'To latest', ru: 'К последнему' },
   // UX improvements — administration dashboard
-  adminDashboardTitle: { en: 'Dashboard', ru: 'Дашборд' },
+  adminDashboardTitle: { en: 'Academy Overview', ru: 'Обзор академии' },
   adminDashboardSubtitle: {
     en: 'Key metrics and the current state of the entire academy in one view.',
     ru: 'Ключевые показатели и текущее состояние всей академии в одном экране.',
@@ -2143,8 +2130,8 @@ export const translations = {
   },
 
   // Financial center
-  financeCenterModule: { en: 'Financial center', ru: 'Финансовый центр' },
-  financeCenterOverview: { en: 'Overview', ru: 'Обзор' },
+  financeModule: { en: 'Finance', ru: 'Финансы' },
+  financeCenterOverview: { en: 'Finance Overview', ru: 'Обзор финансов' },
   financeCenterIncome: { en: 'Income', ru: 'Доходы' },
   financeCenterPayroll: { en: 'Payroll', ru: 'Зарплаты' },
   financeCenterTransactions: { en: 'Transactions', ru: 'Операции' },

@@ -7,11 +7,11 @@ import {
 import type { TranslationKey } from '@/lib/i18n';
 
 const moduleTranslationKeys = {
-  administration: 'administrationModule',
-  sales: 'salesDepartmentModule',
-  teacher: 'teacherDepartmentModule',
-  marketing: 'marketingDepartmentModule',
-  finance: 'financeCenterModule',
+  administration: 'administration',
+  sales: 'salesModule',
+  teacher: 'teacher',
+  marketing: 'marketingTab',
+  finance: 'financeModule',
 } as const satisfies Record<AcademyAccessModule, TranslationKey>;
 
 export function getInitials(fullName: string): string {

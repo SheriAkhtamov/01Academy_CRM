@@ -13,12 +13,15 @@ import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
+import { useTranslation } from '@/hooks/useTranslation';
+import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
+import type { AcademyModule } from '@shared/academy';
 
 interface AuditLog {
   id: number;
   userId?: number | null;
   userName?: string | null;
-  userModule?: string | null;
+  userModule?: AcademyModule | null;
   action: string;
   entityType: string;
   entityId?: number | null;
@@ -39,7 +42,7 @@ interface AuditData {
     retryCount: number;
     createdAt: string;
   }>;
-  employees: Array<{ id: number; fullName: string; module: string }>;
+  employees: Array<{ id: number; fullName: string; module: AcademyModule }>;
 }
 
 type AuditCopy = ReturnType<typeof useCeoCopy>['audit'];
@@ -75,6 +78,7 @@ const presentValue = (value: unknown, copy: AuditCopy) => {
 
 export default function AuditPage() {
   const ceoCopy = useCeoCopy();
+  const { t } = useTranslation();
   const [tab, setTab] = useState('audit');
   const [userId, setUserId] = useState('all');
   const [action, setAction] = useState('all');
@@ -114,7 +118,10 @@ export default function AuditPage() {
       <PageHeader
         title={ceoCopy.audit.title}
         subtitle={ceoCopy.audit.subtitle}
-        breadcrumbs={[{ label: ceoCopy.audit.title }]}
+        breadcrumbs={[
+          { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
+          { label: ceoCopy.audit.title },
+        ]}
         actions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
       />
 

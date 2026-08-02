@@ -2,7 +2,11 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { ACADEMY_MODULES } from "../../../shared/academy";
+import {
+  ACADEMY_MODULES,
+  type AcademyAccessModule,
+  type AcademyModule,
+} from "../../../shared/academy";
 import { isOnlinePbxExtension } from "../../../shared/telephony";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
@@ -24,7 +28,7 @@ export const users = pgTable("users", {
   onlinePbxExtension: varchar("online_pbx_extension", { length: 20 }),
   dateOfBirth: timestamp("date_of_birth"),
   position: varchar("position", { length: 255 }),
-  module: varchar("module", { length: 50 }).notNull(),
+  module: varchar("module", { length: 50 }).$type<AcademyModule>().notNull(),
   hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
@@ -61,7 +65,7 @@ export const notifications = pgTable("notifications", {
 export const userModules = pgTable("user_modules", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  module: varchar("module", { length: 50 }).notNull(),
+  module: varchar("module", { length: 50 }).$type<AcademyAccessModule>().notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({

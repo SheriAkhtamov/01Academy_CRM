@@ -38,6 +38,7 @@ import {
   type TelephonyCallStatus,
 } from '@/lib/telephony';
 import { cn } from '@/lib/utils';
+import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 
 type JournalCall = {
   id: number;
@@ -158,7 +159,7 @@ export default function CallJournalPage() {
         )}
         subtitle={t('callJournalDescription')}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/sales' },
+          { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
           { label: t('callJournal') },
         ]}
         actions={(

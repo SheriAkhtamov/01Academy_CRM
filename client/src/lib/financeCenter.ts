@@ -24,7 +24,7 @@ export const currentFinancePeriod = () => {
 type Translate = (key: TranslationKey) => string;
 
 export const financeCopy = (t: Translate) => ({
-  module: t('financeCenterModule'),
+  module: t('financeModule'),
   overview: t('financeCenterOverview'),
   income: t('financeCenterIncome'),
   expenses: t('expenses'),

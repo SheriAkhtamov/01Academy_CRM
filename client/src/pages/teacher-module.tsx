@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -796,10 +797,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const fullName = user?.fullName || t('teacher');
   const sectionTitle: Record<TeacherSection, string> = {
-    overview: `${t('hello')}, ${fullName}`,
-    schedule: t('schedule'),
-    groups: t('myGroups'),
-    attendance: t('attendanceLabel'),
+    overview: t(moduleSectionLabelKey('teacher', 'overview')),
+    schedule: t(moduleSectionLabelKey('teacher', 'schedule')),
+    groups: t(moduleSectionLabelKey('teacher', 'groups')),
+    attendance: t(moduleSectionLabelKey('teacher', 'attendance')),
     ratings: t('lessonRatings'),
   };
 
@@ -992,9 +993,11 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={t('teacherModule')}
+        subtitle={section === 'overview'
+          ? `${t('hello')}, ${fullName}`
+          : t(MODULE_NAVIGATION.teacher.nameKey)}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/teacher-module' },
+          { label: t(MODULE_NAVIGATION.teacher.nameKey), href: '/teacher-module' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
       />

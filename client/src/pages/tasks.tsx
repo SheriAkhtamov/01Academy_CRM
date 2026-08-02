@@ -11,14 +11,14 @@ import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { hasLeadershipAccess } from '@shared/academy';
+import { hasLeadershipAccess, type AcademyModule } from '@shared/academy';
 import type { BoardStatus, BoardTasksResponse, UserMini } from '@/lib/boardTypes';
 
 interface ApiUser {
     id: number;
     fullName: string;
     position: string | null;
-    module: string;
+    module: AcademyModule;
     isActive?: boolean;
 }
 

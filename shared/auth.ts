@@ -1,4 +1,4 @@
-import type { AcademyAccessModule } from "./academy";
+import type { AcademyAccessModule, AcademyModule } from "./academy";
 
 export type SanitizedUser = {
   id: number;
@@ -8,7 +8,7 @@ export type SanitizedUser = {
   onlinePbxExtension: string | null;
   dateOfBirth: Date | string | null;
   position: string | null;
-  module: string;
+  module: AcademyModule;
   hasReportAccess: boolean | null;
   isActive: boolean | null;
   isOnline: boolean | null;

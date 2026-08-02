@@ -58,6 +58,7 @@ import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
+import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import {
   reportingRangeForPreset,
   reportingRangeQuery,
@@ -352,7 +353,7 @@ export default function AdminDashboardPage() {
         <PageHeader
           title={t('adminDashboardTitle')}
           subtitle={t('adminDashboardSubtitle')}
-          breadcrumbs={[{ label: t('adminDashboardTitle') }]}
+          breadcrumbs={[{ label: t(MODULE_NAVIGATION.administration.nameKey) }]}
         />
         <Alert variant="destructive">
           <AlertTriangle />
@@ -540,7 +541,7 @@ export default function AdminDashboardPage() {
       <PageHeader
         title={t('adminDashboardTitle')}
         subtitle={t('adminDashboardSubtitle')}
-        breadcrumbs={[{ label: t('adminDashboardTitle') }]}
+        breadcrumbs={[{ label: t(MODULE_NAVIGATION.administration.nameKey) }]}
         actions={(
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Badge variant="outline">
@@ -759,7 +760,7 @@ export default function AdminDashboardPage() {
 
         <Card className="self-start border-border/60 shadow-sm xl:col-span-2">
           <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-base">{t('salesPipeline')}</CardTitle>
+            <CardTitle className="text-base">{t('pipeline')}</CardTitle>
             <CardDescription>{t('adminCurrentPipeline')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 px-4 pb-4 pt-0">

@@ -61,6 +61,7 @@ import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
+import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { addReportingDays, isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import {
   UnsavedChangesDialog,
@@ -1026,10 +1027,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }
 
   const sectionTitle: Record<SalesSection, string> = {
-    overview: t('navDashboard'),
-    pipeline: t('pipeline'),
-    archive: t('leadArchive'),
-    schedule: t('salesSchedule'),
+    overview: t(moduleSectionLabelKey('sales', 'overview')),
+    pipeline: t(moduleSectionLabelKey('sales', 'pipeline')),
+    archive: t(moduleSectionLabelKey('sales', 'archive')),
+    schedule: t(moduleSectionLabelKey('sales', 'schedule')),
     students: isAdministrationModule ? t('allClients') : t('myStudents'),
   };
   const sectionSubtitle = section === 'overview'
@@ -1048,7 +1049,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         title={sectionTitle[section]}
         subtitle={sectionSubtitle}
         breadcrumbs={[
-          { label: t('salesModule'), href: '/sales' },
+          { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
         ]}
         actions={

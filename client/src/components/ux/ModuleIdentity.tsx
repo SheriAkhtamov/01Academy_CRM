@@ -1,15 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  GraduationCap,
-  Megaphone,
-  ShieldCheck,
-  TrendingUp,
-  Landmark,
-  KanbanSquare,
-} from 'lucide-react';
+import { KanbanSquare } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
+import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 
 type ModuleType =
   | 'sales'
@@ -76,39 +70,28 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
   const { user } = useAuth();
   const { t } = useTranslation();
   const moduleDefinitions: Record<ModuleType, ModuleDefinition> = {
-    sales: {
-      title: t('salesDepartmentModule'),
-      description: t('salesDepartmentModuleDescription'),
-      icon: TrendingUp,
-    },
-    administration: {
-      title: t('administrationModule'),
-      description: t('administrationModuleDescription'),
-      icon: ShieldCheck,
-    },
-    teacher: {
-      title: t('teacherModule'),
-      description: t('teacherWorkplaceModuleDescription'),
-      icon: GraduationCap,
-    },
-    marketing: {
-      title: t('marketingDepartmentModule'),
-      description: t('marketingDepartmentModuleDescription'),
-      icon: Megaphone,
-    },
-    finance: {
-      title: t('financeCenterModule'),
-      description: t('financeCenterSubtitle'),
-      icon: Landmark,
-    },
+    sales: resolveDefinition('sales'),
+    administration: resolveDefinition('administration'),
+    teacher: resolveDefinition('teacher'),
+    marketing: resolveDefinition('marketing'),
+    finance: resolveDefinition('finance'),
     tasks: {
-      title: t('taskBoard'),
+      title: t(TASKS_NAVIGATION_ITEM.labelKey),
       description: t('taskBoardSubtitle'),
       icon: KanbanSquare,
     },
   };
   const module = moduleDefinitions[resolveModuleType(location, user?.module)];
   const Icon = module.icon;
+
+  function resolveDefinition(moduleType: Exclude<ModuleType, 'tasks'>): ModuleDefinition {
+    const definition = MODULE_NAVIGATION[moduleType];
+    return {
+      title: t(definition.nameKey),
+      description: t(definition.descriptionKey),
+      icon: definition.icon,
+    };
+  }
 
   return (
     <div className="flex min-w-0 items-center gap-3">

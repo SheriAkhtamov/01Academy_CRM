@@ -65,6 +65,7 @@ import {
   resolveReferralLevel,
   resolveReferralMilestone,
   suggestCourseSlugByAge,
+  type AcademyAccessModule,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
 import {
@@ -912,7 +913,7 @@ export const parseTimeToMinutes = parseScheduleTimeToMinutes;
 
 export interface DatasetActor {
   userId: number;
-  module: string;
-  modules?: string[];
+  module: AcademyAccessModule | '';
+  modules?: AcademyAccessModule[];
   scopeModule?: 'sales' | 'teacher' | 'marketing';
 }

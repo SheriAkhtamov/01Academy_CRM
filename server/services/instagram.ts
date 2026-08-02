@@ -7,14 +7,18 @@ import {
   resolveInstagramLeadContactName,
 } from '../lib/instagram-lead';
 import { logger } from '../lib/logger';
-import { hasLeadershipAccess } from '@shared/academy';
+import {
+  hasLeadershipAccess,
+  type AcademyAccessModule,
+  type AcademyModule,
+} from '@shared/academy';
 import { upsertLeadChannel } from './lead-channels';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
 type InstagramUser = {
   id: number;
-  module: string;
-  modules?: string[] | null;
+  module: AcademyModule;
+  modules?: AcademyAccessModule[] | null;
 };
 
 type InstagramAccountRow = {

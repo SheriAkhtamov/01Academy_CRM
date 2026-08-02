@@ -6,6 +6,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import {
   isInstagramLead,
   isSyntheticInstagramPhone,
@@ -1826,7 +1827,7 @@ export default function MessagesPage() {
         title={t('salesInbox')}
         subtitle={t('messagesDesc')}
         breadcrumbs={[
-          { label: t('navDashboard'), href: '/sales' },
+          { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
           { label: t('salesInbox') },
         ]}
         actions={(

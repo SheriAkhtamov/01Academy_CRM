@@ -103,7 +103,7 @@
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.28.1",
-    "eslint": "^9.39.1",
+    "eslint": "^10.8.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.0.1",
     "jsdom": "^27.2.0",

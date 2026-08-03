@@ -23,6 +23,11 @@ import { runAutomations } from '../../services/automations';
 import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
+import {
+  getMetaMarketingIntegrationConfig,
+  processMetaConversionEvents,
+  retryMetaConversionEvent,
+} from '../../services/meta-marketing';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -107,6 +112,7 @@ import {
   updateRow,
 } from './academy-core';
 import {
+  academyDateOnlyKey,
   listAvailableSchoolSlots,
   parseDateOnly,
   parseReportingRange,
@@ -120,6 +126,10 @@ import {
   getMarketingModuleDataset,
   resolveTeacherId,
 } from './academy-analytics';
+import {
+  getMetaAttributionAnalytics,
+  getMetaConversionEventDataset,
+} from './meta-marketing-analytics';
 import { buildSalesDashboardMetrics } from './sales-dashboard-metrics';
 
 export const registerAcademyModuleRoutes = (router: ReturnType<typeof Router>) => {
@@ -492,6 +502,61 @@ router.get('/modules/marketing', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to fetch marketing module', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch marketing module') });
+  }
+});
+
+router.get('/modules/marketing/meta-attribution', async (req, res) => {
+  if (!ensureMarketingModuleAccess(req, res)) return;
+  try {
+    const reportingRange = parseReportingRange(req.query.from, req.query.to);
+    const defaultMonth = getZonedMonthRange(new Date(), ACADEMY_TIME_ZONE);
+    const range = reportingRange ?? {
+      start: defaultMonth.start,
+      end: defaultMonth.end,
+      from: academyDateOnlyKey(defaultMonth.start),
+      to: academyDateOnlyKey(new Date(defaultMonth.end.getTime() - 1)),
+    };
+    res.json({
+      ...(await getMetaAttributionAnalytics(range)),
+      integration: getMetaMarketingIntegrationConfig(),
+    });
+  } catch (error: any) {
+    logger.error('Failed to fetch Meta attribution analytics', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch Meta attribution analytics') });
+  }
+});
+
+router.get('/modules/marketing/meta-events', async (req, res) => {
+  if (!ensureMarketingModuleAccess(req, res)) return;
+  try {
+    const limit = Number(req.query.limit ?? 200);
+    res.json({
+      ...(await getMetaConversionEventDataset(Number.isFinite(limit) ? limit : 200)),
+      integration: getMetaMarketingIntegrationConfig(),
+    });
+  } catch (error: any) {
+    logger.error('Failed to fetch Meta conversion events', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch Meta conversion events') });
+  }
+});
+
+router.post('/modules/marketing/meta-events/:id/retry', async (req, res) => {
+  if (!ensureMarketingModuleAccess(req, res)) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'invalidData' });
+    const existing = await queryOne<{ status: string }>(
+      `SELECT status FROM meta_conversion_events WHERE id = $1`,
+      [id],
+    );
+    if (!existing) return res.status(404).json({ error: 'resourceNotFound' });
+    if (existing.status === 'sent') return res.status(409).json({ error: 'metaEventAlreadySent' });
+    const event = await retryMetaConversionEvent(id);
+    await processMetaConversionEvents(1);
+    res.json(event);
+  } catch (error: any) {
+    logger.error('Failed to retry Meta conversion event', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to retry Meta conversion event') });
   }
 });
 

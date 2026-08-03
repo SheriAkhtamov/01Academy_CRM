@@ -15,6 +15,8 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ux/DataTable';
 import { MarketingAnalyticsCharts } from '@/components/ux/analytics/MarketingAnalyticsCharts';
+import { MetaAttributionSection } from '@/components/marketing/MetaAttributionSection';
+import { MetaEventsSection } from '@/components/marketing/MetaEventsSection';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
@@ -64,7 +66,7 @@ const EMPTY_EXPENSE_FORM = {
   periodEnd: '',
 };
 
-type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses';
+type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses' | 'meta-attribution' | 'meta-events';
 
 type OverviewSourcePerformance = {
   sourceName: string;
@@ -464,13 +466,20 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     warm: t(moduleSectionLabelKey('marketing', 'warm-leads')),
     referrals: t(moduleSectionLabelKey('marketing', 'referrals')),
     expenses: t(moduleSectionLabelKey('marketing', 'expenses')),
+    'meta-attribution': t(moduleSectionLabelKey('marketing', 'meta-attribution')),
+    'meta-events': t(moduleSectionLabelKey('marketing', 'meta-events')),
   };
+  const sectionSubtitle = section === 'meta-attribution'
+    ? t('metaAttributionSubtitle')
+    : section === 'meta-events'
+      ? t('metaEventManagerSubtitle')
+      : t('channelsAndEfficiency');
 
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={t('channelsAndEfficiency')}
+        subtitle={sectionSubtitle}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.marketing.nameKey), href: '/marketing-module' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
@@ -485,7 +494,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         }
       />
 
-      {section === 'overview' ? (
+      {section === 'overview' || section === 'meta-attribution' ? (
         <ReportingDateRangeFilter
           value={reportingRange}
           onChange={setReportingRange}
@@ -556,7 +565,11 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       ) : null}
 
       <ModulePageBody contained={contained} ariaLabel={sectionTitle[section]}>
-      {section !== 'overview' ? (
+      {section === 'meta-attribution' ? (
+        <MetaAttributionSection reportingQuery={reportingQuery} />
+      ) : section === 'meta-events' ? (
+        <MetaEventsSection />
+      ) : section !== 'overview' ? (
       <Tabs value={section} className="space-y-4">
         {/* ─── Tab: Sources ─── */}
         <TabsContent value="sources" className="space-y-4">

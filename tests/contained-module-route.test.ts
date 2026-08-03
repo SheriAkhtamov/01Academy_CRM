@@ -22,6 +22,8 @@ describe('isContainedModuleRoute', () => {
     '/marketing-module/warm-base',
     '/marketing-module/referrals',
     '/marketing-module/expenses',
+    '/marketing-module/meta-attribution',
+    '/marketing-module/meta-events',
     '/marketing-module/tasks',
     '/finance/income',
     '/finance/expenses',

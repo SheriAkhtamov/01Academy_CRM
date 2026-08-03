@@ -212,6 +212,16 @@ export function AppRouter() {
             <MarketingModule section="expenses" />
           </ModuleGuard>
         )} />
+        <Route path="/marketing-module/meta-attribution" component={() => (
+          <ModuleGuard module="marketing">
+            <MarketingModule section="meta-attribution" />
+          </ModuleGuard>
+        )} />
+        <Route path="/marketing-module/meta-events" component={() => (
+          <ModuleGuard module="marketing">
+            <MarketingModule section="meta-events" />
+          </ModuleGuard>
+        )} />
         <Route path="/marketing-module" component={() => (
           <ModuleGuard module="marketing">
             <MarketingModule section="overview" />

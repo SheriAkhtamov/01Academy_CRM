@@ -10,6 +10,7 @@ import {
 import { isOnlinePbxExtension } from "../../../shared/telephony";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
+import { createMetaMarketingTables } from "./meta-marketing";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
@@ -1045,6 +1046,8 @@ export const instagramConversationReads = pgTable("instagram_conversation_reads"
   userIdx: index("instagram_conversation_reads_user_idx").on(table.userId),
 }));
 
+export const { metaLeadAttributions, metaConversionEvents } = createMetaMarketingTables({ leadId: academyLeads.id, conversationId: instagramConversations.id });
+
 export const academyNotificationOutbox = pgTable("academy_notification_outbox", {
   id: serial("id").primaryKey(),
   channel: varchar("channel", { length: 80 }).notNull(),
@@ -1328,23 +1331,11 @@ export const insertAcademyIntegrationLogSchema = createInsertSchema(academyInteg
   updatedAt: true,
 });
 
-export const insertInstagramAccountSchema = createInsertSchema(instagramAccounts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertInstagramConversationSchema = createInsertSchema(instagramConversations).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertInstagramMessageSchema = createInsertSchema(instagramMessages).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertInstagramAccountSchema = createInsertSchema(instagramAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInstagramConversationSchema = createInsertSchema(instagramConversations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInstagramMessageSchema = createInsertSchema(instagramMessages).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMetaLeadAttributionSchema = createInsertSchema(metaLeadAttributions).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMetaConversionEventSchema = createInsertSchema(metaConversionEvents).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertAcademyNotificationOutboxSchema = createInsertSchema(academyNotificationOutbox).omit({
   id: true,
@@ -1454,6 +1445,10 @@ export type InstagramConversation = typeof instagramConversations.$inferSelect;
 export type InsertInstagramConversation = z.infer<typeof insertInstagramConversationSchema>;
 export type InstagramMessage = typeof instagramMessages.$inferSelect;
 export type InsertInstagramMessage = z.infer<typeof insertInstagramMessageSchema>;
+export type MetaLeadAttribution = typeof metaLeadAttributions.$inferSelect;
+export type InsertMetaLeadAttribution = z.infer<typeof insertMetaLeadAttributionSchema>;
+export type MetaConversionEvent = typeof metaConversionEvents.$inferSelect;
+export type InsertMetaConversionEvent = z.infer<typeof insertMetaConversionEventSchema>;
 export type AcademyNotificationOutbox = typeof academyNotificationOutbox.$inferSelect;
 export type InsertAcademyNotificationOutbox = z.infer<typeof insertAcademyNotificationOutboxSchema>;
 export type Message = typeof messages.$inferSelect;

@@ -64,7 +64,17 @@ interface AppConfig {
     };
     metaAds?: {
       accessToken?: string;
+      marketingAccessToken?: string;
+      capiAccessToken?: string;
       adAccountId?: string;
+      businessId?: string;
+      datasetId?: string;
+      pageId?: string;
+      apiVersion?: string;
+      conversionStageCode?: string;
+      conversionEventName?: string;
+      partnerAgent?: string;
+      testEventCode?: string;
     };
     notion?: {
       token?: string;
@@ -228,6 +238,7 @@ const validateConfig = (config: AppConfig) => {
   }
 
   const instagram = config.integrations?.instagram;
+  const metaAds = config.integrations?.metaAds;
   if (config.server.environment === 'production') {
     validateHttpsIntegrationUrl(
       'integrations.instagram.graphApiUrl',
@@ -259,6 +270,9 @@ const validateConfig = (config: AppConfig) => {
     ) {
       throw new Error('integrations.instagram.tokenEncryptionKey must be a separate non-placeholder value of at least 32 characters');
     }
+  }
+  if (metaAds?.apiVersion && !/^v\d+\.\d+$/.test(metaAds.apiVersion.trim())) {
+    throw new Error('integrations.metaAds.apiVersion must look like v25.0');
   }
 };
 

@@ -526,6 +526,13 @@
       "when": 1787414400000,
       "tag": "0074_add_demo_lessons",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1787500800000,
+      "tag": "0075_add_meta_attribution_and_capi",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,11 @@ import {
   type AcademyModule,
 } from '@shared/academy';
 import { upsertLeadChannel } from './lead-channels';
+import {
+  captureInstagramMetaAttribution,
+  extractMetaReferral,
+  linkMetaAttributionToLead,
+} from './meta-marketing';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
 type InstagramUser = {
@@ -114,6 +119,7 @@ const INSTAGRAM_SCOPES = [
 const INSTAGRAM_WEBHOOK_FIELDS = [
   'messages',
   'messaging_postbacks',
+  'messaging_referrals',
   'messaging_seen',
   'message_reactions',
 ];
@@ -1524,6 +1530,44 @@ const processReceiptEvent = async (account: InstagramAccountRow, event: any) => 
   }
 };
 
+const processReferralEvent = async (account: InstagramAccountRow, event: any) => {
+  if (!extractMetaReferral(event)) return;
+  const senderIgsid = String(event?.sender?.id ?? '');
+  const recipientIgsid = String(event?.recipient?.id ?? '');
+  if (!senderIgsid || !recipientIgsid) return;
+  const participantIgsid = senderIgsid === String(account.ig_user_id) ? recipientIgsid : senderIgsid;
+  if (!participantIgsid || participantIgsid === String(account.ig_user_id)) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const conversationResult = await client.query(
+      `INSERT INTO instagram_conversations (account_id, participant_igsid)
+       VALUES ($1,$2)
+       ON CONFLICT (account_id, participant_igsid) DO UPDATE SET updated_at = NOW()
+       RETURNING *`,
+      [account.id, participantIgsid],
+    );
+    const conversation = conversationResult.rows[0];
+    await captureInstagramMetaAttribution({
+      client,
+      conversationId: Number(conversation.id),
+      leadId: conversation.lead_id ? Number(conversation.lead_id) : null,
+      event,
+    });
+    await client.query(
+      `UPDATE instagram_accounts SET last_webhook_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [account.id],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 const processMessagingEvent = async (account: InstagramAccountRow, event: any) => {
   const message = event?.message;
 
@@ -1535,6 +1579,9 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
   // The participant is the one who saw/delivered-to, so we stamp our own
   // OUTBOUND messages in that conversation up to (and including) the watermark.
   if (!message || (!message.mid && !message.text && !message.attachments)) {
+    if (extractMetaReferral(event)) {
+      return processReferralEvent(account, event);
+    }
     if (event?.read?.watermark != null || event?.delivery?.watermark != null) {
       return processReceiptEvent(account, event);
     }
@@ -1599,6 +1646,16 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
         ? (await client.query(`SELECT id, manager_id FROM academy_leads WHERE id = $1`, [conversation.lead_id])).rows[0]
         : null
       : await ensureLeadForConversation(client, account, conversation, participantIgsid, profile);
+
+    if (lead?.id) {
+      await linkMetaAttributionToLead(client, Number(conversation.id), Number(lead.id));
+    }
+    await captureInstagramMetaAttribution({
+      client,
+      conversationId: Number(conversation.id),
+      leadId: lead?.id ? Number(lead.id) : null,
+      event,
+    });
 
     const messageResult = await client.query(
       `INSERT INTO instagram_messages

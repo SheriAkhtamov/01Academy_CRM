@@ -72,6 +72,8 @@ describe('module navigation naming', () => {
         'Тёплые лиды',
         'Реферальная программа',
         'Маркетинговые расходы',
+        'Атрибуция Meta',
+        'Менеджер событий Meta',
       ],
       finance: ['Обзор финансов', 'Доходы', 'Расходы', 'Зарплаты', 'Операции'],
     });
@@ -85,6 +87,8 @@ describe('module navigation naming', () => {
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/teacher-module/schedule');
     expect(hrefs).toContain('/marketing-module/warm-base');
+    expect(hrefs).toContain('/marketing-module/meta-attribution');
+    expect(hrefs).toContain('/marketing-module/meta-events');
     expect(hrefs).toContain('/finance/transactions');
     expect(TASKS_NAVIGATION_ITEM.href).toBe('/tasks');
   });

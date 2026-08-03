@@ -6,6 +6,10 @@ import { runAutomations } from "./automations";
 import { buildWeeklyReport } from "./weekly-report";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
+import {
+  processMetaAttributionEnrichment,
+  processMetaConversionEvents,
+} from "./meta-marketing";
 
 export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
 
@@ -36,12 +40,22 @@ export const startScheduler = () => {
   // Outbox worker — drains the notification queue every minute.
   cron.schedule("* * * * *", async () => {
     try {
-      const dispatched = await processOutbox(50);
+      const [dispatched, enrichedMetaAttributions, dispatchedMetaEvents] = await Promise.all([
+        processOutbox(50),
+        processMetaAttributionEnrichment(20),
+        processMetaConversionEvents(50),
+      ]);
       if (dispatched > 0) {
         logger.info(`[scheduler] outbox dispatched ${dispatched} messages`);
       }
+      if (enrichedMetaAttributions > 0) {
+        logger.info(`[scheduler] enriched ${enrichedMetaAttributions} Meta attributions`);
+      }
+      if (dispatchedMetaEvents > 0) {
+        logger.info(`[scheduler] processed ${dispatchedMetaEvents} Meta CAPI events`);
+      }
     } catch (error) {
-      logger.error("[scheduler] outbox worker error", { error });
+      logger.error("[scheduler] minute worker error", { error });
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
@@ -88,7 +102,7 @@ export const startScheduler = () => {
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   logger.info(
-    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; outbox: 1m, escalations: hourly, automations: daily 09:00, weekly report: Mon 09:00)`,
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; outbox/meta: 1m, escalations: hourly, automations: daily 09:00, weekly report: Mon 09:00)`,
   );
 };
 

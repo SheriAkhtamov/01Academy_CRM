@@ -14,6 +14,8 @@ import {
   validateLeadForStatusChange,
 } from '@shared/academy';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
+import { logger } from '../../lib/logger';
+import { enqueueMetaConversionForLead } from '../../services/meta-marketing';
 import {
   ACADEMY_REFERRAL_ADVISORY_LOCK,
   ACADEMY_TIME_ZONE,
@@ -38,6 +40,7 @@ import {
   query,
   queryOne,
   resolveLeadManagerId,
+  runAfterTransactionCommit,
   salesUserAccessSql,
   syncLeadChannelInCurrentTransaction,
   syncLeadPhones,
@@ -1760,6 +1763,18 @@ export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, pr
   const actor = actorContextFrom(source);
   const managerId = lead.managerId ?? actor.userId;
   const now = new Date();
+
+  await runAfterTransactionCommit(async () => {
+    try {
+      await enqueueMetaConversionForLead(lead, previousStatus);
+    } catch (error) {
+      logger.error('Failed to enqueue Meta CAPI event for lead stage', {
+        leadId: lead.id,
+        statusCode: lead.statusCode,
+        error,
+      });
+    }
+  });
 
   if (lead.statusCode === 'new_request') {
     await createNotification(managerId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);

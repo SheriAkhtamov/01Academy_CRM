@@ -233,6 +233,14 @@ export const translations = {
     en: '{count} unread messages',
     ru: 'Непрочитанных сообщений: {count}',
   },
+  unreadNotificationCount: {
+    en: '{count} unread notifications',
+    ru: 'Непрочитанных уведомлений: {count}',
+  },
+  moreNotificationsHidden: {
+    en: '{count} more in the list',
+    ru: 'Ещё в списке: {count}',
+  },
   messagesDesc: {
     en: 'Manage conversations from every connected channel in one place.',
     ru: 'Работайте с диалогами из всех подключённых каналов в одном разделе.',

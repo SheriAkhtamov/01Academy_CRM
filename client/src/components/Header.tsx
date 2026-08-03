@@ -15,8 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
-import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck, UserPlus, ArrowLeftRight, Loader2, Check } from 'lucide-react';
+import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck, UserPlus, Loader2, Check } from 'lucide-react';
 import ChatSheet from './ux/ChatSheet';
 import ConfirmDialog from './ConfirmDialog';
 import SettingsModal from './modals/SettingsModal';
@@ -38,6 +37,8 @@ interface HeaderProps {
   onMenuToggle?: () => void;
 }
 
+const VISIBLE_NOTIFICATIONS = 6;
+
 export default function Header({
   title,
   subtitle,
@@ -50,7 +51,6 @@ export default function Header({
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
-  const [showAccountList, setShowAccountList] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<number | null>(null);
   const [accountToRemove, setAccountToRemove] = useState<SavedAccountEntry | null>(null);
@@ -67,21 +67,56 @@ export default function Header({
   });
 
   const unreadNotificationCount = notifications.filter((n: any) => !n.isRead).length;
+  const unreadNotificationsLabel = t('unreadNotificationCount')
+    .replace('{count}', String(unreadNotificationCount));
+  const hiddenNotificationCount = Math.max(0, notifications.length - VISIBLE_NOTIFICATIONS);
   const unreadMessageCount = totalUnreadMessages(conversations);
   const unreadMessagesLabel = t('unreadMessageCount')
     .replace('{count}', String(unreadMessageCount));
 
+  // The badge is what the user watches, so move it the moment they act instead of
+  // waiting for a refetch round-trip; a failed request rolls the count back.
+  const cancelNotificationRefetch = async () => {
+    await queryClient.cancelQueries({ queryKey: ['/api/notifications'] });
+    return { previous: queryClient.getQueryData<any[]>(['/api/notifications']) };
+  };
+
+  const restoreNotifications = (context: { previous?: any[] } | undefined) => {
+    if (context?.previous) {
+      queryClient.setQueryData(['/api/notifications'], context.previous);
+    }
+  };
+
   const markReadMutation = useMutation({
     mutationFn: (notificationId: number) =>
       apiRequest('PUT', `/api/notifications/${notificationId}/read`),
-    onSuccess: () => {
+    onMutate: async (notificationId) => {
+      const context = await cancelNotificationRefetch();
+      queryClient.setQueryData<any[]>(['/api/notifications'], (current = []) => current.map(
+        (item) => (item.id === notificationId ? { ...item, isRead: true } : item),
+      ));
+      return context;
+    },
+    onError: (_error, _notificationId, context) => restoreNotifications(context),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
     },
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: () => apiRequest('PUT', '/api/notifications/read-all'),
-    onSuccess: () => {
+    onMutate: async () => {
+      const context = await cancelNotificationRefetch();
+      queryClient.setQueryData<any[]>(['/api/notifications'], (current = []) => current.map(
+        (item) => (item.isRead ? item : { ...item, isRead: true }),
+      ));
+      return context;
+    },
+    onError: (error: Error, _variables, context) => {
+      restoreNotifications(context);
+      toast({ title: t('updateFailed'), description: error.message, variant: 'destructive' });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
     },
   });
@@ -171,17 +206,15 @@ export default function Header({
                   variant="ghost"
                   size="icon"
                   className="relative rounded-full"
-                  aria-label={t('notifications')}
+                  aria-label={unreadNotificationCount > 0 ? unreadNotificationsLabel : t('notifications')}
                 >
                   <Bell className="h-5 w-5" />
-                  {unreadNotificationCount > 0 && (
-                    <Badge
-                      variant="destructive"
-                      className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center p-0 text-[10px] font-bold ring-2 ring-background"
-                    >
-                      {unreadNotificationCount}
-                    </Badge>
-                  )}
+                  <UnreadCountBadge
+                    count={unreadNotificationCount}
+                    label={unreadNotificationsLabel}
+                    announce
+                    className="pointer-events-none absolute -right-0.5 -top-0.5"
+                  />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80">
@@ -206,7 +239,7 @@ export default function Header({
                     {t('noNotifications')}
                   </div>
                 ) : (
-                  notifications.slice(0, 6).map((notification: any) => (
+                  notifications.slice(0, VISIBLE_NOTIFICATIONS).map((notification: any) => (
                     <DropdownMenuItem
                       key={notification.id}
                       className={`flex justify-between items-start p-3 gap-2 ${notification.isRead ? 'opacity-60' : ''}`}
@@ -243,6 +276,11 @@ export default function Header({
                       </div>
                     </DropdownMenuItem>
                   ))
+                )}
+                {hiddenNotificationCount > 0 && (
+                  <p className="border-t border-border/60 px-3 py-2 text-center text-xs text-muted-foreground">
+                    {t('moreNotificationsHidden').replace('{count}', String(hiddenNotificationCount))}
+                  </p>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

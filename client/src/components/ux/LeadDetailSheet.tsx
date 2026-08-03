@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -30,6 +30,10 @@ import {
   LeadMergeConflictDialog,
   type LeadMergeDialogLead,
 } from '@/components/ux/LeadMergeConflictDialog';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -420,9 +424,33 @@ export function LeadDetailSheet({
     defaultValues: { title: '', deadlineAt: '', description: '' },
   });
 
+  // Closing the sheet must not silently discard what the user typed in any tab:
+  // the deal form, an unsent payment, a task draft, or a comment draft.
+  const sheetHasUnsavedChanges = leadForm.formState.isDirty
+    || paymentForm.formState.isDirty
+    || taskForm.formState.isDirty
+    || commentDraft.trim().length > 0;
+  const closeSheet = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) setTagDropdownOpen(false);
+    onOpenChange(nextOpen);
+  }, [onOpenChange]);
+  const unsavedGuard = useUnsavedChangesGuard({
+    open,
+    isDirty: sheetHasUnsavedChanges,
+    onOpenChange: closeSheet,
+  });
+
   useEffect(() => {
     if (open) setActiveTab(initialTab);
   }, [initialTab, open]);
+
+  // Per-lead drafts must not leak into another lead when the sheet switches
+  // records while staying open (e.g. after a merge opens the retained lead).
+  useEffect(() => {
+    setCommentDraft('');
+    taskForm.reset({ title: '', deadlineAt: '', description: '' });
+    setDuplicateHint(null);
+  }, [leadId, taskForm]);
 
   // Track which lead snapshot we last hydrated the forms from. Background refetches
   // (e.g. after recording a contact) must NOT wipe what the user is typing in other tabs,
@@ -459,7 +487,7 @@ export function LeadDetailSheet({
 
   useEffect(() => {
     const lead = leadQuery.data;
-    if (!lead || !leadSnapshotKey) return;
+    if (!open || !lead || !leadSnapshotKey) return;
 
     // Reseed the deal form only when the lead itself changes, or when the
     // server data changed AND the user is not mid-edit in the deal tab.
@@ -490,7 +518,7 @@ export function LeadDetailSheet({
       }
       hydratedTransientKey.current = transientSnapshotKey;
     }
-  }, [leadQuery.data, leadSnapshotKey, transientSnapshotKey, leadForm, paymentForm]);
+  }, [open, leadQuery.data, leadSnapshotKey, transientSnapshotKey, leadForm, paymentForm]);
 
   // Reset hydration tracking when the sheet closes so reopening reseeds cleanly.
   useEffect(() => {
@@ -501,9 +529,16 @@ export function LeadDetailSheet({
       setPendingManagerId(null);
       setDuplicateHint(null);
       setCreateStudentOpen(false);
+      setTagDropdownOpen(false);
       setCommentDraft('');
+      taskForm.reset({ title: '', deadlineAt: '', description: '' });
+      // Drop unsaved edits so the dirty flag clears; reopening reseeds the
+      // forms from the (possibly cached) lead data because the hydration
+      // effect above re-runs on `open` with the tracking keys nulled here.
+      leadForm.reset();
+      paymentForm.reset();
     }
-  }, [open]);
+  }, [open, leadForm, paymentForm, taskForm]);
 
   const finishMutation = async (title: string) => {
     toast({ title });
@@ -745,10 +780,7 @@ export function LeadDetailSheet({
   return (
     <Sheet
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) setTagDropdownOpen(false);
-        onOpenChange(nextOpen);
-      }}
+      onOpenChange={unsavedGuard.handleOpenChange}
     >
       <SheetContent
         className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
@@ -1740,6 +1772,11 @@ export function LeadDetailSheet({
           if (!lead?.id || !duplicateHint?.id) return;
           mergeLeads.mutate({ retainedLeadId: Number(duplicateHint.id), duplicateLeadId: lead.id });
         }}
+      />
+      <UnsavedChangesDialog
+        open={unsavedGuard.confirmationOpen}
+        onOpenChange={unsavedGuard.setConfirmationOpen}
+        onDiscard={unsavedGuard.discardChanges}
       />
     </Sheet>
   );

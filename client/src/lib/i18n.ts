@@ -395,6 +395,7 @@ export const translations = {
   thisActionCannotBeUndone: { en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' },
   totalUsers: { en: 'Total Users', ru: 'Всего пользователей' },
   typeMessage: { en: 'Type a message...', ru: 'Напишите сообщение...' },
+  messageSendFailed: { en: 'Failed to send message', ru: 'Не удалось отправить сообщение' },
   updateFailed: { en: 'Update failed', ru: 'Ошибка обновления' },
   updateUser: { en: 'Update User', ru: 'Обновить пользователя' },
   useSearchToStartChat: { en: 'Use search to start a new chat', ru: 'Используйте поиск для начала нового чата' },

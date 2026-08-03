@@ -15,8 +15,9 @@ import { Badge } from '@/components/ui/badge';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from '@/hooks/use-toast';
 import { MessageCircle, Send, User, Circle, Search } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isToday } from 'date-fns';
 import { ru, enUS } from 'date-fns/locale';
 import type {
   ConversationUserDto,
@@ -85,6 +86,33 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   // Ensure messages is always an array
   const messages = Array.isArray(messagesData) ? messagesData : [];
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const lastMessageKey = messages.length > 0
+    ? `${messages[messages.length - 1].id}-${messages.length}`
+    : null;
+
+  const scrollThreadToBottom = (behavior: ScrollBehavior) => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end', behavior });
+  };
+
+  // Jump to the latest message when a conversation is opened or first loads.
+  useEffect(() => {
+    if (!open || !selectedEmployeeId || messagesLoading) return;
+    requestAnimationFrame(() => scrollThreadToBottom('auto'));
+  }, [open, selectedEmployeeId, messagesLoading]);
+
+  // Follow incoming messages, but only when the user is already near the bottom —
+  // never yank the viewport away from someone reading older history.
+  useEffect(() => {
+    if (lastMessageKey === null) return;
+    const viewport = messagesEndRef.current?.closest('[data-radix-scroll-area-viewport]');
+    if (!viewport) return;
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    if (distanceFromBottom < 320) {
+      requestAnimationFrame(() => scrollThreadToBottom('smooth'));
+    }
+  }, [lastMessageKey]);
 
   const markConversationRead = useMutation({
     mutationFn: (employeeId: number) =>
@@ -210,6 +238,15 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
       if (isNewConversation) {
         setSearchQuery('');
       }
+
+      requestAnimationFrame(() => scrollThreadToBottom('smooth'));
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('messageSendFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -397,7 +434,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                               >
                                 {(() => {
                                   try {
-                                    return message.createdAt ? format(new Date(message.createdAt), 'HH:mm', { locale }) : '';
+                                    if (!message.createdAt) return '';
+                                    const createdAt = new Date(message.createdAt);
+                                    return format(
+                                      createdAt,
+                                      isToday(createdAt) ? 'HH:mm' : 'd MMM, HH:mm',
+                                      { locale },
+                                    );
                                   } catch (e) {
                                     return t('now');
                                   }
@@ -414,6 +457,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                         <p className="text-xs text-muted-foreground mt-1">{t('startConversation')}</p>
                       </div>
                     )}
+                    <div ref={messagesEndRef} aria-hidden="true" />
                   </div>
                 </ScrollArea>
 

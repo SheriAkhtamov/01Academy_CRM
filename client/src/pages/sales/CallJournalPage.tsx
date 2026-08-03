@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
   CheckCheck,
@@ -118,6 +118,9 @@ export default function CallJournalPage() {
     queryKey: ['/api/telephony/calls/journal', queryString],
     queryFn: () => apiRequest('GET', `/api/telephony/calls/journal?${queryString}`),
     refetchInterval: (query) => (query.state.data?.items.some((call) => activeTelephonyStatuses.has(call.status)) ? 2_000 : 10_000),
+    // Keep the current rows on screen while the next page/filter result loads
+    // instead of collapsing the list into a skeleton on every transition.
+    placeholderData: keepPreviousData,
   });
   const { data: missedCallUnread = { count: 0 } } = useQuery({
     ...missedCallUnreadQueryOptions,
@@ -231,8 +234,8 @@ export default function CallJournalPage() {
                 <SelectItem value="declined">{t('telephonyStatusDeclined')}</SelectItem>
               </SelectContent>
             </Select>
-            <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label={t('dateFrom')} />
-            <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label={t('dateTo')} />
+            <Input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} aria-label={t('dateFrom')} />
+            <Input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} aria-label={t('dateTo')} />
           </CardContent>
         </Card>
 
@@ -255,10 +258,14 @@ export default function CallJournalPage() {
           ) : (
             <div
               ref={journalListRef}
-              className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+              className={cn(
+                'min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity [scrollbar-gutter:stable]',
+                journalQuery.isPlaceholderData && 'pointer-events-none opacity-60',
+              )}
               data-call-journal-scroll
               role="region"
               aria-label={t('callJournal')}
+              aria-busy={journalQuery.isPlaceholderData}
               tabIndex={0}
             >
               <div className="hidden md:block">

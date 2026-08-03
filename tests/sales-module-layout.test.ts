@@ -9,7 +9,7 @@ const messages = read('../client/src/pages/sales/InstagramMessagesPage.tsx');
 describe('sales module layout', () => {
   it('keeps the archived lead rows scrollable inside their card', () => {
     expect(dataTable).toContain('rootClassName?: string;');
-    expect(dataTable).toContain('<div className={cn(rootClassName)}>');
+    expect(dataTable).toContain('<div className={cn(rootClassName)} aria-busy={isLoading}>');
     expect(salesDashboard).toContain('rootClassName="flex h-full min-h-0 flex-col"');
     expect(salesDashboard).toContain('className="min-h-0 flex-1 overflow-auto overscroll-contain"');
   });

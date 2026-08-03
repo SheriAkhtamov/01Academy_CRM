@@ -13,9 +13,14 @@ const telephonyRoutes = readFileSync(
 describe('call journal navigation', () => {
   it('keeps a dedicated keyboard-accessible scroll region for journal rows', () => {
     expect(callJournal).toContain('data-call-journal-scroll');
-    expect(callJournal).toContain('className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"');
+    expect(callJournal).toContain("'min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity [scrollbar-gutter:stable]'");
     expect(callJournal).toContain('role="region"');
     expect(callJournal).toContain('tabIndex={0}');
+  });
+
+  it('keeps the previous page visible while the next one loads', () => {
+    expect(callJournal).toContain('placeholderData: keepPreviousData');
+    expect(callJournal).toContain('aria-busy={journalQuery.isPlaceholderData}');
   });
 
   it('loads fifty calls per page and derives navigation from the server response', () => {

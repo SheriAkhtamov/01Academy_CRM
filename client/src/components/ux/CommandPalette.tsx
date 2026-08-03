@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
@@ -120,11 +120,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   );
 
   const normalizedSearch = search.trim().toLowerCase();
+  // Defer the term that reaches the network so a fast typist does not fire one
+  // search request per keystroke; the local navigation filter stays instant.
+  const queriedSearch = useDeferredValue(normalizedSearch);
 
   const { data: serverResults = [], isFetching } = useQuery<ServerSearchItem[]>({
-    queryKey: ['academy-search', normalizedSearch],
-    queryFn: () => apiRequest('GET', `/api/academy/search?q=${encodeURIComponent(normalizedSearch)}&limit=8`),
-    enabled: open && normalizedSearch.length >= 2,
+    queryKey: ['academy-search', queriedSearch],
+    queryFn: () => apiRequest('GET', `/api/academy/search?q=${encodeURIComponent(queriedSearch)}&limit=8`),
+    enabled: open && queriedSearch.length >= 2,
     staleTime: 30_000,
   });
 
@@ -186,7 +189,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const showNavigation = filteredNavigation.length > 0;
   const showEntities = filteredEntities.length > 0;
-  const showSearching = normalizedSearch.length >= 2 && isFetching && !showEntities;
+  // While the deferred term lags behind what is typed, the request has not been
+  // issued yet — treat that as "still searching" so "nothing found" cannot flash.
+  const searchPending = isFetching || normalizedSearch !== queriedSearch;
+  const showSearching = normalizedSearch.length >= 2 && searchPending && !showEntities;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
@@ -214,7 +220,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             <p className="text-sm text-muted-foreground">{t('loading')}</p>
           </CommandEmpty>
         )}
-        {normalizedSearch.length >= 2 && !isFetching && !showNavigation && !showEntities && (
+        {normalizedSearch.length >= 2 && !searchPending && !showNavigation && !showEntities && (
           <CommandEmpty>{t('noSearchResults')}</CommandEmpty>
         )}
         {showNavigation && (

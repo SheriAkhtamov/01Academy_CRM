@@ -101,11 +101,19 @@ export function DataTable<T extends Record<string, any>>({
     });
   }, [data, sortKey, sortDirection, columns]);
 
+  // Reset to the first page only when sorting, page size, or the visible row set
+  // changes (filtering). Background refetches keep the array contents but change its
+  // identity, so depending on `data` itself would kick the user back to page 1
+  // after every mutation; out-of-range pages are clamped below instead.
   useEffect(() => {
     setCurrentPage(1);
-  }, [data, sortKey, sortDirection, pageSize]);
+  }, [data.length, sortKey, sortDirection, pageSize]);
 
-  const totalPages = pageSize > 0 ? Math.ceil(sortedData.length / pageSize) : 1;
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(sortedData.length / pageSize)) : 1;
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
   const pagedData = pageSize > 0 ? sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize) : sortedData;
 
   const handleSort = (key: string, sortable?: boolean) => {
@@ -129,7 +137,7 @@ export function DataTable<T extends Record<string, any>>({
   };
 
   return (
-    <div className={cn(rootClassName)}>
+    <div className={cn(rootClassName)} aria-busy={isLoading}>
       <div className={cn('overflow-x-auto', className)}>
         <Table containerClassName="overflow-visible">
           <TableHeader className="sticky top-0 z-10 bg-muted/70">
@@ -167,7 +175,17 @@ export function DataTable<T extends Record<string, any>>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pagedData.length > 0 ? (
+            {isLoading ? (
+              Array.from({ length: Math.min(pageSize > 0 ? pageSize : 6, 6) }, (_, rowIndex) => (
+                <TableRow key={`skeleton-${rowIndex}`} className="border-b border-border/50">
+                  {columns.map((column) => (
+                    <TableCell key={`skeleton-${rowIndex}-${column.key}`} className="p-3 px-4">
+                      <Skeleton className="h-4 w-full max-w-40" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : pagedData.length > 0 ? (
               pagedData.map((row, index) => (
                 <TableRow
                   key={keyExtractor(row, index)}
@@ -201,7 +219,7 @@ export function DataTable<T extends Record<string, any>>({
           </TableBody>
         </Table>
       </div>
-      {sortedData.length > 0 && (
+      {sortedData.length > 0 && !isLoading && (
         <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/40 px-1 pt-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span>

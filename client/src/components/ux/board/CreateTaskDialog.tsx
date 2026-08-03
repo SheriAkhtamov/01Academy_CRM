@@ -97,6 +97,9 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
     };
 
     const handleOpenChange = (next: boolean) => {
+        // Never drop the draft while the create request is still in flight —
+        // Esc/overlay clicks would otherwise close the dialog mid-submit.
+        if (!next && mutation.isPending) return;
         if (!next) reset();
         onOpenChange(next);
     };
@@ -182,8 +185,8 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                     <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                         {t('cancel')}
                     </Button>
-                    <Button onClick={handleSubmit} disabled={mutation.isPending}>
-                        {t('createTask')}
+                    <Button onClick={handleSubmit} disabled={!title.trim() || mutation.isPending}>
+                        {mutation.isPending ? t('saving') : t('createTask')}
                     </Button>
                 </div>
             </DialogContent>

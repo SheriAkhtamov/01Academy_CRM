@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { AlertCircle, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TaskBoard } from '@/components/ux/board/TaskBoard';
@@ -33,7 +34,7 @@ export default function TasksPage() {
     const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
 
-    const { data, isLoading } = useQuery<BoardTasksResponse>({
+    const { data, isLoading, isError, error, refetch, isFetching } = useQuery<BoardTasksResponse>({
         queryKey: ['/api/board/tasks'],
     });
 
@@ -113,6 +114,23 @@ export default function TasksPage() {
                             </div>
                         ))}
                     </div>
+                ) : isError ? (
+                    <Alert variant="destructive" className="mt-4">
+                        <AlertCircle />
+                        <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+                        <AlertDescription className="flex flex-col items-start gap-3">
+                            <span>{error instanceof Error ? error.message : t('errorOccurred')}</span>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => refetch()}
+                                disabled={isFetching}
+                            >
+                                {isFetching ? t('loading') : t('retry')}
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
                 ) : (
                     <div className="mt-2 flex min-h-0 flex-1 flex-col">
                         <TaskBoard

@@ -2,7 +2,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
-  CheckCheck,
   Clock3,
   Headphones,
   Phone,
@@ -30,6 +29,7 @@ import {
 } from '@/features/telephony/api';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import {
   activeTelephonyStatuses,
@@ -88,6 +88,7 @@ export default function CallJournalPage() {
   const { t, language } = useTranslation();
   const onlinePbxCall = useOnlinePbxCall();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [direction, setDirection] = useState('all');
   const [status, setStatus] = useState('all');
@@ -95,6 +96,7 @@ export default function CallJournalPage() {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const journalListRef = useRef<HTMLDivElement | null>(null);
+  const autoReadAttemptedCursorRef = useRef<number | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => setPage(1), [deferredSearch, direction, status, from, to]);
@@ -126,13 +128,16 @@ export default function CallJournalPage() {
   const { data: missedCallUnread } = useQuery({
     ...missedCallUnreadQueryOptions,
   });
-  const markMissedCallsRead = useMutation({
+  const { mutate: markMissedCallsRead } = useMutation({
     mutationFn: telephonyApi.markMissedCallsRead,
     onSuccess: (summary) => {
       queryClient.setQueryData(
         telephonyQueryKeys.missedCallUnread,
         summary,
       );
+    },
+    onError: () => {
+      toast({ title: t('updateFailed'), variant: 'destructive' });
     },
   });
 
@@ -150,8 +155,35 @@ export default function CallJournalPage() {
   const lastSeenMissedCallId = missedCallUnread
     ? Number(missedCallUnread.lastSeenCallId) || 0
     : null;
+  const hasVisibleUnreadMissedCalls = items.some((call) => (
+    isUnreadMissedCall(call, lastSeenMissedCallId)
+  ));
   const missedCallsLabel = t('newMissedCallCount')
     .replace('{count}', String(missedCallCount));
+
+  // A call is considered viewed only after the journal has rendered a real
+  // (non-placeholder) list containing that unread call. This avoids clearing
+  // the counter merely because navigation started or a stale page was visible.
+  useEffect(() => {
+    if (
+      !journalQuery.isSuccess
+      || journalQuery.isPlaceholderData
+      || missedCallCount <= 0
+      || lastSeenMissedCallId === null
+      || !hasVisibleUnreadMissedCalls
+      || autoReadAttemptedCursorRef.current === lastSeenMissedCallId
+    ) return;
+
+    autoReadAttemptedCursorRef.current = lastSeenMissedCallId;
+    markMissedCallsRead();
+  }, [
+    hasVisibleUnreadMissedCalls,
+    journalQuery.isPlaceholderData,
+    journalQuery.isSuccess,
+    lastSeenMissedCallId,
+    markMissedCallsRead,
+    missedCallCount,
+  ]);
 
   return (
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
@@ -170,23 +202,10 @@ export default function CallJournalPage() {
           { label: t('callJournal') },
         ]}
         actions={(
-          <>
-            {missedCallCount > 0 && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => markMissedCallsRead.mutate()}
-                disabled={markMissedCallsRead.isPending}
-              >
-                <CheckCheck />
-                {t('markMissedCallsRead')}
-              </Button>
-            )}
-            <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
-              <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
-              {t('callJournalRefresh')}
-            </Button>
-          </>
+          <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
+            <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
+            {t('callJournalRefresh')}
+          </Button>
         )}
       />
 

@@ -610,10 +610,6 @@ export const translations = {
     en: 'New missed call',
     ru: 'Новый пропущенный звонок',
   },
-  markMissedCallsRead: {
-    en: 'Mark missed calls as viewed',
-    ru: 'Отметить пропущенные просмотренными',
-  },
   totalTalkTime: { en: 'Total talk time', ru: 'Общее время разговоров' },
   talkTime: { en: 'Talk time', ru: 'Время разговора' },
   callDirection: { en: 'Direction', ru: 'Направление' },

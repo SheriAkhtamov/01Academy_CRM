@@ -53,6 +53,15 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('<CallStatus call={call} isUnread={isUnread} />');
   });
 
+  it('marks missed calls viewed only after their real journal rows are visible', () => {
+    expect(callJournal).toContain('const hasVisibleUnreadMissedCalls = items.some');
+    expect(callJournal).toContain('!journalQuery.isSuccess');
+    expect(callJournal).toContain('journalQuery.isPlaceholderData');
+    expect(callJournal).toContain('autoReadAttemptedCursorRef.current = lastSeenMissedCallId;');
+    expect(callJournal).toContain('markMissedCallsRead();');
+    expect(callJournal).not.toContain("t('markMissedCallsRead')");
+  });
+
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {
     expect(telephonyRoutes).toContain('resolveOnlinePbxRecording(call)');
     expect(telephonyRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");

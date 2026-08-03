@@ -10,6 +10,11 @@ export type TelephonyNotificationViewer = {
   modules?: readonly string[] | null;
 };
 
+export type MissedCallUnreadSummary = {
+  count: number;
+  lastSeenCallId: number;
+};
+
 export const MISSED_INCOMING_CALL_SQL = `(
   call.direction = 'incoming'
   AND call.talk_seconds = 0
@@ -28,11 +33,14 @@ const visibilityCondition = (viewer: TelephonyNotificationViewer) => (
     : buildTelephonyCallVisibilitySql('$1')
 );
 
-export const getUnreadMissedCallCount = async (
+export const getMissedCallUnreadSummary = async (
   viewer: TelephonyNotificationViewer,
   client: Queryable = pool,
-): Promise<number> => {
-  const result = await client.query<{ count: number | string }>(
+): Promise<MissedCallUnreadSummary> => {
+  const result = await client.query<{
+    count: number | string;
+    lastSeenCallId: number | string;
+  }>(
     `WITH inserted_state AS (
        INSERT INTO telephony_missed_call_states (user_id, last_seen_call_id)
        SELECT $1, COALESCE(MAX(id), 0)
@@ -48,18 +56,29 @@ export const getUnreadMissedCallCount = async (
        WHERE user_id = $1
        LIMIT 1
      )
-     SELECT COUNT(*)::int AS count
+     SELECT COUNT(*)::int AS count,
+            COALESCE((SELECT last_seen_call_id FROM current_state), 0)::int
+              AS "lastSeenCallId"
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
-     CROSS JOIN current_state state
      WHERE ${MISSED_INCOMING_CALL_SQL}
-       AND call.id > state.last_seen_call_id
+       AND call.id > COALESCE((SELECT last_seen_call_id FROM current_state), 0)
        AND ${visibilityCondition(viewer)}`,
     [viewer.id],
   );
 
-  return Number(result.rows[0]?.count ?? 0);
+  return {
+    count: Number(result.rows[0]?.count ?? 0),
+    lastSeenCallId: Number(result.rows[0]?.lastSeenCallId ?? 0),
+  };
 };
+
+export const getUnreadMissedCallCount = async (
+  viewer: TelephonyNotificationViewer,
+  client: Queryable = pool,
+): Promise<number> => (
+  await getMissedCallUnreadSummary(viewer, client)
+).count;
 
 export const markMissedCallsSeen = async (
   viewer: TelephonyNotificationViewer,

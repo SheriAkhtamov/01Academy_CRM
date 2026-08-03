@@ -34,6 +34,7 @@ import { apiRequest } from '@/lib/queryClient';
 import {
   activeTelephonyStatuses,
   formatCallDuration,
+  isUnreadMissedCall,
   telephonyStatusTranslationKey,
   type TelephonyCallStatus,
 } from '@/lib/telephony';
@@ -122,15 +123,15 @@ export default function CallJournalPage() {
     // instead of collapsing the list into a skeleton on every transition.
     placeholderData: keepPreviousData,
   });
-  const { data: missedCallUnread = { count: 0 } } = useQuery({
+  const { data: missedCallUnread } = useQuery({
     ...missedCallUnreadQueryOptions,
   });
   const markMissedCallsRead = useMutation({
     mutationFn: telephonyApi.markMissedCallsRead,
-    onSuccess: () => {
+    onSuccess: (summary) => {
       queryClient.setQueryData(
         telephonyQueryKeys.missedCallUnread,
-        { count: 0 },
+        summary,
       );
     },
   });
@@ -145,7 +146,10 @@ export default function CallJournalPage() {
   const pageSize = journalQuery.data?.limit ?? CALL_JOURNAL_PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil((journalQuery.data?.total ?? 0) / pageSize));
   const items = journalQuery.data?.items ?? [];
-  const missedCallCount = Number(missedCallUnread.count) || 0;
+  const missedCallCount = Number(missedCallUnread?.count) || 0;
+  const lastSeenMissedCallId = missedCallUnread
+    ? Number(missedCallUnread.lastSeenCallId) || 0
+    : null;
   const missedCallsLabel = t('newMissedCallCount')
     .replace('{count}', String(missedCallCount));
 
@@ -288,6 +292,7 @@ export default function CallJournalPage() {
                         key={call.id}
                         call={call}
                         dateTime={dateTime}
+                        isUnread={isUnreadMissedCall(call, lastSeenMissedCallId)}
                         onCall={() => onlinePbxCall.startCall(call.phone)}
                       />
                     ))}
@@ -300,6 +305,7 @@ export default function CallJournalPage() {
                     key={call.id}
                     call={call}
                     dateTime={dateTime}
+                    isUnread={isUnreadMissedCall(call, lastSeenMissedCallId)}
                     onCall={() => onlinePbxCall.startCall(call.phone)}
                   />
                 ))}
@@ -349,7 +355,17 @@ function SummaryCard({
   );
 }
 
-function JournalTableRow({ call, dateTime, onCall }: { call: JournalCall; dateTime: (value: string) => string; onCall: () => void }) {
+function JournalTableRow({
+  call,
+  dateTime,
+  isUnread,
+  onCall,
+}: {
+  call: JournalCall;
+  dateTime: (value: string) => string;
+  isUnread: boolean;
+  onCall: () => void;
+}) {
   const { t } = useTranslation();
   const DirectionIcon = call.direction === 'incoming' ? PhoneIncoming : PhoneCall;
   const duration = call.talkSeconds || (finalStatuses.has(call.status) ? 0 : call.durationSeconds);
@@ -366,7 +382,7 @@ function JournalTableRow({ call, dateTime, onCall }: { call: JournalCall; dateTi
         <p className="font-medium">{call.userName || t('notAssigned')}</p>
         {call.extension ? <p className="text-xs text-muted-foreground">{t('extensionShort')} {call.extension}</p> : null}
       </td>
-      <td className="px-4 py-3"><Badge variant={statusVariant(call.status)}>{t(telephonyStatusTranslationKey(call.status))}</Badge></td>
+      <td className="px-4 py-3"><CallStatus call={call} isUnread={isUnread} /></td>
       <td className="px-4 py-3 font-mono tabular-nums">{formatCallDuration(duration)}</td>
       <td className="px-4 py-3"><CallRecordingPlayer callId={call.id} hasRecording={call.hasRecording} /></td>
       <td className="px-4 py-3 text-right">
@@ -376,14 +392,24 @@ function JournalTableRow({ call, dateTime, onCall }: { call: JournalCall; dateTi
   );
 }
 
-function JournalMobileCard({ call, dateTime, onCall }: { call: JournalCall; dateTime: (value: string) => string; onCall: () => void }) {
+function JournalMobileCard({
+  call,
+  dateTime,
+  isUnread,
+  onCall,
+}: {
+  call: JournalCall;
+  dateTime: (value: string) => string;
+  isUnread: boolean;
+  onCall: () => void;
+}) {
   const { t } = useTranslation();
   const DirectionIcon = call.direction === 'incoming' ? PhoneIncoming : PhoneCall;
   return (
     <article className="space-y-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <LeadCell call={call} />
-        <Badge variant={statusVariant(call.status)}>{t(telephonyStatusTranslationKey(call.status))}</Badge>
+        <CallStatus call={call} isUnread={isUnread} />
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><DirectionIcon className="size-3.5" />{call.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}</span>
@@ -396,6 +422,26 @@ function JournalMobileCard({ call, dateTime, onCall }: { call: JournalCall; date
         <Button type="button" variant="outline" size="sm" onClick={onCall}><Phone />{t('telephonyCallBack')}</Button>
       </div>
     </article>
+  );
+}
+
+function CallStatus({ call, isUnread }: { call: JournalCall; isUnread: boolean }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="inline-flex items-center gap-2">
+      {isUnread ? (
+        <span
+          className="inline-flex size-2 shrink-0 rounded-full bg-destructive shadow-[0_0_0_3px_hsl(var(--destructive)/0.12)]"
+          title={t('newMissedCall')}
+        >
+          <span className="sr-only">{t('newMissedCall')}</span>
+        </span>
+      ) : null}
+      <Badge variant={statusVariant(call.status)}>
+        {t(telephonyStatusTranslationKey(call.status))}
+      </Badge>
+    </div>
   );
 }
 

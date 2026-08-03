@@ -29,7 +29,7 @@ import {
 } from '../services/telephony-routing';
 import {
   buildTelephonyCallVisibilitySql,
-  getUnreadMissedCallCount,
+  getMissedCallUnreadSummary,
   markMissedCallsSeen,
   MISSED_INCOMING_CALL_SQL,
 } from '../services/telephony-notifications';
@@ -1211,7 +1211,7 @@ router.get('/calls/missed/unread', requireAuth, asyncRoute(async (req, res) => {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
   res.setHeader('Cache-Control', 'no-store, private');
-  res.json({ count: await getUnreadMissedCallCount(req.user!) });
+  res.json(await getMissedCallUnreadSummary(req.user!));
 }));
 
 router.put('/calls/missed/read', requireAuth, asyncRoute(async (req, res) => {

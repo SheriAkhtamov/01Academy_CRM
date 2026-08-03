@@ -15,6 +15,28 @@ export const activeTelephonyStatuses = new Set<TelephonyCallStatus>([
   'connected',
 ]);
 
+const missedIncomingStatuses = new Set<TelephonyCallStatus>([
+  'missed',
+  'failed',
+  'declined',
+]);
+
+export const isUnreadMissedCall = (
+  call: {
+    id: number;
+    direction: 'incoming' | 'outgoing';
+    status: TelephonyCallStatus;
+    talkSeconds: number;
+  },
+  lastSeenCallId: number | null,
+) => (
+  lastSeenCallId !== null
+  && call.id > lastSeenCallId
+  && call.direction === 'incoming'
+  && call.talkSeconds === 0
+  && missedIncomingStatuses.has(call.status)
+);
+
 export const telephonyStatusTranslationKey = (status: TelephonyCallStatus): TranslationKey => {
   switch (status) {
     case 'dialing': return 'telephonyStatusDialing';

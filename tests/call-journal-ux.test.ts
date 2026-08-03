@@ -46,6 +46,13 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('className="flex min-h-[32rem] shrink-0 flex-col overflow-hidden lg:min-h-0 lg:flex-1"');
   });
 
+  it('shows a localized red indicator beside every unread missed call status', () => {
+    expect(callJournal).toContain('isUnread={isUnreadMissedCall(call, lastSeenMissedCallId)}');
+    expect(callJournal).toContain("title={t('newMissedCall')}");
+    expect(callJournal).toContain('rounded-full bg-destructive');
+    expect(callJournal).toContain('<CallStatus call={call} isUnread={isUnread} />');
+  });
+
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {
     expect(telephonyRoutes).toContain('resolveOnlinePbxRecording(call)');
     expect(telephonyRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");

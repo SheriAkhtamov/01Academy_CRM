@@ -606,6 +606,10 @@ export const translations = {
     en: '{count} new missed calls',
     ru: 'Новых пропущенных звонков: {count}',
   },
+  newMissedCall: {
+    en: 'New missed call',
+    ru: 'Новый пропущенный звонок',
+  },
   markMissedCallsRead: {
     en: 'Mark missed calls as viewed',
     ru: 'Отметить пропущенные просмотренными',

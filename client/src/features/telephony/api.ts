@@ -2,6 +2,7 @@ import { apiRequest } from '@/lib/queryClient';
 
 export type MissedCallUnreadSummary = {
   count: number;
+  lastSeenCallId: number;
 };
 
 export const telephonyQueryKeys = {
@@ -13,9 +14,7 @@ export const telephonyApi = {
     apiRequest('GET', '/api/telephony/calls/missed/unread') as Promise<MissedCallUnreadSummary>
   ),
   markMissedCallsRead: () => (
-    apiRequest('PUT', '/api/telephony/calls/missed/read') as Promise<
-      MissedCallUnreadSummary & { lastSeenCallId: number }
-    >
+    apiRequest('PUT', '/api/telephony/calls/missed/read') as Promise<MissedCallUnreadSummary>
   ),
 };
 

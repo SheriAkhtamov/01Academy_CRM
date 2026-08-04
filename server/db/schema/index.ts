@@ -293,10 +293,14 @@ export const academyLeads = pgTable("academy_leads", {
     { onDelete: "set null" },
   ),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  firstViewedAt: timestamp("first_viewed_at"), // NULL while the lead is still new for everyone.
+  firstViewedBy: integer("first_viewed_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   phoneIdx: index("academy_leads_phone_idx").on(table.phone),
+  unviewedIdx: index("academy_leads_unviewed_idx").on(table.managerId)
+    .where(sql`${table.firstViewedAt} IS NULL AND COALESCE(${table.isArchived}, false) = false`),
   statusIdx: index("academy_leads_status_idx").on(table.statusCode),
   managerIdx: index("academy_leads_manager_idx").on(table.managerId),
   schoolIdx: index("academy_leads_school_idx").on(table.schoolId),

@@ -653,6 +653,14 @@ export const translations = {
     en: 'New missed call',
     ru: 'Новый пропущенный звонок',
   },
+  newLeadIndicator: {
+    en: 'New lead, not opened yet',
+    ru: 'Новый лид, ещё не открывали',
+  },
+  newLeadsCount: {
+    en: '{count} new leads',
+    ru: 'Новых лидов: {count}',
+  },
   totalTalkTime: { en: 'Total talk time', ru: 'Общее время разговоров' },
   talkTime: { en: 'Talk time', ru: 'Время разговора' },
   callDirection: { en: 'Direction', ru: 'Направление' },

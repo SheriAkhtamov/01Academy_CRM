@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { unviewedLeadCountQueryOptions } from '@/features/leads/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 
@@ -59,6 +60,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const missedCallCount = Number(missedCallUnread.count) || 0;
   const missedCallsLabel = t('newMissedCallCount')
     .replace('{count}', String(missedCallCount));
+  const { data: unviewedLeads = { count: 0 } } = useQuery({
+    ...unviewedLeadCountQueryOptions,
+    enabled: hasSalesModule,
+  });
+  const newLeadCount = Number(unviewedLeads.count) || 0;
+  const newLeadsLabel = t('newLeadsCount').replace('{count}', String(newLeadCount));
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => (
     location.startsWith('/finance')
       ? {
@@ -110,6 +117,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           icon: item.icon,
           ...(module === 'sales' && item.id === 'calls'
             ? { badgeCount: missedCallCount, badgeLabel: missedCallsLabel }
+            : {}),
+          ...(module === 'sales' && item.id === 'pipeline'
+            ? { badgeCount: newLeadCount, badgeLabel: newLeadsLabel }
             : {}),
         })),
       };

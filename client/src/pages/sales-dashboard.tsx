@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData, salesQueryKeys } from '@/features/sales/queries';
+import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import {
   SalesOverviewSection,
   SalesPipelineSection,
@@ -106,6 +107,7 @@ interface Lead {
   managerName?: string | null;
   comment?: string;
   createdAt: string;
+  firstViewedAt?: string | null;
   expectedPaymentUzs?: number;
   offerPriceUzs?: number;
   firstContactAt?: string;
@@ -849,6 +851,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       variant: 'destructive',
     }),
   });
+
+  // The red "new lead" dot stays until its card is actually opened.
+  useLeadViewTracking({ leadId: selectedLeadId, open: leadSheetOpen, leads: myLeads });
 
   const openLead = useCallback((leadId: number, tab: LeadSheetTab = 'deal') => {
     setSelectedLeadId(leadId);

@@ -78,6 +78,7 @@ import {
 } from '@shared/scheduling';
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
+import { countUnviewedLeads, markLeadViewed } from '../../services/lead-view-state';
 
 import {
   DbValue,
@@ -515,6 +516,34 @@ router.post('/leads/bulk-assign', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to bulk assign leads', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to assign leads') });
+  }
+});
+
+// Registered before `/leads/:id` so Express does not treat the literal segment
+// as a lead identifier.
+router.get('/leads/unviewed-count', async (req, res) => {
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead access required')) return;
+  try {
+    res.json({ count: await countUnviewedLeads(req.user!) });
+  } catch (error) {
+    logger.error('Failed to count unviewed leads', { error, userId: req.user?.id });
+    res.status(500).json({ error: 'Failed to count unviewed leads' });
+  }
+});
+
+// Opening the lead card clears the "new lead" marker for the whole company.
+router.post('/leads/:id/view', async (req, res) => {
+  if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
+    const lead = await queryOne<Row>(`SELECT id, manager_id FROM academy_leads WHERE id = $1`, [id]);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (!ensureLeadRowAccess(req, res, lead)) return;
+    res.json(await markLeadViewed(id, req.user!.id));
+  } catch (error) {
+    logger.error('Failed to mark lead as viewed', { error, leadId: req.params.id });
+    res.status(500).json({ error: 'Failed to mark lead as viewed' });
   }
 });
 

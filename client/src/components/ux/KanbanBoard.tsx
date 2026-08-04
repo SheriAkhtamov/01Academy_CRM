@@ -46,6 +46,7 @@ import {
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
+import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import {
   DemoLessonEnrollmentDialog,
   type DemoLessonEnrollmentLead,
@@ -77,7 +78,15 @@ export interface KanbanLead {
   expectedPaymentUzs?: number;
   offerPriceUzs?: number;
   statusCode: string;
+  /** Stays empty while nobody has opened the lead card yet. */
+  firstViewedAt?: string | null;
 }
+
+export const isNewLead = (lead: Pick<KanbanLead, 'firstViewedAt'>) => !lead.firstViewedAt;
+
+export const countNewLeads = (leads: readonly KanbanLead[]) => (
+  leads.reduce((count, lead) => count + (isNewLead(lead) ? 1 : 0), 0)
+);
 
 interface KanbanBoardProps {
   statuses: readonly KanbanStatus[];
@@ -139,6 +148,12 @@ function LeadCardContent({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
+            {isNewLead(lead) ? (
+              <span
+                aria-hidden="true"
+                className="mr-1.5 inline-block size-2 shrink-0 rounded-full bg-destructive align-middle"
+              />
+            ) : null}
             {lead.contactName}
           </p>
           {visiblePhone ? <div className="truncate text-xs text-muted-foreground">{visiblePhone}</div> : null}
@@ -270,7 +285,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
         'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         isDragging && 'opacity-25',
       )}
-      aria-label={`${lead.contactName}. ${t('openLead')}`}
+      aria-label={`${isNewLead(lead) ? `${t('newLeadIndicator')}. ` : ''}${lead.contactName}. ${t('openLead')}`}
       {...attributes}
       {...listeners}
       onClick={() => onLeadClick?.(lead)}
@@ -336,6 +351,7 @@ function KanbanColumn({
       return sum + (Number.isFinite(val) ? val : 0);
     }, 0);
   }, [leads]);
+  const newLeadCount = useMemo(() => countNewLeads(leads), [leads]);
 
   return (
     <div
@@ -360,9 +376,16 @@ function KanbanColumn({
             </span>
           ) : null}
         </div>
-        <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-2 text-xs font-semibold text-muted-foreground shadow-2xs">
-          {leads.length}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <UnreadCountBadge
+            count={newLeadCount}
+            label={t('newLeadsCount').replace('{count}', String(newLeadCount))}
+            className="ring-muted"
+          />
+          <span className="flex h-6 min-w-6 items-center justify-center rounded-full border border-border bg-background px-2 text-xs font-semibold text-muted-foreground shadow-2xs">
+            {leads.length}
+          </span>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3">

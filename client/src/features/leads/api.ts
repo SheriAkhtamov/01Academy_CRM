@@ -14,6 +14,14 @@ import { apiRequest } from '@/lib/queryClient';
 
 export type LeadIdentifier = number;
 
+export type LeadViewState = {
+  leadId: number;
+  firstViewedAt: string | null;
+  firstViewedBy: number | null;
+};
+
+export type UnviewedLeadCount = { count: number };
+
 export const leadsApi = {
   create: (input: CreateAcademyLeadRequest) => (
     apiRequest('POST', '/api/academy/leads', input)
@@ -63,14 +71,31 @@ export const leadsApi = {
   createStudent: <T>(leadId: number, input: CreateLeadStudentRequest) => (
     apiRequest('POST', `/api/academy/leads/${leadId}/students`, input) as Promise<T>
   ),
+  markViewed: (leadId: LeadIdentifier) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/view`) as Promise<LeadViewState>
+  ),
+  getUnviewedCount: () => (
+    apiRequest('GET', '/api/academy/leads/unviewed-count') as Promise<UnviewedLeadCount>
+  ),
 };
 
 export const leadQueryKeys = {
   all: ['/api/academy/leads'] as const,
   detail: (leadId: number | null) => ['/api/academy/leads', leadId] as const,
   tags: ['/api/academy/lead-tags'] as const,
+  unviewedCount: ['/api/academy/leads/unviewed-count'] as const,
   mergeCandidates: (search: string) => ['/api/academy/leads/merge-candidates', search] as const,
   mergePreview: (firstLeadId?: number, secondLeadId?: number) => (
     ['/api/academy/leads/merge-preview', firstLeadId, secondLeadId] as const
   ),
+};
+
+// Leads arrive from Instagram, Meta forms, and calls without a page reload, so
+// the badge polls on the same cadence as the missed-call counter.
+export const unviewedLeadCountQueryOptions = {
+  queryKey: leadQueryKeys.unviewedCount,
+  queryFn: leadsApi.getUnviewedCount,
+  staleTime: 10_000,
+  refetchInterval: 30_000,
+  refetchOnWindowFocus: true,
 };

@@ -6,9 +6,14 @@ const projectRoot = process.cwd();
 const sourceRoots = ['client/src', 'server', 'shared'];
 const sourceExtensions = ['.ts', '.tsx'];
 
+// A line budget is a proxy for logic complexity, which a translation
+// dictionary does not have: it is flat data, one line per key. Capping it only
+// pressured authors into shortening user-facing text to reclaim lines, so the
+// file is measured by the i18n audit (npm run check:i18n) instead.
+const lineBudgetExemptions = new Set(['client/src/lib/i18n.ts']);
+
 const legacyLineBudgets = new Map(Object.entries({
   'client/src/components/ux/LeadDetailSheet.tsx': 1_900,
-  'client/src/lib/i18n.ts': 2_500,
   'client/src/pages/academy-settings.tsx': 2_300,
   'client/src/pages/admin.tsx': 1_600,
   'client/src/pages/admin/AdminDashboardPage.tsx': 1_100,
@@ -227,12 +232,14 @@ for (const file of files) {
 
   graph.set(file, [...new Set(dependencies)]);
 
-  const lines = source.split(/\r?\n/).length - 1;
-  const maximum = compositionBudgets.get(from)
-    ?? legacyLineBudgets.get(from)
-    ?? 1_200;
-  if (lines > maximum) {
-    failures.push(`${from}: ${lines} lines exceeds architectural budget ${maximum}`);
+  if (!lineBudgetExemptions.has(from)) {
+    const lines = source.split(/\r?\n/).length - 1;
+    const maximum = compositionBudgets.get(from)
+      ?? legacyLineBudgets.get(from)
+      ?? 1_200;
+    if (lines > maximum) {
+      failures.push(`${from}: ${lines} lines exceeds architectural budget ${maximum}`);
+    }
   }
 }
 

@@ -1749,7 +1749,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                   )}
 
                   <Button
-                    className="w-full h-11 text-sm font-bold rounded-xl bg-gradient-to-r from-primary-600 via-primary to-primary-700 hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-primary/25"
+                    className="w-full h-11 text-sm font-bold rounded-xl bg-gradient-to-r from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] hover:brightness-110 active:scale-[0.99] transition-all shadow-md shadow-primary/25"
                     onClick={handleSaveAttendance}
                     disabled={lessonMutationPending || !canSaveAttendance}
                   >

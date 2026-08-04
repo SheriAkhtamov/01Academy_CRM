@@ -36,6 +36,15 @@ export default {
         primary: {
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
+          // The brand ramp was only reachable through hand-written utilities
+          // in index.css, so gradient/ring variants (from-primary-600,
+          // ring-primary-50) silently produced nothing. Registering it here
+          // makes every Tailwind variant of the ramp work.
+          "50": "var(--primary-50)",
+          "100": "var(--primary-100)",
+          "500": "var(--primary-500)",
+          "600": "var(--primary-600)",
+          "700": "var(--primary-700)",
         },
         secondary: {
           DEFAULT: "var(--secondary)",
@@ -53,8 +62,24 @@ export default {
           DEFAULT: "var(--destructive)",
           foreground: "var(--destructive-foreground)",
         },
-        border: "var(--border)",
-        input: "var(--input)",
+        border: {
+          DEFAULT: "var(--border)",
+          strong: "var(--border-strong)",
+        },
+        input: {
+          DEFAULT: "var(--input)",
+          background: "var(--input-background)",
+        },
+        elevated: {
+          DEFAULT: "var(--elevated)",
+          foreground: "var(--elevated-foreground)",
+        },
+        surface: {
+          "1": "var(--surface-1)",
+          "2": "var(--surface-2)",
+          "3": "var(--surface-3)",
+          "4": "var(--surface-4)",
+        },
         ring: "var(--ring)",
         chart: {
           "1": "var(--chart-1)",

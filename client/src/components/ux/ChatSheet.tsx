@@ -424,7 +424,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                                   ? 'text-white rounded-br-sm'
                                   : 'bg-muted text-foreground rounded-bl-sm'
                               }`}
-                              style={isOwnMessage ? { background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' } : undefined}
+                              style={isOwnMessage ? { background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' } : undefined}
                             >
                               <p className="text-sm leading-relaxed">{message.content}</p>
                               <p

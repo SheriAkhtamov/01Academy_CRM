@@ -17,13 +17,13 @@ const badgeVariants = cva(
         outline:
           "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
         success:
-          "border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-200/70",
+          "border-transparent bg-emerald-100 text-emerald-700 hover:bg-emerald-200/70 dark:hover:bg-emerald-900/50",
         warning:
-          "border-transparent bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-200/70",
+          "border-transparent bg-amber-100 text-amber-700 hover:bg-amber-200/70 dark:hover:bg-amber-900/50",
         info:
-          "border-transparent bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-200/70",
+          "border-transparent bg-blue-100 text-blue-700 hover:bg-blue-200/70 dark:hover:bg-blue-900/50",
         purple:
-          "border-transparent bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 hover:bg-purple-200/70",
+          "border-transparent bg-purple-100 text-purple-700 hover:bg-purple-200/70 dark:hover:bg-purple-900/50",
       },
     },
     defaultVariants: {

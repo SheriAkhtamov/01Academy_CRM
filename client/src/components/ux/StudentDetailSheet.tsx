@@ -190,7 +190,7 @@ export function StudentDetailSheet({
         <SheetHeader className="pb-4">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-border">
-              <AvatarFallback className="bg-gradient-to-br from-primary-500 to-primary-700 text-white text-lg">
+              <AvatarFallback className="bg-gradient-to-br from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] text-white text-lg">
                 {getInitials(displayName)}
               </AvatarFallback>
             </Avatar>

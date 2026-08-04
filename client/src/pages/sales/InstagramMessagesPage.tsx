@@ -523,7 +523,7 @@ function AttachmentMedia({
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 p-3 text-white">
           {isReelShare ? (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-foreground shadow-sm">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-black shadow-sm">
               <Play className="ml-0.5 h-4 w-4 fill-current" />
             </span>
           ) : (
@@ -1879,7 +1879,7 @@ export default function MessagesPage() {
             <div>
               <div
                 className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-white shadow-primary"
-                style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
               >
                 <MessageCircle className="h-8 w-8" />
               </div>

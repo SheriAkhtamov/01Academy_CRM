@@ -82,7 +82,7 @@ const useCallDuration = (call: ActiveTelephonyCall | null) => {
 };
 
 const ContactAvatar = ({ call }: { call: ActiveTelephonyCall }) => (
-  <div className="flex size-16 items-center justify-center rounded-full bg-primary-50 text-primary-700 ring-8 ring-primary-50/60">
+  <div className="flex size-16 items-center justify-center rounded-full bg-primary-50 text-primary-700 ring-8 ring-primary-50">
     {call.direction === 'incoming' ? <PhoneIncoming className="size-7" /> : <UserRound className="size-7" />}
   </div>
 );

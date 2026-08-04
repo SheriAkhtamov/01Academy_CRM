@@ -120,6 +120,51 @@
   --login-card-border: hsl(0 0% 100% / 0.6);
   --login-glow-blue: hsla(221, 83%, 60%, 0.18);
   --login-glow-purple: hsla(271, 81%, 60%, 0.16);
+
+  /* Surface elevation ladder.
+     0 = page canvas, 1 = cards/sidebar, 2 = inputs & muted blocks,
+     3 = hover/accent, 4 = pressed. Dark mode leans on this instead of
+     shadows, which are almost invisible on a near-black canvas. */
+  --surface-1: hsl(0, 0%, 100%);
+  --surface-2: hsl(220, 20%, 97%);
+  --surface-3: hsl(220, 16%, 94%);
+  --surface-4: hsl(220, 15%, 90%);
+  --border-strong: hsl(220, 14%, 86%);
+  --input-background: hsl(0, 0%, 100%);
+  /* A surface that must read as *above* --muted (active tab, segmented
+     control). In dark that means lighter, not white. */
+  --elevated: hsl(0, 0%, 100%);
+  --elevated-foreground: hsl(222, 47%, 11%);
+
+  /* Brand gradient used by avatars / progress bars. Kept separate from
+     --primary-500/700 so those stay free to be text-safe accents. */
+  --brand-gradient-from: hsl(217, 91%, 60%);
+  --brand-gradient-to: hsl(224, 76%, 48%);
+  --primary-glow: rgba(37, 99, 235, 0.5);
+
+  --slate-800: hsl(217, 33%, 17%);
+  --slate-950: hsl(222, 47%, 8%);
+
+  /* Danger tint — error banners need far more text contrast than the
+     solid --destructive fill colour provides on a pale background. */
+  --danger-tint-background: hsl(0, 86%, 97%);
+  --danger-tint-border: hsl(0, 80%, 89%);
+  --danger-tint-foreground: hsl(0, 72%, 42%);
+
+  --selection-background: hsl(217, 91%, 88%);
+  --selection-foreground: hsl(222, 47%, 11%);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: hsl(220, 13%, 84%);
+  --scrollbar-thumb-hover: hsl(220, 12%, 70%);
+
+  --sidebar-background: hsl(0, 0%, 100%);
+  --sidebar-foreground: hsl(222, 47%, 11%);
+  --sidebar-primary: hsl(221, 83%, 53%);
+  --sidebar-primary-foreground: hsl(210, 40%, 98%);
+  --sidebar-accent: hsl(220, 14.3%, 96.3%);
+  --sidebar-accent-foreground: hsl(222, 47%, 11%);
+  --sidebar-border: hsl(220, 16%, 93%);
+  --sidebar-ring: hsl(221, 83%, 53%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -133,116 +178,180 @@
   }
 }
 
+/* ============================================================
+   DARK THEME
+   Built on a five-step surface ladder (hue 224, a neutral navy)
+   instead of the flat near-black shadcn default. Every surface is
+   a measurable step lighter than the one it sits on, so cards,
+   popovers and inputs read as elevated without relying on shadows
+   that a dark canvas swallows. Text and accent values are tuned to
+   clear WCAG AA against the surface they actually appear on.
+   ============================================================ */
 .dark {
-  --background: hsl(240, 10%, 3.9%);
-  --foreground: hsl(0, 0%, 98%);
-  --muted: hsl(240, 3.7%, 15.9%);
-  --muted-foreground: hsl(240, 5%, 64.9%);
-  --popover: hsl(240, 10%, 3.9%);
-  --popover-foreground: hsl(0, 0%, 98%);
-  --card: hsl(240, 10%, 3.9%);
-  --card-foreground: hsl(0, 0%, 98%);
-  --border: hsl(240, 3.7%, 15.9%);
-  --input: hsl(240, 3.7%, 15.9%);
-  --primary: hsl(221, 83%, 53%);
-  --primary-foreground: hsl(210, 40%, 98%);
-  --secondary: hsl(240, 3.7%, 15.9%);
-  --secondary-foreground: hsl(0, 0%, 98%);
-  --accent: hsl(240, 3.7%, 15.9%);
-  --accent-foreground: hsl(0, 0%, 98%);
-  --destructive: hsl(0, 62.8%, 30.6%);
-  --destructive-foreground: hsl(0, 0%, 98%);
-  --ring: hsl(240, 4.9%, 83.9%);
+  color-scheme: dark;
+
+  /* Surface ladder */
+  --background: hsl(224, 27%, 6.5%);
+  --surface-1: hsl(224, 22%, 10%);
+  --surface-2: hsl(224, 20%, 13.5%);
+  --surface-3: hsl(224, 18%, 17.5%);
+  --surface-4: hsl(224, 16%, 22%);
+
+  --foreground: hsl(210, 28%, 96%);
+  --muted: var(--surface-2);
+  --muted-foreground: hsl(217, 14%, 64%);
+  --popover: hsl(224, 22%, 11.5%);
+  --popover-foreground: hsl(210, 28%, 96%);
+  --card: var(--surface-1);
+  --card-foreground: hsl(210, 28%, 96%);
+  --border: hsl(224, 16%, 19.5%);
+  --border-strong: hsl(224, 15%, 27%);
+  --input: hsl(224, 15%, 24%);
+  --input-background: hsl(224, 20%, 12.5%);
+  --elevated: hsl(224, 18%, 19.5%);
+  --elevated-foreground: hsl(210, 26%, 96%);
+  --primary: hsl(219, 90%, 55%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: var(--surface-2);
+  --secondary-foreground: hsl(210, 24%, 93%);
+  --accent: var(--surface-3);
+  --accent-foreground: hsl(210, 24%, 95%);
+  --destructive: hsl(0, 76%, 53%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --ring: hsl(219, 92%, 62%);
   --radius: 0.625rem;
 
-  --primary-50: hsl(221, 48%, 14%);
-  --primary-100: hsl(221, 52%, 20%);
-  --primary-500: hsl(217, 91%, 60%);
-  --primary-600: hsl(217, 91%, 60%);
-  --primary-700: hsl(213, 94%, 68%);
-  --chart-1: hsl(158, 64%, 52%);
-  --chart-2: hsl(217, 91%, 65%);
-  --chart-3: hsl(43, 96%, 56%);
-  --chart-4: hsl(263, 85%, 70%);
-  --chart-5: hsl(350, 89%, 68%);
-  --chart-6: hsl(215, 20%, 65%);
+  /* Blue ramp: 50/100 are tint backgrounds, 500–700 are accents that
+     must stay legible as text on those tints. */
+  --primary-50: hsl(221, 52%, 15%);
+  --primary-100: hsl(221, 50%, 21%);
+  --primary-500: hsl(217, 92%, 64%);
+  --primary-600: hsl(215, 94%, 69%);
+  --primary-700: hsl(213, 96%, 76%);
+  --brand-gradient-from: hsl(217, 90%, 53%);
+  --brand-gradient-to: hsl(228, 82%, 44%);
+  --primary-glow: hsla(215, 94%, 66%, 0.55);
 
-  --emerald-100: hsl(160, 40%, 14%);
-  --emerald-500: hsl(160, 84%, 39%);
-  --emerald-600: hsl(158, 64%, 52%);
+  /* Chart series: lifted and slightly desaturated so no single series
+     screams against the dark canvas. */
+  --chart-1: hsl(158, 68%, 55%);
+  --chart-2: hsl(217, 92%, 66%);
+  --chart-3: hsl(42, 96%, 62%);
+  --chart-4: hsl(266, 90%, 74%);
+  --chart-5: hsl(348, 92%, 70%);
+  --chart-6: hsl(217, 16%, 68%);
 
-  --amber-100: hsl(38, 46%, 15%);
-  --amber-500: hsl(43, 96%, 56%);
-  --amber-600: hsl(43, 96%, 62%);
+  --emerald-100: hsl(158, 45%, 14%);
+  --emerald-500: hsl(155, 72%, 48%);
+  --emerald-600: hsl(152, 76%, 64%);
 
-  --purple-100: hsl(272, 38%, 16%);
-  --purple-500: hsl(271, 91%, 65%);
-  --purple-600: hsl(270, 95%, 75%);
+  --amber-100: hsl(38, 48%, 15%);
+  --amber-500: hsl(41, 96%, 58%);
+  --amber-600: hsl(44, 96%, 68%);
 
-  --slate-50: hsl(240, 5%, 10%);
-  --slate-100: hsl(240, 4%, 16%);
-  --slate-200: hsl(240, 4%, 23%);
-  --slate-300: hsl(240, 4%, 32%);
-  --slate-400: hsl(240, 5%, 52%);
-  --slate-500: hsl(240, 5%, 65%);
-  --slate-600: hsl(240, 5%, 75%);
-  --slate-700: hsl(240, 5%, 84%);
-  --slate-900: hsl(0, 0%, 98%);
+  --purple-100: hsl(266, 42%, 17%);
+  --purple-500: hsl(268, 90%, 70%);
+  --purple-600: hsl(268, 94%, 78%);
 
-  --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.18);
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.22);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.28), 0 1px 2px -1px rgba(0, 0, 0, 0.24);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.38), 0 2px 6px -2px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 12px 28px -6px rgba(0, 0, 0, 0.46), 0 6px 12px -6px rgba(0, 0, 0, 0.34);
-  --shadow-xl: 0 20px 44px -10px rgba(0, 0, 0, 0.52), 0 10px 20px -10px rgba(0, 0, 0, 0.40);
-  --shadow-2xl: 0 28px 64px -16px rgba(0, 0, 0, 0.62);
+  /* Slate ramp is inverted for dark: low numbers are surfaces,
+     high numbers are text. */
+  --slate-50: hsl(224, 22%, 10%);
+  --slate-100: hsl(224, 20%, 14%);
+  --slate-200: hsl(224, 17%, 20%);
+  --slate-300: hsl(224, 15%, 27%);
+  --slate-400: hsl(220, 12%, 52%);
+  --slate-500: hsl(218, 13%, 64%);
+  --slate-600: hsl(216, 16%, 74%);
+  --slate-700: hsl(214, 20%, 84%);
+  --slate-800: hsl(212, 24%, 90%);
+  --slate-900: hsl(210, 28%, 96%);
+  --slate-950: hsl(210, 32%, 98%);
 
-  --tint-blue: hsl(221, 48%, 14%);
-  --tint-green: hsl(160, 40%, 13%);
-  --tint-amber: hsl(32, 46%, 14%);
-  --tint-red: hsl(0, 42%, 14%);
-  --tint-purple: hsl(272, 38%, 16%);
+  /* Dark elevation: a black drop shadow plus a 1px inset highlight on
+     the top edge — that highlight is what actually reads as "raised"
+     when the shadow has nothing to darken. */
+  --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.40);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.48);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.55), 0 1px 2px -1px rgba(0, 0, 0, 0.45),
+               inset 0 1px 0 0 rgba(255, 255, 255, 0.035);
+  --shadow-md: 0 4px 14px -2px rgba(0, 0, 0, 0.62), 0 2px 6px -2px rgba(0, 0, 0, 0.48),
+               inset 0 1px 0 0 rgba(255, 255, 255, 0.045);
+  --shadow-lg: 0 14px 32px -8px rgba(0, 0, 0, 0.70), 0 6px 14px -6px rgba(0, 0, 0, 0.52),
+               inset 0 1px 0 0 rgba(255, 255, 255, 0.055);
+  --shadow-xl: 0 24px 52px -12px rgba(0, 0, 0, 0.78), 0 10px 22px -10px rgba(0, 0, 0, 0.58),
+               inset 0 1px 0 0 rgba(255, 255, 255, 0.065);
+  --shadow-2xl: 0 34px 76px -18px rgba(0, 0, 0, 0.85),
+                inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+  --shadow-primary: 0 6px 18px -4px rgba(37, 99, 235, 0.50), 0 2px 8px -4px rgba(37, 99, 235, 0.40);
+  --shadow-primary-lg: 0 12px 28px -6px rgba(37, 99, 235, 0.58), 0 6px 14px -6px rgba(37, 99, 235, 0.44);
 
-  --app-bg: radial-gradient(1200px 600px at 100% -10%, hsl(221, 45%, 10%) 0%, transparent 55%),
-            radial-gradient(900px 500px at -10% 110%, hsl(272, 34%, 10%) 0%, transparent 50%),
-            hsl(240, 10%, 4%);
-  --glass-background: rgba(9, 9, 11, 0.78);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --backdrop-background: rgba(9, 9, 11, 0.76);
-  --shimmer-start: hsl(240, 4%, 13%);
-  --shimmer-middle: hsl(240, 4%, 18%);
-  --login-bg: radial-gradient(900px 500px at 12% 18%, hsl(221, 45%, 11%) 0%, transparent 60%),
-              radial-gradient(800px 460px at 88% 82%, hsl(272, 34%, 11%) 0%, transparent 55%),
-              hsl(240, 10%, 4%);
-  --login-card-background: hsl(240 10% 6% / 0.9);
-  --login-card-border: hsl(240 4% 24% / 0.75);
-  --login-glow-blue: hsla(217, 91%, 60%, 0.16);
-  --login-glow-purple: hsla(271, 81%, 60%, 0.14);
+  --tint-blue: hsl(221, 52%, 15%);
+  --tint-green: hsl(158, 45%, 13%);
+  --tint-amber: hsl(36, 48%, 14%);
+  --tint-red: hsl(0, 46%, 15%);
+  --tint-purple: hsl(266, 42%, 17%);
 
-  --calendar-blue-background: hsl(224, 44%, 16%);
-  --calendar-blue-border: hsl(217, 70%, 46%);
-  --calendar-blue-foreground: hsl(214, 100%, 88%);
+  /* Canvas keeps a whisper of brand colour in the corners so large
+     empty areas do not read as dead black. */
+  --app-bg: radial-gradient(1100px 620px at 100% -12%, hsl(222, 52%, 12%) 0%, transparent 58%),
+            radial-gradient(880px 520px at -8% 108%, hsl(266, 38%, 11%) 0%, transparent 52%),
+            hsl(224, 27%, 6.5%);
+  --glass-background: hsla(224, 24%, 9%, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --backdrop-background: hsla(224, 26%, 7%, 0.78);
+  --shimmer-start: hsl(224, 19%, 14%);
+  --shimmer-middle: hsl(224, 17%, 20%);
+  --login-bg: radial-gradient(900px 520px at 12% 18%, hsl(222, 52%, 13%) 0%, transparent 62%),
+              radial-gradient(820px 470px at 88% 82%, hsl(266, 38%, 12%) 0%, transparent 56%),
+              hsl(224, 27%, 6%);
+  --login-card-background: hsla(224, 22%, 10%, 0.86);
+  --login-card-border: hsla(224, 20%, 32%, 0.6);
+  --login-glow-blue: hsla(217, 91%, 60%, 0.22);
+  --login-glow-purple: hsla(268, 84%, 62%, 0.18);
+
+  --danger-tint-background: hsl(0, 46%, 13%);
+  --danger-tint-border: hsl(0, 45%, 27%);
+  --danger-tint-foreground: hsl(0, 90%, 77%);
+
+  --selection-background: hsla(219, 92%, 60%, 0.38);
+  --selection-foreground: hsl(210, 30%, 98%);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: hsl(224, 14%, 26%);
+  --scrollbar-thumb-hover: hsl(222, 14%, 36%);
+
+  --sidebar-background: hsl(224, 23%, 9%);
+  --sidebar-foreground: hsl(210, 28%, 96%);
+  --sidebar-primary: hsl(219, 90%, 55%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(224, 18%, 17.5%);
+  --sidebar-accent-foreground: hsl(210, 24%, 95%);
+  --sidebar-border: hsl(224, 16%, 19.5%);
+  --sidebar-ring: hsl(219, 92%, 62%);
+
+  --calendar-blue-background: hsl(221, 50%, 17%);
+  --calendar-blue-border: hsl(217, 68%, 48%);
+  --calendar-blue-foreground: hsl(213, 96%, 84%);
   --calendar-blue-solid: hsl(217, 91%, 60%);
-  --calendar-emerald-background: hsl(160, 40%, 13%);
-  --calendar-emerald-border: hsl(160, 60%, 34%);
-  --calendar-emerald-foreground: hsl(149, 70%, 86%);
-  --calendar-emerald-solid: hsl(160, 84%, 39%);
-  --calendar-amber-background: hsl(32, 46%, 14%);
-  --calendar-amber-border: hsl(38, 80%, 42%);
-  --calendar-amber-foreground: hsl(44, 95%, 86%);
-  --calendar-amber-solid: hsl(38, 92%, 50%);
-  --calendar-violet-background: hsl(272, 38%, 16%);
-  --calendar-violet-border: hsl(271, 65%, 48%);
-  --calendar-violet-foreground: hsl(270, 80%, 90%);
-  --calendar-violet-solid: hsl(271, 81%, 56%);
-  --calendar-rose-background: hsl(346, 38%, 15%);
-  --calendar-rose-border: hsl(347, 68%, 46%);
-  --calendar-rose-foreground: hsl(350, 100%, 90%);
-  --calendar-rose-solid: hsl(347, 77%, 50%);
-  --calendar-cyan-background: hsl(190, 42%, 13%);
-  --calendar-cyan-border: hsl(188, 68%, 38%);
-  --calendar-cyan-foreground: hsl(186, 100%, 88%);
-  --calendar-cyan-solid: hsl(188, 86%, 42%);
+  --calendar-emerald-background: hsl(158, 45%, 14%);
+  --calendar-emerald-border: hsl(158, 56%, 36%);
+  --calendar-emerald-foreground: hsl(152, 76%, 80%);
+  --calendar-emerald-solid: hsl(158, 76%, 44%);
+  --calendar-amber-background: hsl(36, 48%, 15%);
+  --calendar-amber-border: hsl(38, 74%, 44%);
+  --calendar-amber-foreground: hsl(44, 96%, 80%);
+  --calendar-amber-solid: hsl(40, 94%, 54%);
+  --calendar-violet-background: hsl(266, 42%, 18%);
+  --calendar-violet-border: hsl(267, 62%, 52%);
+  --calendar-violet-foreground: hsl(268, 92%, 86%);
+  --calendar-violet-solid: hsl(268, 84%, 62%);
+  --calendar-rose-background: hsl(346, 42%, 16%);
+  --calendar-rose-border: hsl(347, 64%, 48%);
+  --calendar-rose-foreground: hsl(350, 94%, 84%);
+  --calendar-rose-solid: hsl(348, 80%, 56%);
+  --calendar-cyan-background: hsl(191, 46%, 14%);
+  --calendar-cyan-border: hsl(189, 62%, 40%);
+  --calendar-cyan-foreground: hsl(187, 88%, 80%);
+  --calendar-cyan-solid: hsl(188, 84%, 48%);
 }
 
 @layer base {
@@ -288,6 +397,43 @@
   [data-slot] {
     @apply transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-200 ease-out;
   }
+
+  ::selection {
+    background-color: var(--selection-background);
+    color: var(--selection-foreground);
+  }
+
+  /* Chrome paints autofilled fields with a hardcoded pale yellow that
+     ignores the theme. Repaint them with the field tokens instead. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--foreground);
+    -webkit-box-shadow: 0 0 0 1000px var(--input-background) inset;
+    box-shadow: 0 0 0 1000px var(--input-background) inset;
+    caret-color: var(--foreground);
+    transition: background-color 100000s ease-in-out 0s;
+  }
+
+  /* Native widgets (date pickers, checkboxes, scrollbars inside inputs)
+     follow color-scheme, which the theme provider sets on <html>. */
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator,
+  .dark input[type="week"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(0.85);
+    opacity: 0.7;
+    cursor: pointer;
+  }
+
+  .dark input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
 }
 
 @layer utilities {
@@ -299,8 +445,10 @@
   .text-slate-500 { color: var(--slate-500); }
   .text-slate-600 { color: var(--slate-600); }
   .text-slate-700 { color: var(--slate-700); }
+  .text-slate-800 { color: var(--slate-800); }
   .text-slate-900 { color: var(--slate-900); }
-  
+  .text-slate-950 { color: var(--slate-950); }
+
   .bg-slate-50 { background-color: var(--slate-50); }
   .bg-slate-100 { background-color: var(--slate-100); }
   .bg-slate-200 { background-color: var(--slate-200); }
@@ -339,6 +487,133 @@
   .shadow-primary-lg { box-shadow: var(--shadow-primary-lg); }
 }
 
+/* ============================================================
+   DARK REMAP OF RAW TAILWIND COLOUR UTILITIES
+   Screens across the app tint status chips with light-only shades
+   (bg-*-50/100/200/300, text-*-600…950, border-*-200/300). Left as
+   Tailwind ships them those render as glaring pastel blocks on the
+   dark canvas, so each shade in use is re-pointed to a dark-native
+   equivalent of the same hue: backgrounds go deep, text goes light,
+   borders sit just above the surface they outline.
+   Solid fills (bg-*-400…700) keep Tailwind's values — they carry
+   white text and already read correctly on dark.
+   ============================================================ */
+@layer utilities {
+  /* — emerald / green — */
+  .dark .bg-emerald-50 { background-color: hsl(158, 46%, 11%); }
+  .dark .bg-emerald-100 { background-color: hsl(158, 45%, 14.5%); }
+  .dark .bg-emerald-200 { background-color: hsl(158, 42%, 19%); }
+  .dark .border-emerald-200 { border-color: hsl(158, 38%, 24%); }
+  .dark .border-emerald-300 { border-color: hsl(158, 40%, 31%); }
+  .dark .text-emerald-600 { color: hsl(154, 78%, 68%); }
+  .dark .text-emerald-700 { color: hsl(154, 80%, 74%); }
+  .dark .text-emerald-800 { color: hsl(152, 82%, 81%); }
+  .dark .text-emerald-950 { color: hsl(150, 86%, 91%); }
+
+  /* — amber / yellow — */
+  .dark .bg-amber-50 { background-color: hsl(38, 48%, 11%); }
+  .dark .bg-amber-100 { background-color: hsl(38, 48%, 14.5%); }
+  .dark .bg-amber-200 { background-color: hsl(38, 44%, 19%); }
+  .dark .bg-amber-300 { background-color: hsl(38, 42%, 25%); }
+  .dark .border-amber-200 { border-color: hsl(38, 40%, 25%); }
+  .dark .border-amber-300 { border-color: hsl(38, 44%, 32%); }
+  .dark .text-amber-600 { color: hsl(44, 92%, 66%); }
+  .dark .text-amber-700 { color: hsl(44, 94%, 72%); }
+  .dark .text-amber-800 { color: hsl(44, 94%, 79%); }
+  .dark .text-amber-900 { color: hsl(45, 96%, 86%); }
+  .dark .text-amber-950 { color: hsl(46, 96%, 92%); }
+
+  /* — red — */
+  .dark .bg-red-50 { background-color: hsl(0, 46%, 12%); }
+  .dark .bg-red-100 { background-color: hsl(0, 45%, 15.5%); }
+  .dark .border-red-200 { border-color: hsl(0, 40%, 26%); }
+  .dark .border-red-300 { border-color: hsl(0, 44%, 33%); }
+  .dark .text-red-600 { color: hsl(0, 88%, 72%); }
+  .dark .text-red-700 { color: hsl(0, 90%, 77%); }
+  .dark .text-red-800 { color: hsl(0, 92%, 83%); }
+  .dark .text-red-900 { color: hsl(0, 94%, 89%); }
+
+  /* — rose — */
+  .dark .bg-rose-50 { background-color: hsl(350, 46%, 12%); }
+  .dark .border-rose-200 { border-color: hsl(350, 40%, 26%); }
+  .dark .border-rose-300 { border-color: hsl(350, 44%, 33%); }
+  .dark .text-rose-600 { color: hsl(350, 88%, 72%); }
+  .dark .text-rose-700 { color: hsl(350, 90%, 78%); }
+
+  /* — blue — */
+  .dark .bg-blue-50 { background-color: hsl(217, 48%, 12%); }
+  .dark .bg-blue-100 { background-color: hsl(217, 46%, 16%); }
+  .dark .bg-blue-200 { background-color: hsl(217, 44%, 21%); }
+  .dark .border-blue-200 { border-color: hsl(217, 40%, 26%); }
+  .dark .border-blue-300 { border-color: hsl(217, 44%, 34%); }
+  .dark .text-blue-600 { color: hsl(213, 92%, 72%); }
+  .dark .text-blue-700 { color: hsl(213, 94%, 78%); }
+  .dark .text-blue-800 { color: hsl(212, 94%, 84%); }
+  .dark .text-blue-950 { color: hsl(211, 96%, 92%); }
+
+  /* — sky / cyan — */
+  .dark .bg-sky-50 { background-color: hsl(199, 48%, 12%); }
+  .dark .bg-sky-100 { background-color: hsl(199, 46%, 16%); }
+  .dark .border-sky-200 { border-color: hsl(199, 40%, 27%); }
+  .dark .text-sky-600 { color: hsl(196, 88%, 70%); }
+  .dark .text-sky-700 { color: hsl(196, 90%, 77%); }
+
+  /* — violet / purple — */
+  .dark .bg-violet-50 { background-color: hsl(258, 44%, 13%); }
+  .dark .bg-violet-100 { background-color: hsl(258, 42%, 17%); }
+  .dark .bg-purple-50 { background-color: hsl(268, 42%, 13%); }
+  .dark .bg-purple-100 { background-color: hsl(268, 42%, 17%); }
+  .dark .bg-purple-200 { background-color: hsl(268, 40%, 22%); }
+  .dark .border-violet-300 { border-color: hsl(258, 42%, 34%); }
+  .dark .text-violet-600 { color: hsl(262, 92%, 76%); }
+  .dark .text-violet-950 { color: hsl(266, 94%, 92%); }
+  .dark .text-purple-600 { color: hsl(268, 92%, 76%); }
+  .dark .text-purple-700 { color: hsl(268, 94%, 81%); }
+
+  /* — fuchsia / pink — */
+  .dark .bg-fuchsia-50 { background-color: hsl(292, 42%, 13%); }
+  .dark .bg-fuchsia-100 { background-color: hsl(292, 42%, 17%); }
+  .dark .border-fuchsia-200 { border-color: hsl(292, 38%, 27%); }
+  .dark .text-fuchsia-700 { color: hsl(292, 90%, 80%); }
+  .dark .bg-pink-100 { background-color: hsl(330, 42%, 17%); }
+  .dark .text-pink-800 { color: hsl(330, 90%, 84%); }
+
+  /* Hover states of the same shades. Tailwind emits these as separate
+     classes, so they need their own remap or a chip would flash light
+     on hover. */
+  .dark .hover\:bg-emerald-50:hover { background-color: hsl(158, 45%, 14.5%); }
+  .dark .hover\:bg-emerald-100:hover { background-color: hsl(158, 44%, 18%); }
+  .dark .hover\:bg-emerald-200:hover { background-color: hsl(158, 42%, 22%); }
+  .dark .hover\:text-emerald-600:hover { color: hsl(154, 78%, 68%); }
+  .dark .hover\:text-emerald-700:hover { color: hsl(154, 80%, 74%); }
+  .dark .hover\:border-emerald-300:hover { border-color: hsl(158, 42%, 34%); }
+
+  .dark .hover\:bg-amber-50:hover { background-color: hsl(38, 48%, 14.5%); }
+  .dark .hover\:bg-amber-100:hover { background-color: hsl(38, 46%, 18%); }
+  .dark .hover\:bg-amber-200:hover { background-color: hsl(38, 44%, 22%); }
+
+  .dark .hover\:bg-red-50:hover { background-color: hsl(0, 45%, 15.5%); }
+  .dark .hover\:text-red-700:hover { color: hsl(0, 90%, 77%); }
+  .dark .hover\:text-red-800:hover { color: hsl(0, 92%, 83%); }
+
+  .dark .hover\:bg-rose-50:hover { background-color: hsl(350, 45%, 15.5%); }
+  .dark .hover\:text-rose-600:hover { color: hsl(350, 88%, 72%); }
+  .dark .hover\:text-rose-700:hover { color: hsl(350, 90%, 78%); }
+  .dark .hover\:border-rose-300:hover { border-color: hsl(350, 44%, 36%); }
+
+  .dark .hover\:bg-blue-100:hover { background-color: hsl(217, 46%, 19%); }
+  .dark .hover\:bg-blue-200:hover { background-color: hsl(217, 44%, 24%); }
+  .dark .hover\:bg-sky-100:hover { background-color: hsl(199, 46%, 19%); }
+  .dark .hover\:bg-purple-200:hover { background-color: hsl(268, 40%, 25%); }
+  .dark .hover\:bg-fuchsia-100:hover { background-color: hsl(292, 42%, 20%); }
+
+  /* — slate chips that are intentionally dark in light mode must invert,
+       otherwise they vanish into the canvas — */
+  .dark .bg-slate-600 { background-color: hsl(224, 14%, 30%); }
+  .dark .bg-slate-800 { background-color: hsl(224, 18%, 18%); }
+  .dark .bg-slate-950 { background-color: hsl(224, 20%, 14%); }
+}
+
 /* ========================================
    🎨 MODERN UI/UX ANIMATIONS & EFFECTS
    ======================================== */
@@ -353,7 +628,7 @@
   }
 
   .glass-dark {
-    background: rgba(15, 23, 42, 0.8);
+    background: hsla(224, 26%, 7%, 0.8);
     backdrop-filter: blur(14px) saturate(180%);
     -webkit-backdrop-filter: blur(14px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -562,7 +837,7 @@
   /* Gradient Text */
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(221, 83%, 53%), hsl(271, 81%, 56%));
+    background-image: linear-gradient(135deg, var(--primary-500), var(--purple-500));
   }
 
   /* Focus Ring Modern */
@@ -618,11 +893,11 @@
 
   /* Glow Effect */
   .glow {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 20px var(--primary-glow);
   }
 
   .glow-hover:hover {
-    box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 30px var(--primary-glow);
     @apply transition-all duration-300;
   }
 
@@ -645,25 +920,35 @@
     scroll-behavior: smooth;
   }
 
-  /* Custom Scrollbar */
+  /* Custom Scrollbar — track stays transparent so it never paints a pale
+     stripe down the edge of a dark panel. */
+  * {
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
 
   ::-webkit-scrollbar-track {
-    background-color: var(--slate-100);
+    background-color: var(--scrollbar-track);
   }
 
   ::-webkit-scrollbar-thumb {
     @apply rounded-full;
-    background-color: var(--slate-300);
+    background-color: var(--scrollbar-thumb);
     border: 2px solid transparent;
     background-clip: padding-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--slate-400);
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background-color: transparent;
   }
 
   /* Loading Spinner */
@@ -783,7 +1068,10 @@
   }
 
   .login-card__error {
-    @apply bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3;
+    @apply rounded-lg border px-4 py-3;
+    background-color: var(--danger-tint-background);
+    border-color: var(--danger-tint-border);
+    color: var(--danger-tint-foreground);
   }
 
   .login-card__btn {
@@ -817,7 +1105,7 @@
     content: '';
     @apply absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full;
     background: var(--primary-600);
-    box-shadow: 0 0 10px 0 rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 10px 0 var(--primary-glow);
   }
 
   .sidebar-nav-item__icon {
@@ -834,7 +1122,7 @@
 
   .sidebar-user-avatar {
     @apply w-9 h-9 rounded-full text-white flex items-center justify-center text-sm font-medium flex-shrink-0;
-    background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+    background: linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to));
     box-shadow: var(--shadow-primary);
   }
 

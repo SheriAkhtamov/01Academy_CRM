@@ -599,7 +599,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         <div className="flex items-center space-x-3">
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
-            style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-700))', boxShadow: 'var(--shadow-primary)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))', boxShadow: 'var(--shadow-primary)' }}
           >
             <span>
               {row.fullName.split(' ').map((name: string) => name[0]).join('').slice(0, 2)}
@@ -710,7 +710,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           : [{ label: t('administration') }]}
         actions={isEmployeesPage ? (
           <Button
-            className="bg-primary-600 hover:bg-primary-700"
             onClick={() => {
               setShowCreateUserModal(true);
             }}

@@ -162,7 +162,13 @@ const CHURN_LABEL_KEYS: Record<string, TranslationKey> = {
   lost_interest: 'studentChurnLostInterest',
 };
 
-const CHURN_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#0891b2'];
+const CHURN_COLORS = [
+  'var(--chart-2)',
+  'var(--chart-1)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+];
 
 const boundedPercent = (value: unknown) => {
   const numericValue = Number(value);

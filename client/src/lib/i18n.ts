@@ -406,7 +406,6 @@ export const translations = {
   present: { en: 'Present', ru: 'Присутствовал' },
   profileUpdated: { en: 'Profile updated successfully', ru: 'Профиль успешно обновлён' },
   progressLabel: { en: 'Progress', ru: 'Прогресс' },
-  qualify: { en: 'Qualify', ru: 'Квалифицировать' },
   reactivated: { en: 'reactivated: ', ru: 'реактивировано: ' },
   recordPayment: { en: 'Record payment', ru: 'Зафиксировать оплату' },
   referralCodeField: { en: 'Code:', ru: 'Код:' },

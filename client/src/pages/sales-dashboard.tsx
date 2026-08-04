@@ -86,7 +86,7 @@ import type { LeadTagView } from '@shared/lead-tags';
 
 type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
-type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
+type QuickAction = 'payment' | 'call' | 'message';
 
 interface Lead {
   id: number;
@@ -943,11 +943,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       return;
     }
-    if (action === 'qualify') {
-      void requestLeadStatusChange(lead.id, 'qualified');
-      return;
-    }
-  }, [openLead, requestLeadStatusChange, setLocation, startOnlinePbxCall, t]);
+  }, [openLead, setLocation, startOnlinePbxCall, t]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);

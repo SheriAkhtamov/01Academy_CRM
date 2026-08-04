@@ -23,7 +23,6 @@ import {
   Send,
   Archive,
   CalendarPlus2,
-  UserPlus,
   Wallet,
 } from 'lucide-react';
 import {
@@ -92,7 +91,7 @@ interface KanbanBoardProps {
   statuses: readonly KanbanStatus[];
   leads: KanbanLead[];
   onStatusChange: (leadId: number, statusCode: string) => boolean | void | Promise<boolean | void>;
-  onQuickAction?: (action: 'qualify' | 'payment' | 'call' | 'message', lead: KanbanLead) => void;
+  onQuickAction?: (action: 'payment' | 'call' | 'message', lead: KanbanLead) => void;
   onArchiveLead?: (lead: KanbanLead) => void;
   onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
@@ -134,7 +133,6 @@ function LeadCardContent({
   showManager,
   t,
 }: LeadCardContentProps) {
-  const canQualify = currentStatus.code === 'new_request' || currentStatus.code === 'first_contact';
   const visiblePhone = primaryVisibleLeadPhone(lead);
   const canCall = Boolean(visiblePhone);
   const canMessage = Boolean(leadMessageTarget(lead));
@@ -242,17 +240,6 @@ function LeadCardContent({
             disabled={isPending}
           >
             <Wallet data-icon="inline-start" /> {t('payment')}
-          </Button>
-        ) : null}
-        {canQualify ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => onQuickAction?.('qualify', lead)}
-            disabled={isPending}
-          >
-            <UserPlus data-icon="inline-start" /> {t('qualify')}
           </Button>
         ) : null}
       </div>

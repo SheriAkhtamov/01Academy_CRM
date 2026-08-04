@@ -10,7 +10,7 @@ export function SalesOverviewSection(props: ComponentProps<typeof DashboardChart
   return <DashboardCharts {...props} />;
 }
 
-type QuickAction = 'qualify' | 'payment' | 'call' | 'message';
+type QuickAction = 'payment' | 'call' | 'message';
 
 export function SalesPipelineSection<TLead extends KanbanLead>({
   leadStatusName,

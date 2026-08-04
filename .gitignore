@@ -1,6 +1,5 @@
 # Dependencies and generated output
 node_modules/
-telegram-bot/node_modules/
 dist/
 coverage/
 .vite/
@@ -16,7 +15,6 @@ config/app.config.json
 .env
 .env.*
 !.env.example
-!telegram-bot/.env.example
 .env.runtime
 .secrets/
 *.pem

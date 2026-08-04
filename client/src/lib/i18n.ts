@@ -1069,6 +1069,18 @@ export const translations = {
     ru: 'Введите тег длиной от 1 до 48 символов.',
   },
   leadTagNotFound: { en: 'Tag not found', ru: 'Тег не найден' },
+  leadFiltersDescription: { en: 'Narrow the pipeline down to the leads you need right now.', ru: 'Оставьте в воронке только нужные сейчас лиды.' },
+  leadFiltersChannels: { en: 'Channels and contacts', ru: 'Каналы и контакты' },
+  leadFiltersTraits: { en: 'Lead traits', ru: 'Признаки лида' },
+  leadFiltersNumbers: { en: 'Numbers and dates', ru: 'Числа и даты' },
+  leadFilterAny: { en: 'Any', ru: 'Любые' },
+  leadFilterMessenger: { en: 'Messenger account', ru: 'Мессенджер' },
+  leadFilterOnlyNew: { en: 'Only new leads nobody opened', ru: 'Только новые, которые не открывали' },
+  leadFilterDemo: { en: 'Booked for a trial lesson', ru: 'Записан на пробное' },
+  leadFilterFrom: { en: 'From', ru: 'От' },
+  leadFilterTo: { en: 'To', ru: 'До' },
+  leadFilterMatches: { en: 'Matching leads: {count}', ru: 'Найдено лидов: {count}' },
+  leadFilterApply: { en: 'Apply filters', ru: 'Применить фильтры' },
   leadTagRemoved: { en: 'Tag removed', ru: 'Тег удалён' },
   leadTagRemoveFailed: { en: 'Tag could not be removed', ru: 'Не удалось удалить тег' },
   leadTags: { en: 'Tags', ru: 'Теги' },
@@ -1850,10 +1862,7 @@ export const translations = {
   transferLead: { en: 'Transfer lead', ru: 'Передать лида' },
 
   // UX improvements — Instagram lead source and sales inbox
-  allConversations: {
-    en: 'All',
-    ru: 'Все',
-  },
+  allConversations: { en: 'All', ru: 'Все' },
   canReplyConversations: {
     en: 'Open',
     ru: 'Открытые',
@@ -1999,10 +2008,7 @@ export const translations = {
     ru: 'Диалогов: {conversations}, новых сообщений: {messages}, новых лидов: {leads}.',
   },
   instagramUser: { en: 'Instagram user', ru: 'Пользователь Instagram' },
-  leadCard: {
-    en: 'Lead card',
-    ru: 'Карточка лида',
-  },
+  leadCard: { en: 'Lead card', ru: 'Карточка лида' },
   collapseLeadCard: {
     en: 'Collapse lead card',
     ru: 'Свернуть карточку лида',

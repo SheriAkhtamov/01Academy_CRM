@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData, salesQueryKeys } from '@/features/sales/queries';
+import { useLeadFilters } from '@/features/sales/useLeadFilters';
 import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import {
   SalesOverviewSection,
@@ -50,6 +51,8 @@ import {
 } from '@/components/ui/dialog';
 import { DataTable } from '@/components/ux/DataTable';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
+import { LeadFiltersDialog } from '@/components/ux/LeadFiltersDialog';
+import { leadMatchesFilters } from '@/lib/leadFilters';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -108,6 +111,8 @@ interface Lead {
   comment?: string;
   createdAt: string;
   firstViewedAt?: string | null;
+  language?: string | null;
+  demoAt?: string | null;
   expectedPaymentUzs?: number;
   offerPriceUzs?: number;
   firstContactAt?: string;
@@ -648,6 +653,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     () => myLeads.filter((lead) => !lead.isArchived && activePipelineCodes.has(lead.statusCode)),
     [activePipelineCodes, myLeads],
   );
+  const { filters: leadFilters, applyFilters } = useLeadFilters();
+  const filteredPipelineLeads = useMemo(
+    () => pipelineLeads.filter((lead) => leadMatchesFilters(lead, leadFilters)),
+    [leadFilters, pipelineLeads],
+  );
 
   const overviewLeads = useMemo(() => {
     if (isAdministrationModule) return myLeads;
@@ -1059,6 +1069,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
               </Button>
+              <LeadFiltersDialog
+                filters={leadFilters}
+                onApply={applyFilters}
+                sources={data.sources ?? []}
+                leads={pipelineLeads}
+              />
             </div>
           ) : undefined
         }
@@ -1099,7 +1115,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       {section === 'pipeline' ? (
         <SalesPipelineSection
           leadStatusName={leadStatusName}
-          leads={pipelineLeads}
+          leads={filteredPipelineLeads}
           activePipelineStatuses={activePipelineStatuses}
           onLeadClick={(lead) => openLead(lead.id)}
           onQuickAction={handleQuickAction}

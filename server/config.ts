@@ -38,20 +38,8 @@ interface AppConfig {
     };
   };
   integrations?: {
-    chatplace?: {
-      webhookSecret?: string;
-    };
     website?: {
       webhookSecret?: string;
-    };
-    telegram?: {
-      botToken?: string;
-      leadershipChatId?: string;
-    };
-    whatsapp?: {
-      apiToken?: string;
-      phoneNumberId?: string;
-      apiUrl?: string;
     };
     instagram?: {
       appId?: string;
@@ -78,14 +66,6 @@ interface AppConfig {
       conversionEventName?: string;
       partnerAgent?: string;
       testEventCode?: string;
-    };
-    notion?: {
-      token?: string;
-      databaseId?: string;
-    };
-    googleSheets?: {
-      credentialsPath?: string;
-      spreadsheetId?: string;
     };
     onlinePbx?: {
       domain?: string;
@@ -220,7 +200,6 @@ const validateConfig = (config: AppConfig) => {
   }
 
   const webhookSecrets = [
-    ['integrations.chatplace.webhookSecret', config.integrations?.chatplace?.webhookSecret],
     ['integrations.website.webhookSecret', config.integrations?.website?.webhookSecret],
     ['integrations.instagram.verifyToken', config.integrations?.instagram?.verifyToken],
     ['integrations.metaAds.leadWebhookVerifyToken', config.integrations?.metaAds?.leadWebhookVerifyToken],
@@ -253,11 +232,6 @@ const validateConfig = (config: AppConfig) => {
       'integrations.instagram.oauthUrl',
       instagram?.oauthUrl,
       (hostname) => hostname === 'www.instagram.com',
-    );
-    validateHttpsIntegrationUrl(
-      'integrations.whatsapp.apiUrl',
-      config.integrations?.whatsapp?.apiUrl,
-      (hostname) => hostname === 'graph.facebook.com',
     );
     validateHttpsIntegrationUrl(
       'integrations.onlinePbx.apiUrl',

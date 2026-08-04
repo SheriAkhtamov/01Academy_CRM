@@ -440,7 +440,6 @@ export const translations = {
   success: { en: 'Success', ru: 'Успешно' },
   systemStatistics: { en: 'System Statistics', ru: 'Системная статистика' },
   teacher: { en: 'Teacher', ru: 'Преподаватель' },
-  telegramWhatsapp: { en: 'Telegram/WhatsApp', ru: 'Telegram/WhatsApp' },
   instagramContactChannel: { en: 'Instagram', ru: 'Инстаграм' },
   thisActionCannotBeUndone: { en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' },
   totalUsers: { en: 'Total Users', ru: 'Всего пользователей' },
@@ -1195,7 +1194,7 @@ export const translations = {
   paymentPartyRequired: { en: 'Select a student or lead for the payment', ru: 'Нельзя отметить оплату без ученика или лида' },
   paymentRequiredBeforePaid: { en: 'Record a confirmed payment before moving the lead to Paid', ru: 'Сначала зафиксируйте подтверждённую оплату' },
   phoneNotProvided: { en: 'Phone is not provided', ru: 'Телефон не указан' },
-  contactMethodNotProvided: { en: 'No phone or Telegram username is provided', ru: 'Не указан телефон или Telegram' },
+  contactMethodNotProvided: { en: 'No Instagram dialog is available', ru: 'Нет доступного диалога Instagram' },
   referralDiscount15: { en: '15% discount for one month', ru: 'Скидка 15% на один месяц' },
   referralBenefitAlreadyConsumed: { en: 'This referral benefit has already been used', ru: 'Этот реферальный бонус уже использован' },
   referralBenefitGrantFailed: { en: 'The referral benefit could not be granted', ru: 'Не удалось начислить реферальный бонус' },
@@ -1605,6 +1604,11 @@ export const translations = {
   integrationProviderWebsiteDesc: {
     en: 'Lead capture webhook from the Zero One Academy website.',
     ru: 'Webhook заявок с сайта Zero One Academy.',
+  },
+  metaIntegration: { en: 'Meta Ads and Leads', ru: 'Meta: реклама и лиды' },
+  metaIntegrationDesc: {
+    en: 'Instant Form leads, exact ad attribution, and CRM conversion events through Meta CAPI.',
+    ru: 'Лиды из Instant Forms, точная атрибуция рекламы и события этапов CRM через Meta CAPI.',
   },
   onlinePbxIntegration: { en: 'OnlinePBX telephony', ru: 'Телефония OnlinePBX' },
   onlinePbxIntegrationDesc: {

@@ -36,7 +36,23 @@ vi.mock('../server/storage', () => ({
   },
 }));
 
-vi.mock('../server/config', () => ({ appConfig: { integrations: {} } }));
+vi.mock('../server/config', () => ({
+  appConfig: {
+    server: { appUrl: 'https://crm.test', environment: 'test' },
+    integrations: {
+      metaAds: {
+        marketingAccessToken: 'marketing-token',
+        capiAccessToken: 'capi-token',
+        leadAccessToken: 'lead-token',
+        webhookAppSecret: 'app-secret',
+        leadWebhookVerifyToken: 'verify-token',
+        adAccountId: '123',
+        datasetId: '456',
+        pageId: '789',
+      },
+    },
+  },
+}));
 vi.mock('../server/lib/logger', () => ({
   logger: { error: mocks.loggerError, warn: vi.fn(), info: vi.fn() },
 }));
@@ -151,6 +167,17 @@ describe('academy route logic boundaries', () => {
       connected: true,
       accountId: 17,
       accountUsername: '01academy_uz',
+    }));
+    expect(response.body.map((entry: { provider: string }) => entry.provider)).toEqual([
+      'instagram',
+      'website',
+      'meta',
+      'onlinepbx',
+    ]);
+    expect(response.body).toContainEqual(expect.objectContaining({
+      provider: 'meta',
+      connected: true,
+      accountUsername: '789',
     }));
   });
 
@@ -925,7 +952,7 @@ describe('academy route logic boundaries', () => {
     expect(attendanceWrites).toHaveLength(2);
     expect(attendanceWrites.every(([, values]) => values[6] === false && values[7] === false)).toBe(true);
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_status_history"'))).toBe(true);
-    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_notification_outbox"'))).toHaveLength(1);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('academy_notification_outbox'))).toBe(false);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 

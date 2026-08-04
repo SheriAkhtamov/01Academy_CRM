@@ -20,7 +20,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
@@ -240,7 +239,7 @@ router.get('/leads', async (req, res) => {
           ${leadTagsSelect('l')}
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
-       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+       LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
        LEFT JOIN users u ON u.id = l.manager_id
        LEFT JOIN academy_schools sc ON sc.id = l.school_id
        LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
@@ -1573,6 +1572,6 @@ router.post('/leads/:id/students', async (req, res) => {
   }
 });
 
-// Inbound webhooks (ChatPlace, Google Forms) live in ./incoming.routes.ts as
-// PUBLIC routes verified by per-provider secrets, not session auth.
+// Provider webhooks live in incoming.routes.ts as public routes verified by
+// provider-specific signatures or secrets, not session authentication.
 };

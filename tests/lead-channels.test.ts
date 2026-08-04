@@ -17,10 +17,7 @@ describe('lead communication channels', () => {
     expect(normalizeLeadChannelHandle('https://www.instagram.com/zero.one/?hl=ru')).toBe('zero.one');
     expect(buildLeadChannelProfileUrl('instagram', '@zero.one'))
       .toBe('https://www.instagram.com/zero.one/');
-    expect(buildLeadChannelProfileUrl('telegram', '@zero_one'))
-      .toBe('https://t.me/zero_one');
-    expect(buildLeadChannelProfileUrl('whatsapp', null, '+998 90 123-45-67'))
-      .toBe('https://wa.me/998901234567');
+    expect(buildLeadChannelProfileUrl('unsupported', '@zero_one')).toBeNull();
   });
 
   it('allows only the official host for each external channel', () => {
@@ -28,8 +25,7 @@ describe('lead communication channels', () => {
       .toBe('https://www.instagram.com/zero.one/');
     expect(safeLeadChannelProfileUrl('instagram', 'javascript:alert(1)')).toBeNull();
     expect(safeLeadChannelProfileUrl('instagram', 'https://example.com/zero.one')).toBeNull();
-    expect(safeLeadChannelProfileUrl('telegram', 'https://t.me/zero_one'))
-      .toBe('https://t.me/zero_one');
+    expect(safeLeadChannelProfileUrl('unsupported', 'https://example.com/zero_one')).toBeNull();
   });
 
   it('treats legacy and provider-backed rows for the same handle as one displayed channel', () => {

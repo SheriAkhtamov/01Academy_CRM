@@ -1052,24 +1052,6 @@ export const instagramConversationReads = pgTable("instagram_conversation_reads"
 
 export const { metaLeadAttributions, metaConversionEvents } = createMetaMarketingTables({ leadId: academyLeads.id, conversationId: instagramConversations.id });
 
-export const academyNotificationOutbox = pgTable("academy_notification_outbox", {
-  id: serial("id").primaryKey(),
-  channel: varchar("channel", { length: 80 }).notNull(),
-  recipient: varchar("recipient", { length: 255 }).notNull(),
-  message: text("message").notNull(),
-  status: varchar("status", { length: 50 }).notNull().default("pending"),
-  scheduledAt: timestamp("scheduled_at"),
-  sentAt: timestamp("sent_at"),
-  errorMessage: text("error_message"),
-  retryCount: integer("retry_count").notNull().default(0),
-  entityType: varchar("entity_type", { length: 80 }),
-  entityId: integer("entity_id"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  statusIdx: index("academy_notification_outbox_status_idx").on(table.status),
-}));
-
 // Internal staff chat.
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
@@ -1341,12 +1323,6 @@ export const insertInstagramMessageSchema = createInsertSchema(instagramMessages
 export const insertMetaLeadAttributionSchema = createInsertSchema(metaLeadAttributions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertMetaConversionEventSchema = createInsertSchema(metaConversionEvents).omit({ id: true, createdAt: true, updatedAt: true });
 
-export const insertAcademyNotificationOutboxSchema = createInsertSchema(academyNotificationOutbox).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
   createdAt: true,
@@ -1453,8 +1429,6 @@ export type MetaLeadAttribution = typeof metaLeadAttributions.$inferSelect;
 export type InsertMetaLeadAttribution = z.infer<typeof insertMetaLeadAttributionSchema>;
 export type MetaConversionEvent = typeof metaConversionEvents.$inferSelect;
 export type InsertMetaConversionEvent = z.infer<typeof insertMetaConversionEventSchema>;
-export type AcademyNotificationOutbox = typeof academyNotificationOutbox.$inferSelect;
-export type InsertAcademyNotificationOutbox = z.infer<typeof insertAcademyNotificationOutboxSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type SavedAccount = typeof savedAccounts.$inferSelect;

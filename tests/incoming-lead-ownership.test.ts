@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../server/config', () => ({
   appConfig: {
     integrations: {
-      chatplace: { webhookSecret: 'test-webhook-secret' },
       website: { webhookSecret: 'test-webhook-secret' },
     },
     server: { appUrl: 'http://localhost:5001' },
@@ -72,40 +71,28 @@ describe('external lead ownership', () => {
     return app;
   };
 
-  it('keeps ChatPlace, Google Forms, and website leads and tasks unassigned', async () => {
+  it('keeps direct website leads unassigned', async () => {
     const app = createApp();
-    const responses = await Promise.all([
-      request(app).post('/api/incoming/chatplace').set('x-webhook-secret', 'test-webhook-secret').send({
-        contactName: 'Instagram lead',
-        instagramUsername: 'instagram_client',
-      }),
-      request(app).post('/api/incoming/google-forms').set('x-webhook-secret', 'test-webhook-secret').send({
-        contactName: 'Google Client',
-        phone: '+998 90 111 22 33',
-      }),
-      request(app).post('/api/incoming/website-lead').set('x-webhook-secret', 'test-webhook-secret').send({
+    const response = await request(app)
+      .post('/api/incoming/website-lead')
+      .set('x-webhook-secret', 'test-webhook-secret')
+      .send({
         contactName: 'Website Client',
         phone: '+998 90 444 55 66',
-        telegramUsername: '@telegram_client',
-      }),
-    ]);
+      });
 
-    expect(responses.map((response) => response.status)).toEqual([201, 201, 201]);
-    expect(responses.every((response) => response.body.managerId === null)).toBe(true);
+    expect(response.status).toBe(201);
+    expect(response.body.managerId).toBeNull();
 
     const leadInsertCalls = mocks.clientQuery.mock.calls.filter(([sql]) =>
       String(sql).includes('INSERT INTO academy_leads'));
-    expect(leadInsertCalls).toHaveLength(3);
+    expect(leadInsertCalls).toHaveLength(1);
     for (const [sql] of leadInsertCalls) {
       expect(String(sql)).toMatch(/status_code, manager_id[\s\S]+VALUES[\s\S]+NULL/);
     }
 
-    const taskInsertCalls = mocks.clientQuery.mock.calls.filter(([sql]) =>
-      String(sql).includes('INSERT INTO academy_tasks'));
-    expect(taskInsertCalls).toHaveLength(2);
-    for (const [sql] of taskInsertCalls) {
-      expect(String(sql)).toMatch(/responsible_id[\s\S]+VALUES[\s\S]+NULL/);
-    }
+    expect(mocks.clientQuery.mock.calls.some(([sql]) =>
+      String(sql).includes('INSERT INTO academy_tasks'))).toBe(false);
   });
 
   it('rejects unsigned lead webhooks', async () => {

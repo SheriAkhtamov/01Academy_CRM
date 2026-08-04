@@ -33,7 +33,6 @@ import {
   FolderOpen,
   History,
   Loader2,
-  MessageSquare,
   Phone,
   Star,
   User,
@@ -151,13 +150,6 @@ export function StudentDetailSheet({
   const payments = data?.payments?.filter((payment: any) => payment.studentId === currentStudent.id) ?? [];
   const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === currentStudent.id) ?? [];
   const displayName = currentStudent.studentName || currentStudent.contactName;
-  const messageHref = currentStudent.phone || currentStudent.messenger
-    ? currentStudent.messenger?.startsWith('@')
-      ? `https://t.me/${currentStudent.messenger.slice(1)}`
-      : currentStudent.phone
-        ? `https://wa.me/${String(currentStudent.phone).replace(/\D/g, '')}`
-        : undefined
-    : undefined;
   const studentStatusLabel = (status: string) => {
     if (status === 'studying') return t('studentStatusStudying');
     if (status === 'paused') return t('studentStatusPaused');
@@ -214,14 +206,6 @@ export function StudentDetailSheet({
                       <Phone data-icon="inline-start" />
                     )}
                     {t('call')}
-                  </Button>
-                ) : null}
-                {messageHref ? (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={messageHref} target="_blank" rel="noreferrer">
-                      <MessageSquare data-icon="inline-start" />
-                      {t('write')}
-                    </a>
                   </Button>
                 ) : null}
                 {currentStudent.leadId && onRecordPayment ? (

@@ -20,7 +20,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';

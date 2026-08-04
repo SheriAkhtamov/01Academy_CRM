@@ -20,7 +20,8 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
+import { getMetaLeadAdsIntegrationConfig } from '../../services/meta-lead-ads';
+import { getMetaMarketingIntegrationConfig } from '../../services/meta-marketing';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
@@ -89,7 +90,6 @@ import {
   SALES_MODULES,
   createAudit,
   createNotification,
-  createTask,
   createTaskOnce,
   ensureAdministrationModuleAccess,
   ensureOperationsAccess,
@@ -110,10 +110,8 @@ import {
   advanceStudentNextPaymentAt,
   applyReferralRewards,
   consumeReferralBenefit,
-  createStageHistory,
   createStudentFromLead,
   ensureReferralBenefit,
-  getLead,
   handleLeadStatusEffects,
   recalculateStudentMetrics,
   validateEnrollmentGroup,
@@ -684,6 +682,8 @@ router.get('/integrations/status', async (req, res) => {
     const instagramAccount = instagramAccounts[0] ?? null;
     const instagramRequiresReconnect = instagramAccount?.lastError === 'instagramReauthorizationRequired';
     const integ = appConfig.integrations ?? {};
+    const metaMarketing = getMetaMarketingIntegrationConfig();
+    const metaLeadAds = getMetaLeadAdsIntegrationConfig();
     const hasSuccessfulInboundLog = (provider: string) =>
       logs.some((log) =>
         log.provider === provider
@@ -706,6 +706,18 @@ router.get('/integrations/status', async (req, res) => {
         accountId: null,
         accountUsername: null,
         note: 'Website lead inbound webhook',
+      },
+      {
+        provider: 'meta',
+        connected: Boolean(
+          metaMarketing.attributionConfigured
+          && metaMarketing.capiConfigured
+          && metaLeadAds.configured
+        ),
+        requiresReconnect: false,
+        accountId: null,
+        accountUsername: metaMarketing.pageId,
+        note: 'Meta Ads attribution, Instant Forms and Conversions API',
       },
       {
         provider: 'onlinepbx',
@@ -740,20 +752,6 @@ router.post('/integrations/:provider/test', async (req, res) => {
   try {
     const provider = String(req.params.provider);
     // Actually exercise the channel so the test reflects real connectivity.
-    if (provider === 'telegram') {
-      const { sendTelegramMessage } = await import('../../services/telegram');
-      const recipient = nullableText(req.body.recipient) ?? appConfig.integrations?.telegram?.leadershipChatId ?? 'leadership';
-      const result = await sendTelegramMessage(recipient, '01 Academy: тест интеграции Telegram ✅');
-      const log = await logIntegration('telegram', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', { result }, result.error ?? null);
-      return res.json({ ok: result.ok, simulated: result.simulated, error: result.error, log });
-    }
-    if (provider === 'whatsapp') {
-      const { sendWhatsAppMessage } = await import('../../services/whatsapp');
-      const recipient = nullableText(req.body.recipient) ?? '+998901234567';
-      const result = await sendWhatsAppMessage(recipient, '01 Academy: тест интеграции WhatsApp ✅');
-      const log = await logIntegration('whatsapp', 'outbound', result.ok ? (result.simulated ? 'simulated' : 'sent') : 'failed', { result }, result.error ?? null);
-      return res.json({ ok: result.ok, simulated: result.simulated, error: result.error, log });
-    }
     if (provider === 'onlinepbx') {
       const extensions = await onlinePbxClient.listExtensions();
       const log = await logIntegration('onlinepbx', 'outbound', 'connected', {
@@ -767,8 +765,7 @@ router.post('/integrations/:provider/test', async (req, res) => {
         log,
       });
     }
-    const log = await logIntegration(provider, 'outbound', 'stub_sent', req.body ?? {});
-    res.json({ ok: true, mode: 'safe_stub', log });
+    res.status(404).json({ error: 'integrationNotSupported' });
   } catch (error) {
     logger.error('Failed to test integration', { error });
     if (error instanceof OnlinePbxError) {
@@ -784,48 +781,12 @@ router.post('/automations/run', async (req, res) => {
   try {
     // Manual and scheduled runs must share the same locking/idempotency rules.
     // Keeping a second implementation here previously produced duplicate tasks
-    // and mailings that the scheduled worker correctly avoided.
+    // that the scheduled worker correctly avoided.
     const actions = await runAutomations(req.user!.id);
     res.json({ ok: true, actions });
   } catch (error) {
     logger.error('Failed to run academy automations', { error });
     res.status(500).json({ error: 'Failed to run academy automations' });
-  }
-});
-
-router.post('/mailings/:id/event', async (req, res) => {
-  try {
-    const id = parseId(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Invalid mailing id' });
-    const outbox = await queryOne(`SELECT * FROM academy_notification_outbox WHERE id = $1`, [id]);
-    if (!outbox) return res.status(404).json({ error: 'Mailing not found' });
-
-    const eventType = nullableText(req.body.eventType) ?? 'opened';
-    await logIntegration(`mailing_${outbox.channel}`, 'inbound', eventType, {
-      outboxId: id,
-      entityType: outbox.entityType,
-      entityId: outbox.entityId,
-      payload: req.body });
-
-    if (eventType === 'reply' && outbox.entityType === 'lead' && outbox.entityId) {
-      const lead = await getLead(Number(outbox.entityId));
-      if (lead?.statusCode === 'not_now' && !lead.isArchived) {
-        const updated = await updateRow('academy_leads', lead.id, {
-          statusCode: 'first_contact',
-          warmReason: null });
-        await createStageHistory(lead.id, 'not_now', 'first_contact', req.user!.id, 'Отклик на рассылку');
-        await createTask('Лид откликнулся из тёплой базы', {
-          responsibleId: updated?.managerId ?? req.user!.id,
-          entityType: 'lead',
-          entityId: lead.id,
-          deadlineAt: addDays(new Date(), 1) });
-      }
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    logger.error('Failed to record mailing event', { error });
-    res.status(500).json({ error: 'Failed to record mailing event' });
   }
 });
 

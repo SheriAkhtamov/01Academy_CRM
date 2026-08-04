@@ -38,9 +38,8 @@ const queueEscalationNotifications = async (
   entityType: string,
   entityId: number,
 ) => {
-  // The internal notifications and Telegram outbox row are part of the same
-  // transaction as the ledger event. A rollback can no longer permanently
-  // consume the dedupe key without actually queuing the escalation.
+  // The internal notification is part of the same transaction as the ledger
+  // event, so a rollback cannot consume the dedupe key without notifying CRM.
   await client.query(
     `INSERT INTO notifications
        (user_id, type, title, message, related_entity_type, related_entity_id)
@@ -57,20 +56,6 @@ const queueEscalationNotifications = async (
            AND existing.related_entity_id = $5
        )`,
     [responsibleId, title, message, entityType, entityId],
-  );
-  await client.query(
-    `INSERT INTO academy_notification_outbox
-       (channel, recipient, message, status, scheduled_at, entity_type, entity_id)
-     SELECT 'telegram','leadership',$1,'pending',NOW(),$2,$3
-     WHERE NOT EXISTS (
-       SELECT 1
-       FROM academy_notification_outbox existing
-       WHERE existing.channel = 'telegram'
-         AND existing.recipient = 'leadership'
-         AND existing.entity_type = $2
-         AND existing.entity_id = $3
-     )`,
-    [`⚠️ ${title}\n${message}`, entityType, entityId],
   );
 };
 
@@ -105,9 +90,8 @@ const escalateTask = async (taskId: number, kind: EscalationKind): Promise<boole
       [eventKey, kind, task.id, task],
     );
     if (!event.rows[0]?.id) {
-      // Recover legacy partial state safely: the notification/outbox inserts
-      // are themselves idempotent, so missing delivery records are restored
-      // without duplicating records that were already queued.
+      // Recover legacy partial state safely. The notification insert is
+      // idempotent, so a missing record is restored without duplication.
       const notification = notificationFor(kind, task);
       await queueEscalationNotifications(
         client,

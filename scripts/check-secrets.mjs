@@ -47,7 +47,7 @@ const detectors = [
     pattern: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/,
   },
   {
-    id: 'telegram-bot-token',
+    id: 'numeric-bot-token',
     pattern: /\b\d{6,12}:[A-Za-z0-9_-]{30,}\b/,
   },
   {

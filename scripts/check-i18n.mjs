@@ -27,10 +27,9 @@ const nonLocalizedValueKeys = new Set([
   'sessionTimeoutPlaceholder',
   'smtpHostPlaceholder',
   'smtpPortPlaceholder',
-  'telegramWhatsapp',
   'uzbekLang',
 ]);
-const hardcodedTextAllowlist = new Set(['.csv', 'Enter', 'K', 'Telegram', 'WhatsApp', 'x']);
+const hardcodedTextAllowlist = new Set(['.csv', 'Enter', 'K', 'x']);
 const nonLocalizedContentArrays = new Set(['DEFAULT_QUICK_REPLIES']);
 const uiTextProperties = new Set([
   'alt',

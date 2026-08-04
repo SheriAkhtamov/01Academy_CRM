@@ -20,7 +20,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
@@ -161,7 +160,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       const scope = await buildCrudScope(req, table, 2);
       if (scope.denied) return res.status(403).json({ error: `${path} access required` });
       const scopedWhere = scope.whereSql ? `AND ${scope.whereSql}` : '';
-      const row = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere}`, [id, ...scope.params]);
+      const listedWhere = options.listWhere ? `AND (${options.listWhere})` : '';
+      const row = await queryOne(
+        `SELECT * FROM ${quoteIdent(table)} WHERE id = $1 ${scopedWhere} ${listedWhere}`,
+        [id, ...scope.params],
+      );
       if (!row) return res.status(404).json({ error: `${path} not found` });
       res.json(row);
     } catch (error) {

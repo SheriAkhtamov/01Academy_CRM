@@ -77,7 +77,6 @@ export type AuditEvent = {
 export interface AuditPort { record(event: AuditEvent): Promise<void> }
 export interface NotificationPort { publish(input: Record<string, unknown>): Promise<void> }
 export interface TaskPort { create(input: Record<string, unknown>): Promise<unknown> }
-export interface OutboxPort { enqueue(input: Record<string, unknown>): Promise<void> }
 export interface RealtimePort { publish(input: Record<string, unknown>): void }
 export interface AutomationPort { run(input: Record<string, unknown>): Promise<void> }
 export interface TelephonyPort { execute(input: Record<string, unknown>): Promise<unknown> }
@@ -92,7 +91,6 @@ export type LeadUnitOfWorkContext = {
   audit: AuditPort;
   notifications: NotificationPort;
   tasks: TaskPort;
-  outbox: OutboxPort;
   afterCommit(task: AfterCommitTask): void;
 };
 

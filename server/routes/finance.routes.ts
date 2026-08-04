@@ -299,7 +299,7 @@ const getTransactions = async (
               COALESCE(e.campaign_name, e.channel) AS title,
               COALESCE(source.name, e.channel) AS counterparty
        FROM academy_marketing_expenses e
-       LEFT JOIN academy_lead_sources source ON source.id = e.source_id
+       LEFT JOIN academy_lead_sources source ON source.id = e.source_id AND source.is_active = true
        WHERE e.status = 'approved'
          AND COALESCE(e.approved_at, e.period_start) >= $1
          AND COALESCE(e.approved_at, e.period_start) < $2
@@ -556,7 +556,7 @@ router.get('/expenses', async (req, res) => {
         `SELECT e.*, source.name AS source_name, creator.full_name AS created_by_name,
                 approver.full_name AS approved_by_name
          FROM academy_marketing_expenses e
-         LEFT JOIN academy_lead_sources source ON source.id = e.source_id
+         LEFT JOIN academy_lead_sources source ON source.id = e.source_id AND source.is_active = true
          LEFT JOIN users creator ON creator.id = e.created_by
          LEFT JOIN users approver ON approver.id = e.approved_by
          WHERE e.period_end >= $1 AND e.period_start < $2

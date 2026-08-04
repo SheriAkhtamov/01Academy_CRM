@@ -1,9 +1,7 @@
 import cron from "node-cron";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
-import { processOutbox } from "./outbox-worker";
 import { runAutomations } from "./automations";
-import { buildWeeklyReport } from "./weekly-report";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
 import {
@@ -29,25 +27,20 @@ let started = false;
 /**
  * Starts all periodic background jobs. Safe to call once at server boot.
  * Uses node-cron expressions:
- *   - outbox worker: every minute (TZ-required delays <= 1 min for notifications)
+ *   - Meta attribution/CAPI worker: every minute
  *   - automations:   daily at 09:00
- *   - weekly report: every Monday at 09:00
  */
 export const startScheduler = () => {
   if (started) return;
   started = true;
 
-  // Outbox worker — drains the notification queue every minute.
+  // Meta worker — enriches attribution and delivers queued CAPI events.
   cron.schedule("* * * * *", async () => {
     try {
-      const [dispatched, enrichedMetaAttributions, dispatchedMetaEvents] = await Promise.all([
-        processOutbox(50),
+      const [enrichedMetaAttributions, dispatchedMetaEvents] = await Promise.all([
         processMetaAttributionEnrichment(20),
         processMetaConversionEvents(50),
       ]);
-      if (dispatched > 0) {
-        logger.info(`[scheduler] outbox dispatched ${dispatched} messages`);
-      }
       if (enrichedMetaAttributions > 0) {
         logger.info(`[scheduler] enriched ${enrichedMetaAttributions} Meta attributions`);
       }
@@ -89,20 +82,8 @@ export const startScheduler = () => {
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
-  // Weekly leadership report every Monday at 09:00.
-  cron.schedule("0 9 * * 1", async () => {
-    try {
-      const actorId = await getSystemUserId();
-      if (!actorId) return;
-      const result = await buildWeeklyReport(actorId);
-      logger.info("[scheduler] weekly report enqueued", { outboxId: result.outboxId });
-    } catch (error) {
-      logger.error("[scheduler] weekly report error", { error });
-    }
-  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
-
   logger.info(
-    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; outbox/meta: 1m, escalations: hourly, automations: daily 09:00, weekly report: Mon 09:00)`,
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, escalations: hourly, automations: daily 09:00)`,
   );
 };
 

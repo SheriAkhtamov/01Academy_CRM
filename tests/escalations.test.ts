@@ -32,7 +32,7 @@ describe("escalation monitor", () => {
     });
   });
 
-  it("notifies only the task owner in CRM while keeping the leadership outbox", async () => {
+  it("notifies only the task owner inside CRM", async () => {
     await expect(runEscalations()).resolves.toEqual(["task-sla:7"]);
 
     const sql = mocks.clientQuery.mock.calls.map(([query]) => sqlText(query));
@@ -40,7 +40,7 @@ describe("escalation monitor", () => {
     expect(sql.some((query) => query.includes("FOR UPDATE OF t"))).toBe(true);
     expect(sql.some((query) => query.startsWith("INSERT INTO academy_escalation_events"))).toBe(true);
     expect(sql.some((query) => query.startsWith("INSERT INTO notifications"))).toBe(true);
-    expect(sql.some((query) => query.startsWith("INSERT INTO academy_notification_outbox"))).toBe(true);
+    expect(sql.some((query) => query.includes("academy_notification_outbox"))).toBe(false);
     expect(sql.some((query) => query.startsWith("UPDATE academy_tasks SET escalated_at = NOW()"))).toBe(true);
     const notificationCall = mocks.clientQuery.mock.calls.find(([query]) =>
       sqlText(query).startsWith("INSERT INTO notifications")

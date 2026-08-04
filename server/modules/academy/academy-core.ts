@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
-import { appConfig } from '../../config';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { storage } from '../../storage';
 import { logger } from '../../lib/logger';
@@ -20,7 +19,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
@@ -876,28 +874,6 @@ export const createTaskOnce = async (title: string, options: {
   );
   if (existing) return { task: existing, created: false };
   return { task: await createTask(title, options), created: true };
-};
-
-export const createOutbox = async (channel: string, recipient: string | null | undefined, message: string, options: {
-  scheduledAt?: Date | null;
-  entityType?: string | null;
-  entityId?: number | null;
-}) => {
-  const normalizedChannel = nullableText(channel)?.toLowerCase();
-  const normalizedRecipient = normalizeOutboxRecipient(
-    normalizedChannel,
-    recipient,
-    appConfig.integrations?.telegram?.leadershipChatId,
-  );
-  if (!normalizedChannel || !normalizedRecipient) return null;
-  return insertRow('academy_notification_outbox', {
-    channel: normalizedChannel,
-    recipient: normalizedRecipient,
-    message,
-    status: 'pending',
-    scheduledAt: options.scheduledAt ?? new Date(),
-    entityType: options.entityType ?? null,
-    entityId: options.entityId ?? null });
 };
 
 export const logIntegration = async (provider: string, direction: string, status: string, payload: unknown, errorMessage?: string | null) =>

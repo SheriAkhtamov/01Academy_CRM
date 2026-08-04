@@ -1,4 +1,4 @@
-export const LEAD_CHANNELS = ['instagram', 'telegram', 'whatsapp'] as const;
+export const LEAD_CHANNELS = ['instagram'] as const;
 export type LeadChannelKind = (typeof LEAD_CHANNELS)[number];
 
 export interface LeadChannelView {
@@ -61,13 +61,6 @@ export const buildLeadChannelProfileUrl = (
   if (normalizedChannel === 'instagram' && normalizedHandle) {
     return `https://www.instagram.com/${encodeURIComponent(normalizedHandle)}/`;
   }
-  if (normalizedChannel === 'telegram' && normalizedHandle) {
-    return `https://t.me/${encodeURIComponent(normalizedHandle)}`;
-  }
-  if (normalizedChannel === 'whatsapp') {
-    const digits = String(phone ?? handle ?? '').replace(/\D/g, '');
-    return digits ? `https://wa.me/${digits}` : null;
-  }
   return null;
 };
 
@@ -78,12 +71,7 @@ export const safeLeadChannelProfileUrl = (channel: string, value?: string | null
     if (url.protocol !== 'https:') return null;
     const host = url.hostname.toLowerCase();
     const allowedHost = channel === 'instagram'
-      ? ['instagram.com', 'www.instagram.com'].includes(host)
-      : channel === 'telegram'
-        ? ['t.me', 'telegram.me'].includes(host)
-        : channel === 'whatsapp'
-          ? ['wa.me', 'api.whatsapp.com'].includes(host)
-          : false;
+      && ['instagram.com', 'www.instagram.com'].includes(host);
     return allowedHost ? url.toString() : null;
   } catch {
     return null;

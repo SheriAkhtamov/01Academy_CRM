@@ -27,7 +27,7 @@ describe("academy automations", () => {
     });
   });
 
-  it("uses pending-only overdue criteria and the academy timezone", async () => {
+  it("uses pending-only overdue criteria without external delivery queues", async () => {
     await expect(runAutomations(1)).resolves.toEqual([]);
 
     const sql = mocks.clientQuery.mock.calls.map(([query]) => sqlText(query));
@@ -36,7 +36,7 @@ describe("academy automations", () => {
     );
     expect(overdueSelection).toContain("status = 'pending'");
     expect(overdueSelection).not.toContain("status <>");
-    expect(sql.some((query) => query.includes("NOW() AT TIME ZONE $1"))).toBe(true);
+    expect(sql.some((query) => query.includes("academy_notification_outbox"))).toBe(false);
     expect(sql.at(-1)).toContain("pg_advisory_unlock");
     expect(mocks.release).toHaveBeenCalledOnce();
   });
@@ -91,44 +91,6 @@ describe("academy automations", () => {
 
     expect(mocks.clientQuery).toHaveBeenCalledOnce();
     expect(mocks.release).toHaveBeenCalledOnce();
-  });
-
-  it("queues warm customer messages through WhatsApp with a normalized phone", async () => {
-    mocks.clientQuery.mockImplementation(async (sql: unknown) => {
-      const text = sqlText(sql);
-      if (text.includes("pg_try_advisory_lock")) return { rows: [{ acquired: true }] };
-      if (text.includes("pg_advisory_unlock")) return { rows: [{ pg_advisory_unlock: true }] };
-      if (
-        text.includes("SELECT id FROM academy_leads")
-        && text.includes("status_code = 'not_now'")
-      ) {
-        return { rows: [{ id: 17 }] };
-      }
-      if (text.includes("SELECT id, phone, warm_moved_at") && text.includes("FOR UPDATE")) {
-        return {
-          rows: [{
-            id: 17,
-            phone: "+998 (90) 123-45-67",
-            warm_moved_at: new Date("2026-07-01T00:00:00.000Z"),
-          }],
-        };
-      }
-      if (text.startsWith("INSERT INTO academy_notification_outbox")) {
-        return { rows: [{ id: 80 }], rowCount: 1 };
-      }
-      if (text.includes("to_char(NOW() AT TIME ZONE")) return { rows: [{ period: "2026-07" }] };
-      return { rows: [], rowCount: 0 };
-    });
-
-    const actions = await runAutomations(1);
-
-    expect(actions).toContain("lead:17:warm_mailings");
-    const outboxCalls = mocks.clientQuery.mock.calls.filter(([query]) =>
-      sqlText(query).startsWith("INSERT INTO academy_notification_outbox")
-    );
-    expect(outboxCalls).toHaveLength(3);
-    expect(outboxCalls.every(([, params]) => params[0] === "whatsapp")).toBe(true);
-    expect(outboxCalls.every(([, params]) => params[1] === "998901234567")).toBe(true);
   });
 
   it("excludes lessons from paused periods and old groups when recalculating student metrics", async () => {

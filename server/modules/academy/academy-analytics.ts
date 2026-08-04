@@ -20,7 +20,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
@@ -155,7 +154,7 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
     query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`),
     query(`SELECT * FROM academy_rooms ORDER BY school_id, is_active DESC, name`),
     query(`SELECT * FROM academy_courses ORDER BY name`),
-    query(`SELECT * FROM academy_lead_sources ORDER BY name`),
+    query(`SELECT * FROM academy_lead_sources WHERE is_active = true ORDER BY name`),
     query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order`),
     isTeacherScoped
       ? query(`SELECT * FROM academy_teachers WHERE id = $1 ORDER BY full_name`, [teacherId])
@@ -210,7 +209,7 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
         ${leadTagsSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
-      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+      LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
       LEFT JOIN users u ON u.id = l.manager_id
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
       LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
@@ -224,7 +223,7 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
           ${leadTagsSelect('l')}
         FROM academy_leads l
         LEFT JOIN academy_courses c ON c.id = l.course_id
-        LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+        LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
         LEFT JOIN users u ON u.id = l.manager_id
         LEFT JOIN academy_schools sc ON sc.id = l.school_id
         LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
@@ -1050,12 +1049,12 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
 
 export const getMarketingModuleDataset = async () => {
   const [sources, leads, students, expenses, referrals, referralBenefits] = await Promise.all([
-    query(`SELECT * FROM academy_lead_sources ORDER BY name`),
+    query(`SELECT * FROM academy_lead_sources WHERE is_active = true ORDER BY name`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
         ${leadTagsSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
-      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+      LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
       LEFT JOIN users u ON u.id = l.manager_id
       WHERE COALESCE(l.is_archived, false) = false
       ORDER BY l.created_at DESC`),

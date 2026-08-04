@@ -49,15 +49,5 @@ export const leadMessageTarget = (lead?: LeadContactFields | null): LeadMessageT
     return { href: `/sales/messages?lead=${lead.id}`, external: false };
   }
 
-  const messenger = lead.messenger?.trim();
-  if (messenger?.startsWith('@')) {
-    return { href: `https://t.me/${messenger.slice(1)}`, external: true };
-  }
-
-  const phone = primaryVisibleLeadPhone(lead);
-  if (phone) {
-    return { href: `https://wa.me/${phone.replace(/\D/g, '')}`, external: true };
-  }
-
   return null;
 };

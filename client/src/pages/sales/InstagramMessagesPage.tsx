@@ -1145,7 +1145,7 @@ function LeadPanel({
               </Button>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="instagram-lead-messenger">{isInstagramLead(lead) ? t('instagramContactChannel') : t('telegramWhatsapp')}</Label>
+              <Label htmlFor="instagram-lead-messenger">{t('instagramContactChannel')}</Label>
               <Input
                 id="instagram-lead-messenger"
                 value={draft.messenger}
@@ -1311,8 +1311,8 @@ export default function MessagesPage() {
   const [mobileLeadOpen, setMobileLeadOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
-  const [threadSearch, setThreadSearch] = useState('');
-  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [newTemplate, setNewTemplate] = useState('');
@@ -1329,7 +1329,7 @@ export default function MessagesPage() {
   const [now, setNow] = useState(() => Date.now());
   const [openedUnreadBoundary, setOpenedUnreadBoundary] = useState<{ conversationId: number; unreadCount: number } | null>(null);
 
-  const threadScrollRef = useRef<HTMLDivElement | null>(null);
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inboxCardRef = useRef<HTMLDivElement | null>(null);
@@ -1520,7 +1520,7 @@ export default function MessagesPage() {
   }, [selectedConversation?.unreadCount, selectedConversationId]);
 
   const getViewport = () => {
-    const root = threadScrollRef.current;
+    const root = conversationScrollRef.current;
     if (!root) return null;
     return root.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement | null;
   };
@@ -1547,7 +1547,7 @@ export default function MessagesPage() {
     updateAtBottom();
     viewport.addEventListener('scroll', updateAtBottom, { passive: true });
     return () => viewport.removeEventListener('scroll', updateAtBottom);
-  }, [selectedConversationId, messageCount, threadSearchOpen]);
+  }, [selectedConversationId, messageCount, conversationSearchOpen]);
 
   // Reliable initial scroll: when the open conversation's messages finish loading
   // (or change because the user switched conversations), jump to the latest message.
@@ -1731,8 +1731,8 @@ export default function MessagesPage() {
 
   const selectConversation = (id: number) => {
     setSelectedConversationId(id);
-    setThreadSearch('');
-    setThreadSearchOpen(false);
+    setConversationSearch('');
+    setConversationSearchOpen(false);
     setQuickOpen(false);
     setEmojiOpen(false);
     setReplyTarget(null);
@@ -1772,10 +1772,10 @@ export default function MessagesPage() {
   const unreadCount = conversations.reduce((count, conversation) => count + (conversation.unreadCount > 0 ? 1 : 0), 0);
   const replyableCount = conversations.filter((conversation) => isReplyWindowOpen(conversation, now)).length;
 
-  const threadQuery = threadSearch.trim().toLowerCase();
+  const conversationSearchQuery = conversationSearch.trim().toLowerCase();
   const threadItems = useMemo(
-    () => buildThreadItems(messages, t, threadQuery, threadUnreadCount),
-    [messages, t, threadQuery, threadUnreadCount],
+    () => buildThreadItems(messages, t, conversationSearchQuery, threadUnreadCount),
+    [messages, t, conversationSearchQuery, threadUnreadCount],
   );
   const threadMatchCount = useMemo(
     () => threadItems.filter((item) => item.kind === 'message').length,
@@ -2183,8 +2183,8 @@ export default function MessagesPage() {
                             variant="ghost"
                             size="icon"
                             aria-label={t('search')}
-                            onClick={() => setThreadSearchOpen((value) => !value)}
-                            className={threadSearchOpen ? 'bg-muted text-primary' : ''}
+                            onClick={() => setConversationSearchOpen((value) => !value)}
+                            className={conversationSearchOpen ? 'bg-muted text-primary' : ''}
                           >
                             <Search className="h-4 w-4" />
                           </Button>
@@ -2220,25 +2220,25 @@ export default function MessagesPage() {
                     </div>
                   </div>
 
-                  {threadSearchOpen ? (
+                  {conversationSearchOpen ? (
                     <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 sm:px-4">
                       <div className="relative flex-1">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           autoFocus
-                          value={threadSearch}
-                          onChange={(event) => setThreadSearch(event.target.value)}
+                          value={conversationSearch}
+                          onChange={(event) => setConversationSearch(event.target.value)}
                           onKeyDown={(event) => {
                             if (event.key === 'Escape') {
-                              setThreadSearch('');
-                              setThreadSearchOpen(false);
+                              setConversationSearch('');
+                              setConversationSearchOpen(false);
                             }
                           }}
                           placeholder={t('searchInConversation')}
                           className="pl-9"
                         />
                       </div>
-                      {threadQuery ? (
+                      {conversationSearchQuery ? (
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                           {threadMatchCount}
                         </span>
@@ -2249,8 +2249,8 @@ export default function MessagesPage() {
                         size="icon"
                         aria-label={t('close')}
                         onClick={() => {
-                          setThreadSearch('');
-                          setThreadSearchOpen(false);
+                          setConversationSearch('');
+                          setConversationSearchOpen(false);
                         }}
                       >
                         <X className="h-4 w-4" />
@@ -2268,7 +2268,7 @@ export default function MessagesPage() {
 
                   <div className="relative min-h-0 flex-1 bg-muted/40">
                     <ScrollArea
-                      ref={threadScrollRef}
+                      ref={conversationScrollRef}
                       className="h-full"
                     >
                       <div className="space-y-1 px-4 py-4">
@@ -2305,7 +2305,7 @@ export default function MessagesPage() {
                             <MessageCircle className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                             {t('noMessagesYet')}
                           </div>
-                        ) : threadQuery && threadMatchCount === 0 ? (
+                        ) : conversationSearchQuery && threadMatchCount === 0 ? (
                           <div className="py-16 text-center text-sm text-muted-foreground">
                             <SearchX className="mx-auto mb-3 h-8 w-8 text-slate-400" />
                             {t('noSearchResults')}
@@ -2450,7 +2450,7 @@ export default function MessagesPage() {
                                       )}
                                     >
                                       <p className="whitespace-pre-wrap break-words text-[0.92rem] leading-relaxed">
-                                        <Highlight text={message.content} query={threadSearch} />
+                                        <Highlight text={message.content} query={conversationSearch} />
                                       </p>
                                     </button>
                                   ) : null}

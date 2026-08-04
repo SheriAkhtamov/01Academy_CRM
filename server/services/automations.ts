@@ -2,7 +2,6 @@ import type { PoolClient } from "pg";
 import { addDays, resolveStudentRiskFlags } from "@shared/academy";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
-import { normalizeOutboxRecipient } from "./message-recipients";
 
 const AUTOMATION_ADVISORY_LOCK = 10_100_002;
 const AUTOMATION_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
@@ -27,7 +26,7 @@ const withTransaction = async <T>(client: PoolClient, work: () => Promise<T>): P
  * Runs the periodic CRM automations. The advisory lock and all automation SQL
  * share one connection, while each multi-step entity action is committed as a
  * transaction. A crash therefore cannot leave a state change without its task,
- * history entry, or queued notification.
+ * history entry, or internal task.
  */
 export const runAutomations = async (actorUserId: number): Promise<string[]> => {
   if (!pool) return [];
@@ -63,12 +62,9 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       const created = await withTransaction(client, async () => {
         const { rows } = await client.query<{
           id: number;
-          next_payment_at: Date | string;
           manager_id: number | null;
-          phone: string | null;
-          student_name: string | null;
         }>(
-          `SELECT id, next_payment_at, manager_id, phone, student_name
+          `SELECT id, manager_id
            FROM academy_students
            WHERE id = $1
              AND status = 'studying'
@@ -79,26 +75,12 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
         const student = rows[0];
         if (!student) return false;
 
-        const taskCreated = await createTaskOnce(client, "Напоминание о продлении оплаты", student.manager_id ?? actorUserId, {
+        return createTaskOnce(client, "Напоминание о продлении оплаты", student.manager_id ?? actorUserId, {
           description: "Позвонить и уточнить продление.",
           entityType: "student",
           entityId: student.id,
           deadlineAt: addDays(now, 1),
         });
-        const reminderCreated = await createOutboxOnce(
-          client,
-          "whatsapp",
-          student.phone,
-          `01 Academy: оплаченный период ${student.student_name ?? "ученика"} скоро заканчивается.`,
-          {
-            scheduledAt: now,
-            entityType: "renewal",
-            entityId: student.id,
-            dedupeByEntityOnly: true,
-            dedupeSince: addDays(new Date(student.next_payment_at), -5),
-          },
-        );
-        return taskCreated || reminderCreated;
       });
       if (created) actions.push(`student:${candidate.id}:renewal_reminder`);
     }
@@ -141,75 +123,7 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       if (transitioned) actions.push(`payment:${candidate.id}:overdue`);
     }
 
-    // 3. Warm-base mailings (only leads that did not decline mailings).
-    const { rows: warmCandidates } = await client.query<{ id: number }>(
-      `SELECT id
-       FROM academy_leads
-       WHERE status_code = 'not_now'
-         AND no_mailing = false
-         AND COALESCE(is_archived, false) = false`,
-    );
-    for (const candidate of warmCandidates) {
-      const created = await withTransaction(client, async () => {
-        const { rows } = await client.query<{
-          id: number;
-          phone: string | null;
-          warm_moved_at: Date | string | null;
-        }>(
-          `SELECT id, phone, warm_moved_at
-           FROM academy_leads
-           WHERE id = $1
-             AND status_code = 'not_now'
-             AND no_mailing = false
-             AND COALESCE(is_archived, false) = false
-           FOR UPDATE`,
-          [candidate.id],
-        );
-        const lead = rows[0];
-        if (!lead) return false;
-
-        const immediateCreated = await createOutboxOnce(
-          client,
-          "whatsapp",
-          lead.phone,
-          "01 Academy: результат недели и новые проекты учеников. Хотите прийти на демо?",
-          {
-            scheduledAt: now,
-            entityType: "lead",
-            entityId: lead.id,
-            dedupeSince: lead.warm_moved_at,
-          },
-        );
-        const demoCreated = await createOutboxOnce(
-          client,
-          "whatsapp",
-          lead.phone,
-          "01 Academy приглашает на демо-урок. Подберём курс по возрасту.",
-          {
-            scheduledAt: addDays(now, 14),
-            entityType: "lead",
-            entityId: lead.id,
-            dedupeSince: lead.warm_moved_at,
-          },
-        );
-        const offerCreated = await createOutboxOnce(
-          client,
-          "whatsapp",
-          lead.phone,
-          "Специальное предложение 01 Academy на этот месяц.",
-          {
-            scheduledAt: addDays(now, 30),
-            entityType: "lead",
-            entityId: lead.id,
-            dedupeSince: lead.warm_moved_at,
-          },
-        );
-        return immediateCreated || demoCreated || offerCreated;
-      });
-      if (created) actions.push(`lead:${candidate.id}:warm_mailings`);
-    }
-
-    // 4. Recompute attendance/progress/risk flags for all active students.
+    // 3. Recompute attendance/progress/risk flags for all active students.
     const { rows: activeStudents } = await client.query<{ id: number }>(
       "SELECT id FROM academy_students WHERE status = 'studying'",
     );
@@ -220,64 +134,6 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
       } catch (error) {
         logger.error("recalc student failed", { id: student.id, error });
       }
-    }
-
-    // 5. Monthly parent survey. Both the period and the monthly dedupe boundary
-    // use the academy timezone rather than the host process/database timezone.
-    const { rows: periodRows } = await client.query<{ period: string }>(
-      "SELECT to_char(NOW() AT TIME ZONE $1, 'YYYY-MM') AS period",
-      [AUTOMATION_TIME_ZONE],
-    );
-    const period = periodRows[0]?.period;
-    if (!period) throw new Error("Failed to resolve automation survey period");
-
-    const { rows: surveyCandidates } = await client.query<{ id: number }>(
-      `SELECT s.id
-       FROM academy_students s
-       WHERE s.status = 'studying'
-         AND NOT EXISTS (
-           SELECT 1
-           FROM academy_parent_surveys ps
-           WHERE ps.student_id = s.id AND ps.period = $1
-         )`,
-      [period],
-    );
-    for (const candidate of surveyCandidates) {
-      const enqueued = await withTransaction(client, async () => {
-        const { rows } = await client.query<{
-          id: number;
-          phone: string | null;
-          student_name: string | null;
-        }>(
-          `SELECT s.id, s.phone, s.student_name
-           FROM academy_students s
-           WHERE s.id = $1
-             AND s.status = 'studying'
-             AND NOT EXISTS (
-               SELECT 1
-               FROM academy_parent_surveys ps
-               WHERE ps.student_id = s.id AND ps.period = $2
-             )
-           FOR UPDATE`,
-          [candidate.id, period],
-        );
-        const target = rows[0];
-        if (!target) return false;
-        return createOutboxOnce(
-          client,
-          "whatsapp",
-          target.phone,
-          `01 Academy: ежемесячный опрос по ученику ${target.student_name}. Поделитесь впечатлениями о прогрессе.`,
-          {
-            scheduledAt: now,
-            entityType: "parent_survey",
-            entityId: target.id,
-            dedupeThisMonth: true,
-            dedupeByEntityOnly: true,
-          },
-        );
-      });
-      if (enqueued) actions.push(`student:${candidate.id}:parent_survey_enqueued`);
     }
 
     await client.query(
@@ -322,78 +178,6 @@ const createTaskOnce = async (
       options.deadlineAt ?? null,
       options.entityType ?? null,
       options.entityId ?? null,
-    ],
-  );
-  return Boolean(rows[0]?.id);
-};
-
-const createOutboxOnce = async (
-  executor: QueryExecutor,
-  channel: string,
-  recipient: string | null | undefined,
-  message: string,
-  options: {
-    scheduledAt?: Date | null;
-    entityType?: string | null;
-    entityId?: number | null;
-    dedupeThisMonth?: boolean;
-    dedupeByEntityOnly?: boolean;
-    dedupeSince?: Date | string | null;
-  },
-) => {
-  const normalizedChannel = String(channel ?? "").trim().toLowerCase();
-  const normalizedRecipient = normalizeOutboxRecipient(normalizedChannel, recipient);
-  if (!normalizedRecipient) return false;
-
-  const { rows } = await executor.query(
-    `INSERT INTO academy_notification_outbox
-       (channel, recipient, message, status, scheduled_at, entity_type, entity_id)
-     SELECT $1,$2,$3,'pending',$4,$5,$6
-     WHERE NOT EXISTS (
-       SELECT 1
-       FROM academy_notification_outbox
-       WHERE channel = $1
-         AND entity_type IS NOT DISTINCT FROM $5::text
-         AND entity_id IS NOT DISTINCT FROM $6::integer
-         AND (
-           (
-             $7::boolean = true
-             AND created_at >= (
-               (date_trunc('month', NOW() AT TIME ZONE $8) AT TIME ZONE $8)
-               AT TIME ZONE 'UTC'
-             )
-           )
-           OR (
-             $7::boolean = false
-             AND (
-               $9::boolean = true
-               OR (
-                 message = $3
-                 AND (
-                   recipient = $2
-                   OR (
-                     $1 = 'whatsapp'
-                     AND regexp_replace(recipient, '\\D', '', 'g') = $2
-                   )
-                 )
-               )
-             )
-             AND ($10::timestamp IS NULL OR created_at >= $10)
-           )
-         )
-     )
-     RETURNING id`,
-    [
-      normalizedChannel,
-      normalizedRecipient,
-      message,
-      options.scheduledAt ?? new Date(),
-      options.entityType ?? null,
-      options.entityId ?? null,
-      options.dedupeThisMonth === true,
-      AUTOMATION_TIME_ZONE,
-      options.dedupeByEntityOnly === true,
-      options.dedupeSince ?? null,
     ],
   );
   return Boolean(rows[0]?.id);

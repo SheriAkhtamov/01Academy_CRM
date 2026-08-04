@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'telegram-bot/**'],
+    ignores: ['dist/**', 'node_modules/**'],
   },
   {
     ...js.configs.recommended,

@@ -20,7 +20,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import {
@@ -762,7 +761,8 @@ router.get('/search', async (req, res) => {
         const sources = await query(
           `SELECT id, name, channel, campaign_name
            FROM academy_lead_sources
-           WHERE LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1
+           WHERE is_active = true
+             AND (LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1)
            ORDER BY name
            LIMIT $2`,
           [like, remaining()],
@@ -817,7 +817,8 @@ router.get('/search', async (req, res) => {
           const sources = await query(
             `SELECT id, name, channel, campaign_name
              FROM academy_lead_sources
-             WHERE LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1
+             WHERE is_active = true
+               AND (LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1)
              ORDER BY name
              LIMIT $2`,
             [like, remaining()],

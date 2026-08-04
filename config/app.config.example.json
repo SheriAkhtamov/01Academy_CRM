@@ -37,21 +37,9 @@
   },
 
   "integrations": {
-    "_comment": "Fill these to enable real outbound/inbound channels. All are optional — channels without tokens fall back to logging-only.",
-    "chatplace": {
-      "webhookSecret": ""
-    },
+    "_comment": "Only the four supported CRM integrations are configured here: website, Instagram, Meta Ads/CAPI, and OnlinePBX.",
     "website": {
       "webhookSecret": ""
-    },
-    "telegram": {
-      "botToken": "",
-      "leadershipChatId": ""
-    },
-    "whatsapp": {
-      "apiToken": "",
-      "phoneNumberId": "",
-      "apiUrl": "https://graph.facebook.com/v19.0"
     },
     "instagram": {
       "_comment": "Create a Meta Business app with Instagram API with Instagram Login. Add the OAuth redirect and webhook callback shown on the CRM Integrations page.",
@@ -80,14 +68,6 @@
       "conversionEventName": "LeadSubmitted",
       "partnerAgent": "01Academy_CRM",
       "testEventCode": ""
-    },
-    "notion": {
-      "token": "",
-      "databaseId": ""
-    },
-    "googleSheets": {
-      "credentialsPath": "",
-      "spreadsheetId": ""
     },
     "onlinePbx": {
       "_comment": "Domain is the PBX hostname, for example pbx12345.onpbx.ru. Keep authKey and webhookSecret only in app.config.json and never commit them.",

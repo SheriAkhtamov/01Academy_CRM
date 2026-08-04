@@ -25,7 +25,7 @@ const nullable = (value: unknown) => {
 
 export const upsertLeadChannel = async (client: Queryable, input: LeadChannelInput) => {
   const channel = input.channel.trim().toLowerCase();
-  if (!/^[a-z][a-z0-9_-]{1,39}$/.test(channel)) return null;
+  if (channel !== 'instagram') return null;
 
   const providerAccountId = String(input.providerAccountId ?? '').trim();
   const externalId = nullable(input.externalId);
@@ -139,14 +139,12 @@ export const syncLeadSourceChannel = async (
     [input.sourceId],
   );
   const channel = String(source.rows[0]?.channel ?? '').trim().toLowerCase();
-  if (!['instagram', 'telegram', 'whatsapp'].includes(channel)) return null;
+  if (channel !== 'instagram') return null;
 
   const messenger = nullable(input.messenger);
-  const externalId = channel === 'instagram' && messenger?.toLowerCase().startsWith('instagram:')
+  const externalId = messenger?.toLowerCase().startsWith('instagram:')
     ? messenger.slice('instagram:'.length)
-    : channel === 'whatsapp'
-      ? String(input.phone ?? '').replace(/\D/g, '') || null
-      : null;
+    : null;
   const handle = messenger && !messenger.toLowerCase().startsWith('instagram:')
     ? normalizeLeadChannelHandle(messenger)
     : null;

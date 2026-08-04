@@ -160,7 +160,6 @@ export const mapMetaLeadToImportRecord = (
     /^mobile(?:_phone|_number)?$/,
     /^номер_телефона$/u,
     /^телефон$/u,
-    /^whatsapp(?:_number)?$/,
   ]));
   const childAge = firstScalarValue(findField(fields, [
     /child.*age/,

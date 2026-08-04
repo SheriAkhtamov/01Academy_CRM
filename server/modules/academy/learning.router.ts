@@ -20,7 +20,6 @@ import {
   type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
-import { normalizeOutboxRecipient } from '../../services/message-recipients';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
@@ -44,7 +43,6 @@ import {
   TARGET_NPS,
   TARGET_ROAS,
   addDays,
-  addMinutes,
   buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
@@ -89,7 +87,6 @@ import {
   Row,
   createAudit,
   createNotification,
-  createOutbox,
   createTask,
   ensureLeadMutationAccess,
   ensureOperationsAccess,
@@ -555,29 +552,6 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         await recalculateStudentMetrics(Number(student.id));
       }
 
-      if (lesson.status !== 'conducted' && updatedLesson?.status === 'conducted') {
-        const presentStudentIds = new Set(
-          normalizedItems
-            .filter((item) => item.status === 'present')
-            .map((item) => item.studentId),
-        );
-        for (const student of groupStudents) {
-          if (!presentStudentIds.has(Number(student.id))) continue;
-          await createOutbox(
-            'whatsapp',
-            student.phone,
-            'Оцените сегодняшний урок 01 Academy: /survey',
-            {
-              scheduledAt: addMinutes(
-                new Date(lesson.scheduledAt),
-                Number(lesson.durationMinutes || 120) + 30,
-              ),
-              entityType: 'lesson',
-              entityId: lessonId,
-            },
-          );
-        }
-      }
       return { lesson: updatedLesson, attendance: saved, absenceAlerts };
     });
 

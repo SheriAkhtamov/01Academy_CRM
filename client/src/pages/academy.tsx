@@ -45,6 +45,7 @@ import {
   PhoneForwarded,
   Plus,
   Plug,
+  RadioTower,
   Settings2,
   Star,
   Trash2,
@@ -147,6 +148,8 @@ const integrationCopy = (provider: string, t: (key: TranslationKey) => string) =
       return { title: t('instagramIntegration'), description: t('instagramIntegrationDesc') };
     case 'website':
       return { title: t('integrationProviderWebsite'), description: t('integrationProviderWebsiteDesc') };
+    case 'meta':
+      return { title: t('metaIntegration'), description: t('metaIntegrationDesc') };
     case 'onlinepbx':
       return { title: t('onlinePbxIntegration'), description: t('onlinePbxIntegrationDesc') };
     default:
@@ -372,7 +375,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
 
       <ModulePageBody contained ariaLabel={t('navIntegrations')} className="space-y-3">
         {integrations.isLoading ? (
-          Array.from({ length: 2 }).map((_, index) => (
+          Array.from({ length: 4 }).map((_, index) => (
             <Card key={index}>
               <CardHeader>
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -395,6 +398,8 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             ? Globe2
             : integration.provider === 'instagram'
               ? Camera
+              : integration.provider === 'meta'
+                ? RadioTower
               : integration.provider === 'onlinepbx'
                 ? PhoneCall
                 : Plug;

@@ -1,7 +1,6 @@
 import {
   LEAD_STATUSES,
   addDays,
-  addMinutes,
   buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
@@ -26,7 +25,6 @@ import {
   canMutateLeadRow,
   createAudit,
   createNotification,
-  createOutbox,
   insertRow,
   leadChannelsSelect,
   leadGroupReservationsSelect,
@@ -313,7 +311,7 @@ export const leadMergeCandidateSelect = (whereSql: string) => `
         AS task_count
    FROM academy_leads l
    LEFT JOIN users manager ON manager.id = l.manager_id
-   LEFT JOIN academy_lead_sources source ON source.id = l.source_id
+   LEFT JOIN academy_lead_sources source ON source.id = l.source_id AND source.is_active = true
    LEFT JOIN academy_lead_statuses status ON status.code = l.status_code
    WHERE ${whereSql}`;
 
@@ -404,8 +402,6 @@ export const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM telephony_calls WHERE lead_id = $1) AS calls,
        (SELECT COUNT(*)::int FROM academy_lead_group_reservations WHERE lead_id = $1) AS group_reservations,
        (SELECT COUNT(*)::int FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1) AS tasks,
-       (SELECT COUNT(*)::int FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
-         AS notification_outbox,
        (SELECT COUNT(*)::int FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
          AS escalation_events,
        (SELECT COUNT(*)::int FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1) AS notifications`,
@@ -601,12 +597,6 @@ export const mergeLeadRecords = async (
     [retainedLeadId, duplicateLeadId],
   );
   await query(
-    `UPDATE academy_notification_outbox
-     SET entity_id = $1, updated_at = NOW()
-     WHERE entity_type = 'lead' AND entity_id = $2`,
-    [retainedLeadId, duplicateLeadId],
-  );
-  await query(
     `UPDATE academy_escalation_events
      SET entity_id = $1
      WHERE entity_type = 'lead' AND entity_id = $2`,
@@ -730,7 +720,6 @@ export const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM telephony_calls WHERE lead_id = $1 OR (contact_type = 'lead' AND contact_id = $1))
        + (SELECT COUNT(*) FROM academy_lead_group_reservations WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1)
-       + (SELECT COUNT(*) FROM academy_notification_outbox WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1)
      )::int AS total`,
@@ -936,7 +925,7 @@ export const getLead = (id: number) =>
         ${leadGroupReservationsSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
-     LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+     LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
      LEFT JOIN academy_schools sc ON sc.id = l.school_id
      LEFT JOIN users u ON u.id = l.manager_id
      LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
@@ -948,7 +937,7 @@ export const getLockedLeadWithSource = (id: number) =>
   queryOne(
     `SELECT lead.*, source.name AS source_name
      FROM academy_leads lead
-     JOIN academy_lead_sources source ON source.id = lead.source_id
+     JOIN academy_lead_sources source ON source.id = lead.source_id AND source.is_active = true
      WHERE lead.id = $1
      FOR UPDATE OF lead`,
     [id],
@@ -1533,9 +1522,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
       status: 'pending' });
   }
 
-  await createOutbox('whatsapp', lead.phone, `Добро пожаловать в 01 Academy, ${student.studentName}!`, {
-    entityType: 'student',
-    entityId: student.id });
   await createAudit(actor, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
   return student;
 };
@@ -1717,7 +1703,7 @@ export const applyReferralRewards = async (source: ActorSource, studentId: numbe
   const milestoneBenefit = resolveReferralMilestone(paidReferrals);
 
   if (milestoneBenefit === 'next_payment_discount_15') {
-    const discountGrant = await ensureReferralBenefit({
+    await ensureReferralBenefit({
       studentId: referrerId,
       benefitType: 'next_payment_discount_15',
       milestone: 1,
@@ -1725,11 +1711,6 @@ export const applyReferralRewards = async (source: ActorSource, studentId: numbe
       sourceReferralRewardId,
       sourcePaymentId: paymentId,
     });
-    if (discountGrant.created) {
-      await createOutbox('whatsapp', referrer.phone,
-        `${referrer.studentName}, вы получили скидку 15% на следующий месяц за рекомендацию 01 Academy! 🎁`,
-        { entityType: 'student', entityId: referrerId });
-    }
   }
   if (milestoneBenefit === 'free_month') {
     await ensureFreeMonthBenefit(actor, {
@@ -1738,12 +1719,9 @@ export const applyReferralRewards = async (source: ActorSource, studentId: numbe
       sourceReferralRewardId,
       sourcePaymentId: paymentId,
     });
-    await createOutbox('whatsapp', referrer.phone,
-      `${referrer.studentName}, вы получили бесплатный месяц обучения за 3 рекомендации 01 Academy! 🎁`,
-      { entityType: 'student', entityId: referrerId });
   }
   if (milestoneBenefit === 'ai_ambassador_free_training') {
-    const ambassadorGrant = await ensureReferralBenefit({
+    await ensureReferralBenefit({
       studentId: referrerId,
       benefitType: 'ai_ambassador_free_training',
       milestone: 5,
@@ -1751,11 +1729,6 @@ export const applyReferralRewards = async (source: ActorSource, studentId: numbe
       sourceReferralRewardId,
       sourcePaymentId: paymentId,
     });
-    if (ambassadorGrant.created) {
-      await createOutbox('whatsapp', referrer.phone,
-        `${referrer.studentName}, вам присвоен статус AI-амбассадора и доступно бесплатное обучение в 01 Academy!`,
-        { entityType: 'student', entityId: referrerId });
-    }
   }
 };
 
@@ -1778,24 +1751,10 @@ export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, pr
 
   if (lead.statusCode === 'new_request') {
     await createNotification(managerId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
-    // The manager already receives an internal CRM notification above. A CRM
-    // user id is not a Telegram chat id, so no Telegram outbox row is created.
   }
 
   if (lead.statusCode === 'first_contact' && !lead.firstContactAt) {
     await updateRow('academy_leads', lead.id, { firstContactAt: now });
-  }
-
-  if (lead.statusCode === 'demo_invited' && lead.demoAt) {
-    const demoAt = new Date(lead.demoAt);
-    await createOutbox('whatsapp', lead.phone, `Напоминание: демо-урок 01 Academy через 24 часа`, {
-      scheduledAt: addDays(demoAt, -1),
-      entityType: 'lead',
-      entityId: lead.id });
-    await createOutbox('whatsapp', lead.phone, `Напоминание: демо-урок 01 Academy через 2 часа`, {
-      scheduledAt: addMinutes(demoAt, -120),
-      entityType: 'lead',
-      entityId: lead.id });
   }
 
   if (lead.statusCode === 'enrolled' && previousStatus !== 'enrolled') {
@@ -1810,10 +1769,6 @@ export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, pr
       period: 'month_1',
       discount: lead.offerDiscount || 'none',
       comment: 'Ожидаемая оплата после записи на курс' });
-    await createOutbox('whatsapp', lead.phone, 'Реквизиты для оплаты 01 Academy: карта/перевод/наличные у администратора. После оплаты отправьте чек менеджеру.', {
-      scheduledAt: now,
-      entityType: 'lead',
-      entityId: lead.id });
   }
 
   if (lead.statusCode === 'not_now') {

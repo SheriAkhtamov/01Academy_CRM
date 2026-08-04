@@ -4,6 +4,7 @@ import {
   BadgeDollarSign,
   CircleCheckBig,
   Clapperboard,
+  ExternalLink,
   Settings2,
   Target,
   UserRoundCheck,
@@ -73,7 +74,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
   const columns = [
     {
       key: 'hook',
-      header: t('metaHook'),
+      header: t('metaAdPublication'),
       accessor: (row: MetaCreativeRow) => row.hookName || row.adName || '',
       render: (row: MetaCreativeRow) => (
         <div className="max-w-72">
@@ -192,7 +193,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
               <Detail label={t('metaCampaign')} value={[selected.campaignName, selected.campaignId].filter(Boolean).join(' · ')} />
               <Detail label={t('metaAdSet')} value={[selected.adsetName, selected.adsetId].filter(Boolean).join(' · ')} />
               <Detail label={t('metaCreative')} value={[selected.creativeName, selected.creativeId].filter(Boolean).join(' · ')} />
-              <Detail label={t('metaSourceUrl')} value={selected.sourceUrl} />
+              <Detail label={t('metaPublication')} value={selected.sourceUrl} href={selected.sourceUrl} />
               <Detail label={t('utmTags')} value={[
                 selected.utmSource && `utm_source=${selected.utmSource}`,
                 selected.utmMedium && `utm_medium=${selected.utmMedium}`,
@@ -210,12 +211,21 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
   );
 }
 
-function Detail({ label, value }: { label: string; value?: string | null }) {
+function Detail({ label, value, href }: { label: string; value?: string | null; href?: string | null }) {
   const { t } = useTranslation();
   return (
     <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{value || t('noData')}</p>
+      {href ? (
+        <Button asChild variant="link" className="mt-1 h-auto justify-start p-0">
+          <a href={href} target="_blank" rel="noreferrer noopener">
+            {t('openMetaPublication')}
+            <ExternalLink className="size-3.5" />
+          </a>
+        </Button>
+      ) : (
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{value || t('noData')}</p>
+      )}
     </div>
   );
 }

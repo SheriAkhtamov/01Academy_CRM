@@ -250,6 +250,46 @@ const firstText = (...values: unknown[]) => {
   return null;
 };
 
+const normalizeMetaPublicationUrl = (value: unknown): string | null => {
+  const normalized = cleanText(value, 4_000);
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    const hostname = url.hostname.toLowerCase();
+    const isMetaHost = hostname === 'instagram.com'
+      || hostname.endsWith('.instagram.com')
+      || hostname === 'facebook.com'
+      || hostname.endsWith('.facebook.com');
+    if (!isMetaHost || !['http:', 'https:'].includes(url.protocol)) return null;
+    url.protocol = 'https:';
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+export const extractMetaPublication = (creative: JsonObject): { id: string | null; url: string | null } => {
+  const instagramId = cleanText(
+    creative.effective_instagram_media_id ?? creative.instagram_story_id,
+    120,
+  );
+  const objectStoryId = cleanText(
+    creative.effective_object_story_id ?? creative.object_story_id,
+    120,
+  );
+  const directUrl = normalizeMetaPublicationUrl(creative.instagram_permalink_url);
+  if (directUrl) return { id: instagramId || objectStoryId, url: directUrl };
+
+  const storyMatch = objectStoryId?.match(/^(\d+)_(\d+)$/u);
+  if (storyMatch) {
+    return {
+      id: objectStoryId,
+      url: `https://www.facebook.com/${storyMatch[1]}/posts/${storyMatch[2]}`,
+    };
+  }
+  return { id: instagramId || objectStoryId, url: null };
+};
+
 const creativeMediaType = (creative: JsonObject): string | null => {
   const objectType = cleanText(creative.object_type, 80)?.toLowerCase();
   const story = creative.object_story_spec ?? {};
@@ -278,7 +318,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
     'name',
     'campaign{id,name}',
     'adset{id,name}',
-    'creative{id,name,title,body,object_type,url_tags,object_story_spec,asset_feed_spec}',
+    'creative{id,name,title,body,object_type,url_tags,object_story_id,effective_object_story_id,effective_instagram_media_id,instagram_story_id,instagram_permalink_url,object_story_spec,asset_feed_spec}',
   ].join(',');
   const response = await fetchMetaJson<JsonObject>(`${encodeURIComponent(row.ad_id)}?fields=${encodeURIComponent(fields)}`);
   const creative = isPlainObject(response.creative) ? response.creative : {};
@@ -296,6 +336,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
     story.video_data?.message,
     assetFeed.bodies,
   );
+  const publication = extractMetaPublication(creative);
   const adName = cleanText(response.name);
   const campaignName = cleanText(response.campaign?.name);
   const hookName = extractMetaAdHook(adName, creative.name, creativeTitle, creativeBody);
@@ -320,14 +361,15 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
          creative_title = COALESCE($9, creative_title),
          creative_body = COALESCE($10, creative_body),
          media_type = COALESCE($11, media_type),
-         hook_name = COALESCE($12, hook_name),
-         utm_source = COALESCE($13, utm_source),
-         utm_medium = COALESCE($14, utm_medium),
-         utm_campaign = COALESCE($15, utm_campaign),
-         utm_content = COALESCE($16, utm_content),
-         utm_term = COALESCE($17, utm_term),
-         utm_values = $18,
-         utm_derived = utm_derived OR $19,
+         source_url = COALESCE($12, source_url),
+         hook_name = COALESCE($13, hook_name),
+         utm_source = COALESCE($14, utm_source),
+         utm_medium = COALESCE($15, utm_medium),
+         utm_campaign = COALESCE($16, utm_campaign),
+         utm_content = COALESCE($17, utm_content),
+         utm_term = COALESCE($18, utm_term),
+         utm_values = $19,
+         utm_derived = utm_derived OR $20,
          enrichment_status = 'enriched',
          enriched_at = NOW(),
          enrichment_error = NULL,
@@ -345,6 +387,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
       creativeTitle,
       creativeBody,
       creativeMediaType(creative),
+      publication.url,
       hookName,
       resolvedUtm.utm.utm_source ?? null,
       resolvedUtm.utm.utm_medium ?? null,

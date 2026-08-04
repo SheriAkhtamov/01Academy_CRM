@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveMetaUtm,
   extractMetaAdHook,
+  extractMetaPublication,
   extractMetaReferral,
   extractMetaUtm,
   metaRetryDelayMinutes,
@@ -67,6 +68,24 @@ describe('Meta marketing attribution', () => {
       message: { referral: { source_type: 'ad', source_id: '120000000002' } },
     })?.adId).toBe('120000000002');
     expect(extractMetaReferral({ referral: { source: 'SHORTLINK', ref: 'organic' } })).toBeNull();
+  });
+
+  it('resolves the exact Instagram or Facebook publication behind an ad creative', () => {
+    expect(extractMetaPublication({
+      effective_instagram_media_id: '18000000000001',
+      instagram_permalink_url: 'https://www.instagram.com/reel/ABC123/',
+    })).toEqual({
+      id: '18000000000001',
+      url: 'https://www.instagram.com/reel/ABC123/',
+    });
+    expect(extractMetaPublication({ effective_object_story_id: '1171222076066744_987654321' })).toEqual({
+      id: '1171222076066744_987654321',
+      url: 'https://www.facebook.com/1171222076066744/posts/987654321',
+    });
+    expect(extractMetaPublication({ instagram_permalink_url: 'https://example.com/not-meta' })).toEqual({
+      id: null,
+      url: null,
+    });
   });
 
   it('uses bounded exponential retry windows', () => {

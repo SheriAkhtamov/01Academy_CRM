@@ -297,7 +297,7 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                 toLabel={t('leadFilterTo')}
               />
               <RangeRow
-                label={t('amount')}
+                label={t('leadFilterAmount')}
                 fromValue={draft.amountFrom}
                 toValue={draft.amountTo}
                 onFromChange={(value) => update('amountFrom', value)}
@@ -306,7 +306,7 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                 toLabel={t('leadFilterTo')}
               />
               <RangeRow
-                label={t('leadSheetCreated')}
+                label={t('leadFilterCreatedAt')}
                 type="date"
                 fromValue={draft.createdFrom}
                 toValue={draft.createdTo}

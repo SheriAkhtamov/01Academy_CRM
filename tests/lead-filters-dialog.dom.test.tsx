@@ -51,22 +51,26 @@ describe('pipeline filter dialog', () => {
   it('keeps the filter list scrollable instead of clipping the lower filters', () => {
     const { container } = openDialog();
 
-    // jsdom has no layout, so the guard is the class itself: a flex child
-    // without min-h-0 refuses to shrink and the scroll area never scrolls.
+    // jsdom has no layout, so the guard is the class itself.
+    // DialogContent ships a `grid` class that beats any `flex` added here, so
+    // the layout has to declare rows; minmax(0,1fr) is what lets the middle row
+    // shrink instead of pushing its content past the clipped edge.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('grid-rows-[auto_minmax(0,1fr)]');
+    expect(dialog.className).not.toMatch(/(^|\s)flex(\s|$)/);
     const scrollArea = container.ownerDocument.querySelector('[data-radix-scroll-area-viewport]')?.parentElement;
     expect(scrollArea?.className).toContain('min-h-0');
-    expect(scrollArea?.className).toContain('flex-1');
   });
 
   it('shows how many leads the draft would leave before applying it', () => {
     const { onApply } = openDialog();
 
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 3');
+    expect(screen.getByRole('status').textContent).toBe('Found 3 of 3 leads');
 
     fireEvent.click(screen.getByRole('switch', { name: /Only new leads/i }));
 
     // The count reacts immediately, but the board is untouched until Apply.
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 1');
+    expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
     expect(onApply).not.toHaveBeenCalled();
   });
 
@@ -78,11 +82,11 @@ describe('pipeline filter dialog', () => {
 
     fireEvent.click(chip);
     expect(chip.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 2');
+    expect(screen.getByRole('status').textContent).toBe('Found 2 of 3 leads');
 
     fireEvent.click(chip);
     expect(chip.getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 3');
+    expect(screen.getByRole('status').textContent).toBe('Found 3 of 3 leads');
   });
 
   it('reports the chosen conditions only when Apply is pressed', () => {
@@ -120,7 +124,7 @@ describe('pipeline filter dialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 3');
+    expect(screen.getByRole('status').textContent).toBe('Found 3 of 3 leads');
     expect(onApply).not.toHaveBeenCalled();
   });
 
@@ -128,14 +132,14 @@ describe('pipeline filter dialog', () => {
     const applied = { ...EMPTY_LEAD_FILTERS, onlyNew: true };
     openDialog(vi.fn(), applied);
 
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 1');
+    expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 3');
+    expect(screen.getByRole('status').textContent).toBe('Found 3 of 3 leads');
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: /Lead filters/i }));
 
-    expect(screen.getByRole('status').textContent).toBe('Matching leads: 1');
+    expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
   });
 
   it('offers only the tags leads actually carry', () => {

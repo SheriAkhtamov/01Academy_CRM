@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { SlidersHorizontal } from 'lucide-react';
+import { CalendarRange, Check, Radio, Sparkles, SlidersHorizontal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,13 +50,30 @@ const LANGUAGE_LABEL_KEYS: Record<string, TranslationKey> = {
 };
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <Label className="text-xs font-medium text-muted-foreground">{children}</Label>;
+  return (
+    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      {children}
+    </Label>
+  );
 }
 
-function FilterSection({ title, children }: { title: string; children: React.ReactNode }) {
+function FilterCard({
+  title,
+  icon: Icon,
+  className,
+  children,
+}: {
+  title: string;
+  icon: typeof Radio;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="space-y-2.5">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground">{title}</h3>
+    <section className={cn('space-y-3 rounded-xl border border-border/60 bg-card p-4', className)}>
+      <header className="flex items-center gap-2">
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      </header>
       {children}
     </section>
   );
@@ -64,7 +81,8 @@ function FilterSection({ title, children }: { title: string; children: React.Rea
 
 /**
  * Chips fit four to six options into the width bordered checkbox rows spent on
- * two, which keeps the whole filter set reachable without a long scroll.
+ * two, and the check mark keeps the selected state readable without relying on
+ * colour alone.
  */
 function ChipGroup<T extends number | string>({
   label,
@@ -90,13 +108,14 @@ function ChipGroup<T extends number | string>({
               aria-pressed={isSelected}
               onClick={() => onToggle(item.id)}
               className={cn(
-                'max-w-full truncate rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                'inline-flex max-w-full items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                 isSelected
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-card text-foreground hover:border-primary/50 hover:bg-accent',
+                  ? 'border-primary bg-primary text-primary-foreground shadow-2xs'
+                  : 'border-border bg-background text-foreground hover:border-primary/40 hover:bg-accent',
               )}
             >
-              {item.label}
+              {isSelected ? <Check className="size-3 shrink-0" aria-hidden="true" /> : null}
+              <span className="truncate">{item.label}</span>
             </button>
           );
         })}
@@ -185,7 +204,7 @@ function RangeRow({
       <FieldLabel>{label}</FieldLabel>
       <div className="flex items-center gap-1.5">
         {renderInput(fromValue, onFromChange, fromLabel)}
-        <span aria-hidden="true" className="text-muted-foreground">—</span>
+        <span aria-hidden="true" className="shrink-0 text-muted-foreground">—</span>
         {renderInput(toValue, onToChange, toLabel)}
       </div>
     </div>
@@ -241,26 +260,33 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
           <Badge variant="secondary" className="ml-1.5 px-1.5">{activeCount}</Badge>
         ) : null}
       </Button>
-      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-border px-5 pb-3 pt-5 pr-12">
-          <DialogTitle>{t('leadFilters')}</DialogTitle>
+      {/*
+        DialogContent is a grid: Tailwind emits `.grid` after `.flex`, so a
+        `flex` class here loses and every flex-1 child silently stops working.
+        The rows are declared instead, and `minmax(0, 1fr)` is what lets the
+        middle row shrink so its scroll area actually scrolls.
+      */}
+      <DialogContent className="grid max-h-[85vh] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <DialogHeader className="space-y-1 border-b border-border/60 bg-muted/30 px-5 py-4 pr-12 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <SlidersHorizontal className="size-4 text-muted-foreground" />
+            {t('leadFilters')}
+          </DialogTitle>
           <DialogDescription>{t('leadFiltersDescription')}</DialogDescription>
         </DialogHeader>
 
         {/* Enter applies, so the keyboard path does not end at a mouse click. */}
         <form
-          className="flex min-h-0 flex-1 flex-col"
+          className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]"
           onSubmit={(event) => {
             event.preventDefault();
             onApply(draft);
             setOpen(false);
           }}
         >
-          {/* Without min-h-0 this flex item refuses to shrink below its content,
-              so the lower filters get clipped instead of becoming scrollable. */}
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-5 px-5 py-4">
-              <FilterSection title={t('leadFiltersChannels')}>
+          <ScrollArea className="min-h-0">
+            <div className="grid gap-3 p-4 lg:grid-cols-2">
+              <FilterCard title={t('leadFiltersChannels')} icon={Radio}>
                 {sources.length > 0 ? (
                   <ChipGroup
                     label={t('source')}
@@ -278,24 +304,22 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                   selected={draft.languages}
                   onToggle={(code) => update('languages', toggleFilterValue(draft.languages, code))}
                 />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <TriStateRow
-                    label={t('telephonyPhoneNumber')}
-                    value={draft.hasPhone}
-                    onChange={(value) => update('hasPhone', value)}
-                    {...triStateLabels}
-                  />
-                  <TriStateRow
-                    label={t('leadFilterMessenger')}
-                    value={draft.hasMessenger}
-                    onChange={(value) => update('hasMessenger', value)}
-                    {...triStateLabels}
-                  />
-                </div>
-              </FilterSection>
+                <TriStateRow
+                  label={t('telephonyPhoneNumber')}
+                  value={draft.hasPhone}
+                  onChange={(value) => update('hasPhone', value)}
+                  {...triStateLabels}
+                />
+                <TriStateRow
+                  label={t('leadFilterMessenger')}
+                  value={draft.hasMessenger}
+                  onChange={(value) => update('hasMessenger', value)}
+                  {...triStateLabels}
+                />
+              </FilterCard>
 
-              <FilterSection title={t('leadFiltersTraits')}>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-card px-3 py-2">
+              <FilterCard title={t('leadFiltersTraits')} icon={Sparkles}>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-3 py-2">
                   <span className="text-sm">{t('leadFilterOnlyNew')}</span>
                   <Switch
                     checked={draft.onlyNew}
@@ -311,24 +335,26 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                     onToggle={(id) => update('tagIds', toggleFilterValue(draft.tagIds, id))}
                   />
                 ) : null}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <TriStateRow
-                    label={t('leadFilterDemo')}
-                    value={draft.demoBooked}
-                    onChange={(value) => update('demoBooked', value)}
-                    {...triStateLabels}
-                  />
-                  <TriStateRow
-                    label={t('comment')}
-                    value={draft.hasComment}
-                    onChange={(value) => update('hasComment', value)}
-                    {...triStateLabels}
-                  />
-                </div>
-              </FilterSection>
+                <TriStateRow
+                  label={t('leadFilterDemo')}
+                  value={draft.demoBooked}
+                  onChange={(value) => update('demoBooked', value)}
+                  {...triStateLabels}
+                />
+                <TriStateRow
+                  label={t('comment')}
+                  value={draft.hasComment}
+                  onChange={(value) => update('hasComment', value)}
+                  {...triStateLabels}
+                />
+              </FilterCard>
 
-              <FilterSection title={t('leadFiltersNumbers')}>
-                <div className="grid gap-3 sm:grid-cols-2">
+              <FilterCard
+                title={t('leadFiltersNumbers')}
+                icon={CalendarRange}
+                className="lg:col-span-2"
+              >
+                <div className="grid gap-3 sm:grid-cols-3">
                   <RangeRow
                     label={t('age')}
                     fromValue={draft.ageFrom}
@@ -348,24 +374,26 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                     fromLabel={t('leadFilterFrom')}
                     toLabel={t('leadFilterTo')}
                   />
+                  <RangeRow
+                    label={t('leadFilterCreatedAt')}
+                    variant="date"
+                    fromValue={draft.createdFrom}
+                    toValue={draft.createdTo}
+                    onFromChange={(value) => update('createdFrom', value)}
+                    onToChange={(value) => update('createdTo', value)}
+                    fromLabel={t('leadFilterFrom')}
+                    toLabel={t('leadFilterTo')}
+                  />
                 </div>
-                <RangeRow
-                  label={t('leadFilterCreatedAt')}
-                  variant="date"
-                  fromValue={draft.createdFrom}
-                  toValue={draft.createdTo}
-                  onFromChange={(value) => update('createdFrom', value)}
-                  onToChange={(value) => update('createdTo', value)}
-                  fromLabel={t('leadFilterFrom')}
-                  toLabel={t('leadFilterTo')}
-                />
-              </FilterSection>
+              </FilterCard>
             </div>
           </ScrollArea>
 
-          <DialogFooter className="flex-row items-center justify-between gap-3 border-t border-border px-5 py-3 sm:justify-between">
+          <DialogFooter className="flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-5 py-3 sm:justify-between">
             <span className="text-sm text-muted-foreground" role="status">
-              {t('leadFilterMatches').replace('{count}', String(draftMatches))}
+              {t('leadFilterMatches')
+                .replace('{count}', String(draftMatches))
+                .replace('{total}', String(leads.length))}
             </span>
             <div className="flex gap-2">
               <Button

@@ -734,7 +734,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               </p>
             </div>
             <Dialog open={showCreateUserModal} onOpenChange={userDialogGuard.handleOpenChange}>
-                <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
+                <DialogContent className="grid max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
                   <DialogHeader className="shrink-0 border-b border-border px-4 py-5 pr-12 text-left sm:px-6">
                     <DialogTitle>
                       {selectedUser ? t('editUser') : t('addNewUser')}
@@ -746,7 +746,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <Form {...userForm}>
                     <form
                       onSubmit={userForm.handleSubmit(onSubmitUser)}
-                      className="flex min-h-0 flex-1 flex-col"
+                      className="flex min-h-0 flex-col"
                     >
                       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
                         <div className="flex flex-col gap-4">

@@ -1081,7 +1081,7 @@ export const translations = {
   leadFilterCreatedAt: { en: 'Created date', ru: 'Дата создания' },
   leadFilterFrom: { en: 'From', ru: 'От' },
   leadFilterTo: { en: 'To', ru: 'До' },
-  leadFilterMatches: { en: 'Matching leads: {count}', ru: 'Найдено лидов: {count}' },
+  leadFilterMatches: { en: 'Found {count} of {total} leads', ru: 'Найдено {count} из {total} лидов' },
   leadFilterApply: { en: 'Apply filters', ru: 'Применить фильтры' },
   leadTagRemoved: { en: 'Tag removed', ru: 'Тег удалён' },
   leadTagRemoveFailed: { en: 'Tag could not be removed', ru: 'Не удалось удалить тег' },

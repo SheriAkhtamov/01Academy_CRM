@@ -181,6 +181,8 @@ export const mapMetaLeadToImportRecord = (
   const leadgenId = text(lead.id ?? webhookValue.leadgen_id, 255) ?? '';
   const resolvedFormId = text(lead.form_id ?? webhookValue.form_id, 255);
   const resolvedFormName = text(formName, 500) ?? (resolvedFormId ? `Meta Instant Form ${resolvedFormId}` : 'Meta Instant Form');
+  const contactName = fullName ?? ([firstName, lastName].filter(Boolean).join(' ') || null);
+  const isNamedTestLead = Boolean(contactName && /\btest[\s_-]*lead\b/i.test(contactName));
   const disclaimerResponses = Array.isArray(lead.custom_disclaimer_responses)
     ? lead.custom_disclaimer_responses.map((response: JsonObject) => ({
       name: text(response?.checkbox_key ?? response?.name, 500) ?? 'Согласие',
@@ -192,7 +194,7 @@ export const mapMetaLeadToImportRecord = (
     externalId: leadgenId,
     sheet: resolvedFormName,
     createdTime: metaTimestamp(lead.created_time ?? webhookValue.created_time),
-    contactName: fullName ?? ([firstName, lastName].filter(Boolean).join(' ') || null),
+    contactName,
     phone,
     rawPhone: phone,
     campaignName: text(lead.campaign_name, 500),
@@ -214,7 +216,7 @@ export const mapMetaLeadToImportRecord = (
       values: fieldValues(field),
     })),
     disclaimerResponses,
-    test: lead.is_test === true || lead.test_lead === true,
+    test: lead.is_test === true || lead.test_lead === true || isNamedTestLead,
     rawMetaLead: lead,
     rawWebhookValue: webhookValue,
   };

@@ -50,6 +50,20 @@ describe('Meta Instant Form lead ingestion', () => {
     expect(comment).toContain('• marketing consent: 1');
   });
 
+  it('recognizes named Meta test leads when the API omits a test flag', () => {
+    const record = mapMetaLeadToImportRecord({
+      id: 'test-lead-123',
+      form_id: 'form-1',
+      field_data: [
+        { name: 'full_name', values: ['Meta CRM Test Lead'] },
+        { name: 'phone_number', values: ['+998900000000'] },
+      ],
+    });
+
+    expect(record.test).toBe(true);
+    expect(record.contactName).toBe('Meta CRM Test Lead');
+  });
+
   it('ships a signed Page webhook and Instant Form attribution schema', () => {
     const routes = read('../server/routes/incoming.routes.ts');
     const httpApp = read('../server/app/http-app.ts');

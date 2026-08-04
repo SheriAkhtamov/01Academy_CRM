@@ -66,6 +66,9 @@ interface AppConfig {
       accessToken?: string;
       marketingAccessToken?: string;
       capiAccessToken?: string;
+      leadAccessToken?: string;
+      webhookAppSecret?: string;
+      leadWebhookVerifyToken?: string;
       adAccountId?: string;
       businessId?: string;
       datasetId?: string;
@@ -220,6 +223,7 @@ const validateConfig = (config: AppConfig) => {
     ['integrations.chatplace.webhookSecret', config.integrations?.chatplace?.webhookSecret],
     ['integrations.website.webhookSecret', config.integrations?.website?.webhookSecret],
     ['integrations.instagram.verifyToken', config.integrations?.instagram?.verifyToken],
+    ['integrations.metaAds.leadWebhookVerifyToken', config.integrations?.metaAds?.leadWebhookVerifyToken],
     ['integrations.onlinePbx.webhookSecret', config.integrations?.onlinePbx?.webhookSecret],
   ] as const;
   if (config.server.environment === 'production') {

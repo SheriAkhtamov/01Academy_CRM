@@ -39,7 +39,10 @@ export const createHttpApp = () => {
     limit: '512kb',
     verify: (req, _res, buffer) => {
       const request = req as Request;
-      if (request.originalUrl.startsWith('/api/incoming/instagram')) {
+      if (
+        request.originalUrl.startsWith('/api/incoming/instagram')
+        || request.originalUrl.startsWith('/api/incoming/meta-leads')
+      ) {
         request.rawBody = Buffer.from(buffer);
       }
     },

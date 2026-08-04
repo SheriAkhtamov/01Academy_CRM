@@ -9,13 +9,28 @@ export type LeadImportRecord = {
   phone?: string | null;
   rawPhone?: string | null;
   campaignName?: string | null;
+  campaignId?: string | null;
+  adsetName?: string | null;
+  adsetId?: string | null;
+  adName?: string | null;
+  adId?: string | null;
   formName?: string | null;
+  formId?: string | null;
   platform?: string | null;
+  isOrganic?: boolean | null;
   childAgeAnswer?: string | number | null;
   cityAnswer?: string | null;
   offlineAnswer?: string | null;
   occupationAnswer?: string | null;
   note?: string | null;
+  answers?: Array<{
+    name: string;
+    values: unknown[];
+  }>;
+  disclaimerResponses?: Array<{
+    name: string;
+    value: unknown;
+  }>;
   test?: boolean;
   [key: string]: unknown;
 };
@@ -27,6 +42,15 @@ export type LeadImportSummary = {
   skippedTest: number;
   skippedInvalid: number;
   alreadyImported: number;
+};
+
+type LeadImportOptions = {
+  provider: string;
+  providerLabel?: string;
+  sourceCode?: string;
+  sourceName?: string;
+  allowMissingPhone?: boolean;
+  createFollowUpTask?: boolean;
 };
 
 const text = (value: unknown) => String(value ?? '').trim();
@@ -50,7 +74,15 @@ export const buildLeadImportComment = (
   const details: Array<[string, unknown]> = [
     ['Дата заявки', record.createdTime],
     ['Кампания', record.campaignName],
+    ['ID кампании', record.campaignId],
+    ['Группа объявлений', record.adsetName],
+    ['ID группы объявлений', record.adsetId],
+    ['Объявление', record.adName],
+    ['ID объявления', record.adId],
     ['Форма', record.formName],
+    ['ID формы', record.formId],
+    ['Платформа', record.platform],
+    ['Органическая заявка', record.isOrganic === true ? 'Да' : record.isOrganic === false ? 'Нет' : null],
     ['Возраст ребёнка', record.childAgeAnswer],
     ['Город', record.cityAnswer],
     ['Формат обучения', record.offlineAnswer],
@@ -60,6 +92,30 @@ export const buildLeadImportComment = (
   for (const [label, value] of details) {
     const normalized = text(value).replace(/_/g, ' ');
     if (normalized) lines.push(`${label}: ${normalized}`);
+  }
+  const answers = Array.isArray(record.answers) ? record.answers : [];
+  if (answers.length > 0) {
+    lines.push('Ответы формы:');
+    for (const answer of answers) {
+      const name = text(answer?.name).replace(/_/g, ' ');
+      const values = Array.isArray(answer?.values)
+        ? answer.values.map((value) => (
+          value && typeof value === 'object' ? JSON.stringify(value) : text(value)
+        )).filter(Boolean)
+        : [];
+      if (name && values.length > 0) lines.push(`• ${name}: ${values.join(', ')}`);
+    }
+  }
+  const disclaimerResponses = Array.isArray(record.disclaimerResponses) ? record.disclaimerResponses : [];
+  if (disclaimerResponses.length > 0) {
+    lines.push('Согласия формы:');
+    for (const response of disclaimerResponses) {
+      const name = text(response?.name).replace(/_/g, ' ');
+      const value = response?.value && typeof response.value === 'object'
+        ? JSON.stringify(response.value)
+        : text(response?.value);
+      if (name && value) lines.push(`• ${name}: ${value}`);
+    }
   }
   return lines.join('\n');
 };
@@ -111,12 +167,7 @@ const findLeadByPhone = async (client: PoolClient, phone: string) => {
 export const importLeadRecords = async (
   pool: Pool,
   records: LeadImportRecord[],
-  options: {
-    provider: string;
-    providerLabel?: string;
-    sourceCode?: string;
-    sourceName?: string;
-  },
+  options: LeadImportOptions,
 ): Promise<LeadImportSummary> => {
   const provider = text(options.provider);
   if (!provider) throw new Error('Import provider is required');
@@ -169,7 +220,7 @@ export const importLeadRecords = async (
       }
 
       const phone = normalizeLeadImportPhone(record.rawPhone ?? record.phone);
-      if (!phone) {
+      if (!phone && !options.allowMissingPhone) {
         await importOutcome(client, provider, normalizedRecord, 'skipped_invalid', null);
         summary.skippedInvalid += 1;
         continue;
@@ -179,15 +230,16 @@ export const importLeadRecords = async (
       const commentCreatedAt = record.createdTime && !Number.isNaN(new Date(record.createdTime).getTime())
         ? new Date(record.createdTime)
         : new Date();
-      let matchedLead = await findLeadByPhone(client, phone);
+      let matchedLead = phone ? await findLeadByPhone(client, phone) : null;
       let outcome: 'created' | 'merged' | 'merged_archived';
       if (!matchedLead) {
-        const contactName = text(record.contactName) || `Новый контакт ${phone}`;
+        const contactName = text(record.contactName)
+          || (phone ? `Новый контакт ${phone}` : `Новый лид Meta #${externalId}`);
         const created = await client.query<{ id: number }>(
           `INSERT INTO academy_leads (
              contact_name, phone, source_id, advertising_campaign, status_code,
              language, comment, first_contact_channel, created_at, updated_at
-           )
+          )
            VALUES ($1, $2, $3, $4, 'new_request', 'ru', $5, 'instagram', $6, NOW())
            RETURNING id`,
           [contactName, phone, sourceId, text(record.campaignName) || null, comment, commentCreatedAt],
@@ -223,6 +275,23 @@ export const importLeadRecords = async (
         }
       }
 
+      if (options.createFollowUpTask) {
+        await client.query(
+          `INSERT INTO academy_tasks
+             (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
+           VALUES (
+             'Первый контакт по заявке Meta',
+             'Связаться с лидом из Instant Form в течение 15 минут.',
+             NULL,
+             NOW() + INTERVAL '15 minutes',
+             'lead',
+             $1,
+             'new'
+           )`,
+          [matchedLead.id],
+        );
+      }
+
       await client.query(
         `INSERT INTO academy_lead_comments (lead_id, author_id, body, created_at)
          SELECT $1, NULL, $2, $3
@@ -233,22 +302,24 @@ export const importLeadRecords = async (
          )`,
         [matchedLead.id, comment, commentCreatedAt],
       );
-      await client.query(
-        `INSERT INTO academy_lead_phones
-           (lead_id, phone, normalized_phone, is_primary)
-         VALUES (
-           $1, $2, $2,
-           NOT EXISTS (SELECT 1 FROM academy_lead_phones existing WHERE existing.lead_id = $1)
-         )
-         ON CONFLICT (lead_id, normalized_phone) DO NOTHING`,
-        [matchedLead.id, phone],
-      );
-      await client.query(
-        `UPDATE academy_leads
-         SET phone = COALESCE(NULLIF(BTRIM(phone), ''), $2)
-         WHERE id = $1`,
-        [matchedLead.id, phone],
-      );
+      if (phone) {
+        await client.query(
+          `INSERT INTO academy_lead_phones
+             (lead_id, phone, normalized_phone, is_primary)
+           VALUES (
+             $1, $2, $2,
+             NOT EXISTS (SELECT 1 FROM academy_lead_phones existing WHERE existing.lead_id = $1)
+           )
+           ON CONFLICT (lead_id, normalized_phone) DO NOTHING`,
+          [matchedLead.id, phone],
+        );
+        await client.query(
+          `UPDATE academy_leads
+           SET phone = COALESCE(NULLIF(BTRIM(phone), ''), $2)
+           WHERE id = $1`,
+          [matchedLead.id, phone],
+        );
+      }
       await importOutcome(client, provider, normalizedRecord, outcome, matchedLead.id);
     }
 

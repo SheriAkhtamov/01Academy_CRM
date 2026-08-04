@@ -64,10 +64,13 @@
       "oauthUrl": "https://www.instagram.com/oauth/authorize"
     },
     "metaAds": {
-      "_comment": "Used for ad attribution enrichment and CRM events via Meta Conversions API. Keep tokens only in app.config.json. accessToken remains a backwards-compatible fallback for both dedicated tokens.",
+      "_comment": "Used for ad attribution, Instant Form lead retrieval and CRM events via Meta Conversions API. Keep tokens and webhook secrets only in app.config.json. accessToken remains a backwards-compatible fallback for marketing/CAPI only.",
       "accessToken": "",
       "marketingAccessToken": "",
       "capiAccessToken": "",
+      "leadAccessToken": "",
+      "webhookAppSecret": "",
+      "leadWebhookVerifyToken": "CHANGE-ME-meta-lead-webhook-verify-token",
       "adAccountId": "",
       "businessId": "",
       "datasetId": "",

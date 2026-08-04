@@ -11,11 +11,39 @@ import {
   verifyInstagramWebhookChallenge,
   verifyInstagramWebhookSignature,
 } from '../services/instagram';
+import {
+  processMetaLeadAdsWebhook,
+  verifyMetaLeadWebhookChallenge,
+  verifyMetaLeadWebhookSignature,
+} from '../services/meta-lead-ads';
 
 const router = Router();
 
 router.use(expressRawJson);
 router.use(inboundWebhookLimiter);
+
+router.get('/meta-leads', (req, res) => {
+  if (!verifyMetaLeadWebhookChallenge(req.query['hub.mode'], req.query['hub.verify_token'])) {
+    return res.status(403).send('Invalid Meta Lead Ads webhook verification token');
+  }
+  return res.status(200).send(String(req.query['hub.challenge'] ?? ''));
+});
+
+router.post('/meta-leads', async (req, res) => {
+  const signature = req.get('x-hub-signature-256');
+  if (!verifyMetaLeadWebhookSignature(req.rawBody, signature)) {
+    return res.status(401).json({ error: 'Invalid Meta Lead Ads webhook signature' });
+  }
+  try {
+    const result = await processMetaLeadAdsWebhook(req.body);
+    return res.status(200).json({ ok: true, ...result });
+  } catch (error) {
+    logger.error('Failed to process Meta Lead Ads webhook', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ error: 'Failed to process Meta Lead Ads webhook' });
+  }
+});
 
 router.get('/instagram', (req, res) => {
   if (!verifyInstagramWebhookChallenge(req.query['hub.mode'], req.query['hub.verify_token'])) {

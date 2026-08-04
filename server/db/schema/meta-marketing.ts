@@ -21,7 +21,9 @@ export const createMetaMarketingTables = (references: {
   const metaLeadAttributions = pgTable('meta_lead_attributions', {
     id: serial('id').primaryKey(),
     leadId: integer('lead_id').references(() => references.leadId, { onDelete: 'set null' }),
-    conversationId: integer('conversation_id').references(() => references.conversationId, { onDelete: 'cascade' }).notNull(),
+    conversationId: integer('conversation_id').references(() => references.conversationId, { onDelete: 'cascade' }),
+    leadgenId: varchar('leadgen_id', { length: 255 }),
+    formId: varchar('form_id', { length: 255 }),
     provider: varchar('provider', { length: 40 }).notNull().default('meta'),
     channel: varchar('channel', { length: 40 }).notNull().default('instagram'),
     touchType: varchar('touch_type', { length: 40 }).notNull().default('first_touch'),
@@ -60,6 +62,10 @@ export const createMetaMarketingTables = (references: {
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   }, (table) => ({
     conversationTouchUnique: uniqueIndex('meta_lead_attributions_conversation_touch_unique').on(table.conversationId, table.touchType),
+    leadgenTouchUnique: uniqueIndex('meta_lead_attributions_leadgen_touch_unique')
+      .on(table.leadgenId, table.touchType)
+      .where(sql`${table.leadgenId} IS NOT NULL AND BTRIM(${table.leadgenId}) <> ''`),
+    formIdx: index('meta_lead_attributions_form_idx').on(table.formId),
     leadIdx: index('meta_lead_attributions_lead_idx').on(table.leadId, table.capturedAt),
     adIdx: index('meta_lead_attributions_ad_idx').on(table.adId),
     enrichmentIdx: index('meta_lead_attributions_enrichment_idx').on(table.enrichmentStatus, table.nextEnrichmentAt),

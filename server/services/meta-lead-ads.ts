@@ -13,6 +13,7 @@ import { deriveMetaUtm, extractMetaAdHook } from './meta-marketing';
 const META_GRAPH_ORIGIN = 'https://graph.facebook.com';
 const META_LEAD_FETCH_TIMEOUT_MS = 20_000;
 const META_LEAD_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const META_LEAD_BACKFILL_MAX_PAGES = 1_000;
 const META_LEAD_FIELDS = [
   'id',
   'created_time',
@@ -43,6 +44,24 @@ type MetaLeadWebhookValue = {
 type MetaLeadField = {
   name?: unknown;
   values?: unknown;
+};
+
+type MetaLeadForm = {
+  id?: unknown;
+  name?: unknown;
+  status?: unknown;
+};
+
+export type MetaLeadAdsBackfillResult = {
+  forms: number;
+  records: number;
+  summary: LeadImportSummary;
+  formSummaries: Array<{
+    formId: string;
+    formName: string;
+    status: string | null;
+    records: number;
+  }>;
 };
 
 const text = (value: unknown, maxLength = 1_000): string | null => {
@@ -221,11 +240,9 @@ export const mapMetaLeadToImportRecord = (
   };
 };
 
-const fetchMetaObject = async <T extends JsonObject>(id: string, fields: string): Promise<T> => {
+const fetchMetaUrl = async <T extends JsonObject>(url: URL): Promise<T> => {
   const config = metaLeadAdsConfig();
   if (!config.accessToken) throw new Error('Meta Lead Ads access token is not configured');
-  const url = new URL(`${META_GRAPH_ORIGIN}/${config.apiVersion}/${encodeURIComponent(id)}`);
-  url.searchParams.set('fields', fields);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), META_LEAD_FETCH_TIMEOUT_MS);
   try {
@@ -252,6 +269,42 @@ const fetchMetaObject = async <T extends JsonObject>(id: string, fields: string)
   } finally {
     clearTimeout(timeout);
   }
+};
+
+const fetchMetaObject = async <T extends JsonObject>(id: string, fields: string): Promise<T> => {
+  const config = metaLeadAdsConfig();
+  const url = new URL(`${META_GRAPH_ORIGIN}/${config.apiVersion}/${encodeURIComponent(id)}`);
+  url.searchParams.set('fields', fields);
+  return fetchMetaUrl<T>(url);
+};
+
+const fetchMetaLeadCollection = async (path: string, fields: string): Promise<JsonObject[]> => {
+  const config = metaLeadAdsConfig();
+  let nextUrl = new URL(`${META_GRAPH_ORIGIN}/${config.apiVersion}/${path.replace(/^\/+/, '')}`);
+  nextUrl.searchParams.set('fields', fields);
+  nextUrl.searchParams.set('limit', '100');
+  const rows: JsonObject[] = [];
+  const visitedPages = new Set<string>();
+
+  for (let page = 0; page < META_LEAD_BACKFILL_MAX_PAGES; page += 1) {
+    const pageKey = nextUrl.toString();
+    if (visitedPages.has(pageKey)) {
+      throw new Error('Meta Lead Ads pagination loop detected');
+    }
+    visitedPages.add(pageKey);
+    const response = await fetchMetaUrl<JsonObject>(nextUrl);
+    if (Array.isArray(response.data)) {
+      rows.push(...response.data.filter((item): item is JsonObject => Boolean(item) && typeof item === 'object'));
+    }
+    const next = response.paging?.next;
+    if (typeof next !== 'string' || !next.trim()) return rows;
+    try {
+      nextUrl = new URL(next);
+    } catch {
+      throw new Error('Meta Lead Ads returned an invalid pagination URL');
+    }
+  }
+  throw new Error(`Meta Lead Ads pagination exceeded ${META_LEAD_BACKFILL_MAX_PAGES} pages`);
 };
 
 const fetchMetaLead = (leadgenId: string) => fetchMetaObject<JsonObject>(leadgenId, META_LEAD_FIELDS);
@@ -351,6 +404,57 @@ const mergeSummary = (target: LeadImportSummary, source: LeadImportSummary) => {
   target.skippedTest += source.skippedTest;
   target.skippedInvalid += source.skippedInvalid;
   target.alreadyImported += source.alreadyImported;
+};
+
+export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfillResult> => {
+  const config = metaLeadAdsConfig();
+  if (!config.accessToken || !config.pageId) {
+    throw new Error('Meta Lead Ads integration is not configured');
+  }
+
+  const forms = await fetchMetaLeadCollection(`${encodeURIComponent(config.pageId)}/leadgen_forms`, 'id,name,status');
+  const summary = emptySummary();
+  const formSummaries: MetaLeadAdsBackfillResult['formSummaries'] = [];
+  let records = 0;
+
+  for (const rawForm of forms) {
+    const form = rawForm as MetaLeadForm;
+    const formId = text(form.id, 255);
+    if (!formId) continue;
+    const formName = text(form.name, 500) ?? `Meta Instant Form ${formId}`;
+    const leads = await fetchMetaLeadCollection(`${encodeURIComponent(formId)}/leads`, META_LEAD_FIELDS);
+    const leadRecords = leads.map((lead) => mapMetaLeadToImportRecord(
+      { ...lead, form_id: lead.form_id ?? formId },
+      { form_id: formId },
+      formName,
+    ));
+    const imported = await importLeadRecords(pool, leadRecords, {
+      provider: 'meta_lead_ads_live',
+      providerLabel: 'Meta Instant Forms',
+      sourceCode: 'meta_lead_ads',
+      sourceName: 'Meta Lead Ads',
+      allowMissingPhone: true,
+      createFollowUpTask: false,
+    });
+    for (const record of leadRecords) {
+      await linkMetaLeadAttribution(record);
+    }
+    mergeSummary(summary, imported);
+    records += leadRecords.length;
+    formSummaries.push({
+      formId,
+      formName,
+      status: text(form.status, 120),
+      records: leadRecords.length,
+    });
+  }
+
+  return {
+    forms: formSummaries.length,
+    records,
+    summary,
+    formSummaries,
+  };
 };
 
 export const processMetaLeadAdsWebhook = async (payload: JsonObject) => {

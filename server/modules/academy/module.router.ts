@@ -831,7 +831,7 @@ router.get('/search', async (req, res) => {
             href: '/marketing-module/sources',
           })));
         }
-        await pushLeads(`TRUE`, [], '/marketing-module/warm-base');
+        await pushLeads(`TRUE`, [], '/marketing-module/funnel');
       }
     }
 

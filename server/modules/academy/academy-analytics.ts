@@ -614,12 +614,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     })
     .filter((d): d is number => d !== null && Number.isFinite(d));
   const avgDealCycleDays = calculateAvgDealCycleDays(dealCycleDays) ?? 0;
-  // Warm-base reactivation: leads that returned from not_now to an active status (via stage history absent here; approximate via current status).
-  const warmReactivated = data.leads.filter((lead) => (
-    lead.statusCode !== 'not_now'
-    && lead.warmMovedAt
-    && valueInMetricRange(lead.warmMovedAt)
-  )).length;
 
   // --- Operations metrics (TZ 4.3): lesson NPS by teacher/course/group, progress, teacher hours, retention %. ---
   const lessonScores = periodLessonSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
@@ -711,8 +705,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
         : data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: newLeadsMonth.length,
       activeLeads: periodLeads.filter((lead) => activePipelineStatusCodes.has(String(lead.statusCode))).length,
-      warmBaseSize: data.leads.filter((lead) => lead.statusCode === 'not_now').length,
-      warmReactivated,
       activeStudents: data.students.filter((student) => student.status === 'studying').length,
       revenueMonth,
       revenueTotal,
@@ -1073,8 +1065,6 @@ export const buildMarketingAnalyticsPayload = (analytics: Row) => ({
   summary: {
     newLeadsWeek: analytics.summary.newLeadsWeek,
     newLeadsMonth: analytics.summary.newLeadsMonth,
-    warmBaseSize: analytics.summary.warmBaseSize,
-    warmReactivated: analytics.summary.warmReactivated,
     leadToDemoConversion: analytics.summary.leadToDemoConversion,
     demoToPaidConversion: analytics.summary.demoToPaidConversion,
     leadToPaidConversion: analytics.summary.leadToPaidConversion,
@@ -1087,8 +1077,6 @@ export const buildMarketingAnalyticsPayload = (analytics: Row) => ({
   funnel: analytics.funnel,
   funnelBySource: analytics.funnelBySource,
   bySource: analytics.bySource,
-  warmBaseSize: analytics.summary.warmBaseSize,
-  warmReactivated: analytics.summary.warmReactivated,
   leadToDemoConversion: analytics.summary.leadToDemoConversion,
   demoToPaidConversion: analytics.summary.demoToPaidConversion,
   leadToPaidConversion: analytics.summary.leadToPaidConversion,

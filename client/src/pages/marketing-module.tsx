@@ -48,12 +48,10 @@ import {
   DollarSign,
   Target,
   BarChart3,
-  Flame,
   HeartHandshake,
   Wallet,
   Plus,
   ArrowRight,
-  RotateCcw,
   Calculator,
 } from 'lucide-react';
 
@@ -66,7 +64,7 @@ const EMPTY_EXPENSE_FORM = {
   periodEnd: '',
 };
 
-type MarketingSection = 'overview' | 'sources' | 'funnel' | 'warm' | 'referrals' | 'expenses' | 'meta-attribution' | 'meta-events';
+type MarketingSection = 'overview' | 'sources' | 'funnel' | 'referrals' | 'expenses' | 'meta-attribution' | 'meta-events';
 
 type OverviewSourcePerformance = {
   sourceName: string;
@@ -173,7 +171,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
-  const [warmDateFilter, setWarmDateFilter] = useState('');
   const [expensePeriodFilter, setExpensePeriodFilter] = useState('');
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
 
@@ -211,16 +208,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     onError: (error: any) => toast({ title: t('error'), description: error.message, variant: 'destructive' }),
   });
 
-  const updateLead = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
-      apiRequest('PATCH', `/api/academy/leads/${id}`, payload),
-    onSuccess: () => {
-      toast({ title: t('success') });
-      invalidate();
-    },
-    onError: (error: any) => toast({ title: t('error'), description: error.message, variant: 'destructive' }),
-  });
-
   /* ─── derived data ─── */
   const analytics = data?.analytics;
   const bySource = analytics?.bySource ?? [];
@@ -231,19 +218,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const referrals = data?.referrals ?? [];
   const students = data?.students ?? [];
   const canManageExpenses = canAccessAcademyModule(user, 'marketing') || hasLeadershipAccess(user);
-
-  const [confirmReactivateId, setConfirmReactivateId] = useState<number | null>(null);
-
-  const warmLeads = useMemo(() => {
-    return leads.filter((lead: any) => lead.statusCode === 'not_now');
-  }, [leads]);
-
-  const filteredWarmLeads = useMemo(() => {
-    if (!warmDateFilter) return warmLeads;
-    return warmLeads.filter((lead: any) =>
-      String(lead.movedToWarmAt || lead.updatedAt || lead.createdAt).startsWith(warmDateFilter)
-    );
-  }, [warmLeads, warmDateFilter]);
 
   const filteredExpenses = useMemo(() => {
     if (!expensePeriodFilter) return expenses;
@@ -366,41 +340,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     { key: 'ltvCac', header: t('ltvCacLabel'), accessor: (row: any) => Number(row.ltvCac || 0), render: (row: any) => `${row.ltvCac}:1`, sortable: true, cellClassName: 'tabular-nums' },
   ];
 
-  /* ─── tab: warm base ─── */
-  const warmColumns = [
-    { key: 'contactName', header: t('contactPersonName'), accessor: (row: any) => row.contactName, sortable: true },
-    { key: 'phone', header: t('phone'), accessor: (row: any) => row.phone || '-', sortable: true },
-    { key: 'courseName', header: t('course'), accessor: (row: any) => row.courseName || t('noCourse'), sortable: true },
-    {
-      key: 'movedAt',
-      header: t('dateColumn'),
-      accessor: (row: any) => new Date(row.movedToWarmAt || row.updatedAt || 0).getTime(),
-      render: (row: any) => dateOnly(row.movedToWarmAt || row.updatedAt),
-      sortable: true,
-    },
-    {
-      key: 'reason',
-      header: t('comment'),
-      accessor: (row: any) => row.warmReason || row.comment || '-',
-      sortable: true,
-    },
-    {
-      key: 'actions',
-      header: t('actions'),
-      render: (row: any) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setConfirmReactivateId(row.id)}
-          disabled={updateLead.isPending}
-        >
-          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-          {t('returnTo')}
-        </Button>
-      ),
-    },
-  ];
-
   /* ─── tab: referrals ─── */
   const referralColumns = [
     { key: 'studentName', header: t('student'), accessor: (row: any) => row.studentName, sortable: true },
@@ -463,7 +402,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     overview: t(moduleSectionLabelKey('marketing', 'overview')),
     sources: t(moduleSectionLabelKey('marketing', 'sources')),
     funnel: t(moduleSectionLabelKey('marketing', 'funnel')),
-    warm: t(moduleSectionLabelKey('marketing', 'warm-leads')),
     referrals: t(moduleSectionLabelKey('marketing', 'referrals')),
     expenses: t(moduleSectionLabelKey('marketing', 'expenses')),
     'meta-attribution': t(moduleSectionLabelKey('marketing', 'meta-attribution')),
@@ -535,18 +473,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
           </div>
           <div className="stagger-item">
             <KpiCard title={t('roasLabel')} value={overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')} detail={t('roasTarget')} icon={Target} tone={overviewMarketingSpend > 0 ? 'purple' : 'slate'} />
-          </div>
-          <div className="stagger-item">
-            <KpiCard title={t('warmBaseSize')} value={summary.warmBaseSize ?? warmLeads.length} icon={Flame} tone="slate" />
-          </div>
-          <div className="stagger-item">
-            <KpiCard
-              title={t('warmReactivated')}
-              value={summary.warmReactivated ?? 0}
-              detail={t('reactivated')}
-              icon={RotateCcw}
-              tone="green"
-            />
           </div>
         </div>
       ) : null}
@@ -707,34 +633,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
           </div>
         </TabsContent>
 
-        {/* ─── Tab: Warm Leads ─── */}
-        <TabsContent value="warm" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <CardTitle>{t('warmBase')}</CardTitle>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={warmDateFilter}
-                  onChange={(e) => setWarmDateFilter(e.target.value)}
-                  className="w-40"
-                />
-                <Button variant="outline" size="sm" onClick={() => setWarmDateFilter('')}>
-                  {t('reset')}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={warmColumns}
-                data={filteredWarmLeads}
-                keyExtractor={(row) => String(row.id)}
-                emptyState={<EmptyState title={t('noData')} text={t('noLeadsFoundDesc')} icon={Flame} />}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         {/* ─── Tab: Referrals ─── */}
         <TabsContent value="referrals" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -892,19 +790,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         onDiscard={expenseDialogGuard.discardChanges}
       />
 
-      <ConfirmDialog
-        open={confirmReactivateId !== null}
-        onOpenChange={(open) => !open && setConfirmReactivateId(null)}
-        title={t('confirmAction')}
-        description={t('confirmReactivationDescription')}
-        onConfirm={() => {
-          if (confirmReactivateId !== null) {
-            updateLead.mutate({ id: confirmReactivateId, payload: { statusCode: 'new_request' } });
-            setConfirmReactivateId(null);
-          }
-        }}
-        isPending={updateLead.isPending}
-      />
     </ModulePage>
   );
 }

@@ -92,7 +92,6 @@ export const MODULE_NAVIGATION = {
       { id: 'overview', labelKey: 'marketingOverviewTitle', href: '/marketing-module', icon: BarChart3 },
       { id: 'sources', labelKey: 'leadSources', href: '/marketing-module/sources', icon: Megaphone },
       { id: 'funnel', labelKey: 'marketingFunnelSection', href: '/marketing-module/funnel', icon: Flame },
-      { id: 'warm-leads', labelKey: 'warmBase', href: '/marketing-module/warm-base', icon: Users },
       { id: 'referrals', labelKey: 'marketingReferrals', href: '/marketing-module/referrals', icon: HeartHandshake },
       { id: 'expenses', labelKey: 'marketingExpenses', href: '/marketing-module/expenses', icon: Banknote },
       { id: 'meta-attribution', labelKey: 'metaAttribution', href: '/marketing-module/meta-attribution', icon: MousePointerClick },

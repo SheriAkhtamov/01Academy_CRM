@@ -212,9 +212,6 @@ router.get('/leads', async (req, res) => {
       params.push(Number(req.query.managerId));
       conditions.push(`l.manager_id = $${params.length}`);
     }
-    if (req.query.warmBase === 'true') {
-      conditions.push(`l.status_code = 'not_now'`);
-    }
     if (req.query.q) {
       params.push(`%${String(req.query.q).toLowerCase()}%`);
       conditions.push(`(

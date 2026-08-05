@@ -14,7 +14,6 @@ const CONTAINED_MODULE_ROUTES = new Set([
   '/teacher-module/tasks',
   '/marketing-module/sources',
   '/marketing-module/funnel',
-  '/marketing-module/warm-base',
   '/marketing-module/referrals',
   '/marketing-module/expenses',
   '/marketing-module/meta-attribution',

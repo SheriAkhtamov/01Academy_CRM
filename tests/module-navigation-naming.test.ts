@@ -69,7 +69,6 @@ describe('module navigation naming', () => {
         'Обзор маркетинга',
         'Источники лидов',
         'Воронка и конверсия',
-        'Тёплые лиды',
         'Реферальная программа',
         'Маркетинговые расходы',
         'Атрибуция Meta',
@@ -86,7 +85,6 @@ describe('module navigation naming', () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/teacher-module/schedule');
-    expect(hrefs).toContain('/marketing-module/warm-base');
     expect(hrefs).toContain('/marketing-module/meta-attribution');
     expect(hrefs).toContain('/marketing-module/meta-events');
     expect(hrefs).toContain('/finance/transactions');

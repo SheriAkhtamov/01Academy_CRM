@@ -19,7 +19,6 @@ describe('isContainedModuleRoute', () => {
     '/teacher-module/tasks',
     '/marketing-module/sources',
     '/marketing-module/funnel',
-    '/marketing-module/warm-base',
     '/marketing-module/referrals',
     '/marketing-module/expenses',
     '/marketing-module/meta-attribution',

@@ -196,11 +196,6 @@ export function AppRouter() {
             <MarketingModule section="funnel" />
           </ModuleGuard>
         )} />
-        <Route path="/marketing-module/warm-base" component={() => (
-          <ModuleGuard module="marketing">
-            <MarketingModule section="warm" />
-          </ModuleGuard>
-        )} />
         <Route path="/marketing-module/referrals" component={() => (
           <ModuleGuard module="marketing">
             <MarketingModule section="referrals" />

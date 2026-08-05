@@ -2,8 +2,10 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  date,
   index,
   integer,
+  numeric,
   jsonb,
   pgTable,
   serial,
@@ -107,6 +109,24 @@ export const createMetaMarketingTables = (references: {
     syncedIdx: index('meta_ads_synced_idx').on(table.syncedAt),
   }));
 
+  // Daily spend per ad in the account currency; summed over the reporting range at read time.
+  const metaAdInsights = pgTable('meta_ad_insights', {
+    id: serial('id').primaryKey(),
+    adId: varchar('ad_id', { length: 120 }).notNull(),
+    statDate: date('stat_date').notNull(),
+    spend: numeric('spend', { precision: 14, scale: 4 }).notNull().default('0'),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+    reach: integer('reach').notNull().default(0),
+    currency: varchar('currency', { length: 10 }),
+    syncedAt: timestamp('synced_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  }, (table) => ({
+    adDateUnique: uniqueIndex('meta_ad_insights_ad_date_unique').on(table.adId, table.statDate),
+    dateIdx: index('meta_ad_insights_date_idx').on(table.statDate),
+  }));
+
   const metaConversionEvents = pgTable('meta_conversion_events', {
     id: serial('id').primaryKey(),
     leadId: integer('lead_id').references(() => references.leadId, { onDelete: 'set null' }),
@@ -136,5 +156,5 @@ export const createMetaMarketingTables = (references: {
     attemptCountCheck: check('meta_conversion_events_attempt_count_check', sql`${table.attemptCount} >= 0`),
   }));
 
-  return { metaLeadAttributions, metaAds, metaConversionEvents };
+  return { metaLeadAttributions, metaAds, metaAdInsights, metaConversionEvents };
 };

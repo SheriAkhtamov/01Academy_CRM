@@ -27,6 +27,7 @@ import {
   processMetaConversionEvents,
   retryMetaConversionEvent,
   syncMetaAdCatalog,
+  syncMetaAdInsights,
 } from '../../services/meta-marketing';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
@@ -531,7 +532,9 @@ router.post('/modules/marketing/meta-attribution/sync', async (req, res) => {
   try {
     const result = await syncMetaAdCatalog();
     if (result.skipped) return res.status(409).json({ error: 'metaAttributionNotConfigured' });
-    res.json(result);
+    // A manual refresh also backfills spend far enough to cover past campaigns.
+    const insights = await syncMetaAdInsights(120);
+    res.json({ ...result, spendRows: insights.synced });
   } catch (error: any) {
     logger.error('Failed to sync Meta ad catalog', { error });
     res.status(error.statusCode || 502).json({ error: getPublicErrorMessage(error, 'Failed to sync Meta ad catalog') });

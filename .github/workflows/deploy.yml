@@ -191,6 +191,7 @@ jobs:
                           "conversionEventName": "LeadSubmitted",
                           "partnerAgent": "01Academy_CRM",
                           "testEventCode": "",
+                          "usdToUzsRate": 0,
                       },
                       "notion": {"token": "", "databaseId": ""},
                       "googleSheets": {"credentialsPath": "", "spreadsheetId": ""},

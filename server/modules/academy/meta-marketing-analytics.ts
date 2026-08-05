@@ -1,4 +1,5 @@
 import { query } from './academy-core';
+import { getMetaSpendCurrency } from '../../services/meta-marketing';
 import type { ReportingRange } from './academy-scheduling';
 
 export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange) => {
@@ -92,8 +93,20 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
      FROM enriched
      GROUP BY COALESCE(ad_id, NULLIF(utm_content, ''), 'unattributed')
      ),
+     spend AS (
+       SELECT ad_id,
+              SUM(spend)::numeric AS spend,
+              SUM(impressions)::bigint AS impressions,
+              SUM(clicks)::bigint AS clicks,
+              MAX(currency) AS currency
+       FROM meta_ad_insights
+       WHERE stat_date >= $1::date AND stat_date < $2::date
+       GROUP BY ad_id
+     ),
      keys AS (
        SELECT ad_id AS attribution_key FROM meta_ads
+       UNION
+       SELECT ad_id FROM spend
        UNION
        SELECT attribution_key FROM stats
      )
@@ -123,20 +136,34 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        COALESCE(stats.paid, 0)::int AS paid,
        COALESCE(stats.revenue, 0)::bigint AS revenue,
        COALESCE(stats.enrichment_failures, 0)::int AS enrichment_failures,
+       COALESCE(spend.spend, 0)::float8 AS spend,
+       COALESCE(spend.impressions, 0)::int AS impressions,
+       COALESCE(spend.clicks, 0)::int AS clicks,
+       spend.currency AS spend_currency,
        stats.first_captured_at,
        stats.last_captured_at
      FROM keys
      LEFT JOIN meta_ads catalog ON catalog.ad_id = keys.attribution_key
      LEFT JOIN stats ON stats.attribution_key = keys.attribution_key
-     ORDER BY COALESCE(stats.leads, 0) DESC, stats.last_captured_at DESC NULLS LAST,
+     LEFT JOIN spend ON spend.ad_id = keys.attribution_key
+     ORDER BY COALESCE(stats.leads, 0) DESC, COALESCE(spend.spend, 0) DESC,
+              stats.last_captured_at DESC NULLS LAST,
               COALESCE(catalog.ad_created_time, TIMESTAMP '1970-01-01') DESC`,
     [reportingRange.start, reportingRange.end],
+  );
+
+  // Meta reports spend in the ad account currency (USD here); the CRM shows soum
+  // everywhere else, so convert only when an explicit rate is configured.
+  const { usdToUzsRate, convertsToUzs } = getMetaSpendCurrency();
+  const toDisplaySpend = (spendValue: number) => (
+    convertsToUzs ? Math.round(spendValue * usdToUzsRate) : Number(spendValue.toFixed(2))
   );
 
   const normalizedCreatives = creatives.map((creative) => {
     const leads = Number(creative.leads || 0);
     const qualified = Number(creative.qualified || 0);
     const paid = Number(creative.paid || 0);
+    const spend = toDisplaySpend(Number(creative.spend || 0));
     return {
       ...creative,
       leads,
@@ -144,6 +171,8 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
       demoInvited: Number(creative.demoInvited || 0),
       paid,
       revenue: Number(creative.revenue || 0),
+      spend,
+      costPerLead: leads > 0 ? toDisplaySpend(Number(creative.spend || 0) / leads) : null,
       qualificationRate: leads > 0 ? Number(((qualified / leads) * 100).toFixed(1)) : 0,
       paymentRate: leads > 0 ? Number(((paid / leads) * 100).toFixed(1)) : 0,
     };
@@ -160,8 +189,10 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
       demoInvited: summary.demoInvited + creative.demoInvited,
       paid: summary.paid + creative.paid,
       revenue: summary.revenue + creative.revenue,
-    }), { creatives: 0, totalAds: 0, leads: 0, qualified: 0, demoInvited: 0, paid: 0, revenue: 0 }),
+      spend: summary.spend + creative.spend,
+    }), { creatives: 0, totalAds: 0, leads: 0, qualified: 0, demoInvited: 0, paid: 0, revenue: 0, spend: 0 }),
     creatives: normalizedCreatives,
+    spendCurrency: convertsToUzs ? 'UZS' : 'USD',
     reportingRange: { from: reportingRange.from, to: reportingRange.to },
   };
 };

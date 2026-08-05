@@ -67,7 +67,9 @@
       "conversionStageCode": "demo_invited",
       "conversionEventName": "LeadSubmitted",
       "partnerAgent": "01Academy_CRM",
-      "testEventCode": ""
+      "testEventCode": "",
+      "_usdToUzsRate": "Meta bills in USD; set the UZS rate to show ad spend and cost per lead in soum. Leave 0 to keep spend in USD.",
+      "usdToUzsRate": 0
     },
     "onlinePbx": {
       "_comment": "Domain is the PBX hostname, for example pbx12345.onpbx.ru. Keep authKey and webhookSecret only in app.config.json and never commit them.",

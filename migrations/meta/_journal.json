@@ -568,6 +568,13 @@
       "when": 1787932800000,
       "tag": "0080_add_meta_ad_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1788019200000,
+      "tag": "0081_add_meta_ad_insights",
+      "breakpoints": true
     }
   ]
 }

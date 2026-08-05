@@ -1050,7 +1050,7 @@ export const instagramConversationReads = pgTable("instagram_conversation_reads"
   userIdx: index("instagram_conversation_reads_user_idx").on(table.userId),
 }));
 
-export const { metaLeadAttributions, metaAds, metaConversionEvents } = createMetaMarketingTables({ leadId: academyLeads.id, conversationId: instagramConversations.id });
+export const { metaLeadAttributions, metaAds, metaAdInsights, metaConversionEvents } = createMetaMarketingTables({ leadId: academyLeads.id, conversationId: instagramConversations.id });
 
 // Internal staff chat.
 export const messages = pgTable("messages", {
@@ -1428,6 +1428,7 @@ export type InsertInstagramMessage = z.infer<typeof insertInstagramMessageSchema
 export type MetaLeadAttribution = typeof metaLeadAttributions.$inferSelect;
 export type InsertMetaLeadAttribution = z.infer<typeof insertMetaLeadAttributionSchema>;
 export type MetaAd = typeof metaAds.$inferSelect;
+export type MetaAdInsight = typeof metaAdInsights.$inferSelect;
 export type MetaConversionEvent = typeof metaConversionEvents.$inferSelect;
 export type InsertMetaConversionEvent = z.infer<typeof insertMetaConversionEventSchema>;
 export type Message = typeof messages.$inferSelect;

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Settings2,
   Target,
+  Wallet,
   UserRoundCheck,
   Users,
 } from 'lucide-react';
@@ -135,6 +136,14 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     return t('metaAdStatusPaused');
   };
   const money = (value: number) => `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
+  // Ad spend arrives already converted when a USD→UZS rate is configured; otherwise it
+  // stays in the account currency so nothing is silently mislabelled as soum.
+  const spendMoney = (value?: number | null) => {
+    if (value === null || value === undefined) return t('noData');
+    return data?.spendCurrency === 'USD'
+      ? `$${Number(value).toLocaleString(locale, { maximumFractionDigits: 2 })}`
+      : money(value);
+  };
   const dateTime = (value?: string | null) => value
     ? new Date(value).toLocaleString(locale)
     : t('noData');
@@ -196,6 +205,27 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       },
       sortable: true,
     },
+    {
+      key: 'spend',
+      header: t('metaAdSpend'),
+      accessor: (row: MetaCreativeRow) => row.spend,
+      render: (row: MetaCreativeRow) => spendMoney(row.spend),
+      sortable: true,
+      cellClassName: 'tabular-nums',
+    },
+    {
+      key: 'costPerLead',
+      header: t('metaCostPerLead'),
+      // Ads with spend but no leads sort as the worst rather than the best.
+      accessor: (row: MetaCreativeRow) => (row.costPerLead ?? (row.spend > 0 ? Number.MAX_SAFE_INTEGER : -1)),
+      render: (row: MetaCreativeRow) => (
+        row.costPerLead === null
+          ? <span className="text-muted-foreground">{row.spend > 0 ? t('metaSpendNoLeads') : t('noData')}</span>
+          : spendMoney(row.costPerLead)
+      ),
+      sortable: true,
+      cellClassName: 'tabular-nums font-medium',
+    },
     { key: 'leads', header: t('metaAttributedLeads'), accessor: (row: MetaCreativeRow) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'qualified', header: t('qualifiedLeads'), accessor: (row: MetaCreativeRow) => row.qualified, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'demoInvited', header: t('invitedToDemo'), accessor: (row: MetaCreativeRow) => row.demoInvited, sortable: true, cellClassName: 'tabular-nums' },
@@ -256,6 +286,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
           value={`${summary.creatives} / ${summary.totalAds}`}
           icon={Clapperboard}
         />
+        <AttributionMetric label={t('metaAdSpend')} value={spendMoney(summary.spend)} icon={Wallet} />
         <AttributionMetric label={t('metaAttributedLeads')} value={summary.leads} icon={Users} />
         <AttributionMetric label={t('qualifiedLeads')} value={summary.qualified} icon={UserRoundCheck} />
         <AttributionMetric label={t('invitedToDemo')} value={summary.demoInvited} icon={Target} />

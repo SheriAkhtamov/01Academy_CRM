@@ -162,6 +162,7 @@ const metaConfig = () => {
     conversionEventName: config?.conversionEventName?.trim() || 'LeadSubmitted',
     partnerAgent: config?.partnerAgent?.trim() || '01Academy_CRM',
     testEventCode: config?.testEventCode?.trim() ?? '',
+    usdToUzsRate: Number(config?.usdToUzsRate ?? 0),
   };
 };
 
@@ -179,6 +180,7 @@ export const getMetaMarketingIntegrationConfig = () => {
     conversionStageCode: config.conversionStageCode,
     conversionEventName: config.conversionEventName,
     testMode: Boolean(config.testEventCode),
+    ...getMetaSpendCurrency(),
   };
 };
 
@@ -559,6 +561,108 @@ export const syncMetaAdCatalog = async () => {
 
   logger.info('Meta ad catalog synced', { synced });
   return { synced, skipped: false };
+};
+
+const META_INSIGHTS_MAX_PAGES = 200;
+const META_INSIGHTS_DEFAULT_DAYS = 14;
+const META_INSIGHTS_BACKFILL_DAYS = 120;
+
+const insightsDateKey = (date: Date) => date.toISOString().slice(0, 10);
+
+const insightsInteger = (value: unknown) => {
+  const parsed = Number(cleanText(value, 40) ?? 0);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+};
+
+const insightsSpend = (value: unknown) => {
+  const parsed = Number(cleanText(value, 40) ?? 0);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+};
+
+/**
+ * Daily spend per ad. Stored per day so any reporting range sums locally instead of
+ * refetching. Meta keeps adjusting recent days, hence the rolling re-sync window.
+ */
+export const syncMetaAdInsights = async (days = META_INSIGHTS_DEFAULT_DAYS) => {
+  const config = metaConfig();
+  if (!config.marketingAccessToken || !config.adAccountId) return { synced: 0, skipped: true };
+
+  const until = new Date();
+  const since = new Date(until.getTime() - Math.max(1, days) * 24 * 60 * 60 * 1000);
+  const timeRange = JSON.stringify({ since: insightsDateKey(since), until: insightsDateKey(until) });
+
+  let after: string | null = null;
+  const visitedCursors = new Set<string>();
+  let synced = 0;
+
+  for (let page = 0; page < META_INSIGHTS_MAX_PAGES; page += 1) {
+    const params = new URLSearchParams({
+      level: 'ad',
+      time_increment: '1',
+      time_range: timeRange,
+      fields: 'ad_id,spend,impressions,clicks,reach,account_currency',
+      limit: '500',
+    });
+    if (after) params.set('after', after);
+    const response = await fetchMetaJson<JsonObject>(
+      `act_${encodeURIComponent(config.adAccountId)}/insights?${params.toString()}`,
+    );
+
+    const rows = Array.isArray(response.data) ? response.data : [];
+    for (const raw of rows) {
+      if (!isPlainObject(raw)) continue;
+      const adId = cleanText(raw.ad_id, 120);
+      const statDate = cleanText(raw.date_start, 20);
+      if (!adId || !statDate) continue;
+      await pool.query(
+        `INSERT INTO meta_ad_insights
+           (ad_id, stat_date, spend, impressions, clicks, reach, currency, synced_at, updated_at)
+         VALUES ($1,$2::date,$3,$4,$5,$6,$7,NOW(),NOW())
+         ON CONFLICT (ad_id, stat_date) DO UPDATE SET
+           spend = EXCLUDED.spend,
+           impressions = EXCLUDED.impressions,
+           clicks = EXCLUDED.clicks,
+           reach = EXCLUDED.reach,
+           currency = COALESCE(EXCLUDED.currency, meta_ad_insights.currency),
+           synced_at = NOW(),
+           updated_at = NOW()`,
+        [
+          adId,
+          statDate,
+          insightsSpend(raw.spend),
+          insightsInteger(raw.impressions),
+          insightsInteger(raw.clicks),
+          insightsInteger(raw.reach),
+          cleanText(raw.account_currency, 10),
+        ],
+      );
+      synced += 1;
+    }
+
+    const nextCursor = cleanText(response.paging?.cursors?.after, 500);
+    if (!response.paging?.next || !nextCursor) break;
+    if (visitedCursors.has(nextCursor)) throw new Error('Meta insights pagination loop detected');
+    visitedCursors.add(nextCursor);
+    after = nextCursor;
+  }
+
+  logger.info('Meta ad insights synced', { synced, days });
+  return { synced, skipped: false };
+};
+
+/** First run has nothing stored, so it reaches back far enough to cover past campaigns. */
+export const syncMetaAdInsightsForSchedule = async () => {
+  const { rows } = await pool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM meta_ad_insights');
+  const isEmpty = Number(rows[0]?.count ?? 0) === 0;
+  return syncMetaAdInsights(isEmpty ? META_INSIGHTS_BACKFILL_DAYS : META_INSIGHTS_DEFAULT_DAYS);
+};
+
+export const getMetaSpendCurrency = () => {
+  const rate = Number(metaConfig().usdToUzsRate ?? 0);
+  return {
+    usdToUzsRate: Number.isFinite(rate) && rate > 0 ? rate : 0,
+    convertsToUzs: Number.isFinite(rate) && rate > 0,
+  };
 };
 
 const claimMetaAttributions = async (limit: number): Promise<MetaAttributionRow[]> => {

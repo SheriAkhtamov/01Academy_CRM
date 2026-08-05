@@ -163,6 +163,28 @@ describe('Meta ad catalog', () => {
     expect(analytics).toContain('COALESCE(stats.leads, 0)::int AS leads');
   });
 
+  it('joins ad spend onto the report and keeps spend-without-leads visible', () => {
+    const analytics = read('../server/modules/academy/meta-marketing-analytics.ts');
+    expect(analytics).toContain('FROM meta_ad_insights');
+    // An ad that only spent — no leads, gone from the catalog — must still get a row.
+    expect(analytics).toContain('SELECT ad_id FROM spend');
+    expect(analytics).toContain('LEFT JOIN spend ON spend.ad_id = keys.attribution_key');
+    expect(analytics).toContain('costPerLead: leads > 0');
+  });
+
+  it('leaves spend in the account currency until a rate is configured', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('usdToUzsRate');
+    // A missing or zero rate must not be treated as a valid conversion factor.
+    expect(service).toContain('convertsToUzs: Number.isFinite(rate) && rate > 0');
+  });
+
+  it('ships the insights migration', () => {
+    const migration = read('../migrations/0081_add_meta_ad_insights.sql');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "meta_ad_insights"');
+    expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "meta_ad_insights_ad_date_unique"');
+  });
+
   it('ships the catalog migration', () => {
     const migration = read('../migrations/0080_add_meta_ad_catalog.sql');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "meta_ads"');

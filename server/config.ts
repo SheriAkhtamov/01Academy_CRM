@@ -66,6 +66,9 @@ interface AppConfig {
       conversionEventName?: string;
       partnerAgent?: string;
       testEventCode?: string;
+      // Meta bills this account in USD while the CRM stores every amount in UZS.
+      // Zero or absent keeps ad spend in USD rather than inventing a rate.
+      usdToUzsRate?: number;
     };
     onlinePbx?: {
       domain?: string;
@@ -251,6 +254,12 @@ const validateConfig = (config: AppConfig) => {
   }
   if (metaAds?.apiVersion && !/^v\d+\.\d+$/.test(metaAds.apiVersion.trim())) {
     throw new Error('integrations.metaAds.apiVersion must look like v25.0');
+  }
+  if (metaAds?.usdToUzsRate !== undefined) {
+    const rate = Number(metaAds.usdToUzsRate);
+    if (!Number.isFinite(rate) || rate < 0) {
+      throw new Error('integrations.metaAds.usdToUzsRate must be a non-negative number');
+    }
   }
 };
 

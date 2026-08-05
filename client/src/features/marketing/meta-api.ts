@@ -12,6 +12,8 @@ export type MetaIntegrationState = {
   conversionStageCode?: string | null;
   conversionEventName?: string | null;
   testMode?: boolean;
+  usdToUzsRate?: number;
+  convertsToUzs?: boolean;
 };
 
 export type MetaCreativeRow = {
@@ -43,6 +45,10 @@ export type MetaCreativeRow = {
   demoInvited: number;
   paid: number;
   revenue: number;
+  spend: number;
+  costPerLead: number | null;
+  impressions?: number;
+  clicks?: number;
   qualificationRate: number;
   paymentRate: number;
   enrichmentFailures?: number;
@@ -59,8 +65,10 @@ export type MetaAttributionData = {
     demoInvited: number;
     paid: number;
     revenue: number;
+    spend: number;
   };
   creatives: MetaCreativeRow[];
+  spendCurrency: 'UZS' | 'USD';
   integration: MetaIntegrationState;
 };
 

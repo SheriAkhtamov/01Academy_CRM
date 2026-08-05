@@ -8,6 +8,7 @@ import {
   processMetaAttributionEnrichment,
   processMetaConversionEvents,
   syncMetaAdCatalog,
+  syncMetaAdInsightsForSchedule,
 } from "./meta-marketing";
 
 export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
@@ -59,6 +60,8 @@ export const startScheduler = () => {
     try {
       const { synced, skipped } = await syncMetaAdCatalog();
       if (!skipped) logger.info(`[scheduler] synced ${synced} Meta ads`);
+      const insights = await syncMetaAdInsightsForSchedule();
+      if (!insights.skipped) logger.info(`[scheduler] synced ${insights.synced} Meta ad spend rows`);
     } catch (error) {
       logger.error("[scheduler] Meta ad catalog sync error", { error });
     }

@@ -34,6 +34,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
+import { MetaIntegrationDialog } from '@/components/marketing/MetaIntegrationDialog';
+import type { MetaIntegrationState } from '@/features/marketing/meta-api';
 import {
   AlertCircle,
   Camera,
@@ -66,6 +68,7 @@ interface IntegrationStatus {
   accountId?: number | null;
   accountUsername?: string | null;
   message: string;
+  details?: MetaIntegrationState | null;
   lastLog?: {
     provider: string;
     direction?: string;
@@ -171,6 +174,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     username?: string | null;
   } | null>(null);
   const [onlinePbxSettingsOpen, setOnlinePbxSettingsOpen] = useState(false);
+  const [metaDetailsOpen, setMetaDetailsOpen] = useState(false);
   const [onlinePbxRoutingDraft, setOnlinePbxRoutingDraft] =
     useState<OnlinePbxRoutingDraft>(emptyOnlinePbxDraft);
   const [newManagerId, setNewManagerId] = useState('');
@@ -295,6 +299,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   });
   const onlinePbxIntegration = integrations.data?.find(
     (integration) => integration.provider === 'onlinepbx',
+  );
+  const metaIntegration = integrations.data?.find(
+    (integration) => integration.provider === 'meta',
   );
   const assignedManagerIds = useMemo(
     () => new Set(onlinePbxRoutingDraft.assignments.map((assignment) => assignment.managerId)),
@@ -464,6 +471,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         <Settings2 data-icon="inline-start" />
                         {t('settings')}
                       </Button>
+                    ) : integration.provider === 'meta' ? (
+                      <Button variant="outline" onClick={() => setMetaDetailsOpen(true)}>
+                        <Settings2 data-icon="inline-start" />
+                        {t('metaConnection')}
+                      </Button>
                     ) : null}
                     <Badge variant={integration.connected ? 'success' : 'warning'}>
                       {integration.connected ? (
@@ -480,6 +492,12 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           );
         })}
       </ModulePageBody>
+
+      <MetaIntegrationDialog
+        open={metaDetailsOpen}
+        onOpenChange={setMetaDetailsOpen}
+        integration={metaIntegration?.details}
+      />
 
       <Dialog open={onlinePbxSettingsOpen} onOpenChange={setOnlinePbxSettingsOpen}>
         <DialogContent className="overflow-hidden sm:max-w-3xl">

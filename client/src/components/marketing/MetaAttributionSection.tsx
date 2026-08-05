@@ -29,7 +29,6 @@ import {
 } from '@/features/marketing/meta-api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import { MetaIntegrationDialog } from './MetaIntegrationDialog';
 
 function AttributionMetric({
   label,
@@ -101,7 +100,6 @@ function CreativeThumbnail({ row, label }: { row: MetaCreativeRow; label: string
 export function MetaAttributionSection({ reportingQuery }: { reportingQuery: string }) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selected, setSelected] = useState<MetaCreativeRow | null>(null);
   const [onlyWithLeads, setOnlyWithLeads] = useState(false);
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
@@ -284,10 +282,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
               <RefreshCw className={`mr-2 size-4 ${syncCatalog.isPending ? 'animate-spin' : ''}`} />
               {t('metaRefreshCatalog')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-              <Settings2 className="mr-2 size-4" />
-              {t('metaConnection')}
-            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -308,7 +302,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
         </CardContent>
       </Card>
 
-      <MetaIntegrationDialog open={settingsOpen} onOpenChange={setSettingsOpen} integration={data.integration} />
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

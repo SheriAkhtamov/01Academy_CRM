@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleCheckBig, Clock3, ListChecks, RotateCcw, Settings2, TriangleAlert } from 'lucide-react';
+import { CircleCheckBig, Clock3, ListChecks, RotateCcw, TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,6 @@ import {
 } from '@/features/marketing/meta-api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import { MetaIntegrationDialog } from './MetaIntegrationDialog';
 
 function EventMetric({ label, value, icon: Icon }: { label: string; value: string | number; icon: typeof ListChecks }) {
   return (
@@ -38,7 +37,6 @@ export function MetaEventsSection() {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const queryClient = useQueryClient();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selected, setSelected] = useState<MetaEventRow | null>(null);
   const queryKey = metaMarketingQueryKeys.events;
   const { data, isLoading, isError, error, refetch } = useQuery<MetaEventsData>({
@@ -153,12 +151,8 @@ export function MetaEventsSection() {
         <EventMetric label={t('metaDeliveryRate')} value={`${data.summary.deliveryRate}%`} icon={CircleCheckBig} />
       </div>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+        <CardHeader className="pb-4">
           <CardTitle>{t('metaEventManager')}</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-            <Settings2 className="mr-2 size-4" />
-            {t('metaConnection')}
-          </Button>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -179,7 +173,6 @@ export function MetaEventsSection() {
         </CardContent>
       </Card>
 
-      <MetaIntegrationDialog open={settingsOpen} onOpenChange={setSettingsOpen} integration={data.integration} />
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

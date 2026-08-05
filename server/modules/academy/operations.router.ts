@@ -698,6 +698,7 @@ router.get('/integrations/status', async (req, res) => {
         accountId: instagramAccount?.id ?? null,
         accountUsername: instagramAccount?.username ?? null,
         note: 'Instagram Login, Direct messages and automatic lead creation',
+        details: null,
       },
       {
         provider: 'website',
@@ -706,6 +707,7 @@ router.get('/integrations/status', async (req, res) => {
         accountId: null,
         accountUsername: null,
         note: 'Website lead inbound webhook',
+        details: null,
       },
       {
         provider: 'meta',
@@ -718,6 +720,8 @@ router.get('/integrations/status', async (req, res) => {
         accountId: null,
         accountUsername: metaMarketing.pageId,
         note: 'Meta Ads attribution, Instant Forms and Conversions API',
+        // Surfaced on the Integrations page so the marketing report stays free of admin diagnostics.
+        details: metaMarketing,
       },
       {
         provider: 'onlinepbx',
@@ -726,6 +730,7 @@ router.get('/integrations/status', async (req, res) => {
         accountId: null,
         accountUsername: onlinePbxClient.getDomain() || null,
         note: 'OnlinePBX click-to-call',
+        details: null,
       },
     ];
     res.json(providers.map((entry) => ({
@@ -734,6 +739,7 @@ router.get('/integrations/status', async (req, res) => {
       connected: entry.connected,
       accountId: entry.accountId,
       accountUsername: entry.accountUsername,
+      details: entry.details,
       lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
       message: entry.requiresReconnect
         ? 'Токен Instagram недействителен. Подключите аккаунт заново — после этого CRM автоматически восстановит имена и username лидов.'

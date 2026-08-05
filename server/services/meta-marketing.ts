@@ -268,6 +268,47 @@ const normalizeMetaPublicationUrl = (value: unknown): string | null => {
   }
 };
 
+const META_MEDIA_HOST_SUFFIXES = ['fbcdn.net', 'cdninstagram.com', 'facebook.com', 'instagram.com'];
+
+const normalizeMetaMediaUrl = (value: unknown): string | null => {
+  const normalized = cleanText(value, 4_000);
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    if (url.protocol !== 'https:') return null;
+    const hostname = url.hostname.toLowerCase();
+    const allowed = META_MEDIA_HOST_SUFFIXES.some(
+      (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
+    );
+    return allowed ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+// Meta scatters the creative preview across several shapes depending on the ad format,
+// so the first host-approved https image wins.
+export const extractMetaThumbnail = (creative: JsonObject): string | null => {
+  const story = creative.object_story_spec ?? {};
+  const assetFeed = creative.asset_feed_spec ?? {};
+  const candidates = [
+    creative.thumbnail_url,
+    creative.image_url,
+    story.video_data?.image_url,
+    story.link_data?.picture,
+    ...(Array.isArray(assetFeed.videos) ? assetFeed.videos.map((item: any) => item?.thumbnail_url) : []),
+    ...(Array.isArray(assetFeed.images) ? assetFeed.images.map((item: any) => item?.url) : []),
+    ...(Array.isArray(story.link_data?.child_attachments)
+      ? story.link_data.child_attachments.map((item: any) => item?.picture)
+      : []),
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeMetaMediaUrl(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
 export const extractMetaPublication = (creative: JsonObject): { id: string | null; url: string | null } => {
   const instagramId = cleanText(
     creative.effective_instagram_media_id ?? creative.instagram_story_id,
@@ -318,7 +359,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
     'name',
     'campaign{id,name}',
     'adset{id,name}',
-    'creative{id,name,title,body,object_type,url_tags,object_story_id,effective_object_story_id,effective_instagram_media_id,instagram_story_id,instagram_permalink_url,object_story_spec,asset_feed_spec}',
+    'creative{id,name,title,body,object_type,url_tags,thumbnail_url,image_url,object_story_id,effective_object_story_id,effective_instagram_media_id,instagram_story_id,instagram_permalink_url,object_story_spec,asset_feed_spec}',
   ].join(',');
   const response = await fetchMetaJson<JsonObject>(`${encodeURIComponent(row.ad_id)}?fields=${encodeURIComponent(fields)}`);
   const creative = isPlainObject(response.creative) ? response.creative : {};
@@ -370,6 +411,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
          utm_term = COALESCE($18, utm_term),
          utm_values = $19,
          utm_derived = utm_derived OR $20,
+         thumbnail_url = COALESCE($21, thumbnail_url),
          enrichment_status = 'enriched',
          enriched_at = NOW(),
          enrichment_error = NULL,
@@ -396,6 +438,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
       resolvedUtm.utm.utm_term ?? null,
       JSON.stringify(resolvedUtm.utm),
       resolvedUtm.derived,
+      extractMetaThumbnail(creative),
     ],
   );
 };

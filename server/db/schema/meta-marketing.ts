@@ -44,6 +44,7 @@ export const createMetaMarketingTables = (references: {
     referralType: varchar('referral_type', { length: 120 }),
     referralRef: text('referral_ref'),
     sourceUrl: text('source_url'),
+    thumbnailUrl: text('thumbnail_url'),
     utmSource: varchar('utm_source', { length: 500 }),
     utmMedium: varchar('utm_medium', { length: 500 }),
     utmCampaign: varchar('utm_campaign', { length: 500 }),

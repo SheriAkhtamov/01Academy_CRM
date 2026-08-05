@@ -235,7 +235,7 @@ export const translations = {
   attributedRevenue: { en: 'Attributed revenue', ru: 'Атрибутированная выручка' },
   metaAdPublication: { en: 'Ad / publication', ru: 'Реклама / публикация' }, metaPublication: { en: 'Source publication', ru: 'Исходная публикация' },
   openMetaPublication: { en: 'Open publication in Meta', ru: 'Открыть публикацию в Meta' },
-  metaHookUnknown: { en: 'Hook is not specified', ru: 'Хук не указан' }, creativeFormat: { en: 'Creative format', ru: 'Формат креатива' },
+  metaCreativePreview: { en: 'Creative preview', ru: 'Превью креатива' }, creativeFormat: { en: 'Creative format', ru: 'Формат креатива' },
   metaAd: { en: 'Meta ad', ru: 'Объявление Meta' }, qualificationRate: { en: 'Qualification rate', ru: 'Конверсия в квалификацию' },
   paymentConversion: { en: 'Payment conversion', ru: 'Конверсия в оплату' }, utmTags: { en: 'UTM tags', ru: 'UTM-метки' },
   metaNoAttribution: { en: 'No Meta attribution yet', ru: 'Атрибуции Meta пока нет' },

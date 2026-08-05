@@ -5,6 +5,7 @@ import {
   extractMetaAdHook,
   extractMetaPublication,
   extractMetaReferral,
+  extractMetaThumbnail,
   extractMetaUtm,
   metaRetryDelayMinutes,
 } from '../server/services/meta-marketing';
@@ -86,6 +87,25 @@ describe('Meta marketing attribution', () => {
       id: null,
       url: null,
     });
+  });
+
+  it('picks a creative thumbnail from any ad shape but only from Meta hosts over https', () => {
+    expect(extractMetaThumbnail({
+      thumbnail_url: 'https://scontent.xx.fbcdn.net/v/t45/preview.jpg',
+    })).toBe('https://scontent.xx.fbcdn.net/v/t45/preview.jpg');
+
+    expect(extractMetaThumbnail({
+      object_story_spec: { video_data: { image_url: 'https://scontent.cdninstagram.com/v/reel.jpg' } },
+    })).toBe('https://scontent.cdninstagram.com/v/reel.jpg');
+
+    expect(extractMetaThumbnail({
+      asset_feed_spec: { images: [{ url: 'https://external.fbcdn.net/asset.png' }] },
+    })).toBe('https://external.fbcdn.net/asset.png');
+
+    // A look-alike host must not slip an arbitrary image into the CRM table.
+    expect(extractMetaThumbnail({ thumbnail_url: 'https://evil-fbcdn.net/tracker.gif' })).toBeNull();
+    expect(extractMetaThumbnail({ thumbnail_url: 'http://scontent.xx.fbcdn.net/insecure.jpg' })).toBeNull();
+    expect(extractMetaThumbnail({})).toBeNull();
   });
 
   it('uses bounded exponential retry windows', () => {

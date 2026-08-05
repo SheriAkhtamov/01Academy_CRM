@@ -29,6 +29,7 @@ export type MetaCreativeRow = {
   hookName?: string | null;
   placement?: string | null;
   sourceUrl?: string | null;
+  thumbnailUrl?: string | null;
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;

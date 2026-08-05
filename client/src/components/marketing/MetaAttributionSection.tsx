@@ -5,6 +5,9 @@ import {
   CircleCheckBig,
   Clapperboard,
   ExternalLink,
+  Image as ImageIcon,
+  Layers,
+  Play,
   Settings2,
   Target,
   UserRoundCheck,
@@ -50,6 +53,49 @@ function AttributionMetric({
   );
 }
 
+const mediaTypeIcon = (mediaType?: string | null) => {
+  if (mediaType === 'video') return Play;
+  if (mediaType === 'image') return ImageIcon;
+  if (mediaType === 'carousel') return Layers;
+  return Clapperboard;
+};
+
+/**
+ * Meta serves creative thumbnails from its own CDN with signed URLs that can expire,
+ * so a broken image falls back to the format icon instead of a torn placeholder.
+ */
+function CreativeThumbnail({ row, label }: { row: MetaCreativeRow; label: string }) {
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
+  const Icon = mediaTypeIcon(row.mediaType);
+  const showImage = Boolean(row.thumbnailUrl) && !failed;
+
+  return (
+    <div
+      className="relative size-14 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-muted"
+      title={label}
+    >
+      {showImage ? (
+        <img
+          src={row.thumbnailUrl as string}
+          alt={`${t('metaCreativePreview')} — ${label}`}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex size-full items-center justify-center text-muted-foreground">
+          <Icon className="size-5" />
+        </div>
+      )}
+      <span className="absolute bottom-0.5 right-0.5 flex size-4 items-center justify-center rounded bg-background/85 text-foreground shadow-sm">
+        <Icon className="size-2.5" />
+      </span>
+    </div>
+  );
+}
+
 export function MetaAttributionSection({ reportingQuery }: { reportingQuery: string }) {
   const { t, language } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -75,20 +121,35 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     {
       key: 'hook',
       header: t('metaAdPublication'),
-      accessor: (row: MetaCreativeRow) => row.hookName || row.adName || '',
-      render: (row: MetaCreativeRow) => (
-        <div className="max-w-72">
-          <p className="font-medium text-foreground">{row.hookName || t('metaHookUnknown')}</p>
-          <p className="truncate text-xs text-muted-foreground">{row.adName || row.adId || t('noData')}</p>
-        </div>
-      ),
-      sortable: true,
-    },
-    {
-      key: 'format',
-      header: t('creativeFormat'),
-      accessor: (row: MetaCreativeRow) => formatLabel(row.mediaType),
-      render: (row: MetaCreativeRow) => <Badge variant="outline">{formatLabel(row.mediaType)}</Badge>,
+      // Meta names the ad, so an unnamed hook shows the real ad name rather than a placeholder.
+      accessor: (row: MetaCreativeRow) => row.hookName || row.adName || row.adId || '',
+      render: (row: MetaCreativeRow) => {
+        const title = row.hookName || row.adName || row.adId || t('noData');
+        return (
+          <div className="flex max-w-80 items-center gap-3">
+            <CreativeThumbnail row={row} label={formatLabel(row.mediaType)} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium text-foreground" title={title}>{title}</p>
+              <p className="truncate text-xs text-muted-foreground" title={row.campaignName ?? undefined}>
+                {row.campaignName || row.adName || t('noData')}
+              </p>
+            </div>
+            {row.sourceUrl ? (
+              <a
+                href={row.sourceUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                onClick={(event) => event.stopPropagation()}
+                aria-label={t('openMetaPublication')}
+                title={t('openMetaPublication')}
+                className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ExternalLink className="size-4" />
+              </a>
+            ) : null}
+          </div>
+        );
+      },
       sortable: true,
     },
     { key: 'leads', header: t('metaAttributedLeads'), accessor: (row: MetaCreativeRow) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
@@ -186,6 +247,16 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
             <DialogTitle>{selected?.hookName || selected?.adName || t('metaDetails')}</DialogTitle>
             <DialogDescription>{t('metaDetails')}</DialogDescription>
           </DialogHeader>
+          {selected ? (
+            <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-muted/20 p-3">
+              <CreativeThumbnail row={selected} label={formatLabel(selected.mediaType)} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-foreground">{selected.adName || selected.adId || t('noData')}</p>
+                <p className="truncate text-xs text-muted-foreground">{selected.campaignName || t('noData')}</p>
+              </div>
+              <Badge variant="outline" className="shrink-0">{formatLabel(selected.mediaType)}</Badge>
+            </div>
+          ) : null}
           {selected ? (
             <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
               <Detail label={t('metaAd')} value={[selected.adName, selected.adId].filter(Boolean).join(' · ')} />

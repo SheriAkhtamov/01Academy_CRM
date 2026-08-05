@@ -69,6 +69,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        MAX(hook_name) AS hook_name,
        MAX(placement) AS placement,
        MAX(source_url) AS source_url,
+       MAX(thumbnail_url) AS thumbnail_url,
        MAX(utm_source) AS utm_source,
        MAX(utm_medium) AS utm_medium,
        MAX(utm_campaign) AS utm_campaign,

@@ -53,7 +53,8 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        LEFT JOIN academy_lead_statuses current_status ON current_status.code = lead.status_code
        LEFT JOIN paid_by_lead payment ON payment.lead_id = attribution.lead_id
        CROSS JOIN stage_thresholds thresholds
-     )
+     ),
+     stats AS (
      SELECT
        COALESCE(ad_id, NULLIF(utm_content, ''), 'unattributed') AS attribution_key,
        MAX(ad_id) AS ad_id,
@@ -90,7 +91,45 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        MAX(captured_at) AS last_captured_at
      FROM enriched
      GROUP BY COALESCE(ad_id, NULLIF(utm_content, ''), 'unattributed')
-     ORDER BY COUNT(DISTINCT lead_id) DESC, MAX(captured_at) DESC`,
+     ),
+     keys AS (
+       SELECT ad_id AS attribution_key FROM meta_ads
+       UNION
+       SELECT attribution_key FROM stats
+     )
+     SELECT
+       keys.attribution_key,
+       COALESCE(catalog.ad_id, stats.ad_id) AS ad_id,
+       COALESCE(catalog.ad_name, stats.ad_name) AS ad_name,
+       COALESCE(catalog.adset_id, stats.adset_id) AS adset_id,
+       COALESCE(catalog.adset_name, stats.adset_name) AS adset_name,
+       COALESCE(catalog.campaign_id, stats.campaign_id) AS campaign_id,
+       COALESCE(catalog.campaign_name, stats.campaign_name) AS campaign_name,
+       COALESCE(catalog.creative_id, stats.creative_id) AS creative_id,
+       COALESCE(catalog.creative_name, stats.creative_name) AS creative_name,
+       COALESCE(catalog.creative_title, stats.creative_title) AS creative_title,
+       COALESCE(catalog.media_type, stats.media_type) AS media_type,
+       COALESCE(catalog.hook_name, stats.hook_name) AS hook_name,
+       COALESCE(catalog.thumbnail_url, stats.thumbnail_url) AS thumbnail_url,
+       COALESCE(catalog.source_url, stats.source_url) AS source_url,
+       catalog.effective_status,
+       (catalog.ad_id IS NOT NULL) AS in_catalog,
+       stats.placement,
+       stats.utm_source, stats.utm_medium, stats.utm_campaign, stats.utm_content, stats.utm_term,
+       COALESCE(stats.utm_derived, false) AS utm_derived,
+       COALESCE(stats.leads, 0)::int AS leads,
+       COALESCE(stats.qualified, 0)::int AS qualified,
+       COALESCE(stats.demo_invited, 0)::int AS demo_invited,
+       COALESCE(stats.paid, 0)::int AS paid,
+       COALESCE(stats.revenue, 0)::bigint AS revenue,
+       COALESCE(stats.enrichment_failures, 0)::int AS enrichment_failures,
+       stats.first_captured_at,
+       stats.last_captured_at
+     FROM keys
+     LEFT JOIN meta_ads catalog ON catalog.ad_id = keys.attribution_key
+     LEFT JOIN stats ON stats.attribution_key = keys.attribution_key
+     ORDER BY COALESCE(stats.leads, 0) DESC, stats.last_captured_at DESC NULLS LAST,
+              COALESCE(catalog.ad_created_time, TIMESTAMP '1970-01-01') DESC`,
     [reportingRange.start, reportingRange.end],
   );
 
@@ -112,13 +151,16 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
 
   return {
     summary: normalizedCreatives.reduce((summary, creative) => ({
-      creatives: summary.creatives + 1,
+      // `creatives` stays the count of ads that actually produced leads in the period;
+      // `totalAds` is the whole account, so the pair reads as "11 of 48 brought leads".
+      creatives: summary.creatives + (creative.leads > 0 ? 1 : 0),
+      totalAds: summary.totalAds + 1,
       leads: summary.leads + creative.leads,
       qualified: summary.qualified + creative.qualified,
       demoInvited: summary.demoInvited + creative.demoInvited,
       paid: summary.paid + creative.paid,
       revenue: summary.revenue + creative.revenue,
-    }), { creatives: 0, leads: 0, qualified: 0, demoInvited: 0, paid: 0, revenue: 0 }),
+    }), { creatives: 0, totalAds: 0, leads: 0, qualified: 0, demoInvited: 0, paid: 0, revenue: 0 }),
     creatives: normalizedCreatives,
     reportingRange: { from: reportingRange.from, to: reportingRange.to },
   };

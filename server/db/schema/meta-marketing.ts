@@ -78,6 +78,35 @@ export const createMetaMarketingTables = (references: {
     enrichmentAttemptsCheck: check('meta_lead_attributions_enrichment_attempts_check', sql`${table.enrichmentAttempts} >= 0`),
   }));
 
+  // Mirror of every ad in the account, so ads without a single lead stay visible.
+  const metaAds = pgTable('meta_ads', {
+    id: serial('id').primaryKey(),
+    adId: varchar('ad_id', { length: 120 }).notNull(),
+    adName: varchar('ad_name', { length: 500 }),
+    adsetId: varchar('adset_id', { length: 120 }),
+    adsetName: varchar('adset_name', { length: 500 }),
+    campaignId: varchar('campaign_id', { length: 120 }),
+    campaignName: varchar('campaign_name', { length: 500 }),
+    creativeId: varchar('creative_id', { length: 120 }),
+    creativeName: varchar('creative_name', { length: 500 }),
+    creativeTitle: text('creative_title'),
+    creativeBody: text('creative_body'),
+    mediaType: varchar('media_type', { length: 80 }),
+    hookName: varchar('hook_name', { length: 500 }),
+    thumbnailUrl: text('thumbnail_url'),
+    sourceUrl: text('source_url'),
+    effectiveStatus: varchar('effective_status', { length: 60 }),
+    adCreatedTime: timestamp('ad_created_time'),
+    rawPayload: jsonb('raw_payload'),
+    syncedAt: timestamp('synced_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  }, (table) => ({
+    adUnique: uniqueIndex('meta_ads_ad_id_unique').on(table.adId),
+    campaignIdx: index('meta_ads_campaign_idx').on(table.campaignId),
+    syncedIdx: index('meta_ads_synced_idx').on(table.syncedAt),
+  }));
+
   const metaConversionEvents = pgTable('meta_conversion_events', {
     id: serial('id').primaryKey(),
     leadId: integer('lead_id').references(() => references.leadId, { onDelete: 'set null' }),
@@ -107,5 +136,5 @@ export const createMetaMarketingTables = (references: {
     attemptCountCheck: check('meta_conversion_events_attempt_count_check', sql`${table.attemptCount} >= 0`),
   }));
 
-  return { metaLeadAttributions, metaConversionEvents };
+  return { metaLeadAttributions, metaAds, metaConversionEvents };
 };

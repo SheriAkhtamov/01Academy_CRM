@@ -561,6 +561,13 @@
       "when": 1787846400000,
       "tag": "0079_add_meta_creative_thumbnail",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1787932800000,
+      "tag": "0080_add_meta_ad_catalog",
+      "breakpoints": true
     }
   ]
 }

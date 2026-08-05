@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BadgeDollarSign,
   CircleCheckBig,
@@ -8,6 +8,7 @@ import {
   Image as ImageIcon,
   Layers,
   Play,
+  RefreshCw,
   Settings2,
   Target,
   UserRoundCheck,
@@ -26,6 +27,7 @@ import {
   type MetaAttributionData,
   type MetaCreativeRow,
 } from '@/features/marketing/meta-api';
+import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { MetaIntegrationDialog } from './MetaIntegrationDialog';
 
@@ -98,14 +100,42 @@ function CreativeThumbnail({ row, label }: { row: MetaCreativeRow; label: string
 
 export function MetaAttributionSection({ reportingQuery }: { reportingQuery: string }) {
   const { t, language } = useTranslation();
+  const queryClient = useQueryClient();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selected, setSelected] = useState<MetaCreativeRow | null>(null);
+  const [onlyWithLeads, setOnlyWithLeads] = useState(false);
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const queryKey = [...metaMarketingQueryKeys.attribution, reportingQuery];
   const { data, isLoading, isError, error, refetch } = useQuery<MetaAttributionData>({
-    queryKey: [...metaMarketingQueryKeys.attribution, reportingQuery],
+    queryKey,
     queryFn: () => metaMarketingApi.attribution(reportingQuery),
     placeholderData: (previous) => previous,
   });
+  const syncCatalog = useMutation({
+    mutationFn: metaMarketingApi.syncCatalog,
+    onSuccess: async () => {
+      toast({ title: t('metaCatalogSynced') });
+      await queryClient.invalidateQueries({ queryKey: metaMarketingQueryKeys.attribution });
+    },
+    onError: (syncError: any) => toast({
+      title: t('error'),
+      description: syncError?.message === 'metaAttributionNotConfigured'
+        ? t('metaAttributionNotConfiguredDesc')
+        : syncError?.message,
+      variant: 'destructive',
+    }),
+  });
+  const visibleCreatives = useMemo(
+    () => (onlyWithLeads ? (data?.creatives ?? []).filter((row) => row.leads > 0) : data?.creatives ?? []),
+    [data?.creatives, onlyWithLeads],
+  );
+  const statusLabel = (status?: string | null) => {
+    const normalized = (status ?? '').toUpperCase();
+    if (normalized === 'ACTIVE') return t('metaAdStatusActive');
+    if (normalized.includes('ARCHIVED') || normalized === 'DELETED') return t('leadInArchive');
+    if (!normalized) return null;
+    return t('metaAdStatusPaused');
+  };
   const money = (value: number) => `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
   const dateTime = (value?: string | null) => value
     ? new Date(value).toLocaleString(locale)
@@ -125,14 +155,30 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       accessor: (row: MetaCreativeRow) => row.hookName || row.adName || row.adId || '',
       render: (row: MetaCreativeRow) => {
         const title = row.hookName || row.adName || row.adId || t('noData');
+        const status = statusLabel(row.effectiveStatus);
         return (
-          <div className="flex max-w-80 items-center gap-3">
+          <div className={`flex max-w-96 items-center gap-3 ${row.leads > 0 ? '' : 'opacity-70'}`}>
             <CreativeThumbnail row={row} label={formatLabel(row.mediaType)} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium text-foreground" title={title}>{title}</p>
-              <p className="truncate text-xs text-muted-foreground" title={row.campaignName ?? undefined}>
-                {row.campaignName || row.adName || t('noData')}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-xs text-muted-foreground" title={row.campaignName ?? undefined}>
+                  {row.campaignName || row.adName || t('noData')}
+                </p>
+                {status ? (
+                  <Badge
+                    variant={row.effectiveStatus?.toUpperCase() === 'ACTIVE' ? 'success' : 'outline'}
+                    className="shrink-0 px-1.5 py-0 text-[10px]"
+                  >
+                    {status}
+                  </Badge>
+                ) : null}
+                {row.inCatalog === false ? (
+                  <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]" title={t('metaAdMissingFromCatalog')}>
+                    {t('metaAdMissingFromCatalog')}
+                  </Badge>
+                ) : null}
+              </div>
             </div>
             {row.sourceUrl ? (
               <a
@@ -207,7 +253,11 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
         </Alert>
       ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <AttributionMetric label={t('metaCreatives')} value={summary.creatives} icon={Clapperboard} />
+        <AttributionMetric
+          label={t('metaAdsWithLeads')}
+          value={`${summary.creatives} / ${summary.totalAds}`}
+          icon={Clapperboard}
+        />
         <AttributionMetric label={t('metaAttributedLeads')} value={summary.leads} icon={Users} />
         <AttributionMetric label={t('qualifiedLeads')} value={summary.qualified} icon={UserRoundCheck} />
         <AttributionMetric label={t('invitedToDemo')} value={summary.demoInvited} icon={Target} />
@@ -215,17 +265,35 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
         <AttributionMetric label={t('attributedRevenue')} value={money(summary.revenue)} icon={BadgeDollarSign} />
       </div>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+        <CardHeader className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{t('metaAttribution')}</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-            <Settings2 className="mr-2 size-4" />
-            {t('metaConnection')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={onlyWithLeads ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setOnlyWithLeads((previous) => !previous)}
+            >
+              {onlyWithLeads ? t('metaShowAllAds') : t('metaOnlyWithLeads')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncCatalog.mutate()}
+              disabled={syncCatalog.isPending}
+            >
+              <RefreshCw className={`mr-2 size-4 ${syncCatalog.isPending ? 'animate-spin' : ''}`} />
+              {t('metaRefreshCatalog')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+              <Settings2 className="mr-2 size-4" />
+              {t('metaConnection')}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <DataTable
             columns={columns}
-            data={data.creatives}
+            data={visibleCreatives}
             keyExtractor={(row) => row.attributionKey}
             defaultSortKey="leads"
             defaultSortDirection="desc"

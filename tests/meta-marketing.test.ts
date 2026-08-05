@@ -7,6 +7,7 @@ import {
   extractMetaReferral,
   extractMetaThumbnail,
   extractMetaUtm,
+  mapMetaAdToCatalogRow,
   metaRetryDelayMinutes,
 } from '../server/services/meta-marketing';
 
@@ -112,6 +113,60 @@ describe('Meta marketing attribution', () => {
     expect(metaRetryDelayMinutes(1)).toBe(1);
     expect(metaRetryDelayMinutes(4)).toBe(15);
     expect(metaRetryDelayMinutes(99)).toBe(720);
+  });
+});
+
+describe('Meta ad catalog', () => {
+  it('maps an ad into a catalog row with the hook, format and publication resolved', () => {
+    expect(mapMetaAdToCatalogRow({
+      id: '120200000000000001',
+      name: '[МАМА ВЫБИРАЕТ ШКОЛУ] reels 15s',
+      effective_status: 'ACTIVE',
+      created_time: '2026-07-07T10:00:00+0000',
+      campaign: { id: '23800000000000001', name: 'Мирсултан ИИ персонаж июль' },
+      adset: { id: '23800000000000002', name: 'UZ 25-45' },
+      creative: {
+        id: '23800000000000003',
+        object_type: 'VIDEO',
+        thumbnail_url: 'https://scontent.xx.fbcdn.net/v/preview.jpg',
+        instagram_permalink_url: 'https://www.instagram.com/reel/ABC123/',
+      },
+    })).toMatchObject({
+      adId: '120200000000000001',
+      campaignName: 'Мирсултан ИИ персонаж июль',
+      adsetName: 'UZ 25-45',
+      hookName: 'МАМА ВЫБИРАЕТ ШКОЛУ',
+      mediaType: 'video',
+      thumbnailUrl: 'https://scontent.xx.fbcdn.net/v/preview.jpg',
+      sourceUrl: 'https://www.instagram.com/reel/ABC123/',
+      effectiveStatus: 'ACTIVE',
+    });
+  });
+
+  it('keeps a default-named ad usable instead of dropping it', () => {
+    const row = mapMetaAdToCatalogRow({
+      id: '120200000000000009',
+      name: 'Новое объявление с целью "Лиды"',
+      creative: { object_type: 'IMAGE' },
+    });
+    expect(row.adId).toBe('120200000000000009');
+    expect(row.adName).toBe('Новое объявление с целью "Лиды"');
+    expect(row.hookName).toBeNull();
+    expect(row.mediaType).toBe('image');
+  });
+
+  it('keeps ads without leads in the attribution report', () => {
+    const analytics = read('../server/modules/academy/meta-marketing-analytics.ts');
+    // The catalog drives the row list; attribution numbers are joined onto it.
+    expect(analytics).toContain('SELECT ad_id AS attribution_key FROM meta_ads');
+    expect(analytics).toContain('LEFT JOIN meta_ads catalog ON catalog.ad_id = keys.attribution_key');
+    expect(analytics).toContain('COALESCE(stats.leads, 0)::int AS leads');
+  });
+
+  it('ships the catalog migration', () => {
+    const migration = read('../migrations/0080_add_meta_ad_catalog.sql');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "meta_ads"');
+    expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "meta_ads_ad_id_unique"');
   });
 });
 

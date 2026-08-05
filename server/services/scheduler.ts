@@ -7,6 +7,7 @@ import { runEscalations } from "./escalations";
 import {
   processMetaAttributionEnrichment,
   processMetaConversionEvents,
+  syncMetaAdCatalog,
 } from "./meta-marketing";
 
 export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
@@ -49,6 +50,17 @@ export const startScheduler = () => {
       }
     } catch (error) {
       logger.error("[scheduler] minute worker error", { error });
+    }
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
+
+  // Ad catalog — keeps every ad in the account visible, including the ones with no leads.
+  // Hourly is plenty: ads change rarely, and the Graph user rate limit is easy to exhaust.
+  cron.schedule("7 * * * *", async () => {
+    try {
+      const { synced, skipped } = await syncMetaAdCatalog();
+      if (!skipped) logger.info(`[scheduler] synced ${synced} Meta ads`);
+    } catch (error) {
+      logger.error("[scheduler] Meta ad catalog sync error", { error });
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 

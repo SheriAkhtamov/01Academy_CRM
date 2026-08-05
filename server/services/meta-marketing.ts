@@ -443,6 +443,124 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
   );
 };
 
+const META_AD_CATALOG_FIELDS = [
+  'id',
+  'name',
+  'effective_status',
+  'created_time',
+  'campaign{id,name}',
+  'adset{id,name}',
+  'creative{id,name,title,body,object_type,thumbnail_url,image_url,object_story_id,'
+  + 'effective_object_story_id,effective_instagram_media_id,instagram_story_id,'
+  + 'instagram_permalink_url,object_story_spec,asset_feed_spec}',
+].join(',');
+
+const META_AD_CATALOG_MAX_PAGES = 200;
+
+const metaAdCatalogTimestamp = (value: unknown): Date | null => {
+  const normalized = cleanText(value, 100);
+  if (!normalized) return null;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const mapMetaAdToCatalogRow = (ad: JsonObject) => {
+  const creative = isPlainObject(ad.creative) ? ad.creative : {};
+  const story = creative.object_story_spec ?? {};
+  const assetFeed = creative.asset_feed_spec ?? {};
+  const creativeTitle = firstText(creative.title, story.link_data?.name, story.video_data?.title, assetFeed.titles);
+  const creativeBody = firstText(creative.body, story.link_data?.message, story.video_data?.message, assetFeed.bodies);
+  const adName = cleanText(ad.name);
+  return {
+    adId: cleanText(ad.id, 120),
+    adName,
+    adsetId: cleanText(ad.adset?.id, 120),
+    adsetName: cleanText(ad.adset?.name),
+    campaignId: cleanText(ad.campaign?.id, 120),
+    campaignName: cleanText(ad.campaign?.name),
+    creativeId: cleanText(creative.id, 120),
+    creativeName: cleanText(creative.name),
+    creativeTitle,
+    creativeBody,
+    mediaType: creativeMediaType(creative),
+    hookName: extractMetaAdHook(adName, creative.name, creativeTitle, creativeBody),
+    thumbnailUrl: extractMetaThumbnail(creative),
+    sourceUrl: extractMetaPublication(creative).url,
+    effectiveStatus: cleanText(ad.effective_status, 60),
+    adCreatedTime: metaAdCatalogTimestamp(ad.created_time),
+  };
+};
+
+/**
+ * Pulls every ad in the account into `meta_ads`. Without it the marketing table can
+ * only ever list ads that already produced a lead, which hides the ones that flopped.
+ */
+export const syncMetaAdCatalog = async () => {
+  const config = metaConfig();
+  if (!config.marketingAccessToken || !config.adAccountId) return { synced: 0, skipped: true };
+
+  const visitedCursors = new Set<string>();
+  let after: string | null = null;
+  let synced = 0;
+
+  for (let page = 0; page < META_AD_CATALOG_MAX_PAGES; page += 1) {
+    const params = new URLSearchParams({ fields: META_AD_CATALOG_FIELDS, limit: '100' });
+    if (after) params.set('after', after);
+    const response = await fetchMetaJson<JsonObject>(
+      `act_${encodeURIComponent(config.adAccountId)}/ads?${params.toString()}`,
+    );
+    const rows = Array.isArray(response.data) ? response.data : [];
+    for (const raw of rows) {
+      if (!isPlainObject(raw)) continue;
+      const ad = mapMetaAdToCatalogRow(raw);
+      if (!ad.adId) continue;
+      await pool.query(
+        `INSERT INTO meta_ads
+           (ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
+            creative_id, creative_name, creative_title, creative_body, media_type,
+            hook_name, thumbnail_url, source_url, effective_status, ad_created_time,
+            raw_payload, synced_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW(),NOW())
+         ON CONFLICT (ad_id) DO UPDATE SET
+           ad_name = EXCLUDED.ad_name,
+           adset_id = EXCLUDED.adset_id,
+           adset_name = EXCLUDED.adset_name,
+           campaign_id = EXCLUDED.campaign_id,
+           campaign_name = EXCLUDED.campaign_name,
+           creative_id = EXCLUDED.creative_id,
+           creative_name = EXCLUDED.creative_name,
+           creative_title = EXCLUDED.creative_title,
+           creative_body = EXCLUDED.creative_body,
+           media_type = EXCLUDED.media_type,
+           hook_name = EXCLUDED.hook_name,
+           thumbnail_url = COALESCE(EXCLUDED.thumbnail_url, meta_ads.thumbnail_url),
+           source_url = COALESCE(EXCLUDED.source_url, meta_ads.source_url),
+           effective_status = EXCLUDED.effective_status,
+           ad_created_time = COALESCE(EXCLUDED.ad_created_time, meta_ads.ad_created_time),
+           raw_payload = EXCLUDED.raw_payload,
+           synced_at = NOW(),
+           updated_at = NOW()`,
+        [
+          ad.adId, ad.adName, ad.adsetId, ad.adsetName, ad.campaignId, ad.campaignName,
+          ad.creativeId, ad.creativeName, ad.creativeTitle, ad.creativeBody, ad.mediaType,
+          ad.hookName, ad.thumbnailUrl, ad.sourceUrl, ad.effectiveStatus, ad.adCreatedTime,
+          JSON.stringify(raw),
+        ],
+      );
+      synced += 1;
+    }
+
+    const nextCursor = cleanText(response.paging?.cursors?.after, 500);
+    if (!response.paging?.next || !nextCursor) break;
+    if (visitedCursors.has(nextCursor)) throw new Error('Meta ad catalog pagination loop detected');
+    visitedCursors.add(nextCursor);
+    after = nextCursor;
+  }
+
+  logger.info('Meta ad catalog synced', { synced });
+  return { synced, skipped: false };
+};
+
 const claimMetaAttributions = async (limit: number): Promise<MetaAttributionRow[]> => {
   const client = await pool.connect();
   try {

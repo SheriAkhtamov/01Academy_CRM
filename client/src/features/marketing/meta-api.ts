@@ -30,6 +30,8 @@ export type MetaCreativeRow = {
   placement?: string | null;
   sourceUrl?: string | null;
   thumbnailUrl?: string | null;
+  effectiveStatus?: string | null;
+  inCatalog?: boolean;
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
@@ -51,6 +53,7 @@ export type MetaCreativeRow = {
 export type MetaAttributionData = {
   summary: {
     creatives: number;
+    totalAds: number;
     leads: number;
     qualified: number;
     demoInvited: number;
@@ -106,4 +109,8 @@ export const metaMarketingApi = {
     'POST',
     `/api/academy/modules/marketing/meta-events/${id}/retry`,
   ),
+  syncCatalog: () => apiRequest(
+    'POST',
+    '/api/academy/modules/marketing/meta-attribution/sync',
+  ) as Promise<{ synced: number }>,
 };

@@ -26,6 +26,7 @@ import {
   getMetaMarketingIntegrationConfig,
   processMetaConversionEvents,
   retryMetaConversionEvent,
+  syncMetaAdCatalog,
 } from '../../services/meta-marketing';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
@@ -522,6 +523,18 @@ router.get('/modules/marketing/meta-attribution', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to fetch Meta attribution analytics', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch Meta attribution analytics') });
+  }
+});
+
+router.post('/modules/marketing/meta-attribution/sync', async (req, res) => {
+  if (!ensureMarketingModuleAccess(req, res)) return;
+  try {
+    const result = await syncMetaAdCatalog();
+    if (result.skipped) return res.status(409).json({ error: 'metaAttributionNotConfigured' });
+    res.json(result);
+  } catch (error: any) {
+    logger.error('Failed to sync Meta ad catalog', { error });
+    res.status(error.statusCode || 502).json({ error: getPublicErrorMessage(error, 'Failed to sync Meta ad catalog') });
   }
 });
 

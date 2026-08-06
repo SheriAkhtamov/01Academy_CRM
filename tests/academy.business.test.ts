@@ -52,11 +52,11 @@ describe("01 Academy business rules", () => {
     })).toBe(true);
   });
 
-  it("gives administration global module access", () => {
+  it("keeps administration to its own module", () => {
     expect(canAccessAcademyModule("administration", "administration")).toBe(true);
-    expect(canAccessAcademyModule("administration", "sales")).toBe(true);
-    expect(canAccessAcademyModule("administration", "marketing")).toBe(true);
-    expect(canAccessAcademyModule("administration", "teacher")).toBe(true);
+    expect(canAccessAcademyModule("administration", "sales")).toBe(false);
+    expect(canAccessAcademyModule("administration", "marketing")).toBe(false);
+    expect(canAccessAcademyModule("administration", "teacher")).toBe(false);
   });
 
   it("keeps other employees inside the assigned module", () => {
@@ -81,14 +81,20 @@ describe("01 Academy business rules", () => {
     expect(canAccessAcademyModule(employee, "marketing")).toBe(false);
   });
 
-  it("treats leadership modules as global access even when primary module differs", () => {
+  it("grants leadership rights without opening ungranted modules", () => {
     const employee = {
       module: "teacher",
       modules: ["teacher", "administration"],
     };
 
+    // Administration still marks the employee as leadership, which is what
+    // widens the view inside a module they hold — but it no longer stands in
+    // for departments nobody ticked for them.
     expect(hasLeadershipAccess(employee)).toBe(true);
-    expect(canAccessAcademyModule(employee, "marketing")).toBe(true);
+    expect(canAccessAcademyModule(employee, "administration")).toBe(true);
+    expect(canAccessAcademyModule(employee, "teacher")).toBe(true);
+    expect(canAccessAcademyModule(employee, "marketing")).toBe(false);
+    expect(canAccessAcademyModule(employee, "sales")).toBe(false);
   });
 
   it("represents leadership as all access modules instead of a separate module", () => {

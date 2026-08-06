@@ -75,10 +75,12 @@ export function canAccessAcademyModule(
   assignedModule: ModuleAccessSource,
   module: AcademyModule,
 ): boolean {
-  // Leadership modules intentionally bypass department boundaries so
-  // the head can investigate and act in any area without a second account.
-  const assignedModules = getAssignedModules(assignedModule);
-  return assignedModules.some(isLeadershipModule) || assignedModules.includes(module);
+  // A module is open only when it was granted. Administration used to stand in
+  // for every other department, which made the modules ticked on an employee
+  // disagree with the ones they could actually open; whoever needs a department
+  // is given it. Elevated rights within a granted module are a separate
+  // question, answered by hasLeadershipAccess.
+  return getAssignedModules(assignedModule).includes(module);
 }
 
 export const LEAD_STATUSES = [

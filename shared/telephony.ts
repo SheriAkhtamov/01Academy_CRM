@@ -75,6 +75,31 @@ export const sharedCallEventClaimsOwnership = (input: {
     || (Number.isFinite(talkSeconds) && talkSeconds > 0);
 };
 
+export type OnlinePbxExtensionHolder = {
+  id: number;
+  extension: string | null;
+};
+
+/**
+ * An extension names an employee only while it belongs to exactly one of them.
+ * Every manager shares the single company extension, so the number the provider
+ * reports says nothing about who was on the line and must never pick a winner —
+ * otherwise every call lands on whichever manager happens to sort first.
+ */
+export const onlinePbxExclusiveExtensionHolder = <T extends OnlinePbxExtensionHolder>(
+  holders: readonly T[],
+): T | null => (holders.length === 1 ? holders[0] : null);
+
+/**
+ * How long a call the CRM recorded stays open to be matched with the provider's
+ * own report of it. The CRM writes its row when the manager dials or answers;
+ * OnlinePBX reports the call once it is over and under its own identifier, so
+ * the two are matched on the phone number, the direction and this window. It
+ * has to outlast a ring group cycle and a normal conversation, while staying
+ * short enough that a customer calling back is not folded into the first call.
+ */
+export const ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS = 900 as const;
+
 export const isOnlinePbxExtension = (value: unknown): value is string => {
   const text = String(value ?? '').trim();
   if (!/^\d{3,4}$/.test(text)) return false;

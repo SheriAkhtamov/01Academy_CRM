@@ -5,7 +5,9 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Pool, PoolClient } from 'pg';
 import type { WebSocketEvent } from '@shared/websocket';
 import {
+  ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS,
   ONLINE_PBX_TRUNK_NUMBER,
+  onlinePbxExclusiveExtensionHolder,
   onlinePbxRoutingDestination,
   sharedCallEventClaimsOwnership,
 } from '@shared/telephony';
@@ -372,6 +374,22 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [input.clientCallId]);
+    // As on the webhook side, a dialog the provider already reported under this
+    // id is left alone: adopting another row on top of it would give two rows
+    // the same identifier.
+    const known = await client.query<{ id: number }>(
+      `SELECT id
+       FROM telephony_calls
+       WHERE client_call_id = $1 OR provider_call_id = $1
+       LIMIT 1`,
+      [input.clientCallId],
+    );
+    const reportedByProvider = known.rowCount
+      ? null
+      : await findCallReportedByProvider(client, {
+          direction: input.direction,
+          phone,
+        });
     let result = await client.query(
       `UPDATE telephony_calls
        SET client_call_id = COALESCE(client_call_id, $1),
@@ -405,9 +423,9 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            talk_seconds = GREATEST(talk_seconds, $15),
            hangup_cause = COALESCE($16, hangup_cause),
            updated_at = NOW()
-       WHERE client_call_id = $1 OR provider_call_id = $1
+       WHERE client_call_id = $1 OR provider_call_id = $1 OR id = $18
        RETURNING ${returning}`,
-      values,
+      [...values, reportedByProvider],
     );
 
     if (!result.rowCount) {
@@ -574,10 +592,14 @@ const hasValidWebhookSecret = (candidate: unknown) => {
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
 };
 
-const findManagerByExtensions = async (
+type CallOwner = {
+  id: number;
+  extension: string | null;
+};
+
+export const findManagerByExtensions = async (
   candidates: string[],
-  incoming: boolean,
-) => {
+): Promise<CallOwner | null> => {
   const extensions = [...new Set(
     candidates
       .map((candidate) => onlinePbxRoutingDestination(candidate))
@@ -585,7 +607,9 @@ const findManagerByExtensions = async (
   )];
   if (extensions.length === 0) return null;
 
-  const result = await pool.query<{ id: number; extension: string }>(
+  // Two rows are enough to know the extension is shared and therefore silent
+  // about who was on the line.
+  const result = await pool.query<CallOwner>(
     `SELECT manager.id, manager.online_pbx_extension AS extension
      FROM users manager
      WHERE manager.is_active = true
@@ -599,18 +623,70 @@ const findManagerByExtensions = async (
          )
        )
        AND manager.online_pbx_extension = ANY($1::text[])
-       AND (
-         $2::boolean = false
-         OR (
-           manager.is_online = true
-           AND manager.online_pbx_incoming_enabled = true
-         )
-       )
      ORDER BY array_position($1::text[], manager.online_pbx_extension), manager.id
+     LIMIT 2`,
+    [extensions],
+  );
+  return onlinePbxExclusiveExtensionHolder(result.rows);
+};
+
+type CorrelatedCall = {
+  id: number;
+  userId: number | null;
+  extension: string | null;
+};
+
+/**
+ * The browser and the provider identify the same conversation differently: the
+ * CRM stores the web phone dialog id the moment the manager dials or answers,
+ * while OnlinePBX reports the finished call under its own uuid. When the two
+ * ids do not coincide the rows are matched on the number, the direction and how
+ * recently the CRM saw the call, so the manager who actually handled it keeps
+ * it. Correlation reads `created_at`, written by the server, rather than
+ * `started_at`, which a browser with a skewed clock can push minutes away.
+ */
+export const findCallHandledInCrm = async (
+  executor: Queryable,
+  input: { direction: 'incoming' | 'outgoing'; phone: string },
+): Promise<CorrelatedCall | null> => {
+  const result = await executor.query<CorrelatedCall>(
+    `SELECT call.id,
+            call.user_id AS "userId",
+            COALESCE(call.extension, employee.online_pbx_extension) AS extension
+     FROM telephony_calls call
+     LEFT JOIN users employee
+       ON employee.id = call.user_id
+      AND employee.is_active = true
+     WHERE call.client_call_id IS NOT NULL
+       AND call.provider_call_id IS NULL
+       AND call.direction = $1
+       AND call.phone = $2
+       AND call.created_at >= NOW() - make_interval(secs => $3)
+     ORDER BY call.user_id IS NULL, call.created_at, call.id
      LIMIT 1`,
-    [extensions, incoming],
+    [input.direction, input.phone, ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS],
   );
   return result.rows[0] ?? null;
+};
+
+/** The mirror of {@link findCallHandledInCrm}, for a provider row that landed first. */
+const findCallReportedByProvider = async (
+  executor: Queryable,
+  input: { direction: 'incoming' | 'outgoing'; phone: string },
+): Promise<number | null> => {
+  const result = await executor.query<{ id: number }>(
+    `SELECT call.id
+     FROM telephony_calls call
+     WHERE call.provider_call_id IS NOT NULL
+       AND call.client_call_id IS NULL
+       AND call.direction = $1
+       AND call.phone = $2
+       AND call.created_at >= NOW() - make_interval(secs => $3)
+     ORDER BY call.created_at, call.id
+     LIMIT 1`,
+    [input.direction, input.phone, ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS],
+  );
+  return result.rows[0]?.id ?? null;
 };
 
 router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
@@ -648,44 +724,71 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
        )
      ORDER BY manager.id`,
   );
-  const ownerResult = await pool.query<{ id: number; extension: string }>(
-    `SELECT employee.id,
+  const knownResult = await pool.query<CorrelatedCall>(
+    `SELECT call.id,
+            call.user_id AS "userId",
             COALESCE(call.extension, employee.online_pbx_extension) AS extension
      FROM telephony_calls call
-     JOIN users employee ON employee.id = call.user_id
-     WHERE (call.provider_call_id = $1 OR call.client_call_id = $1)
-       AND employee.is_active = true
+     LEFT JOIN users employee
+       ON employee.id = call.user_id
+      AND employee.is_active = true
+     WHERE call.provider_call_id = $1 OR call.client_call_id = $1
      ORDER BY call.updated_at DESC
      LIMIT 1`,
     [providerCallId],
   );
-  let employee: { id: number; extension: string } | null = ownerResult.rows[0] ?? null;
+  const known = knownResult.rows[0] ?? null;
+  let employee: CallOwner | null = known?.userId
+    ? { id: known.userId, extension: known.extension }
+    : null;
   const trunk = ONLINE_PBX_TRUNK_NUMBER;
   const phoneDigits = candidates.find((value) => value.length >= 7 && value !== trunk) ?? '';
   const phone = normalizeOnlinePbxPhone(phoneDigits);
   if (!phone) return res.status(200).json({ ok: true, ignored: true });
 
   const direction = String(payload.direction ?? '').toLowerCase().includes('out') ? 'outgoing' : 'incoming';
-  if (!employee) {
-    employee = await findManagerByExtensions(candidates, direction === 'incoming');
-  }
   const durationSeconds = safeInteger(payload.call_duration);
   const talkSeconds = safeInteger(payload.dialog_duration);
   const status = providerEventStatus(event, talkSeconds);
-  const contactOwnerId = direction === 'outgoing'
-    || status === 'connected'
-    || talkSeconds > 0
-    ? employee?.id
-    : null;
-  const contact = await ensureContactByPhone(phone, { userId: contactOwnerId, direction });
+  const startedAtSeconds = safeInteger(payload.date);
+  const startedAt = startedAtSeconds > 0 ? new Date(startedAtSeconds * 1000) : new Date();
+
+  // The web phone already recorded who dialled or answered, so that row is both
+  // the one to merge into and the answer to "whose call is this". Only a call
+  // the provider has never reported may be adopted this way: once a row carries
+  // this uuid, pulling a second row into the same update would make both claim
+  // the identifier.
+  const handledInCrm = known
+    ? null
+    : await findCallHandledInCrm(pool, { direction, phone });
+  if (handledInCrm?.userId) {
+    employee = { id: handledInCrm.userId, extension: handledInCrm.extension };
+  }
+  if (!employee) employee = await findManagerByExtensions(candidates);
+
+  // Nobody owns a call that no one in the CRM picked up: an extension shared by
+  // the whole team cannot name the manager, and guessing one puts every call on
+  // the same person.
+  const claimsOwnership = sharedCallEventClaimsOwnership({ direction, status, talkSeconds });
+  const ownerId = claimsOwnership ? employee?.id ?? null : null;
+  if (claimsOwnership && !ownerId) {
+    // A handled call the CRM cannot put a name to means the web phone never
+    // reported it — usually because it was dialled from outside the CRM, where
+    // the shared extension makes everyone look alike.
+    logger.warn('OnlinePBX call was handled outside the CRM web phone', {
+      providerCallId,
+      direction,
+      status,
+      extensions: candidates.map((candidate) => onlinePbxRoutingDestination(candidate)).filter(Boolean),
+    });
+  }
+  const contact = await ensureContactByPhone(phone, { userId: ownerId, direction });
   if (contact.created) {
     publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
   }
-  if (direction === 'incoming' && status === 'connected' && employee) {
-    await claimUnassignedLeadForAnsweredCall(contact.leadId, employee.id);
+  if (direction === 'incoming' && status === 'connected' && ownerId) {
+    await claimUnassignedLeadForAnsweredCall(contact.leadId, ownerId);
   }
-  const startedAtSeconds = safeInteger(payload.date);
-  const startedAt = startedAtSeconds > 0 ? new Date(startedAtSeconds * 1000) : new Date();
   const endedAt = ['ended', 'failed', 'declined', 'missed'].includes(status) ? new Date() : null;
   const answeredAt = status === 'connected'
     ? new Date()
@@ -695,7 +798,7 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
 
   const values = [
     providerCallId,
-    employee?.id ?? null,
+    ownerId,
     employee?.extension
       ?? candidates.map((candidate) => onlinePbxRoutingDestination(candidate)).find(Boolean)
       ?? null,
@@ -751,9 +854,9 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
            recording_url = COALESCE($17, recording_url),
            metadata = metadata || $18::jsonb,
            updated_at = NOW()
-       WHERE provider_call_id = $1 OR client_call_id = $1
+       WHERE provider_call_id = $1 OR client_call_id = $1 OR id = $19
        RETURNING ${returning}`,
-      values,
+      [...values, handledInCrm?.id ?? null],
     );
 
     if (!result.rowCount) {

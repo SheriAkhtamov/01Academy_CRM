@@ -136,7 +136,9 @@ export const createMetaMarketingTables = (references: {
     crmStage: varchar('crm_stage', { length: 80 }).notNull(),
     eventTime: timestamp('event_time').notNull(),
     actionSource: varchar('action_source', { length: 80 }).notNull().default('business_messaging'),
-    messagingChannel: varchar('messaging_channel', { length: 40 }).notNull().default('instagram'),
+    // Null for events that did not happen in a conversation (lead-form or phone match).
+    messagingChannel: varchar('messaging_channel', { length: 40 }),
+    matchKey: varchar('match_key', { length: 40 }),
     userData: jsonb('user_data').$type<Record<string, unknown>>().notNull().default({}),
     customData: jsonb('custom_data').$type<Record<string, unknown>>().notNull().default({}),
     status: varchar('status', { length: 30 }).notNull().default('pending'),

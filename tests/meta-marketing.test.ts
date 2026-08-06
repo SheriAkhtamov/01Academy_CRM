@@ -7,6 +7,7 @@ import {
   extractMetaReferral,
   extractMetaThumbnail,
   extractMetaUtm,
+  hashMetaPhone,
   mapMetaAdToCatalogRow,
   metaRetryDelayMinutes,
 } from '../server/services/meta-marketing';
@@ -192,6 +193,47 @@ describe('Meta ad catalog', () => {
   });
 });
 
+describe('Meta CRM stage events', () => {
+  it('hashes only real phone numbers, never the Instagram placeholder', () => {
+    // sha256 of "998901234567"
+    expect(hashMetaPhone('+998 90 123-45-67')).toBe(hashMetaPhone('998901234567'));
+    expect(hashMetaPhone('+998901234567')).toMatch(/^[a-f0-9]{64}$/);
+    // The CRM stores `instagram:<id>` in the phone column for DM leads.
+    expect(hashMetaPhone('instagram:17841400000000')).toBeNull();
+    expect(hashMetaPhone('12345')).toBeNull();
+    expect(hashMetaPhone(null)).toBeNull();
+  });
+
+  it('sends an event for every stage change, not just one configured stage', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('if (!statusCode || previousStatus === statusCode) return null;');
+    // The event name comes from the CRM stage, so the pipeline drives what Meta offers.
+    expect(service).toContain('status.name AS stage_name');
+    expect(service).toContain('const eventName = cleanText(row.stage_name, 60) ?? statusCode;');
+    expect(service).not.toContain('conversionStageCode');
+  });
+
+  it('identifies the person by conversation, lead form or hashed phone', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain("matchKey: 'ig_sid'");
+    expect(service).toContain("matchKey: 'leadgen_id'");
+    expect(service).toContain("matchKey: 'phone_hash'");
+    // A phone alone is not proof the lead came from an ad, so attribution is required.
+    expect(service).toContain('if (phoneHash && row.attribution_id)');
+  });
+
+  it('omits the messaging channel for events that had no conversation', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('...(event.messaging_channel ? { messaging_channel: event.messaging_channel } : {})');
+  });
+
+  it('serves the live stage list to the integrations page', () => {
+    const operations = read('../server/modules/academy/operations.router.ts');
+    expect(operations).toContain('SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, code');
+    expect(operations).toContain('conversionStages');
+  });
+});
+
 describe('Meta integration wiring', () => {
   it('subscribes Instagram accounts to referral webhooks', () => {
     expect(read('../server/services/instagram.ts')).toContain("'messaging_referrals'");
@@ -209,8 +251,7 @@ describe('Meta integration wiring', () => {
     const exampleConfig = read('../config/app.config.example.json');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "meta_lead_attributions"');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "meta_conversion_events"');
-    expect(exampleConfig).toContain('"conversionStageCode": "demo_invited"');
-    expect(exampleConfig).toContain('"conversionEventName": "LeadSubmitted"');
+    expect(exampleConfig).not.toContain('conversionStageCode');
     expect(exampleConfig).toContain('"marketingAccessToken": ""');
     expect(exampleConfig).toContain('"capiAccessToken": ""');
   });

@@ -31,7 +31,7 @@ export function MetaIntegrationDialog({
 }) {
   const { t } = useTranslation();
   const missing = t('metaNotConfigured');
-  const mapping = `${integration?.conversionStageCode || missing} → ${integration?.conversionEventName || missing}`;
+  const stages = integration?.conversionStages ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,13 +56,29 @@ export function MetaIntegrationDialog({
           <ConfigRow label={t('metaBusinessId')} value={integration?.businessId || missing} />
           <ConfigRow label={t('metaDatasetId')} value={integration?.datasetId || missing} />
           <ConfigRow label={t('metaPageId')} value={integration?.pageId || missing} />
-          <ConfigRow label={t('metaConversionMapping')} value={mapping} />
+          <ConfigRow
+            label={t('metaConversionMapping')}
+            value={stages.length ? String(stages.length) : missing}
+          />
           <ConfigRow
             label={t('metaTestMode')}
             value={integration?.testMode ? t('metaTestModeOn') : t('metaTestModeOff')}
           />
           <ConfigRow label={t('metaRequiredPermissions')} value={t('metaRequiredPermissionsValue')} />
         </div>
+        {stages.length ? (
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+            <p className="text-sm font-medium text-foreground">{t('metaStageEventsTitle')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('metaStageEventsHint')}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {stages.map((stage) => (
+                <Badge key={stage.code} variant="outline" className="font-normal" title={stage.code}>
+                  {stage.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

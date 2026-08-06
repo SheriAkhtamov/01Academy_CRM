@@ -64,8 +64,6 @@
       "datasetId": "",
       "pageId": "",
       "apiVersion": "v25.0",
-      "conversionStageCode": "demo_invited",
-      "conversionEventName": "LeadSubmitted",
       "partnerAgent": "01Academy_CRM",
       "testEventCode": "",
       "_usdToUzsRate": "Meta bills in USD; set the UZS rate to show ad spend and cost per lead in soum. Leave 0 to keep spend in USD.",

@@ -684,6 +684,10 @@ router.get('/integrations/status', async (req, res) => {
     const integ = appConfig.integrations ?? {};
     const metaMarketing = getMetaMarketingIntegrationConfig();
     const metaLeadAds = getMetaLeadAdsIntegrationConfig();
+    // Read live: adding or renaming a stage in the CRM changes what Meta is offered.
+    const conversionStages = await query<{ code: string; name: string }>(
+      `SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, code`,
+    );
     const hasSuccessfulInboundLog = (provider: string) =>
       logs.some((log) =>
         log.provider === provider
@@ -721,7 +725,7 @@ router.get('/integrations/status', async (req, res) => {
         accountUsername: metaMarketing.pageId,
         note: 'Meta Ads attribution, Instant Forms and Conversions API',
         // Surfaced on the Integrations page so the marketing report stays free of admin diagnostics.
-        details: metaMarketing,
+        details: { ...metaMarketing, conversionStages },
       },
       {
         provider: 'onlinepbx',

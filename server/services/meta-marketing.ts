@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { appConfig } from '../config';
 import { pool } from '../db';
@@ -26,7 +27,7 @@ type MetaConversionRow = {
   event_name: string;
   event_time: Date | string;
   action_source: string;
-  messaging_channel: string;
+  messaging_channel: string | null;
   user_data: JsonObject;
   custom_data: JsonObject;
   attempt_count: number;
@@ -158,8 +159,6 @@ const metaConfig = () => {
     datasetId: config?.datasetId?.trim() ?? '',
     pageId: config?.pageId?.trim() ?? '',
     apiVersion: config?.apiVersion?.trim() || 'v25.0',
-    conversionStageCode: config?.conversionStageCode?.trim() || 'demo_invited',
-    conversionEventName: config?.conversionEventName?.trim() || 'LeadSubmitted',
     partnerAgent: config?.partnerAgent?.trim() || '01Academy_CRM',
     testEventCode: config?.testEventCode?.trim() ?? '',
     usdToUzsRate: Number(config?.usdToUzsRate ?? 0),
@@ -177,8 +176,6 @@ export const getMetaMarketingIntegrationConfig = () => {
     datasetId: config.datasetId || null,
     pageId: config.pageId || null,
     apiVersion: config.apiVersion,
-    conversionStageCode: config.conversionStageCode,
-    conversionEventName: config.conversionEventName,
     testMode: Boolean(config.testEventCode),
     ...getMetaSpendCurrency(),
   };
@@ -811,73 +808,146 @@ export const linkMetaAttributionToLead = async (
   );
 };
 
+/** Meta wants E.164 digits only; the CRM also stores placeholders like `instagram:<id>`. */
+export const hashMetaPhone = (value: unknown): string | null => {
+  const normalized = cleanText(value, 40);
+  if (!normalized || /[a-z]/i.test(normalized)) return null;
+  const digits = normalized.replace(/\D/g, '');
+  if (digits.length < 10 || digits.length > 15) return null;
+  return crypto.createHash('sha256').update(digits).digest('hex');
+};
+
+type MetaLeadIdentityRow = {
+  ig_sid: string | null;
+  instagram_business_account_id: string | null;
+  attribution_id: number | null;
+  leadgen_id: string | null;
+  ad_id: string | null;
+  campaign_id: string | null;
+  hook_name: string | null;
+  phone: string | null;
+};
+
+/**
+ * Meta can only credit a conversion to an ad if it recognises the person. Prefer the
+ * conversation id, then the lead-form id, then a hashed phone. A lead with none of
+ * those never came from Meta, so no event is sent for it.
+ */
+const resolveMetaLeadIdentity = (row: MetaLeadIdentityRow) => {
+  if (row.ig_sid && row.instagram_business_account_id) {
+    return {
+      matchKey: 'ig_sid',
+      actionSource: 'business_messaging',
+      messagingChannel: 'instagram',
+      userData: {
+        instagram_business_account_id: String(row.instagram_business_account_id),
+        ig_sid: String(row.ig_sid),
+      } as JsonObject,
+    };
+  }
+  if (row.leadgen_id) {
+    return {
+      matchKey: 'leadgen_id',
+      actionSource: 'system_generated',
+      messagingChannel: null,
+      userData: { lead_id: String(row.leadgen_id) } as JsonObject,
+    };
+  }
+  const phoneHash = hashMetaPhone(row.phone);
+  if (phoneHash && row.attribution_id) {
+    return {
+      matchKey: 'phone_hash',
+      actionSource: 'system_generated',
+      messagingChannel: null,
+      userData: { ph: [phoneHash] } as JsonObject,
+    };
+  }
+  return null;
+};
+
+/**
+ * Every pipeline stage becomes its own Meta event, so a campaign can be optimised for
+ * whichever stage matters. Stage names are read live from the CRM, so adding or removing
+ * a stage changes what Meta offers without a code change.
+ */
 export const enqueueMetaConversionForLead = async (lead: JsonObject, previousStatus?: string | null) => {
-  const config = metaConfig();
   const leadId = Number(lead?.id);
   const statusCode = cleanText(lead?.statusCode ?? lead?.status_code, 80);
   if (!Number.isSafeInteger(leadId) || leadId <= 0) return null;
-  if (statusCode !== config.conversionStageCode || previousStatus === statusCode) return null;
+  if (!statusCode || previousStatus === statusCode) return null;
 
-  const { rows: channelRows } = await pool.query(
+  const { rows } = await pool.query<MetaLeadIdentityRow & { stage_name: string | null }>(
     `SELECT channel.external_id AS ig_sid,
             channel.provider_account_id AS instagram_business_account_id,
             attribution.id AS attribution_id,
+            attribution.leadgen_id,
             attribution.ad_id,
             attribution.campaign_id,
-            attribution.hook_name
-     FROM academy_lead_channels channel
+            attribution.hook_name,
+            lead.phone,
+            status.name AS stage_name
+     FROM academy_leads lead
+     LEFT JOIN academy_lead_statuses status ON status.code = lead.status_code
      LEFT JOIN LATERAL (
-       SELECT attribution_inner.id, attribution_inner.ad_id,
-              attribution_inner.campaign_id, attribution_inner.hook_name
-       FROM meta_lead_attributions attribution_inner
-       WHERE attribution_inner.lead_id = channel.lead_id
-         AND attribution_inner.channel = 'instagram'
-       ORDER BY attribution_inner.captured_at, attribution_inner.id
+       SELECT inner_channel.external_id, inner_channel.provider_account_id
+       FROM academy_lead_channels inner_channel
+       WHERE inner_channel.lead_id = lead.id
+         AND inner_channel.channel = 'instagram'
+         AND inner_channel.external_id IS NOT NULL
+         AND BTRIM(inner_channel.external_id) <> ''
+         AND inner_channel.provider_account_id <> ''
+       ORDER BY inner_channel.updated_at DESC, inner_channel.id DESC
+       LIMIT 1
+     ) channel ON true
+     LEFT JOIN LATERAL (
+       SELECT inner_attribution.id, inner_attribution.leadgen_id, inner_attribution.ad_id,
+              inner_attribution.campaign_id, inner_attribution.hook_name
+       FROM meta_lead_attributions inner_attribution
+       WHERE inner_attribution.lead_id = lead.id
+       ORDER BY inner_attribution.captured_at, inner_attribution.id
        LIMIT 1
      ) attribution ON true
-     WHERE channel.lead_id = $1
-       AND channel.channel = 'instagram'
-       AND channel.external_id IS NOT NULL
-       AND BTRIM(channel.external_id) <> ''
-       AND channel.provider_account_id <> ''
-     ORDER BY channel.updated_at DESC, channel.id DESC
-     LIMIT 1`,
+     WHERE lead.id = $1`,
     [leadId],
   );
-  const channel = channelRows[0];
-  if (!channel) return null;
+  const row = rows[0];
+  if (!row) return null;
 
-  const eventId = `crm:${leadId}:${config.conversionStageCode}`;
-  const userData = {
-    instagram_business_account_id: String(channel.instagram_business_account_id),
-    ig_sid: String(channel.ig_sid),
-  };
+  const identity = resolveMetaLeadIdentity(row);
+  if (!identity) return null;
+
+  const eventName = cleanText(row.stage_name, 60) ?? statusCode;
+  const eventId = `crm:${leadId}:${statusCode}`;
   const customData = {
-    crm_stage: config.conversionStageCode,
-    ...(channel.ad_id ? { source_ad_id: String(channel.ad_id) } : {}),
-    ...(channel.campaign_id ? { source_campaign_id: String(channel.campaign_id) } : {}),
-    ...(channel.hook_name ? { creative_hook: String(channel.hook_name) } : {}),
+    crm_stage: statusCode,
+    ...(row.stage_name ? { crm_stage_name: cleanText(row.stage_name, 200) } : {}),
+    ...(row.ad_id ? { source_ad_id: String(row.ad_id) } : {}),
+    ...(row.campaign_id ? { source_campaign_id: String(row.campaign_id) } : {}),
+    ...(row.hook_name ? { creative_hook: String(row.hook_name) } : {}),
   };
-  const eventTime = new Date();
-  const { rows } = await pool.query(
+
+  const { rows: inserted } = await pool.query(
     `INSERT INTO meta_conversion_events
        (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
-        action_source, messaging_channel, user_data, custom_data, status, next_attempt_at)
-     VALUES ($1,$2,$3,$4,$5,$6,'business_messaging','instagram',$7,$8,'pending',NOW())
+        action_source, messaging_channel, match_key, user_data, custom_data, status, next_attempt_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',NOW())
      ON CONFLICT (event_id) DO NOTHING
      RETURNING *`,
     [
       leadId,
-      channel.attribution_id ?? null,
+      row.attribution_id ?? null,
       eventId,
-      config.conversionEventName,
-      config.conversionStageCode,
-      eventTime,
-      JSON.stringify(userData),
+      eventName,
+      statusCode,
+      new Date(),
+      identity.actionSource,
+      identity.messagingChannel,
+      identity.matchKey,
+      JSON.stringify(identity.userData),
       JSON.stringify(customData),
     ],
   );
-  return rows[0] ?? null;
+  return inserted[0] ?? null;
 };
 
 const claimMetaConversionEvents = async (limit: number): Promise<MetaConversionRow[]> => {
@@ -932,7 +1002,7 @@ const dispatchMetaConversionEvent = async (event: MetaConversionRow) => {
       event_time: Math.floor(new Date(event.event_time).getTime() / 1_000),
       event_id: event.event_id,
       action_source: event.action_source,
-      messaging_channel: event.messaging_channel,
+      ...(event.messaging_channel ? { messaging_channel: event.messaging_channel } : {}),
       user_data: event.user_data,
       custom_data: event.custom_data,
     }],

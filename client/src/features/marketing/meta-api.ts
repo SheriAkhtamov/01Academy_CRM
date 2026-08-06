@@ -9,8 +9,7 @@ export type MetaIntegrationState = {
   datasetId?: string | null;
   pageId?: string | null;
   apiVersion?: string | null;
-  conversionStageCode?: string | null;
-  conversionEventName?: string | null;
+  conversionStages?: Array<{ code: string; name: string }>;
   testMode?: boolean;
   usdToUzsRate?: number;
   convertsToUzs?: boolean;

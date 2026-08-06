@@ -62,8 +62,6 @@ interface AppConfig {
       datasetId?: string;
       pageId?: string;
       apiVersion?: string;
-      conversionStageCode?: string;
-      conversionEventName?: string;
       partnerAgent?: string;
       testEventCode?: string;
       // Meta bills this account in USD while the CRM stores every amount in UZS.

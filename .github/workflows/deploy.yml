@@ -187,8 +187,6 @@ jobs:
                           "datasetId": "",
                           "pageId": "",
                           "apiVersion": "v25.0",
-                          "conversionStageCode": "demo_invited",
-                          "conversionEventName": "LeadSubmitted",
                           "partnerAgent": "01Academy_CRM",
                           "testEventCode": "",
                           "usdToUzsRate": 0,

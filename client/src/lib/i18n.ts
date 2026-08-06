@@ -260,7 +260,12 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   metaConfigured: { en: 'Configured', ru: 'Настроено' }, metaNotConfigured: { en: 'Not configured', ru: 'Не настроено' },
   metaApiVersion: { en: 'Graph API version', ru: 'Версия Graph API' }, metaAdAccountId: { en: 'Ad account ID', ru: 'ID рекламного аккаунта' },
   metaBusinessId: { en: 'Business portfolio ID', ru: 'ID бизнес-портфолио' }, metaDatasetId: { en: 'Dataset ID', ru: 'ID набора данных (Dataset)' },
-  metaPageId: { en: 'Facebook Page ID', ru: 'ID страницы Facebook' }, metaConversionMapping: { en: 'CRM stage → Meta event', ru: 'Этап CRM → событие Meta' },
+  metaPageId: { en: 'Facebook Page ID', ru: 'ID страницы Facebook' }, metaConversionMapping: { en: 'Stages sent to Meta', ru: 'Этапов отправляется в Meta' },
+  metaStageEventsTitle: { en: 'Events available in Ads Manager', ru: 'События для выбора в Ads Manager' },
+  metaStageEventsHint: {
+    en: 'Each stage is sent as its own conversion event and can be picked as a campaign optimisation goal. The list follows the CRM pipeline — add or remove a stage and Meta follows.',
+    ru: 'Каждый этап уходит в Meta отдельным событием конверсии и доступен как цель оптимизации кампании. Список берётся из воронки CRM — добавите или удалите этап, в Meta изменится следом.',
+  },
   metaTestMode: { en: 'Test event mode', ru: 'Режим тестовых событий' }, metaTestModeOn: { en: 'Test code is active', ru: 'Тестовый код активен' },
   metaTestModeOff: { en: 'Production events', ru: 'Рабочие события' }, metaRequiredPermissions: { en: 'Required Meta permissions', ru: 'Необходимые разрешения Meta' },
   metaRequiredPermissionsValue: { en: 'Technical IDs: instagram_business_manage_messages, instagram_manage_events, ads_read', ru: 'Технические ID: instagram_business_manage_messages, instagram_manage_events, ads_read' },

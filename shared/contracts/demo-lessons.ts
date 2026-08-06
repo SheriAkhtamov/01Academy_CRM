@@ -10,8 +10,11 @@ export const DEMO_PARTICIPANT_STATUSES = [
   'cancelled',
 ] as const;
 
+export const DEMO_LESSON_MAX_CAPACITY = 100;
+
 const entityId = z.coerce.number().int().positive();
-const participantIds = (minimum: number) => z.array(entityId).min(minimum).max(100)
+const participantIds = (minimum: number) => z.array(entityId)
+  .min(minimum).max(DEMO_LESSON_MAX_CAPACITY)
   .refine((ids) => new Set(ids).size === ids.length, 'duplicateDemoParticipants');
 
 export const demoLessonMutationSchema = z.object({
@@ -22,8 +25,10 @@ export const demoLessonMutationSchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }),
   durationMinutes: z.coerce.number().int().min(15).max(480),
   format: z.enum(DEMO_LESSON_FORMATS).default('offline'),
-  capacity: z.coerce.number().int().min(1).max(100),
-  participantIds: participantIds(1),
+  // Omitted capacity is resolved on the server from the booked room (offline)
+  // or from the maximum allowed capacity (online).
+  capacity: z.coerce.number().int().min(1).max(DEMO_LESSON_MAX_CAPACITY).optional(),
+  participantIds: participantIds(0).default([]),
   notes: z.string().trim().max(2_000).nullable().optional(),
 }).superRefine((value, context) => {
   if (value.format === 'offline' && !value.roomId) {
@@ -40,7 +45,7 @@ export const demoLessonMutationSchema = z.object({
       message: 'demoOnlineRoomNotAllowed',
     });
   }
-  if (value.participantIds.length > value.capacity) {
+  if (value.capacity !== undefined && value.participantIds.length > value.capacity) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['capacity'],

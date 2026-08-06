@@ -80,8 +80,28 @@ describe('demo lessons', () => {
     expect(journal.entries.filter((entry) => entry.idx === 74)).toHaveLength(1);
   });
 
+  it('creates a demo lesson without participants and without an explicit capacity', () => {
+    const { capacity, participantIds, ...schedule } = validMutation;
+    const empty = demoLessonMutationSchema.safeParse(schedule);
+    expect(empty.success).toBe(true);
+    expect(empty.data?.participantIds).toEqual([]);
+    expect(empty.data?.capacity).toBeUndefined();
+    expect(capacity).toBe(2);
+    expect(participantIds).toHaveLength(2);
+    expect(routes).toContain('resolveDemoCapacity');
+    expect(routes).toContain('capacity: resources.capacity');
+    expect(createDialog).not.toContain("t('demoParticipants')");
+    expect(createDialog).not.toContain('demoParticipantsSelected');
+  });
+
   it('validates room, capacity and unique participants before transport', () => {
     expect(demoLessonMutationSchema.safeParse(validMutation).success).toBe(true);
+    const overCapacity = demoLessonMutationSchema.safeParse({
+      ...validMutation,
+      capacity: 1,
+    });
+    expect(overCapacity.success).toBe(false);
+    expect(overCapacity.error?.issues[0]?.message).toBe('demoCapacityExceeded');
     const noRoom = demoLessonMutationSchema.safeParse({ ...validMutation, roomId: null });
     expect(noRoom.success).toBe(false);
     expect(noRoom.error?.issues[0]?.message).toBe('demoRoomRequired');

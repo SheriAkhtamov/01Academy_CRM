@@ -6,14 +6,11 @@ import {
   CircleAlert,
   Clock3,
   LoaderCircle,
-  Search,
   UserRoundCheck,
-  UsersRound,
 } from 'lucide-react';
 import type { DemoLessonMutation } from '@shared/contracts/demo-lessons';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -24,7 +21,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -105,25 +101,22 @@ export function DemoLessonDialog({
   const [demoDate, setDemoDate] = useState('');
   const [demoTime, setDemoTime] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('60');
-  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(new Set());
-  const [leadSearch, setLeadSearch] = useState('');
   const [notes, setNotes] = useState('');
 
   const activeLeads = useMemo(
     () => leads.filter((lead) => !lead.isArchived && lead.statusCode !== 'paid'),
     [leads],
   );
-  const filteredLeads = useMemo(() => {
-    const query = leadSearch.trim().toLocaleLowerCase();
-    if (!query) return activeLeads;
-    return activeLeads.filter((lead) => (
-      lead.contactName.toLocaleLowerCase().includes(query)
-      || String(lead.studentName ?? '').toLocaleLowerCase().includes(query)
-    ));
-  }, [activeLeads, leadSearch]);
+  // The dialog only books resources: the lead it was opened from is the single
+  // participant, everyone else is enrolled later from the lead card.
+  const initialLead = useMemo(() => (
+    initialLeadId
+      ? activeLeads.find((lead) => Number(lead.id) === Number(initialLeadId)) ?? null
+      : null
+  ), [activeLeads, initialLeadId]);
   const participantIds = useMemo(
-    () => [...selectedLeadIds].sort((left, right) => left - right),
-    [selectedLeadIds],
+    () => (initialLead ? [Number(initialLead.id)] : []),
+    [initialLead],
   );
   const participantKey = participantIds.join(',');
   const scheduledAt = academyDateTime(demoDate, demoTime);
@@ -131,14 +124,10 @@ export function DemoLessonDialog({
 
   useEffect(() => {
     if (!open) return;
-    const initialLead = initialLeadId
-      ? activeLeads.find((lead) => Number(lead.id) === Number(initialLeadId))
-      : null;
     const nextCourseId = initialLead?.courseId ? String(initialLead.courseId) : '';
     const courseDuration = courses.find((course) => String(course.id) === nextCourseId)
       ?.lessonDurationMinutes;
     const defaults = defaultDemoDateTime();
-    setSelectedLeadIds(initialLead ? new Set([initialLead.id]) : new Set());
     setCourseId(nextCourseId);
     setSchoolId(initialSchoolId
       ? String(initialSchoolId)
@@ -151,9 +140,8 @@ export function DemoLessonDialog({
     setDemoTime(defaults.time);
     setDurationMinutes(String(Number(courseDuration) >= 15 ? courseDuration : 60));
     setFormat('offline');
-    setLeadSearch('');
     setNotes('');
-  }, [activeLeads, courses, initialLeadId, initialSchoolId, open]);
+  }, [courses, initialLead, initialSchoolId, open]);
 
   const availabilityRequest = useMemo(() => {
     if (
@@ -207,14 +195,6 @@ export function DemoLessonDialog({
     setFormat(value);
     if (value === 'online') setRoomId('');
   };
-  const toggleLead = (leadId: number, checked: boolean) => {
-    setSelectedLeadIds((current) => {
-      const next = new Set(current);
-      if (checked) next.add(leadId);
-      else next.delete(leadId);
-      return next;
-    });
-  };
   const unavailableLabel = (reason: string | null) => {
     if (reason === 'inactive') return t('demoResourceInactive');
     if (reason === 'too_small') return t('demoRoomTooSmallShort');
@@ -238,7 +218,6 @@ export function DemoLessonDialog({
       ...availabilityRequest,
       teacherId: Number(teacherId),
       roomId: format === 'offline' ? Number(roomId) : null,
-      capacity: participantIds.length,
       participantIds,
       notes: notes.trim() || null,
     };
@@ -274,7 +253,6 @@ export function DemoLessonDialog({
   );
   const canSubmit = Boolean(
     mutationPayload
-    && participantIds.length > 0
     && resourceAvailability.data
     && !resourceAvailability.data.participantConflict
     && resourcesSelected
@@ -286,7 +264,7 @@ export function DemoLessonDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => {
       if (!createDemo.isPending) onOpenChange(nextOpen);
     }}>
-      <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
+      <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus2 data-icon="inline-start" />
@@ -438,57 +416,6 @@ export function DemoLessonDialog({
               </p>
             )}
           </div>
-        </div>
-
-        <div className="space-y-3 rounded-xl border border-border p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="flex items-center gap-2 text-sm font-semibold">
-                <UsersRound data-icon="inline-start" />{t('demoParticipants')}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t('demoParticipantsSelected').replace('{count}', String(selectedLeadIds.size))}
-              </p>
-            </div>
-            <div className="relative w-full sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={leadSearch}
-                onChange={(event) => setLeadSearch(event.target.value)}
-                placeholder={t('searchLeadsForDemo')}
-                className="pl-9"
-              />
-            </div>
-          </div>
-          <ScrollArea className="h-44 rounded-lg border border-border">
-            <div className="grid gap-1 p-2 sm:grid-cols-2">
-              {filteredLeads.map((lead) => {
-                const checked = selectedLeadIds.has(lead.id);
-                return (
-                  <Label
-                    key={lead.id}
-                    htmlFor={`demo-lead-${lead.id}`}
-                    className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-muted focus-within:ring-2 focus-within:ring-ring"
-                  >
-                    <Checkbox
-                      id={`demo-lead-${lead.id}`}
-                      checked={checked}
-                      onCheckedChange={(value) => toggleLead(lead.id, value === true)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{lead.studentName || lead.contactName}</span>
-                      {lead.studentName ? (
-                        <span className="block truncate text-xs text-muted-foreground">{lead.contactName}</span>
-                      ) : null}
-                    </span>
-                  </Label>
-                );
-              })}
-              {filteredLeads.length === 0 ? (
-                <p className="col-span-full p-5 text-center text-sm text-muted-foreground">{t('noLeadsFound')}</p>
-              ) : null}
-            </div>
-          </ScrollArea>
         </div>
 
         <div className="space-y-2">

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  DEMO_LESSON_MAX_CAPACITY,
   demoLessonAttendanceSchema,
   demoLessonCancelSchema,
   demoLessonEnrollmentSchema,
@@ -96,6 +97,7 @@ const parseDateRange = (value: unknown, fallback: Date) => {
 };
 
 const loadMutableLeads = async (req: any, leadIds: number[], lock = false) => {
+  if (leadIds.length === 0) return [];
   const leads = await query(
     `SELECT * FROM academy_leads
      WHERE id = ANY($1::int[])
@@ -126,6 +128,7 @@ const assertParticipantAvailability = async (
   durationMinutes: number,
   excludeDemoLessonId?: number | null,
 ) => {
+  if (leadIds.length === 0) return;
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
   const [eventConflict, legacyConflict] = await Promise.all([
     queryOne(
@@ -182,6 +185,20 @@ const hasParticipantConflict = async (
   }
 };
 
+// A demo can be created with no participants, so its seat count comes from the
+// booked room (offline) or the maximum allowed capacity (online) unless the
+// caller asked for a smaller number of seats.
+const resolveDemoCapacity = (input: DemoLessonMutation, room: Row | null) => {
+  if (input.capacity) return input.capacity;
+  const seats = input.format === 'online'
+    ? DEMO_LESSON_MAX_CAPACITY
+    : Number(room?.capacity ?? 0);
+  return Math.min(
+    DEMO_LESSON_MAX_CAPACITY,
+    Math.max(1, input.participantIds.length, seats),
+  );
+};
+
 const assertDemoResources = async (
   input: DemoLessonMutation,
   excludeDemoLessonId?: number | null,
@@ -213,9 +230,6 @@ const assertDemoResources = async (
   let room: Row | null = null;
   if (input.format === 'offline') {
     room = await assertActiveRoomInSchool(Number(input.roomId), input.schoolId);
-    if (input.capacity > Number(room.capacity)) {
-      throw Object.assign(new Error('demoExceedsRoomCapacity'), { statusCode: 409 });
-    }
     await assertLessonRoomAvailable({
       schoolId: input.schoolId,
       roomId: Number(input.roomId),
@@ -224,13 +238,17 @@ const assertDemoResources = async (
       excludeDemoLessonId,
     });
   }
+  const capacity = resolveDemoCapacity(input, room);
+  if (room && capacity > Number(room.capacity)) {
+    throw Object.assign(new Error('demoExceedsRoomCapacity'), { statusCode: 409 });
+  }
   await assertParticipantAvailability(
     input.participantIds,
     startsAt,
     input.durationMinutes,
     excludeDemoLessonId,
   );
-  return { course, school, room, startsAt };
+  return { course, school, room, startsAt, capacity };
 };
 
 const syncLeadInvitation = async (
@@ -363,7 +381,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           scheduledAt: resources.startsAt,
           durationMinutes: parsed.data.durationMinutes,
           format: parsed.data.format,
-          capacity: parsed.data.capacity,
+          capacity: resources.capacity,
           status: 'scheduled',
           notes: parsed.data.notes ?? null,
           createdBy: req.user!.id,

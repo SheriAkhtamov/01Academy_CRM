@@ -391,19 +391,23 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
           phone,
         });
     let result = await client.query(
+      // $4 and $5 are pinned to text: each is both assigned to a varchar column
+      // and compared against a bare literal, and Postgres refuses a statement
+      // whose parameter it has to read as varchar in one place and text in
+      // another ("inconsistent types deduced for parameter $4").
       `UPDATE telephony_calls
        SET client_call_id = COALESCE(client_call_id, $1),
            user_id = CASE WHEN $17 THEN $2 ELSE user_id END,
            extension = $3,
-           direction = $4,
+           direction = $4::text,
            status = CASE
-             WHEN $4 = 'incoming'
+             WHEN $4::text = 'incoming'
               AND NOT $17
-              AND $5 IN ('ended', 'failed', 'declined', 'missed')
+              AND $5::text IN ('ended', 'failed', 'declined', 'missed')
               AND (user_id IS NULL OR user_id <> $2) THEN status
              WHEN status IN ('ended', 'failed', 'declined', 'missed')
-              AND $5 NOT IN ('ended', 'failed', 'declined', 'missed') THEN status
-             ELSE $5
+              AND $5::text NOT IN ('ended', 'failed', 'declined', 'missed') THEN status
+             ELSE $5::text
            END,
            phone = $6,
            contact_type = COALESCE(contact_type, $7),
@@ -413,9 +417,9 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            started_at = LEAST(started_at, $11),
            answered_at = COALESCE(answered_at, $12),
            ended_at = CASE
-             WHEN $4 = 'incoming'
+             WHEN $4::text = 'incoming'
               AND NOT $17
-              AND $5 IN ('ended', 'failed', 'declined', 'missed')
+              AND $5::text IN ('ended', 'failed', 'declined', 'missed')
               AND (user_id IS NULL OR user_id <> $2) THEN ended_at
              ELSE COALESCE($13, ended_at)
            END,
@@ -435,7 +439,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            contact_type, contact_id, contact_name, lead_id, started_at, answered_at,
            ended_at, duration_seconds, talk_seconds, hangup_cause
          )
-         VALUES ($1,CASE WHEN $17 THEN $2 ELSE NULL END,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         VALUES ($1,CASE WHEN $17 THEN $2::integer ELSE NULL::integer END,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING ${returning}`,
         values,
       );

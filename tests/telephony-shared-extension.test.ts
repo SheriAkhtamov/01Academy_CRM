@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -83,6 +84,36 @@ describe('shared OnlinePBX extension', () => {
     expect(onlinePbxExclusiveExtensionHolder([honzoda])).toBe(honzoda);
     expect(onlinePbxExclusiveExtensionHolder([honzoda, maftuna])).toBeNull();
     expect(onlinePbxExclusiveExtensionHolder([])).toBeNull();
+  });
+});
+
+// Postgres rejects a whole statement when it has to read one parameter as two
+// different types, and it does so at plan time — the pool is mocked here, so no
+// amount of unit testing reaches it. Between 2026-07-23 and 2026-08-06 that made
+// every web phone report fail with 500 "inconsistent types deduced for parameter
+// $4", which is why the journal fell back to guessing the employee. These
+// assertions pin the casts that keep each parameter to a single type.
+describe('web phone call statements', () => {
+  const source = readFileSync(
+    new URL('../server/routes/telephony.routes.ts', import.meta.url),
+    'utf8',
+  );
+
+  it('keeps the direction and status parameters to one type', () => {
+    // $4 is assigned to a varchar column and compared against a bare literal.
+    expect(source).toContain('direction = $4::text');
+    expect(source).toContain("WHEN $4::text = 'incoming'");
+    expect(source).not.toMatch(/WHEN \$4 = 'incoming'/);
+    // $5 sits in the same CASE and is pinned alongside it. The webhook
+    // statement leaves its own $5 uncast, which Postgres resolves cleanly
+    // because nothing there compares it to a literal and assigns it both.
+    expect(source).toContain('ELSE $5::text');
+    expect(source).toContain("$5::text IN ('ended', 'failed', 'declined', 'missed')");
+  });
+
+  it('keeps the conditional employee column an integer', () => {
+    expect(source).toContain('CASE WHEN $17 THEN $2::integer ELSE NULL::integer END');
+    expect(source).not.toContain('CASE WHEN $17 THEN $2 ELSE NULL END');
   });
 });
 

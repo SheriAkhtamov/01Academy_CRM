@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import {
@@ -203,6 +203,9 @@ export const academyLeadStatuses = pgTable("academy_lead_statuses", {
   isPipeline: boolean("is_pipeline").notNull().default(true),
   isSystem: boolean("is_system").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
+  // Conversion value reported to Meta for this stage. Null means "no agreed number",
+  // which sends no value rather than claiming the stage is worthless.
+  metaEventValue: bigint("meta_event_value", { mode: "number" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({

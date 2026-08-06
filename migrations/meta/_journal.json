@@ -582,6 +582,13 @@
       "when": 1788105600000,
       "tag": "0082_meta_events_all_stages",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788192000000,
+      "tag": "0083_add_stage_event_value",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import {
   extractMetaPublication,
   extractMetaReferral,
   extractMetaThumbnail,
+  buildMetaUserData,
   extractMetaUtm,
   hashMetaPhone,
   mapMetaAdToCatalogRow,
@@ -213,16 +214,42 @@ describe('Meta CRM stage events', () => {
     expect(service).not.toContain('conversionStageCode');
   });
 
+  it('sends every identifier the CRM holds so Meta can actually match the person', () => {
+    const userData = buildMetaUserData({
+      leadgen_id: '9988776655',
+      phone: '+998 90 123-45-67',
+      contact_name: 'Дилноза Каримова',
+    });
+    expect(userData.lead_id).toBe('9988776655');
+    expect(userData.ph[0]).toMatch(/^[a-f0-9]{64}$/);
+    expect(userData.fn[0]).toMatch(/^[a-f0-9]{64}$/);
+    expect(userData.ln[0]).toMatch(/^[a-f0-9]{64}$/);
+    // Names are hashed case- and punctuation-insensitively, per Meta's normalisation.
+    expect(buildMetaUserData({ contact_name: '  ДИЛНОЗА  ' }).fn)
+      .toEqual(buildMetaUserData({ contact_name: 'Дилноза' }).fn);
+    // The Instagram placeholder is not a phone and must not be hashed as one.
+    expect(buildMetaUserData({ phone: 'instagram:17841400000000' }).ph).toBeUndefined();
+  });
+
+  it('reports real money when there is any, and never invents a zero', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('paidAmount > 0 ? paidAmount : (stageValue > 0 ? stageValue : null)');
+    // A stage with no agreed value sends no value at all rather than value 0, which
+    // would teach Meta the stage is worthless.
+    expect(service).toContain("...(conversionValue !== null ? { value: conversionValue, currency: 'UZS' } : {})");
+  });
+
   it('identifies the person by lead form id or hashed phone, never the conversation', () => {
     const service = read('../server/services/meta-marketing.ts');
-    expect(service).toContain("matchKey: 'leadgen_id'");
-    expect(service).toContain("matchKey: 'phone_hash'");
     // Meta rejects custom event names on action_source business_messaging (subcode
     // 2804066), so stage-named events must never be routed through the conversation id.
     expect(service).not.toContain("matchKey: 'ig_sid'");
     expect(service).not.toContain("actionSource: 'business_messaging'");
-    // A phone alone is not proof the lead came from an ad, so attribution is required.
-    expect(service).toContain('if (phoneHash && row.attribution_id)');
+    expect(service).toContain("actionSource: 'system_generated',");
+    // Neither a phone nor a name proves the lead came from an ad; attribution does.
+    expect(service).toContain('if (!userData.lead_id && !row.attribution_id) return null;');
+    // And an event Meta cannot tie to anyone is not worth sending at all.
+    expect(service).toContain('if (!userData.lead_id && !userData.ph) return null;');
   });
 
   it('omits the messaging channel for events that had no conversation', () => {

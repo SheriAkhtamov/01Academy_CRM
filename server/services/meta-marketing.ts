@@ -821,8 +821,39 @@ export const hashMetaPhone = (value: unknown): string | null => {
   return crypto.createHash('sha256').update(digits).digest('hex');
 };
 
+/** Meta hashes are SHA256 over a lowercase, punctuation-free value. */
+const hashMetaName = (value: unknown): string | null => {
+  const normalized = cleanText(value, 120)
+    ?.toLocaleLowerCase('ru-RU')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+  if (!normalized) return null;
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+};
+
+/**
+ * Meta scores how well it can recognise the people behind the events. A lead-form id
+ * alone scores zero, so every extra identifier the CRM already holds is sent alongside it.
+ */
+export const buildMetaUserData = (row: {
+  leadgen_id?: string | null;
+  phone?: string | null;
+  contact_name?: string | null;
+}): JsonObject => {
+  const userData: JsonObject = {};
+  if (row.leadgen_id) userData.lead_id = String(row.leadgen_id);
+  const phoneHash = hashMetaPhone(row.phone);
+  if (phoneHash) userData.ph = [phoneHash];
+  const nameParts = (cleanText(row.contact_name, 200) ?? '').split(' ').filter(Boolean);
+  const firstName = hashMetaName(nameParts[0]);
+  const lastName = hashMetaName(nameParts.slice(1).join(' '));
+  if (firstName) userData.fn = [firstName];
+  if (lastName) userData.ln = [lastName];
+  return userData;
+};
+
 type MetaLeadIdentityRow = {
   attribution_id: number | null;
+  contact_name?: string | null;
   leadgen_id: string | null;
   ad_id: string | null;
   campaign_id: string | null;
@@ -841,24 +872,16 @@ type MetaLeadIdentityRow = {
  * of standard events instead. Stage-named events therefore cannot travel that way.
  */
 const resolveMetaLeadIdentity = (row: MetaLeadIdentityRow) => {
-  if (row.leadgen_id) {
-    return {
-      matchKey: 'leadgen_id',
-      actionSource: 'system_generated',
-      messagingChannel: null,
-      userData: { lead_id: String(row.leadgen_id) } as JsonObject,
-    };
-  }
-  const phoneHash = hashMetaPhone(row.phone);
-  if (phoneHash && row.attribution_id) {
-    return {
-      matchKey: 'phone_hash',
-      actionSource: 'system_generated',
-      messagingChannel: null,
-      userData: { ph: [phoneHash] } as JsonObject,
-    };
-  }
-  return null;
+  const userData = buildMetaUserData(row);
+  // A phone or a name alone is not proof the lead came from an ad; attribution is.
+  if (!userData.lead_id && !row.attribution_id) return null;
+  if (!userData.lead_id && !userData.ph) return null;
+  return {
+    matchKey: userData.lead_id ? 'leadgen_id' : 'phone_hash',
+    actionSource: 'system_generated',
+    messagingChannel: null,
+    userData,
+  };
 };
 
 /**
@@ -872,14 +895,21 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
   if (!Number.isSafeInteger(leadId) || leadId <= 0) return null;
   if (!statusCode || previousStatus === statusCode) return null;
 
-  const { rows } = await pool.query<MetaLeadIdentityRow & { stage_name: string | null }>(
+  const { rows } = await pool.query<MetaLeadIdentityRow & {
+    stage_name: string | null;
+    meta_event_value: string | number | null;
+    paid_amount: string | number | null;
+  }>(
     `SELECT attribution.id AS attribution_id,
             attribution.leadgen_id,
             attribution.ad_id,
             attribution.campaign_id,
             attribution.hook_name,
             lead.phone,
-            status.name AS stage_name
+            lead.contact_name,
+            status.name AS stage_name,
+            status.meta_event_value,
+            paid.amount_uzs AS paid_amount
      FROM academy_leads lead
      LEFT JOIN academy_lead_statuses status ON status.code = lead.status_code
      LEFT JOIN LATERAL (
@@ -890,6 +920,11 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
        ORDER BY inner_attribution.captured_at, inner_attribution.id
        LIMIT 1
      ) attribution ON true
+     LEFT JOIN LATERAL (
+       SELECT SUM(payment.amount_uzs)::bigint AS amount_uzs
+       FROM academy_payments payment
+       WHERE payment.lead_id = lead.id AND payment.status = 'paid'
+     ) paid ON true
      WHERE lead.id = $1`,
     [leadId],
   );
@@ -901,8 +936,12 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
 
   const eventName = cleanText(row.stage_name, 60) ?? statusCode;
   const eventId = `crm:${leadId}:${statusCode}`;
+  const paidAmount = Number(row.paid_amount ?? 0);
+  const stageValue = Number(row.meta_event_value ?? 0);
+  const conversionValue = paidAmount > 0 ? paidAmount : (stageValue > 0 ? stageValue : null);
   const customData = {
     crm_stage: statusCode,
+    ...(conversionValue !== null ? { value: conversionValue, currency: 'UZS' } : {}),
     ...(row.stage_name ? { crm_stage_name: cleanText(row.stage_name, 200) } : {}),
     ...(row.ad_id ? { source_ad_id: String(row.ad_id) } : {}),
     ...(row.campaign_id ? { source_campaign_id: String(row.campaign_id) } : {}),

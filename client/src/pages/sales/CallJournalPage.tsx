@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
   Clock3,
@@ -29,7 +29,6 @@ import {
 } from '@/features/telephony/api';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import {
   activeTelephonyStatuses,
@@ -88,7 +87,6 @@ export default function CallJournalPage() {
   const { t, language } = useTranslation();
   const onlinePbxCall = useOnlinePbxCall();
   const queryClient = useQueryClient();
-  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [direction, setDirection] = useState('all');
   const [status, setStatus] = useState('all');
@@ -96,7 +94,7 @@ export default function CallJournalPage() {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const journalListRef = useRef<HTMLDivElement | null>(null);
-  const autoReadAttemptedCursorRef = useRef<number | null>(null);
+  const pendingMissedCallReadRef = useRef(false);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => setPage(1), [deferredSearch, direction, status, from, to]);
@@ -128,18 +126,6 @@ export default function CallJournalPage() {
   const { data: missedCallUnread } = useQuery({
     ...missedCallUnreadQueryOptions,
   });
-  const { mutate: markMissedCallsRead } = useMutation({
-    mutationFn: telephonyApi.markMissedCallsRead,
-    onSuccess: (summary) => {
-      queryClient.setQueryData(
-        telephonyQueryKeys.missedCallUnread,
-        summary,
-      );
-    },
-    onError: () => {
-      toast({ title: t('updateFailed'), variant: 'destructive' });
-    },
-  });
 
   const dateTime = (value: string) => new Date(value).toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US', {
     day: '2-digit',
@@ -161,7 +147,7 @@ export default function CallJournalPage() {
   const missedCallsLabel = t('newMissedCallCount')
     .replace('{count}', String(missedCallCount));
 
-  // A call is considered viewed only after the journal has rendered a real
+  // A call counts as viewed only after the journal has rendered a real
   // (non-placeholder) list containing that unread call. This avoids clearing
   // the counter merely because navigation started or a stale page was visible.
   useEffect(() => {
@@ -171,19 +157,31 @@ export default function CallJournalPage() {
       || missedCallCount <= 0
       || lastSeenMissedCallId === null
       || !hasVisibleUnreadMissedCalls
-      || autoReadAttemptedCursorRef.current === lastSeenMissedCallId
     ) return;
 
-    autoReadAttemptedCursorRef.current = lastSeenMissedCallId;
-    markMissedCallsRead();
+    pendingMissedCallReadRef.current = true;
   }, [
     hasVisibleUnreadMissedCalls,
     journalQuery.isPlaceholderData,
     journalQuery.isSuccess,
     lastSeenMissedCallId,
-    markMissedCallsRead,
     missedCallCount,
   ]);
+
+  // The badges stay lit for the whole visit: what was seen is reported as read
+  // when the manager leaves the journal, so the red counter disappears on the
+  // way out instead of vanishing under the cursor on the way in.
+  useEffect(() => () => {
+    if (!pendingMissedCallReadRef.current) return;
+    pendingMissedCallReadRef.current = false;
+    telephonyApi.markMissedCallsRead()
+      .then((summary) => {
+        queryClient.setQueryData(telephonyQueryKeys.missedCallUnread, summary);
+      })
+      .catch(() => {
+        queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread });
+      });
+  }, [queryClient]);
 
   return (
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">

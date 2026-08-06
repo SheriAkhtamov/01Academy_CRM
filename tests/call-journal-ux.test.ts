@@ -57,9 +57,21 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('const hasVisibleUnreadMissedCalls = items.some');
     expect(callJournal).toContain('!journalQuery.isSuccess');
     expect(callJournal).toContain('journalQuery.isPlaceholderData');
-    expect(callJournal).toContain('autoReadAttemptedCursorRef.current = lastSeenMissedCallId;');
-    expect(callJournal).toContain('markMissedCallsRead();');
+    expect(callJournal).toContain('pendingMissedCallReadRef.current = true;');
     expect(callJournal).not.toContain("t('markMissedCallsRead')");
+  });
+
+  it('keeps the red counter lit until the manager leaves the journal', () => {
+    const seenEffect = callJournal.indexOf('pendingMissedCallReadRef.current = true;');
+    const leaveEffect = callJournal.indexOf('useEffect(() => () => {');
+
+    expect(seenEffect).toBeGreaterThan(0);
+    expect(leaveEffect).toBeGreaterThan(seenEffect);
+    // The request belongs to the unmount cleanup, so nothing clears the badge
+    // while the journal is still on screen.
+    expect(callJournal.indexOf('telephonyApi.markMissedCallsRead()')).toBeGreaterThan(leaveEffect);
+    expect(callJournal).toContain('if (!pendingMissedCallReadRef.current) return;');
+    expect(callJournal).toContain('queryClient.setQueryData(telephonyQueryKeys.missedCallUnread, summary);');
   });
 
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {

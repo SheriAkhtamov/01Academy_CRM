@@ -226,7 +226,11 @@ const fetchMetaJson = async <T>(
       }
     }
     if (!response.ok || parsed?.error) {
-      const message = cleanText(parsed?.error?.message, 1_500) ?? `Meta API request failed (${response.status})`;
+      const error = parsed?.error ?? {};
+      const message = [
+        cleanText(error.message, 500) ?? `Meta API request failed (${response.status})`,
+        cleanText(error.error_user_msg, 900),
+      ].filter(Boolean).join(' — ');
       throw new Error(message);
     }
     return parsed as T;
@@ -818,8 +822,6 @@ export const hashMetaPhone = (value: unknown): string | null => {
 };
 
 type MetaLeadIdentityRow = {
-  ig_sid: string | null;
-  instagram_business_account_id: string | null;
   attribution_id: number | null;
   leadgen_id: string | null;
   ad_id: string | null;
@@ -829,22 +831,16 @@ type MetaLeadIdentityRow = {
 };
 
 /**
- * Meta can only credit a conversion to an ad if it recognises the person. Prefer the
- * conversation id, then the lead-form id, then a hashed phone. A lead with none of
- * those never came from Meta, so no event is sent for it.
+ * Meta can only credit a conversion to an ad if it recognises the person: the lead-form
+ * id first, then a hashed phone. Both require ad attribution, so a lead that never came
+ * from Meta produces no event.
+ *
+ * The Instagram conversation id is deliberately unused here. It only works with
+ * action_source `business_messaging`, and Meta rejects custom event names on that source
+ * ("Недействительный тип события переписки", subcode 2804066) — it accepts a short list
+ * of standard events instead. Stage-named events therefore cannot travel that way.
  */
 const resolveMetaLeadIdentity = (row: MetaLeadIdentityRow) => {
-  if (row.ig_sid && row.instagram_business_account_id) {
-    return {
-      matchKey: 'ig_sid',
-      actionSource: 'business_messaging',
-      messagingChannel: 'instagram',
-      userData: {
-        instagram_business_account_id: String(row.instagram_business_account_id),
-        ig_sid: String(row.ig_sid),
-      } as JsonObject,
-    };
-  }
   if (row.leadgen_id) {
     return {
       matchKey: 'leadgen_id',
@@ -877,9 +873,7 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
   if (!statusCode || previousStatus === statusCode) return null;
 
   const { rows } = await pool.query<MetaLeadIdentityRow & { stage_name: string | null }>(
-    `SELECT channel.external_id AS ig_sid,
-            channel.provider_account_id AS instagram_business_account_id,
-            attribution.id AS attribution_id,
+    `SELECT attribution.id AS attribution_id,
             attribution.leadgen_id,
             attribution.ad_id,
             attribution.campaign_id,
@@ -888,17 +882,6 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
             status.name AS stage_name
      FROM academy_leads lead
      LEFT JOIN academy_lead_statuses status ON status.code = lead.status_code
-     LEFT JOIN LATERAL (
-       SELECT inner_channel.external_id, inner_channel.provider_account_id
-       FROM academy_lead_channels inner_channel
-       WHERE inner_channel.lead_id = lead.id
-         AND inner_channel.channel = 'instagram'
-         AND inner_channel.external_id IS NOT NULL
-         AND BTRIM(inner_channel.external_id) <> ''
-         AND inner_channel.provider_account_id <> ''
-       ORDER BY inner_channel.updated_at DESC, inner_channel.id DESC
-       LIMIT 1
-     ) channel ON true
      LEFT JOIN LATERAL (
        SELECT inner_attribution.id, inner_attribution.leadgen_id, inner_attribution.ad_id,
               inner_attribution.campaign_id, inner_attribution.hook_name

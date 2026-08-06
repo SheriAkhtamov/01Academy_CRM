@@ -213,11 +213,14 @@ describe('Meta CRM stage events', () => {
     expect(service).not.toContain('conversionStageCode');
   });
 
-  it('identifies the person by conversation, lead form or hashed phone', () => {
+  it('identifies the person by lead form id or hashed phone, never the conversation', () => {
     const service = read('../server/services/meta-marketing.ts');
-    expect(service).toContain("matchKey: 'ig_sid'");
     expect(service).toContain("matchKey: 'leadgen_id'");
     expect(service).toContain("matchKey: 'phone_hash'");
+    // Meta rejects custom event names on action_source business_messaging (subcode
+    // 2804066), so stage-named events must never be routed through the conversation id.
+    expect(service).not.toContain("matchKey: 'ig_sid'");
+    expect(service).not.toContain("actionSource: 'business_messaging'");
     // A phone alone is not proof the lead came from an ad, so attribution is required.
     expect(service).toContain('if (phoneHash && row.attribution_id)');
   });
@@ -225,6 +228,11 @@ describe('Meta CRM stage events', () => {
   it('omits the messaging channel for events that had no conversation', () => {
     const service = read('../server/services/meta-marketing.ts');
     expect(service).toContain('...(event.messaging_channel ? { messaging_channel: event.messaging_channel } : {})');
+  });
+
+  it('surfaces the actionable half of a Meta error, not just "Invalid parameter"', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('cleanText(error.error_user_msg, 900)');
   });
 
   it('serves the live stage list to the integrations page', () => {

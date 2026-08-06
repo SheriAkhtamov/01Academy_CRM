@@ -55,6 +55,16 @@ export type MetaCreativeRow = {
   lastCapturedAt?: string | null;
 };
 
+export type MetaFormRow = {
+  formId: string;
+  formName?: string | null;
+  leads: number;
+  qualified: number;
+  demoInvited: number;
+  paid: number;
+  revenue: number;
+};
+
 export type MetaAttributionData = {
   summary: {
     creatives: number;
@@ -67,6 +77,7 @@ export type MetaAttributionData = {
     spend: number;
   };
   creatives: MetaCreativeRow[];
+  forms: MetaFormRow[];
   spendCurrency: 'UZS' | 'USD';
   integration: MetaIntegrationState;
 };

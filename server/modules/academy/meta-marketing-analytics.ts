@@ -178,7 +178,70 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
     };
   });
 
+  // Which Instant Form a lead filled in is a separate question from which ad showed it,
+  // so the forms are counted on their own rather than folded into the ad rows.
+  const forms = await query(
+    `WITH stage_thresholds AS (
+       SELECT
+         COALESCE(MAX(sort_order) FILTER (WHERE code = 'qualified'), 30) AS qualified_sort,
+         COALESCE(MAX(sort_order) FILTER (WHERE code = 'demo_invited'), 40) AS demo_sort
+       FROM academy_lead_statuses
+     ),
+     selected AS (
+       SELECT DISTINCT ON (attribution.lead_id)
+              attribution.lead_id, attribution.form_id, attribution.leadgen_id
+       FROM meta_lead_attributions attribution
+       WHERE attribution.lead_id IS NOT NULL
+         AND attribution.form_id IS NOT NULL
+         AND attribution.captured_at >= $1
+         AND attribution.captured_at < $2
+       ORDER BY attribution.lead_id, attribution.captured_at, attribution.id
+     )
+     SELECT
+       selected.form_id,
+       MAX(record.source_sheet) AS form_name,
+       COUNT(DISTINCT selected.lead_id)::int AS leads,
+       COUNT(DISTINCT selected.lead_id) FILTER (
+         WHERE EXISTS (
+           SELECT 1 FROM academy_lead_stage_history history
+           JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
+           WHERE history.lead_id = selected.lead_id
+             AND history_status.is_pipeline = true
+             AND history_status.sort_order >= thresholds.qualified_sort
+         )
+       )::int AS qualified,
+       COUNT(DISTINCT selected.lead_id) FILTER (
+         WHERE EXISTS (
+           SELECT 1 FROM academy_lead_stage_history history
+           JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
+           WHERE history.lead_id = selected.lead_id
+             AND history_status.is_pipeline = true
+             AND history_status.sort_order >= thresholds.demo_sort
+         )
+       )::int AS demo_invited,
+       COUNT(DISTINCT selected.lead_id) FILTER (WHERE payment.revenue > 0)::int AS paid,
+       COALESCE(SUM(payment.revenue), 0)::bigint AS revenue
+     FROM selected
+     CROSS JOIN stage_thresholds thresholds
+     LEFT JOIN LATERAL (
+       SELECT record_inner.source_sheet
+       FROM academy_lead_import_records record_inner
+       WHERE record_inner.provider = 'meta_lead_ads_live'
+         AND record_inner.external_id = selected.leadgen_id
+       LIMIT 1
+     ) record ON true
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(payment_inner.amount_uzs) FILTER (WHERE payment_inner.status = 'paid'), 0)::bigint AS revenue
+       FROM academy_payments payment_inner
+       WHERE payment_inner.lead_id = selected.lead_id
+     ) payment ON true
+     GROUP BY selected.form_id
+     ORDER BY COUNT(DISTINCT selected.lead_id) DESC`,
+    [reportingRange.start, reportingRange.end],
+  );
+
   return {
+    forms,
     summary: normalizedCreatives.reduce((summary, creative) => ({
       // `creatives` stays the count of ads that actually produced leads in the period;
       // `totalAds` is the whole account, so the pair reads as "11 of 48 brought leads".

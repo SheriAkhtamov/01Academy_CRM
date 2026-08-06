@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Image as ImageIcon,
   Layers,
+  Newspaper,
   Play,
   RefreshCw,
   Settings2,
@@ -27,6 +28,7 @@ import {
   metaMarketingQueryKeys,
   type MetaAttributionData,
   type MetaCreativeRow,
+  type MetaFormRow,
 } from '@/features/marketing/meta-api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -59,6 +61,7 @@ const mediaTypeIcon = (mediaType?: string | null) => {
   if (mediaType === 'video') return Play;
   if (mediaType === 'image') return ImageIcon;
   if (mediaType === 'carousel') return Layers;
+  if (mediaType === 'share') return Newspaper;
   return Clapperboard;
 };
 
@@ -151,6 +154,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     if (value === 'video') return t('mediaVideo');
     if (value === 'image') return t('creativeImage');
     if (value === 'carousel') return t('creativeCarousel');
+    if (value === 'share') return t('creativeShare');
     return t('creativeUnknown');
   };
 
@@ -256,6 +260,33 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     },
   ];
 
+  const formColumns = [
+    {
+      key: 'form',
+      header: t('metaFormName'),
+      accessor: (row: MetaFormRow) => row.formName || row.formId,
+      render: (row: MetaFormRow) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{row.formName || t('metaFormUnknown')}</p>
+          <p className="truncate font-mono text-xs text-muted-foreground">{row.formId}</p>
+        </div>
+      ),
+      sortable: true,
+    },
+    { key: 'leads', header: t('metaAttributedLeads'), accessor: (row: MetaFormRow) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'qualified', header: t('qualifiedLeads'), accessor: (row: MetaFormRow) => row.qualified, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'demoInvited', header: t('invitedToDemo'), accessor: (row: MetaFormRow) => row.demoInvited, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'paid', header: t('paidLeads'), accessor: (row: MetaFormRow) => row.paid, sortable: true, cellClassName: 'tabular-nums' },
+    {
+      key: 'revenue',
+      header: t('attributedRevenue'),
+      accessor: (row: MetaFormRow) => row.revenue,
+      render: (row: MetaFormRow) => money(row.revenue),
+      sortable: true,
+      cellClassName: 'tabular-nums font-medium',
+    },
+  ];
+
   if (isLoading || !data) {
     return <div className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>;
   }
@@ -327,6 +358,26 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
               <div className="py-14 text-center">
                 <p className="font-medium text-foreground">{t('metaNoAttribution')}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{t('metaNoAttributionDesc')}</p>
+              </div>
+            )}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle>{t('metaFormsTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={formColumns}
+            data={data.forms ?? []}
+            keyExtractor={(row) => row.formId}
+            defaultSortKey="leads"
+            defaultSortDirection="desc"
+            emptyState={(
+              <div className="py-10 text-center">
+                <p className="text-sm text-muted-foreground">{t('metaNoAttribution')}</p>
               </div>
             )}
           />

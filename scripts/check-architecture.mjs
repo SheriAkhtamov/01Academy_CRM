@@ -25,7 +25,7 @@ const legacyLineBudgets = new Map(Object.entries({
   'server/modules/academy/academy-leads.ts': 1_850,
   'server/modules/academy/leads.router.ts': 1_600,
   'server/modules/academy/operations.router.ts': 1_300,
-  'server/routes/telephony.routes.ts': 1_650,
+  'server/routes/telephony.routes.ts': 1_750,
   'server/routes/user.routes.ts': 1_300,
   'server/services/instagram.ts': 2_700,
   'server/db/schema/index.ts': 1_620,

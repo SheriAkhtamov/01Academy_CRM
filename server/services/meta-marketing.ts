@@ -851,6 +851,12 @@ export const buildMetaUserData = (row: {
   return userData;
 };
 
+export const buildMetaCrmCustomData = (leadEventSource: unknown, data: JsonObject = {}): JsonObject => ({
+  ...data,
+  event_source: 'crm',
+  lead_event_source: cleanText(leadEventSource, 120) ?? '01Academy_CRM',
+});
+
 type MetaLeadIdentityRow = {
   attribution_id: number | null;
   contact_name?: string | null;
@@ -862,9 +868,8 @@ type MetaLeadIdentityRow = {
 };
 
 /**
- * Meta can only credit a conversion to an ad if it recognises the person: the lead-form
- * id first, then a hashed phone. Both require ad attribution, so a lead that never came
- * from Meta produces no event.
+ * Conversion Leads CRM events only support the 15-16 digit Meta Lead ID downloaded with
+ * an Instant Form submission. Instagram messaging conversions use a different payload.
  *
  * The Instagram conversation id is deliberately unused here. It only works with
  * action_source `business_messaging`, and Meta rejects custom event names on that source
@@ -873,14 +878,12 @@ type MetaLeadIdentityRow = {
  */
 const resolveMetaLeadIdentity = (row: MetaLeadIdentityRow) => {
   const userData = buildMetaUserData(row);
-  // A phone or a name alone is not proof the lead came from an ad; attribution is.
-  if (!userData.lead_id && !row.attribution_id) return null;
-  if (!userData.lead_id && !userData.ph) return null;
+  if (!userData.lead_id) return null;
   return {
-    matchKey: userData.lead_id ? 'leadgen_id' : 'phone_hash',
+    matchKey: 'leadgen_id',
     actionSource: 'system_generated',
     messagingChannel: null,
-    userData,
+    userData: { lead_id: userData.lead_id },
   };
 };
 
@@ -939,14 +942,14 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
   const paidAmount = Number(row.paid_amount ?? 0);
   const stageValue = Number(row.meta_event_value ?? 0);
   const conversionValue = paidAmount > 0 ? paidAmount : (stageValue > 0 ? stageValue : null);
-  const customData = {
+  const customData = buildMetaCrmCustomData(metaConfig().partnerAgent, {
     crm_stage: statusCode,
     ...(conversionValue !== null ? { value: conversionValue, currency: 'UZS' } : {}),
     ...(row.stage_name ? { crm_stage_name: cleanText(row.stage_name, 200) } : {}),
     ...(row.ad_id ? { source_ad_id: String(row.ad_id) } : {}),
     ...(row.campaign_id ? { source_campaign_id: String(row.campaign_id) } : {}),
     ...(row.hook_name ? { creative_hook: String(row.hook_name) } : {}),
-  };
+  });
 
   const { rows: inserted } = await pool.query(
     `INSERT INTO meta_conversion_events
@@ -970,6 +973,86 @@ export const enqueueMetaConversionForLead = async (lead: JsonObject, previousSta
     ],
   );
   return inserted[0] ?? null;
+};
+
+export const enqueueRecentMetaCrmHistory = async () => {
+  const config = metaConfig();
+  if (!config.capiAccessToken || !config.datasetId) return 0;
+
+  const { rows } = await pool.query<{ count: number }>(
+    `WITH eligible AS (
+       SELECT history.id AS history_id,
+              history.lead_id,
+              history.to_status_code,
+              history.entered_at,
+              status.name AS stage_name,
+              attribution.id AS attribution_id,
+              attribution.leadgen_id,
+              attribution.ad_id,
+              attribution.campaign_id,
+              attribution.hook_name
+       FROM academy_lead_stage_history history
+       JOIN academy_lead_statuses status ON status.code = history.to_status_code
+       JOIN LATERAL (
+         SELECT inner_attribution.id,
+                inner_attribution.leadgen_id,
+                inner_attribution.ad_id,
+                inner_attribution.campaign_id,
+                inner_attribution.hook_name,
+                inner_attribution.captured_at
+         FROM meta_lead_attributions inner_attribution
+         WHERE inner_attribution.lead_id = history.lead_id
+           AND inner_attribution.leadgen_id ~ '^[0-9]{15,16}$'
+         ORDER BY inner_attribution.captured_at, inner_attribution.id
+         LIMIT 1
+       ) attribution ON true
+       WHERE history.entered_at >= NOW() - INTERVAL '7 days'
+         AND history.entered_at <= NOW()
+         AND history.entered_at >= attribution.captured_at
+         AND NOT EXISTS (
+           SELECT 1
+           FROM meta_conversion_events existing
+           WHERE existing.lead_id = history.lead_id
+             AND existing.crm_stage = history.to_status_code
+             AND existing.custom_data ->> 'event_source' = 'crm'
+             AND NULLIF(BTRIM(existing.custom_data ->> 'lead_event_source'), '') IS NOT NULL
+             AND existing.event_time BETWEEN history.entered_at - INTERVAL '2 minutes'
+                                         AND history.entered_at + INTERVAL '2 minutes'
+         )
+     ), inserted AS (
+       INSERT INTO meta_conversion_events
+         (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
+          action_source, messaging_channel, match_key, user_data, custom_data,
+          status, next_attempt_at)
+       SELECT eligible.lead_id,
+              eligible.attribution_id,
+              'crm-history:' || eligible.history_id,
+              LEFT(COALESCE(NULLIF(BTRIM(eligible.stage_name), ''), eligible.to_status_code), 60),
+              eligible.to_status_code,
+              eligible.entered_at,
+              'system_generated',
+              NULL,
+              'leadgen_id',
+              jsonb_build_object('lead_id', eligible.leadgen_id),
+              jsonb_strip_nulls(jsonb_build_object(
+                'event_source', 'crm',
+                'lead_event_source', $1::text,
+                'crm_stage', eligible.to_status_code,
+                'crm_stage_name', eligible.stage_name,
+                'source_ad_id', eligible.ad_id,
+                'source_campaign_id', eligible.campaign_id,
+                'creative_hook', eligible.hook_name
+              )),
+              'pending',
+              NOW()
+       FROM eligible
+       ON CONFLICT (event_id) DO NOTHING
+       RETURNING id
+     )
+     SELECT COUNT(*)::int AS count FROM inserted`,
+    [config.partnerAgent],
+  );
+  return Number(rows[0]?.count ?? 0);
 };
 
 const claimMetaConversionEvents = async (limit: number): Promise<MetaConversionRow[]> => {

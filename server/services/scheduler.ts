@@ -5,6 +5,7 @@ import { runAutomations } from "./automations";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
 import {
+  enqueueRecentMetaCrmHistory,
   processMetaAttributionEnrichment,
   processMetaConversionEvents,
   syncMetaAdCatalog,
@@ -36,6 +37,17 @@ export const startScheduler = () => {
   if (started) return;
   started = true;
 
+  const syncRecentMetaCrmHistory = async () => {
+    try {
+      const queued = await enqueueRecentMetaCrmHistory();
+      if (queued > 0) logger.info(`[scheduler] queued ${queued} recent Meta CRM events`);
+    } catch (error) {
+      logger.error("[scheduler] Meta CRM history sync error", { error });
+    }
+  };
+
+  void syncRecentMetaCrmHistory();
+
   // Meta worker — enriches attribution and delivers queued CAPI events.
   cron.schedule("* * * * *", async () => {
     try {
@@ -66,6 +78,11 @@ export const startScheduler = () => {
       logger.error("[scheduler] Meta ad catalog sync error", { error });
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
+
+  cron.schedule("5 * * * *", syncRecentMetaCrmHistory, {
+    timezone: SCHEDULER_TIME_ZONE,
+    noOverlap: true,
+  });
 
   // The escalation monitor makes overdue work and cash risks push themselves to leadership.
   cron.schedule("0 * * * *", async () => {

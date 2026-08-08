@@ -17,6 +17,7 @@ vi.mock("../server/services/escalations", () => ({ runEscalations: mocks.runEsca
 describe("scheduler timezone", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.poolQuery.mockResolvedValue({ rows: [{ count: 0 }] });
   });
 
   it("schedules every job explicitly in the academy timezone without overlap", async () => {
@@ -27,13 +28,14 @@ describe("scheduler timezone", () => {
     startScheduler();
 
     expect(SCHEDULER_TIME_ZONE).toBe("Asia/Tashkent");
-    expect(mocks.schedule).toHaveBeenCalledTimes(4);
+    expect(mocks.schedule).toHaveBeenCalledTimes(5);
     for (const call of mocks.schedule.mock.calls) {
       expect(call[2]).toEqual({ timezone: "Asia/Tashkent", noOverlap: true });
     }
     expect(mocks.schedule.mock.calls.map((call) => call[0])).toEqual([
       "* * * * *",
       "7 * * * *",
+      "5 * * * *",
       "0 * * * *",
       "0 9 * * *",
     ]);

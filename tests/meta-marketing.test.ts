@@ -7,6 +7,7 @@ import {
   extractMetaReferral,
   extractMetaThumbnail,
   buildMetaUserData,
+  buildMetaCrmCustomData,
   extractMetaUtm,
   hashMetaPhone,
   mapMetaAdToCatalogRow,
@@ -195,6 +196,28 @@ describe('Meta ad catalog', () => {
 });
 
 describe('Meta CRM stage events', () => {
+  it('marks every stage event as a Conversion Leads CRM event', () => {
+    expect(buildMetaCrmCustomData('01Academy CRM', { crm_stage: 'qualified' })).toEqual({
+      crm_stage: 'qualified',
+      event_source: 'crm',
+      lead_event_source: '01Academy CRM',
+    });
+    expect(buildMetaCrmCustomData('  ', { event_source: 'website' })).toEqual({
+      event_source: 'crm',
+      lead_event_source: '01Academy_CRM',
+    });
+  });
+
+  it('recovers accurate recent stage history for Meta validation', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('FROM academy_lead_stage_history history');
+    expect(service).toContain("history.entered_at >= NOW() - INTERVAL '7 days'");
+    expect(service).toContain("inner_attribution.leadgen_id ~ '^[0-9]{15,16}$'");
+    expect(service).toContain("'crm-history:' || eligible.history_id");
+    expect(service).toContain("'event_source', 'crm'");
+    expect(service).toContain("'lead_event_source', $1::text");
+  });
+
   it('hashes only real phone numbers, never the Instagram placeholder', () => {
     // sha256 of "998901234567"
     expect(hashMetaPhone('+998 90 123-45-67')).toBe(hashMetaPhone('998901234567'));
@@ -239,17 +262,16 @@ describe('Meta CRM stage events', () => {
     expect(service).toContain("...(conversionValue !== null ? { value: conversionValue, currency: 'UZS' } : {})");
   });
 
-  it('identifies the person by lead form id or hashed phone, never the conversation', () => {
+  it('uses only a real lead form id for Conversion Leads CRM events', () => {
     const service = read('../server/services/meta-marketing.ts');
     // Meta rejects custom event names on action_source business_messaging (subcode
     // 2804066), so stage-named events must never be routed through the conversation id.
     expect(service).not.toContain("matchKey: 'ig_sid'");
     expect(service).not.toContain("actionSource: 'business_messaging'");
     expect(service).toContain("actionSource: 'system_generated',");
-    // Neither a phone nor a name proves the lead came from an ad; attribution does.
-    expect(service).toContain('if (!userData.lead_id && !row.attribution_id) return null;');
-    // And an event Meta cannot tie to anyone is not worth sending at all.
-    expect(service).toContain('if (!userData.lead_id && !userData.ph) return null;');
+    expect(service).toContain('if (!userData.lead_id) return null;');
+    expect(service).toContain("matchKey: 'leadgen_id'");
+    expect(service).toContain('userData: { lead_id: userData.lead_id }');
   });
 
   it('omits the messaging channel for events that had no conversation', () => {

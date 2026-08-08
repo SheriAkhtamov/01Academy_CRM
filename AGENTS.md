@@ -1,12 +1,5 @@
 # Правила проекта (AGENTS.md)
 
-## Domain Terminology Rules
-
-### 1. Модули приложения (запрет термина Workspace)
-- Разделы доступа CRM (`administration`, `sales`, `teacher`, `marketing`, `finance`) **ОБЯЗАНЫ** называться модулями (`module` / `modules`) в интерфейсе, TypeScript-идентификаторах, API, URL и актуальной схеме БД.
-- Для этой доменной сущности **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО** вводить новые названия `workspace` / `workspaces`.
-- Старый термин допустим только в неизменяемых исторических SQL-миграциях и в миграции `0073_rename_workspaces_to_modules.sql`, которая переименовывает прежние объекты БД.
-
 ## UI & Layout Rules
 
 ### 1. Сохранение модальных окон (Dialog / Modal / Sheet)

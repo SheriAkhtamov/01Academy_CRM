@@ -19,6 +19,7 @@ import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
 import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
+import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
 import {
   LeadStageStepper,
@@ -390,6 +391,7 @@ export function LeadDetailSheet({
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
+  const [demoEnrollmentOpen, setDemoEnrollmentOpen] = useState(false);
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
@@ -924,7 +926,7 @@ export function LeadDetailSheet({
                   </Button>
                 ) : null}
                 {!lead.isArchived && lead.statusCode !== 'paid' ? (
-                  <Button type="button" size="sm" variant="outline" onClick={() => setCreateDemoOpen(true)}>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
                     <CalendarPlus2 data-icon="inline-start" />
                     {t('bookDemoLesson')}
                   </Button>
@@ -1730,6 +1732,23 @@ export function LeadDetailSheet({
             hydratedTransientKey.current = null;
             await leadQuery.refetch();
             onChanged();
+          }}
+        />
+      ) : null}
+      {lead ? (
+        <DemoLessonEnrollmentDialog
+          open={demoEnrollmentOpen}
+          onOpenChange={setDemoEnrollmentOpen}
+          lead={{
+            id: lead.id,
+            contactName: lead.contactName,
+            studentName: lead.students?.[0]?.studentName,
+            courseId: lead.courseId,
+            schoolId: lead.schoolId,
+          }}
+          onCreateNew={() => {
+            setDemoEnrollmentOpen(false);
+            setCreateDemoOpen(true);
           }}
         />
       ) : null}

@@ -1367,14 +1367,14 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   bookDemoLesson: { en: 'Book demo lesson', ru: 'Записать на демо' },
   enrollInDemoLesson: { en: 'Enroll in demo lesson', ru: 'Записать на демо-урок' },
   enrollLeadInDemoDescription: {
-    en: 'Choose a previously created upcoming demo for {lead}. A student record is not required.',
-    ru: 'Выберите ранее созданный будущий демо-урок для {lead}. Создавать ученика не требуется.',
+    en: 'Choose an upcoming demo for {lead} or create a new lesson. A student record is not required.',
+    ru: 'Выберите предстоящий демо-урок для {lead} или создайте новый. Создавать ученика не требуется.',
   },
   searchDemoLessons: { en: 'Search by course, teacher, branch or room', ru: 'Поиск по курсу, преподавателю, филиалу или кабинету' },
   noUpcomingDemoLessons: { en: 'No upcoming demo lessons', ru: 'Нет предстоящих демо-уроков' },
   noUpcomingDemoLessonsDescription: {
-    en: 'Create a demo lesson in the schedule first, then return here to enroll the lead.',
-    ru: 'Сначала создайте демо-урок в расписании, затем вернитесь сюда и запишите лида.',
+    en: 'Create a new demo lesson with the button below to enroll the lead immediately.',
+    ru: 'Создайте новый демо-урок кнопкой ниже, чтобы сразу записать лида.',
   },
   demoSeatsAvailable: { en: '{available} of {capacity} seats available', ru: 'Свободно мест: {available} из {capacity}' },
   demoNoSeats: { en: 'No seats available', ru: 'Свободных мест нет' },

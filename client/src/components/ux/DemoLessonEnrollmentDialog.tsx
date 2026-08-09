@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarDays,
+  CalendarPlus2,
   Check,
   Clock3,
   Loader2,
@@ -86,31 +87,25 @@ export function DemoLessonEnrollmentDialog({
   open,
   onOpenChange,
   lead,
+  onCreateNew,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lead: DemoLessonEnrollmentLead | null;
+  onCreateNew?: () => void;
 }) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedDemoId, setSelectedDemoId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
-  const [range] = useState(() => {
-    const from = new Date();
-    const to = new Date(from.getTime() + 90 * 24 * 60 * 60 * 1_000);
-    return { from: from.toISOString(), to: to.toISOString() };
-  });
-
   useEffect(() => {
-    if (!open) {
-      setSelectedDemoId(null);
-      setSearch('');
-    }
-  }, [open]);
+    setSelectedDemoId(null);
+    setSearch('');
+  }, [lead?.id, open]);
 
   const demoQuery = useQuery({
-    queryKey: [...demoLessonQueryKeys.enrollment, range.from, range.to],
-    queryFn: () => demoLessonsApi.list(range),
+    queryKey: demoLessonQueryKeys.enrollment,
+    queryFn: demoLessonsApi.listUpcoming,
     enabled: open && Boolean(lead),
     staleTime: 15_000,
   });
@@ -210,7 +205,7 @@ export function DemoLessonEnrollmentDialog({
             </div>
           ) : visibleDemos.length > 0 ? (
             <ScrollArea className="min-h-0 flex-1 pr-3">
-              <div role="radiogroup" className="space-y-2 pb-1" aria-label={t('enrollInDemoLesson')}>
+              <div role="radiogroup" className="flex flex-col gap-2 pb-1" aria-label={t('enrollInDemoLesson')}>
                 {visibleDemos.map((demo) => {
                   const state = getDemoEnrollmentState(demo, Number(lead?.id), demos);
                   const disabled = state !== 'available';
@@ -285,18 +280,29 @@ export function DemoLessonEnrollmentDialog({
           )}
         </div>
 
-        <DialogFooter className="border-t border-border px-6 pb-6 pt-4">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enroll.isPending}>
-            {t('cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => enroll.mutate()}
-            disabled={!selectedDemoId || enroll.isPending}
-          >
-            {enroll.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
-            {enroll.isPending ? t('saving') : t('enrollInDemoLesson')}
-          </Button>
+        <DialogFooter className={cn(
+          'border-t border-border px-6 pb-6 pt-4',
+          onCreateNew ? 'sm:justify-between' : 'sm:justify-end',
+        )}>
+          {onCreateNew ? (
+            <Button type="button" variant="outline" onClick={onCreateNew} disabled={enroll.isPending}>
+              <CalendarPlus2 data-icon="inline-start" />
+              {t('createDemoLesson')}
+            </Button>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enroll.isPending}>
+              {t('cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => enroll.mutate()}
+              disabled={!selectedDemoId || enroll.isPending}
+            >
+              {enroll.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+              {enroll.isPending ? t('saving') : t('enrollInDemoLesson')}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

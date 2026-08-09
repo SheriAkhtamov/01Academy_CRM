@@ -284,9 +284,15 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
   router.get('/demo-lessons', async (req, res) => {
     if (!ensureSalesAccess(req, res)) return;
     try {
-      const from = parseDateRange(req.query.from, new Date(Date.now() - 24 * 60 * 60 * 1_000));
-      const to = parseDateRange(req.query.to, new Date(Date.now() + 31 * 24 * 60 * 60 * 1_000));
-      if (to <= from) return res.status(400).json({ error: 'invalidData' });
+      const upcomingOnly = req.query.upcoming === 'true';
+      const from = parseDateRange(
+        req.query.from,
+        new Date(upcomingOnly ? Date.now() : Date.now() - 24 * 60 * 60 * 1_000),
+      );
+      const to = upcomingOnly
+        ? null
+        : parseDateRange(req.query.to, new Date(Date.now() + 31 * 24 * 60 * 60 * 1_000));
+      if (to && to <= from) return res.status(400).json({ error: 'invalidData' });
       const schoolId = Number(req.query.schoolId) || null;
       const demos = await query(
         `SELECT demo.*,
@@ -315,12 +321,13 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
          JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
          LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
          LEFT JOIN academy_leads lead ON lead.id = participant.lead_id
-         WHERE demo.scheduled_at < $2
-           AND demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $1
+         WHERE demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $1
+           AND ($2::timestamptz IS NULL OR demo.scheduled_at < $2::timestamptz)
            AND ($3::int IS NULL OR demo.school_id = $3)
+           AND ($4::boolean = false OR (demo.status = 'scheduled' AND demo.scheduled_at > $1))
          GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name
          ORDER BY demo.scheduled_at, demo.id`,
-        [from, to, schoolId],
+        [from, to, schoolId, upcomingOnly],
       );
       res.json(demos.map((demo) => presentDemoLesson(req, demo)));
     } catch (error: any) {

@@ -49,6 +49,10 @@ const kanbanBoard = readFileSync(
   new URL('../client/src/components/ux/KanbanBoard.tsx', import.meta.url),
   'utf8',
 );
+const leadDetailSheet = readFileSync(
+  new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
+  'utf8',
+);
 
 const validMutation = {
   courseId: 1,
@@ -223,5 +227,15 @@ describe('demo lessons', () => {
     expect(enrollmentDialog).toContain('demoLessonsApi.enroll');
     expect(enrollmentDialog).not.toContain('studentsApi');
     expect(enrollmentDialog).not.toContain('CreateLeadStudentDialog');
+  });
+
+  it('offers all upcoming demos before creating a new lesson from lead details', () => {
+    expect(routes).toContain("req.query.upcoming === 'true'");
+    expect(enrollmentDialog).toContain('demoLessonsApi.listUpcoming');
+    expect(enrollmentDialog).toContain("t('createDemoLesson')");
+    expect(enrollmentDialog).toContain('onCreateNew');
+    expect(leadDetailSheet).toContain('<DemoLessonEnrollmentDialog');
+    expect(leadDetailSheet).toContain('setDemoEnrollmentOpen(true)');
+    expect(leadDetailSheet).toContain('setCreateDemoOpen(true)');
   });
 });

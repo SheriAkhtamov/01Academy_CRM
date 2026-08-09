@@ -89,6 +89,13 @@ export const demoLessonsApi = {
     if (params.schoolId) query.set('schoolId', String(params.schoolId));
     return apiRequest('GET', `/api/academy/demo-lessons?${query.toString()}`) as Promise<DemoLesson[]>;
   },
+  listUpcoming: () => {
+    const query = new URLSearchParams({
+      from: new Date().toISOString(),
+      upcoming: 'true',
+    });
+    return apiRequest('GET', `/api/academy/demo-lessons?${query.toString()}`) as Promise<DemoLesson[]>;
+  },
   availability: (params: {
     schoolId: number;
     courseId: number;

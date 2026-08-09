@@ -7,19 +7,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useTranslation } from '@/hooks/useTranslation';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-
 import { Skeleton } from '@/components/ui/skeleton';
+import { PaginationControls } from '@/components/ux/PaginationControls';
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -219,57 +211,18 @@ export function DataTable<T extends Record<string, any>>({
           </TableBody>
         </Table>
       </div>
-      {sortedData.length > 0 && !isLoading && (
-        <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/40 px-1 pt-3 text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span>
-              {Math.min((currentPage - 1) * pageSize + 1, sortedData.length)}-
-              {Math.min(currentPage * pageSize, sortedData.length)} {t('ofLabel')} {sortedData.length}
-            </span>
-            <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-muted-foreground/70">{t('perPage')}</span>
-              <Select value={String(pageSize)} onValueChange={(val) => setPageSize(Number(val))}>
-                <SelectTrigger className="h-7 w-[70px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="25">25</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              <span className="mr-2 text-muted-foreground/80">
-                {t('page')} {currentPage} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                aria-label={t('previousPage')}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                aria-label={t('nextPage')}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+      {!isLoading ? (
+        <PaginationControls
+          page={currentPage}
+          pageSize={pageSize}
+          totalItems={sortedData.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setCurrentPage(1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

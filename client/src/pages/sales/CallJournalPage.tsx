@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { PaginationControls } from '@/components/ux/PaginationControls';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import {
@@ -75,7 +76,7 @@ type JournalResponse = {
 };
 
 const finalStatuses = new Set<TelephonyCallStatus>(['ended', 'failed', 'declined', 'missed']);
-const CALL_JOURNAL_PAGE_SIZE = 50;
+const CALL_JOURNAL_DEFAULT_PAGE_SIZE = 50;
 
 const statusVariant = (status: TelephonyCallStatus) => {
   if (status === 'connected' || status === 'ended') return 'success' as const;
@@ -93,6 +94,7 @@ export default function CallJournalPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(CALL_JOURNAL_DEFAULT_PAGE_SIZE);
   const journalListRef = useRef<HTMLDivElement | null>(null);
   const pendingMissedCallReadRef = useRef(false);
   const deferredSearch = useDeferredValue(search.trim());
@@ -105,7 +107,7 @@ export default function CallJournalPage() {
   const queryString = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
-      limit: String(CALL_JOURNAL_PAGE_SIZE),
+      limit: String(pageSize),
     });
     if (deferredSearch) params.set('q', deferredSearch);
     if (direction !== 'all') params.set('direction', direction);
@@ -113,7 +115,7 @@ export default function CallJournalPage() {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     return params.toString();
-  }, [deferredSearch, direction, from, page, status, to]);
+  }, [deferredSearch, direction, from, page, pageSize, status, to]);
 
   const journalQuery = useQuery<JournalResponse>({
     queryKey: ['/api/telephony/calls/journal', queryString],
@@ -134,8 +136,6 @@ export default function CallJournalPage() {
     hour: '2-digit',
     minute: '2-digit',
   });
-  const pageSize = journalQuery.data?.limit ?? CALL_JOURNAL_PAGE_SIZE;
-  const totalPages = Math.max(1, Math.ceil((journalQuery.data?.total ?? 0) / pageSize));
   const items = journalQuery.data?.items ?? [];
   const missedCallCount = Number(missedCallUnread?.count) || 0;
   const lastSeenMissedCallId = missedCallUnread
@@ -329,22 +329,18 @@ export default function CallJournalPage() {
               </div>
             </div>
           )}
+          <PaginationControls
+            page={page}
+            pageSize={journalQuery.data?.limit ?? pageSize}
+            totalItems={journalQuery.data?.total ?? 0}
+            disabled={journalQuery.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              setPage(1);
+            }}
+          />
         </Card>
-
-        {journalQuery.data && journalQuery.data.total > 0 ? (
-          <div className="flex shrink-0 items-center justify-between gap-3 text-sm text-muted-foreground">
-            <span>{t('callJournalCount').replace('{count}', String(journalQuery.data.total))}</span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
-                {t('previous')}
-              </Button>
-              <span className="tabular-nums">{page} / {totalPages}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>
-                {t('next')}
-              </Button>
-            </div>
-          </div>
-        ) : null}
       </ModulePageBody>
     </ModulePage>
   );

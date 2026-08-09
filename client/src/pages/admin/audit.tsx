@@ -10,8 +10,9 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
+import { PaginationControls } from '@/components/ux/PaginationControls';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, ChevronLeft, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
+import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { useTranslation } from '@/hooks/useTranslation';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
@@ -86,75 +87,6 @@ const presentValue = (value: unknown, copy: AuditCopy) => {
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 };
-
-function ServerPagination({
-  pagination,
-  disabled,
-  onPageChange,
-  onLimitChange,
-}: {
-  pagination: PaginationMeta;
-  disabled: boolean;
-  onPageChange: (page: number) => void;
-  onLimitChange: (limit: number) => void;
-}) {
-  const { t } = useTranslation();
-  if (pagination.total === 0) return null;
-
-  const firstItem = (pagination.page - 1) * pagination.limit + 1;
-  const lastItem = Math.min(pagination.page * pagination.limit, pagination.total);
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="tabular-nums">
-          {t('auditShown')} {firstItem}–{lastItem} {t('ofLabel')} {pagination.total}
-        </span>
-        <div className="flex items-center gap-1.5">
-          <span>{t('perPage')}</span>
-          <Select
-            value={String(pagination.limit)}
-            onValueChange={(value) => onLimitChange(Number(value))}
-            disabled={disabled}
-          >
-            <SelectTrigger className="h-8 w-[72px] text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="25">25</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <span className="mr-1 tabular-nums">{t('page')} {pagination.page} / {pagination.totalPages}</span>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-8"
-          aria-label={t('previousPage')}
-          disabled={disabled || pagination.page <= 1}
-          onClick={() => onPageChange(pagination.page - 1)}
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-8"
-          aria-label={t('nextPage')}
-          disabled={disabled || pagination.page >= pagination.totalPages}
-          onClick={() => onPageChange(pagination.page + 1)}
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 export default function AuditPage() {
   const ceoCopy = useCeoCopy();
@@ -269,11 +201,13 @@ export default function AuditPage() {
                   </tbody>
                 </table>
               </div>
-              <ServerPagination
-                pagination={auditPagination}
+              <PaginationControls
+                page={auditPagination.page}
+                pageSize={auditPagination.limit}
+                totalItems={auditPagination.total}
                 disabled={isFetching}
                 onPageChange={setAuditPage}
-                onLimitChange={(limit) => {
+                onPageSizeChange={(limit) => {
                   setAuditLimit(limit);
                   setAuditPage(1);
                 }}
@@ -287,11 +221,13 @@ export default function AuditPage() {
             <CardHeader className="border-b border-border/70"><CardTitle>{ceoCopy.audit.integrationLogs}</CardTitle><CardDescription>{ceoCopy.audit.integrationDescription}</CardDescription></CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{log.provider}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div>
-              <ServerPagination
-                pagination={integrationPagination}
+              <PaginationControls
+                page={integrationPagination.page}
+                pageSize={integrationPagination.limit}
+                totalItems={integrationPagination.total}
                 disabled={isFetching}
                 onPageChange={setIntegrationPage}
-                onLimitChange={(limit) => {
+                onPageSizeChange={(limit) => {
                   setIntegrationLimit(limit);
                   setIntegrationPage(1);
                 }}

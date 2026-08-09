@@ -9,6 +9,10 @@ const telephonyRoutes = readFileSync(
   new URL('../server/routes/telephony.routes.ts', import.meta.url),
   'utf8',
 );
+const paginationControls = readFileSync(
+  new URL('../client/src/components/ux/PaginationControls.tsx', import.meta.url),
+  'utf8',
+);
 
 describe('call journal navigation', () => {
   it('keeps a dedicated keyboard-accessible scroll region for journal rows', () => {
@@ -23,20 +27,25 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('aria-busy={journalQuery.isPlaceholderData}');
   });
 
-  it('loads fifty calls per page and derives navigation from the server response', () => {
-    expect(callJournal).toContain('const CALL_JOURNAL_PAGE_SIZE = 50;');
-    expect(callJournal).toContain('journalQuery.data?.limit ?? CALL_JOURNAL_PAGE_SIZE');
-    expect(callJournal).toContain('Math.ceil((journalQuery.data?.total ?? 0) / pageSize)');
+  it('defaults to fifty calls and lets the shared pagination change the server page size', () => {
+    expect(callJournal).toContain('const CALL_JOURNAL_DEFAULT_PAGE_SIZE = 50;');
+    expect(callJournal).toContain('const [pageSize, setPageSize] = useState(CALL_JOURNAL_DEFAULT_PAGE_SIZE);');
+    expect(callJournal).toContain('limit: String(pageSize)');
+    expect(callJournal).toContain('pageSize={journalQuery.data?.limit ?? pageSize}');
+    expect(callJournal).toContain('onPageSizeChange={(nextPageSize) => {');
+    expect(paginationControls).toContain('const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;');
     expect(telephonyRoutes).toContain('const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);');
     expect(telephonyRoutes).toContain('LIMIT ${limitParam} OFFSET ${offsetParam}');
   });
 
   it('keeps page controls outside the row scroller and resets scroll position on navigation', () => {
-    const scrollRegionEnd = callJournal.indexOf('</Card>', callJournal.indexOf('data-call-journal-scroll'));
-    const pagination = callJournal.indexOf('page} / {totalPages}');
+    const scrollRegion = callJournal.indexOf('data-call-journal-scroll');
+    const pagination = callJournal.indexOf('<PaginationControls', scrollRegion);
+    const cardEnd = callJournal.indexOf('</Card>', pagination);
 
-    expect(scrollRegionEnd).toBeGreaterThan(0);
-    expect(pagination).toBeGreaterThan(scrollRegionEnd);
+    expect(scrollRegion).toBeGreaterThan(0);
+    expect(pagination).toBeGreaterThan(scrollRegion);
+    expect(cardEnd).toBeGreaterThan(pagination);
     expect(callJournal).toContain('journalListRef.current?.scrollTo({ top: 0 });');
   });
 

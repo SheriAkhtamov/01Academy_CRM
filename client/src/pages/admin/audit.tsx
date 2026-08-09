@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { useTranslation } from '@/hooks/useTranslation';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
@@ -43,6 +43,17 @@ interface AuditData {
     createdAt: string;
   }>;
   employees: Array<{ id: number; fullName: string; module: AcademyModule }>;
+  pagination: {
+    audit: PaginationMeta;
+    integrations: PaginationMeta;
+  };
+}
+
+interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 type AuditCopy = ReturnType<typeof useCeoCopy>['audit'];
@@ -76,6 +87,75 @@ const presentValue = (value: unknown, copy: AuditCopy) => {
   return String(value);
 };
 
+function ServerPagination({
+  pagination,
+  disabled,
+  onPageChange,
+  onLimitChange,
+}: {
+  pagination: PaginationMeta;
+  disabled: boolean;
+  onPageChange: (page: number) => void;
+  onLimitChange: (limit: number) => void;
+}) {
+  const { t } = useTranslation();
+  if (pagination.total === 0) return null;
+
+  const firstItem = (pagination.page - 1) * pagination.limit + 1;
+  const lastItem = Math.min(pagination.page * pagination.limit, pagination.total);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="tabular-nums">
+          {t('auditShown')} {firstItem}–{lastItem} {t('ofLabel')} {pagination.total}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <span>{t('perPage')}</span>
+          <Select
+            value={String(pagination.limit)}
+            onValueChange={(value) => onLimitChange(Number(value))}
+            disabled={disabled}
+          >
+            <SelectTrigger className="h-8 w-[72px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="mr-1 tabular-nums">{t('page')} {pagination.page} / {pagination.totalPages}</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="size-8"
+          aria-label={t('previousPage')}
+          disabled={disabled || pagination.page <= 1}
+          onClick={() => onPageChange(pagination.page - 1)}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="size-8"
+          aria-label={t('nextPage')}
+          disabled={disabled || pagination.page >= pagination.totalPages}
+          onClick={() => onPageChange(pagination.page + 1)}
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function AuditPage() {
   const ceoCopy = useCeoCopy();
   const { t } = useTranslation();
@@ -85,6 +165,10 @@ export default function AuditPage() {
   const [entityType, setEntityType] = useState('all');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditLimit, setAuditLimit] = useState(25);
+  const [integrationPage, setIntegrationPage] = useState(1);
+  const [integrationLimit, setIntegrationLimit] = useState(25);
   const [selected, setSelected] = useState<AuditLog | null>(null);
 
   const queryUrl = useMemo(() => {
@@ -94,13 +178,28 @@ export default function AuditPage() {
     if (entityType !== 'all') params.set('entityType', entityType);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
+    params.set('auditPage', String(auditPage));
+    params.set('auditLimit', String(auditLimit));
+    params.set('integrationPage', String(integrationPage));
+    params.set('integrationLimit', String(integrationLimit));
     return `/api/academy/audit?${params.toString()}`;
-  }, [action, entityType, from, to, userId]);
+  }, [action, auditLimit, auditPage, entityType, from, integrationLimit, integrationPage, to, userId]);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<AuditData>({
     queryKey: ['academy-audit', queryUrl],
     queryFn: () => apiRequest('GET', queryUrl),
+    placeholderData: keepPreviousData,
   });
+
+  useEffect(() => {
+    const totalPages = data?.pagination.audit.totalPages;
+    if (totalPages && auditPage > totalPages) setAuditPage(totalPages);
+  }, [auditPage, data?.pagination.audit.totalPages]);
+
+  useEffect(() => {
+    const totalPages = data?.pagination.integrations.totalPages;
+    if (totalPages && integrationPage > totalPages) setIntegrationPage(totalPages);
+  }, [data?.pagination.integrations.totalPages, integrationPage]);
 
   const resetFilters = () => {
     setUserId('all');
@@ -108,10 +207,23 @@ export default function AuditPage() {
     setEntityType('all');
     setFrom('');
     setTo('');
+    setAuditPage(1);
   };
   const oldValues = selected ? jsonObject(selected.oldValues) : {};
   const newValues = selected ? jsonObject(selected.newValues) : {};
   const changedFields = selected ? [...new Set([...Object.keys(oldValues), ...Object.keys(newValues)])] : [];
+  const auditPagination = data?.pagination.audit ?? {
+    page: auditPage,
+    limit: auditLimit,
+    total: 0,
+    totalPages: 1,
+  };
+  const integrationPagination = data?.pagination.integrations ?? {
+    page: integrationPage,
+    limit: integrationLimit,
+    total: 0,
+    totalPages: 1,
+  };
 
   return (
     <ModulePage contained>
@@ -135,17 +247,17 @@ export default function AuditPage() {
         <TabsContent value="audit" className="mt-5 space-y-5">
           <Card>
             <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_1fr_1fr_auto] xl:items-end">
-              <div className="space-y-1.5"><Label>{ceoCopy.audit.employee}</Label><Select value={userId} onValueChange={setUserId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allEmployees}</SelectItem>{(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{employee.fullName}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-1.5"><Label>{ceoCopy.audit.action}</Label><Select value={action} onValueChange={setAction}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allActions}</SelectItem><SelectItem value="CREATE">{ceoCopy.audit.created}</SelectItem><SelectItem value="UPDATE">{ceoCopy.audit.changed}</SelectItem><SelectItem value="DELETE">{ceoCopy.audit.deleted}</SelectItem><SelectItem value="REFUND">{ceoCopy.audit.refund}</SelectItem><SelectItem value="APPROVE">{ceoCopy.audit.approved}</SelectItem></SelectContent></Select></div>
-              <div className="space-y-1.5"><Label>{ceoCopy.audit.object}</Label><Select value={entityType} onValueChange={setEntityType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allObjects}</SelectItem><SelectItem value="academy_lead">{ceoCopy.audit.leads}</SelectItem><SelectItem value="academy_student">{ceoCopy.audit.students}</SelectItem><SelectItem value="academy_payment">{ceoCopy.audit.payments}</SelectItem><SelectItem value="academy_group">{ceoCopy.audit.groups}</SelectItem><SelectItem value="academy_lesson">{ceoCopy.audit.schedule}</SelectItem></SelectContent></Select></div>
-              <div className="space-y-1.5"><Label>{ceoCopy.audit.fromDate}</Label><Input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} /></div>
-              <div className="space-y-1.5"><Label>{ceoCopy.audit.toDate}</Label><Input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} /></div>
+              <div className="space-y-1.5"><Label>{ceoCopy.audit.employee}</Label><Select value={userId} onValueChange={(value) => { setUserId(value); setAuditPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allEmployees}</SelectItem>{(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{employee.fullName}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-1.5"><Label>{ceoCopy.audit.action}</Label><Select value={action} onValueChange={(value) => { setAction(value); setAuditPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allActions}</SelectItem><SelectItem value="CREATE">{ceoCopy.audit.created}</SelectItem><SelectItem value="UPDATE">{ceoCopy.audit.changed}</SelectItem><SelectItem value="DELETE">{ceoCopy.audit.deleted}</SelectItem><SelectItem value="REFUND">{ceoCopy.audit.refund}</SelectItem><SelectItem value="APPROVE">{ceoCopy.audit.approved}</SelectItem></SelectContent></Select></div>
+              <div className="space-y-1.5"><Label>{ceoCopy.audit.object}</Label><Select value={entityType} onValueChange={(value) => { setEntityType(value); setAuditPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allObjects}</SelectItem><SelectItem value="academy_lead">{ceoCopy.audit.leads}</SelectItem><SelectItem value="academy_student">{ceoCopy.audit.students}</SelectItem><SelectItem value="academy_payment">{ceoCopy.audit.payments}</SelectItem><SelectItem value="academy_group">{ceoCopy.audit.groups}</SelectItem><SelectItem value="academy_lesson">{ceoCopy.audit.schedule}</SelectItem></SelectContent></Select></div>
+              <div className="space-y-1.5"><Label>{ceoCopy.audit.fromDate}</Label><Input type="date" value={from} max={to || undefined} onChange={(event) => { setFrom(event.target.value); setAuditPage(1); }} /></div>
+              <div className="space-y-1.5"><Label>{ceoCopy.audit.toDate}</Label><Input type="date" value={to} min={from || undefined} onChange={(event) => { setTo(event.target.value); setAuditPage(1); }} /></div>
               <Button variant="ghost" onClick={resetFilters}><RotateCcw data-icon="inline-start" />{ceoCopy.audit.reset}</Button>
             </CardContent>
           </Card>
 
           <Card className="overflow-hidden">
-            <CardHeader className="border-b border-border/70 pb-4"><CardTitle>{ceoCopy.audit.history}</CardTitle><CardDescription>{isLoading ? ceoCopy.audit.loading : `${ceoCopy.audit.shown} ${data?.logs.length ?? 0} ${ceoCopy.audit.lastEvents}`}</CardDescription></CardHeader>
+            <CardHeader className="border-b border-border/70 pb-4"><CardTitle>{ceoCopy.audit.history}</CardTitle><CardDescription>{isLoading ? ceoCopy.audit.loading : `${ceoCopy.audit.shown} ${auditPagination.total} ${ceoCopy.audit.lastEvents}`}</CardDescription></CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-left text-sm">
@@ -157,6 +269,15 @@ export default function AuditPage() {
                   </tbody>
                 </table>
               </div>
+              <ServerPagination
+                pagination={auditPagination}
+                disabled={isFetching}
+                onPageChange={setAuditPage}
+                onLimitChange={(limit) => {
+                  setAuditLimit(limit);
+                  setAuditPage(1);
+                }}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -164,7 +285,18 @@ export default function AuditPage() {
         <TabsContent value="integrations" className="mt-5">
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{ceoCopy.audit.integrationLogs}</CardTitle><CardDescription>{ceoCopy.audit.integrationDescription}</CardDescription></CardHeader>
-            <CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{log.provider}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div></CardContent>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{log.provider}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(log.createdAt).toLocaleString('ru-RU')}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div>
+              <ServerPagination
+                pagination={integrationPagination}
+                disabled={isFetching}
+                onPageChange={setIntegrationPage}
+                onLimitChange={(limit) => {
+                  setIntegrationLimit(limit);
+                  setIntegrationPage(1);
+                }}
+              />
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

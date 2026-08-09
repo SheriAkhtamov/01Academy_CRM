@@ -85,7 +85,9 @@ export const auditLogs = pgTable("audit_logs", {
   oldValues: jsonb("old_values"),
   newValues: jsonb("new_values"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  createdAtIdx: index("audit_logs_created_at_id_idx").on(table.createdAt.desc(), table.id.desc()),
+}));
 
 /** One-row, academy-wide targets controlled by the CEO. */
 export const academyCompanySettings = pgTable("academy_company_settings", {
@@ -904,6 +906,7 @@ export const academyIntegrationLogs = pgTable("academy_integration_logs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   providerIdx: index("academy_integration_logs_provider_idx").on(table.provider),
+  createdAtIdx: index("academy_integration_logs_created_at_id_idx").on(table.createdAt.desc(), table.id.desc()),
 }));
 
 export const telephonyCalls = pgTable("telephony_calls", {

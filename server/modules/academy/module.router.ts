@@ -326,6 +326,16 @@ router.patch('/company-settings', async (req, res) => {
 router.get('/audit', async (req, res) => {
   if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
+    const paginationValue = (value: unknown, fallback: number, maximum: number) => {
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed > 0
+        ? Math.min(parsed, maximum)
+        : fallback;
+    };
+    const auditPage = paginationValue(req.query.auditPage, 1, 1_000_000);
+    const auditLimit = paginationValue(req.query.auditLimit, 25, 100);
+    const integrationPage = paginationValue(req.query.integrationPage, 1, 1_000_000);
+    const integrationLimit = paginationValue(req.query.integrationLimit, 25, 100);
     const filters: string[] = [];
     const params: DbValue[] = [];
     const add = (value: DbValue) => {
@@ -343,26 +353,63 @@ router.get('/audit', async (req, res) => {
     if (from instanceof Date) filters.push(`a.created_at >= ${add(from)}`);
     if (to instanceof Date) filters.push(`a.created_at < ${add(addDays(to, 1))}`);
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
-    const logs = await query(
-      `SELECT a.*, u.full_name AS user_name, u.module AS user_module
-       FROM audit_logs a
-       LEFT JOIN users u ON u.id = a.user_id
-       ${where}
-       ORDER BY a.created_at DESC, a.id DESC
-       LIMIT ${add(limit)}`,
-      params,
-    );
-    const integrationLogs = await query(
-      `SELECT id, provider, direction, status, payload, error_message, retry_count, created_at, updated_at
-       FROM academy_integration_logs
-       ORDER BY created_at DESC, id DESC
-       LIMIT 100`,
-    );
-    const employees = await query(
-      `SELECT id, full_name, module FROM users WHERE is_active = true ORDER BY full_name`,
-    );
-    res.json({ logs, integrationLogs, employees });
+    const auditLimitPlaceholder = `$${params.length + 1}`;
+    const auditOffsetPlaceholder = `$${params.length + 2}`;
+    const auditDataParams = [
+      ...params,
+      auditLimit,
+      (auditPage - 1) * auditLimit,
+    ];
+
+    const [logs, auditCountRows, integrationLogs, integrationCountRows, employees] = await Promise.all([
+      query(
+        `SELECT a.*, u.full_name AS user_name, u.module AS user_module
+         FROM audit_logs a
+         LEFT JOIN users u ON u.id = a.user_id
+         ${where}
+         ORDER BY a.created_at DESC, a.id DESC
+         LIMIT ${auditLimitPlaceholder} OFFSET ${auditOffsetPlaceholder}`,
+        auditDataParams,
+      ),
+      query<{ total: number }>(
+        `SELECT COUNT(*)::int AS total FROM audit_logs a ${where}`,
+        params,
+      ),
+      query(
+        `SELECT id, provider, direction, status, payload, error_message, retry_count, created_at, updated_at
+         FROM academy_integration_logs
+         ORDER BY created_at DESC, id DESC
+         LIMIT $1 OFFSET $2`,
+        [integrationLimit, (integrationPage - 1) * integrationLimit],
+      ),
+      query<{ total: number }>(
+        `SELECT COUNT(*)::int AS total FROM academy_integration_logs`,
+      ),
+      query(
+        `SELECT id, full_name, module FROM users WHERE is_active = true ORDER BY full_name`,
+      ),
+    ]);
+    const auditTotal = Number(auditCountRows[0]?.total ?? 0);
+    const integrationTotal = Number(integrationCountRows[0]?.total ?? 0);
+    res.json({
+      logs,
+      integrationLogs,
+      employees,
+      pagination: {
+        audit: {
+          page: auditPage,
+          limit: auditLimit,
+          total: auditTotal,
+          totalPages: Math.max(1, Math.ceil(auditTotal / auditLimit)),
+        },
+        integrations: {
+          page: integrationPage,
+          limit: integrationLimit,
+          total: integrationTotal,
+          totalPages: Math.max(1, Math.ceil(integrationTotal / integrationLimit)),
+        },
+      },
+    });
   } catch (error) {
     logger.error('Failed to fetch audit trail', { error });
     res.status(500).json({ error: 'Failed to fetch audit trail' });

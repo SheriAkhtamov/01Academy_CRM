@@ -589,6 +589,13 @@
       "when": 1788192000000,
       "tag": "0083_add_stage_event_value",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788278400000,
+      "tag": "0084_add_audit_pagination_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -371,7 +371,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   // Group detail dialog
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/modules/teacher'],
   });

@@ -295,7 +295,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const copy = financeCopy(t);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState(currentFinancePeriod);
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [salaryDialogOpen, setSalaryDialogOpen] = useState(false);
   const [payoutTarget, setPayoutTarget] = useState<Row | null>(null);

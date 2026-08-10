@@ -29,7 +29,9 @@ describe('dashboard period filters and simplified actions', () => {
     expect(filter).toContain("setBoundary('to'");
     expect(filter).toContain('<SelectTrigger');
     expect(filter).not.toContain('aria-pressed={value.preset === preset}');
-    expect(sales).toContain("reportingRangeForPreset('today')");
+    for (const source of [sales, teacher, marketing, finance, administration]) {
+      expect(source).toContain("reportingRangeForPreset('today')");
+    }
   });
 
   it('uses the same range UX on every requested overview', () => {

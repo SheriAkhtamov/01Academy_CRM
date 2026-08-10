@@ -297,7 +297,7 @@ export default function AdminDashboardPage() {
   const { t, language } = useTranslation();
   const ceoCopy = useCeoCopy();
   const [, navigate] = useLocation();
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
   const reportingQuery = reportingRangeQuery(reportingRange);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<AdministrationDashboardData>({
     queryKey: ['/api/academy/modules/administration', reportingQuery],

@@ -172,7 +172,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
   const [expensePeriodFilter, setExpensePeriodFilter] = useState('');
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('last30'));
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;

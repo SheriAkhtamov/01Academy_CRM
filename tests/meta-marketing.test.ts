@@ -190,6 +190,16 @@ describe('Meta ad catalog', () => {
     expect(analytics).toContain('SELECT ad_id FROM spend');
     expect(analytics).toContain('LEFT JOIN spend ON spend.ad_id = keys.attribution_key');
     expect(analytics).toContain('costPerLead: leads > 0');
+    const scheduler = read('../server/services/scheduler.ts');
+    expect(scheduler).toContain('cron.schedule("*/15 * * * *"');
+    expect(scheduler).toContain('syncMetaAdInsights(3)');
+  });
+
+  it('shows a meaningful Meta creative name before the technical ad name', () => {
+    const component = read('../client/src/components/marketing/MetaAttributionSection.tsx');
+    expect(component).toContain('const creativeDisplayTitle');
+    expect(component).toContain('|| row.adsetName');
+    expect(component).toContain('{row.adName || row.creativeName');
   });
 
   it('ships a production-safe Meta spend resync command', () => {

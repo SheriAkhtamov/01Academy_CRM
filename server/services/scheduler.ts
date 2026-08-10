@@ -10,7 +10,7 @@ import {
   processMetaAttributionEnrichment,
   processMetaConversionEvents,
   syncMetaAdCatalog,
-  syncMetaAdInsightsForSchedule,
+  syncMetaAdInsights,
 } from "./meta-marketing";
 
 export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
@@ -82,14 +82,23 @@ export const startScheduler = () => {
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
+  // Current-day spend changes throughout the day. Keep it fresh enough for the
+  // attribution table without repeatedly fetching the full historical window.
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const insights = await syncMetaAdInsights(3);
+      if (!insights.skipped) logger.info(`[scheduler] synced ${insights.synced} recent Meta ad spend rows`);
+    } catch (error) {
+      logger.error("[scheduler] Meta ad spend sync error", { error });
+    }
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
+
   // Ad catalog — keeps every ad in the account visible, including the ones with no leads.
   // Hourly is plenty: ads change rarely, and the Graph user rate limit is easy to exhaust.
   cron.schedule("7 * * * *", async () => {
     try {
       const { synced, skipped } = await syncMetaAdCatalog();
       if (!skipped) logger.info(`[scheduler] synced ${synced} Meta ads`);
-      const insights = await syncMetaAdInsightsForSchedule();
-      if (!insights.skipped) logger.info(`[scheduler] synced ${insights.synced} Meta ad spend rows`);
     } catch (error) {
       logger.error("[scheduler] Meta ad catalog sync error", { error });
     }
@@ -131,7 +140,7 @@ export const startScheduler = () => {
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   logger.info(
-    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, Lead Ads fallback: 5m, escalations: hourly, automations: daily 09:00)`,
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, Lead Ads fallback: 5m, spend: 15m, escalations: hourly, automations: daily 09:00)`,
   );
 };
 

@@ -34,13 +34,14 @@ describe("scheduler timezone", () => {
     startScheduler();
 
     expect(SCHEDULER_TIME_ZONE).toBe("Asia/Tashkent");
-    expect(mocks.schedule).toHaveBeenCalledTimes(6);
+    expect(mocks.schedule).toHaveBeenCalledTimes(7);
     for (const call of mocks.schedule.mock.calls) {
       expect(call[2]).toEqual({ timezone: "Asia/Tashkent", noOverlap: true });
     }
     expect(mocks.schedule.mock.calls.map((call) => call[0])).toEqual([
       "* * * * *",
       "*/5 * * * *",
+      "*/15 * * * *",
       "7 * * * *",
       "5 * * * *",
       "0 * * * *",

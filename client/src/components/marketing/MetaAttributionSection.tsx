@@ -69,6 +69,19 @@ const mediaTypeIcon = (mediaType?: string | null) => {
   return Clapperboard;
 };
 
+const creativeDisplayTitle = (row: MetaCreativeRow) => {
+  const creativeTitle = row.creativeTitle?.trim();
+  const usefulCreativeTitle = creativeTitle && !/^(?:instagram\.com|facebook\.com|01academy)$/i.test(creativeTitle)
+    ? creativeTitle
+    : null;
+  return row.hookName
+    || usefulCreativeTitle
+    || row.adsetName
+    || row.adName
+    || row.adId
+    || '';
+};
+
 /**
  * Meta serves creative thumbnails from its own CDN with signed URLs that can expire,
  * so a broken image falls back to the format icon instead of a torn placeholder.
@@ -117,6 +130,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     queryKey,
     queryFn: () => metaMarketingApi.attribution(reportingQuery),
     placeholderData: (previous) => previous,
+    refetchInterval: 5 * 60 * 1_000,
   });
   const attributedLeads = useQuery<MetaAttributionLeadsData>({
     queryKey: [
@@ -179,19 +193,21 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     {
       key: 'hook',
       header: t('metaAdPublication'),
-      // Meta names the ad, so an unnamed hook shows the real ad name rather than a placeholder.
-      accessor: (row: MetaCreativeRow) => row.hookName || row.adName || row.adId || '',
+      accessor: creativeDisplayTitle,
       render: (row: MetaCreativeRow) => {
-        const title = row.hookName || row.adName || row.adId || t('noData');
+        const title = creativeDisplayTitle(row) || t('noData');
         const status = statusLabel(row.effectiveStatus);
         return (
           <div className={`flex max-w-96 items-center gap-3 ${row.leads > 0 ? '' : 'opacity-70'}`}>
             <CreativeThumbnail row={row} label={formatLabel(row.mediaType)} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium text-foreground" title={title}>{title}</p>
+              <p className="truncate text-xs text-muted-foreground" title={row.adName ?? undefined}>
+                {row.adName || row.creativeName || t('noData')}
+              </p>
               <div className="flex items-center gap-1.5">
-                <p className="truncate text-xs text-muted-foreground" title={row.campaignName ?? undefined}>
-                  {row.campaignName || row.adName || t('noData')}
+                <p className="truncate text-[11px] text-muted-foreground" title={row.campaignName ?? undefined}>
+                  {row.campaignName || t('noData')}
                 </p>
                 {status ? (
                   <Badge
@@ -424,7 +440,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{selected?.hookName || selected?.adName || t('metaDetails')}</DialogTitle>
+            <DialogTitle>{selected ? creativeDisplayTitle(selected) || t('metaDetails') : t('metaDetails')}</DialogTitle>
             <DialogDescription>{t('metaDetails')}</DialogDescription>
           </DialogHeader>
           {selected ? (

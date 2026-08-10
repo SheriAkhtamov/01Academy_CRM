@@ -452,7 +452,14 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('FROM academy_leads lead') && sql.includes('FOR UPDATE OF lead')) {
         return { rows: [lead] };
       }
-      if (sql.includes('FROM academy_lead_tag_assignments assignment')) {
+      if (sql.includes('DELETE FROM academy_lead_tags tag')) {
+        expect(values).toEqual([51]);
+        return emptyResult();
+      }
+      if (
+        sql.includes('FROM academy_lead_tag_assignments assignment')
+        && sql.includes('JOIN academy_lead_tags tag')
+      ) {
         expect(values).toEqual([202, 42]);
         return { rows: [{ id: 202, tag_id: 51, name: 'Летний лагерь' }] };
       }
@@ -480,6 +487,10 @@ describe('academy route logic boundaries', () => {
       || String(sql).includes('UPDATE academy_lead_sources')
       || String(sql).includes('DELETE FROM academy_lead_sources')
     ))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('DELETE FROM academy_lead_tags tag')
+      && String(sql).includes('NOT EXISTS')
+    ))).toBe(true);
     expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: 'REMOVE_ACADEMY_LEAD_TAG',
       entityType: 'academy_lead',

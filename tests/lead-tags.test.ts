@@ -15,6 +15,10 @@ const deduplicateMigration = readFileSync(
   new URL('../migrations/0085_merge_duplicate_lead_tags.sql', import.meta.url),
   'utf8',
 );
+const orphanCleanupMigration = readFileSync(
+  new URL('../migrations/0086_remove_orphan_lead_tags.sql', import.meta.url),
+  'utf8',
+);
 const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const routes = readAcademyModuleSource();
 const leadSheet = readFileSync(
@@ -78,6 +82,8 @@ describe('lead tags', () => {
     expect(routes).toContain("router.delete('/leads/:id/tags/:assignmentId'");
     expect(routes).toContain('Automatic tags are derived from academy_leads.source_id');
     expect(routes).toContain('DELETE FROM academy_lead_tag_assignments');
+    expect(routes).toContain('DELETE FROM academy_lead_tags tag');
+    expect(routes).toContain('WHERE assignment.tag_id = tag.id');
     expect(routes).not.toMatch(/DELETE FROM academy_lead_sources[\s\S]*REMOVE_ACADEMY_LEAD_TAG/);
     expect(routes).toContain('ON CONFLICT (lead_id, tag_id) DO NOTHING');
     expect(routes).toContain('(SELECT COUNT(*) FROM academy_lead_tag_assignments WHERE lead_id = $1)');
@@ -110,5 +116,10 @@ describe('lead tags', () => {
     expect(journal.entries.find((entry) => entry.idx === 85)?.tag)
       .toBe('0085_merge_duplicate_lead_tags');
     expect(journal.entries.filter((entry) => entry.idx === 85)).toHaveLength(1);
+    expect(journal.entries.find((entry) => entry.idx === 86)?.tag)
+      .toBe('0086_remove_orphan_lead_tags');
+    expect(journal.entries.filter((entry) => entry.idx === 86)).toHaveLength(1);
+    expect(orphanCleanupMigration).toContain('DELETE FROM academy_lead_tags tag');
+    expect(orphanCleanupMigration).toContain('NOT EXISTS');
   });
 });

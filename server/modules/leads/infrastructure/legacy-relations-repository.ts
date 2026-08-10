@@ -148,6 +148,16 @@ export class LegacyLeadRelationsRepository implements LeadRelationsRepository {
         `DELETE FROM academy_lead_tag_assignments WHERE id = $1 AND lead_id = $2`,
         [assignmentId, leadId],
       );
+      await query(
+        `DELETE FROM academy_lead_tags tag
+         WHERE tag.id = $1
+           AND NOT EXISTS (
+             SELECT 1
+             FROM academy_lead_tag_assignments assignment
+             WHERE assignment.tag_id = tag.id
+           )`,
+        [assignment.tagId],
+      );
       return {
         id: Number(assignment.id),
         tagId: Number(assignment.tagId),

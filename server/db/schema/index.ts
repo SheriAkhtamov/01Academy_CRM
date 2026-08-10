@@ -194,6 +194,13 @@ export const academyLeadTags = pgTable("academy_lead_tags", {
     "academy_lead_tags_name_not_blank",
     sql`BTRIM(${table.name}) <> '' AND BTRIM(${table.normalizedName}) <> ''`,
   ),
+  canonicalName: check(
+    "academy_lead_tags_canonical_name",
+    sql`CHAR_LENGTH(${table.name}) <= 48
+      AND ${table.name} !~ '[[:cntrl:]]'
+      AND ${table.name} = public.academy_clean_lead_tag_name(${table.name})
+      AND ${table.normalizedName} = public.academy_normalize_lead_tag_name(${table.name})`,
+  ),
 }));
 
 export const academyLeadStatuses = pgTable("academy_lead_statuses", {

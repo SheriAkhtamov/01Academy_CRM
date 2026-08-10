@@ -42,6 +42,9 @@ export class LegacyLeadRelationsRepository implements LeadRelationsRepository {
     const usesExistingTag = input.tagId !== undefined;
     const tagId = usesExistingTag ? Number(input.tagId) : null;
     const normalizedTag = usesExistingTag ? null : normalizeLeadTagName(input.name);
+    if (!usesExistingTag && !normalizedTag) {
+      throw Object.assign(new Error('leadTagNameInvalid'), { statusCode: 400 });
+    }
 
     const result = await withTransaction<TagMutationResult>(async () => {
       const lead = await requireMutableLead(leadId, actor);
@@ -66,14 +69,17 @@ export class LegacyLeadRelationsRepository implements LeadRelationsRepository {
 
         tag = await queryOne(
           `INSERT INTO academy_lead_tags (name, normalized_name, created_by)
-           VALUES ($1, $2, $3)
+           VALUES ($1, public.academy_normalize_lead_tag_name($1), $2)
            ON CONFLICT (normalized_name) DO NOTHING
            RETURNING *`,
-          [normalizedTag.name, normalizedTag.normalizedName, actor.userId],
+          [normalizedTag.name, actor.userId],
         );
         tag ??= await queryOne(
-          `SELECT * FROM academy_lead_tags WHERE normalized_name = $1 FOR SHARE`,
-          [normalizedTag.normalizedName],
+          `SELECT *
+           FROM academy_lead_tags
+           WHERE normalized_name = public.academy_normalize_lead_tag_name($1)
+           FOR SHARE`,
+          [normalizedTag.name],
         );
       }
 

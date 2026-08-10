@@ -359,7 +359,7 @@ describe('academy route logic boundaries', () => {
         return { rows: [lead] };
       }
       if (sql.includes('INSERT INTO academy_lead_tags')) {
-        expect(values).toEqual(['Летний лагерь', 'летний лагерь', 7]);
+        expect(values).toEqual(['Летний лагерь', 7]);
         return {
           rows: [{
             id: 51,

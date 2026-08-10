@@ -11,6 +11,10 @@ const migration = readFileSync(
   new URL('../migrations/0068_add_lead_tags.sql', import.meta.url),
   'utf8',
 );
+const deduplicateMigration = readFileSync(
+  new URL('../migrations/0085_merge_duplicate_lead_tags.sql', import.meta.url),
+  'utf8',
+);
 const schema = readFileSync(new URL('../server/db/schema/index.ts', import.meta.url), 'utf8');
 const routes = readAcademyModuleSource();
 const leadSheet = readFileSync(
@@ -38,9 +42,24 @@ describe('lead tags', () => {
       normalizedName: 'летний лагерь',
     });
     expect(leadTagNameKey('ＩＮＳＴＡＧＲＡＭ')).toBe('instagram');
+    expect(normalizeLeadTagName(' AI\u200b \u202eCREATOR ')).toEqual({
+      name: 'AI CREATOR',
+      normalizedName: 'ai creator',
+    });
+    expect(normalizeLeadTagName('\u200b\u2060\ufeff')).toBeNull();
     expect(normalizeLeadTagName('')).toBeNull();
     expect(normalizeLeadTagName('tag\u0000name')).toBeNull();
     expect(normalizeLeadTagName('я'.repeat(MAX_LEAD_TAG_NAME_LENGTH + 1))).toBeNull();
+  });
+
+  it('merges canonical duplicates before enforcing database-side normalization', () => {
+    const compactDeduplicateSql = deduplicateMigration.replace(/\s+/g, ' ').trim();
+    expect(compactDeduplicateSql).toContain('CREATE OR REPLACE FUNCTION public.academy_clean_lead_tag_name');
+    expect(compactDeduplicateSql).toContain('CREATE TEMPORARY TABLE academy_lead_tag_merge_map');
+    expect(compactDeduplicateSql).toContain('ON CONFLICT (lead_id, tag_id) DO NOTHING');
+    expect(compactDeduplicateSql).toContain('DELETE FROM academy_lead_tags tag');
+    expect(compactDeduplicateSql).toContain('ADD CONSTRAINT academy_lead_tags_canonical_name');
+    expect(schema).toContain('academy_lead_tags_canonical_name');
   });
 
   it('stores a global tag catalog and unique per-lead assignments', () => {
@@ -88,5 +107,8 @@ describe('lead tags', () => {
     expect(journal.entries.find((entry) => entry.idx === 67)?.tag).toBe('0067_add_onlinepbx_manager_routing');
     expect(journal.entries.find((entry) => entry.idx === 68)?.tag).toBe('0068_add_lead_tags');
     expect(journal.entries.filter((entry) => entry.idx === 68)).toHaveLength(1);
+    expect(journal.entries.find((entry) => entry.idx === 85)?.tag)
+      .toBe('0085_merge_duplicate_lead_tags');
+    expect(journal.entries.filter((entry) => entry.idx === 85)).toHaveLength(1);
   });
 });

@@ -87,6 +87,23 @@ describe('lead command HTTP contracts', () => {
     );
   });
 
+  it('rejects tag names made only from invisible formatting characters', async () => {
+    const service = {
+      addTag: vi.fn(),
+      removeTag: vi.fn(),
+      addComment: vi.fn(),
+    };
+    const response = await request(createApp(createLeadRelationsRouter(
+      service as unknown as LeadRelationsService,
+    )))
+      .post('/api/academy/leads/12/tags')
+      .send({ name: '\u200b\u2060\ufeff' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: 'leadTagNameInvalid' });
+    expect(service.addTag).not.toHaveBeenCalled();
+  });
+
   it('trims comment input and preserves the created response', async () => {
     const comment = { id: 8, leadId: 12, body: 'Called parent' };
     const service = {

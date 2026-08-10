@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeLeadTagName } from '../lead-tags';
 import { positiveIdSchema } from './messages';
 
 const optionalPositiveIdInput = z.preprocess(
@@ -90,9 +91,21 @@ export const restoreLeadRequestSchema = z.object({
   statusCode: z.string().trim().min(1).max(80),
 });
 
+const normalizedLeadTagNameSchema = z.string().transform((value, context) => {
+  const normalized = normalizeLeadTagName(value);
+  if (!normalized) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'leadTagNameInvalid',
+    });
+    return z.NEVER;
+  }
+  return normalized.name;
+});
+
 export const leadTagRequestSchema = z.union([
   z.object({ tagId: positiveIdSchema }),
-  z.object({ name: z.string().trim().min(1).max(48) }),
+  z.object({ name: normalizedLeadTagNameSchema }),
 ]);
 
 export const leadCommentRequestSchema = z.object({

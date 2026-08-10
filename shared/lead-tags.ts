@@ -12,6 +12,7 @@ export type LeadTagOption = {
 };
 
 const LEAD_TAG_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u;
+const LEAD_TAG_INVISIBLE_FORMATTING_CHARACTERS = /[\u00ad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/gu;
 
 export const normalizeLeadTagName = (value: unknown): {
   name: string;
@@ -20,6 +21,7 @@ export const normalizeLeadTagName = (value: unknown): {
   if (typeof value !== 'string') return null;
   const name = value
     .normalize('NFKC')
+    .replace(LEAD_TAG_INVISIBLE_FORMATTING_CHARACTERS, '')
     .replace(/\s+/gu, ' ')
     .trim();
   if (

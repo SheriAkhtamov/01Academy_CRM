@@ -186,6 +186,9 @@ describe('Meta ad catalog', () => {
   it('joins ad spend onto the report and keeps spend-without-leads visible', () => {
     const analytics = read('../server/modules/academy/meta-marketing-analytics.ts');
     expect(analytics).toContain('FROM meta_ad_insights');
+    expect(analytics).toContain('stat_date >= $3::date AND stat_date <= $4::date');
+    expect(analytics).toContain('reportingRange.from, reportingRange.to');
+    expect(analytics).not.toContain('stat_date >= $1::date AND stat_date < $2::date');
     // An ad that only spent — no leads, gone from the catalog — must still get a row.
     expect(analytics).toContain('SELECT ad_id FROM spend');
     expect(analytics).toContain('LEFT JOIN spend ON spend.ad_id = keys.attribution_key');

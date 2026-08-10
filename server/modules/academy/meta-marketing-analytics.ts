@@ -107,7 +107,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
               SUM(clicks)::bigint AS clicks,
               MAX(currency) AS currency
        FROM meta_ad_insights
-       WHERE stat_date >= $1::date AND stat_date < $2::date
+       WHERE stat_date >= $3::date AND stat_date <= $4::date
        GROUP BY ad_id
      ),
      keys AS (
@@ -156,7 +156,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
      ORDER BY COALESCE(stats.leads, 0) DESC, COALESCE(spend.spend, 0) DESC,
               stats.last_captured_at DESC NULLS LAST,
               COALESCE(catalog.ad_created_time, TIMESTAMP '1970-01-01') DESC`,
-    [reportingRange.start, reportingRange.end],
+    [reportingRange.start, reportingRange.end, reportingRange.from, reportingRange.to],
   );
 
   // Meta reports spend in the ad account currency (USD here); the CRM shows soum

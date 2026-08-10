@@ -14,7 +14,6 @@ const META_GRAPH_ORIGIN = 'https://graph.facebook.com';
 const META_LEAD_FETCH_TIMEOUT_MS = 20_000;
 const META_LEAD_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const META_LEAD_BACKFILL_MAX_PAGES = 1_000;
-const META_LEAD_RECENT_LOOKBACK_HOURS = 48;
 const META_LEAD_FIELDS = [
   'id',
   'created_time',
@@ -279,18 +278,11 @@ const fetchMetaObject = async <T extends JsonObject>(id: string, fields: string)
   return fetchMetaUrl<T>(url);
 };
 
-const fetchMetaLeadCollection = async (
-  path: string,
-  fields: string,
-  searchParams: Record<string, string> = {},
-): Promise<JsonObject[]> => {
+const fetchMetaLeadCollection = async (path: string, fields: string): Promise<JsonObject[]> => {
   const config = metaLeadAdsConfig();
   let nextUrl = new URL(`${META_GRAPH_ORIGIN}/${config.apiVersion}/${path.replace(/^\/+/, '')}`);
   nextUrl.searchParams.set('fields', fields);
   nextUrl.searchParams.set('limit', '100');
-  for (const [name, value] of Object.entries(searchParams)) {
-    nextUrl.searchParams.set(name, value);
-  }
   const rows: JsonObject[] = [];
   const visitedPages = new Set<string>();
 
@@ -452,82 +444,6 @@ export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfill
       sourceName: 'Meta Lead Ads',
       allowMissingPhone: true,
       createFollowUpTask: false,
-    });
-    for (const record of leadRecords) {
-      await linkMetaLeadAttribution(record);
-    }
-    mergeSummary(summary, imported);
-    records += leadRecords.length;
-    formSummaries.push({
-      formId,
-      formName,
-      status: text(form.status, 120),
-      records: leadRecords.length,
-    });
-  }
-
-  return {
-    forms: formSummaries.length,
-    records,
-    summary,
-    formSummaries,
-  };
-};
-
-export const syncRecentMetaLeadAds = async (
-  lookbackHours = META_LEAD_RECENT_LOOKBACK_HOURS,
-): Promise<MetaLeadAdsBackfillResult> => {
-  const config = metaLeadAdsConfig();
-  if (!config.accessToken || !config.pageId) {
-    throw new Error('Meta Lead Ads integration is not configured');
-  }
-  if (!Number.isFinite(lookbackHours) || lookbackHours <= 0 || lookbackHours > 168) {
-    throw new Error('Meta Lead Ads recent sync lookback must be between 0 and 168 hours');
-  }
-
-  const forms = await fetchMetaLeadCollection(`${encodeURIComponent(config.pageId)}/leadgen_forms`, 'id,name,status');
-  const summary = emptySummary();
-  const formSummaries: MetaLeadAdsBackfillResult['formSummaries'] = [];
-  const createdAfter = Math.floor((Date.now() - lookbackHours * 60 * 60 * 1_000) / 1_000);
-  const filtering = JSON.stringify([{
-    field: 'time_created',
-    operator: 'GREATER_THAN',
-    value: createdAfter,
-  }]);
-  let records = 0;
-
-  for (const rawForm of forms) {
-    const form = rawForm as MetaLeadForm;
-    const formId = text(form.id, 255);
-    if (!formId) continue;
-    const formName = text(form.name, 500) ?? `Meta Instant Form ${formId}`;
-    const leads = await fetchMetaLeadCollection(
-      `${encodeURIComponent(formId)}/leads`,
-      META_LEAD_FIELDS,
-      { filtering },
-    );
-    const leadRecords = leads.map((lead) => mapMetaLeadToImportRecord(
-      { ...lead, form_id: lead.form_id ?? formId },
-      { form_id: formId },
-      formName,
-    ));
-    if (leadRecords.length === 0) {
-      formSummaries.push({
-        formId,
-        formName,
-        status: text(form.status, 120),
-        records: 0,
-      });
-      continue;
-    }
-    const imported = await importLeadRecords(pool, leadRecords, {
-      provider: 'meta_lead_ads_live',
-      providerLabel: 'Meta Instant Forms',
-      sourceCode: 'meta_lead_ads',
-      sourceName: 'Meta Lead Ads',
-      allowMissingPhone: true,
-      createFollowUpTask: true,
-      restoreArchivedMatches: true,
     });
     for (const record of leadRecords) {
       await linkMetaLeadAttribution(record);

@@ -479,15 +479,15 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
         open={Boolean(selectedLeadsCreative)}
         onOpenChange={(open) => !open && setSelectedLeadsCreative(null)}
       >
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
-          <DialogHeader className="border-b border-border/60 px-6 pb-4 pt-6 pr-12">
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh]">
+          <DialogHeader className="shrink-0 border-b border-border/60 px-6 pb-4 pt-6 pr-12">
             <DialogTitle>{t('metaAttributedLeads')}</DialogTitle>
             <DialogDescription>
               {t('metaAttributedLeadsDescription')}
               {selectedLeadsCreative ? ` ${selectedLeadsCreative.hookName || selectedLeadsCreative.adName || selectedLeadsCreative.adId || ''}` : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 overflow-y-auto px-6 pb-6">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6">
             {selectedLeadsCreative ? (
               <div className="mb-4 grid grid-cols-3 gap-2 pt-1">
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">

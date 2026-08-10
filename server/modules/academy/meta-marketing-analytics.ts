@@ -4,13 +4,16 @@ import type { ReportingRange } from './academy-scheduling';
 
 export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange) => {
   const creatives = await query(
-    `WITH selected_attribution AS (
-       SELECT DISTINCT ON (attribution.lead_id) attribution.*
+    `WITH period_attribution AS (
+       SELECT attribution.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY attribution.lead_id
+                ORDER BY attribution.captured_at, attribution.id
+              ) AS lead_rank
        FROM meta_lead_attributions attribution
        WHERE attribution.lead_id IS NOT NULL
          AND attribution.captured_at >= $1
          AND attribution.captured_at < $2
-       ORDER BY attribution.lead_id, attribution.captured_at, attribution.id
      ),
      paid_by_lead AS (
        SELECT payment.lead_id,
@@ -49,7 +52,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
                   AND history_status.is_pipeline = true
                   AND history_status.sort_order >= thresholds.demo_sort
               ) AS reached_demo
-       FROM selected_attribution attribution
+       FROM period_attribution attribution
        JOIN academy_leads lead ON lead.id = attribution.lead_id
        LEFT JOIN academy_lead_statuses current_status ON current_status.code = lead.status_code
        LEFT JOIN paid_by_lead payment ON payment.lead_id = attribution.lead_id
@@ -78,15 +81,19 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        MAX(utm_content) AS utm_content,
        MAX(utm_term) AS utm_term,
        BOOL_OR(utm_derived) AS utm_derived,
-       COUNT(DISTINCT lead_id)::int AS leads,
+       COUNT(*)::int AS leads,
        COUNT(DISTINCT lead_id) FILTER (
-         WHERE reached_qualified OR (current_is_pipeline = true AND current_sort >= qualified_sort)
+         WHERE lead_rank = 1
+           AND (reached_qualified OR (current_is_pipeline = true AND current_sort >= qualified_sort))
        )::int AS qualified,
        COUNT(DISTINCT lead_id) FILTER (
-         WHERE reached_demo OR (current_is_pipeline = true AND current_sort >= demo_sort)
+         WHERE lead_rank = 1
+           AND (reached_demo OR (current_is_pipeline = true AND current_sort >= demo_sort))
        )::int AS demo_invited,
-       COUNT(DISTINCT lead_id) FILTER (WHERE revenue > 0 OR status_code = 'paid')::int AS paid,
-       COALESCE(SUM(revenue), 0)::bigint AS revenue,
+       COUNT(DISTINCT lead_id) FILTER (
+         WHERE lead_rank = 1 AND (revenue > 0 OR status_code = 'paid')
+       )::int AS paid,
+       COALESCE(SUM(revenue) FILTER (WHERE lead_rank = 1), 0)::bigint AS revenue,
        COUNT(*) FILTER (WHERE enrichment_status = 'failed')::int AS enrichment_failures,
        MIN(captured_at) AS first_captured_at,
        MAX(captured_at) AS last_captured_at
@@ -188,21 +195,27 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        FROM academy_lead_statuses
      ),
      selected AS (
-       SELECT DISTINCT ON (attribution.lead_id)
-              attribution.lead_id, attribution.form_id, attribution.leadgen_id
+       SELECT attribution.id,
+              attribution.lead_id,
+              attribution.form_id,
+              attribution.leadgen_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY attribution.lead_id
+                ORDER BY attribution.captured_at, attribution.id
+              ) AS lead_rank
        FROM meta_lead_attributions attribution
        WHERE attribution.lead_id IS NOT NULL
          AND attribution.form_id IS NOT NULL
          AND attribution.captured_at >= $1
          AND attribution.captured_at < $2
-       ORDER BY attribution.lead_id, attribution.captured_at, attribution.id
      )
      SELECT
        selected.form_id,
        MAX(record.source_sheet) AS form_name,
-       COUNT(DISTINCT selected.lead_id)::int AS leads,
+       COUNT(*)::int AS leads,
        COUNT(DISTINCT selected.lead_id) FILTER (
-         WHERE EXISTS (
+         WHERE selected.lead_rank = 1
+           AND EXISTS (
            SELECT 1 FROM academy_lead_stage_history history
            JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
            WHERE history.lead_id = selected.lead_id
@@ -211,7 +224,8 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
          )
        )::int AS qualified,
        COUNT(DISTINCT selected.lead_id) FILTER (
-         WHERE EXISTS (
+         WHERE selected.lead_rank = 1
+           AND EXISTS (
            SELECT 1 FROM academy_lead_stage_history history
            JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
            WHERE history.lead_id = selected.lead_id
@@ -219,8 +233,10 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
              AND history_status.sort_order >= thresholds.demo_sort
          )
        )::int AS demo_invited,
-       COUNT(DISTINCT selected.lead_id) FILTER (WHERE payment.revenue > 0)::int AS paid,
-       COALESCE(SUM(payment.revenue), 0)::bigint AS revenue
+       COUNT(DISTINCT selected.lead_id) FILTER (
+         WHERE selected.lead_rank = 1 AND payment.revenue > 0
+       )::int AS paid,
+       COALESCE(SUM(payment.revenue) FILTER (WHERE selected.lead_rank = 1), 0)::bigint AS revenue
      FROM selected
      CROSS JOIN stage_thresholds thresholds
      LEFT JOIN LATERAL (
@@ -236,7 +252,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        WHERE payment_inner.lead_id = selected.lead_id
      ) payment ON true
      GROUP BY selected.form_id
-     ORDER BY COUNT(DISTINCT selected.lead_id) DESC`,
+     ORDER BY COUNT(*) DESC`,
     [reportingRange.start, reportingRange.end],
   );
 
@@ -264,15 +280,15 @@ export const getMetaAttributionLeads = async (
   reportingRange: ReportingRange,
   attributionKey: string,
 ) => query(
-  `WITH selected_attribution AS (
-     SELECT DISTINCT ON (attribution.lead_id) attribution.*
+  `WITH period_attribution AS (
+     SELECT attribution.*
      FROM meta_lead_attributions attribution
      WHERE attribution.lead_id IS NOT NULL
        AND attribution.captured_at >= $1
        AND attribution.captured_at < $2
-     ORDER BY attribution.lead_id, attribution.captured_at, attribution.id
    )
-   SELECT lead.id,
+   SELECT attribution.id AS attribution_id,
+          lead.id,
           lead.contact_name,
           lead.student_name,
           COALESCE(
@@ -295,7 +311,7 @@ export const getMetaAttributionLeads = async (
           attribution.captured_at,
           attribution.leadgen_id,
           attribution.form_id
-   FROM selected_attribution attribution
+   FROM period_attribution attribution
    JOIN academy_leads lead ON lead.id = attribution.lead_id
    LEFT JOIN academy_lead_statuses status ON status.code = lead.status_code
    LEFT JOIN users manager ON manager.id = lead.manager_id

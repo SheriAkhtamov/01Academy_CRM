@@ -166,6 +166,23 @@ describe('Meta ad catalog', () => {
     expect(analytics).toContain('COALESCE(stats.leads, 0)::int AS leads');
   });
 
+  it('counts every Meta submission without duplicating CRM conversions', () => {
+    const analytics = read('../server/modules/academy/meta-marketing-analytics.ts');
+    expect(analytics).toContain('COUNT(*)::int AS leads');
+    expect(analytics).toContain('ROW_NUMBER() OVER (');
+    expect(analytics).toContain('WHERE lead_rank = 1');
+    expect(analytics).toContain('SUM(revenue) FILTER (WHERE lead_rank = 1)');
+    expect(analytics).not.toContain('SELECT DISTINCT ON (attribution.lead_id) attribution.*');
+  });
+
+  it('returns every attributed submission in the lead drill-down', () => {
+    const analytics = read('../server/modules/academy/meta-marketing-analytics.ts');
+    expect(analytics).toContain('SELECT attribution.id AS attribution_id');
+    const client = read('../client/src/components/marketing/MetaAttributionSection.tsx');
+    expect(client).toContain('key={lead.attributionId}');
+    expect(client).toContain("spendMoney(selectedLeadsCreative.costPerLead)");
+  });
+
   it('joins ad spend onto the report and keeps spend-without-leads visible', () => {
     const analytics = read('../server/modules/academy/meta-marketing-analytics.ts');
     expect(analytics).toContain('FROM meta_ad_insights');

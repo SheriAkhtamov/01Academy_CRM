@@ -66,6 +66,7 @@ export type MetaFormRow = {
 };
 
 export type MetaAttributionLeadRow = {
+  attributionId: number;
   id: number;
   contactName?: string | null;
   studentName?: string | null;

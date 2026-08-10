@@ -472,6 +472,22 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 overflow-y-auto px-6 pb-6">
+            {selectedLeadsCreative ? (
+              <div className="mb-4 grid grid-cols-3 gap-2 pt-1">
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">{t('metaAttributedLeads')}</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{selectedLeadsCreative.leads}</p>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">{t('metaAdSpend')}</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{spendMoney(selectedLeadsCreative.spend)}</p>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">{t('metaCostPerLead')}</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{spendMoney(selectedLeadsCreative.costPerLead)}</p>
+                </div>
+              </div>
+            ) : null}
             {attributedLeads.isLoading ? (
               <div className="space-y-3 py-2">
                 <Skeleton className="h-20 w-full" />
@@ -489,7 +505,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
             ) : attributedLeads.data?.leads.length ? (
               <div className="divide-y divide-border/60">
                 {attributedLeads.data.leads.map((lead) => (
-                  <AttributedLeadRow key={lead.id} lead={lead} dateTime={dateTime} />
+                  <AttributedLeadRow key={lead.attributionId} lead={lead} dateTime={dateTime} />
                 ))}
               </div>
             ) : (

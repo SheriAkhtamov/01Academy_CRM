@@ -314,6 +314,8 @@ describe('Meta integration wiring', () => {
     const script = read('../scripts/import-meta-lead-ads.ts');
     const workflow = read('../.github/workflows/import-meta-leads.yml');
     expect(service).toContain('export const importMetaLeadAdsByIds');
+    expect(service).toContain('export const syncRecentMetaLeadAds');
+    expect(service).toContain("field: 'time_created'");
     expect(service).toContain("provider: 'meta_lead_ads_live'");
     expect(script).toContain("process.argv.indexOf('--ids')");
     expect(workflow).toContain('Import Meta leads by ID');

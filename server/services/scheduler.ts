@@ -4,6 +4,7 @@ import { logger } from "../lib/logger";
 import { runAutomations } from "./automations";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
+import { syncRecentMetaLeadAds } from "./meta-lead-ads";
 import {
   enqueueRecentMetaCrmHistory,
   processMetaAttributionEnrichment,
@@ -31,6 +32,7 @@ let started = false;
  * Starts all periodic background jobs. Safe to call once at server boot.
  * Uses node-cron expressions:
  *   - Meta attribution/CAPI worker: every minute
+ *   - Meta Lead Ads fallback: every five minutes
  *   - automations:   daily at 09:00
  */
 export const startScheduler = () => {
@@ -63,6 +65,20 @@ export const startScheduler = () => {
       }
     } catch (error) {
       logger.error("[scheduler] minute worker error", { error });
+    }
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
+
+  // Webhooks remain the primary real-time path. This overlapping 24-hour pull
+  // recovers Meta Lead Ads notifications that never reached the CRM.
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      const result = await syncRecentMetaLeadAds(24);
+      const imported = result.summary.created + result.summary.merged + result.summary.mergedArchived;
+      if (!result.skipped && imported > 0) {
+        logger.info(`[scheduler] recovered ${imported} Meta Lead Ads submissions`);
+      }
+    } catch (error) {
+      logger.error("[scheduler] Meta Lead Ads fallback sync error", { error });
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
@@ -115,7 +131,7 @@ export const startScheduler = () => {
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   logger.info(
-    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, escalations: hourly, automations: daily 09:00)`,
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, Lead Ads fallback: 5m, escalations: hourly, automations: daily 09:00)`,
   );
 };
 

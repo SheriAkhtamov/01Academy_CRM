@@ -278,11 +278,22 @@ const fetchMetaObject = async <T extends JsonObject>(id: string, fields: string)
   return fetchMetaUrl<T>(url);
 };
 
-const fetchMetaLeadCollection = async (path: string, fields: string): Promise<JsonObject[]> => {
+const fetchMetaLeadCollection = async (
+  path: string,
+  fields: string,
+  options: { since?: Date } = {},
+): Promise<JsonObject[]> => {
   const config = metaLeadAdsConfig();
   let nextUrl = new URL(`${META_GRAPH_ORIGIN}/${config.apiVersion}/${path.replace(/^\/+/, '')}`);
   nextUrl.searchParams.set('fields', fields);
   nextUrl.searchParams.set('limit', '100');
+  if (options.since) {
+    nextUrl.searchParams.set('filtering', JSON.stringify([{
+      field: 'time_created',
+      operator: 'GREATER_THAN',
+      value: Math.floor(options.since.getTime() / 1_000),
+    }]));
+  }
   const rows: JsonObject[] = [];
   const visitedPages = new Set<string>();
 
@@ -446,7 +457,10 @@ export const importMetaLeadAdsByIds = async (leadgenIds: string[]) => {
   return { processed: ids.length, summary };
 };
 
-export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfillResult> => {
+export const importHistoricalMetaLeadAds = async (options: {
+  since?: Date;
+  createFollowUpTask?: boolean;
+} = {}): Promise<MetaLeadAdsBackfillResult> => {
   const config = metaLeadAdsConfig();
   if (!config.accessToken || !config.pageId) {
     throw new Error('Meta Lead Ads integration is not configured');
@@ -462,7 +476,11 @@ export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfill
     const formId = text(form.id, 255);
     if (!formId) continue;
     const formName = text(form.name, 500) ?? `Meta Instant Form ${formId}`;
-    const leads = await fetchMetaLeadCollection(`${encodeURIComponent(formId)}/leads`, META_LEAD_FIELDS);
+    const leads = await fetchMetaLeadCollection(
+      `${encodeURIComponent(formId)}/leads`,
+      META_LEAD_FIELDS,
+      { since: options.since },
+    );
     const leadRecords = leads.map((lead) => mapMetaLeadToImportRecord(
       { ...lead, form_id: lead.form_id ?? formId },
       { form_id: formId },
@@ -483,7 +501,8 @@ export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfill
       sourceCode: 'meta_lead_ads',
       sourceName: 'Meta Lead Ads',
       allowMissingPhone: true,
-      createFollowUpTask: false,
+      createFollowUpTask: options.createFollowUpTask ?? false,
+      restoreArchivedMatches: Boolean(options.since),
     });
     for (const record of leadRecords) {
       await linkMetaLeadAttribution(record);
@@ -503,6 +522,19 @@ export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfill
     records,
     summary,
     formSummaries,
+  };
+};
+
+export const syncRecentMetaLeadAds = async (lookbackHours = 24) => {
+  const config = metaLeadAdsConfig();
+  if (!config.accessToken || !config.pageId) {
+    return { skipped: true, forms: 0, records: 0, summary: emptySummary(), formSummaries: [] };
+  }
+  const boundedLookbackHours = Math.max(1, Math.min(Math.floor(lookbackHours), 168));
+  const since = new Date(Date.now() - boundedLookbackHours * 60 * 60 * 1_000);
+  return {
+    skipped: false,
+    ...(await importHistoricalMetaLeadAds({ since, createFollowUpTask: true })),
   };
 };
 

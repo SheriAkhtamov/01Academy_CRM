@@ -68,8 +68,18 @@ describe('pipeline lead filters', () => {
 
   it('keeps a lead carrying any of the selected tags', () => {
     const filters = withFilters({ tagIds: [3, 4] });
-    expect(leadMatchesFilters(lead({ tags: [{ id: 4, name: 'VIP' }] }), filters)).toBe(true);
-    expect(leadMatchesFilters(lead({ tags: [{ id: 8, name: 'Cold' }] }), filters)).toBe(false);
+    expect(leadMatchesFilters(
+      lead({ tags: [{ id: 104, tagId: 4, name: 'VIP' }] }),
+      filters,
+    )).toBe(true);
+    expect(leadMatchesFilters(
+      lead({ tags: [{ id: 105, tagId: 4, name: 'VIP' }] }),
+      filters,
+    )).toBe(true);
+    expect(leadMatchesFilters(
+      lead({ tags: [{ id: 4, tagId: 8, name: 'Cold' }] }),
+      filters,
+    )).toBe(false);
     expect(leadMatchesFilters(lead({ tags: [] }), filters)).toBe(false);
   });
 

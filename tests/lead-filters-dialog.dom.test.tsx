@@ -21,8 +21,8 @@ const sources = [
 ];
 
 const leads: FilterableLead[] = [
-  { id: 1, sourceId: 1, language: 'ru', phone: 'instagram:1', firstViewedAt: null, tags: [{ id: 7, name: 'VIP' }] },
-  { id: 2, sourceId: 2, language: 'uz', phone: '+998901234567', firstViewedAt: '2026-08-04T10:00:00.000Z' },
+  { id: 1, sourceId: 1, language: 'ru', phone: 'instagram:1', firstViewedAt: null, tags: [{ id: 7, tagId: 9, name: 'VIP' }] },
+  { id: 2, sourceId: 2, language: 'uz', phone: '+998901234567', firstViewedAt: '2026-08-04T10:00:00.000Z', tags: [{ id: 8, tagId: 9, name: 'VIP' }] },
   { id: 3, sourceId: 2, language: 'ru', phone: '+998907654321', firstViewedAt: '2026-08-04T10:00:00.000Z' },
 ];
 
@@ -142,10 +142,13 @@ describe('pipeline filter dialog', () => {
     expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
   });
 
-  it('offers only the tags leads actually carry', () => {
+  it('offers each global tag once and filters every lead carrying it', () => {
     openDialog();
 
-    expect(screen.getByRole('button', { name: 'VIP' })).toBeTruthy();
+    const vipTags = screen.getAllByRole('button', { name: 'VIP' });
+    expect(vipTags).toHaveLength(1);
+    fireEvent.click(vipTags[0]);
+    expect(screen.getByRole('status').textContent).toBe('Found 2 of 3 leads');
     expect(screen.getByRole('button', { name: 'Instagram' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Meta Lead Ads' })).toBeTruthy();
   });

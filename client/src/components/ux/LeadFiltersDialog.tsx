@@ -231,7 +231,9 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
   // Only tags that leads actually carry are worth offering as a filter.
   const tagOptions = useMemo(() => {
     const byId = new Map<number, string>();
-    leads.forEach((lead) => (lead.tags ?? []).forEach((tag) => byId.set(tag.id, tag.name)));
+    // `id` belongs to the lead/tag assignment and is different for every lead.
+    // `tagId` identifies the shared catalog entry and is the stable filter key.
+    leads.forEach((lead) => (lead.tags ?? []).forEach((tag) => byId.set(tag.tagId, tag.name)));
     return [...byId.entries()]
       .map(([id, name]) => ({ id, label: name }))
       .sort((left, right) => left.label.localeCompare(right.label));

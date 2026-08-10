@@ -10,7 +10,7 @@ export const LEAD_FILTER_LANGUAGES = ['ru', 'uz', 'en'] as const;
 export interface FilterableLead extends LeadContactFields {
   sourceId?: number | null;
   language?: string | null;
-  tags?: Array<{ id: number; name: string }> | null;
+  tags?: Array<{ id: number; tagId: number; name: string }> | null;
   firstViewedAt?: string | null;
   demoAt?: string | null;
   comment?: string | null;
@@ -104,7 +104,7 @@ export const leadMatchesFilters = (lead: FilterableLead, filters: LeadFilterStat
   if (!matchesTriState(filters.hasMessenger, Boolean(lead.messenger?.trim()))) return false;
 
   if (filters.tagIds.length > 0
-    && !(lead.tags ?? []).some((tag) => filters.tagIds.includes(tag.id))) {
+    && !(lead.tags ?? []).some((tag) => filters.tagIds.includes(tag.tagId))) {
     return false;
   }
   if (filters.onlyNew && lead.firstViewedAt) return false;

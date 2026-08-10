@@ -192,6 +192,14 @@ describe('Meta ad catalog', () => {
     expect(analytics).toContain('costPerLead: leads > 0');
   });
 
+  it('ships a production-safe Meta spend resync command', () => {
+    const script = read('../scripts/sync-meta-marketing.ts');
+    const workflow = read('../.github/workflows/sync-meta-marketing.yml');
+    expect(script).toContain('syncMetaAdInsights(days)');
+    expect(script).toContain('FROM meta_ad_insights');
+    expect(workflow).toContain('node dist/scripts/sync-meta-marketing.js --apply --days "$1"');
+  });
+
   it('leaves spend in the account currency until a rate is configured', () => {
     const service = read('../server/services/meta-marketing.ts');
     expect(service).toContain('usdToUzsRate');

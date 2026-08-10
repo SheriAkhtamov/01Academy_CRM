@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   runAutomations: vi.fn(),
   refreshTokens: vi.fn(),
   runEscalations: vi.fn(),
+  syncRecentMetaLeadAds: vi.fn(),
 }));
 
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
@@ -13,11 +14,27 @@ vi.mock("../server/db", () => ({ pool: { query: mocks.poolQuery } }));
 vi.mock("../server/services/automations", () => ({ runAutomations: mocks.runAutomations }));
 vi.mock("../server/services/instagram", () => ({ refreshExpiringInstagramTokens: mocks.refreshTokens }));
 vi.mock("../server/services/escalations", () => ({ runEscalations: mocks.runEscalations }));
+vi.mock("../server/services/meta-lead-ads", () => ({
+  syncRecentMetaLeadAds: mocks.syncRecentMetaLeadAds,
+}));
 
 describe("scheduler timezone", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.poolQuery.mockResolvedValue({ rows: [{ count: 0 }] });
+    mocks.syncRecentMetaLeadAds.mockResolvedValue({
+      forms: 0,
+      records: 0,
+      summary: {
+        created: 0,
+        merged: 0,
+        mergedArchived: 0,
+        skippedTest: 0,
+        skippedInvalid: 0,
+        alreadyImported: 0,
+      },
+      formSummaries: [],
+    });
   });
 
   it("schedules every job explicitly in the academy timezone without overlap", async () => {
@@ -28,7 +45,7 @@ describe("scheduler timezone", () => {
     startScheduler();
 
     expect(SCHEDULER_TIME_ZONE).toBe("Asia/Tashkent");
-    expect(mocks.schedule).toHaveBeenCalledTimes(5);
+    expect(mocks.schedule).toHaveBeenCalledTimes(6);
     for (const call of mocks.schedule.mock.calls) {
       expect(call[2]).toEqual({ timezone: "Asia/Tashkent", noOverlap: true });
     }
@@ -36,6 +53,7 @@ describe("scheduler timezone", () => {
       "* * * * *",
       "7 * * * *",
       "5 * * * *",
+      "*/5 * * * *",
       "0 * * * *",
       "0 9 * * *",
     ]);

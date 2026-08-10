@@ -80,4 +80,16 @@ describe('Meta Instant Form lead ingestion', () => {
     expect(exampleConfig).toContain('"leadAccessToken": ""');
     expect(exampleConfig).toContain('"leadWebhookVerifyToken"');
   });
+
+  it('keeps a scheduled recent-lead recovery window for missed webhooks', () => {
+    const service = read('../server/services/meta-lead-ads.ts');
+    const scheduler = read('../server/services/scheduler.ts');
+
+    expect(service).toContain('export const syncRecentMetaLeadAds');
+    expect(service).toContain("field: 'time_created'");
+    expect(service).toContain("operator: 'GREATER_THAN'");
+    expect(service).toContain('createFollowUpTask: true');
+    expect(service.match(/restoreArchivedMatches: true/g)).toHaveLength(2);
+    expect(scheduler).toContain('cron.schedule("*/5 * * * *", syncRecentMetaLeads');
+  });
 });

@@ -51,6 +51,7 @@ type LeadImportOptions = {
   sourceName?: string;
   allowMissingPhone?: boolean;
   createFollowUpTask?: boolean;
+  restoreArchivedMatches?: boolean;
 };
 
 const text = (value: unknown) => String(value ?? '').trim();
@@ -164,6 +165,45 @@ const findLeadByPhone = async (client: PoolClient, phone: string) => {
   return result.rows[0] ?? null;
 };
 
+const restoreArchivedLead = async (
+  client: PoolClient,
+  leadId: number,
+  enteredAt: Date,
+) => {
+  const restored = await client.query<{ from_status_code: string | null }>(
+    `WITH archived_lead AS (
+       SELECT id, status_code
+       FROM academy_leads
+       WHERE id = $1 AND is_archived = true
+       FOR UPDATE
+     ), restored_lead AS (
+       UPDATE academy_leads lead
+       SET status_code = 'new_request',
+           is_archived = false,
+           archive_reason = NULL,
+           archived_at = NULL,
+           archived_by = NULL,
+           first_viewed_at = NULL,
+           updated_at = NOW()
+       FROM archived_lead
+       WHERE lead.id = archived_lead.id
+       RETURNING archived_lead.status_code AS from_status_code
+     )
+     SELECT from_status_code FROM restored_lead`,
+    [leadId],
+  );
+  const previousStatus = restored.rows[0]?.from_status_code;
+  if (previousStatus && previousStatus !== 'new_request') {
+    await client.query(
+      `INSERT INTO academy_lead_stage_history
+       (lead_id, from_status_code, to_status_code, entered_at, comment)
+       VALUES ($1, $2, 'new_request', $3, 'Повторная заявка из Meta Instant Form')`,
+      [leadId, previousStatus, enteredAt],
+    );
+  }
+  return (restored.rowCount ?? 0) > 0;
+};
+
 export const importLeadRecords = async (
   pool: Pool,
   records: LeadImportRecord[],
@@ -203,13 +243,31 @@ export const importLeadRecords = async (
     for (const record of records) {
       const externalId = text(record.externalId) || `${text(record.sheet) || 'sheet'}:${record.row ?? 'unknown'}`;
       const normalizedRecord = { ...record, externalId };
-      const existingImport = await client.query(
-        `SELECT id FROM academy_lead_import_records
+      const existingImport = await client.query<{
+        id: number;
+        lead_id: number | null;
+        outcome: string;
+      }>(
+        `SELECT id, lead_id, outcome FROM academy_lead_import_records
          WHERE provider = $1 AND external_id = $2
          LIMIT 1`,
         [provider, externalId],
       );
       if (existingImport.rowCount) {
+        const existing = existingImport.rows[0];
+        if (
+          options.restoreArchivedMatches
+          && existing.outcome === 'merged_archived'
+          && Number.isSafeInteger(existing.lead_id)
+          && Number(existing.lead_id) > 0
+        ) {
+          const restored = await restoreArchivedLead(client, Number(existing.lead_id), new Date());
+          await client.query(
+            `UPDATE academy_lead_import_records SET outcome = 'merged' WHERE id = $1`,
+            [existing.id],
+          );
+          if (restored) summary.mergedArchived += 1;
+        }
         summary.alreadyImported += 1;
         continue;
       }
@@ -254,6 +312,9 @@ export const importLeadRecords = async (
         outcome = 'created';
         summary.created += 1;
       } else {
+        if (matchedLead.isArchived && options.restoreArchivedMatches) {
+          await restoreArchivedLead(client, matchedLead.id, commentCreatedAt);
+        }
         await client.query(
           `UPDATE academy_leads
            SET comment = CASE
@@ -320,7 +381,10 @@ export const importLeadRecords = async (
           [matchedLead.id, phone],
         );
       }
-      await importOutcome(client, provider, normalizedRecord, outcome, matchedLead.id);
+      const recordedOutcome = outcome === 'merged_archived' && options.restoreArchivedMatches
+        ? 'merged'
+        : outcome;
+      await importOutcome(client, provider, normalizedRecord, recordedOutcome, matchedLead.id);
     }
 
     await client.query('COMMIT');

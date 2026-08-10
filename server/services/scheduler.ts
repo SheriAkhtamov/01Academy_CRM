@@ -4,6 +4,7 @@ import { logger } from "../lib/logger";
 import { runAutomations } from "./automations";
 import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
+import { syncRecentMetaLeadAds } from "./meta-lead-ads";
 import {
   enqueueRecentMetaCrmHistory,
   processMetaAttributionEnrichment,
@@ -46,7 +47,18 @@ export const startScheduler = () => {
     }
   };
 
+  const syncRecentMetaLeads = async () => {
+    try {
+      const { summary } = await syncRecentMetaLeadAds();
+      const imported = summary.created + summary.merged + summary.mergedArchived;
+      if (imported > 0) logger.info(`[scheduler] recovered ${imported} recent Meta leads`);
+    } catch (error) {
+      logger.error("[scheduler] recent Meta lead sync error", { error });
+    }
+  };
+
   void syncRecentMetaCrmHistory();
+  void syncRecentMetaLeads();
 
   // Meta worker — enriches attribution and delivers queued CAPI events.
   cron.schedule("* * * * *", async () => {
@@ -84,6 +96,12 @@ export const startScheduler = () => {
     noOverlap: true,
   });
 
+  // Webhook safety net — recovers Instant Form leads if Meta skips or delays delivery.
+  cron.schedule("*/5 * * * *", syncRecentMetaLeads, {
+    timezone: SCHEDULER_TIME_ZONE,
+    noOverlap: true,
+  });
+
   // The escalation monitor makes overdue work and cash risks push themselves to leadership.
   cron.schedule("0 * * * *", async () => {
     try {
@@ -115,7 +133,7 @@ export const startScheduler = () => {
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   logger.info(
-    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, escalations: hourly, automations: daily 09:00)`,
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, lead recovery: 5m, escalations: hourly, automations: daily 09:00)`,
   );
 };
 

@@ -309,6 +309,17 @@ describe('Meta CRM stage events', () => {
 });
 
 describe('Meta integration wiring', () => {
+  it('supports an idempotent one-off import for exact Meta Lead IDs', () => {
+    const service = read('../server/services/meta-lead-ads.ts');
+    const script = read('../scripts/import-meta-lead-ads.ts');
+    const workflow = read('../.github/workflows/import-meta-leads.yml');
+    expect(service).toContain('export const importMetaLeadAdsByIds');
+    expect(service).toContain("provider: 'meta_lead_ads_live'");
+    expect(script).toContain("process.argv.indexOf('--ids')");
+    expect(workflow).toContain('Import Meta leads by ID');
+    expect(workflow).toContain('node dist/scripts/import-meta-lead-ads.js --apply --ids "$1"');
+  });
+
   it('subscribes Instagram accounts to referral webhooks', () => {
     expect(read('../server/services/instagram.ts')).toContain("'messaging_referrals'");
   });

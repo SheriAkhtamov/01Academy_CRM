@@ -1,0 +1,55 @@
+name: Import Meta leads by ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      lead_ids:
+        description: Comma-separated numeric Meta Lead IDs
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Import selected Meta leads over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          META_LEAD_IDS: ${{ inputs.lead_ids }}
+        run: |
+          set -euo pipefail
+
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS META_LEAD_IDS; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required value: $name" >&2
+              exit 1
+            fi
+          done
+          if ! [[ "$META_LEAD_IDS" =~ ^[0-9]{10,30}(,[0-9]{10,30})*$ ]]; then
+            echo "Meta Lead IDs must be comma-separated numeric values" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=5 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            bash -s -- "$META_LEAD_IDS" <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/01academy-crm"
+          docker compose exec -T crm \
+            node dist/scripts/import-meta-lead-ads.js --apply --ids "$1"
+          REMOTE

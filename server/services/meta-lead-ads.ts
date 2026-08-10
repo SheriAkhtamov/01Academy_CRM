@@ -406,6 +406,46 @@ const mergeSummary = (target: LeadImportSummary, source: LeadImportSummary) => {
   target.alreadyImported += source.alreadyImported;
 };
 
+const importMetaLeadValue = async (
+  value: MetaLeadWebhookValue,
+  createFollowUpTask: boolean,
+) => {
+  const leadgenId = text(value.leadgen_id, 255);
+  if (!leadgenId) throw new Error('Meta Lead Ads lead ID is required');
+  const lead = await fetchMetaLead(leadgenId);
+  const formId = text(lead.form_id ?? value.form_id, 255);
+  const formName = formId ? await fetchMetaFormName(formId) : null;
+  const record = mapMetaLeadToImportRecord(lead, value, formName);
+  const imported = await importLeadRecords(pool, [record], {
+    provider: 'meta_lead_ads_live',
+    providerLabel: 'Meta Instant Forms',
+    sourceCode: 'meta_lead_ads',
+    sourceName: 'Meta Lead Ads',
+    allowMissingPhone: true,
+    createFollowUpTask,
+    restoreArchivedMatches: true,
+  });
+  await linkMetaLeadAttribution(record);
+  return imported;
+};
+
+export const importMetaLeadAdsByIds = async (leadgenIds: string[]) => {
+  const config = metaLeadAdsConfig();
+  if (!config.accessToken || !config.pageId) {
+    throw new Error('Meta Lead Ads integration is not configured');
+  }
+  const ids = [...new Set(leadgenIds.map((id) => text(id, 255)).filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0 || ids.some((id) => !/^\d{10,30}$/.test(id))) {
+    throw new Error('Meta Lead Ads lead IDs must contain 10 to 30 digits');
+  }
+
+  const summary = emptySummary();
+  for (const leadgenId of ids) {
+    mergeSummary(summary, await importMetaLeadValue({ leadgen_id: leadgenId }, true));
+  }
+  return { processed: ids.length, summary };
+};
+
 export const importHistoricalMetaLeadAds = async (): Promise<MetaLeadAdsBackfillResult> => {
   const config = metaLeadAdsConfig();
   if (!config.accessToken || !config.pageId) {
@@ -493,22 +533,7 @@ export const processMetaLeadAdsWebhook = async (payload: JsonObject) => {
 
   const summary = emptySummary();
   for (const value of values) {
-    const leadgenId = text(value.leadgen_id, 255)!;
-    const lead = await fetchMetaLead(leadgenId);
-    const formId = text(lead.form_id ?? value.form_id, 255);
-    const formName = formId ? await fetchMetaFormName(formId) : null;
-    const record = mapMetaLeadToImportRecord(lead, value, formName);
-    const imported = await importLeadRecords(pool, [record], {
-      provider: 'meta_lead_ads_live',
-      providerLabel: 'Meta Instant Forms',
-      sourceCode: 'meta_lead_ads',
-      sourceName: 'Meta Lead Ads',
-      allowMissingPhone: true,
-      createFollowUpTask: true,
-      restoreArchivedMatches: true,
-    });
-    mergeSummary(summary, imported);
-    await linkMetaLeadAttribution(record);
+    mergeSummary(summary, await importMetaLeadValue(value, true));
   }
 
   return { processed: values.length, summary };

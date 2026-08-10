@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -27,11 +28,14 @@ import {
   metaMarketingApi,
   metaMarketingQueryKeys,
   type MetaAttributionData,
+  type MetaAttributionLeadsData,
+  type MetaAttributionLeadRow,
   type MetaCreativeRow,
   type MetaFormRow,
 } from '@/features/marketing/meta-api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { getInitials } from '@/lib/auth';
 
 function AttributionMetric({
   label,
@@ -105,6 +109,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<MetaCreativeRow | null>(null);
+  const [selectedLeadsCreative, setSelectedLeadsCreative] = useState<MetaCreativeRow | null>(null);
   const [onlyWithLeads, setOnlyWithLeads] = useState(false);
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const queryKey = [...metaMarketingQueryKeys.attribution, reportingQuery];
@@ -112,6 +117,18 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     queryKey,
     queryFn: () => metaMarketingApi.attribution(reportingQuery),
     placeholderData: (previous) => previous,
+  });
+  const attributedLeads = useQuery<MetaAttributionLeadsData>({
+    queryKey: [
+      ...metaMarketingQueryKeys.attributionLeads,
+      reportingQuery,
+      selectedLeadsCreative?.attributionKey,
+    ],
+    queryFn: () => metaMarketingApi.attributionLeads(
+      reportingQuery,
+      selectedLeadsCreative!.attributionKey,
+    ),
+    enabled: Boolean(selectedLeadsCreative),
   });
   const syncCatalog = useMutation({
     mutationFn: metaMarketingApi.syncCatalog,
@@ -230,7 +247,27 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       sortable: true,
       cellClassName: 'tabular-nums font-medium',
     },
-    { key: 'leads', header: t('metaAttributedLeads'), accessor: (row: MetaCreativeRow) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
+    {
+      key: 'leads',
+      header: t('metaAttributedLeads'),
+      accessor: (row: MetaCreativeRow) => row.leads,
+      render: (row: MetaCreativeRow) => row.leads > 0 ? (
+        <button
+          type="button"
+          className="inline-flex min-w-8 items-center justify-center rounded-md px-2 py-1 font-semibold text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:bg-primary/10 hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={(event) => {
+            event.stopPropagation();
+            setSelectedLeadsCreative(row);
+          }}
+          aria-label={`${t('metaViewAttributedLeads')}: ${row.leads}`}
+          title={t('metaViewAttributedLeads')}
+        >
+          {row.leads}
+        </button>
+      ) : <span className="px-2 text-muted-foreground">0</span>,
+      sortable: true,
+      cellClassName: 'tabular-nums',
+    },
     { key: 'qualified', header: t('qualifiedLeads'), accessor: (row: MetaCreativeRow) => row.qualified, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'demoInvited', header: t('invitedToDemo'), accessor: (row: MetaCreativeRow) => row.demoInvited, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'paid', header: t('paidLeads'), accessor: (row: MetaCreativeRow) => row.paid, sortable: true, cellClassName: 'tabular-nums' },
@@ -421,7 +458,96 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={Boolean(selectedLeadsCreative)}
+        onOpenChange={(open) => !open && setSelectedLeadsCreative(null)}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
+          <DialogHeader className="border-b border-border/60 px-6 pb-4 pt-6 pr-12">
+            <DialogTitle>{t('metaAttributedLeads')}</DialogTitle>
+            <DialogDescription>
+              {t('metaAttributedLeadsDescription')}
+              {selectedLeadsCreative ? ` ${selectedLeadsCreative.hookName || selectedLeadsCreative.adName || selectedLeadsCreative.adId || ''}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto px-6 pb-6">
+            {attributedLeads.isLoading ? (
+              <div className="space-y-3 py-2">
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            ) : attributedLeads.isError ? (
+              <Alert variant="destructive" className="my-2">
+                <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span>{attributedLeads.error instanceof Error ? attributedLeads.error.message : t('error')}</span>
+                  <Button variant="outline" size="sm" onClick={() => attributedLeads.refetch()}>{t('retry')}</Button>
+                </AlertDescription>
+              </Alert>
+            ) : attributedLeads.data?.leads.length ? (
+              <div className="divide-y divide-border/60">
+                {attributedLeads.data.leads.map((lead) => (
+                  <AttributedLeadRow key={lead.id} lead={lead} dateTime={dateTime} />
+                ))}
+              </div>
+            ) : (
+              <div className="py-14 text-center">
+                <Users className="mx-auto size-8 text-muted-foreground/60" />
+                <p className="mt-3 text-sm font-medium text-foreground">{t('metaNoAttributedLeads')}</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function AttributedLeadRow({
+  lead,
+  dateTime,
+}: {
+  lead: MetaAttributionLeadRow;
+  dateTime: (value?: string | null) => string;
+}) {
+  const { t } = useTranslation();
+  const name = lead.contactName || lead.studentName || `#${lead.id}`;
+  const href = `${lead.isArchived ? '/sales/archive' : '/sales/pipeline'}?lead=${lead.id}`;
+
+  return (
+    <a
+      href={href}
+      className="group flex items-center gap-3 py-4 outline-none transition-colors hover:bg-muted/35 focus-visible:bg-muted/50"
+      title={t('openLead')}
+    >
+      <Avatar className="size-10 border border-border/60">
+        <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+          {getInitials(name)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate font-medium text-foreground">{name}</p>
+          {lead.isArchived ? <Badge variant="outline">{t('leadInArchive')}</Badge> : null}
+          {lead.statusName || lead.statusCode ? (
+            <Badge variant="secondary" className="gap-1.5">
+              {lead.statusColor ? (
+                <span className="size-2 rounded-full" style={{ backgroundColor: lead.statusColor }} />
+              ) : null}
+              {lead.statusName || lead.statusCode}
+            </Badge>
+          ) : null}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{lead.phone || t('noData')}</span>
+          <span>{t('manager')}: {lead.managerName || t('notAssigned')}</span>
+          <span>{t('metaLeadReceivedAt')}: {dateTime(lead.capturedAt)}</span>
+        </div>
+      </div>
+      <ExternalLink className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+    </a>
   );
 }
 

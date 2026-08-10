@@ -129,6 +129,7 @@ import {
 } from './academy-analytics';
 import {
   getMetaAttributionAnalytics,
+  getMetaAttributionLeads,
   getMetaConversionEventDataset,
 } from './meta-marketing-analytics';
 import { buildSalesDashboardMetrics } from './sales-dashboard-metrics';
@@ -571,6 +572,36 @@ router.get('/modules/marketing/meta-attribution', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to fetch Meta attribution analytics', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch Meta attribution analytics') });
+  }
+});
+
+router.get('/modules/marketing/meta-attribution/leads', async (req, res) => {
+  if (!ensureMarketingModuleAccess(req, res)) return;
+  try {
+    const attributionKey = String(req.query.attributionKey ?? '').trim();
+    if (!attributionKey || attributionKey.length > 255) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    const reportingRange = parseReportingRange(req.query.from, req.query.to);
+    const defaultMonth = getZonedMonthRange(new Date(), ACADEMY_TIME_ZONE);
+    const range = reportingRange ?? {
+      start: defaultMonth.start,
+      end: defaultMonth.end,
+      from: academyDateOnlyKey(defaultMonth.start),
+      to: academyDateOnlyKey(new Date(defaultMonth.end.getTime() - 1)),
+    };
+    const leads = await getMetaAttributionLeads(range, attributionKey);
+    res.json({
+      leads: await applyLeadVisibilityForActor({
+        userId: req.user!.id,
+        module: req.user!.module,
+        modules: getAssignedModules(req.user),
+        scopeModule: 'sales',
+      }, leads),
+    });
+  } catch (error: any) {
+    logger.error('Failed to fetch Meta attributed leads', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to fetch Meta attributed leads') });
   }
 });
 

@@ -65,6 +65,27 @@ export type MetaFormRow = {
   revenue: number;
 };
 
+export type MetaAttributionLeadRow = {
+  id: number;
+  contactName?: string | null;
+  studentName?: string | null;
+  phone?: string | null;
+  statusCode: string;
+  statusName?: string | null;
+  statusColor?: string | null;
+  managerId?: number | null;
+  managerName?: string | null;
+  isArchived?: boolean;
+  createdAt?: string | null;
+  capturedAt?: string | null;
+  leadgenId?: string | null;
+  formId?: string | null;
+};
+
+export type MetaAttributionLeadsData = {
+  leads: MetaAttributionLeadRow[];
+};
+
 export type MetaAttributionData = {
   summary: {
     creatives: number;
@@ -111,6 +132,7 @@ export type MetaEventsData = {
 
 export const metaMarketingQueryKeys = {
   attribution: ['/api/academy/modules/marketing/meta-attribution'] as const,
+  attributionLeads: ['/api/academy/modules/marketing/meta-attribution/leads'] as const,
   events: ['/api/academy/modules/marketing/meta-events'] as const,
 };
 
@@ -119,6 +141,14 @@ export const metaMarketingApi = {
     'GET',
     `/api/academy/modules/marketing/meta-attribution?${reportingQuery}`,
   ) as Promise<MetaAttributionData>,
+  attributionLeads: (reportingQuery: string, attributionKey: string) => {
+    const query = new URLSearchParams(reportingQuery);
+    query.set('attributionKey', attributionKey);
+    return apiRequest(
+      'GET',
+      `/api/academy/modules/marketing/meta-attribution/leads?${query.toString()}`,
+    ) as Promise<MetaAttributionLeadsData>;
+  },
   events: () => apiRequest(
     'GET',
     '/api/academy/modules/marketing/meta-events',

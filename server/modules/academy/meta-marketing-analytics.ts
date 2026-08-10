@@ -260,6 +260,50 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
   };
 };
 
+export const getMetaAttributionLeads = async (
+  reportingRange: ReportingRange,
+  attributionKey: string,
+) => query(
+  `WITH selected_attribution AS (
+     SELECT DISTINCT ON (attribution.lead_id) attribution.*
+     FROM meta_lead_attributions attribution
+     WHERE attribution.lead_id IS NOT NULL
+       AND attribution.captured_at >= $1
+       AND attribution.captured_at < $2
+     ORDER BY attribution.lead_id, attribution.captured_at, attribution.id
+   )
+   SELECT lead.id,
+          lead.contact_name,
+          lead.student_name,
+          COALESCE(
+            NULLIF(BTRIM(lead.phone), ''),
+            (
+              SELECT phone.phone
+              FROM academy_lead_phones phone
+              WHERE phone.lead_id = lead.id
+              ORDER BY phone.is_primary DESC, phone.id
+              LIMIT 1
+            )
+          ) AS phone,
+          lead.status_code,
+          status.name AS status_name,
+          status.color AS status_color,
+          lead.manager_id,
+          manager.full_name AS manager_name,
+          lead.is_archived,
+          lead.created_at,
+          attribution.captured_at,
+          attribution.leadgen_id,
+          attribution.form_id
+   FROM selected_attribution attribution
+   JOIN academy_leads lead ON lead.id = attribution.lead_id
+   LEFT JOIN academy_lead_statuses status ON status.code = lead.status_code
+   LEFT JOIN users manager ON manager.id = lead.manager_id
+   WHERE COALESCE(attribution.ad_id, NULLIF(attribution.utm_content, ''), 'unattributed') = $3
+   ORDER BY attribution.captured_at DESC, lead.id DESC`,
+  [reportingRange.start, reportingRange.end, attributionKey],
+);
+
 export const getMetaConversionEventDataset = async (limit = 200) => {
   const [events, statusCounts] = await Promise.all([
     query(

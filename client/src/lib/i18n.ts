@@ -1790,9 +1790,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     ru: 'Все занятия групп в одном календаре. Фильтруйте по преподавателю, школе, курсу или группе.',
   },
   scheduleFilters: { en: 'Schedule filters', ru: 'Фильтры расписания' },
-  calendarTimeScale: { en: 'Calendar time scale', ru: 'Масштаб времени календаря' },
-  compactCalendar: { en: 'Compact', ru: 'Компактно' },
-  fullDayCalendar: { en: 'Full day', ru: 'Весь день' },
   collapsedScheduleGap: {
     en: 'No lessons from {start} to {end}',
     ru: 'Нет занятий с {start} до {end}',

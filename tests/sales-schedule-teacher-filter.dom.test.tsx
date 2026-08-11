@@ -119,20 +119,11 @@ describe('sales schedule teacher filter', () => {
     expect(container.querySelector('[aria-label$=", Vibe Coding — Evening"]')).toBeTruthy();
   });
 
-  it('starts with long empty hours collapsed and can restore the full day', async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  it('collapses long empty hours automatically without density controls', () => {
     renderSchedule();
 
-    const compactButton = screen.getByRole('button', { name: 'Compact' });
-    const fullDayButton = screen.getByRole('button', { name: 'Full day' });
-    expect(compactButton.getAttribute('aria-pressed')).toBe('true');
-    expect(fullDayButton.getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('note', { name: 'No lessons from 11:30 to 17:30' })).toBeTruthy();
-
-    await user.click(fullDayButton);
-
-    expect(compactButton.getAttribute('aria-pressed')).toBe('false');
-    expect(fullDayButton.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.queryByRole('note', { name: /No lessons from/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Compact' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Full day' })).toBeNull();
   });
 });

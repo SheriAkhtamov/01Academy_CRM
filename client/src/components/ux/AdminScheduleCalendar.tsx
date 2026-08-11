@@ -9,6 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  buildCalendarTimeScale,
+  getCalendarMinutePosition,
+} from '@/lib/calendarTimeScale';
 import { cn } from '@/lib/utils';
 
 interface SchoolOption {
@@ -82,7 +86,14 @@ interface CalendarEvent {
 
 const START_HOUR = 9;
 const END_HOUR = 21;
-const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, index) => START_HOUR + index);
+const HOUR_WIDTH = 80;
+const COLLAPSED_GAP_WIDTH = 128;
+const EMPTY_TIMELINE_WIDTH = 360;
+const RESOURCE_COLUMN_WIDTH = 13 * 16;
+
+const formatMinutes = (minutes: number) => (
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+);
 
 const toDateInput = (value: Date) => {
   const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
@@ -197,6 +208,20 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
       demos: onlineDemos,
     }];
   }, [schedule.data?.onlineDemos, schedule.data?.rooms, t]);
+  const eventsByRoomId = useMemo(
+    () => new Map(resourceRows.map((room) => [room.id, buildRoomEvents(room, selectedDate)])),
+    [resourceRows, selectedDate],
+  );
+  const timeScale = useMemo(() => buildCalendarTimeScale(
+    resourceRows.flatMap((room) => eventsByRoomId.get(room.id) ?? []),
+    {
+      hourSize: HOUR_WIDTH,
+      defaultStartMinutes: START_HOUR * 60,
+      defaultEndMinutes: END_HOUR * 60,
+      collapsedGapSize: COLLAPSED_GAP_WIDTH,
+      emptyCalendarSize: EMPTY_TIMELINE_WIDTH,
+    },
+  ), [eventsByRoomId, resourceRows]);
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -247,17 +272,49 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
           </div>
         ) : resourceRows.length ? (
           <div className="overflow-x-auto">
-            <div className="min-w-[980px]">
-              <div className="grid grid-cols-[13rem_repeat(12,minmax(5rem,1fr))] border-b border-border bg-muted/40">
+            <div
+              className="min-w-max"
+              style={{ width: RESOURCE_COLUMN_WIDTH + timeScale.totalSize }}
+            >
+              <div className="grid grid-cols-[13rem_minmax(0,1fr)] border-b border-border bg-muted/40">
                 <div className="px-4 py-3 text-xs font-medium text-muted-foreground">{t('scheduleResources')}</div>
-                {HOURS.map((hour) => (
-                  <div key={hour} className="border-l border-border px-2 py-3 text-center text-xs font-medium tabular-nums text-muted-foreground">
-                    {String(hour).padStart(2, '0')}:00
-                  </div>
-                ))}
+                <div className="relative min-h-11 border-l border-border">
+                  {timeScale.segments
+                    .filter((segment) => segment.kind === 'collapsed')
+                    .map((segment) => {
+                      const start = formatMinutes(segment.startMinutes);
+                      const end = formatMinutes(segment.endMinutes);
+                      return (
+                        <div
+                          key={`${segment.startMinutes}-${segment.endMinutes}`}
+                          className="absolute inset-y-0 flex items-center justify-center border-x border-dashed border-border bg-muted/80 px-1"
+                          style={{ left: segment.offset, width: segment.size }}
+                          role="note"
+                          aria-label={t('collapsedScheduleGap')
+                            .replace('{start}', start)
+                            .replace('{end}', end)}
+                        >
+                          <span className="truncate text-[10px] font-medium tabular-nums text-muted-foreground">
+                            {start}–{end}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  {timeScale.markers.map((marker) => (
+                    <div
+                      key={marker.minutes}
+                      className="absolute inset-y-0 z-10 border-l border-border"
+                      style={{ left: marker.offset }}
+                    >
+                      <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-muted px-1 text-[10px] font-medium tabular-nums text-muted-foreground">
+                        {formatMinutes(marker.minutes)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
               {resourceRows.map((room) => {
-                const events = buildRoomEvents(room, selectedDate);
+                const events = eventsByRoomId.get(room.id) ?? [];
                 return (
                   <div key={room.id} className="grid grid-cols-[13rem_minmax(0,1fr)] border-b border-border last:border-b-0">
                     <div className="flex flex-col justify-center gap-1 border-r border-border bg-card px-4 py-3">
@@ -270,14 +327,28 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
                       </span>
                     </div>
                     <div className="relative min-h-24 bg-card">
-                      <div className="absolute inset-0 grid grid-cols-12" aria-hidden="true">
-                        {HOURS.map((hour) => <div key={hour} className="border-r border-border last:border-r-0" />)}
-                      </div>
+                      {timeScale.segments
+                        .filter((segment) => segment.kind === 'collapsed')
+                        .map((segment) => (
+                          <div
+                            key={`${segment.startMinutes}-${segment.endMinutes}`}
+                            className="absolute inset-y-0 border-x border-dashed border-border bg-muted/45"
+                            style={{ left: segment.offset, width: segment.size }}
+                            aria-hidden="true"
+                          />
+                        ))}
+                      {timeScale.markers.map((marker) => (
+                        <div
+                          key={marker.minutes}
+                          className="absolute inset-y-0 border-l border-border"
+                          style={{ left: marker.offset }}
+                          aria-hidden="true"
+                        />
+                      ))}
                       {events.map((event) => {
-                        const visibleStart = Math.max(event.startMinutes, START_HOUR * 60);
-                        const visibleEnd = Math.min(event.endMinutes, END_HOUR * 60);
-                        const left = ((visibleStart - START_HOUR * 60) / ((END_HOUR - START_HOUR) * 60)) * 100;
-                        const width = ((visibleEnd - visibleStart) / ((END_HOUR - START_HOUR) * 60)) * 100;
+                        const left = getCalendarMinutePosition(timeScale, event.startMinutes);
+                        const right = getCalendarMinutePosition(timeScale, event.endMinutes);
+                        const width = Math.max(64, right - left - 6);
                         return (
                           <article
                             key={event.id}
@@ -289,7 +360,7 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
                                   ? 'border-violet-300 bg-violet-50 text-violet-950 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-100'
                                   : 'border-primary/30 bg-primary/10 text-primary',
                             )}
-                            style={{ left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` }}
+                            style={{ left: left + 3, width }}
                             title={`${event.source === 'demo' ? t('demoLesson') : event.name} · ${event.courseName ?? ''} · ${event.teacherName ?? ''}`}
                           >
                             <span className="truncate text-xs font-semibold">

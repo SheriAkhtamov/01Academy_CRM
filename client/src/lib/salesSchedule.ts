@@ -7,6 +7,7 @@ export interface SalesScheduleGroup {
   courseId?: number | null;
   courseName?: string | null;
   schoolId?: number | null;
+  teacherId?: number | null;
   teacherName?: string | null;
   schoolName?: string | null;
   maxStudents?: number | null;
@@ -25,6 +26,7 @@ export interface SalesScheduleLesson {
   groupName?: string | null;
   courseId?: number | null;
   courseName?: string | null;
+  teacherId?: number | null;
   teacherName?: string | null;
   schoolName?: string | null;
   topic?: string | null;
@@ -50,6 +52,7 @@ export interface SalesScheduleDemoLesson {
   courseName?: string | null;
   schoolName?: string | null;
   roomName?: string | null;
+  teacherId?: number | null;
   teacherName?: string | null;
   scheduledAt: string;
   durationMinutes?: number | null;
@@ -77,6 +80,7 @@ export interface SalesScheduleEvent {
   groupId: number;
   groupName: string;
   courseName?: string | null;
+  teacherId?: number | null;
   teacherName?: string | null;
   schoolName?: string | null;
   topic?: string | null;
@@ -110,6 +114,7 @@ export function buildSalesDemoScheduleEvents(
       groupId: 0,
       groupName: 'demoLesson',
       courseName: demo.courseName,
+      teacherId: entityId(demo.teacherId),
       teacherName: demo.teacherName,
       schoolName: demo.schoolName,
       roomName: demo.roomName,
@@ -165,6 +170,7 @@ const toEvent = (
     groupId: lesson.groupId,
     groupName: lesson.groupName || group?.name || `#${lesson.groupId}`,
     courseName: lesson.courseName || group?.courseName,
+    teacherId: entityId(lesson.teacherId) ?? entityId(group?.teacherId),
     teacherName: lesson.teacherName || group?.teacherName,
     schoolName: lesson.schoolName || group?.schoolName,
     availableSeats: group
@@ -247,6 +253,7 @@ export function buildSalesScheduleEvents({
         groupId: group.id,
         groupName: group.name,
         courseName: group.courseName,
+        teacherId: entityId(group.teacherId),
         teacherName: group.teacherName,
         schoolName: group.schoolName,
         availableSeats: Math.max(0, Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0)),
@@ -329,6 +336,45 @@ const entityId = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
+
+export interface SalesScheduleTeacherOption {
+  id: number;
+  name: string;
+}
+
+export function buildSalesScheduleTeacherOptions(
+  groups: SalesScheduleGroup[],
+  lessons: SalesScheduleLesson[],
+  demos: SalesScheduleDemoLesson[] = [],
+): SalesScheduleTeacherOption[] {
+  const teachersById = new Map<number, string>();
+  const addTeacher = (idValue: unknown, nameValue: unknown) => {
+    const id = entityId(idValue);
+    const name = String(nameValue ?? '').trim();
+    if (!id || !name) return;
+    teachersById.set(id, name);
+  };
+
+  for (const group of groups) addTeacher(group.teacherId, group.teacherName);
+  for (const lesson of lessons) addTeacher(lesson.teacherId, lesson.teacherName);
+  for (const demo of demos) addTeacher(demo.teacherId, demo.teacherName);
+
+  return [...teachersById]
+    .map(([id, name]) => ({ id, name }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function filterSalesScheduleEventsByTeachers(
+  events: SalesScheduleEvent[],
+  selectedTeacherIds: Set<number>,
+) {
+  if (selectedTeacherIds.size === 0) return events;
+  return events.filter((event) => (
+    event.teacherId !== null
+    && event.teacherId !== undefined
+    && selectedTeacherIds.has(event.teacherId)
+  ));
+}
 
 const entityKey = (prefix: string, id: number | null, name: string | null | undefined) => (
   id ? `${prefix}-${id}` : `${prefix}-name-${name?.trim().toLocaleLowerCase() || 'unassigned'}`

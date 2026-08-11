@@ -50,11 +50,14 @@ import {
   type DemoLessonDialogLead,
 } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonDetailsDialog } from '@/components/ux/DemoLessonDetailsDialog';
+import { SalesScheduleTeacherFilter } from '@/components/ux/SalesScheduleTeacherFilter';
 import { cn } from '@/lib/utils';
 import {
   buildSalesDemoScheduleEvents,
   buildSalesScheduleFilterTree,
   buildSalesScheduleEvents,
+  buildSalesScheduleTeacherOptions,
+  filterSalesScheduleEventsByTeachers,
   getGroupSelectionState,
   getGroupsWithSchedule,
   positionOverlappingScheduleEvents,
@@ -155,6 +158,7 @@ export function SalesScheduleCalendar({
   const [now, setNow] = useState(() => new Date());
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [selectedDemoId, setSelectedDemoId] = useState<number | null>(null);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<Set<number>>(() => new Set());
   const weekEnd = useMemo(() => addWeeks(weekStart, 1), [weekStart]);
   const demosQuery = useQuery<DemoLesson[]>({
     queryKey: [...demoLessonQueryKeys.all, weekStart.toISOString(), weekEnd.toISOString()],
@@ -175,6 +179,22 @@ export function SalesScheduleCalendar({
   const scheduleGroups = useMemo(
     () => getGroupsWithSchedule(groups, lessons),
     [groups, lessons],
+  );
+  const scheduleGroupIds = useMemo(
+    () => new Set(scheduleGroups.map((group) => group.id)),
+    [scheduleGroups],
+  );
+  const scheduleLessons = useMemo(
+    () => lessons.filter((lesson) => scheduleGroupIds.has(lesson.groupId)),
+    [lessons, scheduleGroupIds],
+  );
+  const teacherOptions = useMemo(
+    () => buildSalesScheduleTeacherOptions(scheduleGroups, scheduleLessons, demos),
+    [demos, scheduleGroups, scheduleLessons],
+  );
+  const teacherIds = useMemo(
+    () => new Set(teacherOptions.map((teacher) => teacher.id)),
+    [teacherOptions],
   );
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(
     () => new Set(scheduleGroups.map((group) => group.id)),
@@ -198,6 +218,13 @@ export function SalesScheduleCalendar({
   }, [scheduleGroups]);
 
   useEffect(() => {
+    setSelectedTeacherIds((current) => {
+      const next = new Set([...current].filter((id) => teacherIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [teacherIds]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
@@ -207,19 +234,31 @@ export function SalesScheduleCalendar({
     [weekStart],
   );
   const allEvents = useMemo(
-    () => buildSalesScheduleEvents({ groups: scheduleGroups, lessons, weekStart }),
-    [lessons, scheduleGroups, weekStart],
+    () => buildSalesScheduleEvents({ groups: scheduleGroups, lessons: scheduleLessons, weekStart }),
+    [scheduleGroups, scheduleLessons, weekStart],
   );
   const demoEvents = useMemo(
     () => buildSalesDemoScheduleEvents(demos, weekStart),
     [demos, weekStart],
   );
-  const visibleEvents = useMemo(
+  const groupFilteredEvents = useMemo(
     () => [
       ...allEvents.filter((event) => selectedGroupIds.has(event.groupId)),
       ...demoEvents,
     ],
     [allEvents, demoEvents, selectedGroupIds],
+  );
+  const teacherEventCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const event of groupFilteredEvents) {
+      if (!event.teacherId) continue;
+      counts.set(event.teacherId, (counts.get(event.teacherId) ?? 0) + 1);
+    }
+    return counts;
+  }, [groupFilteredEvents]);
+  const visibleEvents = useMemo(
+    () => filterSalesScheduleEventsByTeachers(groupFilteredEvents, selectedTeacherIds),
+    [groupFilteredEvents, selectedTeacherIds],
   );
   const positionedEvents = useMemo(
     () => days.flatMap((_, dayIndex) => positionOverlappingScheduleEvents(
@@ -279,6 +318,15 @@ export function SalesScheduleCalendar({
     });
   };
 
+  const toggleTeacher = (teacherId: number, checked: boolean) => {
+    setSelectedTeacherIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(teacherId);
+      else next.delete(teacherId);
+      return next;
+    });
+  };
+
   const availableSeats = (group: SalesScheduleGroup) => Math.max(
     0,
     Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0),
@@ -294,12 +342,14 @@ export function SalesScheduleCalendar({
 
   return (
     <div className="grid h-full min-h-0 min-w-0 grid-cols-1 gap-4 overflow-y-auto overscroll-y-contain lg:grid-cols-[18rem_minmax(0,1fr)] lg:overflow-hidden">
-      <Card className="flex min-h-64 max-h-80 flex-col lg:h-full lg:min-h-0 lg:max-h-none">
+      <Card className="flex min-h-[30rem] max-h-[75vh] flex-col lg:h-full lg:min-h-0 lg:max-h-none">
         <CardHeader className="shrink-0 gap-3 pb-3">
           <div>
             <CardTitle>{t('scheduleFilters')}</CardTitle>
             <CardDescription>
               {selectedGroupIds.size} {t('ofLabel')} {scheduleGroups.length} {t('groupsSelected')}
+              {' · '}
+              {t('lessonsThisWeekCount').replace('{count}', String(visibleEvents.length))}
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-1">
@@ -310,7 +360,7 @@ export function SalesScheduleCalendar({
               disabled={allSelected}
               onClick={() => setSelectedGroupIds(new Set(scheduleGroups.map((group) => group.id)))}
             >
-              {t('selectAll')}
+              {t('selectAllScheduleGroups')}
             </Button>
             <Button
               type="button"
@@ -319,9 +369,18 @@ export function SalesScheduleCalendar({
               disabled={selectedGroupIds.size === 0}
               onClick={() => setSelectedGroupIds(new Set())}
             >
-              {t('clearAll')}
+              {t('clearScheduleGroups')}
             </Button>
           </div>
+          {teacherOptions.length > 0 ? (
+            <SalesScheduleTeacherFilter
+              teachers={teacherOptions}
+              selectedTeacherIds={selectedTeacherIds}
+              eventCounts={teacherEventCounts}
+              onToggle={toggleTeacher}
+              onClear={() => setSelectedTeacherIds(new Set())}
+            />
+          ) : null}
         </CardHeader>
         <CardContent className="min-h-0 flex-1 overflow-hidden pt-0">
           {scheduleGroups.length > 0 ? (
@@ -677,7 +736,9 @@ export function SalesScheduleCalendar({
                     <p className="max-w-md text-xs text-muted-foreground">
                       {selectedGroupIds.size === 0 && demos.length === 0
                         ? t('selectGroupsToSeeSchedule')
-                        : t('noLessonsThisWeekDescription')}
+                        : selectedTeacherIds.size > 0
+                          ? t('noLessonsForSelectedTeachers')
+                          : t('noLessonsThisWeekDescription')}
                     </p>
                   </div>
                 ) : null}

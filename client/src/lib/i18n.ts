@@ -1772,7 +1772,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
 
   // UX improvements — sales lesson calendar
-  clearAll: { en: 'Clear all', ru: 'Снять все' },
   groupsSelected: { en: 'groups selected', ru: 'групп выбрано' },
   noLessonsThisWeek: { en: 'No lessons to display', ru: 'Нет занятий для отображения' },
   noLessonsThisWeekDescription: {
@@ -1787,10 +1786,37 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   ofLabel: { en: 'of', ru: 'из' },
   salesSchedule: { en: 'Lesson schedule', ru: 'Расписание занятий' },
   salesScheduleSubtitle: {
-    en: 'All group lessons in one calendar. Filter the schedule by school, course or group.',
-    ru: 'Все занятия групп в одном календаре. Фильтруйте расписание по школе, курсу или группе.',
+    en: 'All group lessons in one calendar. Filter by teacher, school, course or group.',
+    ru: 'Все занятия групп в одном календаре. Фильтруйте по преподавателю, школе, курсу или группе.',
   },
   scheduleFilters: { en: 'Schedule filters', ru: 'Фильтры расписания' },
+  scheduleTeacherFilter: { en: 'Teachers', ru: 'Преподаватели' },
+  scheduleTeacherFilterDescription: {
+    en: 'Show lessons taught by any of the selected teachers.',
+    ru: 'Показывать занятия любого из выбранных преподавателей.',
+  },
+  allTeachers: { en: 'All teachers', ru: 'Все преподаватели' },
+  teachersSelectedCount: {
+    en: 'Teachers selected: {count}',
+    ru: 'Выбрано преподавателей: {count}',
+  },
+  searchTeachers: { en: 'Find a teacher', ru: 'Найти преподавателя' },
+  noTeachersFound: { en: 'No teachers found', ru: 'Преподаватели не найдены' },
+  showAllTeachers: { en: 'Show all teachers', ru: 'Показать всех преподавателей' },
+  removeTeacherFilter: {
+    en: 'Remove teacher filter: {name}',
+    ru: 'Убрать преподавателя из фильтра: {name}',
+  },
+  lessonsThisWeekCount: {
+    en: 'Lessons this week: {count}',
+    ru: 'Занятий на неделе: {count}',
+  },
+  noLessonsForSelectedTeachers: {
+    en: 'The selected teachers have no lessons in the chosen groups this week.',
+    ru: 'У выбранных преподавателей нет занятий в отмеченных группах на этой неделе.',
+  },
+  selectAllScheduleGroups: { en: 'All groups', ru: 'Все группы' },
+  clearScheduleGroups: { en: 'Clear groups', ru: 'Снять группы' },
   selectAll: { en: 'Select all', ru: 'Выбрать все' },
   selectGroupsToSeeSchedule: {
     en: 'Select at least one group to see its lessons.',

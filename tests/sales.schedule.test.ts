@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSalesDemoScheduleEvents,
   buildSalesScheduleFilterTree,
   buildSalesScheduleEvents,
+  buildSalesScheduleTeacherOptions,
+  filterSalesScheduleEventsByTeachers,
   getGroupSelectionState,
   positionOverlappingScheduleEvents,
   type SalesScheduleEvent,
@@ -109,5 +112,74 @@ describe('sales schedule calendar', () => {
     expect(getGroupSelectionState([1, 2], new Set([1]))).toBe('indeterminate');
     expect(getGroupSelectionState([1, 2], new Set([1, 2]))).toBe(true);
     expect(getGroupSelectionState([1, 2], new Set())).toBe(false);
+  });
+
+  it('builds one stable teacher option per teacher id across groups and lessons', () => {
+    const teachers = buildSalesScheduleTeacherOptions([
+      { id: 1, name: 'A1', teacherId: 10, teacherName: 'Teacher One' },
+      { id: 2, name: 'A2', teacherId: 10, teacherName: 'Teacher One' },
+    ], [{
+      id: 7,
+      groupId: 1,
+      teacherId: 11,
+      teacherName: 'Substitute Teacher',
+      scheduledAt: '2026-06-15T12:00:00',
+    }], [{
+      id: 3,
+      teacherId: 12,
+      teacherName: 'Demo Teacher',
+      scheduledAt: '2026-06-15T09:00:00',
+    }]);
+
+    expect(teachers).toEqual([
+      { id: 12, name: 'Demo Teacher' },
+      { id: 11, name: 'Substitute Teacher' },
+      { id: 10, name: 'Teacher One' },
+    ]);
+  });
+
+  it('filters by the teacher assigned to each real lesson, including substitutes', () => {
+    const events = buildSalesScheduleEvents({
+      groups: [{
+        ...groups[0],
+        teacherId: 10,
+      }],
+      lessons: [{
+        id: 7,
+        groupId: 1,
+        groupName: 'AI Kids A1',
+        teacherId: 11,
+        teacherName: 'Substitute Teacher',
+        scheduledAt: '2026-06-15T12:00:00',
+        durationMinutes: 90,
+        status: 'scheduled',
+      }],
+      weekStart,
+    });
+
+    expect(filterSalesScheduleEventsByTeachers(events, new Set([10])))
+      .toHaveLength(1);
+    expect(filterSalesScheduleEventsByTeachers(events, new Set([10]))[0].source)
+      .toBe('recurring');
+    expect(filterSalesScheduleEventsByTeachers(events, new Set([11])))
+      .toMatchObject([{ source: 'lesson', teacherId: 11 }]);
+    expect(filterSalesScheduleEventsByTeachers(events, new Set([10, 11])))
+      .toHaveLength(2);
+    expect(filterSalesScheduleEventsByTeachers(events, new Set())).toBe(events);
+  });
+
+  it('uses the same teacher filter for demo lessons', () => {
+    const demoEvents = buildSalesDemoScheduleEvents([{
+      id: 3,
+      teacherId: 12,
+      teacherName: 'Demo Teacher',
+      scheduledAt: '2026-06-15T09:00:00',
+      status: 'scheduled',
+    }], weekStart);
+
+    expect(filterSalesScheduleEventsByTeachers(demoEvents, new Set([12])))
+      .toMatchObject([{ source: 'demo', teacherId: 12 }]);
+    expect(filterSalesScheduleEventsByTeachers(demoEvents, new Set([10])))
+      .toEqual([]);
   });
 });

@@ -401,7 +401,7 @@ export const academyLeadAssignmentHistory = pgTable("academy_lead_assignment_his
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
   fromManagerId: integer("from_manager_id").references(() => users.id, { onDelete: "set null" }),
-  toManagerId: integer("to_manager_id").references(() => users.id, { onDelete: "set null" }).notNull(),
+  toManagerId: integer("to_manager_id").references(() => users.id, { onDelete: "set null" }),
   changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow(),

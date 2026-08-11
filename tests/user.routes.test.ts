@@ -215,6 +215,67 @@ describe('user route validation', () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it('transfers every assigned responsibility before deleting a sales employee', async () => {
+    const departingUser = {
+      ...administrationUser,
+      id: 16,
+      fullName: 'Departing Sales User',
+      module: 'sales',
+      modules: ['sales'],
+      hasReportAccess: false,
+    };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(departingUser);
+
+    const statements: string[] = [];
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
+        statements.push(statement.trim());
+        if (statement.includes('AS has_leadership')) {
+          return { rows: [{ id: 16, is_active: true, has_leadership: false }] };
+        }
+        if (statement.includes('AS lead_count')) {
+          return { rows: [{ lead_count: 1, student_count: 1, open_task_count: 1 }] };
+        }
+        if (statement.includes('SELECT u.id, u.full_name')) {
+          return { rows: [{ id: 8, full_name: 'Replacement Sales User' }] };
+        }
+        if (statement.includes('FROM academy_leads') && statement.includes('FOR UPDATE')) {
+          return { rows: [{ id: 10 }] };
+        }
+        if (statement.includes('FROM academy_students') && statement.includes('FOR UPDATE')) {
+          return { rows: [{ id: 20 }] };
+        }
+        if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 1 };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.delete('/api/users/16?leadTransferManagerId=8');
+
+    expect(response.status).toBe(200);
+    expect(response.body.transferredLeadCount).toBe(3);
+    const leadTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_leads'));
+    const studentTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_students'));
+    const taskTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_tasks'));
+    const historyIndex = statements.findIndex((statement) => statement.includes('INSERT INTO academy_lead_assignment_history'));
+    const deleteIndex = statements.findIndex((statement) => statement.includes('DELETE FROM users'));
+    const commitIndex = statements.findIndex((statement) => statement === 'COMMIT');
+    expect(leadTransferIndex).toBeGreaterThan(-1);
+    expect(studentTransferIndex).toBeGreaterThan(leadTransferIndex);
+    expect(taskTransferIndex).toBeGreaterThan(studentTransferIndex);
+    expect(historyIndex).toBeGreaterThan(taskTransferIndex);
+    expect(deleteIndex).toBeGreaterThan(historyIndex);
+    expect(commitIndex).toBeGreaterThan(deleteIndex);
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
   it('does not assign a telephony extension without Sales access', async () => {
     const currentUser = { ...administrationUser, onlinePbxExtension: null };
     const updatedUser = { ...administrationUser, onlinePbxExtension: null };

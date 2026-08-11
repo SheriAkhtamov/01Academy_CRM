@@ -3,9 +3,12 @@ import {
   buildSalesDemoScheduleEvents,
   buildSalesScheduleFilterTree,
   buildSalesScheduleEvents,
+  buildSalesScheduleTimeScale,
   buildSalesScheduleTeacherOptions,
   filterSalesScheduleEventsByTeachers,
+  getSalesScheduleMinutePosition,
   getGroupSelectionState,
+  isSalesScheduleMinuteCollapsed,
   positionOverlappingScheduleEvents,
   type SalesScheduleEvent,
 } from '../client/src/lib/salesSchedule';
@@ -82,6 +85,55 @@ describe('sales schedule calendar', () => {
     expect(positioned[0]).toMatchObject({ lane: 0, laneCount: 2 });
     expect(positioned[1]).toMatchObject({ lane: 1, laneCount: 2 });
     expect(positioned[2]).toMatchObject({ lane: 0, laneCount: 1 });
+  });
+
+  it('collapses long week-wide gaps without shrinking lesson duration', () => {
+    const scale = buildSalesScheduleTimeScale([
+      { startMinutes: 10 * 60, endMinutes: 11 * 60 },
+      { startMinutes: 18 * 60, endMinutes: 19 * 60 },
+    ], { compact: true });
+
+    expect(scale).toMatchObject({
+      startMinutes: 9 * 60 + 30,
+      endMinutes: 19 * 60 + 30,
+      height: 304,
+      segments: [
+        { kind: 'time', startMinutes: 570, endMinutes: 690, top: 0, height: 136 },
+        { kind: 'collapsed', startMinutes: 690, endMinutes: 1050, top: 136, height: 32 },
+        { kind: 'time', startMinutes: 1050, endMinutes: 1170, top: 168, height: 136 },
+      ],
+    });
+    expect(scale.markers.map((marker) => marker.minutes)).toEqual([600, 660, 1080, 1140]);
+    expect(isSalesScheduleMinuteCollapsed(scale, 14 * 60)).toBe(true);
+    expect(
+      getSalesScheduleMinutePosition(scale, 11 * 60)
+      - getSalesScheduleMinutePosition(scale, 10 * 60),
+    ).toBe(68);
+  });
+
+  it('keeps nearby lessons on a continuous scale and supports the full-day view', () => {
+    const events = [
+      { startMinutes: 10 * 60, endMinutes: 11 * 60 },
+      { startMinutes: 13 * 60, endMinutes: 14 * 60 },
+    ];
+    const compactScale = buildSalesScheduleTimeScale(events, { compact: true });
+    const fullDayScale = buildSalesScheduleTimeScale(events, { compact: false });
+
+    expect(compactScale.segments.every((segment) => segment.kind === 'time')).toBe(true);
+    expect(compactScale.height).toBe(340);
+    expect(fullDayScale).toMatchObject({
+      startMinutes: 9 * 60,
+      endMinutes: 21 * 60,
+      height: 816,
+      segments: [{ kind: 'time', startMinutes: 540, endMinutes: 1260, height: 816 }],
+    });
+  });
+
+  it('uses a short canvas for an empty compact calendar', () => {
+    const scale = buildSalesScheduleTimeScale([], { compact: true });
+
+    expect(scale.height).toBe(260);
+    expect(scale.markers).toEqual([]);
   });
 
   it('organizes group filters by school and course', () => {

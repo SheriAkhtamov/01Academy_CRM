@@ -18,7 +18,9 @@ import {
   ChevronRight,
   Clock3,
   MapPin,
+  Maximize2,
   Minus,
+  Minimize2,
   Plus,
   UserRoundCheck,
 } from 'lucide-react';
@@ -56,16 +58,20 @@ import {
   buildSalesDemoScheduleEvents,
   buildSalesScheduleFilterTree,
   buildSalesScheduleEvents,
+  buildSalesScheduleTimeScale,
   buildSalesScheduleTeacherOptions,
   filterSalesScheduleEventsByTeachers,
+  getSalesScheduleMinutePosition,
   getGroupSelectionState,
   getGroupsWithSchedule,
+  isSalesScheduleMinuteCollapsed,
   positionOverlappingScheduleEvents,
   type PositionedScheduleEvent,
   type SalesScheduleCourse,
   type SalesScheduleGroup,
   type SalesScheduleLesson,
   type SalesScheduleSchool,
+  type SalesScheduleTimeScale,
 } from '@/lib/salesSchedule';
 
 interface SalesScheduleCalendarProps {
@@ -76,8 +82,6 @@ interface SalesScheduleCalendarProps {
   leads: DemoLessonDialogLead[];
 }
 
-const DEFAULT_START_HOUR = 9;
-const DEFAULT_END_HOUR = 21;
 const HOUR_HEIGHT = 68;
 const TIME_COLUMN_WIDTH = 64;
 
@@ -126,12 +130,15 @@ const formatMinutes = (minutes: number) => (
 
 const getEventPositionStyle = (
   event: PositionedScheduleEvent,
-  startHour: number,
+  timeScale: SalesScheduleTimeScale,
 ) => {
   const dayWidth = `(100% - ${TIME_COLUMN_WIDTH}px) / 7`;
   const laneWidth = `(${dayWidth}) / ${event.laneCount}`;
-  const top = ((event.startMinutes - startHour * 60) / 60) * HOUR_HEIGHT;
-  const height = Math.max(38, ((event.endMinutes - event.startMinutes) / 60) * HOUR_HEIGHT - 4);
+  const top = getSalesScheduleMinutePosition(timeScale, event.startMinutes);
+  const height = Math.max(
+    38,
+    getSalesScheduleMinutePosition(timeScale, event.endMinutes) - top - 4,
+  );
 
   return {
     left: `calc(${TIME_COLUMN_WIDTH}px + (${dayWidth}) * ${event.dayIndex} + (${laneWidth}) * ${event.lane} + 3px)`,
@@ -159,6 +166,7 @@ export function SalesScheduleCalendar({
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [selectedDemoId, setSelectedDemoId] = useState<number | null>(null);
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<Set<number>>(() => new Set());
+  const [compactTimeScale, setCompactTimeScale] = useState(true);
   const weekEnd = useMemo(() => addWeeks(weekStart, 1), [weekStart]);
   const demosQuery = useQuery<DemoLesson[]>({
     queryKey: [...demoLessonQueryKeys.all, weekStart.toISOString(), weekEnd.toISOString()],
@@ -271,32 +279,22 @@ export function SalesScheduleCalendar({
     [scheduleGroups],
   );
 
-  const startHour = useMemo(() => {
-    if (visibleEvents.length === 0) return DEFAULT_START_HOUR;
-    return Math.max(0, Math.min(
-      DEFAULT_START_HOUR,
-      Math.floor(Math.min(...visibleEvents.map((event) => event.startMinutes)) / 60),
-    ));
-  }, [visibleEvents]);
-  const endHour = useMemo(() => {
-    if (visibleEvents.length === 0) return DEFAULT_END_HOUR;
-    return Math.min(24, Math.max(
-      DEFAULT_END_HOUR,
-      Math.ceil(Math.max(...visibleEvents.map((event) => event.endMinutes)) / 60),
-    ));
-  }, [visibleEvents]);
-  const hours = useMemo(
-    () => Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index),
-    [endHour, startHour],
+  const timeScale = useMemo(
+    () => buildSalesScheduleTimeScale(visibleEvents, {
+      compact: compactTimeScale,
+      hourHeight: HOUR_HEIGHT,
+    }),
+    [compactTimeScale, visibleEvents],
   );
-  const calendarHeight = (endHour - startHour) * HOUR_HEIGHT;
+  const calendarHeight = timeScale.height;
   const allSelected = scheduleGroups.length > 0 && selectedGroupIds.size === scheduleGroups.length;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const showCurrentTime = isSameWeek(now, weekStart, { weekStartsOn: 1 })
-    && now.getHours() >= startHour
-    && now.getHours() < endHour;
-  const currentTimeTop = (
-    ((now.getHours() * 60 + now.getMinutes()) - startHour * 60) / 60
-  ) * HOUR_HEIGHT;
+    && positionedEvents.length > 0
+    && currentMinutes >= timeScale.startMinutes
+    && currentMinutes < timeScale.endMinutes
+    && !isSalesScheduleMinuteCollapsed(timeScale, currentMinutes);
+  const currentTimeTop = getSalesScheduleMinutePosition(timeScale, currentMinutes);
 
   const toggleGroup = (groupId: number, checked: boolean) => {
     setSelectedGroupIds((current) => {
@@ -511,6 +509,34 @@ export function SalesScheduleCalendar({
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-1">
+            <div
+              className="flex items-center rounded-md border border-border bg-muted/30 p-0.5"
+              role="group"
+              aria-label={t('calendarTimeScale')}
+            >
+              <Button
+                type="button"
+                variant={compactTimeScale ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 shadow-none"
+                aria-pressed={compactTimeScale}
+                onClick={() => setCompactTimeScale(true)}
+              >
+                <Minimize2 data-icon="inline-start" />
+                {t('compactCalendar')}
+              </Button>
+              <Button
+                type="button"
+                variant={compactTimeScale ? 'ghost' : 'secondary'}
+                size="sm"
+                className="h-7 px-2 shadow-none"
+                aria-pressed={!compactTimeScale}
+                onClick={() => setCompactTimeScale(false)}
+              >
+                <Maximize2 data-icon="inline-start" />
+                {t('fullDayCalendar')}
+              </Button>
+            </div>
             <Button type="button" size="sm" onClick={() => setCreateDemoOpen(true)}>
               <Plus data-icon="inline-start" />{t('createDemoLesson')}
             </Button>
@@ -592,24 +618,46 @@ export function SalesScheduleCalendar({
                   ))}
                 </div>
 
-                {hours.map((hour) => {
-                  const top = (hour - startHour) * HOUR_HEIGHT;
+                {timeScale.markers.map((marker) => {
                   return (
-                    <div key={hour}>
+                    <div key={marker.minutes}>
                       <span
                         className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-[11px] tabular-nums text-muted-foreground"
-                        style={{ top: hour === startHour ? 8 : top }}
+                        style={{ top: marker.top === 0 ? 8 : marker.top }}
                       >
-                        {String(hour).padStart(2, '0')}:00
+                        {formatMinutes(marker.minutes)}
                       </span>
                       <div
                         className="absolute right-0 border-t border-border"
-                        style={{ left: TIME_COLUMN_WIDTH, top }}
+                        style={{ left: TIME_COLUMN_WIDTH, top: marker.top }}
                         aria-hidden="true"
                       />
                     </div>
                   );
                 })}
+
+                {positionedEvents.length > 0 ? timeScale.segments
+                  .filter((segment) => segment.kind === 'collapsed')
+                  .map((segment) => {
+                    const start = formatMinutes(segment.startMinutes);
+                    const end = formatMinutes(segment.endMinutes);
+                    return (
+                      <div
+                        key={`${segment.startMinutes}-${segment.endMinutes}`}
+                        className="absolute right-0 z-[5] flex items-center justify-center border-y border-dashed border-border bg-muted/70 px-3"
+                        style={{ left: TIME_COLUMN_WIDTH, top: segment.top, height: segment.height }}
+                        role="note"
+                        aria-label={t('collapsedScheduleGap')
+                          .replace('{start}', start)
+                          .replace('{end}', end)}
+                      >
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground shadow-2xs">
+                          <Minimize2 className="size-3" aria-hidden="true" />
+                          {start}–{end} · {t('noLessonsShort')}
+                        </span>
+                      </div>
+                    );
+                  }) : null}
 
                 <TooltipProvider delayDuration={800}>
                   {positionedEvents.map((event) => {
@@ -630,7 +678,7 @@ export function SalesScheduleCalendar({
                               event.source === 'demo' && 'cursor-pointer',
                             )}
                             style={{
-                              ...getEventPositionStyle(event, startHour),
+                              ...getEventPositionStyle(event, timeScale),
                               backgroundColor: tone.background,
                               borderColor: tone.border,
                               color: tone.foreground,

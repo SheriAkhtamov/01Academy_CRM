@@ -96,6 +96,212 @@ export interface SalesScheduleEvent {
   endMinutes: number;
 }
 
+export interface SalesScheduleTimeSegment {
+  kind: 'time' | 'collapsed';
+  startMinutes: number;
+  endMinutes: number;
+  top: number;
+  height: number;
+}
+
+export interface SalesScheduleTimeMarker {
+  minutes: number;
+  top: number;
+}
+
+export interface SalesScheduleTimeScale {
+  startMinutes: number;
+  endMinutes: number;
+  height: number;
+  segments: SalesScheduleTimeSegment[];
+  markers: SalesScheduleTimeMarker[];
+}
+
+interface SalesScheduleTimeScaleOptions {
+  compact: boolean;
+  hourHeight?: number;
+  defaultStartMinutes?: number;
+  defaultEndMinutes?: number;
+  eventPaddingMinutes?: number;
+  collapseThresholdMinutes?: number;
+  collapsedGapHeight?: number;
+  emptyCalendarHeight?: number;
+}
+
+const MINUTES_IN_DAY = 24 * 60;
+const MINUTES_IN_HOUR = 60;
+
+const clampScheduleMinute = (minutes: number) => (
+  Math.min(MINUTES_IN_DAY, Math.max(0, minutes))
+);
+
+const roundScheduleMinuteDown = (minutes: number, step: number) => (
+  Math.floor(minutes / step) * step
+);
+
+const roundScheduleMinuteUp = (minutes: number, step: number) => (
+  Math.ceil(minutes / step) * step
+);
+
+export function getSalesScheduleMinutePosition(
+  scale: SalesScheduleTimeScale,
+  minutes: number,
+) {
+  const clampedMinutes = Math.min(scale.endMinutes, Math.max(scale.startMinutes, minutes));
+  const segment = scale.segments.find((item) => clampedMinutes <= item.endMinutes)
+    ?? scale.segments.at(-1);
+  if (!segment || segment.endMinutes <= segment.startMinutes) return 0;
+
+  const progress = (clampedMinutes - segment.startMinutes)
+    / (segment.endMinutes - segment.startMinutes);
+  return segment.top + progress * segment.height;
+}
+
+export function isSalesScheduleMinuteCollapsed(
+  scale: SalesScheduleTimeScale,
+  minutes: number,
+) {
+  return scale.segments.some((segment) => (
+    segment.kind === 'collapsed'
+    && minutes > segment.startMinutes
+    && minutes < segment.endMinutes
+  ));
+}
+
+export function buildSalesScheduleTimeScale(
+  events: Pick<SalesScheduleEvent, 'startMinutes' | 'endMinutes'>[],
+  {
+    compact,
+    hourHeight = 68,
+    defaultStartMinutes = 9 * MINUTES_IN_HOUR,
+    defaultEndMinutes = 21 * MINUTES_IN_HOUR,
+    eventPaddingMinutes = 30,
+    collapseThresholdMinutes = 2 * MINUTES_IN_HOUR,
+    collapsedGapHeight = 32,
+    emptyCalendarHeight = 260,
+  }: SalesScheduleTimeScaleOptions,
+): SalesScheduleTimeScale {
+  const validEvents = events
+    .map((event) => ({
+      startMinutes: clampScheduleMinute(Number(event.startMinutes)),
+      endMinutes: clampScheduleMinute(Number(event.endMinutes)),
+    }))
+    .filter((event) => (
+      Number.isFinite(event.startMinutes)
+      && Number.isFinite(event.endMinutes)
+      && event.endMinutes > event.startMinutes
+    ));
+
+  if (compact && validEvents.length === 0) {
+    return {
+      startMinutes: defaultStartMinutes,
+      endMinutes: defaultEndMinutes,
+      height: emptyCalendarHeight,
+      segments: [{
+        kind: 'collapsed',
+        startMinutes: defaultStartMinutes,
+        endMinutes: defaultEndMinutes,
+        top: 0,
+        height: emptyCalendarHeight,
+      }],
+      markers: [],
+    };
+  }
+
+  const eventStart = validEvents.length > 0
+    ? Math.min(...validEvents.map((event) => event.startMinutes))
+    : defaultStartMinutes;
+  const eventEnd = validEvents.length > 0
+    ? Math.max(...validEvents.map((event) => event.endMinutes))
+    : defaultEndMinutes;
+  const startMinutes = compact
+    ? clampScheduleMinute(roundScheduleMinuteDown(eventStart - eventPaddingMinutes, 30))
+    : Math.min(defaultStartMinutes, roundScheduleMinuteDown(eventStart, MINUTES_IN_HOUR));
+  const endMinutes = compact
+    ? clampScheduleMinute(roundScheduleMinuteUp(eventEnd + eventPaddingMinutes, 30))
+    : Math.max(defaultEndMinutes, roundScheduleMinuteUp(eventEnd, MINUTES_IN_HOUR));
+
+  const activeRanges = validEvents
+    .map((event) => ({
+      startMinutes: Math.max(
+        startMinutes,
+        roundScheduleMinuteDown(event.startMinutes - eventPaddingMinutes, 30),
+      ),
+      endMinutes: Math.min(
+        endMinutes,
+        roundScheduleMinuteUp(event.endMinutes + eventPaddingMinutes, 30),
+      ),
+    }))
+    .sort((left, right) => left.startMinutes - right.startMinutes)
+    .reduce<Array<{ startMinutes: number; endMinutes: number }>>((ranges, range) => {
+      const previous = ranges.at(-1);
+      if (!previous || range.startMinutes > previous.endMinutes) {
+        ranges.push({ ...range });
+      } else {
+        previous.endMinutes = Math.max(previous.endMinutes, range.endMinutes);
+      }
+      return ranges;
+    }, []);
+
+  const rawSegments: Array<Pick<SalesScheduleTimeSegment, 'kind' | 'startMinutes' | 'endMinutes'>> = [];
+  if (!compact) {
+    rawSegments.push({ kind: 'time', startMinutes, endMinutes });
+  } else {
+    let cursor = startMinutes;
+    for (const range of activeRanges) {
+      if (range.startMinutes > cursor) {
+        rawSegments.push({
+          kind: range.startMinutes - cursor >= collapseThresholdMinutes ? 'collapsed' : 'time',
+          startMinutes: cursor,
+          endMinutes: range.startMinutes,
+        });
+      }
+      rawSegments.push({
+        kind: 'time',
+        startMinutes: range.startMinutes,
+        endMinutes: range.endMinutes,
+      });
+      cursor = range.endMinutes;
+    }
+    if (cursor < endMinutes) {
+      rawSegments.push({
+        kind: endMinutes - cursor >= collapseThresholdMinutes ? 'collapsed' : 'time',
+        startMinutes: cursor,
+        endMinutes,
+      });
+    }
+  }
+
+  let top = 0;
+  const segments = rawSegments.map<SalesScheduleTimeSegment>((segment) => {
+    const height = segment.kind === 'collapsed'
+      ? collapsedGapHeight
+      : ((segment.endMinutes - segment.startMinutes) / MINUTES_IN_HOUR) * hourHeight;
+    const positionedSegment = { ...segment, top, height };
+    top += height;
+    return positionedSegment;
+  });
+  const scaleWithoutMarkers: SalesScheduleTimeScale = {
+    startMinutes,
+    endMinutes,
+    height: top,
+    segments,
+    markers: [],
+  };
+  const firstHour = roundScheduleMinuteUp(startMinutes, MINUTES_IN_HOUR);
+  const markers = Array.from(
+    { length: Math.max(0, Math.floor((endMinutes - firstHour) / MINUTES_IN_HOUR) + 1) },
+    (_, index) => firstHour + index * MINUTES_IN_HOUR,
+  )
+    .filter((minutes) => !isSalesScheduleMinuteCollapsed(scaleWithoutMarkers, minutes))
+    .map((minutes) => ({
+      minutes,
+      top: getSalesScheduleMinutePosition(scaleWithoutMarkers, minutes),
+    }));
+
+  return { ...scaleWithoutMarkers, markers };
+}
+
 export function buildSalesDemoScheduleEvents(
   demos: SalesScheduleDemoLesson[],
   weekStart: Date,

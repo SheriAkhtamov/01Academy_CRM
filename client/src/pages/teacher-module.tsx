@@ -1713,8 +1713,9 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                     {/* Comment / Note Section */}
                     {selectedLessonStudents.length > 0 && (
                       <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold text-muted-foreground">{t('comment')}</Label>
+                        <Label htmlFor="attendance-note" className="text-xs font-semibold text-muted-foreground">{t('comment')}</Label>
                         <Textarea
+                          id="attendance-note"
                           value={attendanceNote}
                           disabled={lessonMutationPending}
                           onChange={(e) => {

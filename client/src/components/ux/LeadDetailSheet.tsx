@@ -1602,7 +1602,9 @@ export function LeadDetailSheet({
                             />
                             <div className="flex justify-end md:col-span-2">
                               <Button type="submit" disabled={createTask.isPending}>
-                                <ClipboardList data-icon="inline-start" />
+                                {createTask.isPending
+                                  ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                                  : <ClipboardList data-icon="inline-start" />}
                                 {t('createTask')}
                               </Button>
                             </div>

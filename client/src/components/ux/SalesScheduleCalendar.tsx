@@ -11,12 +11,14 @@ import {
 } from 'date-fns';
 import { enUS, ru } from 'date-fns/locale';
 import {
+  AlertCircle,
   BookOpen,
   Building2,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  LoaderCircle,
   MapPin,
   Minus,
   Minimize2,
@@ -503,8 +505,16 @@ export function SalesScheduleCalendar({
         <CardHeader className="shrink-0 flex flex-col gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>{t('weeklySchedule')}</CardTitle>
-            <CardDescription>
-              {format(days[0], 'd MMMM', { locale })} — {format(days[6], 'd MMMM yyyy', { locale })}
+            <CardDescription className="flex flex-wrap items-center gap-x-2">
+              <span>{format(days[0], 'd MMMM', { locale })} — {format(days[6], 'd MMMM yyyy', { locale })}</span>
+              {/* Demo lessons load per week. Without this an in-flight week and a
+                  genuinely empty one look identical — the grid is blank either way. */}
+              {demosQuery.isFetching ? (
+                <span className="inline-flex items-center gap-1">
+                  <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
+                  {t('loading')}
+                </span>
+              ) : null}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-1">
@@ -541,6 +551,25 @@ export function SalesScheduleCalendar({
           </div>
         </CardHeader>
         <CardContent className="min-h-0 flex-1 p-0">
+          {demosQuery.isError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+            >
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              <span>{t('failedToLoadData')}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-auto h-7"
+                disabled={demosQuery.isFetching}
+                onClick={() => void demosQuery.refetch()}
+              >
+                {t('retry')}
+              </Button>
+            </div>
+          ) : null}
           <div className="h-full overflow-auto overscroll-contain [scrollbar-gutter:stable]">
             <div className="min-w-[820px]">
               <div className="sticky top-0 z-20 grid grid-cols-[4rem_repeat(7,minmax(6.75rem,1fr))] border-b border-border bg-card">

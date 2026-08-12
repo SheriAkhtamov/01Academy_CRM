@@ -38,6 +38,7 @@ import {
   type DemoLesson,
 } from '@/features/demo-lessons/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
+import { submitOnEnter } from '@/lib/submitOnEnter';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 
@@ -259,6 +260,9 @@ export function DemoLessonDetailsDialog({
               id="demo-cancel-reason"
               value={cancelReason}
               onChange={(event) => setCancelReason(event.target.value)}
+              onKeyDown={submitOnEnter(() => cancelDemo.mutate(), {
+                disabled: !cancelReason.trim() || cancelDemo.isPending,
+              })}
               placeholder={t('cancellationReasonPlaceholder')}
               maxLength={500}
             />

@@ -1177,13 +1177,13 @@ function LeadPanel({
           </div>
 
           <div className="space-y-2">
-            <Label>{t('course')}</Label>
+            <Label htmlFor="instagram-lead-course">{t('course')}</Label>
             <Select
               value={draft.courseId || 'none'}
               onValueChange={(value) => patchDraft({ courseId: value === 'none' ? '' : value })}
               disabled={['enrolled', 'paid'].includes(lead.statusCode)}
             >
-              <SelectTrigger aria-label={t('course')}>
+              <SelectTrigger id="instagram-lead-course" aria-label={t('course')}>
                 <SelectValue placeholder={t('courseNotSelected')} />
               </SelectTrigger>
               <SelectContent>
@@ -1199,13 +1199,13 @@ function LeadPanel({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <div className="space-y-2">
-              <Label>{t('status')}</Label>
+              <Label htmlFor="instagram-lead-status">{t('status')}</Label>
               <Select
                 value={draft.statusCode}
                 onValueChange={(value) => patchDraft({ statusCode: value })}
                 disabled={lead.statusCode === 'paid'}
               >
-                <SelectTrigger aria-label={t('status')}>
+                <SelectTrigger id="instagram-lead-status" aria-label={t('status')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1221,9 +1221,9 @@ function LeadPanel({
             </div>
 
             <div className="space-y-2">
-              <Label>{t('source')}</Label>
+              <Label htmlFor="instagram-lead-source">{t('source')}</Label>
               <Select value={draft.sourceId} onValueChange={(value) => patchDraft({ sourceId: value })}>
-                <SelectTrigger aria-label={t('source')}>
+                <SelectTrigger id="instagram-lead-source" aria-label={t('source')}>
                   <SelectValue placeholder={t('selectSource')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1238,9 +1238,9 @@ function LeadPanel({
           </div>
 
           <div className="space-y-2">
-            <Label>{t('communicationLanguage')}</Label>
+            <Label htmlFor="instagram-lead-language">{t('communicationLanguage')}</Label>
             <Select value={draft.language} onValueChange={(value) => patchDraft({ language: value })}>
-              <SelectTrigger aria-label={t('communicationLanguage')}>
+              <SelectTrigger id="instagram-lead-language" aria-label={t('communicationLanguage')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

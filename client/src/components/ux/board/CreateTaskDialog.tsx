@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -88,7 +89,9 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
         },
     });
 
-    const handleSubmit = () => {
+    const handleSubmit = (event?: React.FormEvent) => {
+        event?.preventDefault();
+        if (mutation.isPending) return;
         if (!title.trim()) {
             toast({ title: t('titleRequired'), variant: 'destructive' });
             return;
@@ -112,35 +115,39 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                     <DialogDescription className="sr-only">{t('addTask')}</DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">{t('taskTitle')}</Label>
+                        <Label htmlFor="create-task-title" className="text-xs text-muted-foreground">{t('taskTitle')}</Label>
                         <Input
+                            id="create-task-title"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             placeholder={t('taskTitlePlaceholder')}
                             autoFocus
+                        />
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <Label htmlFor="create-task-description" className="text-xs text-muted-foreground">{t('description')}</Label>
+                        <Textarea
+                            id="create-task-description"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder={t('taskDescriptionPlaceholder')}
+                            rows={3}
+                            // Enter inserts a newline here, so keep the modifier shortcut
+                            // as the way to submit without leaving the description.
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
                             }}
                         />
                     </div>
 
-                    <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">{t('description')}</Label>
-                        <Textarea
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder={t('taskDescriptionPlaceholder')}
-                            rows={3}
-                        />
-                    </div>
-
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
+                            <Label htmlFor="create-task-priority" className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
                             <Select value={priority} onValueChange={(v) => setPriority(v as BoardPriority)}>
-                                <SelectTrigger>
+                                <SelectTrigger id="create-task-priority">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -154,10 +161,10 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
+                            <Label htmlFor="create-task-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
                             {canAssignUsers ? (
                                 <Select value={assigneeId} onValueChange={setAssigneeId}>
-                                    <SelectTrigger>
+                                    <SelectTrigger id="create-task-assignee">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -170,25 +177,26 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                                     </SelectContent>
                                 </Select>
                             ) : (
-                                <Input value={currentUser?.fullName ?? ''} disabled />
+                                <Input id="create-task-assignee" value={currentUser?.fullName ?? ''} disabled />
                             )}
                         </div>
                     </div>
 
                     <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
-                        <Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+                        <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
+                        <Input id="create-task-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
                     </div>
-                </div>
 
-                <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
-                        {t('cancel')}
-                    </Button>
-                    <Button onClick={handleSubmit} disabled={!title.trim() || mutation.isPending}>
-                        {mutation.isPending ? t('saving') : t('createTask')}
-                    </Button>
-                </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
+                            {t('cancel')}
+                        </Button>
+                        <Button type="submit" disabled={!title.trim() || mutation.isPending}>
+                            {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                            {mutation.isPending ? t('saving') : t('createTask')}
+                        </Button>
+                    </div>
+                </form>
             </DialogContent>
         </Dialog>
     );

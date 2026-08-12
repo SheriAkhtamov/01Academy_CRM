@@ -1633,9 +1633,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </div>
               <div className="mt-5 grid grid-cols-1 gap-4 border-t border-border/70 pt-5 md:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-2 rounded-lg border border-border/70 p-4">
-                  <Label>{ceoCopy.settings.phoneVisibility}</Label>
+                  <Label htmlFor="settings-phone-visibility">{ceoCopy.settings.phoneVisibility}</Label>
                   <Select value={kpiDraft.salesPhoneVisibility} onValueChange={(value: CompanySettings['salesPhoneVisibility']) => setKpiDraft((current) => ({ ...current, salesPhoneVisibility: value }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="settings-phone-visibility"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="own_leads">{ceoCopy.settings.ownLeadsOnly}</SelectItem>
                       <SelectItem value="mask_until_assigned">{ceoCopy.settings.maskUntilAssigned}</SelectItem>
@@ -1702,7 +1702,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               )} />
               <div className="flex justify-end gap-2 md:col-span-2">
                 <Button type="button" variant="outline" onClick={() => setSchoolDialogOpen(false)}>{t('cancel')}</Button>
-                <Button type="submit" disabled={saveSchool.isPending}>{t('save')}</Button>
+                <Button type="submit" disabled={saveSchool.isPending}>
+                  {saveSchool.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                  {saveSchool.isPending ? t('saving') : t('save')}
+                </Button>
               </div>
             </form>
           </Form>
@@ -2094,7 +2097,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   type="submit"
                   disabled={saveStatus.isPending}
                 >
-                  {t('save')}
+                  {saveStatus.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                  {saveStatus.isPending ? t('saving') : t('save')}
                 </Button>
               </div>
             </form>
@@ -2153,13 +2157,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </div>
 
                 <div className="space-y-2">
-                  <Label>{t('transferLeadsToStage')}</Label>
+                  <Label htmlFor="pipeline-transfer-target">{t('transferLeadsToStage')}</Label>
                   <Select
                     value={pipelineTransferTargetId}
                     onValueChange={setPipelineTransferTargetId}
                     disabled={availableTransferStatuses.length === 0 || transferAndDeletePipelineStatus.isPending}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="pipeline-transfer-target">
                       <SelectValue placeholder={t('selectPipelineStage')} />
                     </SelectTrigger>
                     <SelectContent>

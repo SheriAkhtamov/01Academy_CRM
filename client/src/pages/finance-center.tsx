@@ -25,6 +25,7 @@ import {
   Clock3,
   Info,
   Landmark,
+  Loader2,
   Plus,
   ReceiptText,
   RotateCcw,
@@ -38,6 +39,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { submitOnEnter } from '@/lib/submitOnEnter';
 import {
   currentFinancePeriod,
   financeCopy,
@@ -453,6 +455,10 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     ? Math.max(0, Number(payoutTarget.baseSalaryUzs || 0) + Number(payoutForm.bonusUzs || 0) - Number(payoutForm.deductionUzs || 0))
     : 0;
 
+  const canSaveExpense = Boolean(expenseForm.title.trim())
+    && Number(expenseForm.amountUzs) > 0
+    && !createExpense.isPending;
+
   const expenseGuard = useUnsavedChangesGuard({
     open: expenseDialogOpen,
     isDirty: JSON.stringify(expenseForm) !== JSON.stringify(initialExpenseForm),
@@ -653,7 +659,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Table>
                 <TableHeader><TableRow><TableHead>{copy.date}</TableHead><TableHead>{copy.title}</TableHead><TableHead>{copy.source}</TableHead><TableHead>{copy.category}</TableHead><TableHead>{copy.vendor}</TableHead><TableHead>{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="whitespace-nowrap text-muted-foreground">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}</TableCell><TableCell><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell>{categoryLabel(row.category)}</TableCell><TableCell>{row.vendor || '—'}</TableCell><TableCell><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => payExpense.mutate(row.id)} disabled={payExpense.isPending}><Check data-icon="inline-start" />{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
+                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="whitespace-nowrap text-muted-foreground">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}</TableCell><TableCell><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell>{categoryLabel(row.category)}</TableCell><TableCell>{row.vendor || '—'}</TableCell><TableCell><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => payExpense.mutate(row.id)} disabled={payExpense.isPending}>{payExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
                   {expenses.data.marketing.map((row) => <TableRow key={`marketing-${row.id}`}><TableCell className="whitespace-nowrap text-muted-foreground">{date(row.periodStart)}</TableCell><TableCell className="font-medium">{row.campaignName || row.channel}</TableCell><TableCell><Badge variant="purple">{copy.marketingSource}</Badge></TableCell><TableCell>{copy.marketing}</TableCell><TableCell>{row.sourceName || row.channel}</TableCell><TableCell><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.recognizedAmountUzs || row.amountUzs)}</TableCell><TableCell /></TableRow>)}
                   {!expenses.data.operating.length && !expenses.data.marketing.length ? <TableRow><TableCell colSpan={8} className="h-40 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow> : null}
                 </TableBody>
@@ -715,9 +721,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <DialogHeader><DialogTitle>{copy.expenseDialogTitle}</DialogTitle><DialogDescription>{copy.expenseDialogDescription}</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field><FieldLabel htmlFor="expense-title">{copy.title}</FieldLabel><Input id="expense-title" value={expenseForm.title} onChange={(event) => setExpenseForm((form) => ({ ...form, title: event.target.value }))} /></Field>
+              <Field><FieldLabel htmlFor="expense-title">{copy.title}</FieldLabel><Input id="expense-title" value={expenseForm.title} onChange={(event) => setExpenseForm((form) => ({ ...form, title: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
               <Field><FieldLabel>{copy.category}</FieldLabel><Select value={expenseForm.category} onValueChange={(category) => setExpenseForm((form) => ({ ...form, category }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{EXPENSE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{categoryLabel(category)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-              <Field><FieldLabel htmlFor="expense-vendor">{copy.vendor}</FieldLabel><Input id="expense-vendor" value={expenseForm.vendor} onChange={(event) => setExpenseForm((form) => ({ ...form, vendor: event.target.value }))} /></Field>
+              <Field><FieldLabel htmlFor="expense-vendor">{copy.vendor}</FieldLabel><Input id="expense-vendor" value={expenseForm.vendor} onChange={(event) => setExpenseForm((form) => ({ ...form, vendor: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
               <Field><FieldLabel htmlFor="expense-amount">{copy.amount}</FieldLabel><CurrencyInput id="expense-amount" value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm((form) => ({ ...form, amountUzs }))} /></Field>
               <Field><FieldLabel htmlFor="expense-date">{copy.expenseDate}</FieldLabel><Input id="expense-date" type="date" value={expenseForm.expenseDate} onChange={(event) => setExpenseForm((form) => ({ ...form, expenseDate: event.target.value }))} /></Field>
               <Field><FieldLabel>{copy.paymentStatus}</FieldLabel><Select value={expenseForm.status} onValueChange={(status) => setExpenseForm((form) => ({ ...form, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="paid">{copy.paid}</SelectItem><SelectItem value="planned">{copy.planned}</SelectItem></SelectGroup></SelectContent></Select></Field>
@@ -725,7 +731,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             </div>
             <Field><FieldLabel htmlFor="expense-description">{copy.description}</FieldLabel><Textarea id="expense-description" value={expenseForm.description} onChange={(event) => setExpenseForm((form) => ({ ...form, description: event.target.value }))} /></Field>
           </FieldGroup>
-          <DialogFooter><Button variant="outline" onClick={() => setExpenseDialogOpen(false)}>{copy.formCancel}</Button><Button disabled={!expenseForm.title.trim() || !Number(expenseForm.amountUzs) || createExpense.isPending} onClick={() => createExpense.mutate()}>{copy.saveExpense}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setExpenseDialogOpen(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -738,7 +744,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /><FieldDescription>{copy.salaryDialogDescription}</FieldDescription></Field>
             <Field><FieldLabel htmlFor="salary-note">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
           </FieldGroup>
-          <DialogFooter><Button variant="outline" onClick={() => setSalaryDialogOpen(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{copy.saveSalary}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setSalaryDialogOpen(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -756,12 +762,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <Field><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={payoutForm.method} onValueChange={(method) => setPayoutForm((form) => ({ ...form, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
             <Field><FieldLabel htmlFor="payout-note">{copy.note}</FieldLabel><Textarea id="payout-note" value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
           </FieldGroup>
-          <DialogFooter><Button variant="outline" onClick={() => setPayoutTarget(null)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{copy.confirmPayout}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setPayoutTarget(null)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} onKeyDown={submitOnEnter(() => cancelExpense.mutate(), { disabled: !cancelReason.trim() || cancelExpense.isPending })} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       
       <UnsavedChangesDialog
         open={expenseGuard.confirmationOpen}

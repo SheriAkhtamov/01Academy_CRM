@@ -318,7 +318,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                     {canManage ? (
                                         editing ? (
                                             <>
-                                                <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{t('saveChanges')}</Button>
+                                                <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{saveMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('saveChanges')}</Button>
                                                 <Button size="icon" variant="ghost" className="size-8" aria-label={t('cancel')} onClick={() => setEditing(false)}><X className="size-4" /></Button>
                                             </>
                                         ) : (
@@ -380,14 +380,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                 {editing ? (
                                     <>
                                         <div className="space-y-1.5">
-                                            <Label className="text-xs text-muted-foreground">{t('description')}</Label>
-                                            <Textarea value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
+                                            <Label htmlFor="task-detail-description" className="text-xs text-muted-foreground">{t('description')}</Label>
+                                            <Textarea id="task-detail-description" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
                                         </div>
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
+                                                <Label htmlFor="task-detail-priority" className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
                                                 <Select value={draftPriority} onValueChange={(v) => setDraftPriority(v as BoardPriority)}>
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                                    <SelectTrigger id="task-detail-priority"><SelectValue /></SelectTrigger>
                                                     <SelectContent>
                                                         {PRIORITY_ORDER.map((p) => (
                                                             <SelectItem key={p} value={p}>{t(PRIORITY_META[p].labelKey)}</SelectItem>
@@ -396,23 +396,23 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                 </Select>
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
+                                                <Label htmlFor="task-detail-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
                                                 {isTaskSupervisor ? (
                                                     <Select value={draftAssignee} onValueChange={setDraftAssignee}>
-                                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                                        <SelectTrigger id="task-detail-assignee"><SelectValue /></SelectTrigger>
                                                         <SelectContent>
                                                             <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
                                                             {users.map((u) => (<SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>))}
                                                         </SelectContent>
                                                     </Select>
                                                 ) : (
-                                                    <Input value={task.assignee?.fullName ?? t('unassigned')} disabled />
+                                                    <Input id="task-detail-assignee" value={task.assignee?.fullName ?? t('unassigned')} disabled />
                                                 )}
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <Label className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
-                                            <Input type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} />
+                                            <Label htmlFor="task-detail-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
+                                            <Input id="task-detail-due" type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} />
                                         </div>
                                     </>
                                 ) : (
@@ -454,7 +454,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             className="resize-none"
                                             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && commentText.trim()) commentMutation.mutate(); }}
                                         />
-                                        <Button size="sm" className="self-end" disabled={!commentText.trim() || commentMutation.isPending} onClick={() => commentMutation.mutate()}>{t('send')}</Button>
+                                        <Button size="sm" className="self-end" disabled={!commentText.trim() || commentMutation.isPending} onClick={() => commentMutation.mutate()}>{commentMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('send')}</Button>
                                     </div>
                                     {task.comments.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noCommentsYet')}</p>
@@ -490,7 +490,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             placeholder={t('addChecklistPlaceholder')}
                                             onKeyDown={(e) => { if (e.key === 'Enter' && checklistText.trim()) addChecklistMutation.mutate(); }}
                                         />
-                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={() => addChecklistMutation.mutate()}>{t('addChecklistItem')}</Button>
+                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={() => addChecklistMutation.mutate()}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
                                     </div>
                                     {task.checklist.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noChecklistYet')}</p>

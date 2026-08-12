@@ -458,7 +458,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           onClick={() => startInstagramConnection.mutate()}
                           disabled={startInstagramConnection.isPending}
                         >
-                          <ExternalLink data-icon="inline-start" />
+                          {startInstagramConnection.isPending
+                            ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                            : <ExternalLink data-icon="inline-start" />}
                           {t('loginWithInstagram')}
                         </Button>
                       )

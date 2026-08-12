@@ -4,8 +4,13 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+// A limit of 1 meant a second toast silently erased the first, so bulk actions
+// and a failure arriving on the heels of a success only ever showed the last
+// one. Three fits the viewport without burying the page.
+const TOAST_LIMIT = 3
+// Time between a toast closing and being dropped from state — long enough for
+// the exit animation, short enough that dismissed toasts are actually released.
+const TOAST_REMOVE_DELAY = 1_000
 
 type ToasterToast = ToastProps & {
   id: string

@@ -26,6 +26,7 @@ import {
   GraduationCap,
   Layers3,
   ListTodo,
+  Loader2,
   RefreshCw,
   TrendingDown,
   TrendingUp,
@@ -854,6 +855,7 @@ export default function AdminDashboardPage() {
                       disabled={createAlertTask.isPending}
                       onClick={() => createAlertTask.mutate(item.key)}
                     >
+                      {createAlertTask.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                       {ceoCopy.dashboard.createTask}
                     </Button>
                   ) : null}

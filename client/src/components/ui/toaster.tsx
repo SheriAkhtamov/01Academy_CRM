@@ -17,7 +17,15 @@ export function Toaster() {
       {toasts.map(function ({ id, title, description, variant, ...props }) {
         const Icon = variant === 'destructive' ? AlertCircle : CheckCircle2
         return (
-          <Toast key={id} variant={variant} {...props}>
+          // An error message takes longer to read — and matters more — than a
+          // "Saved" confirmation, so give it more time before it auto-closes.
+          // A caller-supplied duration still wins via the spread below.
+          <Toast
+            key={id}
+            variant={variant}
+            duration={variant === 'destructive' ? 10_000 : 5_000}
+            {...props}
+          >
             <div className="flex items-start gap-3 w-full pr-2">
               <Icon className={`h-5 w-5 shrink-0 mt-0.5 ${variant === 'destructive' ? 'text-destructive-foreground' : 'text-emerald-500'}`} />
               <div className="grid gap-1 min-w-0 flex-1">

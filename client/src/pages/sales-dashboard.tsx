@@ -53,6 +53,7 @@ import { DataTable } from '@/components/ux/DataTable';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { LeadFiltersDialog } from '@/components/ux/LeadFiltersDialog';
 import { leadMatchesFilters } from '@/lib/leadFilters';
+import { submitOnEnter } from '@/lib/submitOnEnter';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -373,6 +374,9 @@ function ArchiveLeadDialog({
                 id="archive-custom-reason"
                 value={customReason}
                 onChange={(event) => onCustomReasonChange(event.target.value)}
+                onKeyDown={submitOnEnter(() => onConfirm(lead, needsManager), {
+                  disabled: !customReason.trim() || isPending,
+                })}
                 placeholder={t('archiveCustomReasonPlaceholder')}
                 maxLength={80}
                 disabled={isPending}

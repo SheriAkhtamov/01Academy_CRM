@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/dialog';
 import { canAccessAcademyModule, hasLeadershipAccess, TARGET_ROAS } from '@shared/academy';
 import { expenseOverlapsMonth, funnelForSource, leadToPaidConversion } from '@/lib/marketingLogic';
+import { submitOnEnter } from '@/lib/submitOnEnter';
 import {
   reportingRangeForPreset,
   reportingRangeQuery,
@@ -751,10 +752,18 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 </Select>
               </Field>
               <Field label={t('channel')}>
-                <Input value={expenseForm.channel} onChange={(e) => setExpenseForm({ ...expenseForm, channel: e.target.value })} />
+                <Input
+                  value={expenseForm.channel}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, channel: e.target.value })}
+                  onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !expenseFormValid || createExpense.isPending })}
+                />
               </Field>
               <Field label={t('campaign')}>
-                <Input value={expenseForm.campaignName} onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })} />
+                <Input
+                  value={expenseForm.campaignName}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })}
+                  onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !expenseFormValid || createExpense.isPending })}
+                />
               </Field>
               <Field label={t('amount')}>
                 <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />

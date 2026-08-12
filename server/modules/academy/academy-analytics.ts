@@ -108,7 +108,32 @@ export const resolveTeacherId = async (userId: number): Promise<number | null> =
   return row ? Number(row.id) : null;
 };
 
-export const getAcademyDataset = async (actor?: DatasetActor) => {
+export type AcademyDatasetSlice =
+  | 'schools' | 'rooms' | 'courses' | 'sources' | 'statuses' | 'teachers' | 'groups'
+  | 'leads' | 'archivedLeads' | 'students' | 'lessons' | 'attendance' | 'payments'
+  | 'tasks' | 'lessonSurveys' | 'parentSurveys' | 'expenses' | 'projects'
+  | 'referrals' | 'referralBenefits';
+
+interface AcademyDatasetOptions {
+  /**
+   * Slices the caller actually reads. Every one of these queries is an
+   * unbounded scan, and the module endpoints each discarded a good half of
+   * them — /configuration, a settings screen, was scanning every lead, payment
+   * and survey in the database to render a list of rooms. Omit to fetch
+   * everything, which is what the analytics caller needs.
+   */
+  include?: readonly AcademyDatasetSlice[];
+}
+
+export const getAcademyDataset = async (
+  actor?: DatasetActor,
+  options?: AcademyDatasetOptions,
+) => {
+  const requested = options?.include ? new Set(options.include) : null;
+  const slice = <T>(name: AcademyDatasetSlice, run: () => Promise<T[]>): Promise<T[]> => (
+    !requested || requested.has(name) ? run() : Promise.resolve([])
+  );
+
   // Module scoping: teachers see only their own groups; sales employees see only
   // their own leads/students; marketing receives its module dataset.
   const actorModules = getAssignedModules(actor);
@@ -151,15 +176,28 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
     referrals,
     referralBenefits,
   ] = await Promise.all([
-    query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`),
-    query(`SELECT * FROM academy_rooms ORDER BY school_id, is_active DESC, name`),
-    query(`SELECT * FROM academy_courses ORDER BY name`),
-    query(`SELECT * FROM academy_lead_sources WHERE is_active = true ORDER BY name`),
-    query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order`),
-    isTeacherScoped
+    slice('schools', () => (
+      query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`)
+    )),
+    slice('rooms', () => (
+      query(`SELECT * FROM academy_rooms ORDER BY school_id, is_active DESC, name`)
+    )),
+    slice('courses', () => (
+      query(`SELECT * FROM academy_courses ORDER BY name`)
+    )),
+    slice('sources', () => (
+      query(`SELECT * FROM academy_lead_sources WHERE is_active = true ORDER BY name`)
+    )),
+    slice('statuses', () => (
+      query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order`)
+    )),
+    slice('teachers', () => (
+      isTeacherScoped
       ? query(`SELECT * FROM academy_teachers WHERE id = $1 ORDER BY full_name`, [teacherId])
-      : query(`SELECT * FROM academy_teachers ORDER BY full_name`),
-    isTeacherScoped
+      : query(`SELECT * FROM academy_teachers ORDER BY full_name`)
+    )),
+    slice('groups', () => (
+      isTeacherScoped
       ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
           sc.name AS school_name, r.name AS room_name,
           (SELECT COUNT(*)::int
@@ -202,8 +240,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
-          ORDER BY g.created_at DESC`),
-    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
+          ORDER BY g.created_at DESC`)
+    )),
+    slice('leads', () => (
+      query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
         sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')},
         ${leadTagsSelect('l')}
@@ -214,8 +254,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
       LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
       WHERE COALESCE(l.is_archived, false) = false ${isManagerScoped ? 'AND (l.manager_id = $1 OR l.manager_id IS NULL)' : ''} ${isTeacherScoped ? 'AND FALSE' : ''}
-      ORDER BY l.created_at DESC`, managerParams),
-    isTeacherScoped
+      ORDER BY l.created_at DESC`, managerParams)
+    )),
+    slice('archivedLeads', () => (
+      isTeacherScoped
       ? Promise.resolve([])
       : query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
@@ -228,8 +270,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
         LEFT JOIN academy_schools sc ON sc.id = l.school_id
         LEFT JOIN users archived_by_user ON archived_by_user.id = l.archived_by
         WHERE COALESCE(l.is_archived, false) = true ${isManagerScoped ? 'AND (l.manager_id = $1 OR l.manager_id IS NULL)' : ''}
-        ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`, managerParams),
-    query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
+        ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`, managerParams)
+    )),
+    slice('students', () => (
+      query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
         sc.name AS school_name,
         ${studentGroupMembershipsSelect('st')},
         (
@@ -255,8 +299,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
           AND teacher_membership.status = 'active'
           AND teacher_group.teacher_id = $1
       )` : ''}
-      ORDER BY st.created_at DESC`, isTeacherScoped ? [teacherId] : managerParams),
-    query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
+      ORDER BY st.created_at DESC`, isTeacherScoped ? [teacherId] : managerParams)
+    )),
+    slice('lessons', () => (
+      query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
         sc.name AS school_name
       FROM academy_lessons l
       LEFT JOIN academy_groups g ON g.id = l.group_id
@@ -265,27 +311,35 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
       LEFT JOIN academy_rooms r ON r.id = l.room_id
       WHERE 1=1 ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}
-      ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : []),
-    query(`SELECT a.*
+      ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : [])
+    )),
+    slice('attendance', () => (
+      query(`SELECT a.*
       FROM academy_attendance a
       JOIN academy_lessons l ON l.id = a.lesson_id
       WHERE l.status = 'conducted' ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}`,
-    isTeacherScoped ? [teacherId] : []),
-    query(`SELECT p.*, st.student_name, l.contact_name AS lead_name
+    isTeacherScoped ? [teacherId] : [])
+    )),
+    slice('payments', () => (
+      query(`SELECT p.*, st.student_name, l.contact_name AS lead_name
       FROM academy_payments p
       LEFT JOIN academy_students st ON st.id = p.student_id
       LEFT JOIN academy_leads l ON l.id = p.lead_id
       WHERE 1=1
         ${isManagerScoped ? 'AND (st.manager_id = $1 OR p.lead_id IN (SELECT id FROM academy_leads WHERE manager_id = $1))' : ''}
         ${isTeacherScoped ? 'AND FALSE' : ''}
-      ORDER BY p.created_at DESC`, isTeacherScoped ? [] : managerParams),
-    query(`SELECT t.*, u.full_name AS responsible_name
+      ORDER BY p.created_at DESC`, isTeacherScoped ? [] : managerParams)
+    )),
+    slice('tasks', () => (
+      query(`SELECT t.*, u.full_name AS responsible_name
       FROM academy_tasks t
       LEFT JOIN users u ON u.id = t.responsible_id
       WHERE 1=1 ${isManagerScoped || isTeacherScoped ? 'AND t.responsible_id = $1' : ''}
       ORDER BY COALESCE(t.deadline_at, t.created_at)`,
-    isTeacherScoped ? [actor!.userId] : managerParams),
-    isTeacherScoped
+    isTeacherScoped ? [actor!.userId] : managerParams)
+    )),
+    slice('lessonSurveys', () => (
+      isTeacherScoped
       ? query(`SELECT ls.*, st.student_name, l.topic AS lesson_topic, g.name AS group_name
         FROM academy_lesson_surveys ls
         JOIN academy_lessons l ON l.id = ls.lesson_id
@@ -298,8 +352,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
         LEFT JOIN academy_students st ON st.id = ls.student_id
         LEFT JOIN academy_lessons l ON l.id = ls.lesson_id
         LEFT JOIN academy_groups g ON g.id = ls.group_id
-        ORDER BY ls.created_at DESC`),
-    isTeacherScoped
+        ORDER BY ls.created_at DESC`)
+    )),
+    slice('parentSurveys', () => (
+      isTeacherScoped
       ? query(`SELECT ps.*
         FROM academy_parent_surveys ps
         JOIN academy_students st ON st.id = ps.student_id
@@ -318,11 +374,15 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
           JOIN academy_students st ON st.id = ps.student_id
           WHERE st.manager_id = $1
           ORDER BY ps.created_at DESC`, managerParams)
-        : query(`SELECT * FROM academy_parent_surveys ORDER BY created_at DESC`),
-    isManagerScoped || isTeacherScoped
+        : query(`SELECT * FROM academy_parent_surveys ORDER BY created_at DESC`)
+    )),
+    slice('expenses', () => (
+      isManagerScoped || isTeacherScoped
       ? Promise.resolve([])
-      : query(`SELECT * FROM academy_marketing_expenses WHERE status = 'approved' ORDER BY period_start DESC`),
-    isTeacherScoped
+      : query(`SELECT * FROM academy_marketing_expenses WHERE status = 'approved' ORDER BY period_start DESC`)
+    )),
+    slice('projects', () => (
+      isTeacherScoped
       ? query(`SELECT p.*
         FROM academy_portfolio_projects p
         JOIN academy_groups g ON g.id = p.group_id
@@ -334,8 +394,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
           JOIN academy_students st ON st.id = p.student_id
           WHERE st.manager_id = $1
           ORDER BY p.created_at DESC`, managerParams)
-        : query(`SELECT * FROM academy_portfolio_projects ORDER BY created_at DESC`),
-    isManagerScoped
+        : query(`SELECT * FROM academy_portfolio_projects ORDER BY created_at DESC`)
+    )),
+    slice('referrals', () => (
+      isManagerScoped
       ? query(`SELECT rr.*
         FROM academy_referral_rewards rr
         LEFT JOIN academy_students referrer ON referrer.id = rr.referrer_student_id
@@ -344,8 +406,10 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
         ORDER BY rr.created_at DESC`, managerParams)
       : isTeacherScoped
         ? Promise.resolve([])
-        : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
-    isManagerScoped
+        : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`)
+    )),
+    slice('referralBenefits', () => (
+      isManagerScoped
       ? query(`SELECT benefit.*
         FROM academy_referral_benefits benefit
         JOIN academy_students student ON student.id = benefit.student_id
@@ -353,7 +417,8 @@ export const getAcademyDataset = async (actor?: DatasetActor) => {
         ORDER BY benefit.created_at DESC`, managerParams)
       : isTeacherScoped
         ? Promise.resolve([])
-        : query(`SELECT * FROM academy_referral_benefits ORDER BY created_at DESC`),
+        : query(`SELECT * FROM academy_referral_benefits ORDER BY created_at DESC`)
+    ))
   ]);
 
   const [visibleLeads, visibleArchivedLeads] = await Promise.all([

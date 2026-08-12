@@ -13,6 +13,8 @@ import {
   loginUserSession,
   logoutSession,
 } from '@/lib/session';
+import { toast } from '@/hooks/use-toast';
+import { i18n } from '@/lib/i18n';
 
 interface AuthContextType {
   session: AuthSession;
@@ -62,6 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.clear();
       queryClient.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, anonymousSession);
     },
+    // Without this a failed request left the button doing nothing at all: the
+    // cache was only cleared on success, so the user stayed signed in with no
+    // hint that anything had gone wrong.
+    onError: (error: Error) => {
+      toast({
+        title: i18n.t('logoutFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
   });
 
   const login = async (loginValue: string, password: string) => (
@@ -69,7 +81,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = async () => {
-    await logoutMutation.mutateAsync();
+    try {
+      await logoutMutation.mutateAsync();
+    } catch {
+      // Already surfaced by the mutation's onError toast; callers only need to
+      // know the flow finished, not to handle it a second time.
+    }
   };
 
   const setUser = (user: SanitizedUser | null) => {

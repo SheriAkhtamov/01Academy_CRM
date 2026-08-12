@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAcademyDate } from '@/lib/localeFormat';
 import { useMovableWidget } from '@/hooks/useMovableWidget';
 import { toast } from '@/hooks/use-toast';
 import { translations, type TranslationKey } from '@/lib/i18n';
@@ -88,7 +89,7 @@ const ContactAvatar = ({ call }: { call: ActiveTelephonyCall }) => (
 );
 
 export function TelephonyWidget() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const telephony = useTelephony();
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<'dialer' | 'history'>('dialer');
@@ -468,7 +469,7 @@ export function TelephonyWidget() {
                           <div className="min-w-0 flex-1 text-left">
                             <p className="truncate text-sm font-medium text-slate-900">{call.contactName || call.phone}</p>
                             <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
-                              <span>{new Date(call.startedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                              <span>{formatAcademyDate(call.startedAt, language, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                               <span className="flex items-center gap-1"><Clock3 className="size-3" />{formatDuration(call.talkSeconds)}</span>
                             </div>
                           </div>

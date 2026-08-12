@@ -1,5 +1,6 @@
 import type { TranslationKey } from '@/lib/i18n';
 import type { AcademyModule } from '@shared/academy';
+import { formatAcademyDate } from '@/lib/localeFormat';
 
 export type BoardStatus = 'backlog' | 'todo' | 'in_progress' | 'done' | 'accepted';
 export type BoardPriority = 'urgent' | 'normal' | 'low';
@@ -131,16 +132,19 @@ export const PRIORITY_META = {
 
 export const PRIORITY_ORDER: BoardPriority[] = ['urgent', 'normal', 'low'];
 
-export function formatBoardDate(value: string | null): string {
-    if (!value) return '';
-    const date = new Date(value);
-    return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+// These took the browser locale, so a task card's due date could disagree with
+// every other date on screen. They follow the language the user picked instead.
+export function formatBoardDate(value: string | null, language: string): string {
+    return formatAcademyDate(value, language, { day: '2-digit', month: 'short' });
 }
 
-export function formatBoardDateTime(value: string | null): string {
-    if (!value) return '';
-    const date = new Date(value);
-    return date.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+export function formatBoardDateTime(value: string | null, language: string): string {
+    return formatAcademyDate(value, language, {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 }
 
 export function isOverdue(task: { dueAt: string | null; status: BoardStatus }): boolean {

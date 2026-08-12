@@ -1,3 +1,5 @@
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+
 export interface RevenuePayment {
   amountUzs?: unknown;
   paidAt?: unknown;
@@ -20,7 +22,7 @@ export function buildMonthlyRevenueData(
   payments: readonly RevenuePayment[],
   locale: string,
   limit = 6,
-  timeZone = 'Asia/Tashkent',
+  timeZone = ACADEMY_TIME_ZONE,
 ): MonthlyRevenuePoint[] {
   if (limit <= 0) return [];
 
@@ -76,7 +78,7 @@ export function buildReportingRevenueData(
   payments: readonly RevenuePayment[],
   locale: string,
   range: { from: string; to: string },
-  timeZone = 'Asia/Tashkent',
+  timeZone = ACADEMY_TIME_ZONE,
 ): MonthlyRevenuePoint[] {
   const fromOrdinal = Date.parse(`${range.from}T00:00:00Z`);
   const toOrdinal = Date.parse(`${range.to}T00:00:00Z`);

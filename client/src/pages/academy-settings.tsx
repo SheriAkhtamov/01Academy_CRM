@@ -6,6 +6,7 @@ import { useLocation, useSearch } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAcademyNumber } from '@/lib/localeFormat';
 import { toast } from '@/hooks/use-toast';
 import { LeadAssignmentContent } from '@/pages/admin-leads';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -76,6 +77,7 @@ import {
   UserRoundCheck,
   UsersRound,
 } from 'lucide-react';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 interface School {
   id: number;
@@ -434,7 +436,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       name: '',
       code: '',
       address: '',
-      timezone: 'Asia/Tashkent',
+      timezone: ACADEMY_TIME_ZONE,
       isActive: true,
     },
   });
@@ -805,7 +807,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       name: '',
       code: '',
       address: '',
-      timezone: 'Asia/Tashkent',
+      timezone: ACADEMY_TIME_ZONE,
       isActive: true,
     });
     setSchoolDialogOpen(true);
@@ -1123,7 +1125,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       header: t('basePrice'),
       sortable: true,
       accessor: (row) => row.basePriceUzs,
-      render: (row) => `${Number(row.basePriceUzs || 0).toLocaleString('ru-RU')}${t('uzs')}`,
+      render: (row) => `${formatAcademyNumber(row.basePriceUzs, language)}${t('uzs')}`,
     },
     {
       key: 'status',

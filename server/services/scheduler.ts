@@ -12,8 +12,9 @@ import {
   syncMetaAdCatalog,
   syncMetaAdInsights,
 } from "./meta-marketing";
+import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
 
-export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
+export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 
 const leadershipUserAccessSql = `
   (

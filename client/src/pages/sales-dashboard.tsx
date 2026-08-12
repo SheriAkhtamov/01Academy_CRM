@@ -87,6 +87,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import type { LeadTagView } from '@shared/lead-tags';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
@@ -515,7 +516,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return t('noData');
     return date.toLocaleString(locale, {
-      timeZone: 'Asia/Tashkent',
+      timeZone: ACADEMY_TIME_ZONE,
       dateStyle: 'short',
       timeStyle: 'short',
     });

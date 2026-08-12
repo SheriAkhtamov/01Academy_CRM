@@ -44,6 +44,8 @@ interface NavItem {
 }
 
 interface NavSection {
+  /** Stable across languages — the label is translated and cannot key state. */
+  id: string;
   label: string;
   items: NavItem[];
 }
@@ -68,13 +70,8 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const newLeadsLabel = t('newLeadsCount').replace('{count}', String(newLeadCount));
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => (
     location.startsWith('/finance')
-      ? {
-          [t(MODULE_NAVIGATION.sales.nameKey)]: true,
-          [t(MODULE_NAVIGATION.teacher.nameKey)]: true,
-          [t(MODULE_NAVIGATION.marketing.nameKey)]: true,
-          [t(MODULE_NAVIGATION.administration.nameKey)]: true,
-        }
-      : {}
+      ? { sales: true, teacher: true, marketing: true, administration: true }
+      : {} as Record<string, boolean>
   ));
 
   if (!user) return null;
@@ -108,6 +105,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     const moduleSection = (module: AcademyAccessModule): NavSection => {
       const definition = MODULE_NAVIGATION[module];
       return {
+        id: module,
         label: t(definition.nameKey),
         items: definition.items.map((item) => ({
           name: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)
@@ -141,8 +139,8 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     icon: TASKS_NAVIGATION_ITEM.icon,
   };
 
-  const toggleSection = (label: string) => {
-    setCollapsedSections((prev) => ({ ...prev, [label]: !prev[label] }));
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
 
   const renderNavItem = (item: NavItem) => {
@@ -210,12 +208,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
           {sections.map((section) => {
             const visibleItems = section.items;
             if (visibleItems.length === 0) return null;
-            const isCollapsed = collapsedSections[section.label];
+            const isCollapsed = collapsedSections[section.id];
 
             return (
-              <div key={section.label} className="mb-2">
+              <div key={section.id} className="mb-2">
                 <button
-                  onClick={() => toggleSection(section.label)}
+                  onClick={() => toggleSection(section.id)}
                   className="w-full flex items-center justify-between px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-500 transition-colors"
                   aria-expanded={!isCollapsed}
                 >
@@ -228,9 +226,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                   />
                 </button>
                 <div
+                  // `invisible` matters as much as the height: opacity alone
+                  // leaves the links focusable, so tabbing through the sidebar
+                  // used to drop focus into a collapsed section.
                   className={cn(
                     'space-y-0.5 overflow-hidden transition-all duration-200',
-                    isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+                    isCollapsed ? 'invisible max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
                   )}
                 >
                   {visibleItems.map((item) => renderNavItem(item))}

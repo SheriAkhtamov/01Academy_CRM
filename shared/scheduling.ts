@@ -221,3 +221,13 @@ export const isDateInsideInclusiveDayRange = (
   return day >= (start ? toLocalDay(start) : Number.NEGATIVE_INFINITY)
     && day <= (end ? toLocalDay(end) : Number.POSITIVE_INFINITY);
 };
+
+/**
+ * The academy runs in one city, so lesson, call and payment times are only
+ * meaningful in its timezone — rendering them in the viewer's browser zone
+ * shifts every time for anyone whose machine is set elsewhere.
+ *
+ * The server may override this through the ACADEMY_TIME_ZONE env var; this
+ * constant is the shared default and the client's fixed value.
+ */
+export const DEFAULT_ACADEMY_TIME_ZONE = 'Asia/Tashkent';

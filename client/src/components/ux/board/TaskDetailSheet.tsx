@@ -118,7 +118,7 @@ function columnLabel(status: string | null, t: (k: any) => string): string {
 }
 
 export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetailSheetProps) {
-    const { t } = useTranslation();
+    const { t, language } = useTranslation();
     const { toast } = useToast();
     const { user } = useAuth();
     const queryClient = useQueryClient();
@@ -424,7 +424,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             <MetaRow label={t('creatorLabel')}><UserChip user={task.creator} /></MetaRow>
                                             <MetaRow label={t('assigneeLabel')}><UserChip user={task.assignee} /></MetaRow>
                                             <MetaRow label={t('dueDateLabel')}>
-                                                <span className="text-foreground">{task.dueAt ? formatBoardDateTime(task.dueAt) : t('noDueDate')}</span>
+                                                <span className="text-foreground">{task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('noDueDate')}</span>
                                             </MetaRow>
                                             <MetaRow label={t('priorityLabel')}>
                                                 {priorityMeta ? <span className="text-foreground">{t(priorityMeta.labelKey)}</span> : null}
@@ -468,7 +468,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                                 <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">{getInitials(c.author?.fullName ?? '?')}</AvatarFallback>
                                                             </Avatar>
                                                             <span className="text-xs font-medium text-foreground">{c.author?.fullName ?? '—'}</span>
-                                                            <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt)}</span>
+                                                            <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt, language)}</span>
                                                         </div>
                                                         {user && (user.id === c.author?.id || isTaskSupervisor) ? (
                                                             <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'comment', id: c.id })}><Trash2 className="size-3.5" /></Button>
@@ -553,7 +553,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                     <span className="text-foreground/90">
                                                         <span className="font-medium">{item.actor?.fullName ?? '—'}</span>{' '}
                                                         {activityLabel(item, t)}
-                                                        <span className="ml-1.5 text-[11px] text-muted-foreground">{formatBoardDateTime(item.createdAt)}</span>
+                                                        <span className="ml-1.5 text-[11px] text-muted-foreground">{formatBoardDateTime(item.createdAt, language)}</span>
                                                     </span>
                                                 </li>
                                             ))}

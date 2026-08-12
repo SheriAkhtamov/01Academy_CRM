@@ -22,9 +22,10 @@ import {
   isFinanceDate,
   isFinancePeriod,
 } from '@shared/finance';
+import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
 
 const router = Router();
-const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || 'Asia/Tashkent';
+const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 const MAX_MONEY_UZS = 2_147_483_647;
 
 type Executor = Pool | PoolClient;

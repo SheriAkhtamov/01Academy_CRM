@@ -60,6 +60,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sortAttendanceLessons } from '@/lib/attendance';
+import { ACADEMY_TIME_ZONE, formatAcademyDate, resolveLocale } from '@/lib/localeFormat';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import {
@@ -158,7 +159,6 @@ type RescheduleLessonVariables = {
   };
 };
 
-const ACADEMY_TIME_ZONE = 'Asia/Tashkent';
 
 type AcademyDateTimeParts = {
   year: number;
@@ -295,29 +295,15 @@ function isToday(dateStr: string): boolean {
   return localDateKey(dateStr) === localDateKey(new Date().toISOString());
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleString('ru-RU', {
-    timeZone: ACADEMY_TIME_ZONE,
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  });
-}
-
-function formatTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleString('ru-RU', {
-    timeZone: ACADEMY_TIME_ZONE,
+function formatTime(dateStr: string, language: string): string {
+  return formatAcademyDate(dateStr, language, {
     hour: '2-digit',
     minute: '2-digit',
   });
 }
 
-function formatDateFull(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleString('ru-RU', {
-    timeZone: ACADEMY_TIME_ZONE,
+function formatDateFull(dateStr: string, language: string): string {
+  return formatAcademyDate(dateStr, language, {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -326,7 +312,7 @@ function formatDateFull(dateStr: string): string {
 
 export default function TeacherModule({ section = 'overview' }: { section?: TeacherSection }) {
   const { t, language } = useTranslation();
-  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const locale = resolveLocale(language);
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -787,11 +773,13 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-14)
       .map(([date, { total, count }]) => ({
-        date: new Date(`${date}T00:00:00`).toLocaleDateString('ru-RU'),
+        date: formatAcademyDate(`${date}T00:00:00`, language),
         avgScore: Math.round((total / count) * 10) / 10,
         count,
       }));
-  }, [surveys]);
+    // The axis labels are formatted against the active language, so switching it
+    // has to rebuild the series.
+  }, [language, surveys]);
 
   const contained = section !== 'overview';
 
@@ -1060,7 +1048,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {day.date.toLocaleDateString('ru-RU', {
+                      {day.date.toLocaleDateString(locale, {
                         timeZone: 'UTC',
                         day: 'numeric',
                         month: 'short',
@@ -1082,7 +1070,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                         )}
                       >
                         <div className="flex items-center justify-between gap-1">
-                          <span className="font-semibold text-foreground">{formatTime(lesson.scheduledAt)}</span>
+                          <span className="font-semibold text-foreground">{formatTime(lesson.scheduledAt, language)}</span>
                           {getLessonStatusBadge(lesson.status)}
                         </div>
                         <p className="text-foreground font-medium truncate">{lesson.groupName || t('noGroup')}</p>
@@ -1127,7 +1115,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                     >
                       <div className="flex items-center gap-4">
                         <div className="text-sm font-semibold text-foreground tabular-nums">
-                          {formatTime(lesson.scheduledAt)}
+                          {formatTime(lesson.scheduledAt, language)}
                         </div>
                         <div>
                           <p className="text-sm font-medium text-foreground">
@@ -1415,11 +1403,11 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                         <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap pt-0.5">
                           <span className="inline-flex items-center gap-1.5 font-medium">
                             <Calendar className="size-3.5 text-primary" />
-                            {formatDateFull(selectedLessonDetails.scheduledAt)}
+                            {formatDateFull(selectedLessonDetails.scheduledAt, language)}
                           </span>
                           <span className="inline-flex items-center gap-1.5 font-medium">
                             <Clock3 className="size-3.5 text-primary" />
-                            {formatTime(selectedLessonDetails.scheduledAt)} ({selectedLessonDetails.durationMinutes} {t('minutes')})
+                            {formatTime(selectedLessonDetails.scheduledAt, language)} ({selectedLessonDetails.durationMinutes} {t('minutes')})
                           </span>
                           {selectedLessonDetails.courseName && (
                             <span className="inline-flex items-center gap-1.5 font-medium">
@@ -1925,7 +1913,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                     key: 'createdAt',
                     header: t('dateColumn'),
                     accessor: (row) =>
-                      new Date(row.createdAt).toLocaleDateString('ru-RU'),
+                      formatAcademyDate(row.createdAt, language),
                   },
                 ]}
                 data={[...surveys].sort(

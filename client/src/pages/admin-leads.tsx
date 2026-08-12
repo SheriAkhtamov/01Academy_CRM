@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAcademyDate } from '@/lib/localeFormat';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -60,7 +61,7 @@ interface PipelineStatus {
 }
 
 export function LeadAssignmentContent() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [managerFilter, setManagerFilter] = useState('all');
@@ -282,7 +283,7 @@ export function LeadAssignmentContent() {
       accessor: (lead) => new Date(lead.createdAt).getTime(),
       render: (lead) => (
         <span className="whitespace-nowrap text-sm text-muted-foreground">
-          {new Date(lead.createdAt).toLocaleDateString('ru-RU')}
+          {formatAcademyDate(lead.createdAt, language)}
         </span>
       ),
     },
@@ -311,6 +312,9 @@ export function LeadAssignmentContent() {
     allVisibleSelected,
     assignLead,
     deleteLead.isPending,
+    // The created-at column formats against the active language, so the columns
+    // have to be rebuilt when it changes.
+    language,
     managerLeadCounts,
     managers,
     selectedLeadIds,
@@ -504,7 +508,7 @@ export function LeadAssignmentContent() {
 }
 
 export default function AdminLeadsPage() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">

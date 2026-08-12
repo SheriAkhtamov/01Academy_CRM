@@ -5,6 +5,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useLocation } from 'wouter';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { RealtimeStatusBanner } from '@/components/ux/RealtimeStatusBanner';
 import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
 
 interface LayoutProps {
@@ -17,7 +18,7 @@ export default function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const containsOwnScrollArea = isContainedModuleRoute(location);
-  useWebSocket();
+  const realtime = useWebSocket();
 
   if (isLoading) {
     return (
@@ -52,6 +53,7 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
+        <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
         <main
           className={`min-h-0 flex-1 ${
             containsOwnScrollArea

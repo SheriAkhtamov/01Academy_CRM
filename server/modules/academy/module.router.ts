@@ -124,6 +124,7 @@ import {
   buildAnalytics,
   buildMarketingAnalyticsPayload,
   getAcademyDataset,
+  type AcademyDatasetSlice,
   getMarketingModuleDataset,
   resolveTeacherId,
 } from './academy-analytics';
@@ -146,6 +147,23 @@ router.get('/modules/administration', async (req, res) => {
   }
 });
 
+// Each endpoint pays for every slice it asks for, so these lists mirror exactly
+// what the response below reads — nothing more.
+const SALES_MODULE_SLICES = [
+  'schools', 'rooms', 'courses', 'groups', 'sources', 'statuses', 'leads',
+  'archivedLeads', 'students', 'lessons', 'payments', 'tasks', 'projects',
+  'referrals', 'referralBenefits',
+] as const satisfies readonly AcademyDatasetSlice[];
+
+const TEACHER_MODULE_SLICES = [
+  'schools', 'rooms', 'courses', 'teachers', 'groups', 'students', 'lessons',
+  'attendance', 'lessonSurveys', 'projects',
+] as const satisfies readonly AcademyDatasetSlice[];
+
+const CONFIGURATION_SLICES = [
+  'schools', 'rooms', 'courses', 'statuses', 'teachers', 'groups', 'lessons',
+] as const satisfies readonly AcademyDatasetSlice[];
+
 router.get('/modules/sales', async (req, res) => {
   if (!ensureSalesModuleAccess(req, res)) return;
   try {
@@ -155,7 +173,10 @@ router.get('/modules/sales', async (req, res) => {
       modules: getAssignedModules(req.user),
       scopeModule: 'sales',
     };
-    const [dataset, companySettings] = await Promise.all([getAcademyDataset(actor), getCompanySettings()]);
+    const [dataset, companySettings] = await Promise.all([
+      getAcademyDataset(actor, { include: SALES_MODULE_SLICES }),
+      getCompanySettings(),
+    ]);
 
     res.json({
       schools: dataset.schools,
@@ -249,7 +270,7 @@ router.get('/modules/teacher', async (req, res) => {
       modules: getAssignedModules(req.user),
       scopeModule: 'teacher',
     };
-    const dataset = await getAcademyDataset(actor);
+    const dataset = await getAcademyDataset(actor, { include: TEACHER_MODULE_SLICES });
     res.json({
       schools: dataset.schools,
       rooms: dataset.rooms,
@@ -272,7 +293,7 @@ router.get('/modules/teacher', async (req, res) => {
 router.get('/configuration', async (req, res) => {
   if (!ensureAdministrationModuleAccess(req, res)) return;
   try {
-    const dataset = await getAcademyDataset();
+    const dataset = await getAcademyDataset(undefined, { include: CONFIGURATION_SLICES });
     res.json({
       schools: dataset.schools,
       rooms: dataset.rooms,

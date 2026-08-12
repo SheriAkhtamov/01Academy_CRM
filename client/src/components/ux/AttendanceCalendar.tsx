@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 export type AttendanceCalendarLesson = {
   id: number;
@@ -21,7 +22,6 @@ interface AttendanceCalendarProps {
   onSelectLesson: (lessonId: string) => void;
 }
 
-const ACADEMY_TIME_ZONE = 'Asia/Tashkent';
 const dateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: ACADEMY_TIME_ZONE,
   calendar: 'gregory',

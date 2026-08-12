@@ -33,8 +33,8 @@ import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
-const ACADEMY_TIME_ZONE = 'Asia/Tashkent';
 const ACTIVE_PARTICIPANT_STATUSES = new Set(['invited', 'confirmed', 'attended', 'no_show']);
 
 export interface DemoLessonEnrollmentLead {

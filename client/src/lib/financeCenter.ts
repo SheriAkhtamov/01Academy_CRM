@@ -1,4 +1,5 @@
 import type { TranslationKey } from '@/lib/i18n';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 export type FinanceSection = 'overview' | 'income' | 'expenses' | 'payroll' | 'transactions';
 
@@ -12,7 +13,7 @@ export const financeRoutes: Record<FinanceSection, string> = {
 
 export const currentFinancePeriod = () => {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Tashkent',
+    timeZone: ACADEMY_TIME_ZONE,
     year: 'numeric',
     month: '2-digit',
   }).formatToParts(new Date());

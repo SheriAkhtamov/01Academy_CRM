@@ -1,3 +1,5 @@
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+
 export type ReportingDatePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'thisMonth' | 'previousMonth' | 'custom';
 
 export type ReportingDateRange = {
@@ -6,7 +8,7 @@ export type ReportingDateRange = {
   preset: ReportingDatePreset;
 };
 
-const REPORTING_TIME_ZONE = 'Asia/Tashkent';
+const REPORTING_TIME_ZONE = ACADEMY_TIME_ZONE;
 
 const datePartsInTimeZone = (value: Date, timeZone = REPORTING_TIME_ZONE) => {
   const parts = new Intl.DateTimeFormat('en-CA', {

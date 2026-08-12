@@ -1,6 +1,8 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryFunction } from "@tanstack/react-query";
+import { AUTH_SESSION_QUERY_KEY, isAnonymousSession, type AuthSession } from "@shared/auth";
 import { devLog } from "@/lib/debug";
 import { i18n, translations } from "@/lib/i18n";
+import { toast } from "@/hooks/use-toast";
 
 const localizeApiErrorMessage = (message: string, status: number) => {
   if (!message) {
@@ -206,7 +208,47 @@ const getQueryFn: <T>(options: {
       return await res.json();
     };
 
+const anonymousSession: AuthSession = { kind: "anonymous" };
+
+/**
+ * An expired server session used to leave the app stranded: nothing refetched
+ * the session query, so the router kept rendering the authenticated shell while
+ * every request failed with 401 and every save silently did nothing. The only
+ * way out was for the user to work out that a reload was needed.
+ *
+ * Dropping the session back to anonymous makes AppRouter fall through to the
+ * login screen on the next render.
+ */
+let signOutScheduled = false;
+
+const handleUnauthorized = (error: unknown) => {
+  const status = (error as { status?: number } | null)?.status;
+  if (status !== 401 || signOutScheduled) return;
+
+  // A rejected sign-in is also a 401, so only react when we currently believe
+  // we are signed in.
+  const session = queryClient.getQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY);
+  if (isAnonymousSession(session)) return;
+
+  signOutScheduled = true;
+  // Deferred because clearing the cache from inside a query's own error
+  // callback would remove the query that is still settling. A page load fires
+  // several requests at once, so the flag keeps the burst down to one toast.
+  queueMicrotask(() => {
+    queryClient.clear();
+    queryClient.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, anonymousSession);
+    signOutScheduled = false;
+    toast({
+      title: i18n.t("sessionExpiredTitle"),
+      description: i18n.t("sessionExpiredDescription"),
+      variant: "destructive",
+    });
+  });
+};
+
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: handleUnauthorized }),
+  mutationCache: new MutationCache({ onError: handleUnauthorized }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

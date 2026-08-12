@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAcademyNumber } from '@/lib/localeFormat';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadTagNameKey, type LeadTagView } from '@shared/lead-tags';
@@ -311,6 +312,7 @@ interface KanbanColumnProps {
   showPaymentAction: boolean;
   showManager: boolean;
   t: (key: TranslationKey) => string;
+  language: string;
   onLeadClick?: KanbanBoardProps['onLeadClick'];
 }
 
@@ -324,6 +326,7 @@ function KanbanColumn({
   showPaymentAction,
   showManager,
   t,
+  language,
   onLeadClick,
 }: KanbanColumnProps) {
   const { isOver, setNodeRef } = useDroppable({
@@ -359,7 +362,7 @@ function KanbanColumn({
           </div>
           {totalSum > 0 ? (
             <span className="text-[11px] font-medium text-muted-foreground/80 pl-4">
-              {new Intl.NumberFormat('ru-RU').format(totalSum)} {t('currencyUzs')}
+              {formatAcademyNumber(totalSum, language)} {t('currencyUzs')}
             </span>
           ) : null}
         </div>
@@ -415,7 +418,7 @@ export function KanbanBoard({
   showPaymentAction = true,
   showManager = false,
 }: KanbanBoardProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [boardLeads, setBoardLeads] = useState(leads);
   const [activeLeadId, setActiveLeadId] = useState<number | null>(null);
   const [demoEnrollmentLead, setDemoEnrollmentLead] = useState<DemoLessonEnrollmentLead | null>(null);
@@ -526,6 +529,7 @@ export function KanbanBoard({
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
                 t={t}
+                language={language}
                 onLeadClick={onLeadClick}
               />
             ))}

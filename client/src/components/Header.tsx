@@ -37,8 +37,6 @@ interface HeaderProps {
   onMenuToggle?: () => void;
 }
 
-const VISIBLE_NOTIFICATIONS = 6;
-
 export default function Header({
   title,
   subtitle,
@@ -69,7 +67,6 @@ export default function Header({
   const unreadNotificationCount = notifications.filter((n: any) => !n.isRead).length;
   const unreadNotificationsLabel = t('unreadNotificationCount')
     .replace('{count}', String(unreadNotificationCount));
-  const hiddenNotificationCount = Math.max(0, notifications.length - VISIBLE_NOTIFICATIONS);
   const unreadMessageCount = totalUnreadMessages(conversations);
   const unreadMessagesLabel = t('unreadMessageCount')
     .replace('{count}', String(unreadMessageCount));
@@ -128,18 +125,13 @@ export default function Header({
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
       setNotificationToDelete(null);
     },
+    // The confirm dialog is kept open on confirm, and only onSuccess closes it.
+    // Without this a failed delete left it open with no spinner and no message.
+    onError: (error: Error) => {
+      setNotificationToDelete(null);
+      toast({ title: t('failedToDeleteResource'), description: error.message, variant: 'destructive' });
+    },
   });
-
-  const handleDeleteNotification = (notificationId: number, event: React.MouseEvent) => {
-    event.stopPropagation();
-    event.preventDefault();
-    setNotificationToDelete(notificationId);
-  };
-
-  const handleMarkRead = (notificationId: number, event: React.MouseEvent) => {
-    event.stopPropagation();
-    markReadMutation.mutate(notificationId);
-  };
 
   const handleConfirmRemoveAccount = async () => {
     const account = accountToRemove;
@@ -239,48 +231,40 @@ export default function Header({
                     {t('noNotifications')}
                   </div>
                 ) : (
-                  notifications.slice(0, VISIBLE_NOTIFICATIONS).map((notification: any) => (
-                    <DropdownMenuItem
-                      key={notification.id}
-                      className={`flex justify-between items-start p-3 gap-2 ${notification.isRead ? 'opacity-60' : ''}`}
-                      onClick={() => !notification.isRead && markReadMutation.mutate(notification.id)}
-                    >
-                      <div className="flex-1 pr-2">
-                        <div className="font-medium text-foreground text-sm">{notification.title}</div>
-                        <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{notification.message}</div>
-                      </div>
-                      <div className="flex flex-col gap-1 shrink-0">
-                        {!notification.isRead && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 hover:bg-accent rounded-full"
-                            onClick={(e) => handleMarkRead(notification.id, e)}
-                            disabled={markReadMutation.isPending}
-                            title={t('markAsRead')}
-                            aria-label={t('markAsRead')}
-                          >
-                            <CheckCheck className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 hover:bg-accent rounded-full shrink-0"
-                          onClick={(e) => handleDeleteNotification(notification.id, e)}
-                          disabled={deleteNotificationMutation.isPending}
-                          aria-label={t('delete')}
+                  // Previously only the first six were rendered and the rest were
+                  // announced as "+N hidden" with no way to reach them. Scroll the
+                  // full list instead.
+                  <div className="max-h-[60vh] overflow-y-auto">
+                    {notifications.map((notification: any) => (
+                      // A plain wrapper, not a menu item: each actionable control
+                      // below is its own DropdownMenuItem, which is what puts it in
+                      // Radix's arrow-key order. Buttons nested inside a menu item
+                      // are unreachable by keyboard.
+                      <div
+                        key={notification.id}
+                        className={`flex items-start gap-1 pr-1 ${notification.isRead ? 'opacity-60' : ''}`}
+                      >
+                        <DropdownMenuItem
+                          className="min-w-0 flex-1 flex-col items-start gap-1 p-3"
+                          onSelect={(event) => {
+                            // Reading one notification should not dismiss the list.
+                            event.preventDefault();
+                            if (!notification.isRead) markReadMutation.mutate(notification.id);
+                          }}
                         >
-                          <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                        </Button>
+                          <span className="font-medium text-foreground text-sm">{notification.title}</span>
+                          <span className="text-xs text-muted-foreground leading-relaxed">{notification.message}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="mt-3 size-6 shrink-0 justify-center rounded-full p-0"
+                          aria-label={t('delete')}
+                          onSelect={() => setNotificationToDelete(notification.id)}
+                        >
+                          <X className="h-3 w-3 text-muted-foreground" />
+                        </DropdownMenuItem>
                       </div>
-                    </DropdownMenuItem>
-                  ))
-                )}
-                {hiddenNotificationCount > 0 && (
-                  <p className="border-t border-border/60 px-3 py-2 text-center text-xs text-muted-foreground">
-                    {t('moreNotificationsHidden').replace('{count}', String(hiddenNotificationCount))}
-                  </p>
+                    ))}
+                  </div>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

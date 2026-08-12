@@ -70,6 +70,7 @@ import {
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 type Row = Record<string, any>;
 
@@ -129,7 +130,7 @@ const PIE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(-
 
 const currentDateOnly = () => {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: ACADEMY_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(new Date());
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${value.year}-${value.month}-${value.day}`;
@@ -324,9 +325,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const money = (value: number) => `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
   const compactMoney = (value: number) => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value || 0));
   const compactCurrency = (value: number) => `${compactMoney(value)}${t('uzs')}`;
-  const date = (value: unknown) => value ? new Date(String(value)).toLocaleDateString(locale, { timeZone: 'Asia/Tashkent' }) : '—';
-  const dateTime = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale, { timeZone: 'Asia/Tashkent', dateStyle: 'short', timeStyle: 'short' }) : '—';
-  const monthLabel = (value: string) => new Date(`${value}-15T12:00:00+05:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent' });
+  const date = (value: unknown) => value ? new Date(String(value)).toLocaleDateString(locale, { timeZone: ACADEMY_TIME_ZONE }) : '—';
+  const dateTime = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale, { timeZone: ACADEMY_TIME_ZONE, dateStyle: 'short', timeStyle: 'short' }) : '—';
+  const monthLabel = (value: string) => new Date(`${value}-15T12:00:00+05:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric', timeZone: ACADEMY_TIME_ZONE });
   const categoryLabel = (value: string) => {
     const labels: Record<string, string> = {
       student_payments: copy.studentPayments, income: copy.studentPayments, payroll: copy.payrollCategory,

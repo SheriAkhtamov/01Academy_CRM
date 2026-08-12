@@ -24,7 +24,7 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
-    const { t } = useTranslation();
+    const { t, language } = useTranslation();
     const priority = PRIORITY_META[task.priority];
     const overdue = isOverdue(task);
 
@@ -69,7 +69,7 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                         )}
                     >
                         <CalendarClock className="size-3" />
-                        {formatBoardDate(task.dueAt)}
+                        {formatBoardDate(task.dueAt, language)}
                     </Badge>
                 ) : null}
             </div>

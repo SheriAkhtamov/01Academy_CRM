@@ -7,6 +7,7 @@ import { storage } from '../../storage';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
+import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
 import {
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
@@ -109,7 +110,7 @@ export const SOURCE_MANAGEMENT_MODULES = new Set(['administration', 'marketing']
 // checked the same free slot in different rooms and assigned one teacher twice.
 export const ACADEMY_SCHEDULING_ADVISORY_LOCK = 7_315_001;
 export const ACADEMY_REFERRAL_ADVISORY_LOCK = 7_315_002;
-export const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || 'Asia/Tashkent';
+export const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 export const salesUserAccessSql = `
   (
     u.module = 'sales'

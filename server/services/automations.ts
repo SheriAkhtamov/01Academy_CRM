@@ -2,9 +2,10 @@ import type { PoolClient } from "pg";
 import { addDays, resolveStudentRiskFlags } from "@shared/academy";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
+import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
 
 const AUTOMATION_ADVISORY_LOCK = 10_100_002;
-const AUTOMATION_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || "Asia/Tashkent";
+const AUTOMATION_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 
 type QueryExecutor = Pick<PoolClient, "query">;
 

@@ -22,6 +22,7 @@ import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAcademyNumber } from '@/lib/localeFormat';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { getInitials } from '@/lib/auth';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
@@ -67,7 +68,7 @@ export function StudentDetailSheet({
   data,
   dateTime,
 }: StudentDetailSheetProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const ceoCopy = useCeoCopy();
   const onlinePbxCall = useOnlinePbxCall();
   const [activeTab, setActiveTab] = useState('info');
@@ -438,7 +439,7 @@ export function StudentDetailSheet({
                 <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm">
                   <div>
                     <div className="font-medium">
-                      {Number(payment.amountUzs || 0).toLocaleString('ru-RU')} {t('uzs')}
+                      {formatAcademyNumber(payment.amountUzs, language)} {t('uzs')}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">{payment.period || payment.method || t('payment')}</div>
                   </div>

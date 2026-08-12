@@ -8,9 +8,16 @@ import { leadQueryKeys } from '@/features/leads/api';
 import { messageQueryKeys } from '@/features/messages/api';
 import { telephonyQueryKeys } from '@/features/telephony/api';
 
+/**
+ * `connecting` covers both the first attempt and the backoff window, so the UI
+ * only nags once retries have actually been exhausted.
+ */
+export type RealtimeStatus = 'connecting' | 'connected' | 'disconnected';
+
 export function useWebSocket() {
-  const [isConnected, setIsConnected] = useState(false);
+  const [status, setStatus] = useState<RealtimeStatus>('connecting');
   const ws = useRef<WebSocket | null>(null);
+  const reconnectNowRef = useRef<() => void>(() => undefined);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const userId = user?.id;
@@ -32,23 +39,29 @@ export function useWebSocket() {
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
-        setIsConnected(true);
+        setStatus('connected');
         reconnectAttempts = 0;
+        // Backoff may have run for minutes; anything that happened meanwhile
+        // never arrived as an event, so treat the cache as suspect.
+        queryClient.invalidateQueries();
       };
 
       ws.current.onclose = () => {
-        setIsConnected(false);
         if (isMounted && reconnectAttempts < maxReconnectAttempts) {
+          setStatus('connecting');
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
           reconnectAttempts++;
           devLog(`WebSocket closed, reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
           reconnectTimer = setTimeout(connect, delay);
+        } else {
+          // Out of retries: live updates have stopped for good until something
+          // triggers a fresh attempt, so the UI has to say so.
+          setStatus('disconnected');
         }
       };
 
       ws.current.onerror = (error) => {
         devLog('WebSocket connection failed - this is expected in development mode', error);
-        setIsConnected(false);
       };
 
       ws.current.onmessage = (event) => {
@@ -135,10 +148,35 @@ export function useWebSocket() {
       }
     };
 
+    // A machine that sleeps or loses Wi-Fi burns through every retry while it
+    // is offline and then stays dead forever. Coming back online, returning to
+    // the tab, or pressing Reconnect all restart the budget.
+    const restart = () => {
+      if (!isMounted) return;
+      const readyState = ws.current?.readyState;
+      if (readyState === WebSocket.OPEN || readyState === WebSocket.CONNECTING) return;
+      clearTimeout(reconnectTimer);
+      reconnectAttempts = 0;
+      setStatus('connecting');
+      connect();
+    };
+
+    reconnectNowRef.current = restart;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') restart();
+    };
+
+    window.addEventListener('online', restart);
+    document.addEventListener('visibilitychange', handleVisibility);
+
     connect();
 
     return () => {
       isMounted = false;
+      reconnectNowRef.current = () => undefined;
+      window.removeEventListener('online', restart);
+      document.removeEventListener('visibilitychange', handleVisibility);
       clearTimeout(reconnectTimer);
       if (ws.current) {
         ws.current.close();
@@ -146,5 +184,9 @@ export function useWebSocket() {
     };
   }, [queryClient, userId]);
 
-  return { isConnected };
+  return {
+    status,
+    isConnected: status === 'connected',
+    reconnect: () => reconnectNowRef.current(),
+  };
 }

@@ -1,4 +1,5 @@
 import type { ReportingDateRange } from '@/lib/reportingDateRange';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 export type AnalyticsTimelineEvent = {
   at: string | Date | null | undefined;
@@ -13,7 +14,6 @@ export type AnalyticsTimelinePoint = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const ACADEMY_TIME_ZONE = 'Asia/Tashkent';
 
 const academyDateFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: ACADEMY_TIME_ZONE,

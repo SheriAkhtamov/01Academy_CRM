@@ -1,0 +1,41 @@
+name: Reconnect Instagram account
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconnect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Reconnect Instagram over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          INSTAGRAM_RECONNECT_TOKEN: ${{ secrets.INSTAGRAM_RECONNECT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS INSTAGRAM_RECONNECT_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+          printf '%s\n' "$INSTAGRAM_RECONNECT_TOKEN" | ssh -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'set -euo pipefail; IFS= read -r INSTAGRAM_RECONNECT_TOKEN; export INSTAGRAM_RECONNECT_TOKEN; cd "$HOME/01academy-crm"; docker compose exec -T -e INSTAGRAM_RECONNECT_TOKEN crm node dist/scripts/reconnect-instagram.js --apply'

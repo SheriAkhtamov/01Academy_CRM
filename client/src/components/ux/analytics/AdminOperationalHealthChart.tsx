@@ -13,6 +13,7 @@ import {
   AnalyticsChartEmpty,
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
+import { useChartEntrance } from '@/components/ux/motion';
 
 type HealthMetric = {
   label: string;
@@ -28,6 +29,8 @@ export function AdminOperationalHealthChart({
   metrics: HealthMetric[];
   className?: string;
 }) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t } = useTranslation();
   const hasRadarMetrics = metrics.length >= 3;
 
@@ -72,7 +75,7 @@ export function AdminOperationalHealthChart({
             />
             <Radar
               dataKey="value"
-              isAnimationActive={false}
+              isAnimationActive={chartEntrance}
               stroke="var(--primary-600)"
               strokeWidth={2.5}
               fill="var(--primary-500)"

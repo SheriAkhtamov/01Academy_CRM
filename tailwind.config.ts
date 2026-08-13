@@ -99,6 +99,15 @@ export default {
           ring: "var(--sidebar-ring)",
         },
       },
+      // Motion timing shared with the framer-motion tokens in
+      // client/src/lib/motion.ts — CSS-driven and JS-driven animation must
+      // agree on easing, or a hover and the entrance it follows look like they
+      // came from two different apps.
+      transitionTimingFunction: {
+        "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "overshoot": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "in-expo": "cubic-bezier(0.7, 0, 0.84, 0)",
+      },
       keyframes: {
         "accordion-down": {
           from: {
@@ -116,10 +125,35 @@ export default {
             height: "0",
           },
         },
+        // Loading sweep for <Skeleton>. Travels a full width past the right
+        // edge so the pause between passes reads as a rhythm, not a stall.
+        "skeleton-sweep": {
+          "0%": { transform: "translateX(-100%)" },
+          "60%, 100%": { transform: "translateX(100%)" },
+        },
+        // Slides a 200%-wide gradient across its own box. Used for animated
+        // brand text and living borders.
+        "gradient-pan": {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+        },
+        // An expanding halo behind a live status dot (call ringing, socket up).
+        "pulse-ring": {
+          "0%": { transform: "scale(0.9)", opacity: "0.65" },
+          "70%, 100%": { transform: "scale(2.1)", opacity: "0" },
+        },
+        "float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-8px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "skeleton-sweep": "skeleton-sweep 1.6s ease-in-out infinite",
+        "gradient-pan": "gradient-pan 6s ease infinite",
+        "pulse-ring": "pulse-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite",
+        "float": "float 4s ease-in-out infinite",
       },
     },
   },

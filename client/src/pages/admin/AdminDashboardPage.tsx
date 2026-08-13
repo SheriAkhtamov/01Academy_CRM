@@ -50,6 +50,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { StaggerGroup, StaggerItem, useChartEntrance } from '@/components/ux/motion';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import {
   AdminOperationalHealthChart,
@@ -237,7 +238,8 @@ function KpiCard({
   change?: number;
 }) {
   return (
-    <Card className="overflow-hidden border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+    <StaggerItem preset="pop" className="h-full">
+    <Card className="h-full overflow-hidden border-border/60 shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border hover:shadow-lg">
       <CardHeader className="flex flex-row items-start justify-between gap-3 p-4 pb-1">
         <div className="min-w-0">
           <CardDescription className="line-clamp-2 min-h-8 text-xs font-medium leading-4" title={title}>{title}</CardDescription>
@@ -258,6 +260,7 @@ function KpiCard({
         )}
       </CardContent>
     </Card>
+    </StaggerItem>
   );
 }
 
@@ -295,6 +298,8 @@ function DashboardSkeleton() {
 }
 
 export default function AdminDashboardPage() {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t, language } = useTranslation();
   const ceoCopy = useCeoCopy();
   const [, navigate] = useLocation();
@@ -575,8 +580,10 @@ export default function AdminDashboardPage() {
         isFetching={isFetching}
       />
 
-      <section
+      <StaggerGroup
+        count={5}
         aria-label={t('adminKeyMetrics')}
+        role="region"
         className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
       >
         <KpiCard
@@ -617,7 +624,7 @@ export default function AdminDashboardPage() {
           icon={CheckCircle2}
           tone="bg-emerald-100 text-emerald-600"
         />
-      </section>
+      </StaggerGroup>
 
       {reportingRange.preset === 'thisMonth' || reportingRange.preset === 'previousMonth' ? (
       <section aria-label={ceoCopy.dashboard.planFact} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -729,7 +736,7 @@ export default function AdminDashboardPage() {
                     yAxisId="money"
                     type="monotone"
                     dataKey="revenue"
-                    isAnimationActive={false}
+                    isAnimationActive={chartEntrance}
                     stroke="var(--primary-600)"
                     strokeWidth={2.5}
                     fill="url(#adminRevenueFill)"
@@ -738,7 +745,7 @@ export default function AdminDashboardPage() {
                     yAxisId="counts"
                     type="monotone"
                     dataKey="students"
-                    isAnimationActive={false}
+                    isAnimationActive={chartEntrance}
                     stroke="var(--emerald-500)"
                     strokeWidth={2}
                     dot={{ r: 3, fill: 'var(--emerald-500)', strokeWidth: 0 }}
@@ -748,7 +755,7 @@ export default function AdminDashboardPage() {
                     yAxisId="counts"
                     type="monotone"
                     dataKey="leads"
-                    isAnimationActive={false}
+                    isAnimationActive={chartEntrance}
                     stroke="var(--chart-3)"
                     strokeWidth={2}
                     strokeDasharray="5 4"
@@ -875,7 +882,7 @@ export default function AdminDashboardPage() {
               <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                 <ResponsiveContainer width="100%" height={120}>
                   <PieChart>
-                    <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={54} paddingAngle={2} isAnimationActive={false}>
+                    <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={54} paddingAngle={2} isAnimationActive={chartEntrance}>
                       {churnData.map((item) => <Cell key={item.name} fill={item.color} />)}
                     </Pie>
                     <Tooltip formatter={(value: number) => [value, ceoCopy.dashboard.students]} />

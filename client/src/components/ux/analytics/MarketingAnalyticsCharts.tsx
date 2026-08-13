@@ -29,6 +29,7 @@ import {
   analyticsAxisTick,
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
+import { useChartEntrance } from '@/components/ux/motion';
 
 type SourcePerformance = {
   sourceName: string;
@@ -90,6 +91,8 @@ export function MarketingAnalyticsCharts({
   };
   money: (value: number) => string;
 }) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const sourceEconomics = rankWithRemainder(
@@ -181,8 +184,8 @@ export function MarketingAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar yAxisId="money" dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} maxBarSize={28} isAnimationActive={false} />
-              <Bar yAxisId="money" dataKey="expenses" fill="var(--chart-5)" radius={[6, 6, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+              <Bar yAxisId="money" dataKey="revenue" fill="var(--chart-2)" radius={[6, 6, 0, 0]} maxBarSize={28} isAnimationActive={chartEntrance} />
+              <Bar yAxisId="money" dataKey="expenses" fill="var(--chart-5)" radius={[6, 6, 0, 0]} maxBarSize={28} isAnimationActive={chartEntrance} />
               <Line
                 yAxisId="roas"
                 type="monotone"
@@ -191,7 +194,7 @@ export function MarketingAnalyticsCharts({
                 strokeWidth={2.5}
                 dot={{ r: 3, fill: 'var(--chart-1)', strokeWidth: 0 }}
                 activeDot={{ r: 5 }}
-                isAnimationActive={false}
+                isAnimationActive={chartEntrance}
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -231,7 +234,7 @@ export function MarketingAnalyticsCharts({
               barSize={14}
             >
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-              <RadialBar dataKey="value" background={{ fill: 'var(--muted)' }} cornerRadius={8} isAnimationActive={false} />
+              <RadialBar dataKey="value" background={{ fill: 'var(--muted)' }} cornerRadius={8} isAnimationActive={chartEntrance} />
               <Tooltip formatter={(value: number) => `${value}%`} contentStyle={analyticsTooltipStyle} />
             </RadialBarChart>
           </ResponsiveContainer>
@@ -270,7 +273,7 @@ export function MarketingAnalyticsCharts({
           <ResponsiveContainer width="100%" height="100%">
             <FunnelChart>
               <Tooltip formatter={(value: number) => [value, t('navLeads')]} contentStyle={analyticsTooltipStyle} />
-              <Funnel dataKey="count" data={funnel} isAnimationActive={false}>
+              <Funnel dataKey="count" data={funnel} isAnimationActive={chartEntrance}>
                 {funnel.map((stage) => <Cell key={stage.code} fill={stage.color} />)}
                 <LabelList
                   position="center"
@@ -324,8 +327,8 @@ export function MarketingAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={18} isAnimationActive={false} />
-              <Bar dataKey="paidStudents" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={18} isAnimationActive={false}>
+              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={18} isAnimationActive={chartEntrance} />
+              <Bar dataKey="paidStudents" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={18} isAnimationActive={chartEntrance}>
                 <LabelList dataKey="paidStudents" position="right" className="fill-foreground text-xs font-semibold" />
               </Bar>
             </BarChart>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import {
   closestCorners,
   DndContext,
@@ -46,6 +47,7 @@ import {
   type OptimisticChange,
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
+import { SPRING, TRANSITION } from '@/lib/motion';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import {
@@ -271,6 +273,17 @@ function LeadCardContent({
   );
 }
 
+/**
+ * A card that leaves the column shrinks toward the drop target rather than
+ * blinking out: archiving a lead, or dragging one to another stage, is a
+ * frequent action and the operator needs to see *which* card left.
+ */
+const leadCardVariants: Variants = {
+  hidden: { opacity: 0, y: 12, scale: 0.96 },
+  visible: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, scale: 0.9, transition: TRANSITION.exit },
+};
+
 interface DraggableLeadCardProps extends LeadCardContentProps {
   onLeadClick?: KanbanBoardProps['onLeadClick'];
 }
@@ -298,10 +311,22 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
   });
 
   const card = (
-    <div
+    <motion.div
       ref={setNodeRef}
+      // `layout` is what makes a dropped card glide into its new slot and the
+      // cards it displaced slide aside, instead of the whole column snapping
+      // to a new arrangement one frame after the pointer is released.
+      // dnd-kit drives the drag through a DragOverlay portal rather than a
+      // transform on this node, so framer owns the transform outright and the
+      // two never fight over it.
+      layout
+      variants={leadCardVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      transition={SPRING.layout}
       className={cn(
-        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         selectionMode && 'cursor-default active:cursor-default',
         selected && 'border-primary/60 bg-primary/5 shadow-sm',
         isDragging && 'opacity-25',
@@ -316,7 +341,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       }}
     >
       <LeadCardContent {...props} />
-    </div>
+    </motion.div>
   );
 
   if (!comment) return card;
@@ -407,8 +432,11 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200',
-        isOver && 'border-primary ring-2 ring-primary/40 bg-primary/5 shadow-lg scale-[1.005]',
+        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200 ease-out-expo',
+        // The hovered column swells slightly and lights its ring, so the drop
+        // target is unmistakable even when the cursor is over a gap between
+        // cards rather than a card itself.
+        isOver && 'border-primary ring-2 ring-primary/50 bg-primary/5 shadow-xl scale-[1.015]',
       )}
     >
       <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/95 p-3 px-4 backdrop-blur-sm">
@@ -447,24 +475,34 @@ function KanbanColumn({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3">
-        {leads.map((lead) => (
-          <DraggableLeadCard
-            key={lead.id}
-            lead={lead}
-            currentStatus={status}
-            onQuickAction={onQuickAction}
-            onArchiveLead={onArchiveLead}
-            onEnrollDemo={onEnrollDemo}
-            isPending={isPending}
-            showPaymentAction={showPaymentAction}
-            showManager={showManager}
-            selectionMode={selectionMode}
-            selected={selectedLeadIds.has(lead.id)}
-            onSelectedChange={(selected) => toggleLead(lead.id, selected)}
-            t={t}
-            onLeadClick={onLeadClick}
-          />
-        ))}
+        {/*
+          Default (sync) mode, not popLayout: popLayout has to absolutely
+          position the leaving child and so requires every direct child of
+          AnimatePresence to be a ref-forwarding motion component, which the
+          tooltip-wrapped variant of DraggableLeadCard is not. In sync mode the
+          card shrinks away in its slot and the `layout` prop on its siblings
+          then closes the gap on a spring.
+        */}
+        <AnimatePresence initial={false}>
+          {leads.map((lead) => (
+            <DraggableLeadCard
+              key={lead.id}
+              lead={lead}
+              currentStatus={status}
+              onQuickAction={onQuickAction}
+              onArchiveLead={onArchiveLead}
+              onEnrollDemo={onEnrollDemo}
+              isPending={isPending}
+              showPaymentAction={showPaymentAction}
+              showManager={showManager}
+              selectionMode={selectionMode}
+              selected={selectedLeadIds.has(lead.id)}
+              onSelectedChange={(selected) => toggleLead(lead.id, selected)}
+              t={t}
+              onLeadClick={onLeadClick}
+            />
+          ))}
+        </AnimatePresence>
         {leads.length === 0 ? (
           <div className="flex min-h-56 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/45 px-5 py-8 text-center">
             <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-muted">
@@ -616,7 +654,15 @@ export function KanbanBoard({
           style={{ zIndex: 90 }}
         >
           {activeLead ? (
-            <div className="w-[296px] cursor-grabbing rounded-lg border border-primary/30 bg-card p-3 opacity-95 shadow-2xl">
+            // The lifted card tilts and grows a little the instant it is picked
+            // up. That tilt is what sells it as being held above the board
+            // rather than sliding along it.
+            <motion.div
+              initial={{ scale: 1, rotate: 0 }}
+              animate={{ scale: 1.04, rotate: -2 }}
+              transition={SPRING.bouncy}
+              className="w-[296px] cursor-grabbing rounded-lg border border-primary/40 bg-card p-3 opacity-95 shadow-2xl ring-4 ring-primary/15"
+            >
               <LeadCardContent
                 lead={activeLead}
                 currentStatus={statusesByCode.get(activeLead.statusCode) ?? statuses[0]}
@@ -629,7 +675,7 @@ export function KanbanBoard({
                 selected={false}
                 t={t}
               />
-            </div>
+            </motion.div>
           ) : null}
         </DragOverlayPortal>
       </DndContext>

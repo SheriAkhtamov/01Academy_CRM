@@ -52,6 +52,7 @@ import { FinanceAnalyticsCharts } from '@/components/ux/analytics/FinanceAnalyti
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
+import { StaggerGroup, StaggerItem, useChartEntrance } from '@/components/ux/motion';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -162,8 +163,11 @@ function FinanceMetric({
   fullValue?: string;
 }) {
   return (
+    // Each metric is its own stagger item, so any grid that holds them only has
+    // to be a StaggerGroup — the cards do not need wrapping at every call site.
+    <StaggerItem preset="pop" className="h-full">
     <Card className={cn(
-      'overflow-hidden border-border/60 shadow-sm',
+      'h-full overflow-hidden border-border/60 shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border hover:shadow-lg',
       large && 'border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20',
     )}>
       <CardContent className="flex h-full items-start justify-between gap-3 p-4">
@@ -191,6 +195,7 @@ function FinanceMetric({
         </div>
       </CardContent>
     </Card>
+    </StaggerItem>
   );
 }
 
@@ -294,6 +299,8 @@ function TransactionTable({
 }
 
 export default function FinanceCenter({ section = 'overview' }: { section?: FinanceSection }) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { language, t } = useTranslation();
   const copy = financeCopy(t);
   const queryClient = useQueryClient();
@@ -526,7 +533,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'overview' && dashboard.data ? (
         <div className="flex flex-col gap-4">
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]">
+          <StaggerGroup count={5} className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]">
             <FinanceMetric
               label={copy.netProfit}
               value={compactCurrency(dashboard.data.summary.netProfit)}
@@ -553,7 +560,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               tone={dashboard.data.summary.revenue > 0 ? 'success' : 'neutral'}
             />
             <FinanceMetric label={copy.duePayroll} value={compactCurrency(dashboard.data.summary.payrollDueUzs)} fullValue={money(dashboard.data.summary.payrollDueUzs)} icon={WalletCards} tone="warning" />
-          </section>
+          </StaggerGroup>
 
           <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
             <Card className="border-border/60 shadow-sm">
@@ -571,9 +578,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                     <YAxis tickFormatter={compactMoney} axisLine={false} tickLine={false} tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} width={58} />
                     <RechartsTooltip formatter={(value: number, name: string) => [money(value), name === 'revenue' ? copy.revenue : name === 'totalExpenses' ? copy.allExpenses : copy.netProfit]} labelFormatter={(value) => reportingDateLabel(String(value))} contentStyle={{ borderRadius: 10, borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }} />
                     <Legend formatter={(value) => value === 'revenue' ? copy.revenue : value === 'totalExpenses' ? copy.allExpenses : copy.netProfit} />
-                    <Bar dataKey="revenue" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                    <Bar dataKey="totalExpenses" fill="var(--chart-5)" radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="netProfit" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+                    <Bar dataKey="revenue" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={chartEntrance} />
+                    <Bar dataKey="totalExpenses" fill="var(--chart-5)" radius={[5, 5, 0, 0]} maxBarSize={30} isAnimationActive={chartEntrance} />
+                    <Line type="monotone" dataKey="netProfit" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} isAnimationActive={chartEntrance} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -590,7 +597,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <CardContent className="grid min-h-[220px] gap-3 px-4 pb-4 pt-0 sm:grid-cols-[145px_1fr] sm:items-center">
                 {dashboard.data.expenseBreakdown.length ? (
                   <ResponsiveContainer width="100%" height={150}>
-                    <PieChart><Pie data={dashboard.data.expenseBreakdown} dataKey="amount" nameKey="category" innerRadius={40} outerRadius={66} paddingAngle={2} isAnimationActive={false}>{dashboard.data.expenseBreakdown.map((item, index) => <Cell key={item.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value: number) => money(value)} /></PieChart>
+                    <PieChart><Pie data={dashboard.data.expenseBreakdown} dataKey="amount" nameKey="category" innerRadius={40} outerRadius={66} paddingAngle={2} isAnimationActive={chartEntrance}>{dashboard.data.expenseBreakdown.map((item, index) => <Cell key={item.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value: number) => money(value)} /></PieChart>
                   </ResponsiveContainer>
                 ) : <div className="flex h-[150px] items-center justify-center text-sm text-muted-foreground">{copy.noData}</div>}
                 <div className="flex flex-col gap-2">
@@ -625,12 +632,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'income' && income.data ? (
         <div className="flex flex-col gap-5">
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StaggerGroup count={4} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <FinanceMetric label={copy.revenue} value={money(income.data.summary.revenueUzs)} icon={CircleDollarSign} tone="success" />
             <FinanceMetric label={copy.paymentCount} value={String(income.data.summary.paidCount)} icon={ReceiptText} />
             <FinanceMetric label={copy.averagePayment} value={money(income.data.summary.averagePaymentUzs)} icon={TrendingUp} />
             <FinanceMetric label={copy.refunds} value={money(income.data.summary.refundedUzs)} icon={RotateCcw} tone={income.data.summary.refundedUzs > 0 ? 'danger' : 'neutral'} />
-          </section>
+          </StaggerGroup>
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.incomeRegistry}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></CardHeader>
             <CardContent className="p-0">
@@ -648,12 +655,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'expenses' && expenses.data ? (
         <div className="flex flex-col gap-5">
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StaggerGroup count={4} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <FinanceMetric label={copy.totalRecognized} value={money(expenses.data.summary.totalRecognizedUzs)} icon={Banknote} tone="danger" />
             <FinanceMetric label={copy.operatingPaid} value={money(expenses.data.summary.paidOperatingUzs)} icon={ReceiptText} />
             <FinanceMetric label={copy.marketing} value={money(expenses.data.summary.marketingUzs)} icon={TrendingUp} />
             <FinanceMetric label={copy.planned} value={money(expenses.data.summary.plannedOperatingUzs)} icon={Clock3} tone="warning" />
-          </section>
+          </StaggerGroup>
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.expenseRegistry}</CardTitle><CardDescription>{copy.methodology}</CardDescription></CardHeader>
             <CardContent className="p-0">
@@ -672,11 +679,11 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'payroll' && payroll.data ? (
         <div className="flex flex-col gap-5">
-          <section className="grid gap-4 md:grid-cols-3">
+          <StaggerGroup count={3} className="grid gap-4 md:grid-cols-3">
             <FinanceMetric label={copy.salaryFund} value={money(payroll.data.summary.payrollFundUzs)} icon={WalletCards} />
             <FinanceMetric label={copy.paidPayroll} value={money(payroll.data.summary.paidAmountUzs)} icon={Check} tone="success" />
             <FinanceMetric label={copy.remainingPayroll} value={money(payroll.data.summary.pendingAmountUzs)} icon={Clock3} tone="warning" />
-          </section>
+          </StaggerGroup>
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <Card className="overflow-hidden">
               <CardHeader className="flex-row items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>

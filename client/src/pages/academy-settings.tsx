@@ -1346,37 +1346,41 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
       <ModulePageBody contained ariaLabel={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList ref={tabsListRef} className="mb-5 h-auto w-full justify-start overflow-x-auto bg-transparent p-0">
+        <TabsList
+          ref={tabsListRef}
+          indicator="underline"
+          className="mb-5 h-auto w-full justify-start overflow-x-auto border-b border-border/70 p-0"
+        >
           {isSalesSettingsMode ? (
             <>
-              <TabsTrigger value="lead-assignment" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="lead-assignment" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UserRoundCheck />{t('leadAssignment')}
               </TabsTrigger>
-              <TabsTrigger value="pipeline" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="pipeline" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <GitBranch />{t('pipelineStages')}
               </TabsTrigger>
-              <TabsTrigger value="lead-merge" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="lead-merge" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <ArrowRightLeft />{t('leadMergeTab')}
               </TabsTrigger>
-              <TabsTrigger value="kpi" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="kpi" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <Target />{ceoCopy.settings.title}
               </TabsTrigger>
             </>
           ) : (
             <>
-              <TabsTrigger value="schools" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="schools" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <Building2 />{t('schools')}
               </TabsTrigger>
-              <TabsTrigger value="rooms" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="rooms" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <DoorOpen />{t('rooms')}
               </TabsTrigger>
-              <TabsTrigger value="courses" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="courses" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <BookOpen />{t('courses')}
               </TabsTrigger>
-              <TabsTrigger value="groups" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="groups" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UsersRound />{t('navGroups')}
               </TabsTrigger>
-              <TabsTrigger value="schedule" className="gap-2 border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none">
+              <TabsTrigger value="schedule" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <Building2 />{t('resourceCalendar')}
               </TabsTrigger>
             </>

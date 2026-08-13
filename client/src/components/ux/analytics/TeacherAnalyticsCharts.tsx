@@ -23,6 +23,7 @@ import {
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
 import { percentage, shortenChartLabel } from '@/lib/analyticsCharts';
+import { useChartEntrance } from '@/components/ux/motion';
 
 type TeacherTimelinePoint = {
   periodStart: string;
@@ -58,6 +59,8 @@ export function TeacherAnalyticsCharts({
   attendance: DistributionItem[];
   ratings: Array<{ score: string; count: number }>;
 }) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t } = useTranslation();
   const attendanceTotal = attendance.reduce((sum, item) => sum + item.value, 0);
   const ratingTotal = ratings.reduce((sum, item) => sum + item.count, 0);
@@ -106,8 +109,8 @@ export function TeacherAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar yAxisId="lessons" dataKey="conducted" stackId="lessons" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={false} />
-              <Bar yAxisId="lessons" dataKey="pending" stackId="lessons" fill="var(--chart-6)" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+              <Bar yAxisId="lessons" dataKey="conducted" stackId="lessons" fill="var(--chart-2)" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={chartEntrance} />
+              <Bar yAxisId="lessons" dataKey="pending" stackId="lessons" fill="var(--chart-6)" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={chartEntrance} />
               <Line
                 yAxisId="attendance"
                 type="monotone"
@@ -116,7 +119,7 @@ export function TeacherAnalyticsCharts({
                 strokeWidth={2.5}
                 dot={{ r: 3, fill: 'var(--chart-1)', strokeWidth: 0 }}
                 activeDot={{ r: 5 }}
-                isAnimationActive={false}
+                isAnimationActive={chartEntrance}
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -147,7 +150,7 @@ export function TeacherAnalyticsCharts({
                   data={attendance}
                   dataKey="value"
                   nameKey="name"
-                  isAnimationActive={false}
+                  isAnimationActive={chartEntrance}
                   innerRadius={50}
                   outerRadius={76}
                   paddingAngle={3}
@@ -251,9 +254,9 @@ export function TeacherAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar dataKey="completion" fill="var(--chart-2)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={false} />
-              <Bar dataKey="attendance" fill="var(--chart-1)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={false} />
-              <Bar dataKey="rating" fill="var(--chart-4)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={false} />
+              <Bar dataKey="completion" fill="var(--chart-2)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={chartEntrance} />
+              <Bar dataKey="attendance" fill="var(--chart-1)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={chartEntrance} />
+              <Bar dataKey="rating" fill="var(--chart-4)" radius={[0, 4, 4, 0]} maxBarSize={11} isAnimationActive={chartEntrance} />
             </BarChart>
           </ResponsiveContainer>
         ) : (
@@ -275,7 +278,7 @@ export function TeacherAnalyticsCharts({
               <XAxis dataKey="score" axisLine={false} tickLine={false} tick={analyticsAxisTick} />
               <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
               <Tooltip formatter={(value: number) => [value, t('responses')]} contentStyle={analyticsTooltipStyle} />
-              <Bar dataKey="count" fill="var(--chart-4)" radius={[7, 7, 0, 0]} maxBarSize={42} isAnimationActive={false}>
+              <Bar dataKey="count" fill="var(--chart-4)" radius={[7, 7, 0, 0]} maxBarSize={42} isAnimationActive={chartEntrance}>
                 <LabelList
                   dataKey="count"
                   position="top"

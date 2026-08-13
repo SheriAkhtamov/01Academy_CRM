@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'wouter';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -31,6 +32,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { DURATION, EASE, SPRING } from '@/lib/motion';
+import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import { unviewedLeadCountQueryOptions } from '@/features/leads/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
@@ -158,6 +161,25 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                 isActive && 'active'
               )}
             >
+              {/*
+                One highlight element shared by every nav item: because they all
+                carry the same `layoutId`, framer animates the single instance
+                from the old item to the new one, so the selection appears to
+                travel down the sidebar instead of blinking out and back in.
+                The edge bar is nested inside it and therefore travels too.
+              */}
+              {isActive && (
+                <motion.span
+                  layoutId="sidebar-active-highlight"
+                  className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100"
+                  transition={SPRING.snappy}
+                >
+                  <span
+                    className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary-600"
+                    style={{ boxShadow: '0 0 10px 0 var(--primary-glow)' }}
+                  />
+                </motion.span>
+              )}
               <Icon className="sidebar-nav-item__icon" />
               <span className="truncate">{item.name}</span>
               <UnreadCountBadge
@@ -166,7 +188,11 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                 className="ml-auto ring-card"
               />
               {isActive && !item.badgeCount && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600" />
+                <motion.span
+                  layoutId="sidebar-active-dot"
+                  className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600"
+                  transition={SPRING.snappy}
+                />
               )}
             </div>
           </Link>
@@ -204,14 +230,20 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden">
+        <StaggerGroup
+          count={sections.length + 1}
+          className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden"
+          // A <nav> landmark is what screen readers navigate by; StaggerGroup
+          // renders a plain div, so the role has to be restated here.
+          role="navigation"
+        >
           {sections.map((section) => {
             const visibleItems = section.items;
             if (visibleItems.length === 0) return null;
             const isCollapsed = collapsedSections[section.id];
 
             return (
-              <div key={section.id} className="mb-2">
+              <StaggerItem key={section.id} className="mb-2">
                 <button
                   onClick={() => toggleSection(section.id)}
                   className="w-full flex items-center justify-between px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-500 transition-colors"
@@ -220,29 +252,39 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
                   <span>{section.label}</span>
                   <ChevronDown
                     className={cn(
-                      'h-3.5 w-3.5 transition-transform duration-200',
+                      'h-3.5 w-3.5 transition-transform duration-200 ease-out-expo',
                       isCollapsed && '-rotate-90'
                     )}
                   />
                 </button>
-                <div
-                  // `invisible` matters as much as the height: opacity alone
-                  // leaves the links focusable, so tabbing through the sidebar
-                  // used to drop focus into a collapsed section.
-                  className={cn(
-                    'space-y-0.5 overflow-hidden transition-all duration-200',
-                    isCollapsed ? 'invisible max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+                {/*
+                  A collapsed section is unmounted rather than hidden. Height
+                  alone would leave the links in the tab order — the previous
+                  fix for that was an `invisible` class, but AnimatePresence
+                  gives the same guarantee and animates the real height, so a
+                  section with three items and one with eight no longer share
+                  a made-up max-height.
+                */}
+                <AnimatePresence initial={false}>
+                  {!isCollapsed && (
+                    <motion.div
+                      className="space-y-0.5 overflow-hidden"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: DURATION.base, ease: EASE.out }}
+                    >
+                      {visibleItems.map((item) => renderNavItem(item))}
+                    </motion.div>
                   )}
-                >
-                  {visibleItems.map((item) => renderNavItem(item))}
-                </div>
-              </div>
+                </AnimatePresence>
+              </StaggerItem>
             );
           })}
-          <div className="mt-3 border-t border-border/70 pt-3">
+          <StaggerItem className="mt-3 border-t border-border/70 pt-3">
             {renderNavItem(taskBoardItem)}
-          </div>
-        </nav>
+          </StaggerItem>
+        </StaggerGroup>
 
         {/* Language Switcher */}
         <div className="border-t border-border/70 px-4 py-2">

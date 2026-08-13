@@ -1,9 +1,11 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Redirect, Switch, Route } from 'wouter';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { canAccessAcademyModule, hasFinanceAccess, hasLeadershipAccess, type AcademyModule } from '@shared/academy';
-import Layout from '@/components/Layout';
+import Layout, { AppSpinner } from '@/components/Layout';
+import { SPRING, scaleIn } from '@/lib/motion';
 
 const NotFound = lazy(() => import('@/pages/not-found'));
 const Login = lazy(() => import('@/pages/login'));
@@ -52,10 +54,16 @@ function AccessDenied({
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-      <div className="rounded-xl border border-border/70 bg-card p-8 text-center">
+      <motion.div
+        className="rounded-xl border border-border/70 bg-card p-8 text-center"
+        variants={scaleIn}
+        initial="hidden"
+        animate="visible"
+        transition={SPRING.gentle}
+      >
         <h1 className="text-xl font-semibold text-foreground">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -93,14 +101,7 @@ const adminPage = (section: AcademySection) => (
 function RouteLoading() {
   const { t } = useTranslation();
 
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-10 h-10 border-[3px] border-muted border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-muted-foreground text-sm">{t('loading')}</p>
-      </div>
-    </div>
-  );
+  return <AppSpinner label={t('loading')} />;
 }
 
 export function AppRouter() {

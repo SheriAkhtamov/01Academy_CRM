@@ -226,7 +226,9 @@ export function ScheduleTimeGrid({
                       type="button"
                       className={cn(
                         'group absolute z-10 flex flex-col overflow-hidden rounded-md border pl-2 pr-1.5 py-1 text-left shadow-2xs outline-none',
-                        'transition-shadow hover:z-20 hover:shadow-md focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                        // Raising z-index alongside the scale keeps a hovered
+                        // lesson on top of the ones it overlaps in the grid.
+                        'transition-[box-shadow,transform] duration-150 ease-out hover:z-20 hover:scale-[1.015] hover:shadow-lg active:scale-100 focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                       )}
                       style={{
                         ...style,

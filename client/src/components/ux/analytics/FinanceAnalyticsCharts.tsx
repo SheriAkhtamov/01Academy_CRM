@@ -20,6 +20,7 @@ import {
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
 import { shortenChartLabel } from '@/lib/analyticsCharts';
+import { useChartEntrance } from '@/components/ux/motion';
 
 type FinanceTrendPoint = {
   periodStart: string;
@@ -47,6 +48,8 @@ export function FinanceAnalyticsCharts({
   money: (value: number) => string;
   compactMoney: (value: number) => string;
 }) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t } = useTranslation();
   const contributionData = [
     { name: t('revenue'), value: Number(summary.revenue || 0), color: 'var(--chart-2)' },
@@ -117,9 +120,9 @@ export function FinanceAnalyticsCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Area type="monotone" dataKey="operatingExpenses" stackId="expenses" stroke="var(--chart-5)" fill="url(#financeOperatingFill)" isAnimationActive={false} />
-              <Area type="monotone" dataKey="payrollExpenses" stackId="expenses" stroke="var(--chart-3)" fill="url(#financePayrollFill)" isAnimationActive={false} />
-              <Area type="monotone" dataKey="marketingExpenses" stackId="expenses" stroke="var(--chart-4)" fill="url(#financeMarketingFill)" isAnimationActive={false} />
+              <Area type="monotone" dataKey="operatingExpenses" stackId="expenses" stroke="var(--chart-5)" fill="url(#financeOperatingFill)" isAnimationActive={chartEntrance} />
+              <Area type="monotone" dataKey="payrollExpenses" stackId="expenses" stroke="var(--chart-3)" fill="url(#financePayrollFill)" isAnimationActive={chartEntrance} />
+              <Area type="monotone" dataKey="marketingExpenses" stackId="expenses" stroke="var(--chart-4)" fill="url(#financeMarketingFill)" isAnimationActive={chartEntrance} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -166,7 +169,7 @@ export function FinanceAnalyticsCharts({
                 tickFormatter={(value) => shortenChartLabel(value, 17)}
               />
               <Tooltip formatter={(value: number) => money(value)} contentStyle={analyticsTooltipStyle} />
-              <Bar dataKey="value" radius={[5, 5, 5, 5]} maxBarSize={28} isAnimationActive={false}>
+              <Bar dataKey="value" radius={[5, 5, 5, 5]} maxBarSize={28} isAnimationActive={chartEntrance}>
                 {contributionData.map((item) => <Cell key={item.name} fill={item.color} />)}
               </Bar>
             </BarChart>

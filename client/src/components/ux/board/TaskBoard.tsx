@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
     closestCorners,
     DndContext,
@@ -23,6 +24,7 @@ import {
     type OptimisticChange,
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
+import { SPRING, TRANSITION } from '@/lib/motion';
 import { TaskCard } from './TaskCard';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
 import { BOARD_COLUMNS, type BoardStatus, type TaskSummary } from '@/lib/boardTypes';
@@ -72,8 +74,16 @@ function DraggableTaskCard({
     }, [isDragging]);
 
     return (
-        <div
+        // Mirrors the lead kanban: `layout` glides a dropped task into its new
+        // slot and slides its neighbours aside, and the exit variant keeps a
+        // completed task from simply blinking out of the column.
+        <motion.div
             ref={setNodeRef}
+            layout
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, transition: TRANSITION.exit }}
+            transition={SPRING.layout}
             className={cn(isDragging && 'opacity-25')}
         >
             <TaskCard
@@ -83,7 +93,7 @@ function DraggableTaskCard({
                     if (!suppressClickRef.current) onClick();
                 }}
             />
-        </div>
+        </motion.div>
     );
 }
 
@@ -113,8 +123,8 @@ function TaskColumn({
             role="region"
             aria-label={label}
             className={cn(
-                'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-[border-color,background-color,box-shadow]',
-                isOver && 'border-primary bg-primary/5 shadow-md',
+                'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200 ease-out-expo',
+                isOver && 'border-primary bg-primary/5 shadow-xl ring-2 ring-primary/50 scale-[1.015]',
                 !canDrop && 'opacity-60',
             )}
         >
@@ -129,9 +139,11 @@ function TaskColumn({
                 data-task-column-scroll
                 className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 [scrollbar-gutter:stable]"
             >
-                {tasks.map((task) => (
-                    <DraggableTaskCard key={task.id} task={task} onClick={() => onTaskClick(task.id)} />
-                ))}
+                <AnimatePresence initial={false}>
+                    {tasks.map((task) => (
+                        <DraggableTaskCard key={task.id} task={task} onClick={() => onTaskClick(task.id)} />
+                    ))}
+                </AnimatePresence>
                 {tasks.length === 0 ? (
                     <div className="flex min-h-40 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-background/40 px-4 text-center">
                         <p className="text-xs text-muted-foreground">{t('noTasks')}</p>
@@ -276,9 +288,14 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                     style={{ zIndex: 90 }}
                 >
                     {activeTask ? (
-                        <div className="w-[296px] cursor-grabbing opacity-95 shadow-2xl">
+                        <motion.div
+                            initial={{ scale: 1, rotate: 0 }}
+                            animate={{ scale: 1.04, rotate: -2 }}
+                            transition={SPRING.bouncy}
+                            className="w-[296px] cursor-grabbing opacity-95 shadow-2xl"
+                        >
                             <TaskCard task={activeTask} />
-                        </div>
+                        </motion.div>
                     ) : null}
                 </DragOverlayPortal>
             </DndContext>

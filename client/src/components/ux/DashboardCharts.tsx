@@ -29,6 +29,7 @@ import {
   analyticsAxisTick,
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
+import { useChartEntrance } from '@/components/ux/motion';
 
 interface DashboardChartsProps {
   payments?: any[];
@@ -54,6 +55,8 @@ export function DashboardCharts({
   money,
   reportingRange,
 }: DashboardChartsProps) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
 
@@ -192,7 +195,7 @@ export function DashboardCharts({
                 <Area
                   type="monotone"
                   dataKey="amount"
-                  isAnimationActive={false}
+                  isAnimationActive={chartEntrance}
                   stroke="var(--primary-500)"
                   strokeWidth={2.5}
                   fillOpacity={1}
@@ -287,8 +290,8 @@ export function DashboardCharts({
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
-              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={false} />
-              <Bar dataKey="paid" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={false}>
+              <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={chartEntrance} />
+              <Bar dataKey="paid" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={chartEntrance}>
                 <LabelList dataKey="conversion" position="right" formatter={(value: number) => `${value}%`} className="fill-muted-foreground text-xs" />
               </Bar>
             </BarChart>
@@ -331,7 +334,7 @@ export function DashboardCharts({
                   data={paymentMethodData}
                   dataKey="amount"
                   nameKey="name"
-                  isAnimationActive={false}
+                  isAnimationActive={chartEntrance}
                   innerRadius={50}
                   outerRadius={76}
                   paddingAngle={3}

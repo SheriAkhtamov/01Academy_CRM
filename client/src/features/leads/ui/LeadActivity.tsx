@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
 import type { TranslationKey } from '@/lib/i18n';
+import { DURATION, EASE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import {
   formatCallDuration,
@@ -409,7 +411,22 @@ export function ActivityTimeline({
                   {group.items.map((item, index) => {
                     const Icon = ACTIVITY_KIND_ICONS[item.kind];
                     return (
-                      <li key={item.id} className="relative flex gap-3 pb-4 last:pb-0">
+                      // Entries slide in from the left, following the timeline
+                      // rail, and each waits a beat on the one above it — the
+                      // cascade reads as the history being replayed in order.
+                      // The step is capped so a lead with fifty events does not
+                      // spend seconds drawing itself.
+                      <motion.li
+                        key={item.id}
+                        className="relative flex gap-3 pb-4 last:pb-0"
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{
+                          duration: DURATION.base,
+                          ease: EASE.out,
+                          delay: Math.min(index * 0.03, 0.24),
+                        }}
+                      >
                         {index !== group.items.length - 1 ? (
                           <span
                             aria-hidden
@@ -439,7 +456,7 @@ export function ActivityTimeline({
                             <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />
                           ) : null}
                         </div>
-                      </li>
+                      </motion.li>
                     );
                   })}
                 </ol>

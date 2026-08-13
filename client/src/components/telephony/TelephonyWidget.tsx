@@ -82,11 +82,32 @@ const useCallDuration = (call: ActiveTelephonyCall | null) => {
   return Math.max(0, Math.floor((end - new Date(call.answeredAt).getTime()) / 1_000));
 };
 
-const ContactAvatar = ({ call }: { call: ActiveTelephonyCall }) => (
-  <div className="flex size-16 items-center justify-center rounded-full bg-primary-50 text-primary-700 ring-8 ring-primary-50">
-    {call.direction === 'incoming' ? <PhoneIncoming className="size-7" /> : <UserRound className="size-7" />}
-  </div>
-);
+/**
+ * While the phone is ringing the avatar sits inside two expanding halos, one
+ * delayed behind the other. A ringing call is the most time-critical event in
+ * the CRM and the widget can be anywhere on screen, so it needs to be visible
+ * from peripheral vision — the halos stop the moment the call connects.
+ */
+const ContactAvatar = ({ call }: { call: ActiveTelephonyCall }) => {
+  const ringing = call.status === 'ringing';
+  return (
+    <div className="relative flex size-16 items-center justify-center">
+      {ringing ? (
+        <>
+          <span className="absolute inset-0 animate-pulse-ring rounded-full bg-primary/30" aria-hidden="true" />
+          <span
+            className="absolute inset-0 animate-pulse-ring rounded-full bg-primary/20"
+            style={{ animationDelay: '0.6s' }}
+            aria-hidden="true"
+          />
+        </>
+      ) : null}
+      <div className="relative flex size-16 items-center justify-center rounded-full bg-primary-50 text-primary-700 ring-8 ring-primary-50">
+        {call.direction === 'incoming' ? <PhoneIncoming className="size-7" /> : <UserRound className="size-7" />}
+      </div>
+    </div>
+  );
+};
 
 export function TelephonyWidget() {
   const { t, language } = useTranslation();
@@ -308,9 +329,11 @@ export function TelephonyWidget() {
 
         <div className="mt-auto flex items-center justify-center gap-4 pt-7">
           {call.direction === 'incoming' && call.status === 'ringing' ? (
+            // The answer button breathes in time with the halos so the two
+            // read as one signal rather than two competing ones.
             <Button
               type="button"
-              className="size-14 rounded-full bg-emerald-600 p-0 hover:bg-emerald-700"
+              className="size-14 animate-float rounded-full bg-emerald-600 p-0 shadow-lg shadow-emerald-600/40 hover:bg-emerald-700"
               onClick={() => runCallAction(telephony.answerCall)}
               disabled={telephony.isPending}
               aria-label={t('telephonyAnswer')}
@@ -342,6 +365,10 @@ export function TelephonyWidget() {
   return (
     <>
       {isOpen ? (
+        // The entrance is a CSS keyframe rather than framer: this node carries
+        // useMovableWidget's `onDragStart`, and a motion component redefines
+        // that prop as its own pan-gesture callback, so the two cannot share
+        // an element.
         <div
           ref={widgetRef}
           style={widgetStyle}
@@ -350,6 +377,7 @@ export function TelephonyWidget() {
           data-dragging={isDragging || undefined}
           className={cn(
             'pointer-events-auto fixed z-[70] isolate flex max-h-[calc(100dvh-24px)] w-[min(380px,calc(100vw-24px))] cursor-move flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
+            'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3 duration-300 ease-out-expo',
             isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
           )}
           role="dialog"
@@ -510,6 +538,9 @@ export function TelephonyWidget() {
           </div>
         </div>
       ) : (
+        // The collapsed pill turns green and gains a pulsing ring while a call
+        // is live, so it stays readable as a status light after the operator
+        // has parked it in a corner and gone back to work.
         <div
           ref={widgetRef}
           style={widgetStyle}
@@ -518,7 +549,8 @@ export function TelephonyWidget() {
           data-dragging={isDragging || undefined}
           className={cn(
             'pointer-events-auto fixed z-[70] flex h-14 touch-none cursor-move items-center overflow-hidden rounded-full text-white shadow-xl',
-            isActive ? 'bg-emerald-600' : telephony.connectionState === 'ready' ? 'bg-slate-950' : 'bg-slate-600',
+            'animate-in fade-in-0 zoom-in-90 duration-300 ease-out-expo',
+            isActive ? 'bg-emerald-600 ring-4 ring-emerald-500/30' : telephony.connectionState === 'ready' ? 'bg-slate-950' : 'bg-slate-600',
             isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
           )}
         >
@@ -534,7 +566,11 @@ export function TelephonyWidget() {
             ) : (
               <span className="text-sm font-medium">{t('telephonyTitle')}</span>
             )}
-            <span className={cn('size-2 rounded-full', telephony.connectionState === 'ready' ? 'bg-emerald-400' : 'bg-amber-300')} />
+            <span className={cn(
+              'size-2 rounded-full',
+              telephony.connectionState === 'ready' ? 'bg-emerald-400' : 'bg-amber-300',
+              isActive && 'animate-pulse',
+            )} />
           </button>
         </div>
       )}

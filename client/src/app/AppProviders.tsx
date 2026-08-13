@@ -5,6 +5,7 @@ import { AuthProvider } from '@/hooks/useAuth';
 import { TelephonyProvider, useTelephony } from '@/contexts/TelephonyContext';
 import { ThemeProvider } from '@/components/ux/ThemeProvider';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
+import { MotionProvider } from '@/components/ux/motion';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 
@@ -25,19 +26,21 @@ const TelephonyOverlay = () => {
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider defaultTheme="system" storageKey="academy-crm-theme">
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <TelephonyProvider>
-            <TooltipProvider>
-              <Toaster />
-              <AppErrorBoundary>
-                {children}
-                <TelephonyOverlay />
-              </AppErrorBoundary>
-            </TooltipProvider>
-          </TelephonyProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+      <MotionProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <TelephonyProvider>
+              <TooltipProvider>
+                <Toaster />
+                <AppErrorBoundary>
+                  {children}
+                  <TelephonyOverlay />
+                </AppErrorBoundary>
+              </TooltipProvider>
+            </TelephonyProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </MotionProvider>
     </ThemeProvider>
   );
 }

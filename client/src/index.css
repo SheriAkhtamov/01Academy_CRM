@@ -615,218 +615,25 @@
 }
 
 /* ========================================
-   🎨 MODERN UI/UX ANIMATIONS & EFFECTS
+   MOTION UTILITIES
+   Effects that must live in CSS because they attach to pseudo-elements or to
+   nodes React does not own. Everything driven from components — entrances,
+   staggers, list exits, layout reflow — goes through framer-motion and the
+   tokens in client/src/lib/motion.ts instead.
+
+   This block used to hold ~25 hand-rolled animation utilities (slideIn*,
+   fadeIn, scaleIn, shimmer, glow, float, btn-modern, card-modern,
+   gradient-text, icon-spin-hover …). All but the ones kept below were dead:
+   nothing in client/src referenced them, so they shipped in every stylesheet
+   and animated nothing. They are gone rather than ported, because the motion
+   layer now covers the same ground with shared timing.
    ======================================== */
 
 @layer components {
-  /* Glassmorphism Effect */
-  .glass {
-    background: var(--glass-background);
-    backdrop-filter: blur(14px) saturate(180%);
-    -webkit-backdrop-filter: blur(14px) saturate(180%);
-    border: 1px solid var(--glass-border);
-  }
-
-  .glass-dark {
-    background: hsla(224, 26%, 7%, 0.8);
-    backdrop-filter: blur(14px) saturate(180%);
-    -webkit-backdrop-filter: blur(14px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  /* Modern Card Shadows */
-  .card-modern {
-    @apply transition-all duration-300 ease-out;
-    box-shadow: var(--shadow-sm);
-  }
-
-  .card-modern:hover {
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-3px);
-  }
-
-  /* Pulse Animation */
-  @keyframes pulse-soft {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.7;
-    }
-  }
-
-  .pulse-soft {
-    animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
-  /* Slide In Animations */
-  @keyframes slideInRight {
-    from {
-      opacity: 0;
-      transform: translateX(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes slideInLeft {
-    from {
-      opacity: 0;
-      transform: translateX(-20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes slideInUp {
-    from {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes slideInDown {
-    from {
-      opacity: 0;
-      transform: translateY(-14px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes scaleIn {
-    from {
-      opacity: 0;
-      transform: scale(0.97);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  .animate-slideInRight {
-    animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .animate-slideInLeft {
-    animation: slideInLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .animate-slideInUp {
-    animation: slideInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .animate-slideInDown {
-    animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .animate-fadeIn {
-    animation: fadeIn 0.3s ease-out;
-  }
-
-  .animate-scaleIn {
-    animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* Stagger Animation (for lists) */
-  .stagger-item {
-    opacity: 0;
-    animation: slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .stagger-item:nth-child(1) { animation-delay: 0.04s; }
-  .stagger-item:nth-child(2) { animation-delay: 0.08s; }
-  .stagger-item:nth-child(3) { animation-delay: 0.12s; }
-  .stagger-item:nth-child(4) { animation-delay: 0.16s; }
-  .stagger-item:nth-child(5) { animation-delay: 0.20s; }
-  .stagger-item:nth-child(6) { animation-delay: 0.24s; }
-  .stagger-item:nth-child(7) { animation-delay: 0.28s; }
-  .stagger-item:nth-child(8) { animation-delay: 0.32s; }
-
-  /* Shimmer Loading Effect */
-  @keyframes shimmer {
-    0% {
-      background-position: -1000px 0;
-    }
-    100% {
-      background-position: 1000px 0;
-    }
-  }
-
-  .shimmer {
-    animation: shimmer 2s infinite;
-    background: linear-gradient(
-      to right,
-      var(--shimmer-start) 0%,
-      var(--shimmer-middle) 20%,
-      var(--shimmer-start) 40%,
-      var(--shimmer-start) 100%
-    );
-    background-size: 1000px 100%;
-  }
-
-  /* Skeleton Loader */
-  .skeleton {
-    @apply shimmer rounded-md bg-slate-200;
-  }
-
-  /* Button Hover Effects */
-  .btn-modern {
-    @apply relative overflow-hidden transition-all duration-200;
-  }
-
-  .btn-modern::before {
-    content: '';
-    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-200;
-  }
-
-  .btn-modern:hover::before {
-    @apply opacity-15;
-  }
-
-  .btn-modern:active {
-    @apply scale-[0.97];
-  }
-
-  /* Badge Pulse */
-  @keyframes badge-pulse {
-    0%, 100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-    50% {
-      transform: scale(1.05);
-      opacity: 0.9;
-    }
-  }
-
-  .badge-pulse {
-    animation: badge-pulse 2s ease-in-out infinite;
-  }
-
-  /* Hover Lift Effect */
+  /* Card hover lift. Still CSS because it applies to plain <Card> elements
+     across dashboards that have no other reason to become motion components. */
   .hover-lift {
-    @apply transition-all duration-300 ease-out;
+    @apply transition-[transform,box-shadow] duration-200 ease-out-expo;
   }
 
   .hover-lift:hover {
@@ -834,85 +641,8 @@
     box-shadow: var(--shadow-lg);
   }
 
-  /* Gradient Text */
-  .gradient-text {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, var(--primary-500), var(--purple-500));
-  }
-
-  /* Focus Ring Modern */
-  .focus-ring-modern {
-    @apply focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-all duration-200;
-  }
-
-  /* Smooth Hover Underline */
-  .hover-underline {
-    @apply relative;
-  }
-
-  .hover-underline::after {
-    content: '';
-    @apply absolute bottom-0 left-0 w-0 h-0.5 bg-primary-600 transition-all duration-300;
-  }
-
-  .hover-underline:hover::after {
-    @apply w-full;
-  }
-
-  /* Icon Spin on Hover */
-  .icon-spin-hover {
-    @apply transition-transform duration-300;
-  }
-
-  .icon-spin-hover:hover {
-    @apply rotate-90;
-  }
-
-  /* Icon Scale on Hover */
-  .icon-scale-hover {
-    @apply transition-transform duration-200;
-  }
-
-  .icon-scale-hover:hover {
-    @apply scale-110;
-  }
-
-  /* Floating Animation */
-  @keyframes float {
-    0%, 100% {
-      transform: translateY(0px);
-    }
-    50% {
-      transform: translateY(-10px);
-    }
-  }
-
-  .float {
-    animation: float 3s ease-in-out infinite;
-  }
-
-  /* Glow Effect */
-  .glow {
-    box-shadow: 0 0 20px var(--primary-glow);
-  }
-
-  .glow-hover:hover {
-    box-shadow: 0 0 30px var(--primary-glow);
-    @apply transition-all duration-300;
-  }
-
-  /* Border Gradient Animation */
-  @keyframes border-glow {
-    0%, 100% {
-      border-color: rgba(59, 130, 246, 0.5);
-    }
-    50% {
-      border-color: rgba(147, 51, 234, 0.5);
-    }
-  }
-
-  .border-glow {
-    animation: border-glow 3s ease-in-out infinite;
+  .hover-lift:active {
+    @apply translate-y-0 duration-75;
   }
 
   /* Smooth Scroll */
@@ -951,76 +681,16 @@
     background-color: transparent;
   }
 
-  /* Loading Spinner */
-  @keyframes spin-slow {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
+  /* Login Page.
+     `aurora` lives here rather than in tailwind.config because it is only ever
+     applied to pseudo-elements, and Tailwind emits a @keyframes block only for
+     animations reached through a utility class. */
+  @keyframes aurora {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    33% { transform: translate3d(4%, -6%, 0) scale(1.08); }
+    66% { transform: translate3d(-5%, 4%, 0) scale(0.95); }
   }
 
-  .spin-slow {
-    animation: spin-slow 1.5s linear infinite;
-  }
-
-  /* Backdrop Blur */
-  .backdrop-modern {
-    backdrop-filter: blur(8px) saturate(180%);
-    -webkit-backdrop-filter: blur(8px) saturate(180%);
-    background-color: var(--backdrop-background);
-  }
-
-  /* Modal Overlay Animation */
-  @keyframes overlay-show {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes overlay-hide {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
-    }
-  }
-
-  .overlay-animate-in {
-    animation: overlay-show 0.2s ease-out;
-  }
-
-  .overlay-animate-out {
-    animation: overlay-hide 0.2s ease-out;
-  }
-
-  /* Content Slide */
-  @keyframes content-slide-in {
-    from {
-      opacity: 0;
-      transform: translate(-50%, -48%) scale(0.96);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
-    }
-  }
-
-  .content-slide-in {
-    animation: content-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* Page transition — subtle fade + rise when entering main content */
-  .page-enter {
-    animation: slideInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* Login Page */
   .login-page {
     @apply min-h-screen flex items-center justify-center relative overflow-hidden;
     background: var(--login-bg);
@@ -1032,12 +702,17 @@
     @apply absolute rounded-full blur-3xl pointer-events-none;
   }
 
+  /* The two glows drift on long, offset cycles so they never line up into a
+     recognisable loop. This is the one place in the app with a permanent
+     ambient animation — it is a landing surface nobody works inside, and the
+     global prefers-reduced-motion rule still stops it. */
   .login-page::before {
     width: 420px;
     height: 420px;
     top: -120px;
     left: -80px;
     background: radial-gradient(circle, var(--login-glow-blue), transparent 70%);
+    animation: aurora 18s ease-in-out infinite;
   }
 
   .login-page::after {
@@ -1046,6 +721,8 @@
     bottom: -160px;
     right: -100px;
     background: radial-gradient(circle, var(--login-glow-purple), transparent 70%);
+    animation: aurora 24s ease-in-out infinite reverse;
+    animation-delay: -6s;
   }
 
   .login-card {
@@ -1059,8 +736,21 @@
     @apply text-center mb-8;
   }
 
+  /* The brand name is painted with a gradient that drifts across itself.
+     It is the one permanently animated piece of text in the app, and it lives
+     on a screen nobody works inside — the moment the operator is logged in it
+     is gone. Set as one 200%-wide gradient so `gradient-pan` has room to move
+     without the colours ever leaving the glyphs. */
   .login-card__title {
-    @apply text-2xl font-bold text-slate-900 mb-1 tracking-tight;
+    @apply mb-1 animate-gradient-pan bg-clip-text text-2xl font-bold tracking-tight text-transparent;
+    background-image: linear-gradient(
+      110deg,
+      var(--primary-600),
+      var(--purple-500),
+      var(--primary-500),
+      var(--primary-600)
+    );
+    background-size: 200% 200%;
   }
 
   .login-card__subtitle {
@@ -1087,33 +777,38 @@
     @apply space-y-0.5 mb-4;
   }
 
+  /* `isolate` gives the item its own stacking context so the framer-motion
+     highlight (rendered at -z-10 by Sidebar.tsx) sits above the sidebar
+     background but below the label. The active fill and the left-edge bar are
+     no longer drawn here: a single shared element slides between items
+     instead, which a static `.active` rule cannot express. */
   .sidebar-nav-item {
-    @apply relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 cursor-pointer transition-all duration-200;
+    @apply relative isolate flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 cursor-pointer;
+    @apply transition-[color,background-color,transform] duration-200 ease-out;
   }
 
   .sidebar-nav-item:hover {
-    @apply bg-slate-100 text-slate-900;
+    @apply bg-slate-100 text-slate-900 translate-x-0.5;
   }
 
   .sidebar-nav-item.active {
     @apply text-primary-700;
-    background: linear-gradient(90deg, var(--primary-50), var(--primary-100));
   }
 
-  /* Animated active indicator bar on the left edge */
-  .sidebar-nav-item.active::before {
-    content: '';
-    @apply absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full;
-    background: var(--primary-600);
-    box-shadow: 0 0 10px 0 var(--primary-glow);
+  .sidebar-nav-item.active:hover {
+    @apply bg-transparent translate-x-0;
   }
 
   .sidebar-nav-item__icon {
-    @apply w-5 h-5 flex-shrink-0 transition-transform duration-200;
+    @apply w-5 h-5 flex-shrink-0 transition-transform duration-200 ease-overshoot;
   }
 
   .sidebar-nav-item:hover .sidebar-nav-item__icon {
     @apply scale-110;
+  }
+
+  .sidebar-nav-item.active .sidebar-nav-item__icon {
+    @apply scale-105;
   }
 
   .sidebar-user-card {

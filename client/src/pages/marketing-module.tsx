@@ -21,6 +21,7 @@ import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChar
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
+import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import {
   UnsavedChangesDialog,
@@ -93,7 +94,7 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   }[tone];
 
   return (
-    <Card className="h-full border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md">
+    <Card className="h-full border-border/60 shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border hover:shadow-lg">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -443,39 +444,39 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
 
       {/* ─── KPI cards ─── */}
       {section === 'overview' ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="stagger-item">
+        <StaggerGroup count={7} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('leadsForPeriod')} value={summary.newLeadsMonth ?? 0} detail={t('dataForSelectedPeriod')} icon={Users} tone="blue" />
-          </div>
-          <div className="stagger-item">
+          </StaggerItem>
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('paidCustomersForPeriod')} value={summary.newPaidStudents ?? 0} detail={t('dataForSelectedPeriod')} icon={Megaphone} tone="green" />
-          </div>
-          <div className="stagger-item">
+          </StaggerItem>
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard
               title={t('conversionApplicationToDemo')}
               value={hasLeadCohort ? `${summary.leadToDemoConversion ?? 0}%` : t('noData')}
               icon={TrendingUp}
               tone={hasLeadCohort ? 'green' : 'slate'}
             />
-          </div>
-          <div className="stagger-item">
+          </StaggerItem>
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard
               title={t('conversionDemoToPayment')}
               value={overviewDemoCohortCount > 0 ? `${summary.demoToPaidConversion ?? 0}%` : t('noData')}
               icon={TrendingDown}
               tone={overviewDemoCohortCount > 0 ? 'green' : 'slate'}
             />
-          </div>
-          <div className="stagger-item">
+          </StaggerItem>
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('cplLabel')} value={hasLeadCohort ? money(summary.cpl) : t('noData')} detail={t('cplTarget')} icon={Calculator} tone={hasLeadCohort ? 'amber' : 'slate'} />
-          </div>
-          <div className="stagger-item">
+          </StaggerItem>
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('cacLabel')} value={hasPaidCohort ? money(summary.cac) : t('noData')} detail={t('cacTarget')} icon={DollarSign} tone={hasPaidCohort ? 'amber' : 'slate'} />
-          </div>
-          <div className="stagger-item">
+          </StaggerItem>
+          <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('roasLabel')} value={overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')} detail={t('roasTarget')} icon={Target} tone={overviewMarketingSpend > 0 ? 'purple' : 'slate'} />
-          </div>
-        </div>
+          </StaggerItem>
+        </StaggerGroup>
       ) : null}
 
       {section === 'overview' ? (

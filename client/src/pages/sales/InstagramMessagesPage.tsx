@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
+import { SPRING } from '@/lib/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
@@ -2380,8 +2382,17 @@ export default function MessagesPage() {
                               </div>
                             );
                             return (
-                              <div
+                              // Bubbles slide in from the side they belong to —
+                              // the operator's own messages from the right, the
+                              // client's from the left — so a message arriving
+                              // mid-conversation is recognisable as incoming
+                              // before a single word of it is read.
+                              <motion.div
                                 key={item.id}
+                                layout="position"
+                                initial={{ opacity: 0, y: 8, x: outbound ? 16 : -16, scale: 0.96 }}
+                                animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+                                transition={SPRING.snappy}
                                 className={cn('flex', outbound ? 'justify-end' : 'justify-start', item.showTime ? 'mt-3' : 'mt-0.5')}
                               >
                                 <div
@@ -2466,7 +2477,7 @@ export default function MessagesPage() {
                                     </button>
                                   ) : null}
                                 </div>
-                              </div>
+                              </motion.div>
                             );
                           })
                         )}

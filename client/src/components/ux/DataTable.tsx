@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Table,
   TableBody,
@@ -12,8 +13,23 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PaginationControls } from '@/components/ux/PaginationControls';
+import { DURATION, EASE } from '@/lib/motion';
 
 type SortDirection = 'asc' | 'desc' | null;
+
+/**
+ * `TableRow` forwards its ref and merges className, so framer can drive it
+ * directly — that keeps the row's styling in one place instead of duplicating
+ * the class list onto a bare `motion.tr`.
+ */
+const MotionTableRow = motion.create(TableRow);
+
+/**
+ * Rows cascade in, but the cascade is capped: past ~10 rows the delay stops
+ * growing, so a 100-row page still finishes in a third of a second instead of
+ * trickling down the screen for three.
+ */
+const rowDelay = (index: number) => Math.min(index * 0.025, 0.25);
 
 interface DataTableColumn<T> {
   key: string;
@@ -178,27 +194,40 @@ export function DataTable<T extends Record<string, any>>({
                 </TableRow>
               ))
             ) : pagedData.length > 0 ? (
-              pagedData.map((row, index) => (
-                <TableRow
-                  key={keyExtractor(row, index)}
-                  className={cn(
-                    'border-b border-border/50 transition-colors hover:bg-accent/40',
-                    onRowClick && 'cursor-pointer',
-                    rowClassName?.(row)
-                  )}
-                  onClick={() => onRowClick?.(row)}
-                >
-                  {columns.map((column) => (
-                    <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>
-                      {column.render
-                        ? column.render(row, index)
-                        : column.accessor
-                          ? column.accessor(row)
-                          : row[column.key]}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              <AnimatePresence initial={false}>
+                {pagedData.map((row, index) => (
+                  <MotionTableRow
+                    key={keyExtractor(row, index)}
+                    className={cn(
+                      'border-b border-border/50 transition-colors hover:bg-accent/40',
+                      onRowClick && 'cursor-pointer',
+                      rowClassName?.(row)
+                    )}
+                    onClick={() => onRowClick?.(row)}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    // A row that is filtered out or deleted fades where it sat
+                    // rather than vanishing, so the eye can follow which record
+                    // left the table.
+                    exit={{ opacity: 0 }}
+                    transition={{
+                      duration: DURATION.base,
+                      ease: EASE.out,
+                      delay: rowDelay(index),
+                    }}
+                  >
+                    {columns.map((column) => (
+                      <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>
+                        {column.render
+                          ? column.render(row, index)
+                          : column.accessor
+                            ? column.accessor(row)
+                            : row[column.key]}
+                      </TableCell>
+                    ))}
+                  </MotionTableRow>
+                ))}
+              </AnimatePresence>
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="p-0">

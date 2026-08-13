@@ -25,6 +25,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { motion } from 'framer-motion';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,13 @@ import {
   analyticsAxisTick,
   analyticsTooltipStyle,
 } from '@/components/ux/analytics/AnalyticsChartCard';
+import {
+  AnimatedNumber,
+  StaggerGroup,
+  StaggerItem,
+  useChartEntrance,
+} from '@/components/ux/motion';
+import { DURATION, EASE } from '@/lib/motion';
 
 interface SalesDashboardCoreMetrics {
   newLeads: number;
@@ -161,7 +169,13 @@ function ConversionRing({ percent, showValue }: { percent: number | null; showVa
           fill="none"
           className="stroke-muted"
         />
-        <circle
+        {/*
+          The arc draws itself from zero on every value change. Conversion is
+          the number this screen exists for, so it gets the most deliberate
+          animation on the page — and the counter in the middle is timed to
+          finish alongside the arc rather than racing ahead of it.
+        */}
+        <motion.circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
@@ -169,14 +183,16 @@ function ConversionRing({ percent, showValue }: { percent: number | null; showVa
           fill="none"
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={circumference - (clamped / 100) * circumference}
-          className="stroke-[var(--primary-500)] transition-[stroke-dashoffset] duration-700 ease-out"
+          className="stroke-[var(--primary-500)]"
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: circumference - (clamped / 100) * circumference }}
+          transition={{ duration: 1, ease: EASE.out }}
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
         {showValue ? (
           <span className="text-4xl font-bold tabular-nums tracking-tight text-foreground">
-            {percent ?? 0}%
+            <AnimatedNumber value={percent ?? 0} suffix="%" />
           </span>
         ) : (
           <span className="text-4xl font-bold tabular-nums text-muted-foreground">—</span>
@@ -205,6 +221,8 @@ export function SalesOverviewMetrics({
   conversionLeadCount,
   conversionRate,
 }: SalesOverviewMetricsProps) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const { t } = useTranslation();
   const [targetRefusalDialogOpen, setTargetRefusalDialogOpen] = useState(false);
   const reportingQuery = reportingRangeQuery(reportingRange);
@@ -365,35 +383,43 @@ export function SalesOverviewMetrics({
         </Card>
 
         {/* Summary KPI cards */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:col-span-7" role="group" aria-label={t('periodMetricsGroup')}>
+        <StaggerGroup
+          count={summaryCards.length}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:col-span-7"
+          role="group"
+          aria-label={t('periodMetricsGroup')}
+        >
           {summaryCards.map((card) => (
-            <Card
-              key={card.id}
-              className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md"
-            >
-              <CardContent className="flex h-full flex-col justify-between p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-medium text-muted-foreground" title={card.iconTitle ?? card.title}>
-                    {card.title}
-                  </p>
-                  <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', card.iconClass)}>
-                    <card.icon className="size-4" aria-hidden="true" />
-                  </span>
-                </div>
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  {card.isLoading ? (
-                    <Skeleton className="h-8 w-20 rounded-md" />
-                  ) : (
-                    <div className="text-[28px] font-bold leading-none tracking-tight tabular-nums text-foreground">
-                      {card.value}
-                    </div>
-                  )}
-                  <TrendBadge delta={card.delta} invert={card.invert} />
-                </div>
-              </CardContent>
-            </Card>
+            <StaggerItem key={card.id} preset="pop" className="h-full">
+              <Card className="h-full border-border/60 shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border hover:shadow-lg">
+                <CardContent className="flex h-full flex-col justify-between p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-medium text-muted-foreground" title={card.iconTitle ?? card.title}>
+                      {card.title}
+                    </p>
+                    <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', card.iconClass)}>
+                      <card.icon className="size-4" aria-hidden="true" />
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between gap-3">
+                    {card.isLoading ? (
+                      <Skeleton className="h-8 w-20 rounded-md" />
+                    ) : (
+                      // Counting up makes the size of a number legible before
+                      // it is read — a KPI that lands on 4 and one that lands
+                      // on 400 spend visibly different amounts of time getting
+                      // there.
+                      <div className="text-[28px] font-bold leading-none tracking-tight tabular-nums text-foreground">
+                        <AnimatedNumber value={card.value} />
+                      </div>
+                    )}
+                    <TrendBadge delta={card.delta} invert={card.invert} />
+                  </div>
+                </CardContent>
+              </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerGroup>
 
         {/* Lead processing funnel */}
         <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-7">
@@ -435,13 +461,25 @@ export function SalesOverviewMetrics({
                           aria-label={`${stage.label}: ${value}`}
                           title={stage.hint}
                         >
-                          <span
-                            className={cn('block h-full rounded-lg opacity-90 transition-[width] duration-500 group-hover:opacity-100', stage.tone)}
-                            style={{ width: `${width}%` }}
+                          {/*
+                            Each stage bar grows out of the left edge a beat
+                            after the one above it, so the funnel narrows in
+                            front of the operator instead of arriving already
+                            narrowed. That is the whole point of the chart.
+                          */}
+                          <motion.span
+                            className={cn('block h-full rounded-lg opacity-90 group-hover:opacity-100', stage.tone)}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${width}%` }}
+                            transition={{
+                              duration: DURATION.slowest,
+                              ease: EASE.out,
+                              delay: index * 0.08,
+                            }}
                           />
                         </div>
                         <span className="w-16 shrink-0 text-right text-sm font-bold tabular-nums text-foreground">
-                          {value}
+                          <AnimatedNumber value={value} />
                         </span>
                         <span className="hidden w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:block">
                           {index === 0 ? '—' : stepShare === null ? '—' : `${stepShare}%`}
@@ -515,7 +553,7 @@ export function SalesOverviewMetrics({
                       stroke="var(--primary-500)"
                       strokeWidth={2.2}
                       fill="url(#overviewDailyNew)"
-                      isAnimationActive={false}
+                      isAnimationActive={chartEntrance}
                     />
                     <Area
                       type="monotone"
@@ -524,7 +562,7 @@ export function SalesOverviewMetrics({
                       stroke="var(--chart-2)"
                       strokeWidth={2}
                       fill="url(#overviewDailyProcessed)"
-                      isAnimationActive={false}
+                      isAnimationActive={chartEntrance}
                     />
                     <Area
                       type="monotone"
@@ -533,7 +571,7 @@ export function SalesOverviewMetrics({
                       stroke="var(--chart-1)"
                       strokeWidth={1.8}
                       fill="none"
-                      isAnimationActive={false}
+                      isAnimationActive={chartEntrance}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -573,7 +611,7 @@ export function SalesOverviewMetrics({
                         data={activityMixData}
                         dataKey="value"
                         nameKey="name"
-                        isAnimationActive={false}
+                        isAnimationActive={chartEntrance}
                         innerRadius={54}
                         outerRadius={78}
                         paddingAngle={2}

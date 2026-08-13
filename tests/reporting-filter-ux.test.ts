@@ -121,7 +121,13 @@ describe('dashboard period filters and simplified actions', () => {
     expect(adminHealthChart).toContain('dataKey="shortLabel"');
   });
 
-  it('renders dashboard data immediately without motion-only chart transitions', () => {
+  // Charts used to pass isAnimationActive={false} everywhere, because recharts
+  // re-runs its animation on any change of `data` identity and React Query
+  // hands back a fresh array on every poll — so bars redrew themselves under
+  // the reader every few seconds. They now animate their first draw and stop:
+  // useChartEntrance flips the flag off once the entrance window has passed,
+  // which keeps refetches silent while still letting the chart arrive.
+  it('animates a chart only on its first draw, never on a refetch', () => {
     for (const source of [
       salesCharts,
       teacherCharts,
@@ -131,8 +137,19 @@ describe('dashboard period filters and simplified actions', () => {
       administration,
       finance,
     ]) {
-      expect(source).toContain('isAnimationActive={false}');
+      expect(source).toContain('isAnimationActive={chartEntrance}');
+      expect(source).toContain('useChartEntrance()');
+      // A literal `true` would bring back the redraw-on-poll behaviour.
+      expect(source).not.toContain('isAnimationActive={true}');
+      expect(source).not.toContain('isAnimationActive>');
     }
-    expect(marketingCharts).not.toContain('isAnimationActive>');
+  });
+
+  it('drives the chart entrance from a single hook that self-disables', () => {
+    const entrance = read('../client/src/components/ux/motion/useChartEntrance.ts');
+    expect(entrance).toContain('useReducedMotion');
+    expect(entrance).toContain('setActive(false)');
+    // Reduced motion must skip the entrance outright, not merely shorten it.
+    expect(entrance).toContain('return prefersReducedMotion ? false : active;');
   });
 });

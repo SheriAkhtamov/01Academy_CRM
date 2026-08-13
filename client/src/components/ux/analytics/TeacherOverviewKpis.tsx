@@ -5,6 +5,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useTranslation } from '@/hooks/useTranslation';
 import { analyticsTooltipStyle } from '@/components/ux/analytics/AnalyticsChartCard';
 import { percentage } from '@/lib/analyticsCharts';
+import {
+  AnimatedNumber,
+  StaggerGroup,
+  StaggerItem,
+  useChartEntrance,
+} from '@/components/ux/motion';
 import { cn } from '@/lib/utils';
 
 export type TeacherOverviewKpiData = {
@@ -108,6 +114,8 @@ function DonutGauge({
   centerLabel: string;
   empty?: boolean;
 }) {
+  // Draws once on mount; later refetches update the geometry silently.
+  const chartEntrance = useChartEntrance();
   const safeTotal = Math.max(total, 0);
   const clamped = Math.min(Math.max(value, 0), safeTotal || 1);
   const data = [
@@ -130,7 +138,7 @@ function DonutGauge({
               outerRadius={36}
               stroke="none"
               cornerRadius={6}
-              isAnimationActive={false}
+              isAnimationActive={chartEntrance}
             >
               {data.map((entry, index) => (
                 <Cell
@@ -192,14 +200,16 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
     : null;
   const ratingValue = data.avgRating == null ? null : Number(data.avgRating);
 
+  // The six tiles pop in one after another. `StaggerGroup` scales the step to
+  // the count, so the whole row is settled inside ~0.4s.
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <StaggerGroup count={6} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
       {/* Мои группы */}
-      <div className="stagger-item">
+      <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('myGroupsCount')} icon={Users} tone="blue">
           <div className="min-w-0">
             <div className="bg-gradient-to-br from-primary-600 to-purple-600 bg-clip-text text-[32px] font-bold leading-none tracking-tight tabular-nums text-transparent">
-              {data.groupsCount}
+              <AnimatedNumber value={data.groupsCount} />
             </div>
             <p
               className="mt-1.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground"
@@ -209,10 +219,10 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
             </p>
           </div>
         </KpiShell>
-      </div>
+      </StaggerItem>
 
       {/* Всего учеников — кольцевая заполняемость */}
-      <div className="stagger-item">
+      <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('totalStudents')} icon={GraduationCap} tone="green">
           <DonutGauge
             value={data.totalStudents}
@@ -229,10 +239,10 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
             empty={occupancyTotal <= 0}
           />
         </KpiShell>
-      </div>
+      </StaggerItem>
 
       {/* Уроки за период — кольцевой прогресс */}
-      <div className="stagger-item">
+      <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('lessonsForPeriod')} icon={CalendarCheck2} tone="amber">
           <DonutGauge
             value={data.conductedLessons}
@@ -245,10 +255,10 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
             empty={data.totalLessons <= 0}
           />
         </KpiShell>
-      </div>
+      </StaggerItem>
 
       {/* Средняя посещаемость — gauge */}
-      <div className="stagger-item">
+      <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('averageAttendance')} icon={ClipboardCheck} tone="blue">
           <DonutGauge
             value={data.avgAttendance ?? 0}
@@ -261,10 +271,10 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
             empty={data.avgAttendance == null}
           />
         </KpiShell>
-      </div>
+      </StaggerItem>
 
       {/* Средняя оценка — звёзды */}
-      <div className="stagger-item">
+      <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('averageLessonRating')} icon={Star} tone="violet">
           <div className="min-w-0">
             {ratingValue != null ? (
@@ -285,10 +295,10 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
             </p>
           </div>
         </KpiShell>
-      </div>
+      </StaggerItem>
 
       {/* Часы преподавания */}
-      <div className="stagger-item">
+      <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('teachingHours')} icon={Clock3} tone="slate">
           <div className="min-w-0">
             <div className="flex items-baseline gap-1">
@@ -304,7 +314,7 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
             </p>
           </div>
         </KpiShell>
-      </div>
-    </div>
+      </StaggerItem>
+    </StaggerGroup>
   );
 }

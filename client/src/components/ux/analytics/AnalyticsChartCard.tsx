@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Reveal } from '@/components/ux/motion';
 import { cn } from '@/lib/utils';
 
 export const analyticsAxisTick = {
@@ -48,8 +49,13 @@ export function AnalyticsChartCard({
   const summaryId = useId();
 
   return (
+    // Analytics pages stack far more chart than fits on a screen, so the cards
+    // animate when they are scrolled to rather than all at mount — by the time
+    // the operator reaches the third row, a mount-time cascade would long since
+    // have finished and the card would appear to pop in with no reason.
+    <Reveal className="min-w-0">
     <Card className={cn(
-      'min-w-0 border-border/60 bg-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md',
+      'min-w-0 border-border/60 bg-card shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-lg',
       className,
     )}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
@@ -69,6 +75,7 @@ export function AnalyticsChartCard({
         {footer ? <div className="mt-2.5 border-t border-border/50 pt-2.5">{footer}</div> : null}
       </CardContent>
     </Card>
+    </Reveal>
   );
 }
 

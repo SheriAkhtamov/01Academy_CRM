@@ -260,8 +260,11 @@ export function AttendanceCalendar({
         aria-label={`${time}, ${lesson.topic}. ${t(STATE_LABEL_KEYS[state])}`}
         onClick={() => selectLesson(lesson.id)}
         className={cn(
-          'w-full rounded-md border border-l-[3px] text-left transition-shadow',
-          'hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          // Lesson chips are packed tightly into day cells, so the hover cue
+          // is a small scale-up rather than a lift — a translate would make a
+          // chip overlap the one below it.
+          'w-full rounded-md border border-l-[3px] text-left transition-[box-shadow,transform] duration-150 ease-out',
+          'hover:scale-[1.02] hover:shadow-md active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'disabled:cursor-not-allowed disabled:opacity-60',
           roomy ? 'px-3 py-2.5' : 'px-1.5 py-1',
           isSelected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',

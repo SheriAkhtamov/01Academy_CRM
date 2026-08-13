@@ -272,7 +272,6 @@ export default function Header({
             <div className="relative">
               <Button
                 onClick={() => setShowChat(true)}
-                className="btn-modern"
                 aria-label={unreadMessageCount > 0 ? unreadMessagesLabel : t('messages')}
               >
                 <MessageCircle className="h-5 w-5 mr-2" />

@@ -441,11 +441,11 @@ export function SalesScheduleCalendar({
         ) : null}
 
         <Card className="flex min-h-[28rem] min-w-0 flex-col overflow-hidden lg:h-full lg:min-h-0">
-          <CardContent className="min-h-0 flex-1 p-0">
+          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
             {demosQuery.isError ? (
               <div
                 role="alert"
-                className="flex flex-wrap items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+                className="flex shrink-0 flex-wrap items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive"
               >
                 <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
                 <span>{t('failedToLoadData')}</span>
@@ -462,44 +462,46 @@ export function SalesScheduleCalendar({
               </div>
             ) : null}
 
-            {view === 'month' ? (
-              <ScheduleMonthGrid
-                days={rangeDays}
-                monthAnchor={monthAnchor}
-                eventsByDate={eventsByDate}
-                now={now}
-                locale={locale}
-                dayNames={dayNames}
-                groupIndexById={groupIndexById}
-                onSelectEvent={selectEvent}
-                onSelectDay={(day) => {
-                  setCursor(startOfDay(day));
-                  setView('day');
-                }}
-              />
-            ) : view === 'agenda' ? (
-              <ScheduleAgendaList
-                days={rangeDays}
-                eventsByDate={eventsByDate}
-                now={now}
-                locale={locale}
-                groupIndexById={groupIndexById}
-                onSelectEvent={selectEvent}
-                emptyState={emptyState}
-              />
-            ) : (
-              <ScheduleTimeGrid
-                days={rangeDays}
-                events={positionedEvents}
-                timeScale={timeScale}
-                now={now}
-                locale={locale}
-                groupIndexById={groupIndexById}
-                onSelectEvent={selectEvent}
-                onCreateAt={(day, minutes) => openDemoCreation(day, minutes)}
-                emptyState={emptyState}
-              />
-            )}
+            <div className="min-h-0 flex-1">
+              {view === 'month' ? (
+                <ScheduleMonthGrid
+                  days={rangeDays}
+                  monthAnchor={monthAnchor}
+                  eventsByDate={eventsByDate}
+                  now={now}
+                  locale={locale}
+                  dayNames={dayNames}
+                  groupIndexById={groupIndexById}
+                  onSelectEvent={selectEvent}
+                  onSelectDay={(day) => {
+                    setCursor(startOfDay(day));
+                    setView('day');
+                  }}
+                />
+              ) : view === 'agenda' ? (
+                <ScheduleAgendaList
+                  days={rangeDays}
+                  eventsByDate={eventsByDate}
+                  now={now}
+                  locale={locale}
+                  groupIndexById={groupIndexById}
+                  onSelectEvent={selectEvent}
+                  emptyState={emptyState}
+                />
+              ) : (
+                <ScheduleTimeGrid
+                  days={rangeDays}
+                  events={positionedEvents}
+                  timeScale={timeScale}
+                  now={now}
+                  locale={locale}
+                  groupIndexById={groupIndexById}
+                  onSelectEvent={selectEvent}
+                  onCreateAt={(day, minutes) => openDemoCreation(day, minutes)}
+                  emptyState={emptyState}
+                />
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

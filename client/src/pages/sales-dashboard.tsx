@@ -1577,7 +1577,8 @@ function StudentsTab({
         </CardHeader>
         <CardContent className="min-h-0 flex-1 p-0">
           <DataTable
-            className="h-full overflow-auto overscroll-contain"
+            rootClassName="flex h-full min-h-0 flex-col"
+            className="min-h-0 flex-1 overflow-auto overscroll-contain"
             columns={columns}
             data={myStudents}
             keyExtractor={(student: Student) => `student-${student.id}`}

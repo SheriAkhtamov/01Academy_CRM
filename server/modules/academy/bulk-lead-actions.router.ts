@@ -3,7 +3,10 @@ import {
   validateLeadForStatusChange,
   validateLeadStatusTransition,
 } from '@shared/academy';
-import { bulkUpdateLeadStatusRequestSchema } from '@shared/contracts/academy-leads';
+import {
+  bulkArchiveLeadsRequestSchema,
+  bulkUpdateLeadStatusRequestSchema,
+} from '@shared/contracts/academy-leads';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { logger } from '../../lib/logger';
 import {
@@ -12,15 +15,134 @@ import {
   createAudit,
   ensureModuleAccess,
   getActiveLeadStatus,
+  isValidLeadArchiveReason,
+  nullableText,
   query,
   withTransaction,
 } from './academy-core';
 import {
   createStageHistory,
+  getActiveSalesManager,
   handleLeadStatusEffects,
+  reassignLead,
 } from './academy-leads';
 
 export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
+  router.post('/leads/bulk-archive', async (req, res) => {
+    if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
+    const input = bulkArchiveLeadsRequestSchema.safeParse(req.body);
+    if (!input.success) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+
+    try {
+      const leadIds = [...new Set(input.data.leadIds)];
+      const archiveReasonCode = nullableText(input.data.reason);
+      if (!isValidLeadArchiveReason(archiveReasonCode)) {
+        return res.status(400).json({ error: 'archiveReasonRequired' });
+      }
+      const customArchiveReason = nullableText(input.data.customReason);
+      if (archiveReasonCode === 'other' && !customArchiveReason) {
+        return res.status(400).json({ error: 'archiveCustomReasonRequired' });
+      }
+      if (customArchiveReason && customArchiveReason.length > 80) {
+        return res.status(400).json({ error: 'archiveCustomReasonTooLong' });
+      }
+      const archiveReason = archiveReasonCode === 'other'
+        ? customArchiveReason!
+        : archiveReasonCode!;
+
+      const result = await withTransaction(async () => {
+        // Match the regular assignment flow's lock order (manager, then leads)
+        // so a bulk archive cannot deadlock with a concurrent reassignment.
+        const currentManager = input.data.assignToSelf === true
+          ? await getActiveSalesManager(req.user!.id, true)
+          : null;
+        const leads = await query(
+          `SELECT *
+           FROM academy_leads
+           WHERE id = ANY($1::int[])
+           ORDER BY id
+           FOR UPDATE`,
+          [leadIds],
+        );
+        if (leads.length !== leadIds.length) {
+          throw Object.assign(new Error('One or more leads were not found'), { statusCode: 404 });
+        }
+        for (const lead of leads) {
+          if (!canMutateLeadRow(req.actor!, lead)) {
+            throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
+          }
+        }
+
+        const activeLeads = leads.filter((lead) => !lead.isArchived);
+        if (activeLeads.some((lead) => lead.statusCode === 'paid')) {
+          throw Object.assign(new Error('paidLeadCannotArchive'), { statusCode: 409 });
+        }
+        const unassignedLeads = activeLeads.filter((lead) => !lead.managerId);
+        if (unassignedLeads.length > 0 && input.data.assignToSelf !== true) {
+          throw Object.assign(new Error('leadRequiresResponsibleManager'), { statusCode: 409 });
+        }
+
+        const beforeArchive = new Map<number, Record<string, unknown>>();
+        let assignedCount = 0;
+        for (const lead of activeLeads) {
+          let leadBeforeArchive = lead;
+          if (!lead.managerId && currentManager) {
+            const assignedLead = await reassignLead(
+              req.actor!,
+              lead,
+              currentManager,
+              'Присвоено себе перед массовым архивированием',
+            );
+            await createAudit(
+              req.actor!,
+              'ASSIGN_ACADEMY_LEAD',
+              'academy_lead',
+              Number(assignedLead.id),
+              assignedLead,
+              lead,
+            );
+            leadBeforeArchive = assignedLead;
+            assignedCount += 1;
+          }
+          beforeArchive.set(Number(lead.id), leadBeforeArchive);
+        }
+
+        if (activeLeads.length === 0) return { archivedCount: 0, assignedCount };
+        const archivedLeads = await query(
+          `UPDATE academy_leads
+           SET is_archived = true,
+               archive_reason = $1,
+               archived_at = NOW(),
+               archived_by = $2,
+               updated_at = NOW()
+           WHERE id = ANY($3::int[]) AND is_archived = false
+           RETURNING *`,
+          [archiveReason, req.user!.id, activeLeads.map((lead) => Number(lead.id))],
+        );
+        for (const archivedLead of archivedLeads) {
+          await createAudit(
+            req.actor!,
+            'BULK_ARCHIVE_ACADEMY_LEAD',
+            'academy_lead',
+            Number(archivedLead.id),
+            archivedLead,
+            beforeArchive.get(Number(archivedLead.id)),
+          );
+        }
+        return { archivedCount: archivedLeads.length, assignedCount };
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      logger.error('Failed to bulk archive leads', { error });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'Failed to archive leads'),
+      });
+    }
+  });
+
   router.post('/leads/bulk-status', async (req, res) => {
     if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
     const input = bulkUpdateLeadStatusRequestSchema.safeParse(req.body);

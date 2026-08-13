@@ -2,6 +2,7 @@ import type {
   ArchiveLeadRequest,
   AssignLeadRequest,
   BulkAssignLeadsRequest,
+  BulkArchiveLeadsRequest,
   BulkDeleteLeadsRequest,
   BulkUpdateLeadStatusRequest,
   CreateAcademyLeadRequest,
@@ -46,6 +47,9 @@ export const leadsApi = {
   ),
   bulkDelete: <T>(input: BulkDeleteLeadsRequest) => (
     apiRequest('POST', '/api/academy/leads/bulk-delete', input) as Promise<T>
+  ),
+  bulkArchive: <T>(input: BulkArchiveLeadsRequest) => (
+    apiRequest('POST', '/api/academy/leads/bulk-archive', input) as Promise<T>
   ),
   archive: <T>(leadId: LeadIdentifier, input: ArchiveLeadRequest) => (
     apiRequest('POST', `/api/academy/leads/${leadId}/archive`, input) as Promise<T>

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   archiveLeadRequestSchema,
+  bulkArchiveLeadsRequestSchema,
   bulkAssignLeadsRequestSchema,
   bulkDeleteLeadsRequestSchema,
   bulkUpdateLeadStatusRequestSchema,
@@ -169,6 +170,11 @@ describe('lead boundary contracts', () => {
     })).toEqual({ leadIds: [1, 2], statusCode: 'qualified' });
     expect(bulkDeleteLeadsRequestSchema.parse({ leadIds: ['1', 2] }))
       .toEqual({ leadIds: [1, 2] });
+    expect(bulkArchiveLeadsRequestSchema.parse({
+      leadIds: ['1', 2],
+      reason: ' no_answer ',
+      assignToSelf: true,
+    })).toEqual({ leadIds: [1, 2], reason: 'no_answer', assignToSelf: true });
     expect(mergeLeadIdsSchema.parse({ retainedLeadId: '1', duplicateLeadId: '2' }))
       .toEqual({ retainedLeadId: 1, duplicateLeadId: 2 });
     expect(mergeLeadIdsSchema.safeParse({ retainedLeadId: 1, duplicateLeadId: 1 }).success)

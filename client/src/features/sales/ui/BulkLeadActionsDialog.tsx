@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
+import { AlertCircle, Archive, ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
+import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -31,8 +35,9 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
 
-type BulkAction = 'status' | 'manager' | 'delete';
+type BulkAction = 'status' | 'manager' | 'archive' | 'delete';
 
 interface BulkLeadActionsDialogProps {
   open: boolean;
@@ -41,9 +46,12 @@ interface BulkLeadActionsDialogProps {
   statuses: Array<{ code: string; name: string }>;
   managers: Array<{ id: number; fullName: string }>;
   canManageAllLeads: boolean;
+  archiveNeedsManagerAssignment: boolean;
+  canArchiveSelected: boolean;
   isPending: boolean;
   onMove: (statusCode: string) => Promise<void>;
   onAssign: (managerId: number) => Promise<void>;
+  onArchive: (reason: string, customReason?: string, assignToSelf?: boolean) => Promise<void>;
   onDelete: () => Promise<void>;
   onClearSelection: () => void;
 }
@@ -55,9 +63,12 @@ export function BulkLeadActionsDialog({
   statuses,
   managers,
   canManageAllLeads,
+  archiveNeedsManagerAssignment,
+  canArchiveSelected,
   isPending,
   onMove,
   onAssign,
+  onArchive,
   onDelete,
   onClearSelection,
 }: BulkLeadActionsDialogProps) {
@@ -65,6 +76,10 @@ export function BulkLeadActionsDialog({
   const [action, setAction] = useState<BulkAction>('status');
   const [targetStatusCode, setTargetStatusCode] = useState('');
   const [targetManagerId, setTargetManagerId] = useState('');
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiveCustomReason, setArchiveCustomReason] = useState('');
+  const [assignUnassignedToSelf, setAssignUnassignedToSelf] = useState(false);
+  const [archiveConfirmationOpen, setArchiveConfirmationOpen] = useState(false);
   const [firstDeleteConfirmationOpen, setFirstDeleteConfirmationOpen] = useState(false);
   const [finalDeleteConfirmationOpen, setFinalDeleteConfirmationOpen] = useState(false);
 
@@ -73,6 +88,10 @@ export function BulkLeadActionsDialog({
     setAction('status');
     setTargetStatusCode('');
     setTargetManagerId('');
+    setArchiveReason('');
+    setArchiveCustomReason('');
+    setAssignUnassignedToSelf(false);
+    setArchiveConfirmationOpen(false);
     setFirstDeleteConfirmationOpen(false);
     setFinalDeleteConfirmationOpen(false);
   }, [open]);
@@ -105,6 +124,25 @@ export function BulkLeadActionsDialog({
     }
   };
 
+  const runArchive = async () => {
+    if (!archiveReason) return;
+    try {
+      await onArchive(
+        archiveReason,
+        archiveReason === 'other' ? archiveCustomReason.trim() : undefined,
+        archiveNeedsManagerAssignment ? assignUnassignedToSelf : undefined,
+      );
+      setArchiveConfirmationOpen(false);
+    } catch {
+      // The mutation owns the localized error toast; keep the confirmation open for retry.
+    }
+  };
+
+  const archiveFormValid = canArchiveSelected
+    && Boolean(archiveReason)
+    && (archiveReason !== 'other' || Boolean(archiveCustomReason.trim()))
+    && (!archiveNeedsManagerAssignment || assignUnassignedToSelf);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,7 +160,7 @@ export function BulkLeadActionsDialog({
           </DialogHeader>
 
           <Tabs value={action} onValueChange={(value) => setAction(value as BulkAction)}>
-            <TabsList className={canManageAllLeads ? 'grid h-auto w-full grid-cols-3' : 'grid h-auto w-full grid-cols-1'}>
+            <TabsList className={canManageAllLeads ? 'grid h-auto w-full grid-cols-2 sm:grid-cols-4' : 'grid h-auto w-full grid-cols-2'}>
               <TabsTrigger value="status" className="gap-2 py-2.5">
                 <GitBranch className="size-4" />
                 {t('bulkMoveToStage')}
@@ -133,6 +171,10 @@ export function BulkLeadActionsDialog({
                   {t('bulkAssignManager')}
                 </TabsTrigger>
               ) : null}
+              <TabsTrigger value="archive" className="gap-2 py-2.5">
+                <Archive className="size-4" />
+                {t('bulkArchiveLeads')}
+              </TabsTrigger>
               {canManageAllLeads ? (
                 <TabsTrigger
                   value="delete"
@@ -187,6 +229,64 @@ export function BulkLeadActionsDialog({
               </TabsContent>
             ) : null}
 
+            <TabsContent value="archive" className="space-y-4 pt-3">
+              <p className="text-sm text-muted-foreground">{t('bulkArchiveLeadsDescription')}</p>
+              {!canArchiveSelected ? (
+                <Alert variant="destructive">
+                  <AlertCircle />
+                  <AlertTitle>{t('bulkArchiveUnavailable')}</AlertTitle>
+                  <AlertDescription>{t('paidLeadCannotArchive')}</AlertDescription>
+                </Alert>
+              ) : null}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-archive-reason">{t('archiveReason')}</Label>
+                <Select value={archiveReason} onValueChange={setArchiveReason} disabled={!canArchiveSelected}>
+                  <SelectTrigger id="bulk-archive-reason">
+                    <SelectValue placeholder={t('chooseArchiveReason')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {LEAD_ARCHIVE_REASONS.map((reason) => (
+                        <SelectItem key={reason.code} value={reason.code}>
+                          {t(reason.translationKey as TranslationKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              {archiveReason === 'other' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-archive-custom-reason">{t('archiveCustomReason')}</Label>
+                  <Input
+                    id="bulk-archive-custom-reason"
+                    value={archiveCustomReason}
+                    onChange={(event) => setArchiveCustomReason(event.target.value)}
+                    placeholder={t('archiveCustomReasonPlaceholder')}
+                    maxLength={80}
+                    disabled={isPending}
+                  />
+                </div>
+              ) : null}
+              {archiveNeedsManagerAssignment ? (
+                <Alert>
+                  <AlertCircle />
+                  <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
+                  <AlertDescription className="space-y-3">
+                    <p>{t('bulkArchiveAssignUnassignedDescription')}</p>
+                    <label className="flex cursor-pointer items-center gap-2 text-foreground">
+                      <Checkbox
+                        checked={assignUnassignedToSelf}
+                        onCheckedChange={(checked) => setAssignUnassignedToSelf(checked === true)}
+                        disabled={isPending}
+                      />
+                      <span>{t('bulkArchiveAssignUnassigned')}</span>
+                    </label>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </TabsContent>
+
             {canManageAllLeads ? (
               <TabsContent value="delete" className="space-y-3 pt-3">
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
@@ -227,6 +327,16 @@ export function BulkLeadActionsDialog({
                   {isPending ? t('saving') : t('assignSelected')}
                 </Button>
               ) : null}
+              {action === 'archive' ? (
+                <Button
+                  type="button"
+                  onClick={() => setArchiveConfirmationOpen(true)}
+                  disabled={!archiveFormValid || isPending}
+                >
+                  <Archive data-icon="inline-start" />
+                  {isPending ? t('saving') : t('bulkArchiveLeads')}
+                </Button>
+              ) : null}
               {action === 'delete' && canManageAllLeads ? (
                 <Button
                   type="button"
@@ -242,6 +352,29 @@ export function BulkLeadActionsDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={archiveConfirmationOpen} onOpenChange={setArchiveConfirmationOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('bulkArchiveConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('bulkArchiveConfirmDescription').replace('{count}', String(selectedCount))}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                void runArchive();
+              }}
+            >
+              {isPending ? t('saving') : t('bulkArchiveConfirmAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={firstDeleteConfirmationOpen} onOpenChange={setFirstDeleteConfirmationOpen}>
         <AlertDialogContent>

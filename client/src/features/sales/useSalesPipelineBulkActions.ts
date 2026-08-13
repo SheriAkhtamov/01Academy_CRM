@@ -9,6 +9,7 @@ import { toast } from '@/hooks/use-toast';
 interface SelectablePipelineLead {
   id: number;
   statusCode: string;
+  managerId?: number | null;
 }
 
 interface SelectablePipelineStatus {
@@ -41,6 +42,9 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     )),
     [selectedLeads, statuses],
   );
+  const archiveNeedsManagerAssignment = selectedLeads.some((lead) => !lead.managerId);
+  const canArchiveSelected = selectedLeads.length > 0
+    && selectedLeads.every((lead) => lead.statusCode !== 'paid');
 
   useEffect(() => {
     const visibleLeadIds = new Set(leads.map((lead) => lead.id));
@@ -111,19 +115,60 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     }),
   });
 
+  const bulkArchive = useMutation({
+    mutationFn: ({
+      leadIds,
+      reason,
+      customReason,
+      assignToSelf,
+    }: {
+      leadIds: number[];
+      reason: string;
+      customReason?: string;
+      assignToSelf?: boolean;
+    }) => leadsApi.bulkArchive<{ archivedCount: number }>({
+      leadIds,
+      reason,
+      customReason,
+      assignToSelf,
+    }),
+    onSuccess: (result) => {
+      toast({
+        title: t('bulkArchiveSuccess'),
+        description: t('bulkArchiveSuccessDescription').replace('{count}', String(result.archivedCount)),
+      });
+      finishAction();
+    },
+    onError: (error: Error) => toast({
+      title: t('bulkArchiveFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
   return {
     selectedLeadIds,
     setSelectedLeadIds,
     dialogOpen,
     setDialogOpen,
     availableMoveStatuses,
+    archiveNeedsManagerAssignment,
+    canArchiveSelected,
     clearSelection,
-    isPending: bulkMove.isPending || bulkAssign.isPending || bulkDelete.isPending,
+    isPending: bulkMove.isPending || bulkAssign.isPending || bulkArchive.isPending || bulkDelete.isPending,
     moveSelected: async (statusCode: string) => {
       await bulkMove.mutateAsync({ leadIds: [...selectedLeadIds], statusCode });
     },
     assignSelected: async (managerId: number) => {
       await bulkAssign.mutateAsync({ leadIds: [...selectedLeadIds], managerId });
+    },
+    archiveSelected: async (reason: string, customReason?: string, assignToSelf?: boolean) => {
+      await bulkArchive.mutateAsync({
+        leadIds: [...selectedLeadIds],
+        reason,
+        customReason,
+        assignToSelf,
+      });
     },
     deleteSelected: async () => {
       await bulkDelete.mutateAsync([...selectedLeadIds]);

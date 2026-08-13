@@ -96,6 +96,10 @@ export const archiveLeadRequestSchema = z.object({
   assignToSelf: z.boolean().optional(),
 });
 
+export const bulkArchiveLeadsRequestSchema = archiveLeadRequestSchema.extend({
+  leadIds: z.array(positiveIdSchema).min(1).max(500),
+});
+
 export const restoreLeadRequestSchema = z.object({
   statusCode: z.string().trim().min(1).max(80),
 });
@@ -182,6 +186,7 @@ export type MergeLeadIds = z.infer<typeof mergeLeadIdsSchema>;
 export type MergeLeadDraftRequest = z.infer<typeof mergeLeadDraftRequestSchema>;
 export type AssignLeadRequest = z.infer<typeof assignLeadRequestSchema>;
 export type ArchiveLeadRequest = z.infer<typeof archiveLeadRequestSchema>;
+export type BulkArchiveLeadsRequest = z.infer<typeof bulkArchiveLeadsRequestSchema>;
 export type RestoreLeadRequest = z.infer<typeof restoreLeadRequestSchema>;
 export type LeadTagRequest = z.infer<typeof leadTagRequestSchema>;
 export type LeadCommentRequest = z.infer<typeof leadCommentRequestSchema>;

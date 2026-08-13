@@ -67,10 +67,13 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
     dialogOpen: boolean;
     setDialogOpen: (open: boolean) => void;
     availableMoveStatuses: KanbanStatus[];
+    archiveNeedsManagerAssignment: boolean;
+    canArchiveSelected: boolean;
     clearSelection: () => void;
     isPending: boolean;
     moveSelected: (statusCode: string) => Promise<void>;
     assignSelected: (managerId: number) => Promise<void>;
+    archiveSelected: (reason: string, customReason?: string, assignToSelf?: boolean) => Promise<void>;
     deleteSelected: () => Promise<void>;
   };
 }) {
@@ -106,9 +109,12 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
         }))}
         managers={managers}
         canManageAllLeads={canManageAllLeads}
+        archiveNeedsManagerAssignment={bulkActions.archiveNeedsManagerAssignment}
+        canArchiveSelected={bulkActions.canArchiveSelected}
         isPending={bulkActions.isPending}
         onMove={bulkActions.moveSelected}
         onAssign={bulkActions.assignSelected}
+        onArchive={bulkActions.archiveSelected}
         onDelete={bulkActions.deleteSelected}
         onClearSelection={bulkActions.clearSelection}
       />

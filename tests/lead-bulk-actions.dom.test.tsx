@@ -3,11 +3,17 @@ import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { KanbanBoard, type KanbanLead } from '../client/src/components/ux/KanbanBoard';
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
 import { BulkLeadActionsDialog } from '../client/src/features/sales/ui/BulkLeadActionsDialog';
 import { i18n } from '../client/src/lib/i18n';
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView ??= () => undefined;
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => undefined;
+});
 
 const statuses = [
   { code: 'new_request', name: 'New request', color: '#2563eb', sortOrder: 1 },
@@ -66,9 +72,12 @@ describe('bulk actions on the sales pipeline', () => {
         statuses={statuses}
         managers={[{ id: 7, fullName: 'Sales manager' }]}
         canManageAllLeads
+        archiveNeedsManagerAssignment={false}
+        canArchiveSelected
         isPending={false}
         onMove={vi.fn()}
         onAssign={vi.fn()}
+        onArchive={vi.fn()}
         onDelete={onDelete}
         onClearSelection={vi.fn()}
       />,
@@ -84,5 +93,39 @@ describe('bulk actions on the sales pipeline', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
     expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('collects an archive reason and confirms bulk archiving', async () => {
+    i18n.setLanguage('en');
+    const user = userEvent.setup();
+    const onArchive = vi.fn().mockResolvedValue(undefined);
+    renderWithProviders(
+      <BulkLeadActionsDialog
+        open
+        onOpenChange={vi.fn()}
+        selectedCount={2}
+        statuses={statuses}
+        managers={[]}
+        canManageAllLeads={false}
+        archiveNeedsManagerAssignment={false}
+        canArchiveSelected
+        isPending={false}
+        onMove={vi.fn()}
+        onAssign={vi.fn()}
+        onArchive={onArchive}
+        onDelete={vi.fn()}
+        onClearSelection={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('tab', { name: 'Archive leads' }));
+    await user.click(screen.getByRole('combobox', { name: 'Archive reason' }));
+    await user.click(screen.getByRole('option', { name: 'No answer' }));
+    await user.click(screen.getByRole('button', { name: 'Archive leads' }));
+
+    expect(screen.getByRole('heading', { name: 'Archive selected leads?' })).toBeTruthy();
+    expect(onArchive).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Archive selected' }));
+    expect(onArchive).toHaveBeenCalledWith('no_answer', undefined, undefined);
   });
 });

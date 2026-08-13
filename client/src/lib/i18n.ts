@@ -1910,6 +1910,32 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'Assign the selected leads and their open tasks to another manager.',
     ru: 'Передать отмеченных лидов и их открытые задачи другому менеджеру.',
   },
+  bulkArchiveLeads: { en: 'Archive leads', ru: 'Добавить в архив' },
+  bulkArchiveLeadsDescription: {
+    en: 'Move all selected leads out of the active pipeline and save one archive reason for them.',
+    ru: 'Убрать всех отмеченных лидов из активной воронки и сохранить для них общую причину архивации.',
+  },
+  bulkArchiveAssignUnassigned: {
+    en: 'Assign unassigned leads to me',
+    ru: 'Присвоить неназначенных лидов мне',
+  },
+  bulkArchiveAssignUnassignedDescription: {
+    en: 'Some selected leads have no responsible manager. Assign them to yourself before archiving.',
+    ru: 'У некоторых выбранных лидов нет ответственного менеджера. Перед архивацией присвойте их себе.',
+  },
+  bulkArchiveUnavailable: { en: 'Archiving is unavailable', ru: 'Архивация недоступна' },
+  bulkArchiveConfirmTitle: { en: 'Archive selected leads?', ru: 'Добавить выбранных лидов в архив?' },
+  bulkArchiveConfirmDescription: {
+    en: 'Archive {count} selected leads? They will leave the active pipeline and remain available in the lead archive.',
+    ru: 'Добавить {count} выбранных лидов в архив? Они исчезнут из активной воронки и останутся доступны в архиве лидов.',
+  },
+  bulkArchiveConfirmAction: { en: 'Archive selected', ru: 'Добавить в архив' },
+  bulkArchiveSuccess: { en: 'Leads archived', ru: 'Лиды добавлены в архив' },
+  bulkArchiveSuccessDescription: {
+    en: 'Archived leads: {count}',
+    ru: 'Добавлено в архив: {count}',
+  },
+  bulkArchiveFailed: { en: 'Leads were not archived', ru: 'Не удалось добавить лидов в архив' },
   bulkDeleteLeads: { en: 'Delete leads', ru: 'Удалить лидов' },
   bulkDeleteLeadsDescription: {
     en: 'Permanently delete selected leads and related lead tasks.',

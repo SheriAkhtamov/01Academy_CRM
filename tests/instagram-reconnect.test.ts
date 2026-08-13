@@ -24,6 +24,8 @@ describe('Instagram access-token reconnect', () => {
     const packageJson = read('package.json');
     expect(script).toContain('process.env.INSTAGRAM_RECONNECT_TOKEN');
     expect(script).not.toContain('process.argv[index');
+    expect(script).toContain("module_access.module = 'administration'");
+    expect(script).toContain('importInstagramConversationHistory(requestedBy)');
     expect(workflow).toContain('secrets.INSTAGRAM_RECONNECT_TOKEN');
     expect(workflow).toContain("IFS= read -r INSTAGRAM_RECONNECT_TOKEN");
     expect(workflow).toContain('-e INSTAGRAM_RECONNECT_TOKEN');

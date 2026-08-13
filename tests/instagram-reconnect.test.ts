@@ -11,6 +11,8 @@ describe('Instagram access-token reconnect', () => {
     expect(service).toContain('reconnectInstagramAccountWithAccessToken');
     expect(service).toContain("profileUrl.searchParams.set('fields', 'user_id,username')");
     expect(service).toContain("subscriptionUrl.searchParams.set('subscribed_fields', WEBHOOK_FIELDS.join(','))");
+    expect(service).toContain("'messaging_referral'");
+    expect(service).not.toContain("'messaging_referrals'");
     expect(service).toContain('encryptInstagramToken(accessToken)');
     expect(service).toContain("status = 'connected'");
     expect(service).toContain('last_error = NULL');

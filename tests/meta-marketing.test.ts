@@ -346,7 +346,7 @@ describe('Meta integration wiring', () => {
   });
 
   it('subscribes Instagram accounts to referral webhooks', () => {
-    expect(read('../server/services/instagram.ts')).toContain("'messaging_referrals'");
+    expect(read('../server/services/instagram.ts')).toContain("'messaging_referral'");
   });
 
   it('queues stage events only after the lead transaction commits', () => {

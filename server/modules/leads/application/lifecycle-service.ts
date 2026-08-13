@@ -10,4 +10,10 @@ export const createLeadLifecycleService = (repository: LeadLifecycleRepository) 
     }
     return repository.delete(leadId, actor);
   },
+  async bulkDelete(actor: ActorContext, leadIds: readonly number[]) {
+    if (!actor.isLeadership) {
+      throw Object.assign(new Error('Admin access required'), { statusCode: 403 });
+    }
+    return repository.bulkDelete(leadIds, actor);
+  },
 });

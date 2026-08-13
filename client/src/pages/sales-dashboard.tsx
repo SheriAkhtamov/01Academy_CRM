@@ -9,10 +9,8 @@ import { leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData, salesQueryKeys } from '@/features/sales/queries';
 import { useLeadFilters } from '@/features/sales/useLeadFilters';
 import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
-import {
-  SalesOverviewSection,
-  SalesPipelineSection,
-} from '@/features/sales/ui/SalesSections';
+import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
+import { SalesBulkActionsButton, SalesOverviewSection, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { translations, type TranslationKey } from '@/lib/i18n';
@@ -663,6 +661,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     () => pipelineLeads.filter((lead) => leadMatchesFilters(lead, leadFilters)),
     [leadFilters, pipelineLeads],
   );
+  const pipelineBulkActions = useSalesPipelineBulkActions({ leads: filteredPipelineLeads, statuses: activePipelineStatuses });
 
   const overviewLeads = useMemo(() => {
     if (isAdministrationModule) return myLeads;
@@ -1071,6 +1070,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         actions={
           section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">
+              <SalesBulkActionsButton selectedCount={pipelineBulkActions.selectedLeadIds.size} onClick={() => pipelineBulkActions.setDialogOpen(true)} />
               <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
               </Button>
@@ -1134,6 +1134,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           }}
           isPending={updateLead.isPending || assignAndMoveLead.isPending}
           showManager={isAdministrationModule}
+          selectedLeadIds={pipelineBulkActions.selectedLeadIds}
+          onSelectedLeadIdsChange={pipelineBulkActions.setSelectedLeadIds}
+          managers={salesManagers}
+          canManageAllLeads={isAdministrationModule}
+          bulkActions={pipelineBulkActions}
         />
       ) : null}
 

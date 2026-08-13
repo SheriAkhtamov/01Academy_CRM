@@ -63,6 +63,11 @@ export interface LeadLifecycleRepository {
     ok: true;
     deletedTaskCount: number;
   }>;
+  bulkDelete(leadIds: readonly number[], actor: ActorContext): Promise<{
+    ok: true;
+    deletedCount: number;
+    deletedTaskCount: number;
+  }>;
 }
 
 export type AuditEvent = {

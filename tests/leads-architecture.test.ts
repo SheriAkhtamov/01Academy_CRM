@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   archiveLeadRequestSchema,
   bulkAssignLeadsRequestSchema,
+  bulkDeleteLeadsRequestSchema,
+  bulkUpdateLeadStatusRequestSchema,
   createLeadStudentRequestSchema,
   leadCommentRequestSchema,
   mergeLeadIdsSchema,
@@ -139,12 +141,18 @@ describe('lead command permissions', () => {
   });
 
   it('keeps hard deletion restricted to leadership', async () => {
-    const repository = { delete: vi.fn().mockResolvedValue({ ok: true, deletedTaskCount: 0 }) };
+    const repository = {
+      delete: vi.fn().mockResolvedValue({ ok: true, deletedTaskCount: 0 }),
+      bulkDelete: vi.fn().mockResolvedValue({ ok: true, deletedCount: 2, deletedTaskCount: 0 }),
+    };
     const service = createLeadLifecycleService(repository);
 
     await expect(service.delete(actorContextFrom({ id: 7, module: 'sales' }), 10))
       .rejects.toMatchObject({ statusCode: 403, message: 'Admin access required' });
+    await expect(service.bulkDelete(actorContextFrom({ id: 7, module: 'sales' }), [10, 11]))
+      .rejects.toMatchObject({ statusCode: 403, message: 'Admin access required' });
     expect(repository.delete).not.toHaveBeenCalled();
+    expect(repository.bulkDelete).not.toHaveBeenCalled();
   });
 });
 
@@ -155,6 +163,12 @@ describe('lead boundary contracts', () => {
       managerId: '8',
       comment: '  transfer  ',
     })).toMatchObject({ leadIds: [1, 2, 2], managerId: 8, comment: 'transfer' });
+    expect(bulkUpdateLeadStatusRequestSchema.parse({
+      leadIds: ['1', 2],
+      statusCode: ' qualified ',
+    })).toEqual({ leadIds: [1, 2], statusCode: 'qualified' });
+    expect(bulkDeleteLeadsRequestSchema.parse({ leadIds: ['1', 2] }))
+      .toEqual({ leadIds: [1, 2] });
     expect(mergeLeadIdsSchema.parse({ retainedLeadId: '1', duplicateLeadId: '2' }))
       .toEqual({ retainedLeadId: 1, duplicateLeadId: 2 });
     expect(mergeLeadIdsSchema.safeParse({ retainedLeadId: 1, duplicateLeadId: 1 }).success)

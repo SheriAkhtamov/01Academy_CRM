@@ -53,6 +53,15 @@ export const bulkAssignLeadsRequestSchema = z.object({
   comment: optionalTextInput,
 });
 
+export const bulkUpdateLeadStatusRequestSchema = z.object({
+  leadIds: z.array(positiveIdSchema).min(1).max(500),
+  statusCode: z.string().trim().min(1).max(80),
+});
+
+export const bulkDeleteLeadsRequestSchema = z.object({
+  leadIds: z.array(positiveIdSchema).min(1).max(500),
+});
+
 export const mergeLeadIdsSchema = z.object({
   retainedLeadId: positiveIdSchema,
   duplicateLeadId: positiveIdSchema,
@@ -167,6 +176,8 @@ export const academyLeadErrorSchema = z.object({
 }).passthrough();
 
 export type BulkAssignLeadsRequest = z.infer<typeof bulkAssignLeadsRequestSchema>;
+export type BulkUpdateLeadStatusRequest = z.infer<typeof bulkUpdateLeadStatusRequestSchema>;
+export type BulkDeleteLeadsRequest = z.infer<typeof bulkDeleteLeadsRequestSchema>;
 export type MergeLeadIds = z.infer<typeof mergeLeadIdsSchema>;
 export type MergeLeadDraftRequest = z.infer<typeof mergeLeadDraftRequestSchema>;
 export type AssignLeadRequest = z.infer<typeof assignLeadRequestSchema>;

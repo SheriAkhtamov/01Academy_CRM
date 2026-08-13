@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { leadIdParamsSchema } from '@shared/contracts/academy-leads';
+import {
+  bulkDeleteLeadsRequestSchema,
+  leadIdParamsSchema,
+} from '@shared/contracts/academy-leads';
 import { getHttpErrorStatus, getPublicErrorMessage } from '../../../lib/http-errors';
 import { logger } from '../../../lib/logger';
 import type { LeadLifecycleService } from '../application/lifecycle-service';
@@ -7,6 +10,27 @@ import { actorContextFromRequest } from './actor-context';
 
 export const createLeadLifecycleRouter = (service: LeadLifecycleService) => {
   const router = Router();
+
+  router.post('/leads/bulk-delete', async (request, response) => {
+    const input = bulkDeleteLeadsRequestSchema.safeParse(request.body);
+    if (!input.success) {
+      return response.status(400).json({ error: 'Select at least one lead' });
+    }
+    try {
+      response.json(await service.bulkDelete(
+        actorContextFromRequest(request),
+        [...new Set(input.data.leadIds)],
+      ));
+    } catch (error: unknown) {
+      logger.error('Failed to bulk delete leads', { error });
+      const isForeignKeyConflict = (error as { code?: unknown })?.code === '23503';
+      response.status(isForeignKeyConflict ? 409 : getHttpErrorStatus(error)).json({
+        error: isForeignKeyConflict
+          ? 'resourceInUse'
+          : getPublicErrorMessage(error, 'Failed to delete leads'),
+      });
+    }
+  });
 
   router.delete('/leads/:id', async (request, response) => {
     const params = leadIdParamsSchema.safeParse(request.params);

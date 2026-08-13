@@ -21,6 +21,7 @@ import { registerAcademyLearningRoutes } from './learning.router';
 import { registerAcademyOperationsRoutes } from './operations.router';
 import { registerAcademyResourceRoutes } from './resources.router';
 import { registerAcademyDemoLessonRoutes } from './demo-lessons.router';
+import { registerAcademyBulkLeadActionRoutes } from './bulk-lead-actions.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -49,6 +50,7 @@ router.use(createLeadLifecycleRouter(
   createLeadLifecycleService(new LegacyLeadLifecycleRepository()),
 ));
 
+registerAcademyBulkLeadActionRoutes(router);
 registerAcademyModuleRoutes(router);
 registerAcademyLeadRoutes(router);
 registerAcademyLearningRoutes(router);

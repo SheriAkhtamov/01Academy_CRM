@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/core';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowRight,
@@ -98,7 +99,11 @@ interface KanbanBoardProps {
   isPending?: boolean;
   showPaymentAction?: boolean;
   showManager?: boolean;
+  selectedLeadIds?: ReadonlySet<number>;
+  onSelectedLeadIdsChange?: (leadIds: Set<number>) => void;
 }
+
+const EMPTY_SELECTED_LEAD_IDS = new Set<number>();
 
 const reconcileKanbanLeads = (
   incoming: KanbanLead[],
@@ -120,6 +125,9 @@ interface LeadCardContentProps {
   isPending?: boolean;
   showPaymentAction: boolean;
   showManager: boolean;
+  selectionMode: boolean;
+  selected: boolean;
+  onSelectedChange?: (selected: boolean) => void;
   t: (key: TranslationKey) => string;
 }
 
@@ -132,6 +140,9 @@ function LeadCardContent({
   isPending,
   showPaymentAction,
   showManager,
+  selectionMode,
+  selected,
+  onSelectedChange,
   t,
 }: LeadCardContentProps) {
   const visiblePhone = primaryVisibleLeadPhone(lead);
@@ -145,6 +156,18 @@ function LeadCardContent({
   return (
     <>
       <div className="flex items-start justify-between gap-2">
+        {selectionMode ? (
+          <Checkbox
+            className="mt-0.5"
+            checked={selected}
+            onCheckedChange={(checked) => onSelectedChange?.(checked === true)}
+            onPointerDown={stopCardInteraction}
+            onMouseDown={stopCardInteraction}
+            onTouchStart={stopCardInteraction}
+            onClick={stopCardInteraction}
+            aria-label={`${t('selectLead')} ${lead.contactName}`}
+          />
+        ) : null}
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
             {isNewLead(lead) ? (
@@ -253,7 +276,15 @@ interface DraggableLeadCardProps extends LeadCardContentProps {
 }
 
 function DraggableLeadCard(props: DraggableLeadCardProps) {
-  const { lead, currentStatus, isPending, t, onLeadClick } = props;
+  const {
+    lead,
+    currentStatus,
+    isPending,
+    onLeadClick,
+    selected,
+    selectionMode,
+    t,
+  } = props;
   const comment = lead.comment?.trim();
   const {
     attributes,
@@ -263,7 +294,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
   } = useDraggable({
     id: `lead-${lead.id}`,
     data: { leadId: lead.id, statusCode: currentStatus.code },
-    disabled: isPending,
+    disabled: isPending || selectionMode,
   });
 
   const card = (
@@ -271,6 +302,8 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       ref={setNodeRef}
       className={cn(
         'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color,opacity] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        selectionMode && 'cursor-default active:cursor-default',
+        selected && 'border-primary/60 bg-primary/5 shadow-sm',
         isDragging && 'opacity-25',
       )}
       aria-label={`${isNewLead(lead) ? `${t('newLeadIndicator')}. ` : ''}${lead.contactName}. ${t('openLead')}`}
@@ -314,6 +347,8 @@ interface KanbanColumnProps {
   t: (key: TranslationKey) => string;
   language: string;
   onLeadClick?: KanbanBoardProps['onLeadClick'];
+  selectedLeadIds: ReadonlySet<number>;
+  onSelectedLeadIdsChange?: KanbanBoardProps['onSelectedLeadIdsChange'];
 }
 
 function KanbanColumn({
@@ -328,6 +363,8 @@ function KanbanColumn({
   t,
   language,
   onLeadClick,
+  selectedLeadIds,
+  onSelectedLeadIdsChange,
 }: KanbanColumnProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: `status-${status.code}`,
@@ -342,6 +379,29 @@ function KanbanColumn({
     }, 0);
   }, [leads]);
   const newLeadCount = useMemo(() => countNewLeads(leads), [leads]);
+  const selectedCount = useMemo(
+    () => leads.reduce((count, lead) => count + (selectedLeadIds.has(lead.id) ? 1 : 0), 0),
+    [leads, selectedLeadIds],
+  );
+  const allSelected = leads.length > 0 && selectedCount === leads.length;
+  const someSelected = selectedCount > 0 && !allSelected;
+  const selectionMode = selectedLeadIds.size > 0;
+
+  const toggleStageLeads = (selected: boolean) => {
+    const next = new Set(selectedLeadIds);
+    for (const lead of leads) {
+      if (selected) next.add(lead.id);
+      else next.delete(lead.id);
+    }
+    onSelectedLeadIdsChange?.(next);
+  };
+
+  const toggleLead = (leadId: number, selected: boolean) => {
+    const next = new Set(selectedLeadIds);
+    if (selected) next.add(leadId);
+    else next.delete(leadId);
+    onSelectedLeadIdsChange?.(next);
+  };
 
   return (
     <div
@@ -354,6 +414,14 @@ function KanbanColumn({
       <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/95 p-3 px-4 backdrop-blur-sm">
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2">
+            {onSelectedLeadIdsChange ? (
+              <Checkbox
+                checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                onCheckedChange={(checked) => toggleStageLeads(checked === true)}
+                disabled={leads.length === 0 || isPending}
+                aria-label={t('selectStageLeads').replace('{stage}', status.name)}
+              />
+            ) : null}
             <span
               className="size-2.5 shrink-0 rounded-full"
               style={{ backgroundColor: status.color }}
@@ -390,6 +458,9 @@ function KanbanColumn({
             isPending={isPending}
             showPaymentAction={showPaymentAction}
             showManager={showManager}
+            selectionMode={selectionMode}
+            selected={selectedLeadIds.has(lead.id)}
+            onSelectedChange={(selected) => toggleLead(lead.id, selected)}
             t={t}
             onLeadClick={onLeadClick}
           />
@@ -417,6 +488,8 @@ export function KanbanBoard({
   isPending,
   showPaymentAction = true,
   showManager = false,
+  selectedLeadIds = EMPTY_SELECTED_LEAD_IDS,
+  onSelectedLeadIdsChange,
 }: KanbanBoardProps) {
   const { t, language } = useTranslation();
   const [boardLeads, setBoardLeads] = useState(leads);
@@ -531,6 +604,8 @@ export function KanbanBoard({
                 t={t}
                 language={language}
                 onLeadClick={onLeadClick}
+                selectedLeadIds={selectedLeadIds}
+                onSelectedLeadIdsChange={onSelectedLeadIdsChange}
               />
             ))}
           </div>
@@ -550,6 +625,8 @@ export function KanbanBoard({
                 onEnrollDemo={undefined}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}
+                selectionMode={false}
+                selected={false}
                 t={t}
               />
             </div>

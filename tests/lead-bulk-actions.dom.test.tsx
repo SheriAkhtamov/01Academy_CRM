@@ -9,10 +9,14 @@ import { TooltipProvider } from '../client/src/components/ui/tooltip';
 import { BulkLeadActionsDialog } from '../client/src/features/sales/ui/BulkLeadActionsDialog';
 import { i18n } from '../client/src/lib/i18n';
 
-const statuses = [{ code: 'new_request', name: 'New request', color: '#2563eb', sortOrder: 1 }];
+const statuses = [
+  { code: 'new_request', name: 'New request', color: '#2563eb', sortOrder: 1 },
+  { code: 'qualified', name: 'Qualified', color: '#14b8a6', sortOrder: 2 },
+];
 const leads: KanbanLead[] = [
   { id: 1, contactName: 'First lead', statusCode: 'new_request' },
   { id: 2, contactName: 'Second lead', statusCode: 'new_request' },
+  { id: 3, contactName: 'Other stage lead', statusCode: 'qualified' },
 ];
 
 function SelectionHarness() {
@@ -46,6 +50,7 @@ describe('bulk actions on the sales pipeline', () => {
 
     expect(screen.getByLabelText('Select lead First lead').getAttribute('data-state')).toBe('checked');
     expect(screen.getByLabelText('Select lead Second lead').getAttribute('data-state')).toBe('checked');
+    expect(screen.queryByLabelText('Select lead Other stage lead')).toBeNull();
     expect(stageCheckbox.getAttribute('data-state')).toBe('checked');
   });
 

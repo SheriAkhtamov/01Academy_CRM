@@ -385,7 +385,7 @@ function KanbanColumn({
   );
   const allSelected = leads.length > 0 && selectedCount === leads.length;
   const someSelected = selectedCount > 0 && !allSelected;
-  const selectionMode = selectedLeadIds.size > 0;
+  const selectionMode = selectedCount > 0;
 
   const toggleStageLeads = (selected: boolean) => {
     const next = new Set(selectedLeadIds);

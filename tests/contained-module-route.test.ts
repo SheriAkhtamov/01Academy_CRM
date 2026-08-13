@@ -13,9 +13,14 @@ describe('isContainedModuleRoute', () => {
     '/sales/messages',
     '/sales/calls',
     '/sales/task-board',
+    // Every teacher section, overview included, is a contained module page:
+    // the width of the content and the element that scrolls must not change
+    // when the user moves between sections of the same module.
+    '/teacher-module',
     '/teacher-module/schedule',
     '/teacher-module/groups',
     '/teacher-module/attendance',
+    '/teacher-module/ratings',
     '/teacher-module/tasks',
     '/marketing-module/sources',
     '/marketing-module/funnel',
@@ -41,7 +46,6 @@ describe('isContainedModuleRoute', () => {
 
   it.each([
     '/sales',
-    '/teacher-module',
     '/marketing-module',
     '/finance',
     '/admin',

@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,146 +17,54 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
-
-import { Skeleton } from '@/components/ui/skeleton';
-import { DataTable } from '@/components/ux/DataTable';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { TeacherAnalyticsCharts } from '@/components/ux/analytics/TeacherAnalyticsCharts';
 import { TeacherOverviewKpis } from '@/components/ux/analytics/TeacherOverviewKpis';
-import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { AttendanceLessonDialog } from '@/components/ux/teacher/AttendanceLessonDialog';
+import { TeacherGroupsSection } from '@/components/ux/teacher/TeacherGroupsSection';
+import { TeacherRatingsSection } from '@/components/ux/teacher/TeacherRatingsSection';
 import {
-  AlertTriangle,
-  Calendar,
-  Users,
-  ClipboardCheck,
-  Star,
-  GraduationCap,
-  ClipboardList,
-  CheckCircle2,
-  Clock3,
-  XCircle,
-  TrendingUp,
-  BarChart3,
-  BookOpen,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+  TeacherScheduleSection,
+  type TeacherScheduleDayView,
+} from '@/components/ux/teacher/TeacherScheduleSection';
+import { TeacherSectionSkeleton } from '@/components/ux/teacher/TeacherSectionSkeleton';
+import { TeacherTodayPanel } from '@/components/ux/teacher/TeacherTodayPanel';
+import { AlertTriangle } from 'lucide-react';
 import { sortAttendanceLessons } from '@/lib/attendance';
-import { ACADEMY_TIME_ZONE, formatAcademyDate, resolveLocale } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, resolveLocale } from '@/lib/localeFormat';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import {
-  buildAnalyticsTimeline,
-  compactRankedSeries,
-  percentage,
-} from '@/lib/analyticsCharts';
-
-type Lesson = {
-  id: number;
-  groupId: number;
-  groupName?: string;
-  courseId?: number;
-  courseName?: string;
-  teacherId?: number;
-  teacherName?: string;
-  schoolId?: number;
-  schoolName?: string;
-  lessonNumber: number;
-  topic: string;
-  scheduledAt: string;
-  durationMinutes: number;
-  status: string;
-};
-
-type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings';
-
-type Group = {
-  id: number;
-  name: string;
-  courseId: number;
-  courseName?: string;
-  teacherId?: number;
-  teacherName?: string;
-  schoolId?: number;
-  schoolName?: string;
-  lessonCount: number;
-  maxStudents: number;
-  currentStudents?: number;
-  capacityLabel?: string;
-  schedule?: Array<{ dayOfWeek: number; time?: string; startTime?: string; endTime?: string }>;
-  status: string;
-};
-
-type Student = {
-  id: number;
-  groupId?: number;
-  groupName?: string;
-  groupIds?: number[];
-  groupNames?: string[];
-  courseName?: string;
-  studentName?: string;
-  contactName: string;
-  attendancePercent: number;
-  progressPercent: number;
-  status: string;
-};
-
-type LessonSurvey = {
-  id: number;
-  studentId: number;
-  studentName?: string;
-  lessonId: number;
-  lessonTopic?: string;
-  groupId?: number;
-  groupName?: string;
-  teacherId?: number;
-  courseId?: number;
-  score: number;
-  liked?: string;
-  improve?: string;
-  createdAt: string;
-};
-
-type AttendanceRecord = {
-  lessonId: number;
-  studentId: number;
-  status: 'present' | 'absent';
-  note?: string | null;
-};
-
-type AttendanceDraft = Record<number, 'present' | 'absent'>;
+  academyDayKey,
+  dateFromDayKey,
+  isDayKey,
+  shiftDayKey,
+  weekStartDayKey,
+  type TeacherAttendanceDraft,
+  type TeacherAttendanceRecord,
+  type TeacherGroup,
+  type TeacherLesson,
+  type TeacherLessonSurvey,
+  type TeacherSection,
+  type TeacherStudent,
+} from '@/lib/teacherModule';
+import { buildAnalyticsTimeline, percentage } from '@/lib/analyticsCharts';
 
 type SaveAttendanceVariables = {
   lessonId: number;
-  roster: Array<Pick<Student, 'id'>>;
-  draft: AttendanceDraft;
+  roster: Array<{ id: number }>;
+  draft: TeacherAttendanceDraft;
   note?: string;
 };
 
 type RescheduleLessonVariables = {
   lessonId: number;
-  payload: {
-    scheduledAt: string;
-    reason: string;
-  };
+  payload: { scheduledAt: string; reason: string };
 };
-
 
 type AcademyDateTimeParts = {
   year: number;
@@ -257,112 +163,88 @@ function toDateTimeLocal(value: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-function formatScheduleTime(item: { time?: string; startTime?: string; endTime?: string }): string {
-  const start = item.startTime || item.time || '';
-  return item.endTime && item.endTime !== start ? `${start}–${item.endTime}` : start;
-}
-
-function getInitials(name?: string): string {
-  if (!name) return '??';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
-function EmptyState({
-  title,
-  text,
-  icon: Icon = BarChart3,
-}: {
-  title: string;
-  text: string;
-  icon?: any;
-}) {
-  return (
-    <Card className="border-dashed">
-      <CardContent className="py-14 px-6 text-center">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
-          <Icon className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">{text}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function isToday(dateStr: string): boolean {
-  return localDateKey(dateStr) === localDateKey(new Date().toISOString());
-}
-
-function formatTime(dateStr: string, language: string): string {
-  return formatAcademyDate(dateStr, language, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatDateFull(dateStr: string, language: string): string {
-  return formatAcademyDate(dateStr, language, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
+/* A minute is the finest granularity anything on this screen cares about. The
+   page used to re-render — and re-sort every lesson — once a second. */
+const CLOCK_TICK_MS = 30_000;
 
 export default function TeacherModule({ section = 'overview' }: { section?: TeacherSection }) {
   const { t, language } = useTranslation();
   const locale = resolveLocale(language);
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const routeSearch = useSearch();
+
   const dayNames = [
-    t('mondayShort'),
-    t('tuesdayShort'),
-    t('wednesdayShort'),
-    t('thursdayShort'),
-    t('fridayShort'),
-    t('saturdayShort'),
-    t('sundayShort'),
+    t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
+    t('fridayShort'), t('saturdayShort'), t('sundayShort'),
   ];
   const dayNamesFull = [
-    t('monday'),
-    t('tuesday'),
-    t('wednesday'),
-    t('thursday'),
-    t('friday'),
-    t('saturday'),
-    t('sunday'),
+    t('monday'), t('tuesday'), t('wednesday'), t('thursday'),
+    t('friday'), t('saturday'), t('sunday'),
   ];
 
-  // Attendance state
-  const [selectedLessonId, setSelectedLessonId] = useState<string>('');
-  const [attendanceDraft, setAttendanceDraft] = useState<AttendanceDraft>({});
+  /* Everything the teacher can point at — the open lesson, the open group, the
+     visible week — lives in the URL. Back, reload and a pasted link now all do
+     what the browser promises, and the schedule's "attendance" button can hand
+     a specific lesson to another route instead of losing it on unmount. */
+  const searchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
+  const lessonParam = searchParams.get('lesson') ?? '';
+  const groupParam = searchParams.get('group') ?? '';
+  const weekParam = searchParams.get('week') ?? '';
+
+  const pathname = location.split('?')[0];
+  const buildHref = useCallback((changes: Record<string, string | null>) => {
+    const params = new URLSearchParams(routeSearch);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    }
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }, [pathname, routeSearch]);
+
+  /* Panning the schedule or opening a lesson replaces the entry — the Back
+     button should leave the module, not walk back through every week the
+     teacher scrolled past. Opening a group pushes, because "back to the list"
+     is exactly what Back is expected to do there. */
+  const replaceParams = useCallback((changes: Record<string, string | null>) => {
+    setLocation(buildHref(changes), { replace: true });
+  }, [buildHref, setLocation]);
+
+  const pushParams = useCallback((changes: Record<string, string | null>) => {
+    setLocation(buildHref(changes));
+  }, [buildHref, setLocation]);
+
+  const [attendanceDraft, setAttendanceDraft] = useState<TeacherAttendanceDraft>({});
   const [attendanceNote, setAttendanceNote] = useState('');
   const [rescheduleAt, setRescheduleAt] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [isRescheduleConfirmOpen, setRescheduleConfirmOpen] = useState(false);
+  const [bulkConfirmStatus, setBulkConfirmStatus] = useState<'present' | 'absent' | null>(null);
   const [pendingLessonSwitch, setPendingLessonSwitch] = useState<string | null>(null);
+  const [pendingDialogClose, setPendingDialogClose] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const attendanceDraftDirty = useRef(false);
   const attendanceNoteDirty = useRef(false);
   const hydratedAttendanceLessonId = useRef<number | null>(null);
 
   useEffect(() => {
-    if (section !== 'attendance') return;
-    setNow(Date.now());
-    const intervalId = window.setInterval(() => setNow(Date.now()), 1_000);
+    const intervalId = window.setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
     return () => window.clearInterval(intervalId);
-  }, [section]);
+  }, []);
+  const nowMinute = Math.floor(now / 60_000) * 60_000;
 
-  // Group detail dialog
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
+  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/modules/teacher'],
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/teacher'] });
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/teacher'] }),
+    [queryClient],
+  );
 
   const saveAttendance = useMutation<unknown, Error, SaveAttendanceVariables>({
     mutationFn: ({ lessonId, roster, draft, note }) =>
@@ -383,16 +265,16 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       });
       invalidate();
     },
-    onError: (error: any) =>
-      toast({ title: t('error'), description: error.message, variant: 'destructive' }),
+    onError: (mutationError: Error) =>
+      toast({ title: t('error'), description: mutationError.message, variant: 'destructive' }),
   });
 
-  // Derived data
-  const groups: Group[] = useMemo(() => data?.groups ?? [], [data]);
-  const lessons: Lesson[] = useMemo(() => data?.lessons ?? [], [data]);
-  const students: Student[] = useMemo(() => data?.students ?? [], [data]);
-  const surveys: LessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
-  const attendanceRecords: AttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
+  const groups: TeacherGroup[] = useMemo(() => data?.groups ?? [], [data]);
+  const lessons: TeacherLesson[] = useMemo(() => data?.lessons ?? [], [data]);
+  const students: TeacherStudent[] = useMemo(() => data?.students ?? [], [data]);
+  const surveys: TeacherLessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
+  const attendanceRecords: TeacherAttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
+
   const groupLessonProgressById = useMemo(() => {
     const lessonCounts = new Map<number, { conducted: number; materialized: number }>();
     for (const lesson of lessons) {
@@ -414,13 +296,62 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, [groups, lessons]);
 
   const totalStudents = useMemo(
-    () => groups.reduce((sum, g) => sum + (g.currentStudents || 0), 0),
-    [groups]
+    () => groups.reduce((sum, group) => sum + (group.currentStudents || 0), 0),
+    [groups],
   );
 
+  /* A group with no declared capacity is excluded from the denominator instead
+     of being padded with an invented 12 seats — a silently wrong occupancy is
+     worse than an honestly partial one. */
+  const capacityGroups = useMemo(
+    () => groups.filter((group) => Number(group.maxStudents) > 0),
+    [groups],
+  );
+  const totalCapacity = useMemo(
+    () => capacityGroups.reduce((sum, group) => sum + Number(group.maxStudents), 0),
+    [capacityGroups],
+  );
+
+  const todayKey = localDateKey(new Date(nowMinute).toISOString());
   const todayLessons = useMemo(
-    () => lessons.filter((l) => isToday(l.scheduledAt)),
-    [lessons]
+    () => lessons.filter((lesson) => localDateKey(lesson.scheduledAt) === todayKey),
+    [lessons, todayKey],
+  );
+  const pendingAttendanceLessons = useMemo(
+    () => lessons
+      .filter((lesson) => (
+        lesson.status === 'scheduled'
+        && new Date(lesson.scheduledAt).getTime() <= nowMinute
+      ))
+      .sort((left, right) => (
+        new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
+      )),
+    [lessons, nowMinute],
+  );
+  /* A lesson between its start and its end is the one the teacher is standing
+     in, and the only one whose attendance can actually be saved. The overview
+     leads with it; otherwise it leads with the next one and offers a link into
+     the schedule rather than a checklist that cannot be submitted yet. */
+  const liveLesson = useMemo(
+    () => lessons.find((lesson) => {
+      if (lesson.status !== 'scheduled') return false;
+      const start = new Date(lesson.scheduledAt).getTime();
+      if (!Number.isFinite(start)) return false;
+      const end = start + Number(lesson.durationMinutes || 0) * 60_000;
+      return start <= nowMinute && nowMinute < end;
+    }) ?? null,
+    [lessons, nowMinute],
+  );
+  const nextLesson = useMemo(
+    () => lessons
+      .filter((lesson) => (
+        lesson.status === 'scheduled'
+        && new Date(lesson.scheduledAt).getTime() > nowMinute
+      ))
+      .sort((left, right) => (
+        new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
+      ))[0] ?? null,
+    [lessons, nowMinute],
   );
 
   const periodLessons = useMemo(
@@ -456,7 +387,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const avgLessonRating = useMemo(() => {
     if (!periodSurveys.length) return null;
     const sum = periodSurveys.reduce((acc, survey) => acc + survey.score, 0);
-    return (sum / periodSurveys.length).toFixed(1);
+    return Number((sum / periodSurveys.length).toFixed(1));
   }, [periodSurveys]);
 
   const teachingHours = useMemo(
@@ -519,10 +450,12 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             records.length,
           )
           : null,
-        rating: averageRating == null ? null : Math.round((averageRating / 5) * 100),
+        // Kept on its own 1–5 scale; the chart no longer rescales it to a
+        // percentage just to fit a shared axis.
+        rating: averageRating == null ? null : Number(averageRating.toFixed(1)),
       }];
     });
-    return compactRankedSeries(rows, (row) => row.lessonVolume, 6);
+    return rows.sort((left, right) => right.lessonVolume - left.lessonVolume);
   }, [groups, periodAttendanceRecords, periodLessons, periodSurveys]);
 
   const attendanceDistribution = useMemo(() => [
@@ -546,33 +479,42 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     [periodSurveys],
   );
 
-  // Schedule: show today first, followed by the next six academy days.
-  const scheduleByDay = useMemo(() => {
-    const lessonsByDate = new Map<string, Lesson[]>();
+  const teacherCourses = useMemo(() => {
+    const courseIds = new Set<number>();
+    groups.forEach((group) => {
+      if (group.courseId) courseIds.add(group.courseId);
+    });
+    return data?.courses?.filter((course: any) => courseIds.has(course.id)) ?? [];
+  }, [groups, data]);
+
+  // Schedule: a real, navigable Monday-to-Sunday week synchronised with the URL.
+  const currentWeekKey = weekStartDayKey(todayKey);
+  const scheduleWeekKey = isDayKey(weekParam) ? weekStartDayKey(weekParam) : currentWeekKey;
+  const scheduleDays: TeacherScheduleDayView[] = useMemo(() => {
+    const lessonsByDate = new Map<string, TeacherLesson[]>();
     for (const lesson of lessons) {
       const dateKey = localDateKey(lesson.scheduledAt);
       const dayLessons = lessonsByDate.get(dateKey) ?? [];
       dayLessons.push(lesson);
       lessonsByDate.set(dateKey, dayLessons);
     }
-
-    return buildTeacherScheduleDays(new Date(), ACADEMY_TIME_ZONE).map((day) => ({
+    return buildTeacherScheduleDays(dateFromDayKey(scheduleWeekKey), ACADEMY_TIME_ZONE).map((day) => ({
       ...day,
       lessons: [...(lessonsByDate.get(day.dateKey) ?? [])].sort(
-        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+        (left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime(),
       ),
     }));
-  }, [lessons]);
+  }, [lessons, scheduleWeekKey]);
 
-  // Attendance
+  const selectedLessonId = section === 'attendance' ? lessonParam : '';
   const selectedLesson = useMemo(
-    () => lessons.find((l) => String(l.id) === selectedLessonId),
-    [lessons, selectedLessonId]
+    () => lessons.find((lesson) => String(lesson.id) === selectedLessonId),
+    [lessons, selectedLessonId],
   );
 
   const attendanceLessons = useMemo(
-    () => sortAttendanceLessons(lessons, now),
-    [lessons, now],
+    () => sortAttendanceLessons(lessons, nowMinute),
+    [lessons, nowMinute],
   );
 
   const previousIncompleteLesson = useMemo(() => {
@@ -589,17 +531,19 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, [lessons, selectedLesson]);
 
   const attendanceRosterQuery = useQuery<{
-    lesson: Lesson;
-    students: Student[];
-    attendance: AttendanceRecord[];
+    lesson: TeacherLesson;
+    students: TeacherStudent[];
+    attendance: TeacherAttendanceRecord[];
   }>({
     queryKey: ['/api/academy/lessons', Number(selectedLessonId), 'attendance-roster'],
     queryFn: () => apiRequest('GET', `/api/academy/lessons/${selectedLessonId}/attendance-roster`),
     enabled: Boolean(selectedLessonId),
   });
-  const selectedLessonDetails = selectedLesson
-    ? { ...selectedLesson, ...(attendanceRosterQuery.data?.lesson ?? {}) }
-    : attendanceRosterQuery.data?.lesson;
+  const rosterLesson = attendanceRosterQuery.data?.lesson;
+  const selectedLessonDetails = useMemo(
+    () => (selectedLesson ? { ...selectedLesson, ...(rosterLesson ?? {}) } : rosterLesson),
+    [rosterLesson, selectedLesson],
+  );
 
   const rescheduleLesson = useMutation<
     { shiftedCount?: number },
@@ -615,73 +559,79 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
         description: t('lessonRescheduledDesc').replace('{count}', String(result.shiftedCount ?? 1)),
       });
       setRescheduleReason('');
+      setRescheduleAt('');
+      setRescheduleConfirmOpen(false);
       queryClient.invalidateQueries({
         queryKey: ['/api/academy/lessons', variables.lessonId, 'attendance-roster'],
       });
       invalidate();
     },
-    onError: (error: Error) => toast({
+    onError: (mutationError: Error) => toast({
       title: t('error'),
-      description: error.message,
+      description: mutationError.message,
       variant: 'destructive',
     }),
   });
 
+  /* Every piece of dialog state resets in one place when the lesson changes.
+     The reschedule form in particular used to survive the switch, so the next
+     lesson opened with a pre-filled date next to an irreversible button. */
   useEffect(() => {
-    if (!selectedLessonDetails) {
-      setRescheduleAt('');
-      setRescheduleReason('');
-      return;
-    }
-    const currentDate = new Date(selectedLessonDetails.scheduledAt);
-    const suggestedDate = new Date(Math.max(
-      currentDate.getTime() + 7 * 24 * 60 * 60 * 1000,
-      Date.now() + 60 * 60 * 1000,
-    ));
-    setRescheduleAt(toDateTimeLocal(suggestedDate));
+    setRescheduleAt('');
     setRescheduleReason('');
-  }, [selectedLessonDetails?.id, selectedLessonDetails?.scheduledAt]);
+    setIsRescheduleOpen(false);
+    setRescheduleConfirmOpen(false);
+    setBulkConfirmStatus(null);
+  }, [selectedLessonId]);
 
-  const selectedLessonStudents = useMemo(() => {
-    if (!selectedLesson) return [];
-    return attendanceRosterQuery.data?.students ?? [];
-  }, [attendanceRosterQuery.data?.students, selectedLesson]);
+  const selectedLessonStudents = useMemo(
+    () => (selectedLessonId ? attendanceRosterQuery.data?.students ?? [] : []),
+    [attendanceRosterQuery.data?.students, selectedLessonId],
+  );
+  const selectedAttendanceRecords = useMemo(
+    () => (selectedLessonId ? attendanceRosterQuery.data?.attendance ?? [] : []),
+    [attendanceRosterQuery.data?.attendance, selectedLessonId],
+  );
 
-  const selectedAttendanceRecords = useMemo(() => {
-    if (!selectedLesson) return [];
-    return attendanceRosterQuery.data?.attendance ?? [];
-  }, [attendanceRosterQuery.data?.attendance, selectedLesson]);
-
-  const attendanceHydrationKey = useMemo(() => JSON.stringify({
-    lessonId: selectedLesson?.id ?? null,
-    studentIds: selectedLessonStudents.map((student) => student.id),
-    records: selectedAttendanceRecords.map((record) => [record.studentId, record.status, record.note ?? '']),
-  }), [selectedAttendanceRecords, selectedLesson?.id, selectedLessonStudents]);
-
-  useEffect(() => {
-    if (!selectedLesson) {
-      setAttendanceDraft({});
-      setAttendanceNote('');
-      attendanceNoteDirty.current = false;
-      return;
-    }
-
-    const changedLesson = hydratedAttendanceLessonId.current !== selectedLesson.id;
-    if (!changedLesson && attendanceDraftDirty.current) return;
-
+  const attendanceHydration = useMemo(() => {
+    const lessonId = selectedLessonId ? Number(selectedLessonId) : null;
     const studentIds = new Set(selectedLessonStudents.map((student) => student.id));
-    const nextDraft: Record<number, 'present' | 'absent'> = {};
+    const draft: TeacherAttendanceDraft = {};
     for (const record of selectedAttendanceRecords) {
       if (studentIds.has(record.studentId) && (record.status === 'present' || record.status === 'absent')) {
-        nextDraft[record.studentId] = record.status;
+        draft[record.studentId] = record.status;
       }
     }
-    setAttendanceDraft(nextDraft);
-    setAttendanceNote(selectedAttendanceRecords.find((record) => record.note?.trim())?.note ?? '');
-    hydratedAttendanceLessonId.current = selectedLesson.id;
+    const distinctNotes = new Set(
+      selectedAttendanceRecords
+        .map((record) => record.note?.trim())
+        .filter((value): value is string => Boolean(value)),
+    );
+    return {
+      lessonId,
+      draft,
+      note: [...distinctNotes][0] ?? '',
+      hasDivergingNotes: distinctNotes.size > 1,
+    };
+  }, [selectedAttendanceRecords, selectedLessonId, selectedLessonStudents]);
+
+  useEffect(() => {
+    if (attendanceHydration.lessonId == null) {
+      setAttendanceDraft({});
+      setAttendanceNote('');
+      attendanceDraftDirty.current = false;
+      attendanceNoteDirty.current = false;
+      hydratedAttendanceLessonId.current = null;
+      return;
+    }
+    const changedLesson = hydratedAttendanceLessonId.current !== attendanceHydration.lessonId;
+    if (!changedLesson && attendanceDraftDirty.current) return;
+    setAttendanceDraft(attendanceHydration.draft);
+    setAttendanceNote(attendanceHydration.note);
+    hydratedAttendanceLessonId.current = attendanceHydration.lessonId;
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
-  }, [attendanceHydrationKey]);
+  }, [attendanceHydration]);
 
   const allAttendanceMarked = selectedLessonStudents.every(
     (student) => attendanceDraft[student.id] !== undefined,
@@ -707,6 +657,12 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   );
   const lessonMutationPending = saveAttendance.isPending || rescheduleLesson.isPending;
 
+  const selectedGroup = useMemo(() => {
+    const groupId = Number(groupParam);
+    if (!Number.isFinite(groupId) || groupId <= 0) return null;
+    return groups.find((group) => Number(group.id) === groupId) ?? null;
+  }, [groupParam, groups]);
+
   const groupStudents = useMemo(() => {
     if (!selectedGroup) return [];
     return students.filter((student) => (
@@ -714,6 +670,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       || Number(student.groupId) === Number(selectedGroup.id)
     ));
   }, [students, selectedGroup]);
+
   const selectedGroupAttendanceByStudentId = useMemo(() => {
     if (!selectedGroup) return new Map<number, { attended: number; missed: number }>();
     const conductedLessonIds = new Set(
@@ -735,126 +692,68 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     return counts;
   }, [attendanceRecords, lessons, selectedGroup]);
 
-  // Survey data grouped by group
-  const surveyGroups = useMemo(() => {
-    const byGroup: Record<number, { surveys: LessonSurvey[]; avgScore: number }> = {};
-    surveys.forEach((s) => {
-      const gid = s.groupId || 0;
-      if (!byGroup[gid]) byGroup[gid] = { surveys: [], avgScore: 0 };
-      byGroup[gid].surveys.push(s);
-    });
-    Object.keys(byGroup).forEach((gid) => {
-      const arr = byGroup[Number(gid)].surveys;
-      byGroup[Number(gid)].avgScore =
-        Math.round((arr.reduce((a, b) => a + b.score, 0) / arr.length) * 10) / 10;
-    });
-    return byGroup;
-  }, [surveys]);
-
-  // Teacher courses
-  const teacherCourses = useMemo(() => {
-    const courseIds = new Set<number>();
-    groups.forEach((g) => {
-      if (g.courseId) courseIds.add(g.courseId);
-    });
-    return data?.courses?.filter((c: any) => courseIds.has(c.id)) ?? [];
-  }, [groups, data]);
-
-  // Chart data for ratings over time
-  const ratingChartData = useMemo(() => {
-    const byDate: Record<string, { total: number; count: number }> = {};
-    surveys.forEach((s) => {
-      const date = localDateKey(s.createdAt);
-      if (!byDate[date]) byDate[date] = { total: 0, count: 0 };
-      byDate[date].total += s.score;
-      byDate[date].count += 1;
-    });
-    return Object.entries(byDate)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-14)
-      .map(([date, { total, count }]) => ({
-        date: formatAcademyDate(`${date}T00:00:00`, language),
-        avgScore: Math.round((total / count) * 10) / 10,
-        count,
-      }));
-    // The axis labels are formatted against the active language, so switching it
-    // has to rebuild the series.
-  }, [language, surveys]);
-
-  const contained = section !== 'overview';
-
+  /* One container for the whole module. Overview used to be the odd one out —
+     `p-4 sm:p-6 lg:p-8` and a document scroll against `p-4 sm:p-5 lg:p-6` and
+     an inner scroller everywhere else — so moving between sections shifted the
+     content sideways and changed what scrolls under the finger. */
+  const contained = true;
   const fullName = user?.fullName || t('teacher');
   const sectionTitle: Record<TeacherSection, string> = {
     overview: t(moduleSectionLabelKey('teacher', 'overview')),
     schedule: t(moduleSectionLabelKey('teacher', 'schedule')),
     groups: t(moduleSectionLabelKey('teacher', 'groups')),
     attendance: t(moduleSectionLabelKey('teacher', 'attendance')),
-    ratings: t('lessonRatings'),
+    ratings: t(moduleSectionLabelKey('teacher', 'ratings')),
   };
 
-  const getLessonStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      scheduled: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300',
-      conducted: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300',
-      cancelled: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300',
-      postponed: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300',
-    };
-    return (
-      <Badge className={cn('text-xs font-medium', variants[status] || 'bg-muted text-muted-foreground')}>
-        {status === 'scheduled' && t('lessonStatusScheduled')}
-        {status === 'conducted' && t('lessonStatusConducted')}
-        {status === 'cancelled' && t('lessonStatusCancelled')}
-        {status === 'postponed' && t('lessonStatusPostponed')}
-        {!['scheduled', 'conducted', 'cancelled', 'postponed'].includes(status) && status}
-      </Badge>
-    );
-  };
-
-  const getGroupStatusBadge = (status: string) => {
-    const labels: Record<string, string> = {
-      open: t('groupStatusOpen'),
-      in_progress: t('groupStatusInProgress'),
-      completed: t('groupStatusCompleted'),
-    };
-    const classes: Record<string, string> = {
-      open: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300',
-      in_progress: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300',
-      completed: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300',
-    };
-    return (
-      <Badge className={cn('text-xs font-medium', classes[status] || 'bg-muted text-muted-foreground')}>
-        {labels[status] ?? status}
-      </Badge>
-    );
-  };
-
-  const handleToggleAttendance = (studentId: number, status: 'present' | 'absent') => {
+  const handleToggleAttendance = useCallback((studentId: number, status: 'present' | 'absent') => {
     if (lessonMutationPending) return;
     attendanceDraftDirty.current = true;
-    setAttendanceDraft((prev) => ({ ...prev, [studentId]: status }));
-  };
+    setAttendanceDraft((previous) => ({ ...previous, [studentId]: status }));
+  }, [lessonMutationPending]);
 
-  const handleSetAllAttendance = (status: 'present' | 'absent') => {
+  const handleSetAllAttendance = useCallback((status: 'present' | 'absent') => {
     if (lessonMutationPending) return;
     attendanceDraftDirty.current = true;
-    const update: AttendanceDraft = {};
-    selectedLessonStudents.forEach((s) => {
-      update[s.id] = status;
+    const update: TeacherAttendanceDraft = {};
+    selectedLessonStudents.forEach((student) => {
+      update[student.id] = status;
     });
     setAttendanceDraft(update);
-  };
+  }, [lessonMutationPending, selectedLessonStudents]);
 
-  const handleSaveAttendance = () => {
-    if (!selectedLesson || !canSaveAttendance || lessonMutationPending) return;
+  /* Overwriting fourteen hand-made marks is a destructive action, so it asks
+     first — but only when there is something to lose. */
+  const handleRequestSetAll = useCallback((status: 'present' | 'absent') => {
+    const hasMarks = selectedLessonStudents.some(
+      (student) => attendanceDraft[student.id] !== undefined,
+    );
+    if (!hasMarks) {
+      handleSetAllAttendance(status);
+      return;
+    }
+    setBulkConfirmStatus(status);
+  }, [attendanceDraft, handleSetAllAttendance, selectedLessonStudents]);
+
+  const handleSaveAttendance = useCallback(() => {
+    if (!selectedLessonDetails || !canSaveAttendance || lessonMutationPending) return;
     saveAttendance.mutate({
-      lessonId: selectedLesson.id,
+      lessonId: selectedLessonDetails.id,
       roster: selectedLessonStudents.map(({ id }) => ({ id })),
       draft: { ...attendanceDraft },
       note: attendanceNoteDirty.current ? attendanceNote : undefined,
     });
-  };
+  }, [
+    attendanceDraft,
+    attendanceNote,
+    canSaveAttendance,
+    lessonMutationPending,
+    saveAttendance,
+    selectedLessonDetails,
+    selectedLessonStudents,
+  ]);
 
-  const handleRescheduleLesson = () => {
+  const handleRescheduleLesson = useCallback(() => {
     if (!selectedLessonDetails || !parsedRescheduleAt || !canRescheduleLesson || lessonMutationPending) return;
     rescheduleLesson.mutate({
       lessonId: selectedLessonDetails.id,
@@ -863,477 +762,218 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
         reason: rescheduleReason.trim(),
       },
     });
-  };
+  }, [
+    canRescheduleLesson,
+    lessonMutationPending,
+    parsedRescheduleAt,
+    rescheduleLesson,
+    rescheduleReason,
+    selectedLessonDetails,
+  ]);
 
-  const [isAttendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
-  const [pendingDialogClose, setPendingDialogClose] = useState(false);
+  const openAttendanceForLesson = useCallback((lessonId: string) => {
+    if (section === 'attendance') {
+      replaceParams({ lesson: lessonId });
+      return;
+    }
+    setLocation(`/teacher-module/attendance?lesson=${encodeURIComponent(lessonId)}`);
+  }, [replaceParams, section, setLocation]);
 
-  const openAttendanceDialog = useCallback((lessonId: string) => {
-    attendanceDraftDirty.current = false;
-    attendanceNoteDirty.current = false;
-    setSelectedLessonId(lessonId);
-    setAttendanceDraft({});
-    setAttendanceNote('');
-    setAttendanceDialogOpen(true);
-  }, []);
+  /* Lands on the schedule week that contains the lesson, not on the current
+     one — a lesson three weeks out is useless if the link drops you on today. */
+  const openLessonInSchedule = useCallback((lessonId: string) => {
+    const lesson = lessons.find((item) => String(item.id) === lessonId);
+    if (!lesson) {
+      setLocation('/teacher-module/schedule');
+      return;
+    }
+    const week = weekStartDayKey(academyDayKey(lesson.scheduledAt));
+    setLocation(`/teacher-module/schedule?week=${week}`);
+  }, [lessons, setLocation]);
 
   const handleLessonSelect = useCallback((lessonId: string) => {
-    if (lessonMutationPending) return;
-    if (isAttendanceDialogOpen && attendanceDraftDirty.current && selectedLessonId) {
+    if (lessonMutationPending || lessonId === selectedLessonId) return;
+    if (selectedLessonId && attendanceDraftDirty.current) {
       setPendingLessonSwitch(lessonId);
       return;
     }
-    openAttendanceDialog(lessonId);
-  }, [isAttendanceDialogOpen, lessonMutationPending, openAttendanceDialog, selectedLessonId]);
+    openAttendanceForLesson(lessonId);
+  }, [lessonMutationPending, openAttendanceForLesson, selectedLessonId]);
 
   const handleDialogCloseRequest = useCallback((open: boolean) => {
-    if (!open) {
-      if (attendanceDraftDirty.current) {
-        setPendingDialogClose(true);
-        return;
-      }
-      setAttendanceDialogOpen(false);
-      attendanceDraftDirty.current = false;
-      attendanceNoteDirty.current = false;
+    if (open) return;
+    if (attendanceDraftDirty.current) {
+      setPendingDialogClose(true);
+      return;
     }
-  }, []);
+    attendanceDraftDirty.current = false;
+    attendanceNoteDirty.current = false;
+    replaceParams({ lesson: null });
+  }, [replaceParams]);
 
   const confirmDialogClose = useCallback(() => {
     setPendingDialogClose(false);
-    setAttendanceDialogOpen(false);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
-  }, []);
+    replaceParams({ lesson: null });
+  }, [replaceParams]);
 
   const confirmLessonSwitch = useCallback(() => {
-    if (pendingLessonSwitch) {
-      openAttendanceDialog(pendingLessonSwitch);
-      setPendingLessonSwitch(null);
-    }
-  }, [openAttendanceDialog, pendingLessonSwitch]);
-
-  const cancelLessonSwitch = useCallback(() => {
+    if (!pendingLessonSwitch) return;
+    attendanceDraftDirty.current = false;
+    attendanceNoteDirty.current = false;
+    replaceParams({ lesson: pendingLessonSwitch });
     setPendingLessonSwitch(null);
-  }, []);
+  }, [pendingLessonSwitch, replaceParams]);
 
   // Protect against accidental page close with unsaved attendance data
   useEffect(() => {
-    if (section !== 'attendance') return;
+    if (section !== 'attendance') return undefined;
     const handler = (event: BeforeUnloadEvent) => {
-      if (attendanceDraftDirty.current) {
-        event.preventDefault();
-      }
+      if (attendanceDraftDirty.current) event.preventDefault();
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [section]);
 
-  const attendanceSummary = useMemo(() => {
-    const total = selectedLessonStudents.length;
-    let marked = 0;
-    let present = 0;
-    let absent = 0;
-    for (const student of selectedLessonStudents) {
-      const status = attendanceDraft[student.id];
-      if (status) {
-        marked += 1;
-        if (status === 'present') present += 1;
-        else absent += 1;
-      }
-    }
-    return { total, marked, present, absent };
-  }, [selectedLessonStudents, attendanceDraft]);
+  /* The page frame — title, breadcrumbs, section navigation — is rendered by
+     the same tree in every state. Errors and loading used to replace it and
+     leave the user with no idea where they were. */
+  const header = (
+    <PageHeader
+      title={sectionTitle[section]}
+      subtitle={section === 'overview'
+        ? t('teacherGreeting').replace('{name}', fullName)
+        : t(MODULE_NAVIGATION.teacher.nameKey)}
+      breadcrumbs={[
+        { label: t(MODULE_NAVIGATION.teacher.nameKey), href: '/teacher-module' },
+        ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
+      ]}
+    />
+  );
 
-  if (isError) {
-    return (
-      <ModulePage contained={contained}>
-        <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
-          <div className="mx-auto max-w-xl space-y-4 text-center">
+  const renderBody = () => {
+    if (isError) {
+      return (
+        <Card className="border-destructive/40">
+          <CardContent className="mx-auto max-w-xl space-y-4 py-14 text-center">
             <p className="font-medium text-destructive">{t('error')}</p>
-            <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
-            <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
-          </div>
-        </ModulePageBody>
-      </ModulePage>
-    );
-  }
+            <p className="text-sm text-muted-foreground">
+              {error instanceof Error ? error.message : t('failedToLoadData')}
+            </p>
+            <Button variant="outline" className="min-h-11" onClick={() => refetch()}>{t('retry')}</Button>
+          </CardContent>
+        </Card>
+      );
+    }
 
-  if (isLoading || !data) {
+    if (isLoading || !data) return <TeacherSectionSkeleton section={section} />;
+
+    if (section === 'overview') {
+      return (
+        <div className="space-y-4">
+          <TeacherTodayPanel
+            focusLesson={liveLesson ?? nextLesson}
+            isLessonLive={liveLesson !== null}
+            todayCount={todayLessons.length}
+            pendingLessons={pendingAttendanceLessons}
+            onOpenAttendance={openAttendanceForLesson}
+            onOpenLessonInSchedule={openLessonInSchedule}
+            onOpenSchedule={() => setLocation('/teacher-module/schedule')}
+          />
+          <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
+          <TeacherOverviewKpis
+            data={{
+              groupsCount: groups.length,
+              courseNames: teacherCourses.map((course: any) => course.name).join(', ') || t('noData'),
+              totalStudents,
+              totalCapacity,
+              capacityGroupsCount: capacityGroups.length,
+              conductedLessons: conductedPeriodLessons.length,
+              totalLessons: periodLessons.length,
+              avgAttendance,
+              avgRating: avgLessonRating,
+              teachingHours: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours),
+            }}
+          />
+          <TeacherAnalyticsCharts
+            timeline={teacherTimeline}
+            groupQuality={groupQuality}
+            attendance={attendanceDistribution}
+            ratings={ratingDistribution}
+          />
+        </div>
+      );
+    }
+
+    if (section === 'schedule') {
+      return (
+        <TeacherScheduleSection
+          days={scheduleDays}
+          dayNames={dayNames}
+          todayKey={todayKey}
+          atToday={scheduleWeekKey === currentWeekKey}
+          onPreviousWeek={() => replaceParams({ week: shiftDayKey(scheduleWeekKey, -7) })}
+          onNextWeek={() => replaceParams({ week: shiftDayKey(scheduleWeekKey, 7) })}
+          onToday={() => replaceParams({ week: null })}
+          onOpenAttendance={openAttendanceForLesson}
+        />
+      );
+    }
+
+    if (section === 'groups') {
+      return (
+        <TeacherGroupsSection
+          groups={groups}
+          selectedGroup={selectedGroup}
+          groupStudents={groupStudents}
+          progressById={groupLessonProgressById}
+          attendanceByStudentId={selectedGroupAttendanceByStudentId}
+          dayNames={dayNames}
+          dayNamesFull={dayNamesFull}
+          onSelectGroup={(groupId) => pushParams({ group: groupId === null ? null : String(groupId) })}
+        />
+      );
+    }
+
+    if (section === 'ratings') {
+      /* The same period state and the same pre-filtered array the overview KPI
+         uses. Before, the KPI averaged the current month while this section
+         averaged all time, so the same group showed 4.2 on one screen and 4.7
+         on the other with nothing saying why. */
+      return (
+        <div className="space-y-4">
+          <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
+          <TeacherRatingsSection surveys={periodSurveys} groups={groups} />
+        </div>
+      );
+    }
+
     return (
-      <ModulePage contained={contained}>
-        <ModulePageBody contained={contained} ariaLabel={t('loading')}>
-          <div className="space-y-6">
-            <Skeleton className="h-10 w-64" />
-            <Skeleton className="h-6 w-48" />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-28" />
-              ))}
-            </div>
-            <AnalyticsChartsSkeleton />
-          </div>
-        </ModulePageBody>
-      </ModulePage>
+      <AttendanceCalendar
+        lessons={attendanceLessons}
+        selectedLessonId={selectedLessonId}
+        now={nowMinute}
+        disabled={lessonMutationPending}
+        onSelectLesson={handleLessonSelect}
+      />
     );
-  }
+  };
 
   return (
-    <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
-      <PageHeader
-        title={sectionTitle[section]}
-        subtitle={section === 'overview'
-          ? `${t('hello')}, ${fullName}`
-          : t(MODULE_NAVIGATION.teacher.nameKey)}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.teacher.nameKey), href: '/teacher-module' },
-          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
-        ]}
-      />
-
-      {section === 'overview' ? (
-        <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
-      ) : null}
-
-      {/* KPI overview — visual charts instead of plain number tiles */}
-      {section === 'overview' ? (
-        <TeacherOverviewKpis
-          data={{
-            groupsCount: groups.length,
-            courseNames: teacherCourses.map((c: any) => c.name).join(', ') || t('noData'),
-            totalStudents,
-            totalCapacity: groups.reduce((sum, group) => sum + (group.maxStudents || 12), 0),
-            conductedLessons: conductedPeriodLessons.length,
-            totalLessons: periodLessons.length,
-            avgAttendance,
-            avgRating: avgLessonRating == null ? null : Number(avgLessonRating),
-            teachingHours: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours),
-          }}
-        />
-      ) : null}
-
-      {section === 'overview' ? (
-        <TeacherAnalyticsCharts
-          timeline={teacherTimeline}
-          groupQuality={groupQuality}
-          attendance={attendanceDistribution}
-          ratings={ratingDistribution}
-        />
-      ) : null}
+    <ModulePage contained={contained}>
+      {header}
 
       <ModulePageBody contained={contained} ariaLabel={sectionTitle[section]}>
-      {section !== 'overview' ? (
-      <Tabs value={section}>
-        {/* Schedule Tab */}
-        <TabsContent value="schedule" className="mt-6 space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
-            {scheduleByDay.map((day) => {
-              const isTodayFlag = day.dateKey === localDateKey(new Date().toISOString());
-              return (
-                <Card
-                  key={day.dateKey}
-                  className={cn(
-                    'border-border/70',
-                    isTodayFlag && 'ring-2 ring-primary-500/30 border-primary-300'
-                  )}
-                >
-                  <CardHeader className="pb-3 pt-4 px-4">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-semibold">
-                        {dayNames[day.weekdayIndex]}
-                      </CardTitle>
-                      {isTodayFlag && (
-                        <Badge className="bg-primary-100 text-xs text-primary-700">
-                          {t('now')}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {day.date.toLocaleDateString(locale, {
-                        timeZone: 'UTC',
-                        day: 'numeric',
-                        month: 'short',
-                      })}
-                    </p>
-                  </CardHeader>
-                  <CardContent className="px-4 pb-4 space-y-2">
-                    {day.lessons.length === 0 && (
-                      <p className="text-xs text-muted-foreground text-center py-4">{t('noLessonsToday')}</p>
-                    )}
-                    {day.lessons.map((lesson) => (
-                      <div
-                        key={lesson.id}
-                        className={cn(
-                          'rounded-lg border p-2.5 text-xs space-y-1 transition-all hover:shadow-sm',
-                          isToday(lesson.scheduledAt)
-                            ? 'bg-blue-50/60 border-blue-200/70'
-                            : 'border-border/50 bg-muted/40'
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-semibold text-foreground">{formatTime(lesson.scheduledAt, language)}</span>
-                          {getLessonStatusBadge(lesson.status)}
-                        </div>
-                        <p className="text-foreground font-medium truncate">{lesson.groupName || t('noGroup')}</p>
-                        <p className="text-muted-foreground truncate">{lesson.topic}</p>
-                        {lesson.status === 'conducted' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="mt-1 min-h-9 px-2 text-xs text-primary-600 hover:text-primary-700"
-                            onClick={() => {
-                              setSelectedLessonId(String(lesson.id));
-                              setLocation('/teacher-module/attendance');
-                            }}
-                          >
-                            {t('attendanceLabel')}
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+        {renderBody()}
+      </ModulePageBody>
 
-          {/* Today's lessons list */}
-          {todayLessons.length > 0 && (
-            <Card className="border-border/70">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base">{t('todayLessons')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {[...todayLessons]
-                  .sort(
-                    (a, b) =>
-                      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-                  )
-                  .map((lesson) => (
-                    <div
-                      key={lesson.id}
-                      className="flex items-center justify-between rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="text-sm font-semibold text-foreground tabular-nums">
-                          {formatTime(lesson.scheduledAt, language)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">
-                            {lesson.groupName || t('noGroup')} • {lesson.topic}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {lesson.courseName || t('noCourse')} • {lesson.durationMinutes}
-                            {t('minutes')} • {lesson.schoolName || t('schoolNotSelected')}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {getLessonStatusBadge(lesson.status)}
-                        {lesson.status === 'scheduled' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              setSelectedLessonId(String(lesson.id));
-                              setLocation('/teacher-module/attendance');
-                            }}
-                          >
-                            {t('attendanceChecklist')}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* Groups Tab */}
-        <TabsContent value="groups" className="mt-6 space-y-4">
-          {selectedGroup ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Button variant="outline" size="sm" onClick={() => setSelectedGroup(null)}>
-                  {t('backToGroups')}
-                </Button>
-              </div>
-              <Card className="border-border/70">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{selectedGroup.name}</CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {selectedGroup.courseName || t('noCourse')} • {t('teacher')}: {user?.fullName}
-                      </p>
-                    </div>
-                    {getGroupStatusBadge(selectedGroup.status)}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-muted-foreground">{t('lessonProgress')}</span>
-                      <span className="font-medium text-foreground">
-                        {t('lessonsConductedCount')
-                          .replace('{conducted}', String(groupLessonProgressById.get(selectedGroup.id)?.conducted ?? 0))
-                          .replace('{total}', String(groupLessonProgressById.get(selectedGroup.id)?.total ?? 0))}
-                      </span>
-                    </div>
-                    <Progress
-                      value={
-                        ((groupLessonProgressById.get(selectedGroup.id)?.conducted ?? 0)
-                          / Math.max(groupLessonProgressById.get(selectedGroup.id)?.total ?? 0, 1))
-                        * 100
-                      }
-                    />
-                  </div>
-
-                  {selectedGroup.schedule && selectedGroup.schedule.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedGroup.schedule.map((s, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          {dayNamesFull[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="border-t border-slate-100 pt-4">
-                    <h4 className="text-sm font-semibold mb-3">
-                      {t('groupStudents')} ({groupStudents.length})
-                    </h4>
-                    <DataTable
-                      columns={[
-                        {
-                          key: 'studentName',
-                          header: t('studentName'),
-                          accessor: (row) => row.studentName || row.contactName,
-                        },
-                        {
-                          key: 'attendedLessons',
-                          header: t('attendedLessons'),
-                          accessor: (row) => selectedGroupAttendanceByStudentId.get(row.id)?.attended ?? 0,
-                          sortable: true,
-                          className: 'text-center',
-                          cellClassName: 'text-center',
-                          render: (row) => (
-                            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 tabular-nums">
-                              {selectedGroupAttendanceByStudentId.get(row.id)?.attended ?? 0}
-                            </Badge>
-                          ),
-                        },
-                        {
-                          key: 'missedLessons',
-                          header: t('missedLessons'),
-                          accessor: (row) => selectedGroupAttendanceByStudentId.get(row.id)?.missed ?? 0,
-                          sortable: true,
-                          className: 'text-center',
-                          cellClassName: 'text-center',
-                          render: (row) => (
-                            <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 tabular-nums">
-                              {selectedGroupAttendanceByStudentId.get(row.id)?.missed ?? 0}
-                            </Badge>
-                          ),
-                        },
-                      ]}
-                      data={groupStudents}
-                      keyExtractor={(row) => String(row.id)}
-                      emptyState={
-                        <EmptyState
-                          title={t('noStudents')}
-                          text={t('noStudentsInGroup')}
-                          icon={Users}
-                        />
-                      }
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {groups.map((group) => (
-                <Card
-                  key={group.id}
-                  className="border-border/70 hover-lift cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  onClick={() => setSelectedGroup(group)}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    setSelectedGroup(group);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <CardContent className="p-5 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className="text-base font-semibold text-foreground group-hover:text-primary-600 transition-colors">
-                          {group.name}
-                        </h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {group.courseName || t('noCourse')} · {group.schoolName || t('schoolNotSelected')}
-                        </p>
-                      </div>
-                      {getGroupStatusBadge(group.status)}
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs mb-1.5">
-                        <span className="text-muted-foreground">{t('lessonProgress')}</span>
-                        <span className="text-foreground font-medium">
-                          {t('lessonsConductedCount')
-                            .replace('{conducted}', String(groupLessonProgressById.get(group.id)?.conducted ?? 0))
-                            .replace('{total}', String(groupLessonProgressById.get(group.id)?.total ?? 0))}
-                        </span>
-                      </div>
-                      <Progress
-                        value={
-                          ((groupLessonProgressById.get(group.id)?.conducted ?? 0)
-                            / Math.max(groupLessonProgressById.get(group.id)?.total ?? 0, 1))
-                          * 100
-                        }
-                        className="h-2"
-                      />
-                    </div>
-
-                    {group.schedule && group.schedule.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {group.schedule.map((s, i) => (
-                          <Badge key={i} variant="outline" className="text-xs">
-                            {dayNames[s.dayOfWeek - 1] || ''} {formatScheduleTime(s)}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Users className="h-3.5 w-3.5" />
-                        <span>{group.currentStudents || 0} {t('studentsCount')}</span>
-                      </div>
-                      <span className="text-xs text-primary-600 font-medium">{t('details')}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {groups.length === 0 && (
-                <EmptyState
-                  title={t('noGroups')}
-                  text={t('noGroupsAssigned')}
-                  icon={Users}
-                />
-              )}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Attendance Tab */}
-        <TabsContent value="attendance" className="mt-6 space-y-4">
-          {/* Unsaved changes confirmation for lesson switch */}
-          <AlertDialog open={pendingLessonSwitch !== null} onOpenChange={(open) => { if (!open) cancelLessonSwitch(); }}>
+      {section === 'attendance' ? (
+        <>
+          <AlertDialog
+            open={pendingLessonSwitch !== null}
+            onOpenChange={(open) => { if (!open) setPendingLessonSwitch(null); }}
+          >
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle className="flex items-center gap-2">
@@ -1343,15 +983,19 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                 <AlertDialogDescription>{t('unsavedAttendanceDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel onClick={cancelLessonSwitch}>{t('keepEditing')}</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmLessonSwitch} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                <AlertDialogCancel onClick={() => setPendingLessonSwitch(null)}>
+                  {t('keepEditing')}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmLessonSwitch}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
                   {t('discardChanges')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
 
-          {/* Unsaved changes confirmation for dialog close */}
           <AlertDialog open={pendingDialogClose} onOpenChange={setPendingDialogClose}>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -1362,579 +1006,65 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                 <AlertDialogDescription>{t('unsavedAttendanceDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setPendingDialogClose(false)}>{t('keepEditing')}</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmDialogClose} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                <AlertDialogCancel onClick={() => setPendingDialogClose(false)}>
+                  {t('keepEditing')}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmDialogClose}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
                   {t('discardChanges')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
 
-          {/* Main Full-Width Calendar */}
-          <AttendanceCalendar
-            lessons={attendanceLessons}
-            selectedLessonId={selectedLessonId}
-            now={now}
-            disabled={lessonMutationPending}
-            onSelectLesson={handleLessonSelect}
+          <AttendanceLessonDialog
+            open={Boolean(selectedLessonId)}
+            onOpenChange={handleDialogCloseRequest}
+            lesson={selectedLessonDetails}
+            students={selectedLessonStudents}
+            draft={attendanceDraft}
+            note={attendanceNote}
+            hasDivergingNotes={attendanceHydration.hasDivergingNotes}
+            onNoteChange={(value) => {
+              attendanceDraftDirty.current = true;
+              attendanceNoteDirty.current = true;
+              setAttendanceNote(value);
+            }}
+            onToggleStudent={handleToggleAttendance}
+            onSetAll={handleSetAllAttendance}
+            onRequestSetAll={handleRequestSetAll}
+            onSave={handleSaveAttendance}
+            canSave={canSaveAttendance}
+            isSaving={saveAttendance.isPending}
+            isRosterPending={Boolean(selectedLessonId) && attendanceRosterQuery.isPending}
+            isRosterError={Boolean(selectedLessonId) && attendanceRosterQuery.isError}
+            rosterErrorMessage={attendanceRosterQuery.error instanceof Error
+              ? attendanceRosterQuery.error.message
+              : t('failedToLoadData')}
+            onRetryRoster={() => attendanceRosterQuery.refetch()}
+            mutationPending={lessonMutationPending}
+            lessonHasStarted={selectedLessonHasStarted}
+            hasPreviousIncompleteLesson={Boolean(previousIncompleteLesson)}
+            rescheduleOpen={isRescheduleOpen}
+            onRescheduleOpenChange={setIsRescheduleOpen}
+            rescheduleAt={rescheduleAt}
+            onRescheduleAtChange={setRescheduleAt}
+            rescheduleReason={rescheduleReason}
+            onRescheduleReasonChange={setRescheduleReason}
+            rescheduleAtDate={parsedRescheduleAt}
+            rescheduleMin={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
+            canReschedule={canRescheduleLesson}
+            isRescheduling={rescheduleLesson.isPending}
+            onConfirmReschedule={handleRescheduleLesson}
+            rescheduleConfirmOpen={isRescheduleConfirmOpen}
+            onRescheduleConfirmOpenChange={setRescheduleConfirmOpen}
+            bulkConfirmStatus={bulkConfirmStatus}
+            onBulkConfirmChange={setBulkConfirmStatus}
           />
-
-          {/* Attendance Checklist Modal Dialog */}
-          <Dialog open={isAttendanceDialogOpen} onOpenChange={handleDialogCloseRequest}>
-            <DialogContent className="max-h-[90vh] max-w-3xl gap-0 overflow-hidden p-0 rounded-2xl border-border/60 shadow-2xl bg-background">
-              {/* Top Header */}
-              <div className="relative border-b border-border/60 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3.5 min-w-0">
-                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-xs ring-1 ring-primary/20">
-                      <ClipboardCheck className="size-6" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="font-semibold bg-background/80 backdrop-blur-xs border-primary/30 text-primary px-2.5 py-0.5 text-xs">
-                          {selectedLessonDetails?.groupName || t('noGroup')}
-                        </Badge>
-                        {selectedLessonDetails && getLessonStatusBadge(selectedLessonDetails.status)}
-                      </div>
-                      <h2 className="text-xl font-bold tracking-tight text-foreground truncate">
-                        {selectedLessonDetails?.topic || t('attendanceChecklist')}
-                      </h2>
-                      {selectedLessonDetails && (
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap pt-0.5">
-                          <span className="inline-flex items-center gap-1.5 font-medium">
-                            <Calendar className="size-3.5 text-primary" />
-                            {formatDateFull(selectedLessonDetails.scheduledAt, language)}
-                          </span>
-                          <span className="inline-flex items-center gap-1.5 font-medium">
-                            <Clock3 className="size-3.5 text-primary" />
-                            {formatTime(selectedLessonDetails.scheduledAt, language)} ({selectedLessonDetails.durationMinutes} {t('minutes')})
-                          </span>
-                          {selectedLessonDetails.courseName && (
-                            <span className="inline-flex items-center gap-1.5 font-medium">
-                              <BookOpen className="size-3.5 text-primary" />
-                              {selectedLessonDetails.courseName}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Scrollable Content Body */}
-              <div className="max-h-[calc(90vh-180px)] overflow-y-auto p-6 space-y-6">
-                {/* Loading state */}
-                {selectedLesson && attendanceRosterQuery.isPending && (
-                  <div className="space-y-4 py-4">
-                    <Skeleton className="h-16 w-full rounded-xl" />
-                    <Skeleton className="h-10 w-64 rounded-lg" />
-                    <div className="space-y-3">
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Error state */}
-                {selectedLesson && attendanceRosterQuery.isError && (
-                  <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
-                    <div className="mx-auto size-12 rounded-full bg-destructive/10 flex items-center justify-center text-destructive mb-3">
-                      <AlertTriangle className="size-6" />
-                    </div>
-                    <p className="text-base font-semibold text-destructive">{t('attendanceRosterLoadFailed')}</p>
-                    <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
-                      {attendanceRosterQuery.error instanceof Error
-                        ? attendanceRosterQuery.error.message
-                        : t('failedToLoadData')}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-4 rounded-xl px-5"
-                      disabled={lessonMutationPending}
-                      onClick={() => attendanceRosterQuery.refetch()}
-                    >
-                      {t('retry')}
-                    </Button>
-                  </div>
-                )}
-
-                {/* Loaded state */}
-                {selectedLesson
-                  && !attendanceRosterQuery.isPending
-                  && !attendanceRosterQuery.isError && (
-                  <>
-                    {/* KPI Summary Toolbar & Quick Actions */}
-                    {selectedLessonStudents.length > 0 && (
-                      <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 space-y-3 shadow-xs">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap text-xs font-medium">
-                            <Badge variant="secondary" className="bg-background text-foreground border border-border/60 px-3 py-1 font-semibold">
-                              {t('attendanceMarkedOf').replace('{marked}', String(attendanceSummary.marked)).replace('{total}', String(attendanceSummary.total))}
-                            </Badge>
-                            <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-3 py-1 font-semibold">
-                              {t('attendancePresentCount').replace('{count}', String(attendanceSummary.present))}
-                            </Badge>
-                            <Badge className="bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-3 py-1 font-semibold">
-                              {t('attendanceAbsentCount').replace('{count}', String(attendanceSummary.absent))}
-                            </Badge>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 rounded-lg text-xs font-medium border-emerald-300/70 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40"
-                              disabled={lessonMutationPending}
-                              onClick={() => handleSetAllAttendance('present')}
-                            >
-                              <CheckCircle2 className="size-3.5 mr-1.5 text-emerald-500" />
-                              {t('allPresent')}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 rounded-lg text-xs font-medium border-rose-300/70 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
-                              disabled={lessonMutationPending}
-                              onClick={() => handleSetAllAttendance('absent')}
-                            >
-                              <XCircle className="size-3.5 mr-1.5 text-rose-500" />
-                              {t('allAbsent')}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Progress bar */}
-                        <div className="space-y-1">
-                          <Progress
-                            value={attendanceSummary.total > 0 ? (attendanceSummary.marked / attendanceSummary.total) * 100 : 0}
-                            className="h-2 rounded-full bg-muted"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Student Roster Cards */}
-                    {selectedLessonStudents.length > 0 && (
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between px-1">
-                          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                            {t('groupStudents')} ({selectedLessonStudents.length})
-                          </h3>
-                        </div>
-
-                        <div className="space-y-2.5">
-                          {selectedLessonStudents.map((student) => {
-                            const status = attendanceDraft[student.id];
-                            const percent = student.attendancePercent || 0;
-                            const percentTone = percent >= 80 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : percent >= 60 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-rose-600 bg-rose-50 border-rose-200';
-
-                            return (
-                              <div
-                                key={student.id}
-                                className={cn(
-                                  'group flex items-center justify-between gap-4 rounded-xl border p-3 sm:p-4 transition-all duration-200 shadow-2xs',
-                                  status === 'present' && 'border-emerald-500/40 bg-emerald-500/[0.04]',
-                                  status === 'absent' && 'border-rose-500/40 bg-rose-500/[0.04]',
-                                  !status && 'border-border/60 bg-card hover:border-border',
-                                )}
-                              >
-                                <div className="flex items-center gap-3.5 min-w-0">
-                                  <div className={cn(
-                                    'flex size-10 shrink-0 items-center justify-center rounded-xl font-bold text-xs border transition-colors',
-                                    status === 'present' && 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30',
-                                    status === 'absent' && 'bg-rose-500/10 text-rose-700 border-rose-500/30',
-                                    !status && 'bg-primary/10 text-primary border-primary/20',
-                                  )}>
-                                    {getInitials(student.studentName || student.contactName)}
-                                  </div>
-                                  <div className="min-w-0 space-y-0.5">
-                                    <p className="text-sm font-semibold text-foreground truncate">
-                                      {student.studentName || student.contactName}
-                                    </p>
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                      <span className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium border tabular-nums', percentTone)}>
-                                        {percent}% {t('attendanceLabel').toLowerCase()}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Segmented Control Buttons */}
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <button
-                                    type="button"
-                                    disabled={lessonMutationPending}
-                                    onClick={() => handleToggleAttendance(student.id, 'present')}
-                                    className={cn(
-                                      'inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-xs font-semibold transition-all duration-150 border',
-                                      'active:scale-95 disabled:cursor-not-allowed disabled:opacity-50',
-                                      status === 'present'
-                                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20'
-                                        : 'bg-background text-muted-foreground border-border/80 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50/50',
-                                    )}
-                                  >
-                                    <CheckCircle2 className="size-4 mr-1.5" />
-                                    {t('present')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={lessonMutationPending}
-                                    onClick={() => handleToggleAttendance(student.id, 'absent')}
-                                    className={cn(
-                                      'inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-xs font-semibold transition-all duration-150 border',
-                                      'active:scale-95 disabled:cursor-not-allowed disabled:opacity-50',
-                                      status === 'absent'
-                                        ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20'
-                                        : 'bg-background text-muted-foreground border-border/80 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50/50',
-                                    )}
-                                  >
-                                    <XCircle className="size-4 mr-1.5" />
-                                    {t('absent')}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Empty Group State */}
-                    {selectedLessonStudents.length === 0 && (
-                      <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center bg-muted/10">
-                        <div className="mx-auto size-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground mb-3">
-                          <Users className="size-6" />
-                        </div>
-                        <h3 className="text-sm font-semibold text-foreground">{t('noStudents')}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground max-w-xs mx-auto">{t('noStudentsInGroup')}</p>
-                      </div>
-                    )}
-
-                    {/* Reschedule Lesson Section */}
-                    {selectedLessonDetails && ['scheduled', 'conducted'].includes(selectedLessonDetails.status) && (
-                      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] p-4 space-y-3">
-                        <div
-                          className="flex items-center justify-between cursor-pointer select-none"
-                          onClick={() => setIsRescheduleOpen(!isRescheduleOpen)}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="size-7 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
-                              <Calendar className="size-4" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-bold text-foreground">{t('rescheduleLesson')}</h4>
-                              <p className="text-[11px] text-muted-foreground">{t('rescheduleLessonHint')}</p>
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground"
-                            aria-label={t('rescheduleLesson')}
-                            aria-expanded={isRescheduleOpen}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setIsRescheduleOpen((open) => !open);
-                            }}
-                          >
-                            {isRescheduleOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                          </Button>
-                        </div>
-
-                        {isRescheduleOpen && (
-                          <div className="pt-2 space-y-3 border-t border-amber-500/20">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-1.5">
-                                <Label htmlFor="reschedule-at" className="text-xs font-medium text-muted-foreground">
-                                  {t('newLessonDate')}
-                                </Label>
-                                <Input
-                                  id="reschedule-at"
-                                  type="datetime-local"
-                                  min={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
-                                  value={rescheduleAt}
-                                  disabled={lessonMutationPending}
-                                  onChange={(event) => setRescheduleAt(event.target.value)}
-                                  className="h-9 text-xs rounded-lg"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label htmlFor="reschedule-reason" className="text-xs font-medium text-muted-foreground">
-                                  {t('rescheduleReason')}
-                                </Label>
-                                <Input
-                                  id="reschedule-reason"
-                                  value={rescheduleReason}
-                                  maxLength={500}
-                                  disabled={lessonMutationPending}
-                                  onChange={(event) => setRescheduleReason(event.target.value)}
-                                  placeholder={t('rescheduleReasonPlaceholder')}
-                                  className="h-9 text-xs rounded-lg"
-                                />
-                              </div>
-                            </div>
-                            <div className="flex justify-end">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 rounded-lg text-xs font-medium border-amber-300 text-amber-800 hover:bg-amber-100"
-                                onClick={handleRescheduleLesson}
-                                disabled={!canRescheduleLesson || lessonMutationPending}
-                              >
-                                <Calendar className="size-3.5 mr-1.5" />
-                                {rescheduleLesson.isPending ? t('saving') : t('rescheduleLesson')}
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Comment / Note Section */}
-                    {selectedLessonStudents.length > 0 && (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="attendance-note" className="text-xs font-semibold text-muted-foreground">{t('comment')}</Label>
-                        <Textarea
-                          id="attendance-note"
-                          value={attendanceNote}
-                          disabled={lessonMutationPending}
-                          onChange={(e) => {
-                            attendanceDraftDirty.current = true;
-                            attendanceNoteDirty.current = true;
-                            setAttendanceNote(e.target.value);
-                          }}
-                          placeholder={t('attendanceNotePlaceholder')}
-                          rows={2}
-                          className="rounded-xl text-sm"
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Sticky Footer */}
-              {selectedLesson && !attendanceRosterQuery.isPending && !attendanceRosterQuery.isError && selectedLessonStudents.length > 0 && (
-                <div className="border-t border-border/60 bg-background/95 backdrop-blur-md p-4 sm:p-5 space-y-3">
-                  {selectedLessonDetails?.status === 'scheduled' && !selectedLessonHasStarted && (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                      <Clock3 className="size-4 shrink-0 text-amber-600" />
-                      <span>{t('attendanceAvailableAfterLessonStart')}</span>
-                    </div>
-                  )}
-                  {previousIncompleteLesson && (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                      <AlertTriangle className="size-4 shrink-0 text-amber-600" />
-                      <span>{t('previousLessonMustBeCompleted')}</span>
-                    </div>
-                  )}
-
-                  <Button
-                    className="w-full h-11 text-sm font-bold rounded-xl bg-gradient-to-r from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] hover:brightness-110 active:scale-[0.99] transition-all shadow-md shadow-primary/25"
-                    onClick={handleSaveAttendance}
-                    disabled={lessonMutationPending || !canSaveAttendance}
-                  >
-                    {saveAttendance.isPending
-                      ? t('saving')
-                      : selectedLessonDetails?.status === 'conducted'
-                        ? t('updateAttendance')
-                        : t('finishLessonAndSaveAttendance')}
-                  </Button>
-                </div>
-              )}
-            </DialogContent>
-          </Dialog>
-        </TabsContent>
-
-        {/* Ratings Tab */}
-        <TabsContent value="ratings" className="mt-6 space-y-4">
-          {/* Average rating by group */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {Object.entries(surveyGroups).map(([gid, { surveys: groupSurveys, avgScore }]) => {
-              const group = groups.find((g) => g.id === Number(gid));
-              return (
-                <Card key={gid} className="border-border/70">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground truncate">
-                          {group?.name || t('noGroup')}
-                        </p>
-                        <div className="mt-1.5 text-[26px] font-bold text-foreground leading-tight tabular-nums">
-                          {avgScore}
-                          <span className="text-sm text-muted-foreground ml-1">/ 5</span>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {groupSurveys.length}{' '}
-                          {groupSurveys.length === 1
-                            ? t('ratingsCount')
-                            : groupSurveys.length < 5
-                            ? t('ratingsCount')
-                            : t('ratingsCount')}
-                        </p>
-                      </div>
-                      <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 text-amber-600">
-                        <Star className="h-5 w-5" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-            {Object.keys(surveyGroups).length === 0 && (
-              <div className="md:col-span-3">
-                <EmptyState
-                  title={t('noGrades')}
-                  text={t('noLessonRatingsYet')}
-                  icon={Star}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Rating chart over time */}
-          {ratingChartData.length > 1 && (
-            <Card className="border-border/70">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  {t('ratingDynamics')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-64">
-                <DataTable
-                  columns={[
-                    {
-                      key: 'date',
-                      header: t('dateColumn'),
-                      accessor: (row) => row.date,
-                    },
-                    {
-                      key: 'avgScore',
-                      header: t('averageScore'),
-                      accessor: (row) => row.avgScore,
-                      render: (row) => (
-                        <div className="flex items-center gap-2">
-                          <div className="flex">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star
-                                key={i}
-                                className={cn(
-                                  'h-3.5 w-3.5',
-                                  i < Math.round(row.avgScore)
-                                    ? 'text-amber-400 fill-amber-400'
-                                    : 'text-slate-200'
-                                )}
-                              />
-                            ))}
-                          </div>
-                          <span className="font-medium text-foreground">{row.avgScore}</span>
-                        </div>
-                      ),
-                    },
-                    {
-                      key: 'count',
-                      header: t('countLabel'),
-                      accessor: (row) => row.count,
-                    },
-                  ]}
-                  data={ratingChartData}
-                  keyExtractor={(row, i) => `${row.date}-${i}`}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Surveys table */}
-          <Card className="border-border/70">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">{t('lessonColumn')} - {t('studentLessonRatings')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={[
-                  {
-                    key: 'studentName',
-                    header: t('student'),
-                    accessor: (row) => row.studentName || `ID: ${row.studentId}`,
-                  },
-                  {
-                    key: 'lesson',
-                    header: t('lessonColumn'),
-                    accessor: (row) => row.lessonTopic || `ID: ${row.lessonId}`,
-                  },
-                  {
-                    key: 'group',
-                    header: t('group'),
-                    accessor: (row) => row.groupName || t('noGroup'),
-                  },
-                  {
-                    key: 'score',
-                    header: t('score'),
-                    accessor: (row) => row.score,
-                    render: (row) => (
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <Star
-                            key={i}
-                            className={cn(
-                              'h-3.5 w-3.5',
-                              i < row.score
-                                ? 'text-amber-400 fill-amber-400'
-                                : 'text-slate-200'
-                            )}
-                          />
-                        ))}
-                        <span className="ml-1 font-medium text-foreground">{row.score}</span>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'liked',
-                    header: t('whatLiked'),
-                    accessor: (row) => row.liked || '—',
-                    cellClassName: 'max-w-[200px] truncate',
-                  },
-                  {
-                    key: 'improve',
-                    header: t('whatImprove'),
-                    accessor: (row) => row.improve || '—',
-                    cellClassName: 'max-w-[200px] truncate',
-                  },
-                  {
-                    key: 'createdAt',
-                    header: t('dateColumn'),
-                    accessor: (row) =>
-                      formatAcademyDate(row.createdAt, language),
-                  },
-                ]}
-                data={[...surveys].sort(
-                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                )}
-                keyExtractor={(row) => String(row.id)}
-                emptyState={
-                  <EmptyState
-                    title={t('noGrades')}
-                    text={t('lessonRatingsWillAppear')}
-                    icon={Star}
-                  />
-                }
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-      </Tabs>
+        </>
       ) : null}
-      </ModulePageBody>
     </ModulePage>
   );
 }

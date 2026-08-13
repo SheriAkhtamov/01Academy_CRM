@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, CircleCheck, Clock3, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
 import { CALENDAR_TONES } from '@/components/ux/calendar/calendarTones';
+import { EmptyState } from '@/components/ux/EmptyState';
 import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useCalendarShortcuts } from '@/hooks/useCalendarShortcuts';
 import { useIsCompactViewport } from '@/hooks/useMediaQuery';
@@ -11,7 +12,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { CalendarViewMode } from '@/lib/calendarPreferences';
 import type { TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, resolveLocale } from '@/lib/localeFormat';
 
 export type AttendanceCalendarLesson = {
   id: number;
@@ -32,6 +33,7 @@ interface AttendanceCalendarProps {
 type AttendanceState = 'pending' | 'upcoming' | 'conducted';
 
 const VIEWS = ['month', 'week', 'agenda'] as const satisfies readonly CalendarViewMode[];
+const COMPACT_VIEWS = ['agenda'] as const satisfies readonly CalendarViewMode[];
 const VISIBLE_PER_DAY = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -129,17 +131,62 @@ export function AttendanceCalendar({
   const todayKey = academyDateKey(new Date(now));
   const [anchorKey, setAnchorKey] = useState(todayKey);
   const [hiddenStates, setHiddenStates] = useState<Set<AttendanceState>>(() => new Set());
+  const [expandedDayKey, setExpandedDayKey] = useState<string | null>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
-  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const locale = resolveLocale(language);
+
+  /* A grid 760px wide inside a 375px viewport is a horizontal scroller nested
+     in a vertical one — the two fight on every touch drag. The stored
+     preference is left alone; only what gets painted changes. */
+  const effectiveView: CalendarViewMode = isCompactViewport && view !== 'agenda' ? 'agenda' : view;
 
   const calendarDays = useMemo(
-    () => (view === 'month' ? buildMonthDays(anchorKey) : buildWeekDays(anchorKey)),
-    [anchorKey, view],
+    () => (effectiveView === 'month' ? buildMonthDays(anchorKey) : buildWeekDays(anchorKey)),
+    [anchorKey, effectiveView],
   );
+  /* Trailing cells of the neighbouring month paint their lessons, so they have
+     to be counted too — otherwise the filter badges disagree with the screen,
+     and a month whose only lessons sit in those cells reports itself empty. */
   const rangeKeys = useMemo(
-    () => new Set(calendarDays.filter((day) => day.isCurrentMonth).map((day) => day.dateKey)),
+    () => new Set(calendarDays.map((day) => day.dateKey)),
     [calendarDays],
   );
+
+  useEffect(() => {
+    setExpandedDayKey(null);
+  }, [anchorKey, effectiveView]);
+
+  /* The lesson can arrive from outside the calendar — a `?lesson=` link, the
+     "attendance" button on a lesson three weeks back in the schedule, the
+     overview CTA that opens the oldest unmarked lesson. Without this the modal
+     was correct while the grid behind it still showed the current month, so
+     closing the modal dropped the teacher somewhere they never navigated to. */
+  const focusedLesson = useMemo(
+    () => lessons.find((item) => String(item.id) === selectedLessonId) ?? null,
+    [lessons, selectedLessonId],
+  );
+  const focusedLessonDateKey = focusedLesson ? academyDateKey(focusedLesson.scheduledAt) : null;
+  const focusedLessonState = focusedLesson ? lessonState(focusedLesson, now) : null;
+
+  useEffect(() => {
+    if (!focusedLessonDateKey) return;
+    setAnchorKey(focusedLessonDateKey);
+  }, [focusedLessonDateKey]);
+
+  useEffect(() => {
+    if (!focusedLessonState) return;
+    // Showing the lesson the user asked for outranks a filter they set earlier:
+    // landing on a grid that hides the very lesson just opened reads as a bug.
+    // Only the one state standing in the way is released, though — wiping every
+    // filter would punish a teacher who narrowed the month down on purpose and
+    // then opened a lesson that was visible all along.
+    setHiddenStates((current) => {
+      if (!current.has(focusedLessonState)) return current;
+      const next = new Set(current);
+      next.delete(focusedLessonState);
+      return next;
+    });
+  }, [focusedLessonDateKey, focusedLessonState]);
 
   const lessonsByDate = useMemo(() => {
     const result = new Map<string, AttendanceCalendarLesson[]>();
@@ -168,10 +215,17 @@ export function AttendanceCalendar({
     },
     { pending: 0, upcoming: 0, conducted: 0 },
   ), [rangeLessons, now]);
-  const visibleLessonsFor = (dateKey: string) => (
-    (lessonsByDate.get(dateKey) ?? [])
-      .filter((lesson) => !hiddenStates.has(lessonState(lesson, now)))
-  );
+  /* Filtering was re-run for each of the 42 month cells on every render, and
+     `lessonState` builds a `Date` per lesson — so a clock tick or a filter tap
+     re-derived the whole month. One map, rebuilt only when its inputs change. */
+  const visibleLessonsByDate = useMemo(() => {
+    const result = new Map<string, AttendanceCalendarLesson[]>();
+    for (const [dateKey, dayLessons] of lessonsByDate) {
+      result.set(dateKey, dayLessons.filter((lesson) => !hiddenStates.has(lessonState(lesson, now))));
+    }
+    return result;
+  }, [hiddenStates, lessonsByDate, now]);
+  const visibleLessonsFor = (dateKey: string) => visibleLessonsByDate.get(dateKey) ?? [];
   const visibleRangeCount = useMemo(
     () => rangeLessons.filter((lesson) => !hiddenStates.has(lessonState(lesson, now))).length,
     [hiddenStates, now, rangeLessons],
@@ -189,7 +243,7 @@ export function AttendanceCalendar({
 
   const shift = (direction: number) => {
     setAnchorKey((current) => (
-      view === 'month'
+      effectiveView === 'month'
         ? shiftMonthKey(current, direction)
         : shiftDayKey(current, direction * 7)
     ));
@@ -204,13 +258,13 @@ export function AttendanceCalendar({
   });
 
   const anchorDate = dateFromKey(anchorKey);
-  const rangeLabel = view === 'month'
+  const rangeLabel = effectiveView === 'month'
     ? new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })
       .format(anchorDate)
     : `${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' })
       .format(calendarDays[0].date)} — ${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
       .format(calendarDays[calendarDays.length - 1].date)}`;
-  const atToday = view === 'month'
+  const atToday = effectiveView === 'month'
     ? anchorKey.slice(0, 7) === todayKey.slice(0, 7)
     : weekStartKey(anchorKey) === weekStartKey(todayKey);
 
@@ -256,7 +310,10 @@ export function AttendanceCalendar({
         type="button"
         data-testid={`attendance-calendar-lesson-${lesson.id}`}
         disabled={disabled}
-        aria-pressed={isSelected}
+        /* The chip opens the attendance dialog, it does not toggle anything —
+           `aria-pressed` promised a switch that never existed. */
+        aria-haspopup="dialog"
+        aria-current={isSelected ? 'true' : undefined}
         aria-label={`${time}, ${lesson.topic}. ${t(STATE_LABEL_KEYS[state])}`}
         onClick={() => selectLesson(lesson.id)}
         className={cn(
@@ -276,14 +333,14 @@ export function AttendanceCalendar({
           color: tone.foreground,
         }}
       >
-        <span className="flex items-center gap-1 text-[10px] font-semibold tabular-nums opacity-90">
+        <span className="flex items-center gap-1 text-xs font-semibold tabular-nums">
           <Clock3 className="size-3" aria-hidden="true" />
           {time}
         </span>
-        <span className={cn('block truncate font-medium', roomy ? 'mt-1 text-sm' : 'text-[11px]')}>
+        <span className={cn('block truncate font-medium', roomy ? 'mt-1 text-sm' : 'text-xs')}>
           {lesson.topic}
         </span>
-        <span className={cn('block truncate opacity-75', roomy ? 'mt-0.5 text-xs' : 'text-[10px]')}>
+        <span className={cn('block truncate opacity-90', roomy ? 'mt-0.5 text-xs' : 'text-xs')}>
           {lesson.groupName || t('noGroup')}
         </span>
       </button>
@@ -306,7 +363,7 @@ export function AttendanceCalendar({
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 gap-1.5"
+              className="min-h-11 gap-1.5"
               disabled={disabled}
               onClick={jumpToPending}
             >
@@ -318,14 +375,14 @@ export function AttendanceCalendar({
 
         <CalendarNavigator
           label={rangeLabel}
-          previousLabel={view === 'month' ? t('previousMonth') : t('previousWeek')}
-          nextLabel={view === 'month' ? t('nextMonth') : t('nextWeek')}
+          previousLabel={effectiveView === 'month' ? t('previousMonth') : t('previousWeek')}
+          nextLabel={effectiveView === 'month' ? t('nextMonth') : t('nextWeek')}
           atToday={atToday}
           onPrevious={() => shift(-1)}
           onNext={() => shift(1)}
           onToday={goToday}
-          views={VIEWS}
-          view={view}
+          views={isCompactViewport ? COMPACT_VIEWS : VIEWS}
+          view={effectiveView}
           onViewChange={setView}
         />
 
@@ -340,7 +397,8 @@ export function AttendanceCalendar({
                 aria-pressed={active}
                 onClick={() => toggleState(state)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                  'inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  'max-md:min-h-11 max-md:px-4',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   active
                     ? 'border-border bg-card text-foreground'
@@ -360,14 +418,35 @@ export function AttendanceCalendar({
         </div>
       </CardHeader>
 
-      <CardContent className="p-0">
+      <CardContent className="relative p-0">
+        {/* "Nothing here" and "everything is filtered out" are different
+            statements, and the second one needs a way out. The message is an
+            overlay rather than an extra block: inserting it above the grid
+            still moved everything below it by ~140px on every filter tap,
+            which is the layout jump P1-27 was about. */}
         {visibleRangeCount === 0 ? (
-          <div className="flex min-h-56 flex-col items-center justify-center gap-2 px-6 py-12 text-center">
-            <CalendarDays className="size-9 text-muted-foreground/60" />
-            <p className="text-sm font-medium">{t('noLessonsInRange')}</p>
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-card/85 px-6 py-8 text-center backdrop-blur-[2px]">
+            <EmptyState
+              icon={CalendarDays}
+              className="py-0"
+              title={hiddenStates.size > 0 ? t('lessonsHiddenByFilters') : t('noLessonsInRange')}
+              description={hiddenStates.size > 0 ? t('lessonsHiddenByFiltersHint') : t('scheduleEmptyWeekHint')}
+              action={hiddenStates.size > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={() => setHiddenStates(new Set())}
+                >
+                  {t('resetFilters')}
+                </Button>
+              ) : undefined}
+            />
           </div>
-        ) : view === 'agenda' ? (
-          <div className="max-h-[32rem] divide-y divide-border/60 overflow-auto overscroll-contain">
+        ) : null}
+
+        {effectiveView === 'agenda' ? (
+          <div className="max-h-[32rem] min-h-56 divide-y divide-border/60 overflow-auto overscroll-contain">
             {calendarDays.map((day) => {
               const dayLessons = visibleLessonsFor(day.dateKey);
               if (dayLessons.length === 0) return null;
@@ -400,12 +479,12 @@ export function AttendanceCalendar({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className={cn(view === 'month' ? 'min-w-[760px]' : 'min-w-[640px]')}>
+            <div className={cn(effectiveView === 'month' ? 'min-w-[760px]' : 'min-w-[640px]')}>
               <div className="grid grid-cols-7 border-b bg-muted/30">
                 {dayNames.map((dayName) => (
                   <div
                     key={dayName}
-                    className="px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                   >
                     {dayName}
                   </div>
@@ -414,10 +493,12 @@ export function AttendanceCalendar({
               <div className="grid grid-cols-7">
                 {calendarDays.map((day) => {
                   const dayLessons = visibleLessonsFor(day.dateKey);
-                  const shown = view === 'month'
+                  const isExpanded = expandedDayKey === day.dateKey;
+                  const shown = effectiveView === 'month' && !isExpanded
                     ? dayLessons.slice(0, VISIBLE_PER_DAY)
                     : dayLessons;
                   const overflow = dayLessons.length - shown.length;
+                  const canExpandDay = effectiveView === 'month' && dayLessons.length > VISIBLE_PER_DAY;
                   const isToday = day.dateKey === todayKey;
 
                   return (
@@ -425,7 +506,7 @@ export function AttendanceCalendar({
                       key={day.dateKey}
                       className={cn(
                         'flex flex-col gap-1 border-b border-r border-border/70 p-1.5 [&:nth-child(7n)]:border-r-0',
-                        view === 'month' ? 'min-h-28' : 'min-h-40',
+                        effectiveView === 'month' ? 'min-h-28' : 'min-h-40',
                         !day.isCurrentMonth && 'bg-muted/20 text-muted-foreground',
                         isToday && 'bg-primary/[0.05]',
                       )}
@@ -433,7 +514,7 @@ export function AttendanceCalendar({
                       <div className="flex items-center justify-between">
                         <span
                           className={cn(
-                            'inline-flex size-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums',
+                            'inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold tabular-nums',
                             isToday && 'bg-primary text-primary-foreground',
                           )}
                         >
@@ -443,21 +524,28 @@ export function AttendanceCalendar({
                           <CircleCheck className="size-3.5 text-emerald-500" aria-hidden="true" />
                         ) : null}
                       </div>
-                      <div className="flex flex-col gap-1">
+                      <div id={`attendance-day-${day.dateKey}`} className="flex flex-col gap-1">
                         {shown.map((lesson) => lessonButton(lesson))}
-                        {overflow > 0 ? (
-                          <button
-                            type="button"
-                            className="rounded px-1 py-0.5 text-left text-[10px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => {
-                              setAnchorKey(day.dateKey);
-                              setView('week');
-                            }}
-                          >
-                            {t('moreEventsCount').replace('{count}', String(overflow))}
-                          </button>
-                        ) : null}
                       </div>
+                      {/* One trigger with a real `aria-expanded` and an
+                          `aria-controls` pointing at the list it opens, instead
+                          of two buttons with the value hardcoded. Expanding a
+                          crowded day must not rewrite the teacher's saved
+                          default view for every future visit — it only opens
+                          this cell. */}
+                      {canExpandDay ? (
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-controls={`attendance-day-${day.dateKey}`}
+                          className="min-h-9 rounded px-1 py-0.5 text-left text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => setExpandedDayKey(isExpanded ? null : day.dateKey)}
+                        >
+                          {isExpanded
+                            ? t('collapseDay')
+                            : t('moreEventsCount').replace('{count}', String(overflow))}
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}

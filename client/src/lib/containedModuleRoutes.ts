@@ -8,9 +8,14 @@ const CONTAINED_MODULE_ROUTES = new Set([
   '/sales/messages',
   '/sales/calls',
   '/sales/task-board',
+  // The teacher overview is a work desk, not a report: it owns its scroll like
+  // the other four sections so switching between them does not change the
+  // content width or which element scrolls.
+  '/teacher-module',
   '/teacher-module/schedule',
   '/teacher-module/groups',
   '/teacher-module/attendance',
+  '/teacher-module/ratings',
   '/teacher-module/tasks',
   '/marketing-module/sources',
   '/marketing-module/funnel',

@@ -29,9 +29,15 @@ describe('dashboard period filters and simplified actions', () => {
     expect(filter).toContain("setBoundary('to'");
     expect(filter).toContain('<SelectTrigger');
     expect(filter).not.toContain('aria-pressed={value.preset === preset}');
-    for (const source of [sales, teacher, marketing, finance, administration]) {
+    for (const source of [sales, marketing, finance, administration]) {
       expect(source).toContain("reportingRangeForPreset('today')");
     }
+    // A teacher's day is often a day off, a morning before the first lesson or
+    // a holiday, and "today" then opened the overview on six empty KPI tiles
+    // and four empty charts — indistinguishable from a broken screen. The
+    // filter itself is the same control everywhere; only its starting preset
+    // matches how this module is actually read.
+    expect(teacher).toContain("reportingRangeForPreset('thisMonth')");
   });
 
   it('uses the same range UX on every requested overview', () => {

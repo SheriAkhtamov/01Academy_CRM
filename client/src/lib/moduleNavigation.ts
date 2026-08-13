@@ -22,6 +22,7 @@ import {
   ReceiptText,
   ShieldCheck,
   SlidersHorizontal,
+  Star,
   TrendingUp,
   RadioTower,
   UserCheck,
@@ -82,6 +83,7 @@ export const MODULE_NAVIGATION = {
       { id: 'schedule', labelKey: 'teacherSchedule', href: '/teacher-module/schedule', icon: Calendar },
       { id: 'groups', labelKey: 'myGroups', href: '/teacher-module/groups', icon: Layers3 },
       { id: 'attendance', labelKey: 'attendanceLabel', href: '/teacher-module/attendance', icon: ClipboardCheck },
+      { id: 'ratings', labelKey: 'lessonRatings', href: '/teacher-module/ratings', icon: Star },
     ],
   },
   marketing: {

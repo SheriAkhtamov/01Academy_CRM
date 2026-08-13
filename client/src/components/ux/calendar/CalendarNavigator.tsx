@@ -34,6 +34,12 @@ const VIEW_LABEL_KEYS = {
  * another had arrows only, a third had no way back to today. A single control
  * means the muscle memory carries between the sales, academy and teacher
  * screens — including the arrow / T keyboard shortcuts they all register.
+ *
+ * Sizing is deliberately asymmetric. Below `md` every control grows to 44px,
+ * because this row is the primary navigation of four calendars and people pan
+ * weeks with a thumb — a 32px arrow wedged between "Today" and the card edge is
+ * a miss every other tap. From `md` up nothing changes at all, so no existing
+ * desktop layout in any module shifts by a pixel.
  */
 export function CalendarNavigator({
   label,
@@ -59,7 +65,7 @@ export function CalendarNavigator({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-8 rounded-md"
+          className="size-8 rounded-md max-md:size-11"
           aria-label={previousLabel}
           onClick={onPrevious}
         >
@@ -69,7 +75,7 @@ export function CalendarNavigator({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 rounded-md px-2.5 text-xs font-semibold"
+          className="h-8 rounded-md px-2.5 text-xs font-semibold max-md:h-11 max-md:px-4"
           disabled={atToday}
           onClick={onToday}
         >
@@ -79,7 +85,7 @@ export function CalendarNavigator({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-8 rounded-md"
+          className="size-8 rounded-md max-md:size-11"
           aria-label={nextLabel}
           onClick={onNext}
         >
@@ -108,7 +114,7 @@ export function CalendarNavigator({
               size="sm"
               aria-pressed={item === view}
               className={cn(
-                'h-8 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70',
+                'h-8 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
                 item === view && 'bg-card text-foreground shadow-2xs hover:bg-card',
               )}
               onClick={() => onViewChange(item)}

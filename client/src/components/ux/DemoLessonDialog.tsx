@@ -60,6 +60,9 @@ interface DemoLessonDialogProps {
   schools: Array<{ id: number; name: string; isActive?: boolean }>;
   initialLeadId?: number | null;
   initialSchoolId?: number | null;
+  /** Booking straight from a calendar slot: `yyyy-MM-dd` and `HH:mm`. */
+  initialDate?: string;
+  initialTime?: string;
   onCreated?: (demo: DemoLesson) => void;
 }
 
@@ -89,6 +92,8 @@ export function DemoLessonDialog({
   schools,
   initialLeadId,
   initialSchoolId,
+  initialDate,
+  initialTime,
   onCreated,
 }: DemoLessonDialogProps) {
   const { t } = useTranslation();
@@ -136,12 +141,12 @@ export function DemoLessonDialog({
         : '');
     setTeacherId('');
     setRoomId('');
-    setDemoDate(defaults.date);
-    setDemoTime(defaults.time);
+    setDemoDate(initialDate || defaults.date);
+    setDemoTime(initialTime || defaults.time);
     setDurationMinutes(String(Number(courseDuration) >= 15 ? courseDuration : 60));
     setFormat('offline');
     setNotes('');
-  }, [courses, initialLead, initialSchoolId, open]);
+  }, [courses, initialDate, initialLead, initialSchoolId, initialTime, open]);
 
   const availabilityRequest = useMemo(() => {
     if (

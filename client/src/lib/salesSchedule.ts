@@ -1,5 +1,12 @@
-import { addDays, addMinutes, differenceInCalendarDays, startOfDay } from 'date-fns';
+import {
+  addDays,
+  addMinutes,
+  differenceInCalendarDays,
+  startOfDay,
+  startOfWeek,
+} from 'date-fns';
 import type { AcademyScheduleItem } from '@shared/scheduling';
+import { assignCalendarLanes } from '@/lib/calendarLanes';
 
 export interface SalesScheduleGroup {
   id: number;
@@ -273,47 +280,95 @@ export function buildSalesScheduleEvents({
   ));
 }
 
-const eventsOverlap = (left: SalesScheduleEvent, right: SalesScheduleEvent) => (
-  left.startMinutes < right.endMinutes && left.endMinutes > right.startMinutes
-);
+export const salesScheduleDateKey = (event: SalesScheduleEvent) => localDateKey(event.startsAt);
+
+/**
+ * Recurring lessons are expanded a week at a time because a weekly timetable is
+ * what a group actually has. Day, month and agenda views still need one flat
+ * list over an arbitrary span, so the week expansion is repeated and then
+ * clipped — `dayIndex` comes back relative to the range, not to Monday.
+ */
+export function buildSalesScheduleRangeEvents({
+  groups,
+  lessons,
+  demos,
+  rangeStart,
+  dayCount,
+}: {
+  groups: SalesScheduleGroup[];
+  lessons: SalesScheduleLesson[];
+  demos: SalesScheduleDemoLesson[];
+  rangeStart: Date;
+  dayCount: number;
+}): SalesScheduleEvent[] {
+  const start = startOfDay(rangeStart);
+  const end = addDays(start, Math.max(1, dayCount));
+  const gridStart = startOfWeek(start, { weekStartsOn: 1 });
+  const weeks = Math.max(1, Math.ceil(differenceInCalendarDays(end, gridStart) / 7));
+
+  const expanded: SalesScheduleEvent[] = [];
+  for (let index = 0; index < weeks; index += 1) {
+    const weekStart = addDays(gridStart, index * 7);
+    expanded.push(
+      ...buildSalesScheduleEvents({ groups, lessons, weekStart }),
+      ...buildSalesDemoScheduleEvents(demos, weekStart),
+    );
+  }
+
+  return expanded
+    .filter((event) => event.startsAt >= start && event.startsAt < end)
+    .map((event) => ({
+      ...event,
+      dayIndex: differenceInCalendarDays(event.startsAt, start),
+    }))
+    .sort((left, right) => (
+      left.startsAt.getTime() - right.startsAt.getTime()
+      || left.groupName.localeCompare(right.groupName)
+    ));
+}
+
+export function groupSalesScheduleEventsByDate(events: SalesScheduleEvent[]) {
+  const byDate = new Map<string, SalesScheduleEvent[]>();
+  for (const event of events) {
+    const key = salesScheduleDateKey(event);
+    const bucket = byDate.get(key);
+    if (bucket) bucket.push(event);
+    else byDate.set(key, [event]);
+  }
+  return byDate;
+}
+
+/**
+ * Keeps a branch when it matches or when anything under it does, so typing a
+ * group name still shows which school and course it belongs to.
+ */
+export function searchSalesScheduleFilterTree(
+  tree: SalesScheduleFilterSchool[],
+  search: string,
+): SalesScheduleFilterSchool[] {
+  const needle = search.trim().toLocaleLowerCase();
+  if (!needle) return tree;
+  const matches = (value: string | null | undefined) => (
+    Boolean(value && value.toLocaleLowerCase().includes(needle))
+  );
+
+  return tree.flatMap((school) => {
+    if (matches(school.name)) return [school];
+    const courses = school.courses.flatMap((course) => {
+      if (matches(course.name)) return [course];
+      const groups = course.groups.filter((group) => (
+        matches(group.name) || matches(group.teacherName) || matches(group.courseName)
+      ));
+      return groups.length > 0 ? [{ ...course, groups }] : [];
+    });
+    return courses.length > 0 ? [{ ...school, courses }] : [];
+  });
+}
 
 export function positionOverlappingScheduleEvents(
   events: SalesScheduleEvent[],
 ): PositionedScheduleEvent[] {
-  const sorted = [...events].sort((left, right) => (
-    left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes
-  ));
-  const positioned: PositionedScheduleEvent[] = [];
-
-  for (let index = 0; index < sorted.length;) {
-    const cluster: SalesScheduleEvent[] = [sorted[index]];
-    let clusterEnd = sorted[index].endMinutes;
-    let cursor = index + 1;
-
-    while (cursor < sorted.length && sorted[cursor].startMinutes < clusterEnd) {
-      cluster.push(sorted[cursor]);
-      clusterEnd = Math.max(clusterEnd, sorted[cursor].endMinutes);
-      cursor += 1;
-    }
-
-    const laneEnds: number[] = [];
-    const clusterPositioned = cluster.map((event) => {
-      let lane = laneEnds.findIndex((endMinutes) => endMinutes <= event.startMinutes);
-      if (lane === -1) lane = laneEnds.length;
-      laneEnds[lane] = event.endMinutes;
-      return { event, lane };
-    });
-    const laneCount = Math.max(1, laneEnds.length);
-
-    positioned.push(...clusterPositioned.map(({ event, lane }) => ({
-      ...event,
-      lane,
-      laneCount,
-    })));
-    index = cursor;
-  }
-
-  return positioned;
+  return assignCalendarLanes(events);
 }
 
 export function getGroupsWithSchedule(

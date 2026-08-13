@@ -61,6 +61,27 @@ export function getCalendarMinutePosition(
   return segment.offset + progress * segment.size;
 }
 
+/**
+ * Inverse of {@link getCalendarMinutePosition}: turns a click on empty grid
+ * into the time the user pointed at, so booking a demo can start from the slot
+ * instead of from an empty form.
+ */
+export function getCalendarMinuteAtPosition(
+  scale: CalendarTimeScale,
+  position: number,
+  stepMinutes = 15,
+) {
+  const clampedPosition = Math.min(scale.totalSize, Math.max(0, position));
+  const segment = scale.segments.find((item) => clampedPosition <= item.offset + item.size)
+    ?? scale.segments.at(-1);
+  if (!segment || segment.size <= 0) return scale.startMinutes;
+
+  const progress = (clampedPosition - segment.offset) / segment.size;
+  const minutes = segment.startMinutes + progress * (segment.endMinutes - segment.startMinutes);
+  const step = Math.max(1, stepMinutes);
+  return clampMinute(Math.round(minutes / step) * step);
+}
+
 export function isCalendarMinuteCollapsed(
   scale: CalendarTimeScale,
   minutes: number,

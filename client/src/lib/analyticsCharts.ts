@@ -105,9 +105,22 @@ export function rankWithRemainder<T>(
   ];
 }
 
+/**
+ * Cutting at a fixed offset leaves whatever letter happens to land there, so
+ * "Vibe Coding ИИ-практикум" came out as "Vibe Coding И…" — a stray initial
+ * that reads as a different group name. Backing up to the last word boundary
+ * gives "Vibe Coding…", which is a truncation the eye can complete. The
+ * fallback stays a hard cut for labels with no spaces at all, and for the case
+ * where honouring the boundary would throw away most of the label.
+ */
 export function shortenChartLabel(value: unknown, maxLength = 16) {
   const label = String(value ?? '').trim();
   const safeLength = Math.max(4, maxLength);
   if (label.length <= safeLength) return label;
-  return `${label.slice(0, safeLength - 1).trimEnd()}…`;
+  const head = label.slice(0, safeLength - 1);
+  const lastBoundary = head.lastIndexOf(' ');
+  const body = lastBoundary >= Math.ceil(safeLength / 2)
+    ? head.slice(0, lastBoundary)
+    : head;
+  return `${body.trimEnd()}…`;
 }

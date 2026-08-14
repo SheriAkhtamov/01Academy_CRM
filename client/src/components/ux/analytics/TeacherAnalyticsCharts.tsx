@@ -4,7 +4,6 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
-  LabelList,
   Line,
   Pie,
   PieChart,
@@ -71,6 +70,11 @@ export function TeacherAnalyticsCharts({
   const hasTimelineData = timeline.some((point) => point.conducted + point.pending > 0);
   const hasTimelineAttendance = timeline.some((point) => point.attendance != null);
   const comparedGroups = groupQuality.slice(0, COMPARED_GROUPS);
+  /* The legend, the "N of M" line and the expandable full list all exist to
+     explain a chart that is not showing everything. With six groups or fewer
+     they explained nothing and offered to reveal rows already on screen — and
+     printed "1 of 1 groups" underneath a chart with one bar on it. */
+  const hasHiddenGroups = groupQuality.length > comparedGroups.length;
   const presentValue = attendance[0]?.value ?? 0;
   const absentValue = attendance[1]?.value ?? 0;
 
@@ -84,7 +88,7 @@ export function TeacherAnalyticsCharts({
         chartClassName={CHART_HEIGHT_TALL}
         footer={hasTimelineData ? (
           <AnalyticsChartLegend items={[
-            { label: t('lessonStatusConducted'), color: 'var(--chart-2)' },
+            { label: t('completedLessons'), color: 'var(--chart-2)' },
             { label: t('lessonsAwaitingCompletion'), color: 'var(--chart-6)' },
             ...(hasTimelineAttendance
               ? [{ label: t('averageAttendance'), color: 'var(--chart-1)' }]
@@ -103,7 +107,7 @@ export function TeacherAnalyticsCharts({
                 formatter={(value: number, name: string) => [
                   name === 'attendance' ? `${value}%` : value,
                   name === 'conducted'
-                    ? t('lessonStatusConducted')
+                    ? t('completedLessons')
                     : name === 'pending'
                       ? t('lessonsAwaitingCompletion')
                       : t('averageAttendance'),
@@ -178,19 +182,25 @@ export function TeacherAnalyticsCharts({
       <AnalyticsChartCard
         title={t('groupQualityComparison')}
         description={t('groupQualityComparisonDescription')}
-        summary={t('groupQualityComparisonSummary')
-          .replace('{shown}', String(comparedGroups.length))
-          .replace('{total}', String(groupQuality.length))}
+        summary={hasHiddenGroups
+          ? t('groupQualityComparisonSummaryTruncated')
+            .replace('{shown}', String(comparedGroups.length))
+            .replace('{total}', String(groupQuality.length))
+          : t('groupQualityComparisonSummary')}
         className="xl:col-span-8"
         chartClassName={CHART_HEIGHT_TALL}
         footer={groupQuality.length > 0 ? (
           <div className="space-y-2">
+            {/* The legend names the two bars and is needed at any group count. */}
             <AnalyticsChartLegend items={[
               { label: t('lessonCompletion'), color: 'var(--chart-2)' },
               { label: t('averageAttendance'), color: 'var(--chart-1)' },
             ]} />
             {/* Six of eight groups used to be shown with nothing saying so; the
-                quiet groups are exactly the ones worth checking. */}
+                quiet groups are exactly the ones worth checking. Below that
+                threshold there is nothing to disclose. */}
+            {hasHiddenGroups ? (
+            <>
             <p className="text-xs leading-4 text-muted-foreground" aria-live="polite">
               {t('groupsComparedCount')
                 .replace('{shown}', String(comparedGroups.length))
@@ -230,6 +240,8 @@ export function TeacherAnalyticsCharts({
                 ))}
               </div>
             </details>
+            </>
+            ) : null}
           </div>
         ) : undefined}
       >

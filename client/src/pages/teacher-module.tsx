@@ -437,14 +437,17 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     return rows.sort((left, right) => right.lessonVolume - left.lessonVolume);
   }, [groups, periodAttendanceRecords, periodLessons]);
 
+  /* `present` / `absent` are the labels on one student's two buttons; as pie
+     slice names they came out as "Отсутствовал" — masculine singular about a
+     category counting everybody. */
   const attendanceDistribution = useMemo(() => [
     {
-      name: t('present'),
+      name: t('attendancePresentSeries'),
       value: periodAttendanceRecords.filter((record) => record.status === 'present').length,
       color: 'var(--chart-1)',
     },
     {
-      name: t('absent'),
+      name: t('attendanceAbsentSeries'),
       value: periodAttendanceRecords.filter((record) => record.status === 'absent').length,
       color: 'var(--chart-5)',
     },

@@ -157,7 +157,7 @@ const SALES_MODULE_SLICES = [
 
 const TEACHER_MODULE_SLICES = [
   'schools', 'rooms', 'courses', 'teachers', 'groups', 'students', 'lessons',
-  'attendance', 'lessonSurveys', 'projects',
+  'attendance', 'projects',
 ] as const satisfies readonly AcademyDatasetSlice[];
 
 const CONFIGURATION_SLICES = [
@@ -280,7 +280,6 @@ router.get('/modules/teacher', async (req, res) => {
       students: dataset.students,
       lessons: dataset.lessons,
       attendance: dataset.attendance,
-      lessonSurveys: dataset.lessonSurveys,
       projects: dataset.projects,
       constants: academyConstants(),
     });

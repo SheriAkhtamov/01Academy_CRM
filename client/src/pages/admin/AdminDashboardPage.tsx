@@ -113,7 +113,6 @@ interface AdministrationDashboardData {
     revenueMonth: number;
     avgAttendance: number;
     attendanceMarks: number;
-    avgLessonScore: number;
     activeGroups: number;
     activeTeachers: number;
     activeUsers: number;
@@ -412,14 +411,6 @@ export default function AdminDashboardPage() {
         display: `${Math.round(Number(summary.avgAttendance || 0))}%`,
       }]
       : []),
-    ...(Number(summary.avgLessonScore || 0) > 0
-      ? [{
-        label: t('averageLessonRating'),
-        shortLabel: t('lessonRatings'),
-        value: boundedPercent((Number(summary.avgLessonScore || 0) / 5) * 100),
-        display: `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`,
-      }]
-      : []),
     ...(Number(summary.activeGroups || 0) > 0
       ? [{
         label: t('adminGroupLoad'),
@@ -516,17 +507,6 @@ export default function AdminDashboardPage() {
       tone: data.alerts.overduePayments === 0
         ? 'bg-emerald-100 text-emerald-600'
         : 'bg-amber-100 text-amber-600',
-    },
-    {
-      title: t('adminLessonQuality'),
-      value: Number(summary.avgLessonScore || 0) > 0
-        ? `${Number(summary.avgLessonScore || 0).toFixed(1)} / 5`
-        : t('noData'),
-      detail: t('adminAverageLessonScore'),
-      icon: BookOpenCheck,
-      tone: Number(summary.avgLessonScore || 0) > 0
-        ? 'bg-amber-100 text-amber-600'
-        : 'bg-muted text-muted-foreground',
     },
     {
       title: t('adminStaffActivity'),

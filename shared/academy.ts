@@ -432,7 +432,6 @@ export function resolveStudentRiskFlags(metrics: {
   attendancePercent: number;
   monthConductedCount: number;
   monthAttendancePercent: number;
-  satisfactionAvg: number;
 }): string[] {
   const flags: string[] = [];
   if (metrics.conductedCount > 0 && metrics.attendancePercent < 70) {
@@ -440,9 +439,6 @@ export function resolveStudentRiskFlags(metrics: {
   }
   if (metrics.monthConductedCount > 0 && metrics.monthAttendancePercent < 50) {
     flags.push("churn_risk");
-  }
-  if (metrics.satisfactionAvg > 0 && metrics.satisfactionAvg < 3) {
-    flags.push("low_satisfaction");
   }
   return flags;
 }

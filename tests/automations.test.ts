@@ -126,9 +126,8 @@ describe("academy automations", () => {
     expect(actions).toContain("student:5:recalc");
     const sql = mocks.clientQuery.mock.calls.map(([query]) => sqlText(query));
     const metricQueries = sql.filter((query) => query.includes("academy_student_status_history"));
-    expect(metricQueries.length).toBeGreaterThanOrEqual(5);
-    const surveyQuery = sql.find((query) => query.includes("SELECT survey.score"));
-    expect(surveyQuery).toContain("lesson.group_id = $2");
-    expect(surveyQuery).toContain("lesson.scheduled_at >= $3");
+    // Was 5 while a fifth query averaged lesson surveys; that feature is gone.
+    expect(metricQueries.length).toBeGreaterThanOrEqual(4);
+    expect(sql.some((query) => query.includes("academy_lesson_surveys"))).toBe(false);
   });
 });

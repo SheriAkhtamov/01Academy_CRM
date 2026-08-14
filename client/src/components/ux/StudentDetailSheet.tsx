@@ -457,7 +457,6 @@ export function StudentDetailSheet({
           </TabsContent>
 
           <TabsContent value="nps" className="space-y-3">
-            <InfoRow label={t('averageRatingLabel')} value={currentStudent.satisfactionAvg || t('noData')} />
             <InfoRow label={t('parentLabel')} value={currentStudent.parentFeedback || t('noData')} />
           </TabsContent>
 

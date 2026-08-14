@@ -212,19 +212,19 @@ describe("01 Academy business rules", () => {
   });
 
   it("keeps attendance risk rules identical for manual and scheduled recalculation", () => {
+    // `low_satisfaction` is gone with lesson surveys: nothing in the product
+    // ever wrote a score, so the flag could only ever stay unraised.
     expect(resolveStudentRiskFlags({
       conductedCount: 4,
       attendancePercent: 0,
       monthConductedCount: 2,
       monthAttendancePercent: 0,
-      satisfactionAvg: 2,
-    })).toEqual(["attendance_below_70", "churn_risk", "low_satisfaction"]);
+    })).toEqual(["attendance_below_70", "churn_risk"]);
     expect(resolveStudentRiskFlags({
       conductedCount: 0,
       attendancePercent: 0,
       monthConductedCount: 0,
       monthAttendancePercent: 0,
-      satisfactionAvg: 0,
     })).toEqual([]);
   });
 });

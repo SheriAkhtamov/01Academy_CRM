@@ -13,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { ChevronDown, Star } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
@@ -43,14 +43,10 @@ type TeacherTimelinePoint = {
   attendance: number | null;
 };
 
-/** `rating` is the real 1–5 average. It used to be rescaled to a percentage so
-    it could share an axis with attendance, which invented a quantity ("88% of
-    rating") that does not exist in the domain. */
 type TeacherGroupQuality = {
   name: string;
   completion: number;
   attendance: number | null;
-  rating: number | null;
 };
 
 type DistributionItem = {
@@ -59,40 +55,19 @@ type DistributionItem = {
   color: string;
 };
 
-function GroupRatingStars({ value }: { value: number }) {
-  return (
-    <span className="inline-flex items-center gap-0.5 align-middle" aria-hidden="true">
-      {[1, 2, 3, 4, 5].map((score) => (
-        <Star
-          key={score}
-          className={cn(
-            'size-3',
-            score <= Math.round(value)
-              ? 'fill-amber-400 text-amber-400 dark:fill-amber-300 dark:text-amber-300'
-              : 'text-muted-foreground/30',
-          )}
-        />
-      ))}
-    </span>
-  );
-}
-
 export function TeacherAnalyticsCharts({
   timeline,
   groupQuality,
   attendance,
-  ratings,
 }: {
   timeline: TeacherTimelinePoint[];
   groupQuality: TeacherGroupQuality[];
   attendance: DistributionItem[];
-  ratings: Array<{ score: string; count: number }>;
 }) {
   // Draws once on mount; later refetches update the geometry silently.
   const chartEntrance = useChartEntrance();
   const { t } = useTranslation();
   const attendanceTotal = attendance.reduce((sum, item) => sum + item.value, 0);
-  const ratingTotal = ratings.reduce((sum, item) => sum + item.count, 0);
   const hasTimelineData = timeline.some((point) => point.conducted + point.pending > 0);
   const hasTimelineAttendance = timeline.some((point) => point.attendance != null);
   const comparedGroups = groupQuality.slice(0, COMPARED_GROUPS);
@@ -250,14 +225,6 @@ export function TeacherAnalyticsCharts({
                           ? t('groupAttendanceUnknown')
                           : t('groupAttendanceValue').replace('{percent}', String(item.attendance))}
                       </span>
-                      <span className="inline-flex items-center gap-1.5 tabular-nums">
-                        {item.rating == null ? t('groupRatingUnknown') : (
-                          <>
-                            <GroupRatingStars value={item.rating} />
-                            {t('groupRatingValue').replace('{value}', item.rating.toFixed(1))}
-                          </>
-                        )}
-                      </span>
                     </span>
                   </div>
                 ))}
@@ -296,34 +263,6 @@ export function TeacherAnalyticsCharts({
         )}
       </AnalyticsChartCard>
 
-      <AnalyticsChartCard
-        title={t('ratingDistribution')}
-        description={t('ratingDistributionDescription')}
-        summary={t('ratingDistributionSummary').replace('{count}', String(ratingTotal))}
-        className="xl:col-span-4"
-        chartClassName={CHART_HEIGHT_SHORT}
-      >
-        {ratingTotal > 0 ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={ratings} margin={{ top: 18, right: 8, left: -16, bottom: 0 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="var(--border)" />
-              <XAxis dataKey="score" axisLine={false} tickLine={false} tick={analyticsAxisTick} />
-              <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={analyticsAxisTick} />
-              <ChartTooltip formatter={(value: number) => [value, t('responses')]} contentStyle={analyticsTooltipStyle} />
-              <Bar dataKey="count" fill="var(--chart-4)" radius={[7, 7, 0, 0]} maxBarSize={42} isAnimationActive={chartEntrance}>
-                <LabelList
-                  dataKey="count"
-                  position="top"
-                  formatter={(value: number) => Number(value) > 0 ? value : ''}
-                  className="fill-foreground text-xs font-semibold"
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <AnalyticsChartEmpty title={t('noRatings')} description={t('analyticsEmptyPeriodHint')} />
-        )}
-      </AnalyticsChartCard>
     </div>
   );
 }

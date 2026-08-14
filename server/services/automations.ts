@@ -299,27 +299,6 @@ const recalcStudent = async (executor: QueryExecutor, studentId: number): Promis
        )`,
     [student.group_id, student.membership_started_at, studentId, AUTOMATION_TIME_ZONE],
   );
-  const { rows: surveys } = await executor.query(
-    `SELECT survey.score
-     FROM academy_lesson_surveys survey
-     JOIN academy_lessons lesson ON lesson.id = survey.lesson_id
-     WHERE survey.student_id = $1
-       AND lesson.group_id = $2
-       AND lesson.scheduled_at >= $3
-       AND COALESCE(
-         (
-           SELECT history.to_status
-           FROM academy_student_status_history history
-           WHERE history.student_id = $1
-             AND history.created_at <= lesson.scheduled_at
-           ORDER BY history.created_at DESC, history.id DESC
-           LIMIT 1
-         ),
-         'studying'
-       ) = 'studying'`,
-    [studentId, student.group_id, student.membership_started_at],
-  );
-
   const presentCount = present[0]?.c ?? 0;
   const conductedCount = conducted.length;
   const lessonTotal = Number(group[0]?.lesson_count) > 0 ? Number(group[0].lesson_count) : conductedCount;
@@ -328,24 +307,20 @@ const recalcStudent = async (executor: QueryExecutor, studentId: number): Promis
   const monthAttendance = (monthConducted[0]?.c ?? 0) > 0
     ? Math.round(((monthPresent[0]?.c ?? 0) / monthConducted[0].c) * 100)
     : 0;
-  const satisfactionAvg = surveys.length
-    ? Math.round(surveys.reduce((sum: number, row: any) => sum + Number(row.score), 0) / surveys.length)
-    : 0;
 
   const riskFlags = resolveStudentRiskFlags({
     conductedCount,
     attendancePercent,
     monthConductedCount: monthConducted[0]?.c ?? 0,
     monthAttendancePercent: monthAttendance,
-    satisfactionAvg,
   });
 
   await executor.query(
     `UPDATE academy_students
      SET attendance_percent = $1, progress_percent = $2,
-         satisfaction_avg = $3, risk_flags = $4, updated_at = NOW()
-     WHERE id = $5 AND status = 'studying'`,
-    [attendancePercent, progressPercent, satisfactionAvg, JSON.stringify(riskFlags), studentId],
+         risk_flags = $3, updated_at = NOW()
+     WHERE id = $4 AND status = 'studying'`,
+    [attendancePercent, progressPercent, JSON.stringify(riskFlags), studentId],
   );
   return true;
 };

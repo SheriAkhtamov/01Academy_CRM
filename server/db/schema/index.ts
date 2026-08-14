@@ -440,7 +440,6 @@ export const academyStudents = pgTable("academy_students", {
   balanceUzs: integer("balance_uzs").notNull().default(0),
   attendancePercent: integer("attendance_percent").notNull().default(0),
   progressPercent: integer("progress_percent").notNull().default(0),
-  satisfactionAvg: integer("satisfaction_avg").notNull().default(0),
   parentFeedback: text("parent_feedback"),
   nextPaymentAt: timestamp("next_payment_at"),
   referralCode: varchar("referral_code", { length: 80 }).notNull(),
@@ -669,22 +668,6 @@ export const academyStudentTransfers = pgTable("academy_student_transfers", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   studentIdx: index("academy_student_transfers_student_idx").on(table.studentId),
-}));
-
-export const academyLessonSurveys = pgTable("academy_lesson_surveys", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
-  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "cascade" }).notNull(),
-  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
-  teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
-  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
-  score: integer("score").notNull(),
-  liked: text("liked"),
-  improve: text("improve"),
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => ({
-  lessonIdx: index("academy_lesson_surveys_lesson_idx").on(table.lessonId),
-  lessonStudentUnique: uniqueIndex("academy_lesson_surveys_lesson_student_unique").on(table.lessonId, table.studentId),
 }));
 
 export const academyParentSurveys = pgTable("academy_parent_surveys", {
@@ -1268,11 +1251,6 @@ export const insertAcademyStudentTransferSchema = createInsertSchema(academyStud
   createdAt: true,
 });
 
-export const insertAcademyLessonSurveySchema = createInsertSchema(academyLessonSurveys).omit({
-  id: true,
-  createdAt: true,
-});
-
 export const insertAcademyParentSurveySchema = createInsertSchema(academyParentSurveys).omit({
   id: true,
   createdAt: true,
@@ -1412,8 +1390,6 @@ export type AcademyCommunication = typeof academyCommunications.$inferSelect;
 export type InsertAcademyCommunication = z.infer<typeof insertAcademyCommunicationSchema>;
 export type AcademyStudentTransfer = typeof academyStudentTransfers.$inferSelect;
 export type InsertAcademyStudentTransfer = z.infer<typeof insertAcademyStudentTransferSchema>;
-export type AcademyLessonSurvey = typeof academyLessonSurveys.$inferSelect;
-export type InsertAcademyLessonSurvey = z.infer<typeof insertAcademyLessonSurveySchema>;
 export type AcademyParentSurvey = typeof academyParentSurveys.$inferSelect;
 export type InsertAcademyParentSurvey = z.infer<typeof insertAcademyParentSurveySchema>;
 export type AcademyPortfolioProject = typeof academyPortfolioProjects.$inferSelect;

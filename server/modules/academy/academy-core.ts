@@ -150,7 +150,6 @@ export const TABLES_WITHOUT_UPDATED_AT = new Set([
   'academy_student_transfers',
   'academy_student_status_history',
   'academy_lesson_status_history',
-  'academy_lesson_surveys',
   'academy_parent_surveys',
   'academy_referral_rewards',
 ]);

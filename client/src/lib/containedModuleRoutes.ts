@@ -15,7 +15,6 @@ const CONTAINED_MODULE_ROUTES = new Set([
   '/teacher-module/schedule',
   '/teacher-module/groups',
   '/teacher-module/attendance',
-  '/teacher-module/ratings',
   '/teacher-module/tasks',
   '/marketing-module/sources',
   '/marketing-module/funnel',

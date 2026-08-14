@@ -26,7 +26,6 @@ import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
 import { AttendanceLessonDialog } from '@/components/ux/teacher/AttendanceLessonDialog';
 import { TeacherGroupsSection } from '@/components/ux/teacher/TeacherGroupsSection';
-import { TeacherRatingsSection } from '@/components/ux/teacher/TeacherRatingsSection';
 import {
   TeacherScheduleSection,
   type TeacherScheduleDayView,
@@ -48,7 +47,6 @@ import {
   type TeacherAttendanceRecord,
   type TeacherGroup,
   type TeacherLesson,
-  type TeacherLessonSurvey,
   type TeacherSection,
   type TeacherStudent,
 } from '@/lib/teacherModule';
@@ -272,7 +270,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const groups: TeacherGroup[] = useMemo(() => data?.groups ?? [], [data]);
   const lessons: TeacherLesson[] = useMemo(() => data?.lessons ?? [], [data]);
   const students: TeacherStudent[] = useMemo(() => data?.students ?? [], [data]);
-  const surveys: TeacherLessonSurvey[] = useMemo(() => data?.lessonSurveys ?? [], [data]);
   const attendanceRecords: TeacherAttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
 
   const groupLessonProgressById = useMemo(() => {
@@ -373,22 +370,11 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     () => attendanceRecords.filter((record) => periodLessonIds.has(Number(record.lessonId))),
     [attendanceRecords, periodLessonIds],
   );
-  const periodSurveys = useMemo(
-    () => surveys.filter((survey) => periodLessonIds.has(Number(survey.lessonId))),
-    [periodLessonIds, surveys],
-  );
-
   const avgAttendance = useMemo(() => {
     if (!periodAttendanceRecords.length) return null;
     const presentCount = periodAttendanceRecords.filter((record) => record.status === 'present').length;
     return Math.round((presentCount / periodAttendanceRecords.length) * 100);
   }, [periodAttendanceRecords]);
-
-  const avgLessonRating = useMemo(() => {
-    if (!periodSurveys.length) return null;
-    const sum = periodSurveys.reduce((acc, survey) => acc + survey.score, 0);
-    return Number((sum / periodSurveys.length).toFixed(1));
-  }, [periodSurveys]);
 
   const teachingHours = useMemo(
     () => conductedPeriodLessons.reduce(
@@ -433,10 +419,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       if (groupLessons.length === 0) return [];
       const lessonIds = new Set(groupLessons.map((lesson) => Number(lesson.id)));
       const records = periodAttendanceRecords.filter((record) => lessonIds.has(Number(record.lessonId)));
-      const groupSurveys = periodSurveys.filter((survey) => lessonIds.has(Number(survey.lessonId)));
-      const averageRating = groupSurveys.length > 0
-        ? groupSurveys.reduce((sum, survey) => sum + Number(survey.score || 0), 0) / groupSurveys.length
-        : null;
       return [{
         name: group.name,
         lessonVolume: groupLessons.length,
@@ -450,13 +432,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             records.length,
           )
           : null,
-        // Kept on its own 1–5 scale; the chart no longer rescales it to a
-        // percentage just to fit a shared axis.
-        rating: averageRating == null ? null : Number(averageRating.toFixed(1)),
       }];
     });
     return rows.sort((left, right) => right.lessonVolume - left.lessonVolume);
-  }, [groups, periodAttendanceRecords, periodLessons, periodSurveys]);
+  }, [groups, periodAttendanceRecords, periodLessons]);
 
   const attendanceDistribution = useMemo(() => [
     {
@@ -470,14 +449,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       color: 'var(--chart-5)',
     },
   ], [periodAttendanceRecords, t]);
-
-  const ratingDistribution = useMemo(
-    () => [1, 2, 3, 4, 5].map((score) => ({
-      score: `${score}★`,
-      count: periodSurveys.filter((survey) => Number(survey.score) === score).length,
-    })),
-    [periodSurveys],
-  );
 
   const teacherCourses = useMemo(() => {
     const courseIds = new Set<number>();
@@ -703,7 +674,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     schedule: t(moduleSectionLabelKey('teacher', 'schedule')),
     groups: t(moduleSectionLabelKey('teacher', 'groups')),
     attendance: t(moduleSectionLabelKey('teacher', 'attendance')),
-    ratings: t(moduleSectionLabelKey('teacher', 'ratings')),
   };
 
   const handleToggleAttendance = useCallback((studentId: number, status: 'present' | 'absent') => {
@@ -875,6 +845,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           <TeacherTodayPanel
             focusLesson={liveLesson ?? nextLesson}
             isLessonLive={liveLesson !== null}
+            isFocusLessonToday={(() => {
+              const focus = liveLesson ?? nextLesson;
+              return focus != null && localDateKey(focus.scheduledAt) === todayKey;
+            })()}
             todayCount={todayLessons.length}
             pendingLessons={pendingAttendanceLessons}
             onOpenAttendance={openAttendanceForLesson}
@@ -892,7 +866,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
               conductedLessons: conductedPeriodLessons.length,
               totalLessons: periodLessons.length,
               avgAttendance,
-              avgRating: avgLessonRating,
               teachingHours: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours),
             }}
           />
@@ -900,7 +873,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             timeline={teacherTimeline}
             groupQuality={groupQuality}
             attendance={attendanceDistribution}
-            ratings={ratingDistribution}
           />
         </div>
       );
@@ -933,19 +905,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           dayNamesFull={dayNamesFull}
           onSelectGroup={(groupId) => pushParams({ group: groupId === null ? null : String(groupId) })}
         />
-      );
-    }
-
-    if (section === 'ratings') {
-      /* The same period state and the same pre-filtered array the overview KPI
-         uses. Before, the KPI averaged the current month while this section
-         averaged all time, so the same group showed 4.2 on one screen and 4.7
-         on the other with nothing saying why. */
-      return (
-        <div className="space-y-4">
-          <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
-          <TeacherRatingsSection surveys={periodSurveys} groups={groups} />
-        </div>
       );
     }
 

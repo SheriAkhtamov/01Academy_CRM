@@ -1,8 +1,7 @@
 import { type ReactNode } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
-import { CalendarCheck2, ClipboardCheck, Clock3, GraduationCap, Star, Users } from 'lucide-react';
+import { CalendarCheck2, ClipboardCheck, Clock3, GraduationCap, Users } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from '@/hooks/useTranslation';
 import { percentage } from '@/lib/analyticsCharts';
 import {
@@ -27,12 +26,11 @@ export type TeacherOverviewKpiData = {
   conductedLessons: number;
   totalLessons: number;
   avgAttendance: number | null;
-  avgRating: number | null;
   teachingHours: string;
 };
 
 /**
- * Six tiles, one typographic system: the headline number is always the same
+ * Five tiles, one typographic system: the headline number is always the same
  * size and weight, the caption always the same. Before, the same row printed
  * its key figure at 32px, 26px and 18px depending on how the tile happened to
  * be drawn, and three of them printed it twice.
@@ -42,13 +40,11 @@ function KpiShell({
   icon: Icon,
   tone,
   children,
-  titleDetail,
 }: {
   title: string;
   icon: typeof Users;
   tone: TeacherTone;
   children: ReactNode;
-  titleDetail?: string;
 }) {
   return (
     <Card
@@ -69,23 +65,9 @@ function KpiShell({
           >
             <Icon className="size-3.5" />
           </span>
-          {titleDetail ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="min-w-0 truncate rounded text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {title}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs">{titleDetail}</TooltipContent>
-            </Tooltip>
-          ) : (
-            <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {title}
-            </p>
-          )}
+          <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {title}
+          </p>
         </div>
         <div className="mt-2 flex min-h-0 flex-1 items-center">{children}</div>
       </CardContent>
@@ -154,25 +136,6 @@ function KpiValue({ value, caption }: { value: ReactNode; caption: string }) {
   );
 }
 
-function StarRating({ value }: { value: number }) {
-  const clamped = Math.min(Math.max(value, 0), 5);
-  return (
-    <div className="flex items-center gap-0.5" aria-hidden="true">
-      {[1, 2, 3, 4, 5].map((score) => {
-        const fill = Math.min(Math.max(clamped - (score - 1), 0), 1) * 100;
-        return (
-          <span key={score} className="relative inline-block size-4">
-            <Star className="absolute inset-0 size-4 text-amber-400" fill="currentColor" strokeWidth={0} opacity={0.28} />
-            <span className="absolute inset-0 overflow-hidden" style={{ width: `${fill}%` }}>
-              <Star className="size-4 text-amber-500 dark:text-amber-300" fill="currentColor" strokeWidth={0} />
-            </span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) {
   const { t } = useTranslation();
 
@@ -182,12 +145,11 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
   const lessonsPercent = data.totalLessons > 0
     ? percentage(data.conductedLessons, data.totalLessons)
     : null;
-  const ratingValue = data.avgRating == null ? null : Number(data.avgRating);
 
   return (
-    <StaggerGroup count={6} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <StaggerGroup count={5} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
       <StaggerItem preset="pop" className="h-full">
-        <KpiShell title={t('myGroupsCount')} icon={Users} tone="accent" titleDetail={data.courseNames}>
+        <KpiShell title={t('myGroupsCount')} icon={Users} tone="accent">
           <KpiValue
             value={<AnimatedNumber value={data.groupsCount} />}
             caption={data.courseNames}
@@ -206,7 +168,7 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
                 empty={!occupancyKnown}
               />
               <KpiValue
-                value={data.totalStudents}
+                value={<AnimatedNumber value={data.totalStudents} />}
                 caption={occupancyPercent != null
                   ? t('seatOccupancySummary')
                     .replace('{percent}', String(occupancyPercent))
@@ -258,27 +220,6 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
               value={data.avgAttendance == null ? t('noData') : `${data.avgAttendance}%`}
               caption={data.avgAttendance == null ? t('noAttendanceData') : t('byActiveStudents')}
             />
-          </div>
-        </KpiShell>
-      </StaggerItem>
-
-      <StaggerItem preset="pop" className="h-full">
-        <KpiShell title={t('averageLessonRating')} icon={Star} tone="danger">
-          <div className="min-w-0">
-            <div className="text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
-              {ratingValue == null ? t('noData') : ratingValue.toFixed(1)}
-              {ratingValue == null ? null : (
-                <span className="ml-1 text-sm font-medium text-muted-foreground">{t('outOfFive')}</span>
-              )}
-            </div>
-            {ratingValue == null ? (
-              <p className="mt-1.5 text-xs leading-4 text-muted-foreground">{t('noSurveyData')}</p>
-            ) : (
-              <div className="mt-2 flex items-center gap-2">
-                <StarRating value={ratingValue} />
-                <span className="text-xs text-muted-foreground">{t('dataForSelectedPeriod')}</span>
-              </div>
-            )}
           </div>
         </KpiShell>
       </StaggerItem>

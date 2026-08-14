@@ -1283,26 +1283,6 @@ export const recalculateStudentMetrics = async (studentId: number) => {
     [studentId, student.groupId, membershipStartedAt],
   );
   const group = await queryOne(`SELECT lesson_count FROM academy_groups WHERE id = $1`, [student.groupId]);
-  const surveyRows = await query<{ score: number }>(
-    `SELECT survey.score
-     FROM academy_lesson_surveys survey
-     JOIN academy_lessons lesson ON lesson.id = survey.lesson_id
-     WHERE survey.student_id = $1
-       AND lesson.group_id = $2
-       AND lesson.scheduled_at >= $3
-       AND COALESCE(
-         (
-           SELECT history.to_status
-           FROM academy_student_status_history history
-           WHERE history.student_id = $1
-             AND history.created_at <= lesson.scheduled_at
-           ORDER BY history.created_at DESC, history.id DESC
-           LIMIT 1
-         ),
-         'studying'
-       ) = 'studying'`,
-    [studentId, student.groupId, membershipStartedAt],
-  );
   const monthlyAttendanceRows = await query<{
     conductedCount: number;
     presentCount: number;
@@ -1334,12 +1314,10 @@ export const recalculateStudentMetrics = async (studentId: number) => {
        )`,
     [studentId, student.groupId, membershipStartedAt, ACADEMY_TIME_ZONE],
   );
-
   const presentCount = Number(presentRows[0]?.count ?? 0);
   const attendancePercent = calculateAttendancePercent(presentCount, conductedLessons.length);
   const totalLessons = Number(group?.lessonCount) > 0 ? Number(group?.lessonCount) : conductedLessons.length;
   const progressPercent = calculateProgressPercent(presentCount, totalLessons);
-  const satisfactionAvg = calculateAverage(surveyRows.map((row) => Number(row.score))) ?? 0;
   const monthConductedCount = Number(monthlyAttendanceRows[0]?.conductedCount ?? 0);
   const monthPresentCount = Number(monthlyAttendanceRows[0]?.presentCount ?? 0);
   const monthAttendancePercent = calculateAttendancePercent(monthPresentCount, monthConductedCount);
@@ -1348,13 +1326,11 @@ export const recalculateStudentMetrics = async (studentId: number) => {
     attendancePercent,
     monthConductedCount,
     monthAttendancePercent,
-    satisfactionAvg,
   });
 
   await updateRow('academy_students', studentId, {
     attendancePercent,
     progressPercent,
-    satisfactionAvg,
     riskFlags });
 };
 

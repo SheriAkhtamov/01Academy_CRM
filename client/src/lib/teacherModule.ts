@@ -10,7 +10,7 @@ import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
  * can never leak into the interface untranslated.
  */
 
-export type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance' | 'ratings';
+export type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance';
 
 export type TeacherLesson = {
   id: number;
@@ -65,22 +65,6 @@ export type TeacherStudent = {
   attendancePercent: number;
   progressPercent: number;
   status: string;
-};
-
-export type TeacherLessonSurvey = {
-  id: number;
-  studentId: number;
-  studentName?: string;
-  lessonId: number;
-  lessonTopic?: string;
-  groupId?: number;
-  groupName?: string;
-  teacherId?: number;
-  courseId?: number;
-  score: number;
-  liked?: string;
-  improve?: string;
-  createdAt: string;
 };
 
 export type TeacherAttendanceRecord = {

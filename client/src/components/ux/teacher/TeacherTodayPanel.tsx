@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 interface TeacherTodayPanelProps {
   focusLesson: TeacherLesson | null;
   isLessonLive: boolean;
+  isFocusLessonToday: boolean;
   todayCount: number;
   pendingLessons: TeacherLesson[];
   onOpenAttendance: (lessonId: string) => void;
@@ -36,6 +37,7 @@ interface TeacherTodayPanelProps {
 export function TeacherTodayPanel({
   focusLesson,
   isLessonLive,
+  isFocusLessonToday,
   todayCount,
   pendingLessons,
   onOpenAttendance,
@@ -85,12 +87,15 @@ export function TeacherTodayPanel({
                 </p>
                 <p className="truncate text-sm text-muted-foreground">{focusLesson.topic}</p>
                 {/* Says why the checklist is not on offer, at the point where
-                    the user would otherwise go looking for it. */}
-                {isLessonLive ? null : (
+                    the user would otherwise go looking for it — but only once
+                    the lesson is close enough for that to be the question. On a
+                    lesson four days out it read as a warning about something
+                    imminent and pushed the real content down a line. */}
+                {!isLessonLive && isFocusLessonToday ? (
                   <p className="text-xs text-muted-foreground">
                     {t('attendanceAvailableAfterLessonStart')}
                   </p>
-                )}
+                ) : null}
               </div>
               {isLessonLive ? (
                 <Button
@@ -139,11 +144,27 @@ export function TeacherTodayPanel({
           </div>
 
           <div className="flex flex-1 items-end justify-between gap-3">
+            {/* The caption has to describe the number above it. It used to read
+                "5 lessons today" under a headline counting unmarked lessons
+                from any day, so two unrelated figures sat stacked with nothing
+                saying which was which. Today's count is still here, on its own
+                line, labelled. */}
             <div className="min-w-0">
               <p className="text-3xl font-bold leading-none tabular-nums text-foreground">
                 {pendingLessons.length}
               </p>
               <p className="mt-1.5 text-xs text-muted-foreground">
+                {oldestPending
+                  ? t('attendanceBacklogOldest').replace(
+                    '{date}',
+                    formatAcademyDate(oldestPending.scheduledAt, language, {
+                      day: 'numeric',
+                      month: 'short',
+                    }),
+                  )
+                  : t('attendanceBacklogClear')}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {t('lessonsTodayCount').replace('{count}', String(todayCount))}
               </p>
             </div>

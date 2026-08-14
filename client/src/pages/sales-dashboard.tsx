@@ -164,7 +164,6 @@ interface Student {
   status: string;
   attendancePercent: number;
   progressPercent: number;
-  satisfactionAvg: number;
   nextPaymentAt?: string;
   enrolledAt?: string;
   createdAt: string;

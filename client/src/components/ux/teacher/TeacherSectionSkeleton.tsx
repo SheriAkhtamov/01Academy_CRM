@@ -44,20 +44,6 @@ export function TeacherSectionSkeleton({ section }: { section: TeacherSection })
     );
   }
 
-  if (section === 'ratings') {
-    return (
-      <div className="space-y-4" aria-hidden="true">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-36 rounded-xl" />
-          ))}
-        </div>
-        <Skeleton className="h-[22rem] w-full rounded-xl" />
-        <Skeleton className="h-96 w-full rounded-xl" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4" aria-hidden="true">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">

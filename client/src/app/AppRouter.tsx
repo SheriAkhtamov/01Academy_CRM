@@ -180,11 +180,7 @@ export function AppRouter() {
           </ModuleGuard>
         )} />
         <Route path="/teacher-module/tasks" component={() => <Redirect to="/tasks" />} />
-        <Route path="/teacher-module/ratings" component={() => (
-          <ModuleGuard module="teacher">
-            <TeacherModule section="ratings" />
-          </ModuleGuard>
-        )} />
+        <Route path="/teacher-module/ratings" component={() => <Redirect to="/teacher-module" />} />
         <Route path="/teacher-module/profile" component={() => <Redirect to="/teacher-module" />} />
         <Route path="/teacher-module" component={() => (
           <ModuleGuard module="teacher">

@@ -103,8 +103,6 @@ describe('dashboard period filters and simplified actions', () => {
 
   it('does not present absent or zero datasets as measured performance', () => {
     expect(teacher).toContain('attendance: markedAttendance > 0 ? percentage(present, markedAttendance) : null');
-    expect(teacher).toContain('rating: averageRating == null ? null');
-    expect(teacher).toContain('surveys.filter((survey) => periodLessonIds.has(Number(survey.lessonId)))');
     expect(teacherCharts).toContain('const hasTimelineData');
     expect(salesCharts).toContain('totalRevenue > 0');
     expect(salesCharts).toContain('hasPaymentRevenue ? (');

@@ -111,7 +111,7 @@ export const resolveTeacherId = async (userId: number): Promise<number | null> =
 export type AcademyDatasetSlice =
   | 'schools' | 'rooms' | 'courses' | 'sources' | 'statuses' | 'teachers' | 'groups'
   | 'leads' | 'archivedLeads' | 'students' | 'lessons' | 'attendance' | 'payments'
-  | 'tasks' | 'lessonSurveys' | 'parentSurveys' | 'expenses' | 'projects'
+  | 'tasks' | 'parentSurveys' | 'expenses' | 'projects'
   | 'referrals' | 'referralBenefits';
 
 interface AcademyDatasetOptions {
@@ -169,7 +169,6 @@ export const getAcademyDataset = async (
     attendance,
     payments,
     tasks,
-    lessonSurveys,
     parentSurveys,
     expenses,
     projects,
@@ -338,22 +337,6 @@ export const getAcademyDataset = async (
       ORDER BY COALESCE(t.deadline_at, t.created_at)`,
     isTeacherScoped ? [actor!.userId] : managerParams)
     )),
-    slice('lessonSurveys', () => (
-      isTeacherScoped
-      ? query(`SELECT ls.*, st.student_name, l.topic AS lesson_topic, g.name AS group_name
-        FROM academy_lesson_surveys ls
-        JOIN academy_lessons l ON l.id = ls.lesson_id
-        LEFT JOIN academy_students st ON st.id = ls.student_id
-        LEFT JOIN academy_groups g ON g.id = ls.group_id
-        WHERE l.teacher_id = $1
-        ORDER BY ls.created_at DESC`, [teacherId])
-      : query(`SELECT ls.*, st.student_name, l.topic AS lesson_topic, g.name AS group_name
-        FROM academy_lesson_surveys ls
-        LEFT JOIN academy_students st ON st.id = ls.student_id
-        LEFT JOIN academy_lessons l ON l.id = ls.lesson_id
-        LEFT JOIN academy_groups g ON g.id = ls.group_id
-        ORDER BY ls.created_at DESC`)
-    )),
     slice('parentSurveys', () => (
       isTeacherScoped
       ? query(`SELECT ps.*
@@ -440,7 +423,6 @@ export const getAcademyDataset = async (
     attendance,
     payments,
     tasks,
-    lessonSurveys,
     parentSurveys,
     expenses,
     projects,
@@ -524,7 +506,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
   const periodLessons = data.lessons.filter((lesson) => valueInMetricRange(lesson.scheduledAt));
   const periodLessonIds = new Set(periodLessons.map((lesson) => Number(lesson.id)));
   const periodAttendance = data.attendance.filter((record) => periodLessonIds.has(Number(record.lessonId)));
-  const periodLessonSurveys = data.lessonSurveys.filter((survey) => valueInMetricRange(survey.createdAt));
   const periodParentSurveys = data.parentSurveys.filter((survey) => valueInMetricRange(survey.createdAt));
 
   const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid');
@@ -593,7 +574,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
       || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance)
     )
   ));
-  const lowScores = periodLessonSurveys.filter((survey) => Number(survey.score) < 3);
   const longThinkingLeads = data.leads.filter((lead) =>
     lead.statusCode === 'thinking' && lead.updatedAt && new Date(lead.updatedAt) < addDays(now, -7)
   );
@@ -680,47 +660,21 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     .filter((d): d is number => d !== null && Number.isFinite(d));
   const avgDealCycleDays = calculateAvgDealCycleDays(dealCycleDays) ?? 0;
 
-  // --- Operations metrics (TZ 4.3): lesson NPS by teacher/course/group, progress, teacher hours, retention %. ---
-  const lessonScores = periodLessonSurveys.map((survey) => Number(survey.score)).filter(Number.isFinite);
-  const avgLessonScore = calculateAverage(lessonScores) ?? 0;
+  // --- Operations metrics: progress, teacher hours, retention %. ---
   const byTeacher = data.teachers.map((teacher) => {
     const teacherLessons = periodLessons.filter((lesson) => Number(lesson.teacherId) === Number(teacher.id) && lesson.status === 'conducted');
     const teacherLessonIds = new Set(teacherLessons.map((lesson) => Number(lesson.id)));
     const teacherAttendance = periodAttendance.filter((record) => teacherLessonIds.has(Number(record.lessonId)));
-    const teacherSurveys = periodLessonSurveys.filter((survey) => Number(survey.teacherId) === Number(teacher.id));
-    const scoresByDate = [...teacherSurveys]
-      .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
-      .map((survey) => Number(survey.score))
-      .filter(Number.isFinite);
     return {
       teacherId: teacher.id,
       teacherName: teacher.fullName,
       hours: teacherLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0),
-      avgScore: calculateAverage(scoresByDate) ?? 0,
       attendance: teacherAttendance.length > 0
         ? Math.round(
             (teacherAttendance.filter((record) => record.status === 'present').length / teacherAttendance.length) * 100,
           )
         : 0,
       groupsCount: data.groups.filter((group) => Number(group.teacherId) === Number(teacher.id)).length,
-      trend: calculateTrend(scoresByDate),
-    };
-  });
-  const byCourseLessonNps = data.courses.map((course) => {
-    const courseSurveys = periodLessonSurveys.filter((survey) => Number(survey.courseId) === Number(course.id));
-    const scores = [...courseSurveys]
-      .sort((left, right) => (getValidDate(left.createdAt)?.getTime() ?? 0) - (getValidDate(right.createdAt)?.getTime() ?? 0))
-      .map((survey) => Number(survey.score))
-      .filter(Number.isFinite);
-    return {
-      courseId: course.id,
-      courseName: course.name,
-      avgLessonScore: calculateAverage(scores) ?? 0,
-      trend: calculateTrend(scores),
-      progressAvg: calculateAverage(
-        data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying')
-          .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
-      ) ?? 0,
     };
   });
   const byGroupProgress = data.groups.map((group) => ({
@@ -785,7 +739,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
           )
         : 0,
       attendanceMarks: periodAttendance.length,
-      avgLessonScore,
       nps,
       npsBelowTarget: nps < targets.nps,
       teacherHours,
@@ -801,7 +754,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     groups: groupsWithCapacity,
     risks: {
       lowAttendanceStudents,
-      lowScores,
       overduePayments,
       longThinkingLeads,
       overdueTasks },
@@ -871,7 +823,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
         ltvCac: sourceCac ? Number(((calculateAverage(paidSourceStudents.map((student) => ltvByStudent.find((item) => Number(item.studentId) === Number(student.id))?.ltv || 0)) ?? 0) / sourceCac).toFixed(2)) : 0 };
     }),
     byTeacher,
-    byCourseLessonNps,
     byGroupProgress,
     retentionByCourse,
     churnByReason,

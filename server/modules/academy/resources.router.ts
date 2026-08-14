@@ -323,7 +323,6 @@ registerSimpleCrud('lessons', 'academy_lessons', [
     const usage = await queryOne<{ inUse: boolean }>(
       `SELECT (
          EXISTS (SELECT 1 FROM academy_attendance WHERE lesson_id = $1)
-         OR EXISTS (SELECT 1 FROM academy_lesson_surveys WHERE lesson_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lesson_status_history WHERE lesson_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lesson_reschedules WHERE lesson_id = $1)
          OR EXISTS (SELECT 1 FROM academy_portfolio_projects WHERE lesson_id = $1)

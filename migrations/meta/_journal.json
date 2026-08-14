@@ -624,6 +624,20 @@
       "when": 1788624000000,
       "tag": "0088_allow_deleted_assignment_managers",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788710400000,
+      "tag": "0089_drop_lesson_surveys",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788796800000,
+      "tag": "0090_add_telephony_call_notes",
+      "breakpoints": true
     }
   ]
 }

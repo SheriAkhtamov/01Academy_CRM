@@ -822,6 +822,6 @@
   }
 
   .telephony-control {
-    @apply flex w-16 flex-col items-center justify-center gap-1.5 rounded-2xl bg-slate-100 px-1 py-3 text-xs font-medium text-slate-700 transition hover:bg-slate-200;
+    @apply flex w-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-muted px-1 py-2.5 text-[11px] font-medium text-foreground transition hover:bg-accent;
   }
 }

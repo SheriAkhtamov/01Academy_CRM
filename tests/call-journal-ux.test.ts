@@ -9,6 +9,10 @@ const telephonyRoutes = readFileSync(
   new URL('../server/routes/telephony.routes.ts', import.meta.url),
   'utf8',
 );
+const telephonyRecordingRoutes = readFileSync(
+  new URL('../server/routes/telephony-recording.routes.ts', import.meta.url),
+  'utf8',
+);
 const paginationControls = readFileSync(
   new URL('../client/src/components/ux/PaginationControls.tsx', import.meta.url),
   'utf8',
@@ -84,8 +88,8 @@ describe('call journal navigation', () => {
   });
 
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {
-    expect(telephonyRoutes).toContain('resolveOnlinePbxRecording(call)');
-    expect(telephonyRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");
-    expect(telephonyRoutes).not.toContain('if (call.recordingUrl) return');
+    expect(telephonyRecordingRoutes).toContain('resolveOnlinePbxRecording(call)');
+    expect(telephonyRecordingRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");
+    expect(telephonyRecordingRoutes).not.toContain('if (call.recordingUrl) return');
   });
 });

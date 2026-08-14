@@ -44,8 +44,6 @@ const compositionBudgets = new Map(Object.entries({
 const clientTransportRatchet = new Map(Object.entries({
   'client/src/components/Header.tsx': 3,
   'client/src/components/modals/SettingsModal.tsx': 1,
-  'client/src/components/telephony/CallRecordingPlayer.tsx': 1,
-  'client/src/components/telephony/TelephonyWidget.tsx': 1,
   'client/src/components/ux/AdminScheduleCalendar.tsx': 1,
   'client/src/components/ux/AvailabilityCalendar.tsx': 1,
   'client/src/components/ux/CommandPalette.tsx': 1,
@@ -85,6 +83,7 @@ const serverPersistenceRatchet = new Map(Object.entries({
   'server/routes/incoming.routes.ts': 1,
   'server/routes/message.routes.ts': 1,
   'server/routes/notifications.routes.ts': 1,
+  'server/routes/telephony-recording.routes.ts': 1,
   'server/routes/telephony.routes.ts': 1,
   'server/routes/user.routes.ts': 2,
 }));

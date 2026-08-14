@@ -60,6 +60,7 @@ type JournalCall = {
   durationSeconds: number;
   talkSeconds: number;
   hangupCause: string | null;
+  note: string | null;
   hasRecording: boolean;
 };
 
@@ -390,6 +391,7 @@ function JournalTableRow({
       </td>
       <td className="px-4 py-3">
         <LeadCell call={call} />
+        <CallNote note={call.note} className="max-w-64" />
       </td>
       <td className="px-4 py-3">
         <p className="font-medium">{call.userName || t('notAssigned')}</p>
@@ -424,6 +426,7 @@ function JournalMobileCard({
         <LeadCell call={call} />
         <CallStatus call={call} isUnread={isUnread} />
       </div>
+      <CallNote note={call.note} />
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><DirectionIcon className="size-3.5" />{call.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}</span>
         <span className="text-right">{dateTime(call.startedAt)}</span>
@@ -455,6 +458,20 @@ function CallStatus({ call, isUnread }: { call: JournalCall; isUnread: boolean }
         {t(telephonyStatusTranslationKey(call.status))}
       </Badge>
     </div>
+  );
+}
+
+/** The note a manager wrote in the phone widget while the call was fresh. */
+function CallNote({ note, className }: { note: string | null; className?: string }) {
+  const { t } = useTranslation();
+  if (!note) return null;
+  return (
+    <p
+      className={cn('mt-1 line-clamp-2 rounded-md bg-muted/60 px-2 py-1 text-xs text-muted-foreground', className)}
+      title={t('telephonyNote')}
+    >
+      {note}
+    </p>
   );
 }
 

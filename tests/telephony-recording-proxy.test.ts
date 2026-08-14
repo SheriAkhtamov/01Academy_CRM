@@ -33,6 +33,10 @@ const telephonyRoutes = readFileSync(
   new URL('../server/routes/telephony.routes.ts', import.meta.url),
   'utf8',
 );
+const telephonyRecordingRoutes = readFileSync(
+  new URL('../server/routes/telephony-recording.routes.ts', import.meta.url),
+  'utf8',
+);
 const academyRoutes = readAcademyModuleSource();
 
 describe('OnlinePBX recording proxy URL validation', () => {
@@ -64,7 +68,7 @@ describe('OnlinePBX recording proxy URL validation', () => {
     expect(academyRoutes).toContain(
       `(NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0)`,
     );
-    expect(telephonyRoutes).not.toContain('if (Number(call.talkSeconds) <= 0)');
-    expect(telephonyRoutes).toContain('Using stored OnlinePBX recording URL after refresh failed');
+    expect(telephonyRecordingRoutes).not.toContain('if (Number(call.talkSeconds) <= 0)');
+    expect(telephonyRecordingRoutes).toContain('Using stored OnlinePBX recording URL after refresh failed');
   });
 });

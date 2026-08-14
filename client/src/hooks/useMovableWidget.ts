@@ -210,6 +210,11 @@ export function useMovableWidget<T extends HTMLElement>(
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<T>) => {
     if (event.button !== 0 || !event.isPrimary || !widgetRef.current) return;
+    // The widget is dragged by its whole surface, which would otherwise steal
+    // the press from controls that need it themselves — placing a caret in a
+    // text field, or flicking a list to scroll it. Those opt out by marking
+    // themselves `data-no-drag`.
+    if (event.target instanceof Element && event.target.closest('[data-no-drag]')) return;
     const bounds = widgetRef.current.getBoundingClientRect();
     dragStateRef.current = {
       pointerId: event.pointerId,

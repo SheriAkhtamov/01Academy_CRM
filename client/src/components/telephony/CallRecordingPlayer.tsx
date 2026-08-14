@@ -3,7 +3,7 @@ import { Headphones, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import { apiRequest } from '@/lib/queryClient';
+import { telephonyApi } from '@/features/telephony/api';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -25,15 +25,13 @@ export function CallRecordingPlayer({
   const loadRecording = async () => {
     setIsLoading(true);
     try {
-      const result = await apiRequest('GET', `/api/telephony/calls/${callId}/recording`) as { url: string };
+      const result = await telephonyApi.getRecordingUrl(callId);
       setUrl(result.url);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'onlinePbxRecordingUnavailable';
       toast({
         title: t('telephonyRecordingUnavailable'),
-        description: message in translations
-          ? t(message as TranslationKey)
-          : t('telephonyRecordingUnavailable'),
+        description: message in translations ? t(message as TranslationKey) : undefined,
         variant: 'destructive',
       });
     } finally {
@@ -59,11 +57,7 @@ export function CallRecordingPlayer({
 
   const handlePlaybackError = () => {
     setUrl(null);
-    toast({
-      title: t('telephonyRecordingUnavailable'),
-      description: t('telephonyRecordingUnavailable'),
-      variant: 'destructive',
-    });
+    toast({ title: t('telephonyRecordingUnavailable'), variant: 'destructive' });
   };
 
   return (

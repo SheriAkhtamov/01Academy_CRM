@@ -12,7 +12,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
-import { hasOnlinePbxManagerAssignment } from '@shared/telephony';
+import {
+  hasOnlinePbxManagerAssignment,
+  ONLINE_PBX_EXTENSION_MAX,
+  ONLINE_PBX_EXTENSION_MIN,
+} from '@shared/telephony';
 import {
   IncomingCallRingtone,
   shouldPlayIncomingRingtone,
@@ -24,6 +28,8 @@ export type TelephonyCallStatus = 'dialing' | 'ringing' | 'connected' | 'ended' 
 export type TelephonyContact = {
   type: 'lead' | 'student';
   id: number;
+  /** A student is reached through the lead they were converted from. */
+  leadId: number | null;
   name: string;
   secondaryName: string | null;
   phone: string;
@@ -31,6 +37,8 @@ export type TelephonyContact = {
 
 export type ActiveTelephonyCall = {
   clientCallId: string;
+  /** The database row id, known once the server has stored the call. */
+  storedCallId: number | null;
   direction: 'incoming' | 'outgoing';
   status: TelephonyCallStatus;
   phone: string;
@@ -97,6 +105,17 @@ export const waitForTelephonySocket = async (
   return client.socketReady();
 };
 
+export const TELEPHONY_RINGTONE_MUTED_KEY = '01academy.telephony.ringtone.muted.v1';
+
+const readStoredRingtoneMuted = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(TELEPHONY_RINGTONE_MUTED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 type TelephonyContextValue = {
   isManagerAssigned: boolean;
   connectionState: TelephonyConnectionState;
@@ -104,6 +123,13 @@ type TelephonyContextValue = {
   activeCall: ActiveTelephonyCall | null;
   pendingPhone: string | null;
   isPending: boolean;
+  /**
+   * Silences the ringer only. An incoming call still lights the widget up and
+   * still lands in the history, because muting the sound must never quietly
+   * turn into missing the call.
+   */
+  isRingtoneMuted: boolean;
+  toggleRingtoneMuted: () => void;
   startCall: (phone: string) => Promise<void>;
   answerCall: () => Promise<void>;
   hangupCall: () => Promise<void>;
@@ -123,6 +149,30 @@ const formatPhone = (value: unknown) => {
   if (digits.length === 9) return `+998${digits}`;
   if (digits.length >= 7 && digits.length <= 15) return `+${digits}`;
   return String(value ?? '').trim();
+};
+
+/**
+ * A transfer goes either to a colleague's extension or straight out to a real
+ * phone. The two never collide: an OnlinePBX extension is a 3–4 digit number in
+ * the 100–4999 range, while any reachable outside number is at least seven
+ * digits long.
+ */
+export const resolveTransferTarget = (
+  destination: string,
+  ownExtension: string | null,
+): string | null => {
+  const digits = String(destination ?? '').replace(/\D/g, '');
+  const asExtension = Number(digits);
+  if (
+    digits.length >= 3
+    && digits.length <= 4
+    && asExtension >= ONLINE_PBX_EXTENSION_MIN
+    && asExtension <= ONLINE_PBX_EXTENSION_MAX
+  ) {
+    return digits === ownExtension ? null : digits;
+  }
+  const external = formatPhone(digits).replace(/\D/g, '');
+  return external.length >= 7 && external.length <= 15 ? external : null;
 };
 
 const dialogPhone = (dialog: VertoDialogLike) => {
@@ -185,12 +235,15 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const [extension, setExtension] = useState<string | null>(null);
   const [activeCall, setActiveCallState] = useState<ActiveTelephonyCall | null>(null);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [isRingtoneMuted, setIsRingtoneMuted] = useState(readStoredRingtoneMuted);
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
   const credentialsRef = useRef<Credentials | null>(null);
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const ringtoneRef = useRef<IncomingCallRingtone | null>(null);
+  const ringtoneMutedRef = useRef(isRingtoneMuted);
+  ringtoneMutedRef.current = isRingtoneMuted;
   const localMediaRef = useRef<MediaStream | null>(null);
   const callSetupTimerRef = useRef<number | null>(null);
   const incomingPresentationTimersRef = useRef(new Map<string, number>());
@@ -236,26 +289,29 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         talkSeconds: durationFrom(call.answeredAt, end),
         hangupCause: hangupCause ?? call.errorCode,
       }) as {
+        id?: number | null;
         clientCallId: string;
         contactType?: 'lead' | 'student' | null;
         contactId?: number | null;
         contactName?: string | null;
+        leadId?: number | null;
         phone?: string | null;
       };
-      if (
-        activeCallRef.current?.clientCallId === call.clientCallId
-        && storedCall.contactType
-        && storedCall.contactId
-        && storedCall.contactName
-      ) {
+      if (activeCallRef.current?.clientCallId === call.clientCallId) {
         patchActiveCall({
-          contact: {
-            type: storedCall.contactType,
-            id: storedCall.contactId,
-            name: storedCall.contactName,
-            secondaryName: null,
-            phone: storedCall.phone || call.phone,
-          },
+          storedCallId: Number(storedCall.id) > 0 ? Number(storedCall.id) : null,
+          ...(storedCall.contactType && storedCall.contactId && storedCall.contactName
+            ? {
+              contact: {
+                type: storedCall.contactType,
+                id: storedCall.contactId,
+                leadId: storedCall.leadId ?? null,
+                name: storedCall.contactName,
+                secondaryName: null,
+                phone: storedCall.phone || call.phone,
+              },
+            }
+            : {}),
         });
       }
       queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls'] });
@@ -271,6 +327,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startRingtone = useCallback(() => {
+    if (ringtoneMutedRef.current) return;
     void ringtoneRef.current?.start();
   }, []);
 
@@ -327,13 +384,25 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     };
   }, [isManagerAssigned]);
 
+  const toggleRingtoneMuted = useCallback(() => {
+    setIsRingtoneMuted((muted) => {
+      const next = !muted;
+      try {
+        window.localStorage.setItem(TELEPHONY_RINGTONE_MUTED_KEY, String(next));
+      } catch {
+        // Remembering the choice is a convenience, not a requirement.
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
-    if (shouldPlayIncomingRingtone(activeCall?.direction, activeCall?.status)) {
+    if (!isRingtoneMuted && shouldPlayIncomingRingtone(activeCall?.direction, activeCall?.status)) {
       startRingtone();
     } else {
       stopRingtone();
     }
-  }, [activeCall?.direction, activeCall?.status, startRingtone, stopRingtone]);
+  }, [activeCall?.direction, activeCall?.status, isRingtoneMuted, startRingtone, stopRingtone]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -395,6 +464,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
                 const phone = dialogPhone(dialog);
                 const incoming: ActiveTelephonyCall = {
                   clientCallId: callId,
+                  storedCallId: null,
                   direction: 'incoming',
                   status: 'ringing',
                   phone,
@@ -580,6 +650,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     const contactPromise = lookupContact(phone);
     const started: ActiveTelephonyCall = {
       clientCallId: provisionalId,
+      storedCallId: null,
       direction: 'outgoing',
       status: 'dialing',
       phone,
@@ -720,11 +791,9 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const transferCall = useCallback(async (destination: string) => {
     const session = sessionRef.current;
     const current = activeCallRef.current;
-    const target = destination.trim();
     if (!session || !current || current.status !== 'connected') return;
-    if (!/^\d{2,10}$/.test(target) || target === extension) {
-      throw new Error('onlinePbxInvalidTransferTarget');
-    }
+    const target = resolveTransferTarget(destination, extension);
+    if (!target) throw new Error('onlinePbxInvalidTransferTarget');
     session.transfer(target, {});
   }, [extension]);
 
@@ -741,6 +810,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     activeCall,
     pendingPhone,
     isPending: Boolean(pendingPhone),
+    isRingtoneMuted,
+    toggleRingtoneMuted,
     startCall,
     answerCall,
     hangupCall,
@@ -757,9 +828,11 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     extension,
     hangupCall,
     isManagerAssigned,
+    isRingtoneMuted,
     pendingPhone,
     sendDtmf,
     startCall,
+    toggleRingtoneMuted,
     transferCall,
     toggleHold,
     toggleMute,

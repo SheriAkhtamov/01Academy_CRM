@@ -52,7 +52,11 @@ export const securityHeadersMiddleware = (
 ) => {
   const scriptSources = ["'self'"];
   if (isDevelopmentEnvironment) {
-    scriptSources.push("'unsafe-eval'");
+    // Vite's dev transform injects the React Refresh preamble as an inline
+    // script. Without 'unsafe-inline' the CSP blocks it, React never mounts
+    // and the dev server serves a blank page — the production policy below is
+    // unaffected, since neither keyword is added there.
+    scriptSources.push("'unsafe-eval'", "'unsafe-inline'");
   }
   const directives = [
     "default-src 'self'",

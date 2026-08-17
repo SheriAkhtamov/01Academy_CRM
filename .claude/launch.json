@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "crm",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/dev-local.mjs"],
+      "port": 5050
+    }
+  ]
+}

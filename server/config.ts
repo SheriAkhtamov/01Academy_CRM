@@ -108,7 +108,33 @@ const readConfigFile = (): AppConfig => {
   }
 
   const configContents = fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '');
-  return JSON.parse(configContents) as AppConfig;
+  const config = JSON.parse(configContents) as AppConfig;
+
+  /*
+    The committed config points at the compose service name, which only
+    resolves inside the container. DATABASE_URL lets a developer run the very
+    same config against a Postgres on their own machine without editing \u2014 and
+    so without risking a commit of \u2014 a file that holds live credentials. It
+    goes through the same validation as the file value below.
+  */
+  const databaseUrlOverride = process.env.DATABASE_URL?.trim();
+  const portOverride = Number(process.env.PORT);
+  const appUrlOverride = process.env.APP_URL?.trim();
+
+  return {
+    ...config,
+    database: databaseUrlOverride
+      ? { ...config.database, url: databaseUrlOverride }
+      : config.database,
+    server: {
+      ...config.server,
+      ...(Number.isInteger(portOverride) && portOverride > 0 ? { port: portOverride } : {}),
+      // Kept in step with the port on purpose: appUrl is the allowed origin the
+      // security middleware checks, so a port override alone would lock the
+      // browser out of the very server it just started.
+      ...(appUrlOverride ? { appUrl: appUrlOverride } : {}),
+    },
+  };
 };
 
 const validateConfig = (config: AppConfig) => {

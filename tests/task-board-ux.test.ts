@@ -20,7 +20,9 @@ const dragOverlayPortal = readFileSync(
 
 describe('task board interaction UX', () => {
   it('keeps the board height bounded so every column can scroll vertically', () => {
-    expect(tasksPage).toContain('h-full min-h-0 flex-col overflow-hidden');
+    // Bounded, but not clipped: the columns need a definite height to scroll
+    // inside, and anything that outgrows it has to reach the shell scroller.
+    expect(tasksPage).toContain('h-full min-h-0 flex-col p-6');
     expect(tasksPage).toContain('min-h-0 w-full max-w-[1600px]');
     expect(taskBoard).toContain('data-task-column-scroll');
     expect(taskBoard).toContain('overflow-y-auto overscroll-y-contain');

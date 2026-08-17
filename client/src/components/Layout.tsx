@@ -62,17 +62,23 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
+        {/*
+          <main> scrolls on every route, including the module pages that build
+          their own scroll area. On those the page fills the element exactly, so
+          `auto` shows nothing and there is still only one visible scrollbar —
+          but the moment a nested height chain collapses, the rows land in a
+          scroller instead of behind a clipped edge. Only the reserved gutter is
+          conditional: contained pages already reserve one further in.
+        */}
         <main
-          className={`min-h-0 flex-1 ${
-            containsOwnScrollArea
-              ? 'overflow-hidden'
-              : 'overflow-y-auto overflow-x-clip overscroll-y-contain [scrollbar-gutter:stable]'
+          className={`min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain ${
+            containsOwnScrollArea ? '' : '[scrollbar-gutter:stable]'
           }`}
           data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}
         >
           <PageTransition
             routeKey={location}
-            className={`min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full min-h-0 overflow-hidden' : ''}`}
+            className={`min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full' : ''}`}
           >
             {children}
           </PageTransition>

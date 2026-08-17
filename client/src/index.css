@@ -359,18 +359,22 @@
     @apply border-border;
   }
 
+  /* The shell sizes itself to the viewport, so in normal operation the document
+     has nothing left to scroll and no second scrollbar appears. The document is
+     deliberately left scrollable all the same: capping it with `max-height` +
+     `overflow: hidden` turns any content that escapes a nested scroll container
+     into content the operator can never reach, and the app stacks five or six
+     nested height constraints between <main> and a table row. Vertical overflow
+     must always end up somewhere reachable — horizontal overflow is always a
+     layout mistake, so that axis stays clipped. */
   html {
     height: 100%;
-    max-height: 100dvh;
-    overflow: hidden;
   }
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
     min-height: 100dvh;
-    height: 100%;
-    max-height: 100dvh;
-    overflow: hidden;
+    overflow-x: clip;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: 'cv11', 'ss01';
     font-variation-settings: 'opsz' 32;
@@ -379,9 +383,7 @@
   /* App canvas background — soft, premium, never flat */
   #root {
     min-height: 100dvh;
-    height: 100%;
-    max-height: 100dvh;
-    overflow: hidden;
+    overflow-x: clip;
     background: var(--app-bg);
     background-attachment: fixed;
   }

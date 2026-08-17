@@ -324,7 +324,7 @@ export function DemoLessonDialog({
             </p>
             <p className="text-xs text-muted-foreground">{t('demoTimeZoneHint')}</p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-tile gap-4">
             <div className="space-y-2">
               <Label htmlFor="demo-date">{t('dateColumn')}</Label>
               <Input

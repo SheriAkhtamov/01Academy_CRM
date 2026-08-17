@@ -147,7 +147,7 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
     : null;
 
   return (
-    <StaggerGroup count={5} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+    <StaggerGroup count={5} className="grid grid-cols-tile gap-3">
       <StaggerItem preset="pop" className="h-full">
         <KpiShell title={t('myGroupsCount')} icon={Users} tone="accent">
           <KpiValue

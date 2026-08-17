@@ -274,7 +274,7 @@ function DashboardSkeleton() {
         </div>
         <Skeleton className="h-10 w-32" />
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-tile gap-3">
         {Array.from({ length: 5 }, (_, index) => (
           <Skeleton key={index} className="h-28 rounded-xl" />
         ))}
@@ -287,7 +287,7 @@ function DashboardSkeleton() {
         <Skeleton className="h-[280px] rounded-xl xl:col-span-4 2xl:col-span-6" />
         <Skeleton className="h-[280px] rounded-xl xl:col-span-2 2xl:col-span-3" />
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-tile gap-4">
         {Array.from({ length: 4 }, (_, index) => (
           <Skeleton key={index} className="h-32 rounded-xl" />
         ))}
@@ -564,7 +564,7 @@ export default function AdminDashboardPage() {
         count={5}
         aria-label={t('adminKeyMetrics')}
         role="region"
-        className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
+        className="grid grid-cols-tile gap-3"
       >
         <KpiCard
           title={t('activeStudents')}
@@ -991,7 +991,7 @@ export default function AdminDashboardPage() {
             <CardTitle>{t('adminNextLessons')}</CardTitle>
             <CardDescription>{t('adminNextLessonsDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <CardContent className="grid grid-cols-tile gap-3">
             {data.upcomingLessons.map((lesson) => (
               <div key={lesson.id} className="rounded-lg border border-border/70 bg-muted/40 p-3">
                 <div className="flex items-center gap-2 text-xs font-medium text-primary-600">

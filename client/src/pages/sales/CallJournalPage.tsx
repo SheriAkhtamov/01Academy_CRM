@@ -214,7 +214,7 @@ export default function CallJournalPage() {
         ariaLabel={t('callJournal')}
         className="flex flex-col gap-3 overflow-y-auto"
       >
-        <section className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('callJournalSummary')}>
+        <section className="grid shrink-0 grid-cols-tile gap-3" aria-label={t('callJournalSummary')}>
           <SummaryCard icon={PhoneCall} title={t('totalCalls')} value={journalQuery.data?.total ?? 0} />
           <SummaryCard icon={Headphones} title={t('answeredCalls')} value={journalQuery.data?.summary.answered ?? 0} tone="success" />
           <SummaryCard icon={PhoneMissed} title={t('missedCalls')} value={journalQuery.data?.summary.missed ?? 0} tone="danger" />

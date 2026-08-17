@@ -143,7 +143,7 @@ export function MetaEventsSection() {
         <AlertTitle>{t('metaConversionMapping')}</AlertTitle>
         <AlertDescription>{t('metaOptimizationNotice')}</AlertDescription>
       </Alert>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-tile gap-3">
         <EventMetric label={t('metaEventsTotal')} value={data.summary.total} icon={ListChecks} />
         <EventMetric label={t('metaEventsPending')} value={data.summary.pending} icon={Clock3} />
         <EventMetric label={t('metaEventsSent')} value={data.summary.sent} icon={CircleCheckBig} />

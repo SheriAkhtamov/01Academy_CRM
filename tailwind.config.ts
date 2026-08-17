@@ -5,6 +5,23 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      /*
+        Card and tile rows size themselves from the width of their own
+        container, not the width of the window.
+
+        A breakpoint like `xl:grid-cols-5` fires at a 1280px *viewport*, but the
+        panel holding the tiles is 960px once the sidebar and page padding are
+        taken out — so five columns land at 182px each, labels truncate, and
+        "цель меньше 50 000" breaks across two lines. auto-fit drops to as many
+        columns as actually fit, and the minmax floor is what a tile needs to
+        stay readable. Pick the step by content: `tile` for a KPI number,
+        `card` for a card with a sentence in it, `panel` for a chart.
+      */
+      gridTemplateColumns: {
+        tile: "repeat(auto-fit, minmax(13rem, 1fr))",
+        card: "repeat(auto-fit, minmax(17rem, 1fr))",
+        panel: "repeat(auto-fit, minmax(22rem, 1fr))",
+      },
       borderRadius: {
         xl: "calc(var(--radius) + 4px)",
         lg: "var(--radius)",

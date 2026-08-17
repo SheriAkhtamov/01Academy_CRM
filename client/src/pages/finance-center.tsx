@@ -632,7 +632,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'income' && income.data ? (
         <div className="flex flex-col gap-5">
-          <StaggerGroup count={4} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StaggerGroup count={4} className="grid grid-cols-tile gap-4">
             <FinanceMetric label={copy.revenue} value={money(income.data.summary.revenueUzs)} icon={CircleDollarSign} tone="success" />
             <FinanceMetric label={copy.paymentCount} value={String(income.data.summary.paidCount)} icon={ReceiptText} />
             <FinanceMetric label={copy.averagePayment} value={money(income.data.summary.averagePaymentUzs)} icon={TrendingUp} />
@@ -655,7 +655,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'expenses' && expenses.data ? (
         <div className="flex flex-col gap-5">
-          <StaggerGroup count={4} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StaggerGroup count={4} className="grid grid-cols-tile gap-4">
             <FinanceMetric label={copy.totalRecognized} value={money(expenses.data.summary.totalRecognizedUzs)} icon={Banknote} tone="danger" />
             <FinanceMetric label={copy.operatingPaid} value={money(expenses.data.summary.paidOperatingUzs)} icon={ReceiptText} />
             <FinanceMetric label={copy.marketing} value={money(expenses.data.summary.marketingUzs)} icon={TrendingUp} />

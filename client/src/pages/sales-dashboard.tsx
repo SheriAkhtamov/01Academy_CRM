@@ -1009,7 +1009,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         <ModulePageBody contained={contained} ariaLabel={t('loading')}>
           <div className="space-y-6">
             <Skeleton className="h-10 w-64" />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-tile gap-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-28" />
               ))}

@@ -305,7 +305,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         <ModulePageBody contained={contained} ariaLabel={t('loading')}>
           <div className="space-y-6">
             <Skeleton className="h-10 w-64" />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
+            <div className="grid grid-cols-tile gap-4">
               {Array.from({ length: 9 }).map((_, i) => (
                 <Skeleton key={i} className="h-28" />
               ))}
@@ -444,7 +444,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
 
       {/* ─── KPI cards ─── */}
       {section === 'overview' ? (
-        <StaggerGroup count={7} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <StaggerGroup count={7} className="grid grid-cols-tile gap-3">
           <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('leadsForPeriod')} value={summary.newLeadsMonth ?? 0} detail={t('dataForSelectedPeriod')} icon={Users} tone="blue" />
           </StaggerItem>

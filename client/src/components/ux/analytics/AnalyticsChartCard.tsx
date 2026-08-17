@@ -53,11 +53,12 @@ export function AnalyticsChartCard({
     // animate when they are scrolled to rather than all at mount — by the time
     // the operator reaches the third row, a mount-time cascade would long since
     // have finished and the card would appear to pop in with no reason.
-    <Reveal className="min-w-0">
-    <Card className={cn(
-      'min-w-0 border-border/60 bg-card shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-lg',
-      className,
-    )}>
+    // `className` lands on the Reveal, not the Card: the Reveal is the grid
+    // item, so a caller's `xl:col-span-7` only means anything here. Putting it
+    // on the Card left every span inert and dropped each chart into a single
+    // column of a twelve-column grid.
+    <Reveal className={cn('min-w-0', className)}>
+    <Card className="h-full min-w-0 border-border/60 bg-card shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-lg">
       <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
         <div className="min-w-0">
           <CardTitle id={titleId} className="text-[15px] font-semibold leading-5 tracking-tight">{title}</CardTitle>

@@ -1429,10 +1429,9 @@ function ArchiveTab({
   ];
 
   return (
+    // No card header: the page header above already reads "Архив лидов", and
+    // repeating it cost 64px of a table that only had 371px to show 25 rows.
     <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-      <CardHeader className="shrink-0 pb-4">
-        <CardTitle>{t('leadArchive')}</CardTitle>
-      </CardHeader>
       <CardContent className="min-h-0 flex-1 p-0">
         <DataTable
           rootClassName="flex h-full min-h-0 flex-col"

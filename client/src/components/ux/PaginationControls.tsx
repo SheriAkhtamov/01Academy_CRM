@@ -48,8 +48,17 @@ export function PaginationControls({
   return (
     <nav
       aria-label={t('paginationNavigation')}
+      /*
+        Every control lives on the left, and the bottom-right corner is left
+        empty on purpose. Paginated tables fill the page, so this bar always
+        sits against the bottom edge — exactly where the draggable telephony
+        widget rests by default (fixed, z-70, pointer-events-auto). It covered
+        the page counter and both arrows, so a 26-page archive could not be
+        paged past the first screen. Reserving the corner fixes that for every
+        table at once, without hard-coding the widget's size or position.
+      */
       className={cn(
-        'flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/70 bg-muted/10 px-4 py-3 text-xs text-muted-foreground',
+        'flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/70 bg-muted/10 px-4 py-3 text-xs text-muted-foreground',
         className,
       )}
     >

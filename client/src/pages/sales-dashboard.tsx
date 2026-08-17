@@ -11,6 +11,7 @@ import { useLeadFilters } from '@/features/sales/useLeadFilters';
 import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
 import { SalesBulkActionsButton, SalesOverviewSection, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
+import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { translations, type TranslationKey } from '@/lib/i18n';
@@ -62,7 +63,7 @@ import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
-import { leadContactSummary, leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { addReportingDays, isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
@@ -79,7 +80,6 @@ import {
   AlertCircle,
   Archive,
   Plus,
-  RotateCcw,
   TrendingUp,
   Trash2,
   UserCheck,
@@ -1318,138 +1318,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   );
 }
 // ---- Sub-components for tabs ----
-
-function ArchiveTab({
-  t,
-  leads,
-  activePipelineStatuses,
-  leadStatusName,
-  archiveReasonName,
-  dateTime,
-  onLeadClick,
-  onRestore,
-  isPending,
-}: {
-  t: (key: TranslationKey) => string;
-  leads: Lead[];
-  activePipelineStatuses: PipelineStatus[];
-  leadStatusName: (code: string) => string;
-  archiveReasonName: (code: string | null | undefined) => string;
-  dateTime: (v: string | null | undefined) => string;
-  onLeadClick: (lead: Lead) => void;
-  onRestore: (leadId: number, statusCode: string) => void;
-  isPending: boolean;
-}) {
-  const columns = [
-    {
-      key: 'contactName',
-      header: t('lead'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.contactName,
-      render: (lead: Lead) => (
-        <div>
-          <div className="font-medium text-foreground">{lead.contactName}</div>
-          <div className="text-xs text-muted-foreground">{leadContactSummary(lead, t('noData'))}</div>
-        </div>
-      ),
-    },
-    {
-      key: 'statusCode',
-      header: t('status'),
-      sortable: true,
-      accessor: (lead: Lead) => leadStatusName(lead.statusCode),
-      render: (lead: Lead) => (
-        <Badge variant="outline">{leadStatusName(lead.statusCode)}</Badge>
-      ),
-    },
-    {
-      key: 'managerName',
-      header: t('manager'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.managerName || t('noData'),
-      render: (lead: Lead) => <span className="text-muted-foreground">{lead.managerName || t('noData')}</span>,
-    },
-    {
-      key: 'archiveReason',
-      header: t('archiveReason'),
-      sortable: true,
-      accessor: (lead: Lead) => archiveReasonName(lead.archiveReason),
-      render: (lead: Lead) => <span className="text-muted-foreground">{archiveReasonName(lead.archiveReason)}</span>,
-    },
-    {
-      key: 'archivedAt',
-      header: t('archivedAt'),
-      sortable: true,
-      accessor: (lead: Lead) => lead.archivedAt,
-      render: (lead: Lead) => (
-        <div>
-          <div className="text-muted-foreground">{dateTime(lead.archivedAt)}</div>
-          {lead.archivedByName ? (
-            <div className="text-xs text-muted-foreground">{t('archivedBy')} {lead.archivedByName}</div>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      key: 'restore',
-      header: t('actions'),
-      render: (lead: Lead) => (
-        <div
-          className="flex justify-end"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm" disabled={isPending || activePipelineStatuses.length === 0}>
-                <RotateCcw data-icon="inline-start" />
-                {t('restoreLead')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuGroup>
-                {activePipelineStatuses.map((status) => (
-                  <DropdownMenuItem
-                    key={status.code}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRestore(lead.id, status.code);
-                    }}
-                    disabled={isPending}
-                  >
-                    {t('restoreToStage')} {leadStatusName(status.code)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ),
-    },
-  ];
-
-  return (
-    // No card header: the page header above already reads "Архив лидов", and
-    // repeating it cost 64px of a table that only had 371px to show 25 rows.
-    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-      <CardContent className="min-h-0 flex-1 p-0">
-        <DataTable
-          rootClassName="flex h-full min-h-0 flex-col"
-          className="min-h-0 flex-1 overflow-auto overscroll-contain"
-          columns={columns}
-          data={leads}
-          keyExtractor={(lead: Lead) => `archived-lead-${lead.id}`}
-          emptyState={
-            <div className="p-8">
-              <EmptyState title={t('noArchivedLeads')} text={t('noArchivedLeadsDesc')} icon={Archive} />
-            </div>
-          }
-          onRowClick={onLeadClick}
-        />
-      </CardContent>
-    </Card>
-  );
-}
 
 function StudentsTab({
   t,

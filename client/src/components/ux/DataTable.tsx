@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Table,
   TableBody,
@@ -194,40 +194,43 @@ export function DataTable<T extends Record<string, any>>({
                 </TableRow>
               ))
             ) : pagedData.length > 0 ? (
-              <AnimatePresence initial={false}>
-                {pagedData.map((row, index) => (
-                  <MotionTableRow
-                    key={keyExtractor(row, index)}
-                    className={cn(
-                      'border-b border-border/50 transition-colors hover:bg-accent/40',
-                      onRowClick && 'cursor-pointer',
-                      rowClassName?.(row)
-                    )}
-                    onClick={() => onRowClick?.(row)}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    // A row that is filtered out or deleted fades where it sat
-                    // rather than vanishing, so the eye can follow which record
-                    // left the table.
-                    exit={{ opacity: 0 }}
-                    transition={{
-                      duration: DURATION.base,
-                      ease: EASE.out,
-                      delay: rowDelay(index),
-                    }}
-                  >
-                    {columns.map((column) => (
-                      <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>
-                        {column.render
-                          ? column.render(row, index)
-                          : column.accessor
-                            ? column.accessor(row)
-                            : row[column.key]}
-                      </TableCell>
-                    ))}
-                  </MotionTableRow>
-                ))}
-              </AnimatePresence>
+              /*
+                Rows animate in, never out. A <tr> fading to opacity 0 keeps its
+                full height for as long as it is mounted, so an exit animation
+                leaves a stack of blank rows below the results — measured on the
+                lead archive, a search narrowing 655 leads to 20 left 25 ghost
+                rows holding 61px each, and they never came back out. Height is
+                not animatable on a table row either, so there is no version of
+                this that leaves gracefully: the row simply goes.
+              */
+              pagedData.map((row, index) => (
+                <MotionTableRow
+                  key={keyExtractor(row, index)}
+                  className={cn(
+                    'border-b border-border/50 transition-colors hover:bg-accent/40',
+                    onRowClick && 'cursor-pointer',
+                    rowClassName?.(row)
+                  )}
+                  onClick={() => onRowClick?.(row)}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: DURATION.base,
+                    ease: EASE.out,
+                    delay: rowDelay(index),
+                  }}
+                >
+                  {columns.map((column) => (
+                    <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>
+                      {column.render
+                        ? column.render(row, index)
+                        : column.accessor
+                          ? column.accessor(row)
+                          : row[column.key]}
+                    </TableCell>
+                  ))}
+                </MotionTableRow>
+              ))
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="p-0">

@@ -16,11 +16,11 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const { t } = useTranslation();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const containsOwnScrollArea = isContainedModuleRoute(location);
+  const containsOwnScrollArea = isContainedModuleRoute(location, user?.module);
   const realtime = useWebSocket();
 
   if (isLoading) {

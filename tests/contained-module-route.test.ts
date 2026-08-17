@@ -52,4 +52,20 @@ describe('isContainedModuleRoute', () => {
   ])('preserves normal page scrolling for %s', (location) => {
     expect(isContainedModuleRoute(location)).toBe(false);
   });
+
+  // `/` renders the operator's own module, so it has to follow that module's
+  // layout: a teacher signing in must not get a different padding, width and
+  // scroll owner on `/` than on `/teacher-module`, which is the same page.
+  it('treats the home route as contained only for the teacher module', () => {
+    expect(isContainedModuleRoute('/', 'teacher')).toBe(true);
+    expect(isContainedModuleRoute('/', 'sales')).toBe(false);
+    expect(isContainedModuleRoute('/', 'marketing')).toBe(false);
+    expect(isContainedModuleRoute('/', 'administration')).toBe(false);
+    expect(isContainedModuleRoute('/', undefined)).toBe(false);
+  });
+
+  it('ignores the module on every route that names its own module', () => {
+    expect(isContainedModuleRoute('/sales/pipeline', 'teacher')).toBe(true);
+    expect(isContainedModuleRoute('/sales', 'teacher')).toBe(false);
+  });
 });

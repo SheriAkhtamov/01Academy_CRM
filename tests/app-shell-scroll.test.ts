@@ -1,7 +1,16 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const clientRoot = fileURLToPath(new URL('../client/src', import.meta.url));
+const tsxFiles = (dir: string): string[] =>
+  readdirSync(dir).flatMap((entry) => {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) return tsxFiles(full);
+    return full.endsWith('.tsx') ? [full] : [];
+  });
 const layout = read('../client/src/components/Layout.tsx');
 const modulePage = read('../client/src/components/ux/ModulePage.tsx');
 const tasks = read('../client/src/pages/tasks.tsx');
@@ -50,5 +59,43 @@ describe('app shell scrolling', () => {
   it('keeps the task board page from clipping the columns it cannot size', () => {
     expect(tasks).toContain('className="flex h-full min-h-0 flex-col p-6 lg:p-8"');
     expect(tasks).toContain('className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col"');
+  });
+
+  it('gives the boards and the inbox a height floor instead of letting them be squeezed', () => {
+    expect(read('../client/src/components/ux/KanbanBoard.tsx'))
+      .toContain('flex min-h-[26rem] min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden');
+    expect(read('../client/src/components/ux/board/TaskBoard.tsx'))
+      .toContain('flex min-h-[26rem] flex-1 flex-col overflow-hidden');
+    expect(read('../client/src/pages/sales/InstagramMessagesPage.tsx'))
+      .toContain('mt-3 flex min-h-[30rem] flex-1 flex-col overflow-hidden');
+  });
+
+  /**
+   * Boards, calendars and the inbox have to clip — their children take a height
+   * from them and scroll inside it. What they must never do is clip *and* let
+   * themselves be squeezed to nothing: on a short viewport that leaves a few
+   * rows visible, the rest hidden, and no scrollbar anywhere to reach it. Such
+   * a box needs either a scroller of its own or a floor under its height.
+   */
+  it('never pairs a vertical clip with an unbounded squeeze', () => {
+    const allowed = new Set([
+      // Lives inside a board wrapper that already carries the floor, and clips
+      // only the axis its columns scroll themselves.
+      'min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2',
+    ]);
+    const offenders = tsxFiles(clientRoot).flatMap((file) => {
+      const source = readFileSync(file, 'utf8');
+      return source.split('\n').flatMap((line, index) =>
+        [...line.matchAll(/className=(?:"([^"]*)"|\{cn\(([^)]*)\)\}|\{`([^`]*)`\})/g)]
+          .map((match) => (match[1] ?? match[2] ?? match[3] ?? '').replace(/\s+/g, ' ').trim())
+          .filter((cls) =>
+            /\bmin-h-0\b/.test(cls)
+            && /\bflex-1\b/.test(cls)
+            && /(^|[\s'"])(overflow-hidden|overflow-y-hidden)([\s'"]|$)/.test(cls)
+            && !/overflow-y-auto|overflow-auto/.test(cls)
+            && !allowed.has(cls))
+          .map((cls) => `${relative(clientRoot, file)}:${index + 1} — ${cls}`));
+    });
+    expect(offenders).toEqual([]);
   });
 });

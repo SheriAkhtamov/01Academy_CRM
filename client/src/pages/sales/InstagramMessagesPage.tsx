@@ -1874,7 +1874,7 @@ export default function MessagesPage() {
 
       <Card
         ref={inboxCardRef}
-        className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-border bg-background shadow-none"
+        className="mt-3 flex min-h-[30rem] flex-1 flex-col overflow-hidden rounded-lg border-border bg-background shadow-none"
       >
         {conversations.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center">

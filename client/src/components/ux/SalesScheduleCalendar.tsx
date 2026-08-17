@@ -356,8 +356,12 @@ export function SalesScheduleCalendar({
     </div>
   );
 
+  /* Scrolls at every width rather than clipping on desktop: the grid inside
+     fills this box exactly when its height resolves, so nothing shows, and a
+     viewport too short for the calendar's floor gets a scrollbar instead of a
+     hidden bottom half. */
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-y-contain lg:overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-y-contain">
       <Card className="shrink-0">
         <CardHeader className="gap-3 px-3 py-2.5 sm:px-4">
           <CalendarNavigator
@@ -440,7 +444,7 @@ export function SalesScheduleCalendar({
           </Card>
         ) : null}
 
-        <Card className="flex min-h-[28rem] min-w-0 flex-col overflow-hidden lg:h-full lg:min-h-0">
+        <Card className="flex min-h-[28rem] min-w-0 flex-col overflow-hidden lg:h-full">
           <CardContent className="flex min-h-0 flex-1 flex-col p-0">
             {demosQuery.isError ? (
               <div

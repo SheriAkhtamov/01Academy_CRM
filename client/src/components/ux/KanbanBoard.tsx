@@ -614,9 +614,17 @@ export function KanbanBoard({
     }
   }, [moveLead]);
 
+  /*
+    The board has to clip: its columns take their height from this box and
+    scroll inside themselves, which is what keeps the stage headers in place
+    while a long column moves. `min-h-0` would let a short viewport squeeze
+    that box down to a few rows of cards with no way to see the rest, so the
+    board keeps a floor instead and pushes past the page when it has to — the
+    shell scroller catches the overflow.
+  */
   return (
     <div
-      className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden"
+      className="flex min-h-[26rem] min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden"
       style={{ contain: 'layout paint' }}
     >
       <DndContext

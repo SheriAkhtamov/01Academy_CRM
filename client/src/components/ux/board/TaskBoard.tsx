@@ -248,9 +248,12 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
         [boardTasks],
     );
 
+    /* Same floor as the lead board: clipping is required for the columns to
+       scroll inside themselves, so the box must never be squeezed smaller
+       than a usable column. See KanbanBoard. */
     return (
         <div
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="flex min-h-[26rem] flex-1 flex-col overflow-hidden"
             style={{ contain: 'layout paint' }}
         >
             <DndContext

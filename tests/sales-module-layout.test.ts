@@ -64,7 +64,7 @@ describe('sales module layout', () => {
 
   it('gives the conversations module the remaining viewport height without duplicate header spacing', () => {
     expect(messages).toContain('<ModulePage contained className="[&>[data-page-header]]:mb-0">');
-    expect(messages).toContain('className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden');
+    expect(messages).toContain('className="mt-3 flex min-h-[30rem] flex-1 flex-col overflow-hidden');
     expect(messages).not.toContain('lg:mt-6');
   });
 });

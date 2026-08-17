@@ -1,3 +1,5 @@
+import type { AcademyModule } from '@shared/academy';
+
 const CONTAINED_MODULE_ROUTES = new Set([
   '/integrations',
   '/sales/pipeline',
@@ -35,7 +37,20 @@ const CONTAINED_MODULE_ROUTES = new Set([
   '/tasks',
 ]);
 
-export function isContainedModuleRoute(location: string) {
+/**
+ * `/` renders whichever module the operator works in, so the path alone cannot
+ * say whether the page builds its own scroll area. The teacher module is
+ * contained in every section, overview included, and a teacher lands on `/`
+ * after signing in — without this it would get the same page with different
+ * padding, a different content width and a different element under the finger
+ * than `/teacher-module`, which is the mismatch the route table above exists
+ * to prevent. Every other module opens its overview on `/`, and those scroll
+ * with the document.
+ */
+const CONTAINED_HOME_MODULES = new Set<AcademyModule>(['teacher']);
+
+export function isContainedModuleRoute(location: string, homeModule?: AcademyModule | null) {
   const pathname = location.split(/[?#]/, 1)[0];
+  if (pathname === '/') return homeModule ? CONTAINED_HOME_MODULES.has(homeModule) : false;
   return CONTAINED_MODULE_ROUTES.has(pathname);
 }

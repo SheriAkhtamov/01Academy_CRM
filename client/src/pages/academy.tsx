@@ -387,9 +387,12 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       under a frozen header instead of the page simply scrolling. Document flow
       is the right shape here — the header scrolls away and the whole height is
       the list's. `pb-24` keeps the last card reachable above the floating
-      telephony widget, which is fixed to the bottom-right corner.
+      telephony widget, which is fixed to the bottom-right corner. That padding
+      sits on the list, not on ModulePage: ModulePage's own `lg:p-8` is a media
+      query and wins over an unprefixed `pb-*` passed in, which left the last
+      card 41px under the widget on a 1280px screen.
     */
-    <ModulePage className="pb-24">
+    <ModulePage>
       <PageHeader
         title={t('navIntegrations')}
         subtitle={t('adminIntegrationsDescription')}
@@ -406,7 +409,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         ) : undefined}
       />
 
-      <div aria-label={t('navIntegrations')} className="space-y-3">
+      <div aria-label={t('navIntegrations')} className="space-y-3 pb-24">
         {integrations.isLoading ? (
           Array.from({ length: 4 }).map((_, index) => (
             <Card key={index}>

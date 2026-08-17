@@ -3,7 +3,6 @@ import { isContainedModuleRoute } from '../client/src/lib/containedModuleRoutes'
 
 describe('isContainedModuleRoute', () => {
   it.each([
-    '/integrations',
     '/sales/pipeline',
     '/sales/pipeline?lead=42',
     '/sales/archive',
@@ -49,6 +48,9 @@ describe('isContainedModuleRoute', () => {
     '/finance',
     '/admin',
     '/',
+    // Four setting cards: the page scrolls as a document rather than building
+    // an inner window inside a frozen viewport.
+    '/integrations',
   ])('preserves normal page scrolling for %s', (location) => {
     expect(isContainedModuleRoute(location)).toBe(false);
   });

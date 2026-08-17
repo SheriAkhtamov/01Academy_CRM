@@ -1,7 +1,6 @@
 import type { AcademyModule } from '@shared/academy';
 
 const CONTAINED_MODULE_ROUTES = new Set([
-  '/integrations',
   '/sales/pipeline',
   '/sales/archive',
   '/sales/schedule',

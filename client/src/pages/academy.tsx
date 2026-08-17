@@ -33,7 +33,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
+import { ModulePage } from '@/components/ux/ModulePage';
 import { MetaIntegrationDialog } from '@/components/marketing/MetaIntegrationDialog';
 import type { MetaIntegrationState } from '@/features/marketing/meta-api';
 import {
@@ -65,9 +65,9 @@ interface IntegrationStatus {
   provider: string;
   mode: string;
   connected: boolean;
+  requiresReconnect?: boolean;
   accountId?: number | null;
   accountUsername?: string | null;
-  message: string;
   details?: MetaIntegrationState | null;
   lastLog?: {
     provider: string;
@@ -187,6 +187,17 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   const integrations = useQuery<IntegrationStatus[]>({
     queryKey: ['/api/academy/integrations/status'],
   });
+  const totalCount = integrations.data?.length ?? 0;
+  const connectedCount = (integrations.data ?? []).filter((entry) => entry.connected).length;
+  /*
+    Whatever is broken goes first. This page exists to be checked, and an admin
+    opening it wants the one integration that stopped working — not to read
+    past three healthy cards to find it. Ties keep the server's order so the
+    list does not reshuffle between refetches.
+  */
+  const orderedIntegrations = useMemo(() => (
+    [...(integrations.data ?? [])].sort((a, b) => Number(a.connected) - Number(b.connected))
+  ), [integrations.data]);
   const onlinePbxRouting = useQuery<OnlinePbxRoutingSettings>({
     queryKey: ['/api/telephony/routing'],
     enabled: onlinePbxSettingsOpen,
@@ -370,17 +381,32 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   };
 
   return (
-    <ModulePage contained>
+    /*
+      A list of four setting cards has no reason to own a scroll area: it built
+      an inner 492px window inside a viewport-locked page, so the cards moved
+      under a frozen header instead of the page simply scrolling. Document flow
+      is the right shape here — the header scrolls away and the whole height is
+      the list's. `pb-24` keeps the last card reachable above the floating
+      telephony widget, which is fixed to the bottom-right corner.
+    */
+    <ModulePage className="pb-24">
       <PageHeader
-        title={section === 'integrations' ? t('navIntegrations') : t('navIntegrations')}
-        subtitle={t('academyDescription')}
+        title={t('navIntegrations')}
+        subtitle={t('adminIntegrationsDescription')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
           { label: t('navIntegrations') },
         ]}
+        titleAccessory={integrations.data ? (
+          <Badge variant={connectedCount === totalCount ? 'success' : 'warning'}>
+            {t('integrationsConnectedSummary')
+              .replace('{connected}', String(connectedCount))
+              .replace('{total}', String(totalCount))}
+          </Badge>
+        ) : undefined}
       />
 
-      <ModulePageBody contained ariaLabel={t('navIntegrations')} className="space-y-3">
+      <div aria-label={t('navIntegrations')} className="space-y-3">
         {integrations.isLoading ? (
           Array.from({ length: 4 }).map((_, index) => (
             <Card key={index}>
@@ -398,8 +424,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               </CardHeader>
             </Card>
           ))
-        ) : (integrations.data ?? []).map((integration) => {
+        ) : orderedIntegrations.map((integration) => {
           const copy = integrationCopy(integration.provider, t);
+          const statusText = integration.requiresReconnect
+            ? t('integrationStatusReconnectRequired')
+            : integration.connected
+              ? t('integrationStatusConnected')
+              : t('integrationStatusNotConfigured');
           const lastLogTime = formatLogTime(integration.lastLog?.createdAt ?? integration.lastLog?.updatedAt, language);
           const Icon = integration.provider === 'website'
             ? Globe2
@@ -425,7 +456,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                     <div className="min-w-0">
                       <CardTitle>{copy.title}</CardTitle>
                       <CardDescription className="mt-1">{copy.description}</CardDescription>
-                      <p className="mt-3 text-sm text-muted-foreground">{integration.message}</p>
+                      <p className={`mt-3 text-sm ${integration.connected ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}`}>
+                        {statusText}
+                      </p>
                       <div className="mt-3 inline-flex rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
                         {lastLogTime ? (
                           <span>{t('integrationLastEvent')}: {lastLogTime}</span>
@@ -485,7 +518,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       ) : (
                         <AlertCircle className="h-3.5 w-3.5" />
                       )}
-                      {integration.connected ? t('active') : t('inactive')}
+                      {integration.connected ? t('active') : t('integrationNeedsAttention')}
                     </Badge>
                   </div>
                 </div>
@@ -493,7 +526,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Card>
           );
         })}
-      </ModulePageBody>
+      </div>
 
       <MetaIntegrationDialog
         open={metaDetailsOpen}

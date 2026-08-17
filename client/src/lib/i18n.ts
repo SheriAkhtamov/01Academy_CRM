@@ -2,7 +2,6 @@ import { devLog } from '@/lib/debug';
 
 export const translations = {
   absent: { en: 'Absent', ru: 'Отсутствовал' },
-  academyDescription: { en: '01 Academy CRM: sales, education, and operations in one workflow.', ru: '01 Academy CRM: продажи, обучение и операции в одном рабочем контуре.' },
   accessDenied: { en: 'Access Denied', ru: 'Доступ запрещён' },
   accountSettings: { en: 'Account Settings', ru: 'Настройки аккаунта' },
   accounts: { en: 'Accounts', ru: 'Аккаунты' },
@@ -1700,6 +1699,17 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   integrationLastEvent: { en: 'Last event', ru: 'Последнее событие' },
   integrationNoEvents: { en: 'No events yet', ru: 'Событий пока нет' },
+  integrationStatusConnected: { en: 'Connected and receiving events', ru: 'Подключено, события поступают' },
+  integrationStatusNotConfigured: {
+    en: 'Not configured — add the service keys to the app configuration.',
+    ru: 'Не настроено — добавьте ключи сервиса в конфигурацию приложения.',
+  },
+  integrationStatusReconnectRequired: {
+    en: 'The token is no longer valid. Reconnect the account and the CRM will restore lead names and usernames.',
+    ru: 'Токен недействителен. Подключите аккаунт заново — CRM восстановит имена и username лидов.',
+  },
+  integrationsConnectedSummary: { en: '{connected} of {total} connected', ru: 'Подключено {connected} из {total}' },
+  integrationNeedsAttention: { en: 'Needs setup', ru: 'Требует настройки' },
   integrationProviderWebsite: { en: 'Website', ru: 'Сайт' },
   integrationProviderWebsiteDesc: {
     en: 'Lead capture webhook from the Zero One Academy website.',

@@ -440,7 +440,6 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: instagramRequiresReconnect,
         accountId: instagramAccount?.id ?? null,
         accountUsername: instagramAccount?.username ?? null,
-        note: 'Instagram Login, Direct messages and automatic lead creation',
         details: null,
       },
       {
@@ -449,7 +448,6 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: false,
         accountId: null,
         accountUsername: null,
-        note: 'Website lead inbound webhook',
         details: null,
       },
       {
@@ -462,7 +460,6 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: false,
         accountId: null,
         accountUsername: metaMarketing.pageId,
-        note: 'Meta Ads attribution, Instant Forms and Conversions API',
         // Surfaced on the Integrations page so the marketing report stays free of admin diagnostics.
         details: { ...metaMarketing, conversionStages },
       },
@@ -472,23 +469,26 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: false,
         accountId: null,
         accountUsername: onlinePbxClient.getDomain() || null,
-        note: 'OnlinePBX click-to-call',
         details: null,
       },
     ];
+    /*
+      State, not prose. The message used to be built here by gluing an English
+      `note` onto Russian words — "Instagram Login, Direct messages and
+      automatic lead creation: подключено." — which read as two languages at
+      once and put user-facing copy outside the translation dictionary. The
+      client owns the wording now and renders it from `connected` and
+      `requiresReconnect`.
+    */
     res.json(providers.map((entry) => ({
       provider: entry.provider,
       mode: entry.connected ? 'live' : 'stub',
       connected: entry.connected,
+      requiresReconnect: entry.requiresReconnect,
       accountId: entry.accountId,
       accountUsername: entry.accountUsername,
       details: entry.details,
       lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
-      message: entry.requiresReconnect
-        ? 'Токен Instagram недействителен. Подключите аккаунт заново — после этого CRM автоматически восстановит имена и username лидов.'
-        : entry.connected
-        ? `${entry.note}: подключено.`
-        : `${entry.note}: режим-заглушка. Заполните ключи в config/app.config.json.`,
     })));
   } catch (error) {
     logger.error('Failed to fetch integrations status', { error });

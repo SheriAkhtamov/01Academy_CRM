@@ -4,6 +4,7 @@ import { Link } from 'wouter';
 import {
   ArrowUpRight,
   Grid3X3,
+  Loader2,
   Mic,
   MicOff,
   NotebookPen,
@@ -316,7 +317,9 @@ export function TelephonyActiveCall({
             disabled={isPending}
             aria-label={t('telephonyAnswer')}
           >
-            <PhoneCall className="size-6" />
+            {isPending
+              ? <Loader2 className="size-6 animate-spin" />
+              : <PhoneCall className="size-6" />}
           </Button>
         ) : null}
         {!finished ? (
@@ -324,9 +327,12 @@ export function TelephonyActiveCall({
             type="button"
             className="size-14 rounded-full bg-red-600 p-0 text-white hover:bg-red-700"
             onClick={onHangup}
+            disabled={isPending}
             aria-label={t('telephonyHangup')}
           >
-            <PhoneOff className="size-6" />
+            {isPending
+              ? <Loader2 className="size-6 animate-spin" />
+              : <PhoneOff className="size-6" />}
           </Button>
         ) : (
           <>
@@ -345,13 +351,12 @@ export function TelephonyActiveCall({
             ) : null}
             <Button
               type="button"
-              variant="outline"
               size="sm"
-              className="h-9"
+              className="h-9 bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={() => onRedial(call.phone)}
             >
               <RotateCcw />
-              {t('telephonyCallAgain')}
+              {call.direction === 'incoming' ? t('telephonyCallBack') : t('telephonyCallAgain')}
             </Button>
             <Button type="button" variant="ghost" size="sm" className="h-9" onClick={onClose}>
               {t('close')}

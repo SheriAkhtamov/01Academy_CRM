@@ -124,7 +124,8 @@ export function TelephonyCallHistory({
               type="button"
               className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setSearch('')}
-              aria-label={t('close')}
+              aria-label={t('clearSearch')}
+              title={t('clearSearch')}
             >
               <X className="size-3.5" />
             </button>

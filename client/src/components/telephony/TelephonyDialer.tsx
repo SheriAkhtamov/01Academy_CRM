@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardPaste, Copy, Delete, PhoneCall, RotateCcw, UserRound } from 'lucide-react';
+import { ClipboardPaste, Copy, Delete, Loader2, PhoneCall, RotateCcw, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -108,7 +108,7 @@ export function TelephonyDialer({
   };
 
   const placeCall = () => {
-    if (!isDiallable) return;
+    if (!isDiallable || !isReady || isPending) return;
     try {
       window.localStorage.setItem(TELEPHONY_LAST_NUMBER_KEY, dialedNumber);
     } catch {
@@ -133,6 +133,7 @@ export function TelephonyDialer({
           onKeyDown={(event) => {
             if (event.key === 'Enter') placeCall();
           }}
+          autoFocus
           placeholder="+998 90 123 45 67"
           className="h-11 cursor-text pl-10 pr-9 text-center font-mono text-base tracking-wide"
           inputMode="tel"
@@ -213,8 +214,8 @@ export function TelephonyDialer({
         disabled={!isDiallable || !isReady || isPending}
         onClick={placeCall}
       >
-        <PhoneCall className="size-5" />
-        {t('call')}
+        {isPending ? <Loader2 className="size-5 animate-spin" /> : <PhoneCall className="size-5" />}
+        {isPending ? t('telephonyStatusDialing') : t('call')}
       </Button>
     </div>
   );

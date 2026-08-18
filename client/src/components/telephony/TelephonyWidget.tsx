@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
@@ -30,7 +30,11 @@ import { TelephonyCallHistory } from '@/components/telephony/TelephonyCallHistor
 import { TelephonyDialer, sanitizeDialledNumber } from '@/components/telephony/TelephonyDialer';
 
 const TELEPHONY_WIDGET_POSITION_KEY = '01academy.telephony.widget.position.v1';
-const FINISHED_CALL_DISMISS_MS = 15_000;
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+};
 
 const useCallDuration = (call: ActiveTelephonyCall | null) => {
   const [, renderTick] = useState(0);
@@ -54,7 +58,6 @@ export function TelephonyWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<'dialer' | 'history'>('dialer');
   const [dialedNumber, setDialedNumber] = useState('');
-  const dismissTimerRef = useRef<number | null>(null);
   const {
     widgetRef,
     widgetStyle,
@@ -80,26 +83,13 @@ export function TelephonyWidget() {
     setTab('dialer');
   }, [activeCallKey]);
 
-  // A call the manager has already dealt with should not keep the widget
-  // hostage: it clears itself, unless they are still doing something with it.
-  const clearDismissTimer = useCallback(() => {
-    if (dismissTimerRef.current === null) return;
-    window.clearTimeout(dismissTimerRef.current);
-    dismissTimerRef.current = null;
-  }, []);
-
-  const clearFinishedCall = telephony.clearFinishedCall;
-  useEffect(() => {
-    clearDismissTimer();
-    if (!activeCallStatus || !isFinishedCall(activeCallStatus)) return undefined;
-    dismissTimerRef.current = window.setTimeout(clearFinishedCall, FINISHED_CALL_DISMISS_MS);
-    return clearDismissTimer;
-  }, [activeCallKey, activeCallStatus, clearDismissTimer, clearFinishedCall]);
-
+  // Closing with Escape must never swallow what the manager is typing —
+  // the dialer, the transfer field and the note editor all live here.
   useEffect(() => {
     if (!isOpen) return undefined;
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key !== 'Escape' || isEditableTarget(event.target)) return;
+      setIsOpen(false);
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -153,8 +143,6 @@ export function TelephonyWidget() {
           ref={widgetRef}
           style={widgetStyle}
           {...widgetDragProps}
-          onPointerDownCapture={clearDismissTimer}
-          onKeyDownCapture={clearDismissTimer}
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(

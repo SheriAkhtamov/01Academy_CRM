@@ -55,6 +55,23 @@ describe('telephony widget drag surface', () => {
   });
 });
 
+describe('telephony widget presence rules', () => {
+  it('opens itself as soon as a call starts so ringing is never invisible', () => {
+    expect(widget).toContain('if (!activeCallKey) return;');
+    expect(widget).toContain('setIsOpen(true)');
+  });
+
+  it('keeps a finished call on screen until the manager closes it', () => {
+    expect(widget).not.toContain('FINISHED_CALL_DISMISS_MS');
+    expect(widget).not.toContain('dismissTimerRef');
+    expect(activeCall).toContain('onClose');
+  });
+
+  it('never collapses through Escape while the manager is typing', () => {
+    expect(widget).toContain('isEditableTarget(event.target)');
+  });
+});
+
 describe('telephony widget history', () => {
   it('separates an unanswered incoming call from one that was picked up', () => {
     expect(isUnansweredIncoming({ direction: 'incoming', status: 'missed', talkSeconds: 0 })).toBe(true);

@@ -49,6 +49,16 @@ export const telephonyStatusTranslationKey = (status: TelephonyCallStatus): Tran
   }
 };
 
+/**
+ * Shared by every global key handler the widget installs — Escape to collapse
+ * and the DTMF keypad. A rich-text field is just as much "the manager is
+ * typing" as an <input> is, so both have to be checked in one place.
+ */
+export const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+};
+
 export const formatCallDuration = (seconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
   const hours = Math.floor(safeSeconds / 3600);

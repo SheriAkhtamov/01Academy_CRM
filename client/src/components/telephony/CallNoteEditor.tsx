@@ -25,7 +25,7 @@ export function CallNoteEditor({
   note: string | null;
   autoFocus?: boolean;
   className?: string;
-  onSaved?: () => void;
+  onSaved?: (note: string | null) => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -37,10 +37,10 @@ export function CallNoteEditor({
 
   const saveNote = useMutation({
     mutationFn: () => telephonyApi.saveCallNote(callId, draft.trim() || null),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.calls });
       toast({ title: t('telephonyNoteSaved') });
-      onSaved?.();
+      onSaved?.(saved.note);
     },
     onError: (error: unknown) => {
       const message = error instanceof Error ? error.message : 'telephonyNoteFailed';

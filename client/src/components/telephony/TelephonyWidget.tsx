@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
@@ -9,6 +9,7 @@ import {
   History,
   Phone,
   PhoneCall,
+  PhoneOff,
   ScrollText,
   Wifi,
   WifiOff,
@@ -17,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useMovableWidget } from '@/hooks/useMovableWidget';
 import { toast } from '@/hooks/use-toast';
-import { formatCallDuration } from '@/lib/telephony';
+import { formatCallDuration, isEditableTarget } from '@/lib/telephony';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import {
   missedCallUnreadQueryOptions,
@@ -31,24 +32,31 @@ import { TelephonyDialer, sanitizeDialledNumber } from '@/components/telephony/T
 
 const TELEPHONY_WIDGET_POSITION_KEY = '01academy.telephony.widget.position.v1';
 
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
-};
-
+/**
+ * One tick a second for as long as the call is alive — not only once it is
+ * answered. An outgoing call can ring for the full 45s setup window, and a
+ * manager staring at a frozen `00:00` has no way to tell a slow callee from a
+ * dead line.
+ */
 const useCallDuration = (call: ActiveTelephonyCall | null) => {
   const [, renderTick] = useState(0);
-  const answeredAt = call?.answeredAt ?? null;
   const status = call?.status ?? null;
+  const isLive = Boolean(status && !isFinishedCall(status));
+
   useEffect(() => {
-    if (status !== 'connected' || !answeredAt) return undefined;
+    if (!isLive) return undefined;
     const timer = window.setInterval(() => renderTick((value) => value + 1), 1_000);
     return () => window.clearInterval(timer);
-  }, [answeredAt, status]);
+  }, [isLive]);
 
-  if (!answeredAt) return 0;
   const end = call?.endedAt ? new Date(call.endedAt).getTime() : Date.now();
-  return Math.max(0, Math.floor((end - new Date(answeredAt).getTime()) / 1_000));
+  const secondsSince = (from: string | null | undefined) => {
+    if (!from) return 0;
+    const start = new Date(from).getTime();
+    return Number.isFinite(start) ? Math.max(0, Math.floor((end - start) / 1_000)) : 0;
+  };
+
+  return { talk: secondsSince(call?.answeredAt), elapsed: secondsSince(call?.startedAt) };
 };
 
 export function TelephonyWidget() {
@@ -58,17 +66,28 @@ export function TelephonyWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<'dialer' | 'history'>('dialer');
   const [dialedNumber, setDialedNumber] = useState('');
+  const tabPanelId = useId();
+  const pillRef = useRef<HTMLButtonElement | null>(null);
+  const shouldRestoreFocusRef = useRef(false);
   const {
     widgetRef,
     widgetStyle,
     widgetDragProps,
     isDragging,
+    resetToDefault,
   } = useMovableWidget<HTMLDivElement>(TELEPHONY_WIDGET_POSITION_KEY, 20, isOpen);
-  const callDuration = useCallDuration(telephony.activeCall);
+  const { talk: callDuration, elapsed: callElapsed } = useCallDuration(telephony.activeCall);
   const activeCall = telephony.activeCall;
   const activeCallKey = activeCall?.clientCallId ?? null;
   const activeCallStatus = activeCall?.status ?? null;
   const isLive = Boolean(activeCallStatus && !isFinishedCall(activeCallStatus));
+  const isRinging = activeCallStatus === 'ringing';
+  const isIncomingRinging = Boolean(isRinging && activeCall?.direction === 'incoming');
+
+  const collapse = useCallback(() => {
+    shouldRestoreFocusRef.current = true;
+    setIsOpen(false);
+  }, []);
 
   const missedQuery = useQuery(missedCallUnreadQueryOptions);
   const unreadMissed = missedQuery.data?.count ?? 0;
@@ -89,10 +108,18 @@ export function TelephonyWidget() {
     if (!isOpen) return undefined;
     const handleKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || isEditableTarget(event.target)) return;
-      setIsOpen(false);
+      collapse();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
+  }, [collapse, isOpen]);
+
+  // Collapsing hides the node the manager was working in, so the keyboard has
+  // to land somewhere deliberate rather than back at the top of the document.
+  useEffect(() => {
+    if (isOpen || !shouldRestoreFocusRef.current) return;
+    shouldRestoreFocusRef.current = false;
+    pillRef.current?.focus();
   }, [isOpen]);
 
   const openHistory = () => {
@@ -110,18 +137,18 @@ export function TelephonyWidget() {
     }
   }, [t, telephony.connectionState]);
 
-  const presentError = (error: unknown) => {
+  const presentError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : 'onlinePbxCallFailed';
     toast({
       title: t('onlinePbxCallFailed'),
       description: message in translations ? t(message as TranslationKey) : undefined,
       variant: 'destructive',
     });
-  };
+  }, [t]);
 
-  const runCallAction = (action: () => Promise<void>) => {
+  const runCallAction = useCallback((action: () => Promise<void>) => {
     void action().catch(presentError);
-  };
+  }, [presentError]);
 
   const startCall = (phone: string) => {
     setDialedNumber(sanitizeDialledNumber(phone));
@@ -130,7 +157,12 @@ export function TelephonyWidget() {
 
   if (!telephony.isManagerAssigned) return null;
 
-  const collapse = () => setIsOpen(false);
+  // Both tabs stay reachable from the keyboard the way a real tablist is.
+  const handleTabKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    if (tab === 'dialer') openHistory(); else setTab('dialer');
+  };
 
   return (
     <>
@@ -146,7 +178,7 @@ export function TelephonyWidget() {
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] isolate flex max-h-[calc(100dvh-24px)] w-[min(372px,calc(100vw-24px))] cursor-move flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
+            'pointer-events-auto fixed z-[70] isolate flex max-h-[min(660px,calc(100dvh-24px))] w-[min(372px,calc(100vw-24px))] cursor-move flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
             'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3 duration-300 ease-out-expo',
             isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
           )}
@@ -154,7 +186,11 @@ export function TelephonyWidget() {
           aria-modal="false"
           aria-label={t('telephonyTitle')}
         >
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 py-2 pl-3.5 pr-2">
+          <header
+            className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 py-2 pl-3.5 pr-2"
+            onDoubleClick={resetToDefault}
+            title={t('telephonyDragHint')}
+          >
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Headphones className="size-4" />
@@ -171,7 +207,7 @@ export function TelephonyWidget() {
                 </div>
               </div>
             </div>
-            <div className="flex shrink-0 items-center">
+            <div className="flex shrink-0 items-center" data-no-drag>
               <button
                 type="button"
                 className={cn(
@@ -199,17 +235,22 @@ export function TelephonyWidget() {
                 className="flex size-9 cursor-pointer items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={collapse}
                 aria-label={t('telephonyCollapse')}
+                title={t('telephonyCollapse')}
               >
                 <ChevronDown className="size-5" />
               </button>
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+          {/* Clips so each tab scrolls inside its own region rather than
+              nesting a second scrollbar in the panel's. The floor is what
+              stops a short viewport from squeezing that region to nothing. */}
+          <div className="flex min-h-[22rem] flex-1 flex-col overflow-hidden">
             {activeCall ? (
               <TelephonyActiveCall
                 call={activeCall}
                 callDuration={callDuration}
+                elapsedSeconds={callElapsed}
                 isPending={telephony.isPending}
                 activeCallId={activeCall.storedCallId}
                 onAnswer={() => runCallAction(telephony.answerCall)}
@@ -224,12 +265,22 @@ export function TelephonyWidget() {
               />
             ) : (
               <>
-                <div className="grid shrink-0 grid-cols-2 gap-1 p-1.5">
+                <div
+                  className="grid shrink-0 grid-cols-2 gap-1 p-1.5"
+                  role="tablist"
+                  aria-label={t('telephonyTitle')}
+                  onKeyDown={handleTabKeys}
+                  data-no-drag
+                >
                   <button
                     type="button"
-                    aria-pressed={tab === 'dialer'}
+                    role="tab"
+                    id={`${tabPanelId}-dialer-tab`}
+                    aria-selected={tab === 'dialer'}
+                    aria-controls={`${tabPanelId}-panel`}
+                    tabIndex={tab === 'dialer' ? 0 : -1}
                     className={cn(
-                      'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition',
+                      'flex cursor-pointer items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition',
                       tab === 'dialer' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-accent/60',
                     )}
                     onClick={() => setTab('dialer')}
@@ -238,9 +289,13 @@ export function TelephonyWidget() {
                   </button>
                   <button
                     type="button"
-                    aria-pressed={tab === 'history'}
+                    role="tab"
+                    id={`${tabPanelId}-history-tab`}
+                    aria-selected={tab === 'history'}
+                    aria-controls={`${tabPanelId}-panel`}
+                    tabIndex={tab === 'history' ? 0 : -1}
                     className={cn(
-                      'relative flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition',
+                      'relative flex cursor-pointer items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition',
                       tab === 'history' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-accent/60',
                     )}
                     onClick={openHistory}
@@ -254,18 +309,25 @@ export function TelephonyWidget() {
                   </button>
                 </div>
 
-                {tab === 'dialer' ? (
-                  <TelephonyDialer
-                    connectionCopy={connectionCopy}
-                    isReady={telephony.connectionState === 'ready'}
-                    isPending={telephony.isPending}
-                    dialedNumber={dialedNumber}
-                    onDialedNumberChange={setDialedNumber}
-                    onCall={startCall}
-                  />
-                ) : (
-                  <TelephonyCallHistory onCallBack={startCall} onCollapse={collapse} />
-                )}
+                <div
+                  className="flex min-h-0 flex-1 flex-col"
+                  role="tabpanel"
+                  id={`${tabPanelId}-panel`}
+                  aria-labelledby={`${tabPanelId}-${tab}-tab`}
+                >
+                  {tab === 'dialer' ? (
+                    <TelephonyDialer
+                      connectionCopy={connectionCopy}
+                      isReady={telephony.connectionState === 'ready'}
+                      isPending={telephony.isPending}
+                      dialedNumber={dialedNumber}
+                      onDialedNumberChange={setDialedNumber}
+                      onCall={startCall}
+                    />
+                  ) : (
+                    <TelephonyCallHistory onCallBack={startCall} onCollapse={collapse} />
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -281,7 +343,7 @@ export function TelephonyWidget() {
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] flex h-14 touch-none cursor-move items-center overflow-hidden rounded-full text-white shadow-xl',
+            'pointer-events-auto fixed z-[70] flex h-14 touch-none cursor-move items-center overflow-hidden rounded-full pr-1 text-white shadow-xl',
             'animate-in fade-in-0 zoom-in-90 duration-300 ease-out-expo',
             isLive
               ? 'bg-emerald-600 ring-4 ring-emerald-500/30'
@@ -290,12 +352,14 @@ export function TelephonyWidget() {
           )}
         >
           <button
+            ref={pillRef}
             type="button"
             className="flex h-full max-w-64 cursor-pointer items-center gap-3 px-4 text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
             onClick={() => setIsOpen(true)}
             aria-label={t('telephonyOpen')}
+            title={t('telephonyOpen')}
           >
-            <PhoneCall className={cn('size-5 shrink-0', isLive && activeCall?.status === 'ringing' && 'animate-float')} />
+            <PhoneCall className={cn('size-5 shrink-0', isRinging && 'animate-pulse')} />
             {isLive && activeCall ? (
               <span className="flex min-w-0 flex-col items-start leading-tight">
                 <span className="max-w-40 truncate text-xs font-medium">
@@ -320,12 +384,41 @@ export function TelephonyWidget() {
                 {unreadMissed}
               </span>
             ) : null}
-            <span className={cn(
-              'size-2 shrink-0 rounded-full',
-              telephony.connectionState === 'ready' ? 'bg-emerald-400' : 'bg-amber-300',
-              isLive && 'animate-pulse',
-            )} />
+            {!isIncomingRinging ? (
+              <span className={cn(
+                'size-2 shrink-0 rounded-full',
+                telephony.connectionState === 'ready' ? 'bg-emerald-400' : 'bg-amber-300',
+                isLive && 'animate-pulse',
+              )} />
+            ) : null}
           </button>
+
+          {/* A ringing call is answered where the manager is already looking.
+              Making them expand the widget first costs two actions and a
+              relocated pointer at the one moment neither is affordable. */}
+          {isIncomingRinging ? (
+            <div className="flex shrink-0 items-center gap-1 pl-1" data-no-drag>
+              <button
+                type="button"
+                className="flex size-11 cursor-pointer items-center justify-center rounded-full bg-white text-emerald-700 shadow-md transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
+                onClick={() => runCallAction(telephony.answerCall)}
+                disabled={telephony.isPending}
+                aria-label={t('telephonyAnswer')}
+                title={t('telephonyAnswer')}
+              >
+                <PhoneCall className="size-5" />
+              </button>
+              <button
+                type="button"
+                className="flex size-11 cursor-pointer items-center justify-center rounded-full bg-red-600 text-white shadow-md transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                onClick={() => runCallAction(telephony.hangupCall)}
+                aria-label={t('telephonyDecline')}
+                title={t('telephonyDecline')}
+              >
+                <PhoneOff className="size-5" />
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </>

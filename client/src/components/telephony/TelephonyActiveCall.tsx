@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
-import { formatCallDuration, telephonyStatusTranslationKey } from '@/lib/telephony';
+import { formatCallDuration, isEditableTarget, telephonyStatusTranslationKey } from '@/lib/telephony';
 import { telephonyApi, telephonyQueryKeys } from '@/features/telephony/api';
 import type { ActiveTelephonyCall } from '@/contexts/TelephonyContext';
 import { Badge } from '@/components/ui/badge';
@@ -77,8 +77,9 @@ const ControlButton = ({
 }) => (
   <button
     type="button"
+    data-no-drag
     className={cn(
-      'telephony-control',
+      'telephony-control cursor-pointer',
       active && (activeTone === 'amber' ? 'bg-amber-100 text-amber-800' : 'bg-primary-50 text-primary-700'),
     )}
     aria-pressed={active}
@@ -93,6 +94,7 @@ const ControlButton = ({
 export function TelephonyActiveCall({
   call,
   callDuration,
+  elapsedSeconds,
   isPending,
   activeCallId,
   onAnswer,
@@ -107,6 +109,7 @@ export function TelephonyActiveCall({
 }: {
   call: ActiveTelephonyCall;
   callDuration: number;
+  elapsedSeconds: number;
   isPending: boolean;
   activeCallId: number | null;
   onAnswer: () => void;
@@ -122,15 +125,33 @@ export function TelephonyActiveCall({
   const { t } = useTranslation();
   const [panel, setPanel] = useState<'none' | 'dtmf' | 'transfer' | 'note'>('none');
   const [transferTarget, setTransferTarget] = useState('');
+  const [isTransferring, setIsTransferring] = useState(false);
+  // The note lives on the server, but the editor is unmounted every time the
+  // panel closes. Without remembering what was saved, reopening it showed an
+  // empty box over an existing note — and saving that box wiped it.
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const finished = isFinishedCall(call.status);
   const connected = call.status === 'connected';
+  const isRingingIncoming = call.direction === 'incoming' && call.status === 'ringing';
   const displayName = call.contact?.name || t('telephonyUnknownContact');
   const contactHref = call.contact?.leadId ? `/sales/pipeline?lead=${call.contact.leadId}` : null;
 
   useEffect(() => {
     setPanel('none');
     setTransferTarget('');
+    setIsTransferring(false);
+    setSavedNote(null);
   }, [call.clientCallId]);
+
+  const runTransfer = async (destination: string) => {
+    if (isTransferring) return;
+    setIsTransferring(true);
+    try {
+      await onTransfer(destination);
+    } finally {
+      setIsTransferring(false);
+    }
+  };
 
   // Typing a digit during a conversation should reach the other end's IVR, the
   // way it does on a desk phone.
@@ -138,8 +159,7 @@ export function TelephonyActiveCall({
     if (!connected || panel !== 'dtmf') return undefined;
     const handleKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
+      if (isEditableTarget(event.target)) return;
       if (!/^[0-9*#]$/.test(event.key)) return;
       event.preventDefault();
       onSendDtmf(event.key);
@@ -168,7 +188,7 @@ export function TelephonyActiveCall({
   const canTransferToNumber = transferDigits.length >= 7;
 
   return (
-    <div className="flex min-h-[386px] flex-col items-center px-4 pb-4 pt-5 text-center">
+    <div className="flex min-h-[386px] flex-1 flex-col items-center overflow-y-auto overscroll-contain px-4 pb-4 pt-5 text-center">
       <ContactAvatar call={call} />
       <Badge variant="secondary" className="mt-4 rounded-full px-3 py-0.5 text-xs font-medium">
         {call.direction === 'incoming' ? t('telephonyIncomingCall') : t('telephonyOutgoingCall')}
@@ -191,6 +211,8 @@ export function TelephonyActiveCall({
         {t(telephonyStatusTranslationKey(call.status))}
         {connected || call.status === 'ended' ? (
           <span className="font-mono tabular-nums">· {formatCallDuration(callDuration)}</span>
+        ) : !finished ? (
+          <span className="font-mono tabular-nums">· {formatCallDuration(elapsedSeconds)}</span>
         ) : null}
       </div>
 
@@ -237,12 +259,12 @@ export function TelephonyActiveCall({
       ) : null}
 
       {connected && panel === 'dtmf' ? (
-        <div className="mt-4 grid w-52 grid-cols-3 gap-1.5 rounded-2xl bg-muted/60 p-2.5">
+        <div className="mt-4 grid w-52 grid-cols-3 gap-1.5 rounded-2xl bg-muted/60 p-2.5" data-no-drag>
           {DIALPAD_KEYS.map(({ digit }) => (
             <button
               key={digit}
               type="button"
-              className="flex h-9 items-center justify-center rounded-xl bg-card text-sm font-semibold text-foreground shadow-2xs transition hover:bg-accent active:scale-95"
+              className="flex h-9 cursor-pointer items-center justify-center rounded-xl bg-card text-sm font-semibold text-foreground shadow-2xs transition hover:bg-accent active:scale-95"
               onClick={() => onSendDtmf(digit)}
             >
               {digit}
@@ -269,11 +291,15 @@ export function TelephonyActiveCall({
             <Button
               type="button"
               size="sm"
+              data-no-drag
+              disabled={isTransferring}
               className="mt-2 h-9 w-full justify-start gap-2"
-              onClick={() => void onTransfer(transferTarget)}
+              onClick={() => void runTransfer(transferTarget)}
             >
-              <PhoneForwarded className="size-4" />
-              <span className="truncate">{t('telephonyTransferToNumber')}</span>
+              {isTransferring ? <Loader2 className="size-4 animate-spin" /> : <PhoneForwarded className="size-4" />}
+              <span className="truncate">
+                {isTransferring ? t('telephonyTransferring') : t('telephonyTransferToNumber')}
+              </span>
             </Button>
           ) : null}
           <ScrollArea className="mt-2 max-h-36" data-no-drag>
@@ -282,8 +308,9 @@ export function TelephonyActiveCall({
                 <button
                   key={employee.id}
                   type="button"
-                  className="flex w-full items-center justify-between rounded-xl bg-card px-3 py-2 text-sm shadow-2xs transition hover:bg-accent"
-                  onClick={() => void onTransfer(employee.extension)}
+                  disabled={isTransferring}
+                  className="flex w-full cursor-pointer items-center justify-between rounded-xl bg-card px-3 py-2 text-sm shadow-2xs transition hover:bg-accent disabled:opacity-60"
+                  onClick={() => void runTransfer(employee.extension)}
                 >
                   <span className="truncate font-medium text-foreground">{employee.name}</span>
                   <Badge variant="secondary" className="ml-3 font-mono">{employee.extension}</Badge>
@@ -303,19 +330,27 @@ export function TelephonyActiveCall({
       ) : null}
 
       {finished && activeCallId && panel === 'note' ? (
-        <CallNoteEditor callId={activeCallId} note={null} autoFocus className="mt-4 w-full" />
+        <CallNoteEditor
+          callId={activeCallId}
+          note={savedNote}
+          autoFocus
+          className="mt-4 w-full"
+          onSaved={setSavedNote}
+        />
       ) : null}
 
-      <div className="mt-auto flex w-full items-center justify-center gap-3 pt-6">
+      <div className="mt-auto flex w-full items-center justify-center gap-3 pt-6" data-no-drag>
         {call.direction === 'incoming' && call.status === 'ringing' ? (
-          // The answer button breathes in time with the halos so the two
-          // read as one signal rather than two competing ones.
+          // The halos around the avatar carry the urgency. The button itself
+          // holds still: a target that drifts 8px on a loop is one the manager
+          // has to chase at the exact moment they cannot afford to miss it.
           <Button
             type="button"
-            className="size-14 animate-float rounded-full bg-emerald-600 p-0 text-white shadow-lg shadow-emerald-600/40 hover:bg-emerald-700"
+            className="size-14 rounded-full bg-emerald-600 p-0 text-white shadow-lg shadow-emerald-600/40 ring-4 ring-emerald-500/30 hover:bg-emerald-700"
             onClick={onAnswer}
             disabled={isPending}
             aria-label={t('telephonyAnswer')}
+            title={t('telephonyAnswer')}
           >
             {isPending
               ? <Loader2 className="size-6 animate-spin" />
@@ -323,16 +358,17 @@ export function TelephonyActiveCall({
           </Button>
         ) : null}
         {!finished ? (
+          // Never disabled. Answering asks the browser for the microphone and
+          // that request can hang for 30s; hanging up is the way out of it, so
+          // it cannot be locked behind the very wait it has to interrupt.
           <Button
             type="button"
             className="size-14 rounded-full bg-red-600 p-0 text-white hover:bg-red-700"
             onClick={onHangup}
-            disabled={isPending}
-            aria-label={t('telephonyHangup')}
+            aria-label={isRingingIncoming ? t('telephonyDecline') : t('telephonyHangup')}
+            title={isRingingIncoming ? t('telephonyDecline') : t('telephonyHangup')}
           >
-            {isPending
-              ? <Loader2 className="size-6 animate-spin" />
-              : <PhoneOff className="size-6" />}
+            <PhoneOff className="size-6" />
           </Button>
         ) : (
           <>

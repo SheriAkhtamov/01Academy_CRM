@@ -53,6 +53,82 @@ describe('telephony widget drag surface', () => {
     expect(dialer).toContain('data-no-drag');
     expect(history).toContain('data-no-drag');
   });
+
+  it('opts every pressable control out, so a 6px wobble cannot eat the press', () => {
+    // The dialpad, the tab switcher and the call actions are aimed at, not
+    // dragged from. Without this the drag threshold swallowed the click.
+    expect(dialer).toContain('grid max-w-60 grid-cols-3 gap-2" data-no-drag');
+    expect(widget).toContain('role="tablist"');
+    expect(widget).toMatch(/role="tablist"[\s\S]{0,200}?data-no-drag/);
+    expect(activeCall).toContain('items-center justify-center gap-3 pt-6" data-no-drag');
+    expect(activeCall).toContain("'telephony-control cursor-pointer'");
+  });
+
+  it('still lets the collapsed pill itself be dragged into a corner', () => {
+    const pill = widget.slice(widget.indexOf('The collapsed pill'));
+    expect(pill).toContain("aria-label={t('telephonyOpen')}");
+    expect(pill.slice(0, pill.indexOf("aria-label={t('telephonyOpen')}"))).not.toContain('data-no-drag');
+  });
+});
+
+describe('telephony widget call controls', () => {
+  it('never locks hanging up behind the microphone request that answering starts', () => {
+    // answerCall() sets pendingPhone before awaiting getUserMedia, and that
+    // request can hang for 30s. Disabling hangup on the same flag left the
+    // manager with no way out of a call they had just mis-answered.
+    const start = activeCall.indexOf('{!finished ? (');
+    const hangup = activeCall.slice(start, activeCall.indexOf(') : (', start));
+    expect(hangup).toContain('onClick={onHangup}');
+    expect(hangup).not.toContain('disabled=');
+  });
+
+  it('holds the answer button still instead of floating it away from the pointer', () => {
+    expect(activeCall).not.toContain('animate-float');
+    expect(widget).not.toContain('animate-float');
+  });
+
+  it('answers and declines straight from the collapsed pill', () => {
+    expect(widget).toContain('isIncomingRinging');
+    expect(widget).toContain("aria-label={t('telephonyAnswer')}");
+    expect(widget).toContain("aria-label={t('telephonyDecline')}");
+  });
+
+  it('will not fire a transfer twice while the first one is still in flight', () => {
+    expect(activeCall).toContain('const [isTransferring, setIsTransferring] = useState(false);');
+    expect(activeCall).toContain('if (isTransferring) return;');
+    expect(activeCall).not.toContain('void onTransfer(transferTarget)');
+  });
+
+  it('reopens a call note on what was saved rather than on an empty box', () => {
+    expect(activeCall).not.toContain('note={null}');
+    expect(activeCall).toContain('note={savedNote}');
+    expect(activeCall).toContain('onSaved={setSavedNote}');
+  });
+
+  it('keeps DTMF capture away from every kind of text field, rich ones included', () => {
+    expect(activeCall).toContain('isEditableTarget(event.target)');
+    expect(activeCall).not.toContain("['INPUT', 'TEXTAREA'].includes(target.tagName)");
+  });
+});
+
+describe('telephony widget layout', () => {
+  it('scrolls in exactly one place per tab instead of nesting scrollbars', () => {
+    expect(history).not.toContain('h-[336px]');
+    expect(history).toContain('min-h-[220px] flex-1');
+    expect(dialer).toContain('flex-1 overflow-y-auto overscroll-contain');
+    expect(activeCall).toContain('flex-1 flex-col items-center overflow-y-auto overscroll-contain');
+  });
+
+  it('puts a floor under the clipped body so a short viewport cannot squeeze it away', () => {
+    expect(widget).toContain('flex min-h-[22rem] flex-1 flex-col overflow-hidden');
+  });
+
+  it('announces the two views as a real tablist', () => {
+    expect(widget).toContain('role="tablist"');
+    expect(widget).toContain('role="tab"');
+    expect(widget).toContain('role="tabpanel"');
+    expect(widget).toContain("aria-selected={tab === 'dialer'}");
+  });
 });
 
 describe('telephony widget presence rules', () => {

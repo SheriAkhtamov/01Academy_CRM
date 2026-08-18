@@ -50,6 +50,11 @@ export function TelephonyDialer({
   const { t } = useTranslation();
   const [lastNumber, setLastNumber] = useState<string | null>(null);
   const [lookupPhone, setLookupPhone] = useState('');
+  const [autoFocusInput] = useState(() => (
+    typeof window === 'undefined' || !window.matchMedia
+      ? true
+      : !window.matchMedia('(pointer: coarse)').matches
+  ));
 
   useEffect(() => {
     try {
@@ -119,7 +124,7 @@ export function TelephonyDialer({
   };
 
   return (
-    <div className="px-4 pb-4 pt-3">
+    <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-3">
       {!isReady ? (
         <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
           {connectionCopy}
@@ -133,7 +138,7 @@ export function TelephonyDialer({
           onKeyDown={(event) => {
             if (event.key === 'Enter') placeCall();
           }}
-          autoFocus
+          autoFocus={autoFocusInput}
           placeholder="+998 90 123 45 67"
           className="h-11 cursor-text pl-10 pr-9 text-center font-mono text-base tracking-wide"
           inputMode="tel"
@@ -177,9 +182,11 @@ export function TelephonyDialer({
         ) : lastNumber && !dialedNumber ? (
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-mono text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            data-no-drag
+            className="flex cursor-pointer items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-mono text-muted-foreground transition hover:bg-accent hover:text-foreground"
             onClick={() => onDialedNumberChange(lastNumber)}
             title={t('telephonyRedial')}
+            aria-label={t('telephonyRedial')}
           >
             <RotateCcw className="size-3.5" />
             {lastNumber}
@@ -187,12 +194,12 @@ export function TelephonyDialer({
         ) : null}
       </div>
 
-      <div className="mx-auto mt-2 grid max-w-60 grid-cols-3 gap-2">
+      <div className="mx-auto mt-2 grid max-w-60 grid-cols-3 gap-2" data-no-drag>
         {DIALPAD_KEYS.map(({ digit, letters }) => (
           <button
             key={digit}
             type="button"
-            className="flex h-11 flex-col items-center justify-center rounded-2xl bg-muted text-foreground transition hover:bg-accent active:scale-95"
+            className="flex h-11 cursor-pointer flex-col items-center justify-center rounded-2xl bg-muted text-foreground transition hover:bg-accent active:scale-95"
             onClick={() => appendTone(digit)}
           >
             <span className="text-lg font-semibold leading-none">{digit}</span>
@@ -207,6 +214,7 @@ export function TelephonyDialer({
 
       <Button
         type="button"
+        data-no-drag
         className={cn(
           'mx-auto mt-4 flex h-11 rounded-full bg-emerald-600 px-7 text-white shadow-lg shadow-emerald-600/25',
           'hover:bg-emerald-700',

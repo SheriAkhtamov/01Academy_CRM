@@ -131,14 +131,14 @@ export function TelephonyCallHistory({
             </button>
           ) : null}
         </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5" data-no-drag>
           {(Object.keys(filterLabelKeys) as HistoryFilter[]).map((option) => (
             <button
               key={option}
               type="button"
               aria-pressed={filter === option}
               className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition',
+                'flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition',
                 filter === option
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -159,7 +159,7 @@ export function TelephonyCallHistory({
         </div>
       </div>
 
-      <ScrollArea className="h-[336px]" data-no-drag>
+      <ScrollArea className="min-h-[220px] flex-1" data-no-drag>
         <div className="divide-y divide-border/60">
           {visibleCalls.map((call) => {
             const contactHref = call.leadId ? `/sales/pipeline?lead=${call.leadId}` : null;

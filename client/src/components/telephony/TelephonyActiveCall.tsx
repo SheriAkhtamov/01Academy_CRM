@@ -25,7 +25,6 @@ import type { ActiveTelephonyCall } from '@/contexts/TelephonyContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { CallNoteEditor } from '@/components/telephony/CallNoteEditor';
 import { DIALPAD_KEYS } from '@/components/telephony/TelephonyDialer';
 
@@ -188,7 +187,7 @@ export function TelephonyActiveCall({
   const canTransferToNumber = transferDigits.length >= 7;
 
   return (
-    <div className="flex min-h-[386px] flex-1 flex-col items-center overflow-y-auto overscroll-contain px-4 pb-4 pt-5 text-center">
+    <div className="flex min-h-[min(386px,calc(100dvh-88px))] flex-1 flex-col items-center overflow-y-auto overscroll-contain px-4 pb-4 pt-5 text-center">
       <ContactAvatar call={call} />
       <Badge variant="secondary" className="mt-4 rounded-full px-3 py-0.5 text-xs font-medium">
         {call.direction === 'incoming' ? t('telephonyIncomingCall') : t('telephonyOutgoingCall')}
@@ -302,7 +301,11 @@ export function TelephonyActiveCall({
               </span>
             </Button>
           ) : null}
-          <ScrollArea className="mt-2 max-h-36" data-no-drag>
+          {/* Native scrolling rather than ScrollArea: Radix sizes its
+              viewport at `height: 100%` of a root left at auto height,
+              which resolves back to auto — so a `max-h` root clipped the
+              extensions past the fold with no way to scroll to them. */}
+          <div className="mt-2 max-h-36 overflow-y-auto overscroll-contain" data-no-drag>
             <div className="space-y-1">
               {matchingExtensions.map((employee) => (
                 <button
@@ -325,7 +328,7 @@ export function TelephonyActiveCall({
                 </p>
               ) : null}
             </div>
-          </ScrollArea>
+          </div>
         </div>
       ) : null}
 

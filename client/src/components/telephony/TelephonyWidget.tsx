@@ -244,8 +244,11 @@ export function TelephonyWidget() {
 
           {/* Clips so each tab scrolls inside its own region rather than
               nesting a second scrollbar in the panel's. The floor is what
-              stops a short viewport from squeezing that region to nothing. */}
-          <div className="flex min-h-[22rem] flex-1 flex-col overflow-hidden">
+              stops a short viewport from squeezing that region to nothing —
+              and it gives way below the header's own height, because a floor
+              taller than the card's ceiling would push the call button out
+              through the clipped bottom edge instead. */}
+          <div className="flex min-h-[min(22rem,calc(100dvh-88px))] flex-1 flex-col overflow-hidden">
             {activeCall ? (
               <TelephonyActiveCall
                 call={activeCall}

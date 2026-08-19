@@ -114,13 +114,48 @@ describe('telephony widget call controls', () => {
 describe('telephony widget layout', () => {
   it('scrolls in exactly one place per tab instead of nesting scrollbars', () => {
     expect(history).not.toContain('h-[336px]');
-    expect(history).toContain('min-h-[220px] flex-1');
     expect(dialer).toContain('flex-1 overflow-y-auto overscroll-contain');
     expect(activeCall).toContain('flex-1 flex-col items-center overflow-y-auto overscroll-contain');
   });
 
+  it('lets the history list take what is left rather than a floor that overshoots it', () => {
+    // The search box and the filter chips eat ~89px of the 304px panel, so a
+    // 220px floor under the list added up to more than the card can show and
+    // the last row was clipped by the rounded bottom edge.
+    expect(history).toContain('min-h-0 flex-1');
+    expect(history).not.toContain('min-h-[220px]');
+  });
+
   it('puts a floor under the clipped body so a short viewport cannot squeeze it away', () => {
-    expect(widget).toContain('flex min-h-[22rem] flex-1 flex-col overflow-hidden');
+    expect(widget).toContain('flex min-h-[min(22rem,calc(100dvh-88px))] flex-1 flex-col overflow-hidden');
+  });
+
+  it('never floors a panel higher than the card is allowed to grow', () => {
+    // The card tops out at `calc(100dvh-24px)`. Any floor stated as a flat
+    // length outgrows that ceiling on a landscape phone and pushes the call
+    // button out through the clipped bottom edge, so every floor worth more
+    // than a spacer has to shrink with the viewport.
+    expect(widget).toContain('max-h-[min(660px,calc(100dvh-24px))]');
+    expect(activeCall).toContain('min-h-[min(386px,calc(100dvh-88px))]');
+
+    for (const source of widgetSources) {
+      const flatFloors = (source.match(/min-h-\[[^\]]+\]/g) ?? []).filter((token) => {
+        if (token.includes('min(')) return false;
+        const size = Number(token.match(/(\d+(?:\.\d+)?)(px|rem)\]/)?.[1] ?? 0);
+        const rem = token.endsWith('rem]') ? size * 16 : size;
+        return rem > 64;
+      });
+      expect(flatFloors).toEqual([]);
+    }
+  });
+
+  it('scrolls the transfer targets natively, because Radix cannot size itself here', () => {
+    // ScrollArea's viewport asks for `height: 100%` of a root left at auto
+    // height; that resolves back to auto, so `max-h` clipped the extension
+    // list instead of scrolling it and the tail was unreachable.
+    expect(activeCall).toContain('max-h-36 overflow-y-auto overscroll-contain');
+    expect(activeCall).not.toContain('<ScrollArea');
+    expect(activeCall).not.toContain("from '@/components/ui/scroll-area'");
   });
 
   it('announces the two views as a real tablist', () => {

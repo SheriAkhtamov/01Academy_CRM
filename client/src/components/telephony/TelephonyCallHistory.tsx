@@ -159,7 +159,7 @@ export function TelephonyCallHistory({
         </div>
       </div>
 
-      <ScrollArea className="min-h-[220px] flex-1" data-no-drag>
+      <ScrollArea className="min-h-0 flex-1" data-no-drag>
         <div className="divide-y divide-border/60">
           {visibleCalls.map((call) => {
             const contactHref = call.leadId ? `/sales/pipeline?lead=${call.leadId}` : null;

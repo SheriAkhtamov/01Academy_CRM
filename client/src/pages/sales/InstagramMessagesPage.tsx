@@ -2521,7 +2521,7 @@ export default function MessagesPage() {
                         <div className="flex items-center justify-between px-2 pb-1">
                           <span className="text-xs font-semibold text-slate-700">{t('quickReplies')}</span>
                         </div>
-                        <ScrollArea className="max-h-56">
+                        <div className="max-h-56 overflow-y-auto overscroll-contain">
                           <div className="space-y-1 pr-1">
                             {quickReplies.length === 0 ? (
                               <p className="px-2 py-3 text-center text-xs text-muted-foreground">{t('noQuickReplies')}</p>
@@ -2553,7 +2553,7 @@ export default function MessagesPage() {
                               ))
                             )}
                           </div>
-                        </ScrollArea>
+                        </div>
                         <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
                           <Input
                             value={newTemplate}

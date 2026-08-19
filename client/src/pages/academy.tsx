@@ -21,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -563,7 +562,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               <AlertDescription>{t('onlinePbxRoutingLoadFailedDescription')}</AlertDescription>
             </Alert>
           ) : (
-            <ScrollArea className="max-h-[68vh] pr-4">
+            <div className="max-h-[68vh] overflow-y-auto overscroll-contain pr-4">
               <div className="flex flex-col gap-3">
                 <Alert>
                   <Users />
@@ -805,7 +804,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   </div>
                 </section>
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           <DialogFooter>

@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { SalesScheduleTeacherFilter } from '@/components/ux/SalesScheduleTeacherFilter';
 import { calendarToneAt } from '@/components/ux/calendar/calendarTones';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -153,7 +152,7 @@ export function ScheduleFilterPanel({
             </Button>
           </div>
 
-          <ScrollArea className="-mr-2 h-auto max-h-72 min-h-0 flex-1 lg:max-h-none">
+          <div className="-mr-2 h-auto max-h-72 min-h-0 flex-1 overflow-y-auto overscroll-contain lg:max-h-none">
             <div className="flex flex-col gap-1 pr-2">
               {visibleTree.map((school) => {
                 const schoolGroupIds = school.courses.flatMap((course) => (
@@ -296,7 +295,7 @@ export function ScheduleFilterPanel({
                 </div>
               ) : null}
             </div>
-          </ScrollArea>
+          </div>
         </>
       ) : (
         <div className="flex min-h-32 flex-col items-center justify-center gap-2 text-center">

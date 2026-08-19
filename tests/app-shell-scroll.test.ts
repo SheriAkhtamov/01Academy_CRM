@@ -98,4 +98,22 @@ describe('app shell scrolling', () => {
     });
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * Radix sizes the ScrollArea viewport at `height: 100%` of the root. On a
+   * root left at auto height that percentage resolves straight back to auto,
+   * so the viewport grows with its content and the root's `max-h` clips the
+   * overflow away with no scrollbar anywhere to reach it. A ScrollArea has to
+   * be handed a height — `h-full`, a fixed one, or `flex-1` under a parent
+   * that has one — never a ceiling in place of one.
+   */
+  it('never asks a ScrollArea to size itself from a max-height', () => {
+    const offenders = tsxFiles(clientRoot).flatMap((file) => {
+      const source = readFileSync(file, 'utf8');
+      return [...source.matchAll(/<ScrollArea\b[^>]*>/g)]
+        .filter((match) => /\bmax-h-(?!none\b)/.test(match[0]))
+        .map((match) => `${relative(clientRoot, file)} — ${match[0].replace(/\s+/g, ' ')}`);
+    });
+    expect(offenders).toEqual([]);
+  });
 });

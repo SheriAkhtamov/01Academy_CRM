@@ -451,129 +451,11 @@ const providerEventStatus = (event: string, talkSeconds: number): CallStatus => 
   return 'ringing';
 };
 
-type MissedCallTaskSource = {
-  id: number;
-  direction: unknown;
-  status: unknown;
-  phone: unknown;
-  leadId?: unknown;
-  contactName?: unknown;
-  talkSeconds?: unknown;
-};
-
-type CreatedMissedCallTask = {
-  id: number;
-  boardId: number;
-};
-
-export const isMissedIncomingCall = (
-  call: Pick<MissedCallTaskSource, 'direction' | 'status' | 'talkSeconds'>,
-) => (
-  call.direction === 'incoming'
-  && ['missed', 'failed', 'declined'].includes(String(call.status))
-  && safeInteger(call.talkSeconds) === 0
-);
-
-export const ensureMissedCallTask = async (
-  client: PoolClient,
-  call: MissedCallTaskSource,
-): Promise<CreatedMissedCallTask | null> => {
-  if (!isMissedIncomingCall(call)) return null;
-
-  const phone = String(call.phone ?? '').trim();
-  const contactName = String(call.contactName ?? '').trim();
-  const leadId = Number(call.leadId) > 0 ? Number(call.leadId) : null;
-  const description = contactName
-    ? `Пропущен входящий звонок от ${contactName} (${phone}). Связаться с контактом как можно скорее.`
-    : `Пропущен входящий звонок с номера ${phone}. Связаться с контактом как можно скорее.`;
-
-  const result = await client.query<CreatedMissedCallTask & { creatorId: number | null }>(
-    `WITH target_board AS (
-       SELECT board.id
-       FROM boards board
-       WHERE board.is_archived = false
-       ORDER BY board.is_default DESC, board.id
-       LIMIT 1
-     ),
-     lead_manager AS (
-       SELECT manager.id
-       FROM academy_leads lead
-       JOIN users manager ON manager.id = lead.manager_id
-       WHERE lead.id = $2
-         AND manager.is_active = true
-       LIMIT 1
-     ),
-     fallback_manager AS (
-       SELECT manager.id
-       FROM users manager
-       LEFT JOIN board_tasks open_task
-         ON open_task.assignee_id = manager.id
-        AND open_task.status NOT IN ('done', 'accepted')
-       WHERE manager.is_active = true
-         AND (
-           manager.module = 'sales'
-           OR EXISTS (
-             SELECT 1
-             FROM user_modules module
-             WHERE module.user_id = manager.id
-               AND module.module = 'sales'
-           )
-         )
-       GROUP BY manager.id
-       ORDER BY COUNT(open_task.id), manager.id
-       LIMIT 1
-     ),
-     selected_manager AS (
-       SELECT id FROM lead_manager
-       UNION ALL
-       SELECT id
-       FROM fallback_manager
-       WHERE NOT EXISTS (SELECT 1 FROM lead_manager)
-       LIMIT 1
-     ),
-     next_position AS (
-       SELECT COALESCE(MAX(task.position), 0) + 1 AS position
-       FROM board_tasks task
-       JOIN target_board board ON board.id = task.board_id
-       WHERE task.status = 'backlog'
-     )
-     INSERT INTO board_tasks (
-       board_id, title, description, status, priority, position,
-       creator_id, assignee_id, lead_id, telephony_call_id, due_at
-     )
-     SELECT board.id, $3, $4, 'backlog', 'urgent', position.position,
-            manager.id, manager.id, $2, $1, NOW() + INTERVAL '15 minutes'
-     FROM target_board board
-     CROSS JOIN next_position position
-     LEFT JOIN selected_manager manager ON true
-     ON CONFLICT ("telephony_call_id")
-       WHERE "telephony_call_id" IS NOT NULL
-       DO NOTHING
-     RETURNING id, board_id AS "boardId", creator_id AS "creatorId"`,
-    [
-      call.id,
-      leadId,
-      'Перезвонить: пропущенный звонок',
-      description,
-    ],
-  );
-  const task = result.rows[0];
-  if (!task) return null;
-
-  await client.query(
-    `INSERT INTO board_task_activity (
-       task_id, actor_id, type, from_value, to_value, meta
-     )
-     VALUES ($1,$2,'created',NULL,'backlog',$3::jsonb)`,
-    [
-      task.id,
-      task.creatorId,
-      JSON.stringify({ source: 'missed_call', telephonyCallId: call.id }),
-    ],
-  );
-
-  return { id: task.id, boardId: task.boardId };
-};
+// A missed incoming call used to open an urgent board task assigned to a sales
+// manager. The call journal already carries the same signal — an unread badge
+// in the sidebar and the missed row itself — so the task only duplicated it and
+// filled the board with work nobody had planned. Missed calls are followed up
+// from the journal; a task for one is now created by hand like any other.
 
 const hasValidWebhookSecret = (candidate: unknown) => {
   const expected = appConfig.integrations?.onlinePbx?.webhookSecret?.trim();
@@ -815,7 +697,6 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
     duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds"`;
   const client = await pool.connect();
   let call: Record<string, unknown> | undefined;
-  let missedCallTask: CreatedMissedCallTask | null = null;
 
   try {
     await client.query('BEGIN');
@@ -864,7 +745,6 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
     }
 
     call = result.rows[0];
-    missedCallTask = await ensureMissedCallTask(client, call as MissedCallTaskSource);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -883,13 +763,6 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
       audienceUserIds,
     });
   }
-  if (missedCallTask) {
-    publishRealtimeEvent({
-      type: 'BOARD_TASK_CREATED',
-      data: missedCallTask,
-    });
-  }
-
   res.json({ ok: true });
 }));
 

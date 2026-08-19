@@ -152,6 +152,37 @@ export function isOverdue(task: { dueAt: string | null; status: BoardStatus }): 
     return new Date(task.dueAt).getTime() < Date.now();
 }
 
+// The board opens on the viewer's own work and the header filter widens it to a
+// colleague — or, for a head who receives every task, to the whole team.
+// A person's tasks are the ones assigned to them plus the ones they wrote:
+// filtering on the assignee alone would hide the work someone delegated and
+// still answers for.
+export const TASK_OWNER_ALL = 'all';
+
+export type TaskOwnerFilter = number | typeof TASK_OWNER_ALL;
+
+type TaskOwnership = Pick<TaskSummary, 'assignee' | 'creator'>;
+
+export function isTaskOwnedBy(task: TaskOwnership, userId: number): boolean {
+    return task.assignee?.id === userId || task.creator?.id === userId;
+}
+
+export function filterTasksByOwner<T extends TaskOwnership>(tasks: T[], owner: TaskOwnerFilter): T[] {
+    return owner === TASK_OWNER_ALL ? tasks : tasks.filter((task) => isTaskOwnedBy(task, owner));
+}
+
+// One task counts once per person even when they both wrote it and own it.
+export function countTasksByOwner(tasks: TaskOwnership[]): Map<number, number> {
+    const counts = new Map<number, number>();
+    for (const task of tasks) {
+        const owners = new Set<number>();
+        if (task.assignee) owners.add(task.assignee.id);
+        if (task.creator) owners.add(task.creator.id);
+        for (const ownerId of owners) counts.set(ownerId, (counts.get(ownerId) ?? 0) + 1);
+    }
+    return counts;
+}
+
 export function formatFileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

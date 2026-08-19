@@ -1678,6 +1678,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   priorityUrgent: { en: 'Urgent', ru: 'Срочно' },
   reopenTask: { en: 'Reopen task', ru: 'Вернуть в работу' },
   taskBoard: { en: 'Tasks', ru: 'Задачи' },
+  myTasks: { en: 'My tasks', ru: 'Мои задачи' },
+  taskOwnerFilter: { en: 'Show tasks of', ru: 'Показывать задачи' },
   taskBoardSubtitle: { en: 'Plan work, assign owners, and track progress across teams.', ru: 'Планируйте работу, назначайте исполнителей и отслеживайте прогресс команд.' },
   taskAssignOtherEmployeesAdminOnly: { en: 'Only administrators can assign tasks to other employees.', ru: 'Назначать задачи другим сотрудникам могут только администраторы.' },
   taskDeletedToast: { en: 'Task deleted', ru: 'Задача удалена' },

@@ -1590,6 +1590,150 @@ describe('academy route logic boundaries', () => {
     expect((insertedPaidUntil as Date).toISOString()).toBe('2026-02-14T10:00:00.000Z');
   });
 
+  it('asks a sales manager to claim an unassigned lead before saving a payment', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [leadFixture({ manager_id: null, is_archived: false })] };
+      }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: null }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({ leadId: 42, studentId: 5, amountUzs: 100_000 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('leadAssignmentRequired');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_payments"')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('claims the lead, synchronizes its student, and saves the payment atomically', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const unassignedLead = leadFixture({ manager_id: null, is_archived: false });
+    const assignedLead = leadFixture({ manager_id: 7, is_archived: false });
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [{ id: 7, full_name: 'Sales Manager' }] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [unassignedLead] };
+      }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: null }] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [assignedLead] };
+      if (sql.includes('INSERT INTO "academy_lead_assignment_history"')) {
+        return { rows: [{ id: 90, lead_id: 42, to_manager_id: 7 }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        return {
+          rows: [{
+            id: 99,
+            lead_id: 42,
+            student_id: 5,
+            status: 'pending',
+            amount_uzs: readInsertValue(sql, values, 'amount_uzs'),
+          }],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({
+        leadId: 42,
+        studentId: 5,
+        amountUzs: 100_000,
+        status: 'pending',
+        assignToSelf: true,
+      });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(response.body.payment).toEqual(expect.objectContaining({
+      id: 99,
+      leadId: 42,
+      studentId: 5,
+    }));
+    expect(mocks.clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE academy_students'),
+      [7, 42],
+    );
+
+    const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+    const managerLockIndex = statements.findIndex((sql) => (
+      sql.includes('FROM users u') && sql.includes('FOR UPDATE OF u')
+    ));
+    const leadLockIndex = statements.findIndex((sql) => (
+      sql.includes('FROM academy_leads WHERE id = $1 FOR UPDATE')
+    ));
+    const paymentInsertIndex = statements.findIndex((sql) => (
+      sql.includes('INSERT INTO "academy_payments"')
+    ));
+    const commitIndex = statements.indexOf('COMMIT');
+
+    expect(managerLockIndex).toBeGreaterThanOrEqual(0);
+    expect(leadLockIndex).toBeGreaterThan(managerLockIndex);
+    expect(paymentInsertIndex).toBeGreaterThan(leadLockIndex);
+    expect(commitIndex).toBeGreaterThan(paymentInsertIndex);
+    expect(mocks.clientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('repairs an unassigned linked student when the lead already belongs to the manager', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const assignedLead = leadFixture({ manager_id: 7, is_archived: false });
+
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [{ id: 7, full_name: 'Sales Manager' }] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [assignedLead] };
+      }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: null }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        return { rows: [{ id: 99, lead_id: 42, student_id: 5, status: 'pending' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({
+        leadId: 42,
+        studentId: 5,
+        amountUzs: 100_000,
+        status: 'pending',
+        assignToSelf: true,
+      });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(mocks.clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE academy_students'),
+      [7, 42],
+    );
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"')
+    ))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_lead_assignment_history"')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('requires an explicit student when a contact has several students', async () => {
     const lead = leadFixture({ is_archived: false });
     mocks.clientQuery.mockImplementation(async (sql: string) => {

@@ -21,6 +21,7 @@ import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
+import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import {
   LeadStageStepper,
   LocalizedFormMessage,
@@ -134,6 +135,7 @@ interface LeadDetails {
   language?: string | null;
   students?: Array<{
     id: number;
+    managerId?: number | null;
     studentName?: string | null;
     studentAge?: number | null;
     phone?: string | null;
@@ -256,6 +258,7 @@ interface LeadDetailSheetProps {
   }>;
   managers: Array<{ id: number; fullName: string }>;
   currentUserId?: number;
+  canClaimUnassignedLead?: boolean;
   leadStatusName: (code: string) => string;
   dateTime: (value: string | null | undefined) => string;
   money: (value: number | string | null | undefined) => string;
@@ -339,6 +342,10 @@ const taskSchema = z.object({
 type LeadFormValues = z.infer<typeof leadSchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type TaskFormValues = z.infer<typeof taskSchema>;
+type PaymentMutationVariables = {
+  values: PaymentFormValues;
+  assignToSelf?: boolean;
+};
 
 const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   contactName: lead.contactName ?? '',
@@ -378,6 +385,7 @@ export function LeadDetailSheet({
   statuses,
   managers,
   currentUserId,
+  canClaimUnassignedLead = false,
   leadStatusName,
   dateTime,
   money,
@@ -389,6 +397,7 @@ export function LeadDetailSheet({
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
+  const [pendingPaymentClaim, setPendingPaymentClaim] = useState<PaymentFormValues | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
   const [demoEnrollmentOpen, setDemoEnrollmentOpen] = useState(false);
@@ -450,6 +459,7 @@ export function LeadDetailSheet({
   // records while staying open (e.g. after a merge opens the retained lead).
   useEffect(() => {
     setCommentDraft('');
+    setPendingPaymentClaim(null);
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
   }, [leadId, taskForm]);
@@ -533,6 +543,7 @@ export function LeadDetailSheet({
       hydratedLeadId.current = null;
       hydratedTransientKey.current = null;
       setPendingManagerId(null);
+      setPendingPaymentClaim(null);
       setDuplicateHint(null);
       setCreateStudentOpen(false);
       setTagDropdownOpen(false);
@@ -647,7 +658,7 @@ export function LeadDetailSheet({
   });
 
   const createPayment = useMutation({
-    mutationFn: (values: PaymentFormValues) =>
+    mutationFn: ({ values, assignToSelf }: PaymentMutationVariables) =>
       paymentsApi.create({
         leadId: leadId!,
         studentId: Number(values.studentId),
@@ -658,8 +669,10 @@ export function LeadDetailSheet({
         paidUntil: values.paidUntil || undefined,
         comment: values.comment,
         status: 'paid',
+        assignToSelf,
       }),
     onSuccess: async () => {
+      setPendingPaymentClaim(null);
       const refreshed = await leadQuery.refetch();
       const refreshedLead = refreshed.data;
       paymentForm.reset({
@@ -678,7 +691,20 @@ export function LeadDetailSheet({
         description: t('paymentSavedDesc'),
       });
     },
-    onError: (error: Error) => toast({ title: t('paymentSaveFailed'), description: error.message, variant: 'destructive' }),
+    onError: (
+      error: Error & { rawMessage?: string },
+      variables: PaymentMutationVariables,
+    ) => {
+      if (
+        canClaimUnassignedLead
+        && !variables.assignToSelf
+        && error.rawMessage === 'leadAssignmentRequired'
+      ) {
+        setPendingPaymentClaim(variables.values);
+        return;
+      }
+      toast({ title: t('paymentSaveFailed'), description: error.message, variant: 'destructive' });
+    },
   });
 
   const createTask = useMutation({
@@ -717,6 +743,28 @@ export function LeadDetailSheet({
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
+
+  const submitPayment = (values: PaymentFormValues) => {
+    const selectedStudent = lead?.students?.find(
+      (student) => Number(student.id) === Number(values.studentId),
+    );
+    const assignmentMissing = Boolean(
+      (lead && !lead.managerId)
+      || (selectedStudent && !selectedStudent.managerId),
+    );
+    const assignedToAnotherManager = Boolean(
+      (lead?.managerId && Number(lead.managerId) !== Number(currentUserId))
+      || (
+        selectedStudent?.managerId
+        && Number(selectedStudent.managerId) !== Number(currentUserId)
+      ),
+    );
+    if (canClaimUnassignedLead && assignmentMissing && !assignedToAnotherManager) {
+      setPendingPaymentClaim(values);
+      return;
+    }
+    createPayment.mutate({ values });
+  };
 
   const copyPhone = async (phone: string) => {
     try {
@@ -1355,7 +1403,7 @@ export function LeadDetailSheet({
                       </CardHeader>
                       <CardContent>
                           <Form {...paymentForm}>
-                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit((values) => createPayment.mutate(values))}>
+                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit(submitPayment)}>
                             <FormField
                               control={paymentForm.control}
                               name="studentId"
@@ -1702,6 +1750,21 @@ export function LeadDetailSheet({
           </>
         )}
       </SheetContent>
+      <AssignLeadToSelfDialog
+        open={pendingPaymentClaim !== null}
+        leadName={lead?.contactName}
+        description={t('leadActionRequiresAssignmentDescription')}
+        confirmLabel={t('assignToMeAndContinue')}
+        isPending={createPayment.isPending}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingPaymentClaim(null);
+        }}
+        onConfirm={() => {
+          if (pendingPaymentClaim) {
+            createPayment.mutate({ values: pendingPaymentClaim, assignToSelf: true });
+          }
+        }}
+      />
       <AlertDialog open={pendingManagerId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen && !assignLead.isPending) setPendingManagerId(null);
       }}>

@@ -112,8 +112,10 @@ import {
   consumeReferralBenefit,
   createStudentFromLead,
   ensureReferralBenefit,
+  getActiveSalesManager,
   handleLeadStatusEffects,
   recalculateStudentMetrics,
+  reassignLead,
   validateEnrollmentGroup,
 } from './academy-leads';
 import {
@@ -174,7 +176,12 @@ router.post('/payments', async (req, res) => {
     }
 
     const result = await withTransaction(async () => {
-      const lead = leadId
+      const isScopedSalesUser = getAssignedModules(req.user).includes('sales')
+        && !hasLeadershipAccess(req.user);
+      const selfAssignmentManager = isScopedSalesUser && req.body.assignToSelf === true
+        ? await getActiveSalesManager(Number(req.user!.id), true)
+        : null;
+      let lead = leadId
         ? await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId])
         : undefined;
       if (leadId && !lead) {
@@ -190,7 +197,7 @@ router.post('/payments', async (req, res) => {
       if (!studentId && leadStudents.length > 1) {
         throw Object.assign(new Error('studentSelectionRequired'), { statusCode: 409 });
       }
-      const existingStudent = studentId
+      let existingStudent = studentId
         ? await queryOne(`SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`, [studentId])
         : leadStudents[0];
       if (studentId && !existingStudent) {
@@ -199,11 +206,64 @@ router.post('/payments', async (req, res) => {
       if (lead && existingStudent && Number(existingStudent.leadId) !== Number(lead.id)) {
         throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
       }
-      if (getAssignedModules(req.user).includes('sales') && !hasLeadershipAccess(req.user)) {
-        const ownsLead = !lead || Number(lead.managerId) === Number(req.user!.id);
-        const ownsStudent = !existingStudent || Number(existingStudent.managerId) === Number(req.user!.id);
-        if (!ownsLead || !ownsStudent) {
+      if (isScopedSalesUser) {
+        const currentUserId = Number(req.user!.id);
+        const leadOwnedByAnotherManager = Boolean(
+          lead?.managerId && Number(lead.managerId) !== currentUserId,
+        );
+        const studentOwnedByAnotherManager = Boolean(
+          existingStudent?.managerId && Number(existingStudent.managerId) !== currentUserId,
+        );
+        if (leadOwnedByAnotherManager || studentOwnedByAnotherManager) {
           throw Object.assign(new Error('Payment access required'), { statusCode: 403 });
+        }
+
+        const assignmentMissing = Boolean(
+          (lead && !lead.managerId)
+          || (existingStudent && !existingStudent.managerId),
+        );
+        if (assignmentMissing && req.body.assignToSelf !== true) {
+          throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
+        }
+
+        if (assignmentMissing) {
+          const assignmentLead = lead ?? (existingStudent?.leadId
+            ? await queryOne(
+              `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
+              [existingStudent.leadId],
+            )
+            : undefined);
+          if (!assignmentLead) {
+            throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
+          }
+          if (
+            assignmentLead.managerId
+            && Number(assignmentLead.managerId) !== currentUserId
+          ) {
+            throw Object.assign(new Error('Payment access required'), { statusCode: 403 });
+          }
+
+          const managerChanged = Number(assignmentLead.managerId) !== currentUserId;
+          const assignedLead = await reassignLead(
+            req.actor!,
+            assignmentLead,
+            selfAssignmentManager!,
+            'Присвоено себе перед сохранением оплаты',
+          );
+          if (managerChanged) {
+            await createAudit(
+              req,
+              'ASSIGN_ACADEMY_LEAD',
+              'academy_lead',
+              assignedLead.id,
+              assignedLead,
+              assignmentLead,
+            );
+          }
+          lead = assignedLead;
+          if (existingStudent) {
+            existingStudent = { ...existingStudent, managerId: currentUserId };
+          }
         }
       }
 

@@ -12,6 +12,7 @@ import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
 import { SalesBulkActionsButton, SalesOverviewSection, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
 import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
+import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { translations, type TranslationKey } from '@/lib/i18n';
@@ -434,6 +435,23 @@ function AssignLeadBeforeMoveDialog({
   const selectedManagerId = canChooseAnyManager ? Number(managerId) : Number(currentUserId);
   const canConfirm = Number.isInteger(selectedManagerId) && selectedManagerId > 0;
 
+  if (!canChooseAnyManager) {
+    return (
+      <AssignLeadToSelfDialog
+        open
+        leadName={pendingMove.lead.contactName}
+        description={t('leadMoveRequiresResponsibleManagerDescription')}
+        confirmLabel={t('assignToMeAndMove')}
+        isPending={isPending}
+        confirmDisabled={!canConfirm}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        onConfirm={() => onConfirm(selectedManagerId)}
+      />
+    );
+  }
+
   return (
     <Dialog open onOpenChange={(open) => {
       if (!open && !isPending) onClose();
@@ -453,25 +471,23 @@ function AssignLeadBeforeMoveDialog({
           <AlertDescription>{t('leadMoveRequiresResponsibleManagerDescription')}</AlertDescription>
         </Alert>
 
-        {canChooseAnyManager ? (
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="lead-move-manager">
-              {t('responsibleManager')}
-            </label>
-            <Select value={managerId} onValueChange={onManagerIdChange} disabled={isPending}>
-              <SelectTrigger id="lead-move-manager">
-                <SelectValue placeholder={t('selectResponsibleManager')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {managers.map((manager) => (
-                    <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="lead-move-manager">
+            {t('responsibleManager')}
+          </label>
+          <Select value={managerId} onValueChange={onManagerIdChange} disabled={isPending}>
+            <SelectTrigger id="lead-move-manager">
+              <SelectValue placeholder={t('selectResponsibleManager')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {managers.map((manager) => (
+                  <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
@@ -483,7 +499,7 @@ function AssignLeadBeforeMoveDialog({
             onClick={() => onConfirm(selectedManagerId)}
           >
             <UserCheck data-icon="inline-start" />
-            {isPending ? t('saving') : canChooseAnyManager ? t('assignManagerAndMove') : t('assignToMeAndMove')}
+            {isPending ? t('saving') : t('assignManagerAndMove')}
           </Button>
         </div>
       </DialogContent>
@@ -1305,6 +1321,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           ? salesManagers
           : salesManagers.filter((manager) => Number(manager.id) === Number(user?.id))}
         currentUserId={user?.id}
+        canClaimUnassignedLead={hasSalesModule && !isAdministrationModule}
         leadStatusName={leadStatusName}
         dateTime={dateTime}
         money={money}

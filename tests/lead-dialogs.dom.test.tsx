@@ -124,4 +124,88 @@ describe('lead modal behavior', () => {
       expect((nameInput as HTMLInputElement).value).toBe('Local draft');
     });
   });
+
+  it('asks to claim an unassigned lead and retries the payment with confirmation', async () => {
+    const paymentBodies: Array<Record<string, unknown>> = [];
+    let claimed = false;
+    const lead = () => ({
+      id: 15,
+      contactName: 'Alexandra Zadorozhnaya',
+      statusCode: 'paid',
+      managerId: claimed ? 1 : null,
+      managerName: claimed ? 'Sales Manager' : null,
+      sourceId: 1,
+      expectedPaymentUzs: 100_000,
+      createdAt: '2026-08-01T08:00:00.000Z',
+      updatedAt: '2026-08-01T08:00:00.000Z',
+      phoneNumbers: [],
+      students: [{
+        id: 50,
+        managerId: claimed ? 1 : null,
+        studentName: 'Alexandra Zadorozhnaya',
+        status: 'studying',
+      }],
+      payments: [],
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      if (method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        paymentBodies.push(body);
+        claimed = true;
+        return new Response(JSON.stringify({
+          payment: { id: 99, leadId: 15, studentId: 50, amountUzs: 100_000, status: 'paid' },
+          student: lead().students[0],
+        }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify(lead()), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LeadDetailSheet
+          leadId={15}
+          open
+          initialTab="payment"
+          onOpenChange={vi.fn()}
+          courses={[]}
+          groups={[]}
+          sources={[{ id: 1, name: 'Website' }]}
+          statuses={[]}
+          managers={[{ id: 1, fullName: 'Sales Manager' }]}
+          currentUserId={1}
+          canClaimUnassignedLead
+          leadStatusName={(code) => code}
+          dateTime={(value) => String(value ?? '')}
+          money={(value) => String(value ?? '')}
+          onChanged={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByRole('heading', { name: 'Alexandra Zadorozhnaya' });
+    fireEvent.click(await screen.findByRole('button', {
+      name: /Confirm Payment|Подтвердить оплату/,
+    }));
+
+    expect(await screen.findByText(/Assign the lead to continue|Присвойте лид, чтобы продолжить/)).toBeTruthy();
+    expect(paymentBodies).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', {
+      name: /Assign to me and continue|Присвоить себе и продолжить/,
+    }));
+
+    await waitFor(() => expect(paymentBodies).toHaveLength(1));
+    expect(paymentBodies[0]).toEqual(expect.objectContaining({
+      leadId: 15,
+      studentId: 50,
+      assignToSelf: true,
+    }));
+  });
 });

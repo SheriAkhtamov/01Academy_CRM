@@ -10,6 +10,7 @@ export type CreatePaymentInput = {
   paidUntil?: string;
   comment: string;
   status: 'paid';
+  assignToSelf?: boolean;
 };
 
 export const paymentsApi = {

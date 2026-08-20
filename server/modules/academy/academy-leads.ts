@@ -1011,18 +1011,15 @@ export const syncLeadOwnedNotifications = async (managerId: number, leadIds: num
   );
 };
 
-export const syncLeadManagerAssignment = async (
-  source: ActorSource,
-  lead: Row,
-  manager: { id: number; fullName: string },
-  comment?: string | null,
+export const syncLeadManagerRelations = async (
+  leadId: number,
+  managerId: number,
 ) => {
-  const actor = actorContextFrom(source);
   await query(
     `UPDATE academy_students
      SET manager_id = $1, updated_at = NOW()
      WHERE lead_id = $2`,
-    [manager.id, lead.id],
+    [managerId, leadId],
   );
   await query(
     `UPDATE academy_tasks
@@ -1035,16 +1032,26 @@ export const syncLeadManagerAssignment = async (
            AND entity_id IN (SELECT id FROM academy_students WHERE lead_id = $2)
          )
        )`,
-    [manager.id, lead.id],
+    [managerId, leadId],
   );
   await query(
     `UPDATE board_tasks
      SET assignee_id = $1, updated_at = NOW()
      WHERE lead_id = $2
        AND status NOT IN ('done', 'accepted')`,
-    [manager.id, lead.id],
+    [managerId, leadId],
   );
-  await syncLeadOwnedNotifications(manager.id, [Number(lead.id)]);
+  await syncLeadOwnedNotifications(managerId, [leadId]);
+};
+
+export const syncLeadManagerAssignment = async (
+  source: ActorSource,
+  lead: Row,
+  manager: { id: number; fullName: string },
+  comment?: string | null,
+) => {
+  const actor = actorContextFrom(source);
+  await syncLeadManagerRelations(Number(lead.id), Number(manager.id));
   await insertRow('academy_lead_assignment_history', {
     leadId: lead.id,
     fromManagerId: lead.managerId ?? null,
@@ -1075,6 +1082,7 @@ export const reassignLead = async (
       throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
     }
     if (Number(lockedLead.managerId) === Number(lockedManager.id)) {
+      await syncLeadManagerRelations(Number(lockedLead.id), Number(lockedManager.id));
       return { ...lockedLead, managerName: lockedManager.fullName };
     }
 

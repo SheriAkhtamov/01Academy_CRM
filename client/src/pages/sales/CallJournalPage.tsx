@@ -24,10 +24,12 @@ import { PaginationControls } from '@/components/ux/PaginationControls';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import {
+  journalOperatorsQueryOptions,
   missedCallUnreadQueryOptions,
   telephonyApi,
   telephonyQueryKeys,
 } from '@/features/telephony/api';
+import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiRequest } from '@/lib/queryClient';
@@ -40,6 +42,7 @@ import {
 } from '@/lib/telephony';
 import { cn } from '@/lib/utils';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
+import { hasOnlinePbxManagerAssignment } from '@shared/telephony';
 
 type JournalCall = {
   id: number;
@@ -78,6 +81,7 @@ type JournalResponse = {
 
 const finalStatuses = new Set<TelephonyCallStatus>(['ended', 'failed', 'declined', 'missed']);
 const CALL_JOURNAL_DEFAULT_PAGE_SIZE = 50;
+const ALL_EMPLOYEES = 'all';
 
 const statusVariant = (status: TelephonyCallStatus) => {
   if (status === 'connected' || status === 'ended') return 'success' as const;
@@ -87,9 +91,11 @@ const statusVariant = (status: TelephonyCallStatus) => {
 
 export default function CallJournalPage() {
   const { t, language } = useTranslation();
+  const { user } = useAuth();
   const onlinePbxCall = useOnlinePbxCall();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [direction, setDirection] = useState('all');
   const [status, setStatus] = useState('all');
   const [from, setFrom] = useState('');
@@ -100,10 +106,29 @@ export default function CallJournalPage() {
   const pendingMissedCallReadRef = useRef(false);
   const deferredSearch = useDeferredValue(search.trim());
 
-  useEffect(() => setPage(1), [deferredSearch, direction, status, from, to]);
+  const operatorsQuery = useQuery(journalOperatorsQueryOptions);
+  // A manager opens the journal to read their own calls, so their name is the
+  // default; someone without a phone widget of their own has no calls to open
+  // on and keeps the whole team's history instead.
+  const ownEmployeeId = user && hasOnlinePbxManagerAssignment(user) ? String(user.id) : null;
+  const employee = selectedEmployee ?? ownEmployeeId ?? ALL_EMPLOYEES;
+  const employeeOptions = useMemo(() => {
+    const operators = operatorsQuery.data ?? [];
+    // The reader's own name has to be selectable before the roster arrives,
+    // otherwise the picker opens blank on the value it is already filtering by.
+    if (!user || !ownEmployeeId || operators.some((operator) => operator.id === user.id)) {
+      return operators;
+    }
+    return [
+      { id: user.id, name: user.fullName, extension: user.onlinePbxExtension ?? '' },
+      ...operators,
+    ];
+  }, [operatorsQuery.data, ownEmployeeId, user]);
+
+  useEffect(() => setPage(1), [deferredSearch, direction, employee, status, from, to]);
   useEffect(() => {
     journalListRef.current?.scrollTo({ top: 0 });
-  }, [deferredSearch, direction, from, page, status, to]);
+  }, [deferredSearch, direction, employee, from, page, status, to]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({
@@ -111,12 +136,13 @@ export default function CallJournalPage() {
       limit: String(pageSize),
     });
     if (deferredSearch) params.set('q', deferredSearch);
+    if (employee !== ALL_EMPLOYEES) params.set('userId', employee);
     if (direction !== 'all') params.set('direction', direction);
     if (status !== 'all') params.set('status', status);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     return params.toString();
-  }, [deferredSearch, direction, from, page, pageSize, status, to]);
+  }, [deferredSearch, direction, employee, from, page, pageSize, status, to]);
 
   const journalQuery = useQuery<JournalResponse>({
     queryKey: ['/api/telephony/calls/journal', queryString],
@@ -201,10 +227,32 @@ export default function CallJournalPage() {
           { label: t('callJournal') },
         ]}
         actions={(
-          <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
-            <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
-            {t('callJournalRefresh')}
-          </Button>
+          <>
+            <Select value={employee} onValueChange={setSelectedEmployee}>
+              {/* Radix drops a className on SelectValue, so the value span is
+                  stretched from the trigger instead — otherwise `justify-between`
+                  strands the name in the middle, away from its person icon. */}
+              <SelectTrigger
+                className="w-full gap-2 sm:w-56 [&>span]:flex-1 [&>span]:text-left"
+                aria-label={t('callJournalEmployee')}
+              >
+                <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_EMPLOYEES}>{t('allEmployees')}</SelectItem>
+                {employeeOptions.map((operator) => (
+                  <SelectItem key={operator.id} value={String(operator.id)}>
+                    {operator.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
+              <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
+              {t('callJournalRefresh')}
+            </Button>
+          </>
         )}
       />
 

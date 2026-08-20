@@ -46,6 +46,7 @@ export const telephonyQueryKeys = {
   missedCallUnread: ['/api/telephony/calls/missed/unread'] as const,
   calls: ['/api/telephony/calls'] as const,
   extensions: ['/api/telephony/extensions'] as const,
+  journalOperators: ['/api/telephony/calls/journal/operators'] as const,
   contactLookup: (phone: string) => ['/api/telephony/contacts/lookup', phone] as const,
 };
 
@@ -62,6 +63,9 @@ export const telephonyApi = {
   getExtensions: () => (
     apiRequest('GET', '/api/telephony/extensions') as Promise<TelephonyExtension[]>
   ),
+  getJournalOperators: () => (
+    apiRequest('GET', '/api/telephony/calls/journal/operators') as Promise<TelephonyExtension[]>
+  ),
   getRecordingUrl: (callId: number) => (
     apiRequest('GET', `/api/telephony/calls/${callId}/recording`) as Promise<{ url: string }>
   ),
@@ -77,6 +81,16 @@ export const telephonyApi = {
       `/api/telephony/contacts/lookup?phone=${encodeURIComponent(phone)}`,
     ) as Promise<{ phone: string; contact: TelephonyContactMatch | null }>
   ),
+};
+
+/**
+ * The journal's employee picker. The roster changes about as often as staff do,
+ * so it is fetched once and left alone while the manager pages through calls.
+ */
+export const journalOperatorsQueryOptions = {
+  queryKey: telephonyQueryKeys.journalOperators,
+  queryFn: telephonyApi.getJournalOperators,
+  staleTime: 5 * 60_000,
 };
 
 export const missedCallUnreadQueryOptions = {

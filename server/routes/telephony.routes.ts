@@ -1194,6 +1194,39 @@ router.put('/calls/missed/read', requireAuth, asyncRoute(async (req, res) => {
   res.json({ count: 0, lastSeenCallId });
 }));
 
+/**
+ * Whose journal can be read: every active employee whose phone widget is
+ * switched on. Unlike `/extensions`, which lists transfer targets, the reader
+ * stays in this list — the journal opens on their own calls first.
+ */
+router.get('/calls/journal/operators', requireAuth, asyncRoute(async (req, res) => {
+  if (!canAccessAcademyModule(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  const result = await pool.query<{ id: number; name: string; extension: string | null }>(
+    `SELECT employee.id,
+            employee.full_name AS name,
+            employee.online_pbx_extension AS extension
+     FROM users employee
+     WHERE employee.is_active = true
+       AND employee.online_pbx_incoming_enabled = true
+       AND (
+         employee.module = 'sales'
+         OR EXISTS (
+           SELECT 1
+           FROM user_modules module
+           WHERE module.user_id = employee.id
+             AND module.module = 'sales'
+         )
+       )
+     ORDER BY employee.full_name, employee.id`,
+  );
+  res.json(result.rows.flatMap((employee) => {
+    const extension = onlinePbxRoutingDestination(employee.extension);
+    return extension ? [{ id: employee.id, name: employee.name, extension }] : [];
+  }));
+}));
+
 router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
   if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
@@ -1213,6 +1246,12 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
     conditions.push(buildTelephonyCallVisibilitySql(actor));
   }
 
+  // Narrowing to one employee never widens what the reader may see: the
+  // visibility rule above still applies, this only adds to it.
+  const employeeId = Number(String(req.query.userId ?? '').trim());
+  if (Number.isInteger(employeeId) && employeeId > 0) {
+    conditions.push(`call.user_id = ${addParam(employeeId)}`);
+  }
   const direction = String(req.query.direction ?? '').trim();
   if (['incoming', 'outgoing'].includes(direction)) {
     conditions.push(`call.direction = ${addParam(direction)}`);

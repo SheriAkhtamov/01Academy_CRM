@@ -654,6 +654,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   callJournalSummary: { en: 'Call journal summary', ru: 'Сводка журнала вызовов' },
   callJournalSearch: { en: 'Phone, lead, or employee', ru: 'Номер, лид или сотрудник' },
+  callJournalEmployee: { en: 'Calls of employee', ru: 'Звонки сотрудника' },
   totalCalls: { en: 'All calls', ru: 'Всего звонков' },
   answeredCalls: { en: 'Conversations', ru: 'Разговоров' },
   missedCalls: { en: 'Missed', ru: 'Пропущено' },

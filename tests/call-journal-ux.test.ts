@@ -89,6 +89,54 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('queryClient.setQueryData(telephonyQueryKeys.missedCallUnread, summary);');
   });
 
+  it('offers an employee picker in the header that opens on the reader\'s own calls', () => {
+    expect(callJournal).toContain("const ALL_EMPLOYEES = 'all';");
+    expect(callJournal).toContain('const ownEmployeeId = user && hasOnlinePbxManagerAssignment(user) ? String(user.id) : null;');
+    expect(callJournal).toContain('const employee = selectedEmployee ?? ownEmployeeId ?? ALL_EMPLOYEES;');
+    // The picker belongs to the header actions slot, which is the top-right
+    // corner of every module page.
+    const actions = callJournal.indexOf('actions={(');
+    const picker = callJournal.indexOf('<Select value={employee} onValueChange={setSelectedEmployee}>');
+    expect(picker).toBeGreaterThan(actions);
+    expect(picker).toBeLessThan(callJournal.indexOf("t('callJournalRefresh')"));
+    expect(callJournal).toContain("aria-label={t('callJournalEmployee')}");
+    expect(callJournal).toContain("<SelectItem value={ALL_EMPLOYEES}>{t('allEmployees')}</SelectItem>");
+  });
+
+  it('keeps the reader selectable before the operator roster arrives', () => {
+    expect(callJournal).toContain('const operatorsQuery = useQuery(journalOperatorsQueryOptions);');
+    expect(callJournal).toContain('operators.some((operator) => operator.id === user.id)');
+    expect(callJournal).toContain('{ id: user.id, name: user.fullName, extension: user.onlinePbxExtension ?? \'\' },');
+  });
+
+  it('asks the server for one employee and resets paging when the pick changes', () => {
+    expect(callJournal).toContain("if (employee !== ALL_EMPLOYEES) params.set('userId', employee);");
+    expect(callJournal).toContain('useEffect(() => setPage(1), [deferredSearch, direction, employee, status, from, to]);');
+    expect(telephonyRoutes).toContain('const employeeId = Number(String(req.query.userId ?? \'\').trim());');
+    expect(telephonyRoutes).toContain('conditions.push(`call.user_id = ${addParam(employeeId)}`);');
+  });
+
+  it('lists only telephony-enabled sales employees, the reader included', () => {
+    expect(telephonyRoutes).toContain("router.get('/calls/journal/operators', requireAuth,");
+    expect(telephonyRoutes).toContain('employee.online_pbx_incoming_enabled = true');
+    expect(telephonyRoutes).toContain('onlinePbxRoutingDestination(employee.extension)');
+    // The journal roster keeps the reader; only the transfer list drops them.
+    const operators = telephonyRoutes.indexOf("router.get('/calls/journal/operators'");
+    const operatorsEnd = telephonyRoutes.indexOf("router.get('/calls/journal',", operators);
+    expect(telephonyRoutes.slice(operators, operatorsEnd)).not.toContain('manager.id <> $1');
+  });
+
+  it('narrows the journal without widening what a manager may read', () => {
+    const visibility = telephonyRoutes.indexOf('buildTelephonyCallVisibilitySql(actor)');
+    const employeeFilter = telephonyRoutes.indexOf('conditions.push(`call.user_id = ${addParam(employeeId)}`);');
+
+    expect(visibility).toBeGreaterThan(0);
+    // Both land in the same AND-joined condition list, so a picked employee can
+    // only ever subtract rows from what the reader is already allowed to see.
+    expect(employeeFilter).toBeGreaterThan(visibility);
+    expect(telephonyRoutes).toContain("const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';");
+  });
+
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {
     expect(telephonyRecordingRoutes).toContain('resolveOnlinePbxRecording(call)');
     expect(telephonyRecordingRoutes).toContain("res.setHeader('Cache-Control', 'no-store, private')");

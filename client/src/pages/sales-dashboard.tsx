@@ -1162,6 +1162,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           courses={data.courses ?? []}
           schools={data.schools ?? []}
           leads={pipelineLeads}
+          onOpenLead={openLead}
         />
       ) : null}
 

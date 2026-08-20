@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { enUS, ru } from 'date-fns/locale';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, MapPin, UserRoundCheck, UsersRound } from 'lucide-react';
+import { ArrowUpRight, CalendarClock, MapPin, UserRoundCheck, UsersRound } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +47,11 @@ interface DemoLessonDetailsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onChanged?: (demo: DemoLesson) => void;
+  /**
+   * Opens a participant's lead card on top of this dialog. Left out where the
+   * host has nowhere to show a lead, which turns participants back into plain text.
+   */
+  onOpenLead?: (leadId: number) => void;
 }
 
 export function DemoLessonDetailsDialog({
@@ -54,6 +59,7 @@ export function DemoLessonDetailsDialog({
   open,
   onOpenChange,
   onChanged,
+  onOpenLead,
 }: DemoLessonDetailsDialogProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? ru : enUS;
@@ -180,39 +186,70 @@ export function DemoLessonDetailsDialog({
               </Badge>
             </div>
             <div className="space-y-2">
-              {demo.participants.map((participant) => (
-                <div key={participant.id} className="grid items-center gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {participant.studentName || participant.contactName || t('restrictedLead')}
-                    </p>
-                    {participant.studentName && participant.contactName ? (
-                      <p className="truncate text-xs text-muted-foreground">{participant.contactName}</p>
-                    ) : null}
+              {demo.participants.map((participant) => {
+                // The server blanks both names on a lead this user may not open,
+                // so a nameless participant must stay unclickable.
+                const primaryName = participant.studentName || participant.contactName;
+                const secondaryName = participant.studentName && participant.contactName
+                  ? participant.contactName
+                  : null;
+
+                return (
+                  <div key={participant.id} className="grid items-center gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                    {onOpenLead && primaryName ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenLead(participant.leadId)}
+                        aria-label={`${t('openLead')}: ${primaryName}`}
+                        className="group -m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium underline-offset-4 group-hover:underline">
+                            {primaryName}
+                          </span>
+                          {secondaryName ? (
+                            <span className="block truncate text-xs text-muted-foreground">{secondaryName}</span>
+                          ) : null}
+                        </span>
+                        <ArrowUpRight
+                          aria-hidden="true"
+                          className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+                        />
+                      </button>
+                    ) : (
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {primaryName || t('restrictedLead')}
+                        </p>
+                        {secondaryName ? (
+                          <p className="truncate text-xs text-muted-foreground">{secondaryName}</p>
+                        ) : null}
+                      </div>
+                    )}
+                    <div>
+                      <Label className="sr-only" htmlFor={`demo-attendance-${participant.leadId}`}>
+                        {t('demoAttendance')}
+                      </Label>
+                      <Select
+                        value={attendance[participant.leadId] || ''}
+                        onValueChange={(value) => setAttendance((current) => ({
+                          ...current,
+                          [participant.leadId]: value as 'attended' | 'no_show',
+                        }))}
+                        disabled={!canEditAttendance}
+                      >
+                        <SelectTrigger id={`demo-attendance-${participant.leadId}`}>
+                          <SelectValue placeholder={t('selectAttendanceResult')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="attended">{t('demoParticipantAttended')}</SelectItem>
+                          <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="sr-only" htmlFor={`demo-attendance-${participant.leadId}`}>
-                      {t('demoAttendance')}
-                    </Label>
-                    <Select
-                      value={attendance[participant.leadId] || ''}
-                      onValueChange={(value) => setAttendance((current) => ({
-                        ...current,
-                        [participant.leadId]: value as 'attended' | 'no_show',
-                      }))}
-                      disabled={!canEditAttendance}
-                    >
-                      <SelectTrigger id={`demo-attendance-${participant.leadId}`}>
-                        <SelectValue placeholder={t('selectAttendanceResult')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="attended">{t('demoParticipantAttended')}</SelectItem>
-                        <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

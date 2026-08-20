@@ -73,6 +73,7 @@ interface SalesScheduleCalendarProps {
   courses: SalesScheduleCourse[];
   schools: SalesScheduleSchool[];
   leads: DemoLessonDialogLead[];
+  onOpenLead?: (leadId: number) => void;
 }
 
 const VIEWS = CALENDAR_VIEW_MODES;
@@ -101,6 +102,7 @@ export function SalesScheduleCalendar({
   courses,
   schools,
   leads,
+  onOpenLead,
 }: SalesScheduleCalendarProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? ru : enUS;
@@ -530,6 +532,7 @@ export function SalesScheduleCalendar({
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setSelectedDemoId(null);
         }}
+        onOpenLead={onOpenLead}
       />
       <ScheduleEventDialog
         event={selectedEvent}

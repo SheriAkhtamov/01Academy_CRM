@@ -16,18 +16,25 @@ export function useUnsavedChangesGuard({
   const [confirmationOpen, setConfirmationOpen] = useState(false);
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && isDirty) {
+    // Only a dialog the user is actually looking at can have changes worth
+    // keeping; a dirty flag left behind by a previous session must not block it.
+    if (!nextOpen && open && isDirty) {
       setConfirmationOpen(true);
       return;
     }
 
     onOpenChange(nextOpen);
-  }, [isDirty, onOpenChange]);
+  }, [isDirty, onOpenChange, open]);
 
   const discardChanges = useCallback(() => {
     setConfirmationOpen(false);
     onOpenChange(false);
   }, [onOpenChange]);
+
+  // The confirmation must never outlive the dialog it guards.
+  useEffect(() => {
+    if (!open) setConfirmationOpen(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !isDirty) return;

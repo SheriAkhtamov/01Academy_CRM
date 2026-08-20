@@ -491,10 +491,14 @@ export function LeadDetailSheet({
     const lead = leadQuery.data;
     if (!open || !lead || !leadSnapshotKey) return;
 
+    // A draft belongs to the lead it was typed on. When the sheet swaps records
+    // while staying open, every form is reseeded even mid-edit: keeping the old
+    // draft would show another lead's data and mark an untouched lead dirty.
+    const changedLead = hydratedLeadId.current !== lead.id;
+
     // Reseed the deal form only when the lead itself changes, or when the
     // server data changed AND the user is not mid-edit in the deal tab.
     if (hydratedLeadKey.current !== leadSnapshotKey) {
-      const changedLead = hydratedLeadId.current !== lead.id;
       leadForm.reset(
         leadToFormValues(lead),
         changedLead ? undefined : { keepDirtyValues: true },
@@ -507,7 +511,7 @@ export function LeadDetailSheet({
     // load or when the underlying amount changed and the user is not editing it.
     if (hydratedTransientKey.current !== transientSnapshotKey) {
       const paymentDirty = paymentForm.formState.isDirty;
-      if (!paymentDirty || hydratedTransientKey.current === null) {
+      if (changedLead || !paymentDirty || hydratedTransientKey.current === null) {
         paymentForm.reset({
           studentId: lead.students?.length === 1 ? String(lead.students[0].id) : '',
           amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),

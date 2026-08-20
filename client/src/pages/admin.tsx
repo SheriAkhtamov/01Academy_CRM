@@ -225,6 +225,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       userForm.reset(defaultUserFormValues);
     }
   };
+  // Every open starts from a known-clean form: otherwise the previous employee's
+  // values survive here and an untouched form is reported as having unsaved changes.
+  const openCreateUserModal = () => {
+    setSelectedUser(null);
+    userForm.reset(defaultUserFormValues);
+    setShowCreateUserModal(true);
+  };
   const userDialogGuard = useUnsavedChangesGuard({
     open: showCreateUserModal,
     isDirty: userForm.formState.isDirty,
@@ -259,9 +266,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         title: t('userCreatedSuccessfullyTitle'),
         description: t('newUserAddedDescription'),
       });
-      userForm.reset(defaultUserFormValues);
-      setShowCreateUserModal(false);
-      setSelectedUser(null);
+      handleUserModalState(false);
     },
     onError: (error: Error) => {
       toast({
@@ -282,10 +287,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         title: t('userUpdatedSuccessfullyTitle'),
         description: t('userInformationUpdatedDescription'),
       });
-      setSelectedUser(null);
-      setSalesModuleTransfer(null);
-      setSalesLeadTransferManagerId('');
-      setShowCreateUserModal(false);
+      handleUserModalState(false);
     },
     onError: () => {
       toast({
@@ -709,11 +711,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           ? [{ label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' }, { label: t('employees') }]
           : [{ label: t('administration') }]}
         actions={isEmployeesPage ? (
-          <Button
-            onClick={() => {
-              setShowCreateUserModal(true);
-            }}
-          >
+          <Button onClick={openCreateUserModal}>
             <Plus className="h-4 w-4 mr-2" />
             {t('createEmployee')}
           </Button>

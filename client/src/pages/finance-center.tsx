@@ -383,7 +383,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     onSuccess: () => {
       toast({ title: copy.saved });
       setExpenseDialogOpen(false);
-      setExpenseForm({ category: 'other', title: '', vendor: '', description: '', amountUzs: '', expenseDate: currentDateOnly(), status: 'paid', method: 'transfer' });
+      setExpenseForm(defaultExpenseForm);
+      setInitialExpenseForm(defaultExpenseForm);
       invalidateFinance();
     },
     onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
@@ -393,7 +394,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       employeeUserId: Number(salaryForm.employeeUserId), amountUzs: Number(salaryForm.amountUzs),
       effectiveFrom: `${salaryForm.effectiveMonth}-01`, note: salaryForm.note,
     }),
-    onSuccess: () => { toast({ title: copy.saved }); setSalaryDialogOpen(false); invalidateFinance(); },
+    onSuccess: () => { toast({ title: copy.saved }); setSalaryDialogOpen(false); setInitialSalaryForm(salaryForm); invalidateFinance(); },
     onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
   });
   const savePayout = useMutation({
@@ -401,7 +402,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       period, employeeUserId: payoutTarget!.employeeUserId, bonusUzs: Number(payoutForm.bonusUzs || 0),
       deductionUzs: Number(payoutForm.deductionUzs || 0), method: payoutForm.method, note: payoutForm.note,
     }),
-    onSuccess: () => { toast({ title: copy.payoutSaved }); setPayoutTarget(null); invalidateFinance(); },
+    onSuccess: () => { toast({ title: copy.payoutSaved }); setPayoutTarget(null); setInitialPayoutForm(payoutForm); invalidateFinance(); },
     onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
   });
   const payAll = useMutation({
@@ -739,7 +740,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             </div>
             <Field><FieldLabel htmlFor="expense-description">{copy.description}</FieldLabel><Textarea id="expense-description" value={expenseForm.description} onChange={(event) => setExpenseForm((form) => ({ ...form, description: event.target.value }))} /></Field>
           </FieldGroup>
-          <DialogFooter><Button variant="outline" onClick={() => setExpenseDialogOpen(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => expenseGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -752,7 +753,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /><FieldDescription>{copy.salaryDialogDescription}</FieldDescription></Field>
             <Field><FieldLabel htmlFor="salary-note">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
           </FieldGroup>
-          <DialogFooter><Button variant="outline" onClick={() => setSalaryDialogOpen(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -770,7 +771,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <Field><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={payoutForm.method} onValueChange={(method) => setPayoutForm((form) => ({ ...form, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
             <Field><FieldLabel htmlFor="payout-note">{copy.note}</FieldLabel><Textarea id="payout-note" value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
           </FieldGroup>
-          <DialogFooter><Button variant="outline" onClick={() => setPayoutTarget(null)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => payoutGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

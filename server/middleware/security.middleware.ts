@@ -21,6 +21,11 @@ const normalizeOrigin = (value: string | undefined): string | null => {
 };
 
 const configuredOrigin = normalizeOrigin(appConfig.server.appUrl);
+const websiteLeadFormOrigins = new Set(
+  (appConfig.integrations?.website?.allowedFormOrigins ?? [])
+    .map((origin) => normalizeOrigin(origin))
+    .filter((origin): origin is string => Boolean(origin)),
+);
 const allowedOrigins = new Set(
   [
     configuredOrigin,
@@ -41,6 +46,16 @@ export const isAllowedRequestOrigin = (origin: string | undefined): boolean => {
   const normalized = normalizeOrigin(origin);
   return Boolean(normalized && allowedOrigins.has(normalized));
 };
+
+export const isAllowedWebsiteLeadFormOrigin = (origin: string | undefined): boolean => {
+  const normalized = normalizeOrigin(origin);
+  return Boolean(normalized && websiteLeadFormOrigins.has(normalized));
+};
+
+const isWebsiteLeadFormRequest = (req: Request) => (
+  req.path === '/api/incoming/website-lead'
+  && ['POST', 'OPTIONS'].includes(req.method)
+);
 
 const isNonBrowserMutationPath = (path: string) =>
   NON_BROWSER_MUTATION_PATHS.some((pattern) => pattern.test(path));
@@ -108,7 +123,11 @@ export const corsMiddleware = (
   next: NextFunction,
 ) => {
   const origin = req.get('origin');
-  const originAllowed = !origin || isAllowedRequestOrigin(origin);
+  const originAllowed = (
+    !origin
+    || isAllowedRequestOrigin(origin)
+    || (isWebsiteLeadFormRequest(req) && isAllowedWebsiteLeadFormOrigin(origin))
+  );
 
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Credentials', 'true');

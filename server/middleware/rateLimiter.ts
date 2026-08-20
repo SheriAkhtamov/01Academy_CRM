@@ -36,6 +36,14 @@ export const inboundWebhookLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+export const websiteLeadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    handler: rateLimitHandler,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 export const attachmentUploadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,

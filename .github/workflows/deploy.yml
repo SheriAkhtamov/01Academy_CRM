@@ -159,7 +159,13 @@ jobs:
                   },
                   "integrations": {
                       "chatplace": {"webhookSecret": secrets.token_urlsafe(32)},
-                      "website": {"webhookSecret": secrets.token_urlsafe(32)},
+                      "website": {
+                          "webhookSecret": secrets.token_urlsafe(32),
+                          "allowedFormOrigins": [
+                              "https://01academy.pro",
+                              "https://www.01academy.pro",
+                          ],
+                      },
                       "telegram": {"botToken": "", "leadershipChatId": ""},
                       "whatsapp": {
                           "apiToken": "",
@@ -201,10 +207,16 @@ jobs:
                       },
                   },
               }
-              config_path.write_text(
-                  json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-                  encoding="utf-8",
-              )
+
+          website_config = config.setdefault("integrations", {}).setdefault("website", {})
+          website_config["allowedFormOrigins"] = [
+              "https://01academy.pro",
+              "https://www.01academy.pro",
+          ]
+          config_path.write_text(
+              json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
 
           password_path.write_text(password + "\n", encoding="utf-8")
           os.chmod(config_path, 0o640)

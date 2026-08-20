@@ -4,7 +4,8 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig, isDevelopmentEnvironment } from '../config';
 import { logger } from '../lib/logger';
-import { inboundWebhookLimiter } from '../middleware/rateLimiter';
+import { inboundWebhookLimiter, websiteLeadLimiter } from '../middleware/rateLimiter';
+import { isAllowedWebsiteLeadFormOrigin } from '../middleware/security.middleware';
 import {
   processInstagramWebhook,
   verifyInstagramWebhookChallenge,
@@ -142,9 +143,11 @@ router.get('/instagram/data-deletion/status/:confirmationCode', (req, res) => {
   });
 });
 
-// Webhook secrets are optional in dev (so local testing works), but when a secret is
-// configured every inbound payload must carry it in the x-webhook-secret header.
-const verifyWebsiteWebhookSecret = (req: any, res: any): boolean => {
+// The public landing is allowed only from explicitly configured origins. Other
+// clients must authenticate with the server-side webhook secret.
+const verifyWebsiteLeadRequest = (req: any, res: any): boolean => {
+  if (isAllowedWebsiteLeadFormOrigin(req.get('origin'))) return true;
+
   const configured = appConfig.integrations?.website?.webhookSecret?.trim();
   if (!configured) {
     if (isDevelopmentEnvironment) return true;
@@ -219,6 +222,47 @@ const normalizePhoneForStorage = (value: unknown) => {
   return { phone, normalizedPhone: phone };
 };
 
+const normalizeMessengerForStorage = (value: unknown) => {
+  const text = nullableText(value, 120);
+  if (!text) return null;
+
+  let handle = text;
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const url = new URL(text);
+      if (['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(url.hostname.toLowerCase())) {
+        handle = url.pathname.split('/').filter(Boolean)[0] ?? text;
+      }
+    } catch {
+      handle = text;
+    }
+  }
+
+  const normalizedHandle = handle.replace(/^@+/, '').replace(/[/?#].*$/, '').trim();
+  if (/^[a-z0-9_]{5,32}$/i.test(normalizedHandle)) return `@${normalizedHandle}`;
+  return text;
+};
+
+const normalizeMessengerForLookup = (value: unknown) => (
+  normalizeMessengerForStorage(value)?.replace(/^@/, '').toLowerCase() ?? null
+);
+
+const resolveWebsiteContact = (body: Record<string, unknown>) => {
+  let phone = nullableText(body.phone, 50);
+  let messenger = nullableText(body.messenger, 120);
+  const contact = nullableText(body.contact, 120);
+
+  if (!phone && !messenger && contact) {
+    if (/^@|t[.]me\/|telegram[.]me\/|[a-z_]/i.test(contact)) messenger = contact;
+    else phone = contact;
+  }
+
+  return {
+    phone,
+    messenger: normalizeMessengerForStorage(messenger),
+  };
+};
+
 const nullableText = (value: unknown, maxLength?: number) => {
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
@@ -229,9 +273,14 @@ const nullableText = (value: unknown, maxLength?: number) => {
 const lockIncomingContact = async (
   executor: QueryExecutor,
   phone: string | null | undefined,
+  messenger: string | null | undefined,
 ) => {
   const normalizedPhone = normalizePhoneForStorage(phone)?.normalizedPhone ?? '';
-  const contactKeys = normalizedPhone ? [`phone:${normalizedPhone}`] : [];
+  const normalizedMessenger = normalizeMessengerForLookup(messenger) ?? '';
+  const contactKeys = [
+    normalizedPhone ? `phone:${normalizedPhone}` : null,
+    normalizedMessenger ? `messenger:${normalizedMessenger}` : null,
+  ].filter((contactKey): contactKey is string => Boolean(contactKey));
   for (const contactKey of contactKeys) {
     await executor.query(
       `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
@@ -254,8 +303,10 @@ const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, ph
 const findIncomingDuplicate = async (
   executor: QueryExecutor,
   phone: string | null | undefined,
+  messenger: string | null | undefined,
 ) => {
   const normalizedPhone = normalizePhoneForStorage(phone)?.normalizedPhone ?? null;
+  const normalizedMessenger = normalizeMessengerForLookup(messenger);
   const { rows } = await executor.query(
     `SELECT 'lead' AS entity_type, l.id, NULL::integer AS lead_id, l.contact_name AS name, l.phone, l.messenger
      FROM academy_leads l
@@ -271,36 +322,64 @@ const findIncomingDuplicate = async (
          )
        )
      )
+     OR (
+       $2::text IS NOT NULL
+       AND LOWER(
+         REGEXP_REPLACE(
+           REGEXP_REPLACE(BTRIM(COALESCE(l.messenger, '')), '^https?://(www[.])?(t[.]me|telegram[.]me)/', '', 'i'),
+           '^@', ''
+         )
+       ) = $2
+     )
      UNION ALL
      SELECT 'student' AS entity_type, id, lead_id, student_name AS name, phone, messenger
      FROM academy_students
      WHERE phone = $1
+        OR (
+          $2::text IS NOT NULL
+          AND LOWER(
+            REGEXP_REPLACE(
+              REGEXP_REPLACE(BTRIM(COALESCE(messenger, '')), '^https?://(www[.])?(t[.]me|telegram[.]me)/', '', 'i'),
+              '^@', ''
+            )
+          ) = $2
+        )
      LIMIT 1`,
-    [normalizedPhone],
+    [normalizedPhone, normalizedMessenger],
   );
   return rows[0] ?? null;
 };
 
-router.post('/website-lead', async (req, res) => {
-  if (!verifyWebsiteWebhookSecret(req, res)) return;
+router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
+  if (!verifyWebsiteLeadRequest(req, res)) return;
   try {
     const body = req.body ?? {};
+    if (nullableText(body.website, 255)) return res.status(202).json({ ok: true });
+
     const contactName = nullableText(body.contactName ?? body.name, 255);
-    const phone = nullableText(body.phone, 50);
-    const message = nullableText(body.message, 2000);
+    const { phone, messenger } = resolveWebsiteContact(body);
+    const company = nullableText(body.company, 255);
+    const team = nullableText(body.team, 255);
+    const message = nullableText(body.message ?? body.comment, 2000);
+    const pageUrl = nullableText(body.pageUrl ?? body.page, 2000);
     const language = nullableText(body.locale ?? body.language, 20) ?? 'ru';
-    const campaign = nullableText(body.sourceLabel ?? body.source ?? body.pageUrl, 255);
+    const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
 
     if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });
-    if (!phone) return res.status(400).json({ error: 'phoneRequired' });
+    if (!phone && !messenger) return res.status(400).json({ error: 'contactRequired' });
 
-    const storedPhone = normalizePhoneForStorage(phone)?.phone ?? phone;
-    const comment = message ? `Сообщение клиента "${message}"` : null;
+    const storedPhone = phone ? (normalizePhoneForStorage(phone)?.phone ?? phone) : null;
+    const comment = [
+      company ? `Компания: ${company}` : null,
+      team ? `Отдел / размер группы: ${team}` : null,
+      message ? `Комментарий: ${message}` : null,
+      pageUrl ? `Страница заявки: ${pageUrl}` : null,
+    ].filter((line): line is string => Boolean(line)).join('\n') || null;
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
-      await lockIncomingContact(client, phone);
-      const duplicate = await findIncomingDuplicate(client, phone);
+      await lockIncomingContact(client, phone, messenger);
+      const duplicate = await findIncomingDuplicate(client, phone, messenger);
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
       const sourceId = await ensureIncomingSourceId(client, {
@@ -311,12 +390,12 @@ router.post('/website-lead', async (req, res) => {
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
-          (contact_name, phone, source_id, advertising_campaign, status_code, manager_id, language, comment, created_by)
-         VALUES ($1,$2,$3,$4,'new_request',NULL,$5,$6,$7) RETURNING *`,
-        [contactName, storedPhone, sourceId, campaign, language, comment, systemUserId],
+          (contact_name, phone, messenger, source_id, advertising_campaign, status_code, manager_id, language, comment, created_by)
+         VALUES ($1,$2,$3,$4,$5,'new_request',NULL,$6,$7,$8) RETURNING *`,
+        [contactName, storedPhone, messenger, sourceId, campaign, language, comment, systemUserId],
       );
       const lead = camelize(inserted[0]);
-      await syncIncomingLeadPhone(client, lead.id, storedPhone);
+      if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
          VALUES ($1,NULL,'new_request',$2,'Заявка с сайта')`,

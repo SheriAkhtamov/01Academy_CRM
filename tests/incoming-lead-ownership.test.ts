@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../server/config', () => ({
   appConfig: {
     integrations: {
-      website: { webhookSecret: 'test-webhook-secret' },
+      website: {
+        webhookSecret: 'test-webhook-secret',
+        allowedFormOrigins: ['https://01academy.pro', 'https://www.01academy.pro'],
+      },
     },
     server: { appUrl: 'http://localhost:5001' },
   },
@@ -56,6 +59,7 @@ describe('external lead ownership', () => {
             id: 77,
             contact_name: params[0],
             phone: params[1] ?? null,
+            messenger: params[2] ?? null,
             manager_id: null,
           }],
         };
@@ -101,6 +105,67 @@ describe('external lead ownership', () => {
       .send({ contactName: 'Unsigned lead' });
 
     expect(response.status).toBe(401);
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
+  });
+
+  it('accepts the configured public form origin and stores a Telegram contact', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('origin', 'https://01academy.pro')
+      .send({
+        name: 'Telegram Client',
+        company: 'Acme',
+        contact: 'https://t.me/acme_client',
+        team: '10–20 человек',
+        sourceLabel: '01academy.pro',
+        page: 'https://01academy.pro/#cta',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.phone).toBeNull();
+    expect(response.body.messenger).toBe('@acme_client');
+
+    const leadInsertCall = mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO academy_leads'));
+    expect(leadInsertCall).toBeDefined();
+    expect(leadInsertCall?.[1]).toEqual([
+      'Telegram Client',
+      null,
+      '@acme_client',
+      5,
+      '01academy.pro',
+      'ru',
+      [
+        'Компания: Acme',
+        'Отдел / размер группы: 10–20 человек',
+        'Страница заявки: https://01academy.pro/#cta',
+      ].join('\n'),
+      1,
+    ]);
+  });
+
+  it('does not let an unconfigured browser origin bypass the webhook secret', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('origin', 'https://attacker.example')
+      .send({ name: 'Attacker', contact: '+998901112233' });
+
+    expect(response.status).toBe(401);
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
+  });
+
+  it('silently accepts a filled honeypot without creating a lead', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('origin', 'https://01academy.pro')
+      .send({
+        name: 'Bot',
+        contact: '+998901112233',
+        website: 'spam.example',
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({ ok: true });
     expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 

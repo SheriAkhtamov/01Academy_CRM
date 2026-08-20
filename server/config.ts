@@ -40,6 +40,7 @@ interface AppConfig {
   integrations?: {
     website?: {
       webhookSecret?: string;
+      allowedFormOrigins?: string[];
     };
     instagram?: {
       appId?: string;
@@ -99,6 +100,32 @@ const validateHttpsIntegrationUrl = (
     || !allowedHost(url.hostname.toLowerCase())
   ) {
     throw new Error(`${name} must use an approved HTTPS host without credentials`);
+  }
+};
+
+const validateAllowedFormOrigins = (origins: string[] | undefined) => {
+  if (origins === undefined) return;
+  if (!Array.isArray(origins)) {
+    throw new Error('integrations.website.allowedFormOrigins must be an array');
+  }
+  for (const value of origins) {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error('integrations.website.allowedFormOrigins must contain non-empty origins');
+    }
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error('integrations.website.allowedFormOrigins must contain valid origins');
+    }
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.origin !== value.trim().replace(/\/$/, '')
+    ) {
+      throw new Error('integrations.website.allowedFormOrigins must contain HTTPS origins without paths or credentials');
+    }
   }
 };
 
@@ -249,6 +276,7 @@ const validateConfig = (config: AppConfig) => {
 
   const instagram = config.integrations?.instagram;
   const metaAds = config.integrations?.metaAds;
+  validateAllowedFormOrigins(config.integrations?.website?.allowedFormOrigins);
   if (config.server.environment === 'production') {
     validateHttpsIntegrationUrl(
       'integrations.instagram.graphApiUrl',

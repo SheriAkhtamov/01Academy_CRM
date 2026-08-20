@@ -39,7 +39,11 @@
   "integrations": {
     "_comment": "Only the four supported CRM integrations are configured here: website, Instagram, Meta Ads/CAPI, and OnlinePBX.",
     "website": {
-      "webhookSecret": ""
+      "webhookSecret": "",
+      "allowedFormOrigins": [
+        "https://01academy.pro",
+        "https://www.01academy.pro"
+      ]
     },
     "instagram": {
       "_comment": "Create a Meta Business app with Instagram API with Instagram Login. Add the OAuth redirect and webhook callback shown on the CRM Integrations page.",

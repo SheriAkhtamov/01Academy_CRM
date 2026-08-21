@@ -74,7 +74,7 @@ describe('task calendar', () => {
 
     // 13:00 UTC is 18:00 in Tashkent on the 18th, so the task belongs to the
     // 18th rather than being pushed a day either way.
-    const june18 = screen.getByRole('region', { name: 'Thursday, June 18' });
+    const june18 = screen.getByRole('group', { name: 'Thursday, June 18' });
     expect(june18.querySelector('[data-testid="task-calendar-task-1"]')).toBeTruthy();
   });
 
@@ -83,7 +83,7 @@ describe('task calendar', () => {
 
     const panel = screen.getByRole('complementary', { name: 'Tasks without a due date' });
     expect(panel.querySelector('[data-testid="task-calendar-task-4"]')).toBeTruthy();
-    expect(screen.getByTestId('task-calendar-task-4').closest('[role="region"]')).toBeNull();
+    expect(screen.getByTestId('task-calendar-task-4').closest('[role="group"]')).toBeNull();
   });
 
   it('opens the task that was clicked', async () => {
@@ -133,6 +133,43 @@ describe('task calendar', () => {
     // The confirmation is what the drop handler opens; it must not be standing
     // open on its own.
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('carries the tasks over into the week and agenda views', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderCalendar();
+
+    // 16 June is a Monday, so its week holds the 18th but not the 10th or 20th.
+    await user.click(screen.getByRole('button', { name: 'Week' }));
+    expect(screen.getByTestId('task-calendar-task-1')).toBeTruthy();
+    expect(screen.queryByTestId('task-calendar-task-2')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByTestId('task-calendar-task-1')).toBeTruthy();
+    // The week of the 15th holds the 18th and the 20th; the agenda skips the
+    // five empty days rather than printing seven headings.
+    expect(screen.getAllByRole('group', { name: /June/ }).map((day) => day.getAttribute('aria-label')))
+      .toEqual(['Thursday, June 18', 'Saturday, June 20']);
+  });
+
+  it('names a day for a screen reader without filing it as a landmark', () => {
+    renderCalendar();
+    // A month is 42 cells. Landmarks are a navigation index, not a grid.
+    expect(screen.queryAllByRole('region')).toHaveLength(0);
+    expect(screen.getAllByRole('group', { name: /June/ }).length).toBeGreaterThan(27);
+  });
+
+  it('keeps the whole title reachable from a cell too narrow to show it', () => {
+    renderCalendar();
+    expect(screen.getByTestId('task-calendar-task-1').getAttribute('title'))
+      .toBe('Call the lead back');
+  });
+
+  it('says when a task is due, not only that it is late', () => {
+    renderCalendar();
+    const label = screen.getByTestId('task-calendar-task-2').getAttribute('aria-label');
+    expect(label).toContain('Overdue tasks');
+    expect(label).toContain('Jun 10');
   });
 });
 

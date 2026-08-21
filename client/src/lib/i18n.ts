@@ -1711,8 +1711,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   taskUnscheduledPanel: { en: 'Tasks without a due date', ru: 'Задачи без срока' },
   taskUnscheduledEmpty: { en: 'Every task has a due date', ru: 'У всех задач есть срок' },
   taskUnscheduledHint: { en: 'Drag one onto a day to schedule it.', ru: 'Перетащите задачу на день, чтобы запланировать её.' },
-  showUnscheduledTasks: { en: 'Show tasks without a due date', ru: 'Показать задачи без срока' },
-  hideUnscheduledTasks: { en: 'Hide tasks without a due date', ru: 'Скрыть задачи без срока' },
   taskRescheduled: { en: 'Deadline moved', ru: 'Срок перенесён' },
   taskDueDateCleared: { en: 'Due date removed', ru: 'Срок снят' },
   taskClearDueTitle: { en: 'Remove the due date?', ru: 'Снять срок у задачи?' },

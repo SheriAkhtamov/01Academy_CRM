@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes } from 'react';
 import {
     DndContext,
     KeyboardSensor,
@@ -39,6 +39,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
 import {
     PRIORITY_META,
+    formatBoardDateTime,
     type TaskSummary,
 } from '@/lib/boardTypes';
 import {
@@ -129,59 +130,52 @@ const collisionDetection: CollisionDetection = (args) => {
     return intersections.length > 0 ? intersections : closestCenter(args);
 };
 
+/**
+ * The chip itself owns no drag state.
+ *
+ * It used to call `useDraggable`, which registers a node under its id whether
+ * or not dragging is enabled — so the copy inside the drag preview overwrote
+ * the registry entry of the very task being dragged, and, reading the same
+ * `isDragging`, painted the preview at 25% opacity. `DraggableTaskChip`
+ * supplies the drag props exactly the way `TaskBoard` does with `TaskCard`.
+ */
 function TaskChip({
     task,
     state,
     roomy = false,
-    draggable = true,
+    dragProps,
+    isDragging = false,
     onClick,
 }: {
     task: TaskSummary;
     state: TaskCalendarState;
     roomy?: boolean;
-    draggable?: boolean;
+    dragProps?: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: (node: HTMLElement | null) => void };
+    isDragging?: boolean;
     onClick?: () => void;
 }) {
-    const { t } = useTranslation();
+    const { t, language } = useTranslation();
     const tone = STATE_TONES[state];
     const priority = PRIORITY_META[task.priority];
     const time = task.dueAt ? academyTimeOfDay(task.dueAt) : '';
-    const suppressClickRef = useRef(false);
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: `calendar-task-${task.id}`,
-        data: { taskId: task.id, dueAt: task.dueAt },
-        disabled: !draggable,
-    });
-
-    /* A drag ends with a click event on the same element; without this the
-       detail sheet opened every time a task was dropped. */
-    useEffect(() => {
-        if (isDragging) {
-            suppressClickRef.current = true;
-            return undefined;
-        }
-        if (!suppressClickRef.current) return undefined;
-        const timer = window.setTimeout(() => { suppressClickRef.current = false; }, 0);
-        return () => window.clearTimeout(timer);
-    }, [isDragging]);
+    const due = task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('noDueDate');
 
     return (
         <button
-            ref={setNodeRef}
-            {...attributes}
-            {...listeners}
+            {...dragProps}
             type="button"
             data-testid={`task-calendar-task-${task.id}`}
             aria-haspopup="dialog"
-            aria-label={`${task.title}. ${t(STATE_LABEL_KEYS[state])}. ${t(priority.labelKey)}`}
-            onClick={() => {
-                if (!suppressClickRef.current) onClick?.();
-            }}
+            aria-label={`${task.title}. ${due}. ${t(STATE_LABEL_KEYS[state])}. ${t(priority.labelKey)}`}
+            /* A month cell is too narrow to finish most titles, so the whole
+               title stays reachable without opening the task. */
+            title={task.title}
+            onClick={onClick}
             className={cn(
                 'w-full rounded-md border border-l-[3px] text-left transition-[box-shadow,transform] duration-150 ease-out',
                 'hover:scale-[1.02] hover:shadow-md active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 roomy ? 'px-3 py-2.5' : 'px-1.5 py-1',
-                draggable && 'cursor-grab active:cursor-grabbing',
+                dragProps && 'cursor-grab active:cursor-grabbing',
                 isDragging && 'opacity-25',
             )}
             style={{
@@ -209,6 +203,49 @@ function TaskChip({
                 </span>
             ) : null}
         </button>
+    );
+}
+
+function DraggableTaskChip({
+    task,
+    state,
+    roomy = false,
+    onClick,
+}: {
+    task: TaskSummary;
+    state: TaskCalendarState;
+    roomy?: boolean;
+    onClick: () => void;
+}) {
+    const suppressClickRef = useRef(false);
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+        id: `calendar-task-${task.id}`,
+        data: { taskId: task.id, dueAt: task.dueAt },
+    });
+
+    /* A drag ends with a click event on the same element; without this the
+       detail sheet opened every time a task was dropped. */
+    useEffect(() => {
+        if (isDragging) {
+            suppressClickRef.current = true;
+            return undefined;
+        }
+        if (!suppressClickRef.current) return undefined;
+        const timer = window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+        return () => window.clearTimeout(timer);
+    }, [isDragging]);
+
+    return (
+        <TaskChip
+            task={task}
+            state={state}
+            roomy={roomy}
+            isDragging={isDragging}
+            dragProps={{ ...attributes, ...listeners, ref: setNodeRef }}
+            onClick={() => {
+                if (!suppressClickRef.current) onClick();
+            }}
+        />
     );
 }
 
@@ -468,8 +505,10 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                 size="sm"
                                 className="h-8 gap-1.5 max-md:h-11"
                                 aria-expanded={panelOpen}
-                                aria-controls={UNSCHEDULED_DROP_ID}
-                                aria-label={panelOpen ? t('hideUnscheduledTasks') : t('showUnscheduledTasks')}
+                                /* Only points at the panel while it is mounted:
+                                   a dangling `aria-controls` is a broken
+                                   reference, not a hidden one. */
+                                aria-controls={panelOpen ? UNSCHEDULED_DROP_ID : undefined}
                                 onClick={() => setUnscheduledPanel(panelOpen ? 'closed' : 'open')}
                             >
                                 <Inbox className="size-4" aria-hidden="true" />
@@ -516,7 +555,11 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                 <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0 lg:flex-row">
                     <div className="relative min-h-0 flex-1 overflow-auto">
                         {visibleRangeCount === 0 ? (
-                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-card/85 px-6 py-8 text-center backdrop-blur-[2px]">
+                            /* The wash sits over the grid but must not swallow
+                               the drop targets underneath it: an empty month is
+                               precisely when a task gets dragged in from the
+                               panel. Only the reset button takes clicks. */
+                            <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-card/85 px-6 py-8 text-center backdrop-blur-[2px]">
                                 <EmptyState
                                     icon={CalendarDays}
                                     className="py-0"
@@ -526,7 +569,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                         <Button
                                             type="button"
                                             variant="outline"
-                                            className="min-h-11"
+                                            className="pointer-events-auto min-h-11"
                                             onClick={() => setHiddenStates(new Set())}
                                         >
                                             {t('resetFilters')}
@@ -622,7 +665,6 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                 task={activeTask}
                                 state={taskCalendarState(activeTask, now)}
                                 roomy
-                                draggable={false}
                             />
                         </div>
                     ) : null}
@@ -693,7 +735,10 @@ function CalendarDayCell({
     return (
         <div
             ref={setNodeRef}
-            role="region"
+            /* A named `region` is a landmark, and a month grid would file 42 of
+               them next to the page's own. `group` names the cell for a screen
+               reader without entering the landmark list. */
+            role="group"
             aria-label={label}
             className={cn(
                 'flex flex-col gap-1 border-b border-r border-border/70 p-1.5 transition-colors [&:nth-child(7n)]:border-r-0',
@@ -713,7 +758,7 @@ function CalendarDayCell({
             </span>
             <div id={`task-day-list-${dateKey}`} className="flex flex-col gap-1">
                 {tasks.map((task) => (
-                    <TaskChip
+                    <DraggableTaskChip
                         key={task.id}
                         task={task}
                         state={taskCalendarState(task, now)}
@@ -756,6 +801,7 @@ function AgendaDay({
     return (
         <section
             ref={setNodeRef}
+            role="group"
             aria-label={label}
             className={cn('space-y-2 p-4 pt-3 transition-colors', isOver && 'bg-primary/10')}
         >
@@ -765,7 +811,7 @@ function AgendaDay({
             </div>
             <div className="space-y-2">
                 {tasks.map((task) => (
-                    <TaskChip
+                    <DraggableTaskChip
                         key={task.id}
                         task={task}
                         state={taskCalendarState(task, now)}
@@ -818,7 +864,7 @@ function UnscheduledPanel({
                     <>
                         <p className="px-1 text-xs text-muted-foreground">{t('taskUnscheduledHint')}</p>
                         {tasks.map((task) => (
-                            <TaskChip
+                            <DraggableTaskChip
                                 key={task.id}
                                 task={task}
                                 state={taskCalendarState(task, now)}

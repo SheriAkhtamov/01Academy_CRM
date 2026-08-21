@@ -9,6 +9,10 @@ const tasksPage = readFileSync(
   new URL('../client/src/pages/tasks.tsx', import.meta.url),
   'utf8',
 );
+const taskCalendar = readFileSync(
+  new URL('../client/src/components/ux/board/TaskCalendar.tsx', import.meta.url),
+  'utf8',
+);
 const salesKanban = readFileSync(
   new URL('../client/src/components/ux/KanbanBoard.tsx', import.meta.url),
   'utf8',
@@ -58,6 +62,26 @@ describe('task board interaction UX', () => {
     // board feature rather than reaching for the transport itself.
     expect(tasksPage).not.toContain('apiRequest(');
     expect(tasksPage).toContain('boardApi.updateTaskDueAt');
+  });
+
+  /* `useDraggable` registers a node under its id whether or not dragging is
+     enabled, so a second copy of the chip inside the drag preview replaced the
+     registry entry of the task being dragged — and, reading the same
+     `isDragging`, drew the preview itself at 25% opacity. */
+  it('keeps drag state out of the chip the calendar preview renders', () => {
+    const chipStart = taskCalendar.indexOf('function TaskChip(');
+    const chipEnd = taskCalendar.indexOf('function DraggableTaskChip(');
+    expect(chipStart).toBeGreaterThan(-1);
+    expect(chipEnd).toBeGreaterThan(chipStart);
+    expect(taskCalendar.slice(chipStart, chipEnd)).not.toContain('useDraggable');
+    expect(taskCalendar).toContain('dragProps={{ ...attributes, ...listeners, ref: setNodeRef }}');
+  });
+
+  it('lets a task be dropped onto a period that has nothing in it yet', () => {
+    // The "nothing here" wash covers every day cell; if it took clicks, the one
+    // moment you most want to plan something would be the one that cannot.
+    expect(taskCalendar).toContain('pointer-events-none absolute inset-0 z-10');
+    expect(taskCalendar).toContain('pointer-events-auto min-h-11');
   });
 
   it('targets the column under the pointer and disables forbidden destinations', () => {

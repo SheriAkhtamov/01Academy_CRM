@@ -4,6 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
 import { CALENDAR_TONES } from '@/components/ux/calendar/calendarTones';
+import {
+  buildMonthDays,
+  buildWeekDays,
+  dateFromDayKey,
+  shiftDayKey,
+  shiftMonthKey,
+  weekStartDayKey,
+} from '@/lib/calendarDays';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useCalendarShortcuts } from '@/hooks/useCalendarShortcuts';
@@ -35,7 +43,6 @@ type AttendanceState = 'pending' | 'upcoming' | 'conducted';
 const VIEWS = ['month', 'week', 'agenda'] as const satisfies readonly CalendarViewMode[];
 const COMPACT_VIEWS = ['agenda'] as const satisfies readonly CalendarViewMode[];
 const VISIBLE_PER_DAY = 3;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const STATE_TONES = {
   pending: CALENDAR_TONES[2],
@@ -64,49 +71,6 @@ const academyDateKey = (value: string | Date) => {
     if (part.type !== 'literal') parts[part.type] = part.value;
   }
   return `${parts.year}-${parts.month}-${parts.day}`;
-};
-
-/* Day arithmetic runs in UTC so that a academy-local date key never drifts
-   across a daylight-saving boundary in the browser's own zone. */
-const dateFromKey = (key: string) => new Date(`${key}T00:00:00Z`);
-const keyFromDate = (date: Date) => date.toISOString().slice(0, 10);
-const shiftDayKey = (key: string, days: number) => (
-  keyFromDate(new Date(dateFromKey(key).getTime() + days * DAY_MS))
-);
-const weekStartKey = (key: string) => (
-  shiftDayKey(key, -((dateFromKey(key).getUTCDay() + 6) % 7))
-);
-const shiftMonthKey = (key: string, offset: number) => {
-  const date = dateFromKey(key);
-  const shifted = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + offset, 1));
-  return keyFromDate(shifted);
-};
-
-const buildMonthDays = (anchorKey: string) => {
-  const anchor = dateFromKey(anchorKey);
-  const year = anchor.getUTCFullYear();
-  const month = anchor.getUTCMonth();
-  const firstDay = new Date(Date.UTC(year, month, 1));
-  const leadingDays = (firstDay.getUTCDay() + 6) % 7;
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const cellCount = Math.ceil((leadingDays + daysInMonth) / 7) * 7;
-
-  return Array.from({ length: cellCount }, (_, index) => {
-    const date = new Date(Date.UTC(year, month, index - leadingDays + 1));
-    return {
-      date,
-      dateKey: keyFromDate(date),
-      isCurrentMonth: date.getUTCMonth() === month,
-    };
-  });
-};
-
-const buildWeekDays = (anchorKey: string) => {
-  const start = weekStartKey(anchorKey);
-  return Array.from({ length: 7 }, (_, index) => {
-    const dateKey = shiftDayKey(start, index);
-    return { date: dateFromKey(dateKey), dateKey, isCurrentMonth: true };
-  });
 };
 
 const lessonState = (lesson: AttendanceCalendarLesson, now: number): AttendanceState => {
@@ -257,7 +221,7 @@ export function AttendanceCalendar({
     scopeRef,
   });
 
-  const anchorDate = dateFromKey(anchorKey);
+  const anchorDate = dateFromDayKey(anchorKey);
   const rangeLabel = effectiveView === 'month'
     ? new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })
       .format(anchorDate)
@@ -266,7 +230,7 @@ export function AttendanceCalendar({
       .format(calendarDays[calendarDays.length - 1].date)}`;
   const atToday = effectiveView === 'month'
     ? anchorKey.slice(0, 7) === todayKey.slice(0, 7)
-    : weekStartKey(anchorKey) === weekStartKey(todayKey);
+    : weekStartDayKey(anchorKey) === weekStartDayKey(todayKey);
 
   const dayNames = [
     t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),

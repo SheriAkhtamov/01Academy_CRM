@@ -1696,6 +1696,30 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   titleRequired: { en: 'Enter a task title', ru: 'Укажите название задачи' },
   unassigned: { en: 'Unassigned', ru: 'Без исполнителя' },
 
+  // UX — the tasks section switches between the board and a due-date calendar
+  taskViewMode: { en: 'Task view', ru: 'Вид раздела задач' },
+  taskViewBoard: { en: 'Board', ru: 'Доска' },
+  taskViewCalendar: { en: 'Calendar', ru: 'Календарь' },
+  taskCalendarHint: { en: 'Drag a task onto another day to move its deadline.', ru: 'Перетащите задачу на другой день, чтобы перенести срок.' },
+  taskCalendarEmpty: { en: 'No tasks in this period', ru: 'В этом периоде задач нет' },
+  taskCalendarEmptyHint: { en: 'Change the period, or plan something from the list of tasks without a due date.', ru: 'Смените период или запланируйте что-нибудь из списка задач без срока.' },
+  taskCalendarHiddenByFilters: { en: 'Every task in this period is hidden', ru: 'Все задачи периода скрыты фильтрами' },
+  taskCalendarHiddenByFiltersHint: { en: 'Switch a state back on to see them.', ru: 'Включите состояние обратно, чтобы увидеть их.' },
+  taskStateOverdue: { en: 'Overdue tasks', ru: 'Просроченные' },
+  taskStatePlanned: { en: 'Scheduled', ru: 'Запланированные' },
+  taskStateFinished: { en: 'Completed tasks', ru: 'Завершённые' },
+  taskUnscheduledPanel: { en: 'Tasks without a due date', ru: 'Задачи без срока' },
+  taskUnscheduledEmpty: { en: 'Every task has a due date', ru: 'У всех задач есть срок' },
+  taskUnscheduledHint: { en: 'Drag one onto a day to schedule it.', ru: 'Перетащите задачу на день, чтобы запланировать её.' },
+  showUnscheduledTasks: { en: 'Show tasks without a due date', ru: 'Показать задачи без срока' },
+  hideUnscheduledTasks: { en: 'Hide tasks without a due date', ru: 'Скрыть задачи без срока' },
+  taskRescheduled: { en: 'Deadline moved', ru: 'Срок перенесён' },
+  taskDueDateCleared: { en: 'Due date removed', ru: 'Срок снят' },
+  taskClearDueTitle: { en: 'Remove the due date?', ru: 'Снять срок у задачи?' },
+  taskClearDueDescription: { en: 'The task keeps its status and returns to the list without a due date. A new one can be set at any time.', ru: 'Задача сохранит статус и вернётся в список без срока. Новый срок можно поставить в любой момент.' },
+  taskClearDueConfirm: { en: 'Remove due date', ru: 'Снять срок' },
+  dragTaskToDayHint: { en: 'Drag the task onto a day to change its deadline', ru: 'Перетащите задачу на день, чтобы изменить срок' },
+
   // UX improvements — administration module boundaries
   adminControlCenterSubtitle: {
     en: 'Manage employees, academy structure, integrations, and system settings without entering operational modules.',

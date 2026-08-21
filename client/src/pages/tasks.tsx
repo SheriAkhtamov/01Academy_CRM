@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Plus, Users } from 'lucide-react';
+import { AlertCircle, CalendarDays, Columns3, Plus, Users, type LucideIcon } from 'lucide-react';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TaskBoard } from '@/components/ux/board/TaskBoard';
+import { TaskCalendar } from '@/components/ux/board/TaskCalendar';
 import { CreateTaskDialog } from '@/components/ux/board/CreateTaskDialog';
 import { TaskDetailSheet } from '@/components/ux/board/TaskDetailSheet';
-import { apiRequest } from '@/lib/queryClient';
+import { boardApi, boardQueryKeys } from '@/features/board/api';
+import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { hasLeadershipAccess, type AcademyModule } from '@shared/academy';
+import type { TranslationKey } from '@/lib/i18n';
 import {
     TASK_OWNER_ALL,
     countTasksByOwner,
@@ -35,6 +39,17 @@ interface ApiUser {
 // The viewer's own id is only known once the session resolves, so the filter
 // keeps a stable sentinel instead of an id and translates it when it reads.
 const OWNER_FILTER_SELF = 'me';
+
+// The board answers "what is everyone working on", the calendar answers "what
+// is due when" — two readings of the same tasks, so the choice is a view
+// switch rather than a route, and it is remembered per person.
+const TASK_VIEWS = ['board', 'calendar'] as const;
+type TaskViewMode = (typeof TASK_VIEWS)[number];
+
+const TASK_VIEW_META = {
+    board: { labelKey: 'taskViewBoard', icon: Columns3 },
+    calendar: { labelKey: 'taskViewCalendar', icon: CalendarDays },
+} satisfies Record<TaskViewMode, { labelKey: TranslationKey; icon: LucideIcon }>;
 
 function OwnerOption({ name, count }: { name: string; count: number }) {
     return (
@@ -58,9 +73,10 @@ export default function TasksPage() {
     const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
     const [ownerFilter, setOwnerFilter] = useState<string>(OWNER_FILTER_SELF);
+    const [taskView, setTaskView] = useCalendarPreference<TaskViewMode>('taskSectionView', TASK_VIEWS, 'board');
 
     const { data, isLoading, isError, error, refetch, isFetching } = useQuery<BoardTasksResponse>({
-        queryKey: ['/api/board/tasks'],
+        queryKey: boardQueryKeys.tasks,
     });
 
     const { data: usersData } = useQuery<ApiUser[]>({
@@ -136,12 +152,30 @@ export default function TasksPage() {
 
     const handleStatusChange = async (taskId: number, status: BoardStatus): Promise<boolean> => {
         try {
-            await apiRequest('PATCH', `/api/board/tasks/${taskId}/status`, { status });
-            queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+            await boardApi.updateTaskStatus(taskId, status);
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${taskId}`] });
             return true;
         } catch (error) {
-            queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+            toast({
+                title: t('taskUpdateFailed'),
+                description: error instanceof Error ? error.message : t('errorOccurred'),
+                variant: 'destructive',
+            });
+            return false;
+        }
+    };
+
+    const handleReschedule = async (taskId: number, dueAt: string | null): Promise<boolean> => {
+        try {
+            await boardApi.updateTaskDueAt(taskId, dueAt);
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+            queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${taskId}`] });
+            toast({ title: dueAt ? t('taskRescheduled') : t('taskDueDateCleared') });
+            return true;
+        } catch (error) {
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
             toast({
                 title: t('taskUpdateFailed'),
                 description: error instanceof Error ? error.message : t('errorOccurred'),
@@ -172,6 +206,33 @@ export default function TasksPage() {
                     subtitle={t('taskBoardSubtitle')}
                     actions={
                         <>
+                            <div
+                                role="group"
+                                aria-label={t('taskViewMode')}
+                                className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+                            >
+                                {TASK_VIEWS.map((mode) => {
+                                    const { labelKey, icon: Icon } = TASK_VIEW_META[mode];
+                                    return (
+                                        <Button
+                                            key={mode}
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            data-testid={`task-view-${mode}`}
+                                            aria-pressed={mode === taskView}
+                                            className={cn(
+                                                'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
+                                                mode === taskView && 'bg-card text-foreground shadow-2xs hover:bg-card',
+                                            )}
+                                            onClick={() => setTaskView(mode)}
+                                        >
+                                            <Icon className="size-4" aria-hidden="true" />
+                                            {t(labelKey)}
+                                        </Button>
+                                    );
+                                })}
+                            </div>
                             <Select value={ownerFilter} onValueChange={setOwnerFilter}>
                                 <SelectTrigger className="w-full sm:w-60" aria-label={t('taskOwnerFilter')}>
                                     <SelectValue>
@@ -215,15 +276,29 @@ export default function TasksPage() {
                 />
 
                 {isLoading ? (
-                    <div className="mt-2 flex gap-4 overflow-hidden">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                            <div key={i} className="w-80 shrink-0 space-y-3">
-                                <Skeleton className="h-10 w-full rounded-xl" />
-                                <Skeleton className="h-24 w-full rounded-lg" />
-                                <Skeleton className="h-24 w-full rounded-lg" />
+                    /* The placeholder has to be shaped like whatever is loading:
+                       five column stubs where a calendar is about to appear read
+                       as the wrong screen for the second it is up. */
+                    taskView === 'calendar' ? (
+                        <div className="mt-2 space-y-3">
+                            <Skeleton className="h-12 w-full rounded-xl" />
+                            <div className="grid grid-cols-7 gap-2">
+                                {Array.from({ length: 21 }).map((_, i) => (
+                                    <Skeleton key={i} className="h-24 w-full rounded-lg" />
+                                ))}
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    ) : (
+                        <div className="mt-2 flex gap-4 overflow-hidden">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                                <div key={i} className="w-80 shrink-0 space-y-3">
+                                    <Skeleton className="h-10 w-full rounded-xl" />
+                                    <Skeleton className="h-24 w-full rounded-lg" />
+                                    <Skeleton className="h-24 w-full rounded-lg" />
+                                </div>
+                            ))}
+                        </div>
+                    )
                 ) : isError ? (
                     <Alert variant="destructive" className="mt-4">
                         <AlertCircle />
@@ -243,12 +318,20 @@ export default function TasksPage() {
                     </Alert>
                 ) : (
                     <div className="mt-2 flex min-h-0 flex-1 flex-col">
-                        <TaskBoard
-                            tasks={visibleTasks}
-                            onStatusChange={handleStatusChange}
-                            onTaskClick={openTask}
-                            canMoveTask={canMoveTask}
-                        />
+                        {taskView === 'calendar' ? (
+                            <TaskCalendar
+                                tasks={visibleTasks}
+                                onTaskClick={openTask}
+                                onReschedule={handleReschedule}
+                            />
+                        ) : (
+                            <TaskBoard
+                                tasks={visibleTasks}
+                                onStatusChange={handleStatusChange}
+                                onTaskClick={openTask}
+                                canMoveTask={canMoveTask}
+                            />
+                        )}
                     </div>
                 )}
             </div>

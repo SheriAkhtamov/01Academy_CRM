@@ -67,3 +67,24 @@ export const academyDateInputValue = (value: Date | string | number | null | und
 
 /** Today's `yyyy-MM-dd` in academy time. */
 export const academyToday = () => academyDateInputValue(new Date());
+
+/** Asia/Tashkent observes no daylight saving, so its offset is a constant. */
+export const ACADEMY_UTC_OFFSET = '+05:00';
+
+/** An instant from an academy wall clock: `yyyy-MM-dd` plus `HH:mm`. */
+export const academyInstant = (dateKey: string, time = '00:00') => (
+  new Date(`${dateKey}T${time}:00${ACADEMY_UTC_OFFSET}`)
+);
+
+const academyTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: ACADEMY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+/** `HH:mm` on the academy clock; the inverse of `academyInstant`. */
+export const academyTimeOfDay = (value: Date | string | number) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : academyTimeFormatter.format(date);
+};

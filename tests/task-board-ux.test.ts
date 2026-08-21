@@ -48,6 +48,18 @@ describe('task board interaction UX', () => {
     expect(salesKanban).toContain('w-[296px]');
   });
 
+  it('switches the section between the board and the calendar without leaving the route', () => {
+    expect(tasksPage).toContain("useCalendarPreference<TaskViewMode>('taskSectionView', TASK_VIEWS, 'board')");
+    expect(tasksPage).toContain("aria-label={t('taskViewMode')}");
+    expect(tasksPage).toContain('aria-pressed={mode === taskView}');
+    expect(tasksPage).toContain('<TaskCalendar');
+    expect(tasksPage).toContain('<TaskBoard');
+    // Both views drive the same query, so the page hands the network to the
+    // board feature rather than reaching for the transport itself.
+    expect(tasksPage).not.toContain('apiRequest(');
+    expect(tasksPage).toContain('boardApi.updateTaskDueAt');
+  });
+
   it('targets the column under the pointer and disables forbidden destinations', () => {
     expect(taskBoard).toContain('pointerWithin(args)');
     expect(taskBoard).toContain('rectIntersection(args)');

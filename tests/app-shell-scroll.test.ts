@@ -68,6 +68,8 @@ describe('app shell scrolling', () => {
       .toContain('flex min-h-[26rem] flex-1 flex-col overflow-hidden');
     expect(read('../client/src/pages/sales/InstagramMessagesPage.tsx'))
       .toContain('mt-3 flex min-h-[30rem] flex-1 flex-col overflow-hidden');
+    expect(read('../client/src/components/ux/board/TaskCalendar.tsx'))
+      .toContain('flex min-h-[32rem] flex-1 flex-col overflow-hidden');
   });
 
   /**

@@ -21,4 +21,8 @@ export const boardApi = {
   updateTaskStatus: <T>(taskId: number, status: string) => (
     apiRequest('PATCH', `/api/board/tasks/${taskId}/status`, { status }) as Promise<T>
   ),
+  /** `null` clears the deadline; the task keeps its status either way. */
+  updateTaskDueAt: <T>(taskId: number, dueAt: string | null) => (
+    apiRequest('PATCH', `/api/board/tasks/${taskId}`, { dueAt }) as Promise<T>
+  ),
 };

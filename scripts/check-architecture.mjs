@@ -61,7 +61,6 @@ const clientTransportRatchet = new Map(Object.entries({
   'client/src/pages/marketing-module.tsx': 3,
   'client/src/pages/sales/CallJournalPage.tsx': 1,
   'client/src/pages/sales/InstagramMessagesPage.tsx': 7,
-  'client/src/pages/tasks.tsx': 1,
   'client/src/pages/teacher-module.tsx': 3,
 }));
 

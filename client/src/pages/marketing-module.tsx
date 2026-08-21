@@ -19,6 +19,7 @@ import { MetaAttributionSection } from '@/components/marketing/MetaAttributionSe
 import { MetaEventsSection } from '@/components/marketing/MetaEventsSection';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { DateRangeField } from '@/components/ux/DateRangeField';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
@@ -769,12 +770,14 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               <Field label={t('amount')}>
                 <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
               </Field>
-              <Field label={t('start')}>
-                <Input type="date" max={expenseForm.periodEnd || undefined} value={expenseForm.periodStart} onChange={(e) => setExpenseForm({ ...expenseForm, periodStart: e.target.value })} />
-              </Field>
-              <Field label={t('end')}>
-                <Input type="date" min={expenseForm.periodStart || undefined} value={expenseForm.periodEnd} onChange={(e) => setExpenseForm({ ...expenseForm, periodEnd: e.target.value })} />
-              </Field>
+              <DateRangeField
+                idPrefix="marketing-expense-period"
+                className="md:col-span-2"
+                fromLabel={t('start')}
+                toLabel={t('end')}
+                value={{ from: expenseForm.periodStart, to: expenseForm.periodEnd }}
+                onChange={(range) => setExpenseForm({ ...expenseForm, periodStart: range.from, periodEnd: range.to })}
+              />
               <div className="md:col-span-2 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button

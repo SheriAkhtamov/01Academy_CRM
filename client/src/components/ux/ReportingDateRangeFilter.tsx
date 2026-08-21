@@ -1,7 +1,7 @@
 import { CalendarRange, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DateRangeField } from '@/components/ux/DateRangeField';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import {
@@ -47,14 +47,11 @@ export function ReportingDateRangeFilter({
     onChange(reportingRangeForPreset(preset));
   };
 
-  const setBoundary = (boundary: 'from' | 'to', nextValue: string) => {
-    if (!nextValue) return;
-    const next = { ...value, [boundary]: nextValue, preset: 'custom' as const };
-    if (next.from > next.to) {
-      if (boundary === 'from') next.to = nextValue;
-      else next.from = nextValue;
-    }
-    onChange(next);
+  /* Reports always need both ends, so clearing an input is ignored rather than
+     propagated as an empty range. */
+  const setRange = (next: { from: string; to: string }) => {
+    if (!next.from || !next.to) return;
+    onChange({ ...next, preset: 'custom' });
   };
 
   return (
@@ -95,32 +92,15 @@ export function ReportingDateRangeFilter({
           </SelectContent>
         </Select>
 
-        <div className="grid grid-cols-2 gap-2">
-          <label className="relative">
-            <span className="absolute left-3 top-1 text-xs font-medium text-muted-foreground">
-              {t('dateFrom')}
-            </span>
-            <Input
-              type="date"
-              value={value.from}
-              max={value.to}
-              onChange={(event) => setBoundary('from', event.target.value)}
-              className="h-12 min-w-0 pt-5 sm:w-[148px]"
-            />
-          </label>
-          <label className="relative">
-            <span className="absolute left-3 top-1 text-xs font-medium text-muted-foreground">
-              {t('dateTo')}
-            </span>
-            <Input
-              type="date"
-              value={value.to}
-              min={value.from}
-              onChange={(event) => setBoundary('to', event.target.value)}
-              className="h-12 min-w-0 pt-5 sm:w-[148px]"
-            />
-          </label>
-        </div>
+        <DateRangeField
+          idPrefix="reporting-range"
+          variant="floating"
+          value={{ from: value.from, to: value.to }}
+          onChange={setRange}
+          inputClassName="sm:w-[148px]"
+          /* The preset select above already carries a "today" entry. */
+          showToday={false}
+        />
       </CardContent>
     </Card>
   );

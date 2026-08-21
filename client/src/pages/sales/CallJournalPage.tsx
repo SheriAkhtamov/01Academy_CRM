@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
+import { DateRangeField } from '@/components/ux/DateRangeField';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
@@ -274,7 +275,7 @@ export default function CallJournalPage() {
         </section>
 
         <Card className="shrink-0">
-          <CardContent className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_190px_170px_170px]">
+          <CardContent className="grid grid-cols-1 items-end gap-3 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_190px_minmax(320px,1fr)]">
             <div className="relative sm:col-span-2 xl:col-span-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -304,8 +305,13 @@ export default function CallJournalPage() {
                 <SelectItem value="declined">{t('telephonyStatusDeclined')}</SelectItem>
               </SelectContent>
             </Select>
-            <Input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} aria-label={t('dateFrom')} />
-            <Input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} aria-label={t('dateTo')} />
+            <DateRangeField
+              idPrefix="call-journal-range"
+              variant="floating"
+              className="sm:col-span-2 xl:col-span-1"
+              value={{ from, to }}
+              onChange={(range) => { setFrom(range.from); setTo(range.to); }}
+            />
           </CardContent>
         </Card>
 

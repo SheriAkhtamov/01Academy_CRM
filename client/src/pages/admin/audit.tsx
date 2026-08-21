@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DateRangeField } from '@/components/ux/DateRangeField';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { PaginationControls } from '@/components/ux/PaginationControls';
@@ -179,12 +180,17 @@ export default function AuditPage() {
 
         <TabsContent value="audit" className="mt-5 space-y-5">
           <Card>
-            <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_1fr_1fr_auto] xl:items-end">
+            <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_2.2fr_auto] xl:items-end">
               <div className="space-y-1.5"><Label htmlFor="audit-filter-employee">{ceoCopy.audit.employee}</Label><Select value={userId} onValueChange={(value) => { setUserId(value); setAuditPage(1); }}><SelectTrigger id="audit-filter-employee"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allEmployees}</SelectItem>{(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{employee.fullName}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1.5"><Label htmlFor="audit-filter-action">{ceoCopy.audit.action}</Label><Select value={action} onValueChange={(value) => { setAction(value); setAuditPage(1); }}><SelectTrigger id="audit-filter-action"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allActions}</SelectItem><SelectItem value="CREATE">{ceoCopy.audit.created}</SelectItem><SelectItem value="UPDATE">{ceoCopy.audit.changed}</SelectItem><SelectItem value="DELETE">{ceoCopy.audit.deleted}</SelectItem><SelectItem value="REFUND">{ceoCopy.audit.refund}</SelectItem><SelectItem value="APPROVE">{ceoCopy.audit.approved}</SelectItem></SelectContent></Select></div>
               <div className="space-y-1.5"><Label htmlFor="audit-filter-object">{ceoCopy.audit.object}</Label><Select value={entityType} onValueChange={(value) => { setEntityType(value); setAuditPage(1); }}><SelectTrigger id="audit-filter-object"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allObjects}</SelectItem><SelectItem value="academy_lead">{ceoCopy.audit.leads}</SelectItem><SelectItem value="academy_student">{ceoCopy.audit.students}</SelectItem><SelectItem value="academy_payment">{ceoCopy.audit.payments}</SelectItem><SelectItem value="academy_group">{ceoCopy.audit.groups}</SelectItem><SelectItem value="academy_lesson">{ceoCopy.audit.schedule}</SelectItem></SelectContent></Select></div>
-              <div className="space-y-1.5"><Label htmlFor="audit-filter-from">{ceoCopy.audit.fromDate}</Label><Input id="audit-filter-from" type="date" value={from} max={to || undefined} onChange={(event) => { setFrom(event.target.value); setAuditPage(1); }} /></div>
-              <div className="space-y-1.5"><Label htmlFor="audit-filter-to">{ceoCopy.audit.toDate}</Label><Input id="audit-filter-to" type="date" value={to} min={from || undefined} onChange={(event) => { setTo(event.target.value); setAuditPage(1); }} /></div>
+              <DateRangeField
+                idPrefix="audit-filter"
+                fromLabel={ceoCopy.audit.fromDate}
+                toLabel={ceoCopy.audit.toDate}
+                value={{ from, to }}
+                onChange={(range) => { setFrom(range.from); setTo(range.to); setAuditPage(1); }}
+              />
               <Button variant="ghost" onClick={resetFilters}><RotateCcw data-icon="inline-start" />{ceoCopy.audit.reset}</Button>
             </CardContent>
           </Card>

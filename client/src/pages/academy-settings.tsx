@@ -77,7 +77,7 @@ import {
   UserRoundCheck,
   UsersRound,
 } from 'lucide-react';
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, academyDateInputValue } from '@/lib/localeFormat';
 
 interface School {
   id: number;
@@ -265,13 +265,7 @@ const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekS
   });
 };
 
-const toDateInput = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-};
+const toDateInput = academyDateInputValue;
 
 const transliterationMap: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',

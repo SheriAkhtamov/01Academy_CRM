@@ -7,6 +7,7 @@ import { GraduationCap, Loader2, Plus, Users } from 'lucide-react';
 import { leadsApi } from '@/features/leads/api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { academyToday } from '@/lib/localeFormat';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -61,11 +62,7 @@ const studentSchema = z.object({
 
 type StudentFormValues = z.infer<typeof studentSchema>;
 
-const todayInputValue = () => {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-};
+const todayInputValue = academyToday;
 
 const EMPTY_STUDENT: StudentFormValues = {
   studentName: '',

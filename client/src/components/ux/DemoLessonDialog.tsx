@@ -38,6 +38,7 @@ import {
 } from '@/features/demo-lessons/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { useTranslation } from '@/hooks/useTranslation';
+import { academyToday } from '@/lib/localeFormat';
 import { toast } from '@/hooks/use-toast';
 
 export interface DemoLessonDialogLead {
@@ -70,7 +71,6 @@ const ACADEMY_UTC_OFFSET_MINUTES = 5 * 60;
 const academyWallClock = (instant: Date) => new Date(
   instant.getTime() + ACADEMY_UTC_OFFSET_MINUTES * 60_000,
 );
-const academyDateKey = (instant: Date) => academyWallClock(instant).toISOString().slice(0, 10);
 const defaultDemoDateTime = () => {
   const shiftedNow = academyWallClock(new Date());
   const interval = 30 * 60_000;
@@ -330,7 +330,7 @@ export function DemoLessonDialog({
               <Input
                 id="demo-date"
                 type="date"
-                min={academyDateKey(new Date())}
+                min={academyToday()}
                 value={demoDate}
                 onChange={(event) => setDemoDate(event.target.value)}
               />

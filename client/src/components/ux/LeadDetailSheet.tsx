@@ -13,6 +13,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { TranslationKey } from '@/lib/i18n';
+import { academyDateInputValue } from '@/lib/localeFormat';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { cn } from '@/lib/utils';
 import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
@@ -355,12 +356,7 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
 });
 
-const toInputDate = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
-};
+const toInputDate = academyDateInputValue;
 
 const nextPaymentDate = (payments?: LeadDetails['payments']) => {
   const latestPaidUntil = (payments ?? []).reduce((latest, payment) => {

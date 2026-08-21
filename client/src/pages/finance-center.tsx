@@ -71,7 +71,7 @@ import {
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, academyToday } from '@/lib/localeFormat';
 
 type Row = Record<string, any>;
 
@@ -129,13 +129,7 @@ const EXPENSE_CATEGORIES = ['rent', 'equipment', 'supplies', 'utilities', 'softw
 const PAYMENT_METHODS = ['transfer', 'cash', 'card'] as const;
 const PIE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)'];
 
-const currentDateOnly = () => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: ACADEMY_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-};
+const currentDateOnly = academyToday;
 
 const initials = (name: string) => name
   .split(/\s+/)

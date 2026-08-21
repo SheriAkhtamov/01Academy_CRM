@@ -4,6 +4,7 @@ import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const filter = read('../client/src/components/ux/ReportingDateRangeFilter.tsx');
+const dateRangeField = read('../client/src/components/ux/DateRangeField.tsx');
 const sales = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
 const teacher = read('../client/src/pages/teacher-module.tsx');
@@ -24,9 +25,10 @@ const sidebar = read('../client/src/components/Sidebar.tsx');
 describe('dashboard period filters and simplified actions', () => {
   it('offers shared quick periods and explicit accessible boundaries', () => {
     expect(filter).toContain("const quickPresets = ['today', 'yesterday', 'last7', 'last30', 'thisMonth', 'previousMonth']");
-    expect(filter).toContain('type="date"');
-    expect(filter).toContain("setBoundary('from'");
-    expect(filter).toContain("setBoundary('to'");
+    expect(filter).toContain('<DateRangeField');
+    expect(dateRangeField).toContain('type="date"');
+    expect(dateRangeField).toContain("boundaryField('from')");
+    expect(dateRangeField).toContain("boundaryField('to')");
     expect(filter).toContain('<SelectTrigger');
     expect(filter).not.toContain('aria-pressed={value.preset === preset}');
     for (const source of [sales, marketing, finance, administration]) {
@@ -87,7 +89,8 @@ describe('dashboard period filters and simplified actions', () => {
   });
 
   it('keeps the analytics system compact and readable on laptop dashboards', () => {
-    expect(filter).toContain('className="h-12 min-w-0 pt-5 sm:w-[148px]"');
+    expect(dateRangeField).toContain("variant === 'floating' && 'h-12 pt-5'");
+    expect(filter).toContain('inputClassName="sm:w-[148px]"');
     expect(filter).toContain('role="status"');
     expect(chartShell).toContain("'h-[236px] min-w-0'");
     expect(chartShell).toContain('px-4 pb-2 pt-3.5');

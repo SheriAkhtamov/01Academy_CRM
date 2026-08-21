@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { addDays, format, isSameDay, startOfDay } from 'date-fns';
+import { format, isSameDay, startOfDay } from 'date-fns';
 import { enUS, ru } from 'date-fns/locale';
 import { DoorOpen, Search, SearchX, UsersRound, Wifi } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
@@ -26,6 +26,8 @@ import {
   getCalendarMinutePosition,
   isCalendarMinuteCollapsed,
 } from '@/lib/calendarTimeScale';
+import { academyToday } from '@/lib/localeFormat';
+import { addReportingDays } from '@/lib/reportingDateRange';
 
 interface SchoolOption {
   id: number;
@@ -111,11 +113,6 @@ const SOURCE_TONES = {
   demo: CALENDAR_TONES[3],
 } as const;
 
-const toDateInput = (value: Date) => {
-  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-};
-
 const toMinutes = (value: string | undefined) => {
   const match = String(value ?? '').match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
@@ -199,7 +196,7 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
     [schools],
   );
   const [schoolId, setSchoolId] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState(() => toDateInput(new Date()));
+  const [selectedDate, setSelectedDate] = useState(academyToday);
   const [roomSearch, setRoomSearch] = useState('');
   const [now, setNow] = useState(() => new Date());
   const scopeRef = useRef<HTMLDivElement>(null);
@@ -214,13 +211,16 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
   }, []);
 
   const shiftDay = useCallback((offset: number) => {
-    setSelectedDate((current) => {
-      const parsed = new Date(`${current}T00:00:00`);
-      const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-      return toDateInput(addDays(base, offset));
-    });
+    setSelectedDate((current) => (
+      /* Stepping days on the `yyyy-MM-dd` key keeps the calendar on the academy
+         calendar; going through a browser-local `Date` shifted the day for
+         anyone whose laptop was not in academy time. */
+      /^\d{4}-\d{2}-\d{2}$/.test(current)
+        ? addReportingDays(current, offset)
+        : academyToday()
+    ));
   }, []);
-  const goToday = useCallback(() => setSelectedDate(toDateInput(new Date())), []);
+  const goToday = useCallback(() => setSelectedDate(academyToday()), []);
 
   useCalendarShortcuts({
     onPrevious: () => shiftDay(-1),

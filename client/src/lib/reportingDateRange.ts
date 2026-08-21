@@ -1,4 +1,4 @@
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { academyToday } from '@/lib/localeFormat';
 
 export type ReportingDatePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'thisMonth' | 'previousMonth' | 'custom';
 
@@ -8,29 +8,10 @@ export type ReportingDateRange = {
   preset: ReportingDatePreset;
 };
 
-const REPORTING_TIME_ZONE = ACADEMY_TIME_ZONE;
-
-const datePartsInTimeZone = (value: Date, timeZone = REPORTING_TIME_ZONE) => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    calendar: 'gregory',
-    numberingSystem: 'latn',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(value);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return {
-    year: Number(values.year),
-    month: Number(values.month),
-    day: Number(values.day),
-  };
-};
-
 const dateOnlyFromParts = ({ year, month, day }: { year: number; month: number; day: number }) =>
   `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-export const reportingToday = () => dateOnlyFromParts(datePartsInTimeZone(new Date()));
+export const reportingToday = academyToday;
 
 export const addReportingDays = (dateOnly: string, days: number) => {
   const [year, month, day] = dateOnly.split('-').map(Number);

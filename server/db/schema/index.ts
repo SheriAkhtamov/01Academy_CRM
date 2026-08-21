@@ -257,7 +257,7 @@ export const academyGroups = pgTable("academy_groups", {
   schoolIdx: index("academy_groups_school_idx").on(table.schoolId),
   roomIdx: index("academy_groups_room_idx").on(table.roomId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
-  capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} BETWEEN 1 AND 12`),
+  capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} >= 1`),
 }));
 
 export const academyLeads = pgTable("academy_leads", {

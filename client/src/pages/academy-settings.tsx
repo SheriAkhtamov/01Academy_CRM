@@ -220,7 +220,7 @@ const groupSchema = z.object({
   teacherId: z.string(),
   lessonCount: z.coerce.number().int().min(1),
   lessonDurationMinutes: z.coerce.number().int().min(15),
-  maxStudents: z.coerce.number().int().min(1).max(12),
+  maxStudents: z.coerce.number().int().min(1),
   status: z.enum(['open', 'in_progress', 'completed']),
   startDate: z.string(),
   endDate: z.string(),
@@ -943,7 +943,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const selectedGroupLessonCount = groupForm.watch('lessonCount');
   const selectedGroupStartDate = groupForm.watch('startDate');
   const selectedGroupEndDate = groupForm.watch('endDate');
-  const selectedGroupRoomCapacity = rooms.find((room) => String(room.id) === selectedGroupRoomId)?.capacity;
   const minimumGroupEndDate = useMemo(() => getMinimumGroupEndDate({
     startDate: selectedGroupStartDate,
     lessonCount: Number(selectedGroupLessonCount),
@@ -1891,7 +1890,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('groupCapacity')}</FormLabel>
-                    <FormControl><Input type="number" min="1" max={Math.min(12, selectedGroupRoomCapacity ?? 12)} {...field} /></FormControl>
+                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
                     <p className="text-[11px] text-muted-foreground">{t('groupCapacityDescription')}</p>
                     <FormMessage />
                   </FormItem>

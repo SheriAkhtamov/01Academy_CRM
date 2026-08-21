@@ -29,7 +29,6 @@ export const createAcademyDemoTables = (references: {
     scheduledAt: timestamp('scheduled_at').notNull(),
     durationMinutes: integer('duration_minutes').notNull().default(60),
     format: varchar('format', { length: 20 }).notNull().default('offline'),
-    capacity: integer('capacity').notNull().default(1),
     status: varchar('status', { length: 30 }).notNull().default('scheduled'),
     notes: text('notes'),
     cancellationReason: text('cancellation_reason'),
@@ -43,7 +42,6 @@ export const createAcademyDemoTables = (references: {
     teacherIdx: index('academy_demo_lessons_teacher_idx').on(table.teacherId, table.scheduledAt),
     schoolIdx: index('academy_demo_lessons_school_idx').on(table.schoolId, table.scheduledAt),
     durationCheck: check('academy_demo_lessons_duration_check', sql`${table.durationMinutes} BETWEEN 15 AND 480`),
-    capacityCheck: check('academy_demo_lessons_capacity_check', sql`${table.capacity} BETWEEN 1 AND 100`),
     formatCheck: check('academy_demo_lessons_format_check', sql`${table.format} IN ('offline', 'online')`),
     statusCheck: check('academy_demo_lessons_status_check', sql`${table.status} IN ('scheduled', 'completed', 'cancelled')`),
     roomFormatCheck: check(

@@ -34,11 +34,11 @@ describe('demo resource availability', () => {
       }
       if (sql.includes('FROM academy_rooms')) {
         return [
-          { id: 11, name: 'Lesson room', schoolId: 2, capacity: 10, isActive: true },
-          { id: 12, name: 'Demo room', schoolId: 2, capacity: 10, isActive: true },
-          { id: 13, name: 'Group room', schoolId: 2, capacity: 10, isActive: true },
-          { id: 14, name: 'Free room', schoolId: 2, capacity: 10, isActive: true },
-          { id: 15, name: 'Small room', schoolId: 2, capacity: 1, isActive: true },
+          { id: 11, name: 'Lesson room', schoolId: 2, isActive: true },
+          { id: 12, name: 'Demo room', schoolId: 2, isActive: true },
+          { id: 13, name: 'Group room', schoolId: 2, isActive: true },
+          { id: 14, name: 'Free room', schoolId: 2, isActive: true },
+          { id: 15, name: 'Small room', schoolId: 2, isActive: true },
         ];
       }
       if (sql.includes('FROM academy_lessons')) return [{ teacherId: 1, roomId: 11 }];
@@ -56,7 +56,7 @@ describe('demo resource availability', () => {
     });
   });
 
-  it('disables teachers and rooms occupied by lessons, demos or recurring groups', async () => {
+  it('disables teachers and rooms occupied by lessons, demos or recurring groups, whatever their size', async () => {
     const result = await getDemoResourceAvailability({
       courseId: 1,
       schoolId: 2,
@@ -78,7 +78,7 @@ describe('demo resource availability', () => {
       { id: 12, available: false, reason: 'busy' },
       { id: 13, available: false, reason: 'busy' },
       { id: 14, available: true, reason: null },
-      { id: 15, available: false, reason: 'too_small' },
+      { id: 15, available: true, reason: null },
     ]);
   });
 });

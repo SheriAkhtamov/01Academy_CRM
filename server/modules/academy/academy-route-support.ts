@@ -243,7 +243,7 @@ export const prepareGroupMutation = async (options: {
     ? nullableText(options.values.frequency)
     : nullableText(options.oldRow?.frequency ?? course.frequency);
 
-  if (maxStudents < 1 || maxStudents > 12) {
+  if (maxStudents < 1) {
     throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
   }
   if (options.oldRow) {
@@ -278,10 +278,9 @@ export const prepareGroupMutation = async (options: {
     }
   }
   options.values.maxStudents = maxStudents;
-  const room = await assertActiveRoomInSchool(roomId, schoolId);
-  if (maxStudents > Number(room.capacity)) {
-    throw Object.assign(new Error('groupExceedsRoomCapacity'), { statusCode: 400 });
-  }
+  // The room is checked for existence only: its seat count is a hint for the
+  // branch, never a ceiling on how many students a group may take.
+  await assertActiveRoomInSchool(roomId, schoolId);
   const startDate = (options.values.startDate ?? options.oldRow?.startDate) as Date | null | undefined;
   const endDate = (options.values.endDate ?? options.oldRow?.endDate) as Date | null | undefined;
   if (startDate && endDate && new Date(endDate).getTime() < new Date(startDate).getTime()) {
@@ -431,7 +430,7 @@ export const prepareGroupMetadataMutation = async (values: Row, row: Row) => {
   if (!Object.prototype.hasOwnProperty.call(values, 'maxStudents')) return;
   const maxStudents = Number(values.maxStudents);
   if (maxStudents === Number(row.maxStudents)) return;
-  if (maxStudents < 1 || maxStudents > 12) {
+  if (maxStudents < 1) {
     throw Object.assign(new Error('groupCapacityLimit'), { statusCode: 400 });
   }
 
@@ -465,10 +464,7 @@ export const prepareGroupMetadataMutation = async (values: Row, row: Row) => {
     throw Object.assign(new Error('groupCapacityBelowOccupancy'), { statusCode: 409 });
   }
 
-  const room = await assertActiveRoomInSchool(Number(row.roomId), Number(row.schoolId));
-  if (maxStudents > Number(room.capacity)) {
-    throw Object.assign(new Error('groupExceedsRoomCapacity'), { statusCode: 400 });
-  }
+  await assertActiveRoomInSchool(Number(row.roomId), Number(row.schoolId));
   values.maxStudents = maxStudents;
 };
 

@@ -17,8 +17,20 @@ const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
   'utf8',
 )) as { entries: Array<{ idx: number; tag: string }> };
+const capacityMigration = readFileSync(
+  new URL('../migrations/0091_remove_capacity_limits.sql', import.meta.url),
+  'utf8',
+);
 const schema = readFileSync(
   new URL('../server/db/schema/demo-lessons.ts', import.meta.url),
+  'utf8',
+);
+const groupSchema = readFileSync(
+  new URL('../server/db/schema/index.ts', import.meta.url),
+  'utf8',
+);
+const groupRouteSupport = readFileSync(
+  new URL('../server/modules/academy/academy-route-support.ts', import.meta.url),
   'utf8',
 );
 const routes = readFileSync(
@@ -62,7 +74,6 @@ const validMutation = {
   scheduledAt: '2030-07-15T05:00:00.000Z',
   durationMinutes: 60,
   format: 'offline' as const,
-  capacity: 2,
   participantIds: [10, 11],
   notes: null,
 };
@@ -76,6 +87,19 @@ describe('demo lessons', () => {
     expect(schema).toContain('createAcademyDemoTables');
   });
 
+  it('drops the seat ceiling from demo lessons and study groups', () => {
+    expect(capacityMigration).toContain('DROP CONSTRAINT IF EXISTS "academy_demo_lessons_capacity_check"');
+    expect(capacityMigration).toContain('DROP COLUMN IF EXISTS "capacity"');
+    expect(capacityMigration).toContain('CHECK ("max_students" >= 1)');
+    expect(capacityMigration).not.toContain('BETWEEN 1 AND 12');
+    expect(journal.entries.find((entry) => entry.idx === 91)?.tag)
+      .toBe('0091_remove_capacity_limits');
+    expect(schema).not.toContain('capacity');
+    expect(groupSchema).toContain('${table.maxStudents} >= 1');
+    expect(groupRouteSupport).not.toContain('groupExceedsRoomCapacity');
+    expect(groupRouteSupport).not.toContain('maxStudents > 12');
+  });
+
   it('registers migration 0074 after the module terminology migration', () => {
     expect(journal.entries.find((entry) => entry.idx === 73)?.tag)
       .toBe('0073_rename_workspaces_to_modules');
@@ -84,28 +108,26 @@ describe('demo lessons', () => {
     expect(journal.entries.filter((entry) => entry.idx === 74)).toHaveLength(1);
   });
 
-  it('creates a demo lesson without participants and without an explicit capacity', () => {
-    const { capacity, participantIds, ...schedule } = validMutation;
+  it('creates a demo lesson without participants and without a seat limit', () => {
+    const { participantIds, ...schedule } = validMutation;
     const empty = demoLessonMutationSchema.safeParse(schedule);
     expect(empty.success).toBe(true);
     expect(empty.data?.participantIds).toEqual([]);
-    expect(empty.data?.capacity).toBeUndefined();
-    expect(capacity).toBe(2);
     expect(participantIds).toHaveLength(2);
-    expect(routes).toContain('resolveDemoCapacity');
-    expect(routes).toContain('capacity: resources.capacity');
+    expect(routes).not.toContain('resolveDemoCapacity');
+    expect(routes).not.toContain('capacity');
     expect(createDialog).not.toContain("t('demoParticipants')");
     expect(createDialog).not.toContain('demoParticipantsSelected');
   });
 
-  it('validates room, capacity and unique participants before transport', () => {
+  it('takes any number of participants and rejects only duplicates and a missing room', () => {
     expect(demoLessonMutationSchema.safeParse(validMutation).success).toBe(true);
-    const overCapacity = demoLessonMutationSchema.safeParse({
+    const crowded = demoLessonMutationSchema.safeParse({
       ...validMutation,
-      capacity: 1,
+      participantIds: Array.from({ length: 250 }, (_, index) => index + 1),
     });
-    expect(overCapacity.success).toBe(false);
-    expect(overCapacity.error?.issues[0]?.message).toBe('demoCapacityExceeded');
+    expect(crowded.success).toBe(true);
+    expect(crowded.data?.participantIds).toHaveLength(250);
     const noRoom = demoLessonMutationSchema.safeParse({ ...validMutation, roomId: null });
     expect(noRoom.success).toBe(false);
     expect(noRoom.error?.issues[0]?.message).toBe('demoRoomRequired');
@@ -139,7 +161,6 @@ describe('demo lessons', () => {
     expect(routes).toContain("router.post('/demo-lessons/:id/participants'");
     expect(routes).toContain('ADD_ACADEMY_DEMO_PARTICIPANTS');
     expect(routes).toContain('demoParticipantAlreadyEnrolled');
-    expect(routes).toContain('Number(activeParticipants?.count ?? 0) + leads.length');
     expect(scheduling).toContain('FROM academy_demo_lessons');
     expect(scheduling).toContain('Number(lesson.roomId) !== roomId');
     expect(routes).toContain('legacyConflict');
@@ -151,7 +172,7 @@ describe('demo lessons', () => {
     expect(resourceAvailability).toContain('busyRoomIds');
   });
 
-  it('disables enrollment when the lead is already booked, the demo is full, or times overlap', () => {
+  it('disables enrollment when the lead is already booked or times overlap, never for a full demo', () => {
     const target: DemoLesson = {
       id: 1,
       courseId: 1,
@@ -160,7 +181,6 @@ describe('demo lessons', () => {
       scheduledAt: '2030-07-15T05:00:00.000Z',
       durationMinutes: 60,
       format: 'offline',
-      capacity: 2,
       status: 'scheduled',
       participants: [],
     };
@@ -171,9 +191,12 @@ describe('demo lessons', () => {
     }, 10, [target], 0)).toBe('already_enrolled');
     expect(getDemoEnrollmentState({
       ...target,
-      capacity: 1,
-      participants: [{ id: 1, leadId: 11, status: 'confirmed' }],
-    }, 10, [target], 0)).toBe('full');
+      participants: Array.from({ length: 40 }, (_, index) => ({
+        id: index + 1,
+        leadId: index + 11,
+        status: 'confirmed' as const,
+      })),
+    }, 10, [target], 0)).toBe('available');
     const overlapping: DemoLesson = {
       ...target,
       id: 2,

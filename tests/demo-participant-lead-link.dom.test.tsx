@@ -29,7 +29,6 @@ const demo: DemoLesson = {
   scheduledAt: '2026-09-01T10:00:00.000Z',
   durationMinutes: 60,
   format: 'offline',
-  capacity: 6,
   status: 'scheduled',
   participants: [
     { id: 11, leadId: 101, status: 'confirmed', contactName: 'Родитель Азиза', studentName: 'Азиз' },

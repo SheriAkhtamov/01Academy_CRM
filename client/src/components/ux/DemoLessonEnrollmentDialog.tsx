@@ -45,7 +45,7 @@ export interface DemoLessonEnrollmentLead {
   schoolId?: number | null;
 }
 
-type EnrollmentState = 'available' | 'already_enrolled' | 'full' | 'lead_busy' | 'closed';
+type EnrollmentState = 'available' | 'already_enrolled' | 'lead_busy' | 'closed';
 
 const isActiveParticipant = (status: string) => ACTIVE_PARTICIPANT_STATUSES.has(status);
 
@@ -64,8 +64,6 @@ export const getDemoEnrollmentState = (
   if (demo.participants.some((participant) => (
     Number(participant.leadId) === leadId && isActiveParticipant(participant.status)
   ))) return 'already_enrolled';
-  const activeCount = demo.participants.filter((participant) => isActiveParticipant(participant.status)).length;
-  if (activeCount >= Number(demo.capacity)) return 'full';
   const endsAt = lessonEndsAt(demo);
   const hasOverlap = demos.some((candidate) => (
     Number(candidate.id) !== Number(demo.id)
@@ -212,16 +210,12 @@ export function DemoLessonEnrollmentDialog({
                   const selected = selectedDemoId === demo.id;
                   const startsAt = new Date(demo.scheduledAt);
                   const endsAt = new Date(lessonEndsAt(demo));
-                  const availableSeats = Math.max(0, Number(demo.capacity) - activeParticipantCount(demo));
                   const statusLabel = state === 'already_enrolled'
                     ? t('demoAlreadyEnrolled')
-                    : state === 'full'
-                      ? t('demoNoSeats')
-                      : state === 'lead_busy'
-                        ? t('demoLeadBusy')
-                        : t('demoSeatsAvailable')
-                          .replace('{available}', String(availableSeats))
-                          .replace('{capacity}', String(demo.capacity));
+                    : state === 'lead_busy'
+                      ? t('demoLeadBusy')
+                      : t('demoEnrolledCount')
+                        .replace('{count}', String(activeParticipantCount(demo)));
                   return (
                     <button
                       key={demo.id}

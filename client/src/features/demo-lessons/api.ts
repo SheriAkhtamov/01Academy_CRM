@@ -29,7 +29,6 @@ export interface DemoLesson {
   scheduledAt: string;
   durationMinutes: number;
   format: 'offline' | 'online';
-  capacity: number;
   status: 'scheduled' | 'completed' | 'cancelled';
   notes?: string | null;
   cancellationReason?: string | null;
@@ -68,10 +67,9 @@ export interface DemoResourceAvailability {
     id: number;
     name: string;
     schoolId: number;
-    capacity: number;
     isActive: boolean;
     available: boolean;
-    reason: 'busy' | 'inactive' | 'too_small' | null;
+    reason: 'busy' | 'inactive' | null;
   }>;
   participantConflict: boolean;
 }
@@ -102,7 +100,6 @@ export const demoLessonsApi = {
     from: string;
     days?: number;
     format?: 'offline' | 'online';
-    participantCount?: number;
     participantIds?: number[];
     excludeLeadId?: number | null;
     excludeDemoLessonId?: number | null;
@@ -113,7 +110,6 @@ export const demoLessonsApi = {
       from: params.from,
       days: String(params.days ?? 7),
       format: params.format ?? 'offline',
-      participantCount: String(params.participantCount ?? 1),
     });
     if (params.excludeLeadId) query.set('excludeLeadId', String(params.excludeLeadId));
     if (params.excludeDemoLessonId) query.set('excludeDemoLessonId', String(params.excludeDemoLessonId));

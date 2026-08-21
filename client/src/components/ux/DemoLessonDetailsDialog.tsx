@@ -168,7 +168,7 @@ export function DemoLessonDetailsDialog({
             <div className="flex items-start gap-3">
               <UsersRound className="mt-0.5 size-4 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium">{demo.participants.length}/{demo.capacity}</p>
+                <p className="text-sm font-medium">{demo.participants.length}</p>
                 <p className="text-xs text-muted-foreground">{t('demoParticipants')}</p>
               </div>
             </div>

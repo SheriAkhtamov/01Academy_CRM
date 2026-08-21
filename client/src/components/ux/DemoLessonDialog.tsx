@@ -202,7 +202,6 @@ export function DemoLessonDialog({
   };
   const unavailableLabel = (reason: string | null) => {
     if (reason === 'inactive') return t('demoResourceInactive');
-    if (reason === 'too_small') return t('demoRoomTooSmallShort');
     return t('demoResourceBusyShort');
   };
   const conflictMessage = resourceAvailability.data?.participantConflict
@@ -210,11 +209,9 @@ export function DemoLessonDialog({
     : selectedTeacher && !selectedTeacher.available
       ? selectedTeacher.reason === 'inactive' ? t('teacherNotActive') : t('demoTeacherBusy')
       : format === 'offline' && selectedRoom && !selectedRoom.available
-        ? selectedRoom.reason === 'too_small'
-          ? t('demoExceedsRoomCapacity')
-          : selectedRoom.reason === 'inactive'
-            ? t('demoRoomInactive')
-            : t('roomOccupied')
+        ? selectedRoom.reason === 'inactive'
+          ? t('demoRoomInactive')
+          : t('roomOccupied')
         : null;
 
   const mutationPayload = useMemo<DemoLessonMutation | null>(() => {
@@ -378,7 +375,7 @@ export function DemoLessonDialog({
                   <SelectContent>
                     {rooms.map((room) => (
                       <SelectItem key={room.id} value={String(room.id)} disabled={!room.available}>
-                        {room.name} · {room.capacity} {t('seats')}
+                        {room.name}
                         {room.available ? '' : ` · ${unavailableLabel(room.reason)}`}
                       </SelectItem>
                     ))}

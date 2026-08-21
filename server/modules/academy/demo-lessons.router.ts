@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import {
-  DEMO_LESSON_MAX_CAPACITY,
   demoLessonAttendanceSchema,
   demoLessonCancelSchema,
   demoLessonEnrollmentSchema,
@@ -185,20 +184,6 @@ const hasParticipantConflict = async (
   }
 };
 
-// A demo can be created with no participants, so its seat count comes from the
-// booked room (offline) or the maximum allowed capacity (online) unless the
-// caller asked for a smaller number of seats.
-const resolveDemoCapacity = (input: DemoLessonMutation, room: Row | null) => {
-  if (input.capacity) return input.capacity;
-  const seats = input.format === 'online'
-    ? DEMO_LESSON_MAX_CAPACITY
-    : Number(room?.capacity ?? 0);
-  return Math.min(
-    DEMO_LESSON_MAX_CAPACITY,
-    Math.max(1, input.participantIds.length, seats),
-  );
-};
-
 const assertDemoResources = async (
   input: DemoLessonMutation,
   excludeDemoLessonId?: number | null,
@@ -238,17 +223,13 @@ const assertDemoResources = async (
       excludeDemoLessonId,
     });
   }
-  const capacity = resolveDemoCapacity(input, room);
-  if (room && capacity > Number(room.capacity)) {
-    throw Object.assign(new Error('demoExceedsRoomCapacity'), { statusCode: 409 });
-  }
   await assertParticipantAvailability(
     input.participantIds,
     startsAt,
     input.durationMinutes,
     excludeDemoLessonId,
   );
-  return { course, school, room, startsAt, capacity };
+  return { course, school, room, startsAt };
 };
 
 const syncLeadInvitation = async (
@@ -388,7 +369,6 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           scheduledAt: resources.startsAt,
           durationMinutes: parsed.data.durationMinutes,
           format: parsed.data.format,
-          capacity: resources.capacity,
           status: 'scheduled',
           notes: parsed.data.notes ?? null,
           createdBy: req.user!.id,
@@ -464,16 +444,6 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (existingParticipants.some((participant) => participant.status !== 'cancelled')) {
           throw Object.assign(new Error('demoParticipantAlreadyEnrolled'), { statusCode: 409 });
         }
-        const activeParticipants = await queryOne<{ count: number }>(
-          `SELECT COUNT(*)::int AS count
-           FROM academy_demo_lesson_participants
-           WHERE demo_lesson_id = $1 AND status <> 'cancelled'`,
-          [id],
-        );
-        if (Number(activeParticipants?.count ?? 0) + leads.length > Number(demo.capacity)) {
-          throw Object.assign(new Error('demoCapacityExceeded'), { statusCode: 409 });
-        }
-
         await assertParticipantAvailability(
           parsed.data.leadIds,
           new Date(demo.scheduledAt),

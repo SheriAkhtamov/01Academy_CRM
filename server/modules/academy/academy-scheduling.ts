@@ -892,7 +892,6 @@ export const listAvailableSchoolSlots = async (options: {
   from: Date;
   days: number;
   format?: 'offline' | 'online';
-  participantCount?: number;
   participantIds?: number[];
   excludeLeadId?: number | null;
   excludeGroupId?: number | null;
@@ -906,7 +905,6 @@ export const listAvailableSchoolSlots = async (options: {
 
   const durationMinutes = Math.max(15, Number(course.lessonDurationMinutes || 60));
   const format = options.format === 'online' ? 'online' : 'offline';
-  const participantCount = Math.max(1, Number(options.participantCount) || 1);
   const rangeStart = startOfAcademyDay(options.from);
   const rangeEnd = getZonedDayRange(rangeStart, ACADEMY_TIME_ZONE, options.days).start;
   const [teachers, rooms] = await Promise.all([query(
@@ -921,9 +919,9 @@ export const listAvailableSchoolSlots = async (options: {
   ), format === 'offline'
     ? query(
       `SELECT * FROM academy_rooms
-       WHERE school_id = $1 AND is_active = true AND capacity >= $2
+       WHERE school_id = $1 AND is_active = true
        ORDER BY capacity, name, id`,
-      [options.schoolId, participantCount],
+      [options.schoolId],
     )
     : Promise.resolve([])]);
   const teacherIds = teachers.map((teacher) => Number(teacher.id));

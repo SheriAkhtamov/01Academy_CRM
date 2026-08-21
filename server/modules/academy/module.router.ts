@@ -235,19 +235,16 @@ router.get('/availability/slots', async (req, res) => {
     const requestedFrom = parseDateOnly(req.query.from) ?? startOfAcademyDay(new Date());
     const days = Math.min(21, Math.max(1, Number(req.query.days) || 7));
     const format = req.query.format === 'online' ? 'online' : 'offline';
-    const participantCount = Math.min(100, Math.max(1, Number(req.query.participantCount) || 1));
     const participantIds = String(req.query.participantIds ?? '')
       .split(',')
       .map((value) => Number(value))
-      .filter((value) => Number.isSafeInteger(value) && value > 0)
-      .slice(0, 100);
+      .filter((value) => Number.isSafeInteger(value) && value > 0);
     const result = await listAvailableSchoolSlots({
       schoolId,
       courseId,
       from: requestedFrom,
       days,
       format,
-      participantCount,
       participantIds,
       excludeLeadId: parseId(req.query.excludeLeadId),
       excludeDemoLessonId: parseId(req.query.excludeDemoLessonId),

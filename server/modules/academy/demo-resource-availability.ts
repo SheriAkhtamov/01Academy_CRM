@@ -8,14 +8,15 @@ import {
   scheduleConflictsWithSlot,
 } from './academy-scheduling';
 
-type ResourceReason = 'busy' | 'inactive' | 'too_small';
+type ResourceReason = 'busy' | 'inactive';
 
-const resourceState = (inactive: boolean, busy: boolean, tooSmall = false): {
+// A room is offered whenever it is free: how many guests fit into it is a call
+// the branch makes on the spot, not something the CRM refuses to book.
+const resourceState = (inactive: boolean, busy: boolean): {
   available: boolean;
   reason: ResourceReason | null;
 } => {
   if (inactive) return { available: false, reason: 'inactive' };
-  if (tooSmall) return { available: false, reason: 'too_small' };
   if (busy) return { available: false, reason: 'busy' };
   return { available: true, reason: null };
 };
@@ -32,14 +33,13 @@ export const getDemoResourceAvailability = async (
     startsAt,
     input.durationMinutes,
   );
-  const participantCount = Math.max(1, input.participantIds.length);
 
   const [course, school, teachers, rooms, lessons, demos, groups] = await Promise.all([
     queryOne(`SELECT id FROM academy_courses WHERE id = $1 AND is_active = true`, [input.courseId]),
     queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true`, [input.schoolId]),
     query(`SELECT id, full_name, status FROM academy_teachers ORDER BY full_name, id`),
     query(
-      `SELECT id, name, school_id, capacity, is_active
+      `SELECT id, name, school_id, is_active
        FROM academy_rooms
        WHERE school_id = $1
        ORDER BY is_active DESC, name, id`,
@@ -103,12 +103,10 @@ export const getDemoResourceAvailability = async (
       id: Number(room.id),
       name: String(room.name),
       schoolId: Number(room.schoolId),
-      capacity: Number(room.capacity),
       isActive: Boolean(room.isActive),
       ...resourceState(
         !room.isActive,
         busyRoomIds.has(Number(room.id)),
-        Number(room.capacity) < participantCount,
       ),
     })),
   };

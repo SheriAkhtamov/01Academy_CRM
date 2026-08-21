@@ -28,7 +28,6 @@ interface AvailabilityCalendarProps {
   value?: AvailabilitySlot | null;
   onChange: (value: AvailabilitySlot | null) => void;
   format?: 'offline' | 'online';
-  participantCount?: number;
   participantIds?: number[];
   excludeLeadId?: number | null;
   className?: string;
@@ -53,7 +52,6 @@ export function AvailabilityCalendar({
   value,
   onChange,
   format: demoFormat = 'offline',
-  participantCount = 1,
   participantIds = [],
   excludeLeadId,
   className,
@@ -71,14 +69,13 @@ export function AvailabilityCalendar({
   const from = localDateKey(weekStart);
 
   const availability = useQuery<AvailabilityResponse>({
-    queryKey: ['/api/academy/availability/slots', schoolId, courseId, from, demoFormat, participantCount, participantIds.join(','), excludeLeadId],
+    queryKey: ['/api/academy/availability/slots', schoolId, courseId, from, demoFormat, participantIds.join(','), excludeLeadId],
     queryFn: () => demoLessonsApi.availability({
       schoolId: Number(schoolId),
       courseId: Number(courseId),
       from,
       days: 7,
       format: demoFormat,
-      participantCount,
       participantIds,
       excludeLeadId,
     }),

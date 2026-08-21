@@ -2280,7 +2280,7 @@ describe('academy route logic boundaries', () => {
         if (sql.includes('FROM academy_schools') && sql.includes('is_active = true')) {
           return { rows: [{ id: 2, name: 'Main school', is_active: true }] };
         }
-        if (sql.includes('FROM academy_rooms') && sql.includes('capacity >=')) {
+        if (sql.includes('FROM academy_rooms') && sql.includes('ORDER BY capacity')) {
           return { rows: [{ id: 8, school_id: 2, name: 'Room 1', capacity: 12, is_active: true }] };
         }
         if (sql.includes('FROM academy_teachers t') && sql.includes('upcoming_lessons')) {

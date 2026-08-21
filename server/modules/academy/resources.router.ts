@@ -139,16 +139,6 @@ registerSimpleCrud('rooms', 'academy_rooms', [
     }
     const school = await queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true`, [nextSchoolId]);
     if (!school) throw Object.assign(new Error('School not found'), { statusCode: 404 });
-    const nextCapacity = Number(values.capacity ?? row.capacity);
-    const maxGroup = await queryOne<{ maxStudents: number }>(
-      `SELECT COALESCE(MAX(max_students), 0)::int AS max_students
-       FROM academy_groups
-       WHERE room_id = $1`,
-      [id],
-    );
-    if (nextCapacity < Number(maxGroup?.maxStudents ?? 0)) {
-      throw Object.assign(new Error('roomCapacityBelowGroupCapacity'), { statusCode: 409 });
-    }
     if (row.isActive !== false && values.isActive === false) {
       const activeGroup = await queryOne(
         `SELECT id FROM academy_groups

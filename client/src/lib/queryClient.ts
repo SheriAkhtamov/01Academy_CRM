@@ -44,7 +44,6 @@ const localizeApiErrorMessage = (message: string, status: number) => {
     failedToUpdateDemoAttendance: i18n.t("failedToUpdateDemoAttendance"),
     demoRoomRequired: i18n.t("demoRoomRequired"),
     demoOnlineRoomNotAllowed: i18n.t("demoOnlineRoomNotAllowed"),
-    demoCapacityExceeded: i18n.t("demoCapacityExceeded"),
     duplicateDemoParticipants: i18n.t("duplicateDemoParticipants"),
   } as const;
   if (normalized in demoLessonErrors) {

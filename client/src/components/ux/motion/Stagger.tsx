@@ -1,6 +1,7 @@
 import { motion, type HTMLMotionProps, type Variants } from 'framer-motion';
-import { forwardRef, type ReactNode } from 'react';
+import { forwardRef, type HTMLAttributes, type ReactNode } from 'react';
 import { fadeInUp, scaleIn, staggerContainer } from '@/lib/motion';
+import { useMotionFeature } from './MotionPreferencesProvider';
 
 /** Total time the whole cascade may take, however many children there are. */
 const MAX_CASCADE_SECONDS = 0.42;
@@ -26,20 +27,31 @@ const resolveStep = (count?: number) => {
 /**
  * Walks its `<StaggerItem>` children in one after another. Only direct
  * children inherit the cascade, so wrap the row, not the whole table body.
+ *
+ * With entrances switched off the group and its items collapse to plain divs,
+ * so the cascade costs nothing at all rather than running at zero duration.
  */
 export const StaggerGroup = forwardRef<HTMLDivElement, StaggerGroupProps>(
-  ({ children, count, delay = 0, ...props }, ref) => (
-    <motion.div
-      ref={ref}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      variants={staggerContainer(resolveStep(count), delay)}
-      {...props}
-    >
-      {children}
-    </motion.div>
-  ),
+  ({ children, count, delay = 0, ...props }, ref) => {
+    const animated = useMotionFeature('entrances');
+
+    if (!animated) {
+      return <div ref={ref} {...(props as unknown as HTMLAttributes<HTMLDivElement>)}>{children}</div>;
+    }
+
+    return (
+      <motion.div
+        ref={ref}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        variants={staggerContainer(resolveStep(count), delay)}
+        {...props}
+      >
+        {children}
+      </motion.div>
+    );
+  },
 );
 StaggerGroup.displayName = 'StaggerGroup';
 
@@ -51,14 +63,22 @@ type StaggerItemProps = Omit<HTMLMotionProps<'div'>, 'variants'> & {
 };
 
 export const StaggerItem = forwardRef<HTMLDivElement, StaggerItemProps>(
-  ({ children, preset = 'rise', variants, ...props }, ref) => (
-    <motion.div
-      ref={ref}
-      variants={variants ?? (preset === 'pop' ? scaleIn : fadeInUp)}
-      {...props}
-    >
-      {children}
-    </motion.div>
-  ),
+  ({ children, preset = 'rise', variants, ...props }, ref) => {
+    const animated = useMotionFeature('entrances');
+
+    if (!animated) {
+      return <div ref={ref} {...(props as unknown as HTMLAttributes<HTMLDivElement>)}>{children}</div>;
+    }
+
+    return (
+      <motion.div
+        ref={ref}
+        variants={variants ?? (preset === 'pop' ? scaleIn : fadeInUp)}
+        {...props}
+      >
+        {children}
+      </motion.div>
+    );
+  },
 );
 StaggerItem.displayName = 'StaggerItem';

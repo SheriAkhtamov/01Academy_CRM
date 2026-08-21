@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 import { pageVariants } from '@/lib/motion';
+import { useMotionFeature } from './MotionPreferencesProvider';
 
 type PageTransitionProps = {
   /** Changes on every navigation — this is what drives the swap. */
@@ -17,8 +18,17 @@ type PageTransitionProps = {
  * screen at once fight over the viewport. The exit is deliberately much
  * shorter than the entrance (0.12s vs 0.32s) so navigation still feels
  * immediate — the wait is barely perceptible, but the swap is clean.
+ *
+ * With page transitions switched off the swap is instant: the same keyed
+ * remount, without AnimatePresence holding the outgoing page for a frame.
  */
 export function PageTransition({ routeKey, children, className }: PageTransitionProps) {
+  const animated = useMotionFeature('pageTransitions');
+
+  if (!animated) {
+    return <div key={routeKey} className={className}>{children}</div>;
+  }
+
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.div

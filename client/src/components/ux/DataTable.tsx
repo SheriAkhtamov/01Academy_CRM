@@ -13,6 +13,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PaginationControls } from '@/components/ux/PaginationControls';
+import { useMotionFeature } from '@/components/ux/motion';
 import { DURATION, EASE } from '@/lib/motion';
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -71,6 +72,7 @@ export function DataTable<T extends Record<string, any>>({
   isLoading = false,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
+  const animateRows = useMotionFeature('entrances');
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey || null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
@@ -212,13 +214,13 @@ export function DataTable<T extends Record<string, any>>({
                     rowClassName?.(row)
                   )}
                   onClick={() => onRowClick?.(row)}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
+                  initial={animateRows ? { opacity: 0, y: 6 } : false}
+                  animate={animateRows ? { opacity: 1, y: 0 } : undefined}
+                  transition={animateRows ? {
                     duration: DURATION.base,
                     ease: EASE.out,
                     delay: rowDelay(index),
-                  }}
+                  } : undefined}
                 >
                   {columns.map((column) => (
                     <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>

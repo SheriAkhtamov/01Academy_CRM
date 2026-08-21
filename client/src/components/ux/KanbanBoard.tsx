@@ -47,6 +47,7 @@ import {
   type OptimisticChange,
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
+import { useMotionFeature } from '@/components/ux/motion';
 import { SPRING, TRANSITION } from '@/lib/motion';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
@@ -298,6 +299,10 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     selectionMode,
     t,
   } = props;
+  // FLIP reflow is the most expensive animation on the board: every card in
+  // the column measures itself twice and animates on a spring whenever one of
+  // them moves. It is the first thing to go on a machine that cannot keep up.
+  const reflow = useMotionFeature('boardReflow');
   const comment = lead.comment?.trim();
   const {
     attributes,
@@ -319,12 +324,12 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       // dnd-kit drives the drag through a DragOverlay portal rather than a
       // transform on this node, so framer owns the transform outright and the
       // two never fight over it.
-      layout
-      variants={leadCardVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      transition={SPRING.layout}
+      layout={reflow}
+      variants={reflow ? leadCardVariants : undefined}
+      initial={reflow ? 'hidden' : false}
+      animate={reflow ? 'visible' : undefined}
+      exit={reflow ? 'exit' : undefined}
+      transition={reflow ? SPRING.layout : undefined}
       className={cn(
         'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         selectionMode && 'cursor-default active:cursor-default',

@@ -168,14 +168,61 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not(.animate-spin),
+  *:not(.animate-spin)::before,
+  *:not(.animate-spin)::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ============================================================
+   MOTION PREFERENCES
+   The in-app switches from Account Settings, mirrored onto <html>
+   by client/src/lib/motionPreferences.ts. framer-motion only knows
+   about the components it drives, so everything animated in CSS —
+   the keyframes in this file, tailwindcss-animate's utilities, the
+   enter/exit classes Radix overlays use — is switched off here.
+
+   A spinner is exempt everywhere: it reports that work is in
+   flight, and a frozen one reads as a hung app rather than as a
+   calm one. Same reason the reduced-motion block above spares it.
+   ============================================================ */
+:root[data-motion='off'],
+:root[data-motion='off'] *:not(.animate-spin),
+:root[data-motion='off'] *:not(.animate-spin)::before,
+:root[data-motion='off'] *:not(.animate-spin)::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* Overlays that open on a keyframe: dialogs, sheets, dropdowns, popovers,
+   tooltips, toasts. Radix reads the computed animation-name to decide when an
+   exiting node may unmount, and `none` is answered immediately — so the panel
+   simply appears and disappears instead of hanging around. */
+:root[data-motion-entrances='off'] .animate-in,
+:root[data-motion-entrances='off'] .animate-out {
+  animation: none !important;
+}
+
+/* Looping ornament. These never stop on their own, so on a tired machine they
+   are the animations that cost something every single frame the app is open. */
+:root[data-motion-decor='off'] .animate-pulse,
+:root[data-motion-decor='off'] .animate-ping,
+:root[data-motion-decor='off'] .animate-bounce,
+:root[data-motion-decor='off'] .animate-float,
+:root[data-motion-decor='off'] .animate-gradient-pan,
+:root[data-motion-decor='off'] .animate-pulse-ring,
+:root[data-motion-decor='off'] .animate-skeleton-sweep,
+:root[data-motion-decor='off'] .login-page::before,
+:root[data-motion-decor='off'] .login-page::after {
+  animation: none !important;
 }
 
 /* ============================================================

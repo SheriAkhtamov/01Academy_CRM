@@ -154,9 +154,11 @@ describe('dashboard period filters and simplified actions', () => {
 
   it('drives the chart entrance from a single hook that self-disables', () => {
     const entrance = read('../client/src/components/ux/motion/useChartEntrance.ts');
-    expect(entrance).toContain('useReducedMotion');
+    // The OS setting and the in-app animation switch are both folded into
+    // useMotionFeature, so the hook asks one question instead of two.
+    expect(entrance).toContain("useMotionFeature('charts')");
     expect(entrance).toContain('setActive(false)');
-    // Reduced motion must skip the entrance outright, not merely shorten it.
-    expect(entrance).toContain('return prefersReducedMotion ? false : active;');
+    // A disabled chart entrance must be skipped outright, not merely shortened.
+    expect(entrance).toContain('return chartsAnimate && active;');
   });
 });

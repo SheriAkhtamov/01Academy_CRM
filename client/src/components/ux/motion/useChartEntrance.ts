@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
+import { useMotionFeature } from './MotionPreferencesProvider';
 
 /** Long enough to cover recharts' own draw, short enough to switch off before a poll lands. */
 const ENTRANCE_WINDOW_MS = 1_100;
@@ -16,7 +16,8 @@ const ENTRANCE_WINDOW_MS = 1_100;
  *
  * This hook restores the entrance without the flicker: `true` while the chart
  * first paints, `false` from then on, so refetches update the geometry
- * silently. Under prefers-reduced-motion it is `false` from the start.
+ * silently. With chart animation switched off — by the user or by
+ * prefers-reduced-motion — it is `false` from the start.
  *
  * ```tsx
  * const chartEntrance = useChartEntrance();
@@ -24,7 +25,7 @@ const ENTRANCE_WINDOW_MS = 1_100;
  * ```
  */
 export function useChartEntrance(windowMs = ENTRANCE_WINDOW_MS): boolean {
-  const prefersReducedMotion = useReducedMotion();
+  const chartsAnimate = useMotionFeature('charts');
   const [active, setActive] = useState(true);
 
   useEffect(() => {
@@ -33,5 +34,5 @@ export function useChartEntrance(windowMs = ENTRANCE_WINDOW_MS): boolean {
     return () => window.clearTimeout(timer);
   }, [active, windowMs]);
 
-  return prefersReducedMotion ? false : active;
+  return chartsAnimate && active;
 }

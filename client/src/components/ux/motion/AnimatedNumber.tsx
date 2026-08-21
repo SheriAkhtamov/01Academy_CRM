@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
+import { useMotionValue, useSpring } from 'framer-motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyNumber } from '@/lib/localeFormat';
+import { useMotionFeature } from './MotionPreferencesProvider';
 
 type AnimatedNumberProps = {
   value: number;
@@ -20,9 +21,10 @@ type AnimatedNumberProps = {
  * Counts a metric up to its value on a spring instead of snapping to it.
  *
  * The spring runs on a motion value, so the count happens outside React's
- * render loop; only the formatted string is state. Under prefers-reduced-motion
- * the final value is rendered immediately — a number ticking upward is exactly
- * the kind of motion that setting exists to suppress.
+ * render loop; only the formatted string is state. With entrances switched off
+ * — by the user or by prefers-reduced-motion — the final value is rendered
+ * immediately: a number ticking upward is exactly the kind of motion those
+ * settings exist to suppress, and it is also a state update every frame.
  */
 export function AnimatedNumber({
   value,
@@ -34,17 +36,17 @@ export function AnimatedNumber({
   suffix,
 }: AnimatedNumberProps) {
   const { language } = useTranslation();
-  const prefersReducedMotion = useReducedMotion();
+  const countUp = useMotionFeature('entrances');
   const safeValue = Number.isFinite(value) ? value : 0;
   const motionValue = useMotionValue(0);
   const spring = useSpring(motionValue, { stiffness: 90, damping: 22, mass: 0.9 });
   // Starts at zero so the first paint is the beginning of the count, not the
   // final figure flashing for one frame before the spring drags it back down.
   // Later value changes resume from wherever the spring currently sits.
-  const [display, setDisplay] = useState(() => (prefersReducedMotion ? safeValue : 0));
+  const [display, setDisplay] = useState(() => (countUp ? 0 : safeValue));
 
   useEffect(() => {
-    if (prefersReducedMotion) {
+    if (!countUp) {
       setDisplay(safeValue);
       return;
     }
@@ -54,7 +56,7 @@ export function AnimatedNumber({
       setDisplay(Math.round(latest * factor) / factor);
     });
     return unsubscribe;
-  }, [safeValue, motionValue, spring, precision, prefersReducedMotion]);
+  }, [safeValue, motionValue, spring, precision, countUp]);
 
   const rendered = format
     ? format(display)

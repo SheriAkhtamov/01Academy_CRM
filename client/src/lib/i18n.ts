@@ -1343,6 +1343,37 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   schedulePresetWeekend: { en: 'Weekend', ru: 'Выходные' },
   scheduleCopyFirstRow: { en: 'Same time everywhere', ru: 'Одно время везде' },
   scheduleEndBeforeStart: { en: 'End is not after start', ru: 'Конец не позже начала' },
+  interfaceAnimations: { en: 'Interface animations', ru: 'Анимации интерфейса' },
+  interfaceAnimationsHint: {
+    en: 'Switch animations off if the interface feels slow on this computer. Applies immediately and is remembered in this browser only.',
+    ru: 'Отключите анимации, если интерфейс работает медленно на этом компьютере. Применяется сразу и запоминается только в этом браузере.',
+  },
+  motionPageTransitions: { en: 'Transitions between pages', ru: 'Переходы между страницами' },
+  motionPageTransitionsHint: {
+    en: 'The fade when you move from one section to another.',
+    ru: 'Плавная смена при переходе из одного раздела в другой.',
+  },
+  motionEntrances: { en: 'Appearance of elements', ru: 'Появление элементов' },
+  motionEntrancesHint: {
+    en: 'Cards, table rows, counters and pop-up panels sliding into place.',
+    ru: 'Выезжающие карточки, строки таблиц, счётчики и всплывающие панели.',
+  },
+  motionBoardReflow: { en: 'Card movement on boards', ru: 'Перемещение карточек на досках' },
+  motionBoardReflowHint: {
+    en: 'Cards gliding to a new slot on the lead and task boards.',
+    ru: 'Плавное перемещение карточек на досках лидов и задач.',
+  },
+  motionCharts: { en: 'Chart drawing', ru: 'Отрисовка графиков' },
+  motionChartsHint: {
+    en: 'Bars and lines drawing themselves when a report opens.',
+    ru: 'Столбцы и линии прорисовываются при открытии отчёта.',
+  },
+  motionDecorative: { en: 'Decorative effects', ru: 'Декоративные эффекты' },
+  motionDecorativeHint: {
+    en: 'Endless effects: pulsing indicators, moving gradients, background glow.',
+    ru: 'Бесконечные эффекты: пульсация индикаторов, движущиеся градиенты, свечение фона.',
+  },
+  motionResetDefaults: { en: 'Turn every animation back on', ru: 'Вернуть все анимации' },
   moveDown: { en: 'Move down', ru: 'Переместить вниз' },
   moveUp: { en: 'Move up', ru: 'Переместить вверх' },
   name: { en: 'Name', ru: 'Название' },

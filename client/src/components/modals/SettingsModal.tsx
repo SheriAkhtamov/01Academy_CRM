@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
+import { AUTH_SESSION_QUERY_KEY, type SanitizedUser } from '@shared/auth';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -34,6 +34,7 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import { Switch } from '@/components/ui/switch';
+import { MotionSettingsPanel } from '@/components/ux/motion';
 import { User, Mail, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
 
 const createSettingsSchema = (
@@ -94,6 +95,57 @@ const createSettingsSchema = (
   }
 });
 
+type SettingsFormValues = {
+  fullName: string;
+  email: string;
+  position: string;
+  phone?: string;
+  hasReportAccess?: boolean;
+  currentPassword?: string;
+  newPassword?: string;
+  confirmNewPassword?: string;
+};
+
+/** The form as it looks the moment it is seeded from the signed-in account. */
+const buildSettingsValues = (user: SanitizedUser | null): SettingsFormValues => ({
+  fullName: user?.fullName || '',
+  email: user?.email || '',
+  position: user?.position || '',
+  phone: user?.phone || '',
+  hasReportAccess: user?.hasReportAccess || false,
+  currentPassword: '',
+  newPassword: '',
+  confirmNewPassword: '',
+});
+
+const PROFILE_FIELDS = ['fullName', 'email', 'position', 'phone'] as const;
+
+/**
+ * Whether the form really differs from the account it was seeded with.
+ *
+ * react-hook-form's own `isDirty` answers a different question — "has anything
+ * written to this form" — and the browser answers it for you: a password
+ * manager fills the current-password box the instant the dialog opens, so
+ * closing an untouched form asked whether to discard edits nobody had made.
+ * Comparing values against the baseline means only a real difference counts.
+ *
+ * A filled current-password box on its own is deliberately not a change. It
+ * does nothing without a new password or a new login beside it, and it is
+ * precisely the field autofill reaches for.
+ */
+export function hasSettingsChanges(
+  values: SettingsFormValues,
+  baseline: SettingsFormValues,
+): boolean {
+  const profileChanged = PROFILE_FIELDS.some(
+    (field) => (values[field] ?? '').trim() !== (baseline[field] ?? '').trim(),
+  );
+  const accessChanged = Boolean(values.hasReportAccess) !== Boolean(baseline.hasReportAccess);
+  const passwordChanged = Boolean(values.newPassword || values.confirmNewPassword);
+
+  return profileChanged || accessChanged || passwordChanged;
+}
+
 interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -112,36 +164,22 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 
   const form = useForm<z.infer<typeof settingsSchema>>({
     resolver: zodResolver(settingsSchema),
-    defaultValues: {
-      fullName: user?.fullName || '',
-      email: user?.email || '',
-      position: user?.position || '',
-      phone: user?.phone || '',
-      hasReportAccess: user?.hasReportAccess || false,
-      currentPassword: '',
-      newPassword: '',
-      confirmNewPassword: '',
-    },
+    defaultValues: buildSettingsValues(user),
   });
+  const baselineValues = React.useMemo(() => buildSettingsValues(user), [user]);
+  // Subscribing to the values, not to `formState.isDirty` — see
+  // `hasSettingsChanges` for why the flag answers the wrong question here.
+  const currentValues = form.watch();
   const settingsDialogGuard = useUnsavedChangesGuard({
     open,
-    isDirty: form.formState.isDirty,
+    isDirty: hasSettingsChanges(currentValues, baselineValues),
     onOpenChange,
   });
 
   // Reset form when user data changes or modal opens
   React.useEffect(() => {
     if (user && open) {
-      form.reset({
-        fullName: user.fullName || '',
-        email: user.email || '',
-        position: user.position || '',
-        phone: user.phone || '',
-        hasReportAccess: user.hasReportAccess || false,
-        currentPassword: '',
-        newPassword: '',
-        confirmNewPassword: '',
-      });
+      form.reset(buildSettingsValues(user));
     }
   }, [user, open, form]);
 
@@ -206,7 +244,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/*
+            The password boxes below keep their own autocomplete hints, which
+            take priority; switching the form off only stops the browser from
+            volunteering address data into the profile fields.
+          */}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" autoComplete="off">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Full Name */}
               <FormField
@@ -377,6 +420,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 )}
               />
             )}
+
+            {/*
+              Device-local, so it sits outside the save flow: the switches take
+              effect the moment they are flipped and never travel to the server.
+            */}
+            <MotionSettingsPanel />
 
             {/* Current module info */}
             <div className="rounded-xl border border-border/70 bg-muted/60 p-4">

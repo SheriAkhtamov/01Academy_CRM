@@ -24,6 +24,7 @@ import {
     type OptimisticChange,
 } from '@/lib/optimisticReconciliation';
 import { cn } from '@/lib/utils';
+import { useMotionFeature } from '@/components/ux/motion';
 import { SPRING, TRANSITION } from '@/lib/motion';
 import { TaskCard } from './TaskCard';
 import { DragOverlayPortal } from '@/components/ux/DragOverlayPortal';
@@ -55,6 +56,9 @@ function DraggableTaskCard({
     onClick: () => void;
 }) {
     const suppressClickRef = useRef(false);
+    // Same trade as the lead board: the FLIP measure-and-spring pass on every
+    // sibling is what a slow machine feels, so it follows the same switch.
+    const reflow = useMotionFeature('boardReflow');
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `task-${task.id}`,
         data: { taskId: task.id, status: task.status },
@@ -79,11 +83,11 @@ function DraggableTaskCard({
         // completed task from simply blinking out of the column.
         <motion.div
             ref={setNodeRef}
-            layout
-            initial={{ opacity: 0, y: 12, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9, transition: TRANSITION.exit }}
-            transition={SPRING.layout}
+            layout={reflow}
+            initial={reflow ? { opacity: 0, y: 12, scale: 0.96 } : false}
+            animate={reflow ? { opacity: 1, y: 0, scale: 1 } : undefined}
+            exit={reflow ? { opacity: 0, scale: 0.9, transition: TRANSITION.exit } : undefined}
+            transition={reflow ? SPRING.layout : undefined}
             className={cn(isDragging && 'opacity-25')}
         >
             <TaskCard

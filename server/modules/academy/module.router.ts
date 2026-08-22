@@ -496,6 +496,7 @@ router.get('/schedule/resource', async (req, res) => {
          LEFT JOIN academy_courses c ON c.id = g.course_id
          LEFT JOIN academy_teachers t ON t.id = g.teacher_id
          WHERE g.school_id = $1 AND g.status IN ('open', 'in_progress')
+           AND COALESCE(g.is_archived, false) = false
          ORDER BY g.room_id, g.name`,
         [schoolId],
       ),
@@ -507,6 +508,7 @@ router.get('/schedule/resource', async (req, res) => {
          LEFT JOIN academy_teachers t ON t.id = l.teacher_id
          WHERE l.school_id = $1
            AND l.status <> 'cancelled'
+           AND COALESCE(g.is_archived, false) = false
            AND l.scheduled_at >= $2
            AND l.scheduled_at < $3
          ORDER BY l.room_id, l.scheduled_at`,

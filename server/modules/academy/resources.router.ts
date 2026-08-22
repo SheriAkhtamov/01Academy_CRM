@@ -204,9 +204,17 @@ registerSimpleCrud('groups', 'academy_groups', [
       values,
       row,
     });
+    /* Reopening a shelved group takes it off the shelf. An archived group is
+       hidden from every calendar, so leaving the flag on a group that teaches
+       again would strand live lessons where nobody can see them. */
+    if (row.isArchived === true && values.status !== undefined && values.status !== 'completed') {
+      values.isArchived = false;
+      values.archivedAt = null;
+      values.archivedBy = null;
+    }
   },
   beforeDelete: async ({ id, row }) => {
-    if (row.status !== 'completed') {
+    if (row.isArchived !== true) {
       throw Object.assign(new Error('groupMustBeArchivedBeforeDelete'), { statusCode: 409 });
     }
     const usage = await queryOne<{ inUse: boolean }>(

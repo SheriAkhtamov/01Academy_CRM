@@ -47,6 +47,7 @@ import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
+import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
@@ -61,6 +62,7 @@ import {
 import {
   AlertCircle,
   Archive,
+  ArchiveRestore,
   ArrowDown,
   ArrowUp,
   ArrowRightLeft,
@@ -146,6 +148,8 @@ interface Group {
   currentStudents: number;
   reservedStudents: number;
   status: string;
+  isArchived?: boolean;
+  archivedAt?: string | null;
   startDate?: string | null;
   endDate?: string | null;
 }
@@ -374,6 +378,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     leadCount: number;
   } | null>(null);
   const [archiveGroupTarget, setArchiveGroupTarget] = useState<Group | null>(null);
+  const [restoreGroupTarget, setRestoreGroupTarget] = useState<Group | null>(null);
   const [pipelineTransferTargetId, setPipelineTransferTargetId] = useState('');
 
   const configuration = useQuery<ConfigurationData>({
@@ -623,24 +628,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     },
   });
 
-  const archiveGroup = useMutation({
-    mutationFn: (group: Group) =>
-      apiRequest('PATCH', `/api/academy/groups/${group.id}`, { status: 'completed' }),
-    onSuccess: (_result, group) => {
-      toast({
-        title: t('groupArchived'),
-        description: group.name,
-      });
-      setArchiveGroupTarget(null);
-      void invalidate();
-    },
-    onError: (error: Error) => {
-      toast({
-        title: t('groupArchiveFailed'),
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
+  /* The archive is a flag of its own, not the `completed` status: a completed
+     group that is still being watched stays on the active list, and shelving
+     one hides it from every calendar in the CRM. Archiving a group that is
+     still running also completes it, which is what this button always did. */
+  const { archiveGroup, restoreGroup } = useGroupArchive<Group>((_group, archived) => {
+    if (archived) setArchiveGroupTarget(null);
+    else setRestoreGroupTarget(null);
+    void invalidate();
   });
 
   const saveStatus = useMutation({
@@ -909,14 +904,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
   const isGroupArchive = requestedFilter === 'archive';
-  const activeGroupsCount = groups.filter((group) => group.status !== 'completed').length;
+  const activeGroupsCount = groups.filter((group) => !group.isArchived).length;
   const archivedGroupsCount = groups.length - activeGroupsCount;
   const displayedGroups = useMemo(
     () => {
       if (requestedFilter === 'archive') {
-        return groups.filter((group) => group.status === 'completed');
+        return groups.filter((group) => group.isArchived);
       }
-      const activeGroups = groups.filter((group) => group.status !== 'completed');
+      const activeGroups = groups.filter((group) => !group.isArchived);
       return requestedFilter === 'without-teacher'
         ? activeGroups.filter((group) => !group.teacherId)
         : activeGroups;
@@ -925,8 +920,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   );
   const groupEmptyState = isGroupArchive
     ? {
-      title: t('noCompletedGroups'),
-      description: t('noCompletedGroupsDescription'),
+      title: t('noArchivedGroups'),
+      description: t('noArchivedGroupsDescription'),
     }
     : requestedFilter === 'without-teacher'
       ? {
@@ -1258,20 +1253,36 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <span className="sr-only">{t('edit')}</span>
             </Button>
             {isGroupArchive ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="min-h-11 min-w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={deleteResource.isPending}
-                onClick={() => setDeleteTarget({
-                  resource: 'groups',
-                  id: row.id,
-                  name: row.name,
-                })}
-              >
-                <Trash2 />
-                <span className="sr-only">{t('deleteGroupPermanently')}</span>
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11"
+                  disabled={restoreGroup.isPending}
+                  onClick={() => setRestoreGroupTarget(row)}
+                >
+                  {restoreGroup.isPending && restoreGroup.variables?.id === row.id ? (
+                    <Loader2 className="animate-spin" data-icon="inline-start" />
+                  ) : (
+                    <ArchiveRestore data-icon="inline-start" />
+                  )}
+                  {t('restoreGroupFromArchive')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="min-h-11 min-w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={deleteResource.isPending}
+                  onClick={() => setDeleteTarget({
+                    resource: 'groups',
+                    id: row.id,
+                    name: row.name,
+                  })}
+                >
+                  <Trash2 />
+                  <span className="sr-only">{t('deleteGroupPermanently')}</span>
+                </Button>
+              </>
             ) : (
               <Button
                 variant="outline"
@@ -2218,6 +2229,23 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(restoreGroupTarget)}
+        onOpenChange={(open) => {
+          if (!open && !restoreGroup.isPending) setRestoreGroupTarget(null);
+        }}
+        title={t('restoreGroupTitle')}
+        description={restoreGroupTarget
+          ? `${t('restoreGroupConfirm')} “${restoreGroupTarget.name}”`
+          : t('restoreGroupConfirm')}
+        confirmLabel={t('restoreGroupFromArchive')}
+        isPending={restoreGroup.isPending}
+        keepOpenOnConfirm
+        onConfirm={() => {
+          if (restoreGroupTarget) restoreGroup.mutate(restoreGroupTarget);
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(archiveGroupTarget)}

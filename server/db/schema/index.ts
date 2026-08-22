@@ -248,6 +248,9 @@ export const academyGroups = pgTable("academy_groups", {
   frequency: varchar("frequency", { length: 255 }),
   maxStudents: integer("max_students").notNull().default(12),
   status: varchar("status", { length: 50 }).notNull().default("open"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: integer("archived_by").references(() => users.id, { onDelete: "set null" }),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -257,6 +260,7 @@ export const academyGroups = pgTable("academy_groups", {
   schoolIdx: index("academy_groups_school_idx").on(table.schoolId),
   roomIdx: index("academy_groups_room_idx").on(table.roomId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
+  archiveIdx: index("academy_groups_archive_idx").on(table.isArchived, table.archivedAt),
   capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} >= 1`),
 }));
 

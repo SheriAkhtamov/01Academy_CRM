@@ -109,6 +109,7 @@ import {
   resolveTeacherId,
 } from './academy-analytics';
 import {
+  assertGroupLifecycleUpdateAllowed,
   getLessonRoster,
   prepareLessonMutation,
 } from './academy-route-support';
@@ -936,6 +937,118 @@ router.patch('/students/:id/status', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to update student status', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to update student status') });
+  }
+});
+
+/**
+ * Archiving is deliberately not a status. `completed` describes where a group
+ * stands in its own lifecycle; the archive says whether anybody still wants to
+ * see it, and only the second one may hide lessons from a calendar. Keeping
+ * them apart is what lets a group be finished today and shelved next month —
+ * and lets the shelving be undone without rewriting the group's history.
+ */
+const loadGroupForArchive = async (groupId: number) => queryOne(
+  `SELECT g.*, teacher.user_id AS teacher_user_id
+   FROM academy_groups g
+   LEFT JOIN academy_teachers teacher ON teacher.id = g.teacher_id
+   WHERE g.id = $1`,
+  [groupId],
+);
+
+const ensureGroupArchiveAccess = (req: any, res: any, group: Row) => {
+  const isAdministrator = hasLeadershipAccess(req.user)
+    || getAssignedModules(req.user).includes('administration');
+  if (isAdministrator) return true;
+  if (!group.teacherUserId || Number(group.teacherUserId) !== Number(req.user!.id)) {
+    res.status(403).json({ error: 'teacherOwnGroupArchiveOnly' });
+    return false;
+  }
+  return true;
+};
+
+router.post('/groups/:id/archive', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
+  try {
+    const groupId = parseId(req.params.id);
+    if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
+    const group = await loadGroupForArchive(groupId);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (!ensureGroupArchiveAccess(req, res, group)) return;
+    /* A teacher shelves a course that is over, never one that is still running:
+       only administration may end a group, and ending it is a separate decision
+       from filing it away. */
+    const isAdministrator = hasLeadershipAccess(req.user)
+      || getAssignedModules(req.user).includes('administration');
+    if (!isAdministrator && group.status !== 'completed') {
+      return res.status(409).json({ error: 'onlyCompletedGroupsCanBeArchived' });
+    }
+    if (group.isArchived === true) return res.json(group);
+
+    const archived = await withTransaction(async () => {
+      await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+      const lockedGroup = await queryOne(
+        `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
+        [groupId],
+      );
+      if (!lockedGroup) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      if (lockedGroup.isArchived === true) return lockedGroup;
+      const values: Row = {
+        isArchived: true,
+        archivedAt: new Date(),
+        archivedBy: req.user!.id,
+      };
+      /* Administration keeps its one-click "to the archive" on a running group,
+         and that click still has to answer for the lessons and the reserved
+         leads it ends. */
+      if (lockedGroup.status !== 'completed') {
+        values.status = 'completed';
+        await assertGroupLifecycleUpdateAllowed({
+          id: groupId,
+          values: { status: 'completed' },
+          row: lockedGroup,
+        });
+      }
+      return updateRow('academy_groups', groupId, values);
+    });
+    await createAudit(req, 'ARCHIVE_ACADEMY_GROUP', 'academy_group', groupId, archived, group);
+    res.json(archived);
+  } catch (error: any) {
+    logger.error('Failed to archive group', { error, groupId: req.params.id });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to archive group') });
+  }
+});
+
+router.post('/groups/:id/unarchive', async (req, res) => {
+  if (!ensureOperationsAccess(req, res)) return;
+  try {
+    const groupId = parseId(req.params.id);
+    if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
+    const group = await loadGroupForArchive(groupId);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (!ensureGroupArchiveAccess(req, res, group)) return;
+    if (group.isArchived !== true) return res.json(group);
+
+    const restored = await withTransaction(async () => {
+      const lockedGroup = await queryOne(
+        `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
+        [groupId],
+      );
+      if (!lockedGroup) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      if (lockedGroup.isArchived !== true) return lockedGroup;
+      /* Only the shelving is undone. The group comes back exactly as completed
+         as it was, so restoring it can never resurrect a finished course as
+         live work. */
+      return updateRow('academy_groups', groupId, {
+        isArchived: false,
+        archivedAt: null,
+        archivedBy: null,
+      });
+    });
+    await createAudit(req, 'UNARCHIVE_ACADEMY_GROUP', 'academy_group', groupId, restored, group);
+    res.json(restored);
+  } catch (error: any) {
+    logger.error('Failed to restore group from the archive', { error, groupId: req.params.id });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to restore group') });
   }
 });
 };

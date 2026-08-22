@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Search, Users } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowLeft, Loader2, Search, Users, UsersRound } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { GroupStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
@@ -15,11 +16,13 @@ import {
   TEACHER_CARD_PADDING,
   TEACHER_CARD_PADDING_DENSE,
   TEACHER_TONE_CLASS,
+  canArchiveGroup,
   formatGroupScheduleTime,
   teacherPercent,
   weekdayIndexFromDayOfWeek,
   type TeacherGroup,
   type TeacherGroupSchedule,
+  type TeacherGroupView,
   type TeacherLessonProgress,
   type TeacherStudent,
 } from '@/lib/teacherModule';
@@ -37,13 +40,19 @@ const GROUP_SORT_KEYS: GroupSortKey[] = ['name', 'progress', 'students'];
 
 interface TeacherGroupsSectionProps {
   groups: TeacherGroup[];
+  view: TeacherGroupView;
   selectedGroup: TeacherGroup | null;
   groupStudents: TeacherStudent[];
   progressById: Map<number, TeacherLessonProgress>;
   attendanceByStudentId: Map<number, { attended: number; missed: number }>;
   dayNames: string[];
   dayNamesFull: string[];
+  archivePendingGroupId: number | null;
   onSelectGroup: (groupId: number | null) => void;
+  onChangeView: (view: TeacherGroupView) => void;
+  onArchiveGroup: (group: TeacherGroup) => void;
+  onRestoreGroup: (group: TeacherGroup) => void;
+  formatArchivedAt: (value: string) => string;
 }
 
 function ScheduleBadges({
@@ -73,6 +82,41 @@ function ScheduleBadges({
   );
 }
 
+function GroupArchiveAction({
+  group,
+  isPending,
+  onArchive,
+  onRestore,
+  className,
+}: {
+  group: TeacherGroup;
+  isPending: boolean;
+  onArchive: (group: TeacherGroup) => void;
+  onRestore: (group: TeacherGroup) => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  if (!group.isArchived && !canArchiveGroup(group)) return null;
+  const restoring = group.isArchived === true;
+  const Icon = restoring ? ArchiveRestore : Archive;
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={cn('min-h-11 rounded-lg', className)}
+      disabled={isPending}
+      onClick={() => (restoring ? onRestore(group) : onArchive(group))}
+    >
+      {isPending
+        ? <Loader2 className="mr-1.5 size-4 animate-spin" />
+        : <Icon className="mr-1.5 size-4" />}
+      {restoring ? t('restoreGroupFromArchive') : t('archiveGroup')}
+    </Button>
+  );
+}
+
 /**
  * Selecting a group used to swap the list for a detail view without touching
  * the URL, so the browser Back button threw the teacher out of the module
@@ -81,25 +125,38 @@ function ScheduleBadges({
  */
 export function TeacherGroupsSection({
   groups,
+  view,
   selectedGroup,
   groupStudents,
   progressById,
   attendanceByStudentId,
   dayNames,
   dayNamesFull,
+  archivePendingGroupId,
   onSelectGroup,
+  onChangeView,
+  onArchiveGroup,
+  onRestoreGroup,
+  formatArchivedAt,
 }: TeacherGroupsSectionProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<GroupSortKey>('name');
+  const [archiveTarget, setArchiveTarget] = useState<TeacherGroup | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<TeacherGroup | null>(null);
+
+  const isArchiveView = view === 'archive';
+  const activeGroups = useMemo(() => groups.filter((group) => !group.isArchived), [groups]);
+  const archivedGroups = useMemo(() => groups.filter((group) => group.isArchived), [groups]);
+  const listedGroups = isArchiveView ? archivedGroups : activeGroups;
 
   const visibleGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const filtered = needle
-      ? groups.filter((group) => (
+      ? listedGroups.filter((group) => (
         `${group.name} ${group.courseName ?? ''} ${group.schoolName ?? ''}`.toLowerCase().includes(needle)
       ))
-      : [...groups];
+      : [...listedGroups];
 
     return filtered.sort((left, right) => {
       if (sortKey === 'students') {
@@ -113,7 +170,7 @@ export function TeacherGroupsSection({
       }
       return left.name.localeCompare(right.name);
     });
-  }, [groups, progressById, query, sortKey]);
+  }, [listedGroups, progressById, query, sortKey]);
 
   /* Rebuilt inline, this array gave `DataTable` a new identity on every parent
      clock tick, re-running the staggered row entrance for the whole roster. */
@@ -158,6 +215,41 @@ export function TeacherGroupsSection({
     },
   ], [attendanceByStudentId, t]);
 
+  const archiveDialogs = (
+    <>
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        onOpenChange={(open) => { if (!open) setArchiveTarget(null); }}
+        title={t('archiveGroupTitle')}
+        description={archiveTarget
+          ? `${archiveTarget.name} — ${t('archiveGroupConfirm')}`
+          : t('archiveGroupConfirm')}
+        confirmLabel={t('archiveGroup')}
+        isPending={archiveTarget !== null && archivePendingGroupId === archiveTarget.id}
+        keepOpenOnConfirm
+        onConfirm={() => {
+          if (archiveTarget) onArchiveGroup(archiveTarget);
+          setArchiveTarget(null);
+        }}
+      />
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        onOpenChange={(open) => { if (!open) setRestoreTarget(null); }}
+        title={t('restoreGroupTitle')}
+        description={restoreTarget
+          ? `${restoreTarget.name} — ${t('restoreGroupConfirm')}`
+          : t('restoreGroupConfirm')}
+        confirmLabel={t('restoreGroupFromArchive')}
+        isPending={restoreTarget !== null && archivePendingGroupId === restoreTarget.id}
+        keepOpenOnConfirm
+        onConfirm={() => {
+          if (restoreTarget) onRestoreGroup(restoreTarget);
+          setRestoreTarget(null);
+        }}
+      />
+    </>
+  );
+
   if (selectedGroup) {
     const progress = progressById.get(selectedGroup.id);
     const conducted = progress?.conducted ?? 0;
@@ -190,8 +282,26 @@ export function TeacherGroupsSection({
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {t('groupTeacherLine').replace('{name}', selectedGroup.teacherName || t('notAssigned'))}
                 </p>
+                {selectedGroup.isArchived && selectedGroup.archivedAt ? (
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {t('groupArchivedOn').replace('{date}', formatArchivedAt(selectedGroup.archivedAt))}
+                  </p>
+                ) : null}
               </div>
-              <GroupStatusBadge status={selectedGroup.status} />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {selectedGroup.isArchived ? (
+                  <Badge variant="outline" className={cn('rounded-lg border', TEACHER_TONE_CLASS.neutral)}>
+                    {t('groupInArchive')}
+                  </Badge>
+                ) : null}
+                <GroupStatusBadge status={selectedGroup.status} />
+                <GroupArchiveAction
+                  group={selectedGroup}
+                  isPending={archivePendingGroupId === selectedGroup.id}
+                  onArchive={setArchiveTarget}
+                  onRestore={setRestoreTarget}
+                />
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -233,6 +343,7 @@ export function TeacherGroupsSection({
             </div>
           </CardContent>
         </Card>
+        {archiveDialogs}
       </div>
     );
   }
@@ -240,32 +351,69 @@ export function TeacherGroupsSection({
   return (
     <div className="space-y-4">
       <Card className="border-border/70">
-        <CardContent className={cn('flex flex-col gap-2.5 sm:flex-row sm:items-center', TEACHER_CARD_PADDING_DENSE)}>
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t('searchGroupsPlaceholder')}
-              aria-label={t('searchGroupsPlaceholder')}
-              className="h-11 rounded-lg pl-9"
-            />
+        <CardContent className={cn('flex flex-col gap-2.5', TEACHER_CARD_PADDING_DENSE)}>
+          <div
+            className="inline-flex w-full items-center gap-1 self-start rounded-lg border border-border bg-muted/50 p-1 sm:w-auto"
+            role="group"
+            aria-label={t('groupListView')}
+          >
+            <Button
+              type="button"
+              size="sm"
+              variant={isArchiveView ? 'ghost' : 'secondary'}
+              className="min-h-11 flex-1 gap-2 sm:flex-none"
+              aria-pressed={!isArchiveView}
+              onClick={() => onChangeView('active')}
+            >
+              <UsersRound />
+              {t('adminActiveGroups')}
+              <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
+                {activeGroups.length}
+              </Badge>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={isArchiveView ? 'secondary' : 'ghost'}
+              className="min-h-11 flex-1 gap-2 sm:flex-none"
+              aria-pressed={isArchiveView}
+              onClick={() => onChangeView('archive')}
+            >
+              <Archive />
+              {t('groupArchiveLabel')}
+              <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
+                {archivedGroups.length}
+              </Badge>
+            </Button>
           </div>
-          <Select value={sortKey} onValueChange={(value) => setSortKey(value as GroupSortKey)}>
-            <SelectTrigger className="h-11 w-full rounded-lg sm:w-[220px]" aria-label={t('sortGroupsLabel')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {GROUP_SORT_KEYS.map((key) => (
-                <SelectItem key={key} value={key}>{t(GROUP_SORT_LABEL_KEYS[key])}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="shrink-0 text-xs tabular-nums text-muted-foreground" aria-live="polite">
-            {t('groupsShownCount')
-              .replace('{shown}', String(visibleGroups.length))
-              .replace('{total}', String(groups.length))}
-          </p>
+
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t('searchGroupsPlaceholder')}
+                aria-label={t('searchGroupsPlaceholder')}
+                className="h-11 rounded-lg pl-9"
+              />
+            </div>
+            <Select value={sortKey} onValueChange={(value) => setSortKey(value as GroupSortKey)}>
+              <SelectTrigger className="h-11 w-full rounded-lg sm:w-[220px]" aria-label={t('sortGroupsLabel')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GROUP_SORT_KEYS.map((key) => (
+                  <SelectItem key={key} value={key}>{t(GROUP_SORT_LABEL_KEYS[key])}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="shrink-0 text-xs tabular-nums text-muted-foreground" aria-live="polite">
+              {t('groupsShownCount')
+                .replace('{shown}', String(visibleGroups.length))
+                .replace('{total}', String(listedGroups.length))}
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -273,10 +421,14 @@ export function TeacherGroupsSection({
         <Card className="border-dashed border-border/70">
           <CardContent className="p-0">
             <EmptyState
-              icon={Users}
-              title={groups.length === 0 ? t('noGroups') : t('noScheduleGroupsFound')}
-              description={groups.length === 0 ? t('noGroupsAssigned') : t('adjustSearchCriteria')}
-              action={groups.length === 0 ? undefined : (
+              icon={isArchiveView ? Archive : Users}
+              title={listedGroups.length === 0
+                ? (isArchiveView ? t('noArchivedGroups') : t('noGroups'))
+                : t('noScheduleGroupsFound')}
+              description={listedGroups.length === 0
+                ? (isArchiveView ? t('noArchivedGroupsDescription') : t('noGroupsAssigned'))
+                : t('adjustSearchCriteria')}
+              action={listedGroups.length === 0 ? undefined : (
                 <Button type="button" variant="outline" onClick={() => setQuery('')}>
                   {t('resetFilters')}
                 </Button>
@@ -306,6 +458,11 @@ export function TeacherGroupsSection({
                       <p className="truncate text-xs text-muted-foreground">
                         {group.schoolName || t('schoolNotSelected')}
                       </p>
+                      {group.isArchived && group.archivedAt ? (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {t('groupArchivedOn').replace('{date}', formatArchivedAt(group.archivedAt))}
+                        </p>
+                      ) : null}
                     </div>
                     <GroupStatusBadge status={group.status} />
                   </div>
@@ -330,22 +487,30 @@ export function TeacherGroupsSection({
                     />
                   ) : null}
 
-                  <div className="flex items-center justify-between gap-2 border-t border-border/70 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3">
                     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Users className="size-3.5" />
                       <span className="tabular-nums">
                         {t('studentsCountValue').replace('{count}', String(group.currentStudents || 0))}
                       </span>
                     </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="min-h-11 rounded-lg"
-                      onClick={() => onSelectGroup(group.id)}
-                    >
-                      {t('details')}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <GroupArchiveAction
+                        group={group}
+                        isPending={archivePendingGroupId === group.id}
+                        onArchive={setArchiveTarget}
+                        onRestore={setRestoreTarget}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="min-h-11 rounded-lg"
+                        onClick={() => onSelectGroup(group.id)}
+                      >
+                        {t('details')}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -353,6 +518,7 @@ export function TeacherGroupsSection({
           })}
         </div>
       )}
+      {archiveDialogs}
     </div>
   );
 }

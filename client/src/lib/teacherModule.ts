@@ -12,6 +12,9 @@ import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 export type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance';
 
+/** Which shelf of "My groups" is on screen: the live courses or the archive. */
+export type TeacherGroupView = 'active' | 'archive';
+
 export type TeacherLesson = {
   id: number;
   groupId: number;
@@ -27,6 +30,7 @@ export type TeacherLesson = {
   scheduledAt: string;
   durationMinutes: number;
   status: string;
+  groupIsArchived?: boolean;
 };
 
 export type TeacherGroupSchedule = {
@@ -51,6 +55,8 @@ export type TeacherGroup = {
   capacityLabel?: string;
   schedule?: TeacherGroupSchedule[];
   status: string;
+  isArchived?: boolean;
+  archivedAt?: string | null;
 };
 
 export type TeacherStudent = {
@@ -77,6 +83,45 @@ export type TeacherAttendanceRecord = {
 export type TeacherAttendanceDraft = Record<number, 'present' | 'absent'>;
 
 export type TeacherLessonProgress = { conducted: number; total: number };
+
+/**
+ * A shelved group is the teacher saying "I am done with this course", so its
+ * lessons leave every surface that speaks about work in hand — the week, the
+ * attendance calendar, today's panel, the period figures. The group's own page
+ * still counts them: a progress bar that fell to zero on archiving would be a
+ * lie about what was taught.
+ *
+ * Both sides of the check earn their place. The flag travels on the lesson, so
+ * a calendar that was handed lessons alone still knows; the group ids cover a
+ * dataset whose lessons predate that flag.
+ */
+export const lessonsOutsideArchivedGroups = <TLesson extends {
+  groupId: number;
+  groupIsArchived?: boolean;
+}>(
+  lessons: TLesson[],
+  groups: Array<{ id: number; isArchived?: boolean }>,
+): TLesson[] => {
+  const archivedGroupIds = new Set(
+    groups.filter((group) => group.isArchived).map((group) => Number(group.id)),
+  );
+  if (archivedGroupIds.size === 0 && !lessons.some((lesson) => lesson.groupIsArchived)) {
+    return lessons;
+  }
+  return lessons.filter((lesson) => (
+    lesson.groupIsArchived !== true && !archivedGroupIds.has(Number(lesson.groupId))
+  ));
+};
+
+/**
+ * Only a finished course can be shelved. `completed` is set by administration
+ * when the programme actually ends, and archiving a group that still teaches
+ * would hide live lessons from the calendar that exists to show them — so the
+ * button is offered exactly where the server would accept it.
+ */
+export const canArchiveGroup = (group: { status: string; isArchived?: boolean }) => (
+  !group.isArchived && group.status === 'completed'
+);
 
 /**
  * Semantic tones, not palette entries. Every tone is built from an accent at

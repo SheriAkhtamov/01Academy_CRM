@@ -199,6 +199,7 @@ export const getAcademyDataset = async (
       isTeacherScoped
       ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
           sc.name AS school_name, r.name AS room_name,
+          archived_by_user.full_name AS archived_by_name,
           (SELECT COUNT(*)::int
            FROM academy_student_group_enrollments enrollment
            JOIN academy_students s ON s.id = enrollment.student_id
@@ -217,10 +218,12 @@ export const getAcademyDataset = async (
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
+          LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
           WHERE g.teacher_id = $1
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
           sc.name AS school_name, r.name AS room_name,
+          archived_by_user.full_name AS archived_by_name,
           (SELECT COUNT(*)::int
            FROM academy_student_group_enrollments enrollment
            JOIN academy_students s ON s.id = enrollment.student_id
@@ -239,6 +242,7 @@ export const getAcademyDataset = async (
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
+          LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
           ORDER BY g.created_at DESC`)
     )),
     slice('leads', () => (
@@ -302,7 +306,8 @@ export const getAcademyDataset = async (
     )),
     slice('lessons', () => (
       query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
-        sc.name AS school_name
+        sc.name AS school_name,
+        COALESCE(g.is_archived, false) AS group_is_archived
       FROM academy_lessons l
       LEFT JOIN academy_groups g ON g.id = l.group_id
       LEFT JOIN academy_teachers t ON t.id = l.teacher_id

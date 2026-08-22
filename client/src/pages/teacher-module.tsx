@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useSearch } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
+import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { useTranslation } from '@/hooks/useTranslation';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,18 +35,20 @@ import { TeacherSectionSkeleton } from '@/components/ux/teacher/TeacherSectionSk
 import { TeacherTodayPanel } from '@/components/ux/teacher/TeacherTodayPanel';
 import { AlertTriangle } from 'lucide-react';
 import { sortAttendanceLessons } from '@/lib/attendance';
-import { ACADEMY_TIME_ZONE, resolveLocale } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, formatAcademyDate, resolveLocale } from '@/lib/localeFormat';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import {
   academyDayKey,
   dateFromDayKey,
   isDayKey,
+  lessonsOutsideArchivedGroups,
   shiftDayKey,
   weekStartDayKey,
   type TeacherAttendanceDraft,
   type TeacherAttendanceRecord,
   type TeacherGroup,
+  type TeacherGroupView,
   type TeacherLesson,
   type TeacherSection,
   type TeacherStudent,
@@ -190,6 +193,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const lessonParam = searchParams.get('lesson') ?? '';
   const groupParam = searchParams.get('group') ?? '';
   const weekParam = searchParams.get('week') ?? '';
+  const groupView: TeacherGroupView = searchParams.get('groups') === 'archive' ? 'archive' : 'active';
 
   const pathname = location.split('?')[0];
   const buildHref = useCallback((changes: Record<string, string | null>) => {
@@ -267,14 +271,28 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       toast({ title: t('error'), description: mutationError.message, variant: 'destructive' }),
   });
 
+  /* Archiving reshapes the group list, the schedule and every period figure on
+     the overview, so the whole teacher dataset is refetched rather than one
+     card being patched in place. */
+  const { archiveGroup, restoreGroup, pendingGroupId } = useGroupArchive<TeacherGroup>(
+    () => { invalidate(); },
+  );
+
   const groups: TeacherGroup[] = useMemo(() => data?.groups ?? [], [data]);
-  const lessons: TeacherLesson[] = useMemo(() => data?.lessons ?? [], [data]);
+  const allLessons: TeacherLesson[] = useMemo(() => data?.lessons ?? [], [data]);
   const students: TeacherStudent[] = useMemo(() => data?.students ?? [], [data]);
   const attendanceRecords: TeacherAttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
 
+  const activeGroups = useMemo(() => groups.filter((group) => !group.isArchived), [groups]);
+
+  const lessons: TeacherLesson[] = useMemo(
+    () => lessonsOutsideArchivedGroups(allLessons, groups),
+    [allLessons, groups],
+  );
+
   const groupLessonProgressById = useMemo(() => {
     const lessonCounts = new Map<number, { conducted: number; materialized: number }>();
-    for (const lesson of lessons) {
+    for (const lesson of allLessons) {
       const groupId = Number(lesson.groupId);
       const counts = lessonCounts.get(groupId) ?? { conducted: 0, materialized: 0 };
       counts.materialized += 1;
@@ -290,19 +308,19 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       });
     }
     return progress;
-  }, [groups, lessons]);
+  }, [allLessons, groups]);
 
   const totalStudents = useMemo(
-    () => groups.reduce((sum, group) => sum + (group.currentStudents || 0), 0),
-    [groups],
+    () => activeGroups.reduce((sum, group) => sum + (group.currentStudents || 0), 0),
+    [activeGroups],
   );
 
   /* A group with no declared capacity is excluded from the denominator instead
      of being padded with an invented 12 seats — a silently wrong occupancy is
      worse than an honestly partial one. */
   const capacityGroups = useMemo(
-    () => groups.filter((group) => Number(group.maxStudents) > 0),
-    [groups],
+    () => activeGroups.filter((group) => Number(group.maxStudents) > 0),
+    [activeGroups],
   );
   const totalCapacity = useMemo(
     () => capacityGroups.reduce((sum, group) => sum + Number(group.maxStudents), 0),
@@ -414,7 +432,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, [locale, periodAttendanceRecords, periodLessons, reportingRange]);
 
   const groupQuality = useMemo(() => {
-    const rows = groups.flatMap((group) => {
+    const rows = activeGroups.flatMap((group) => {
       const groupLessons = periodLessons.filter((lesson) => Number(lesson.groupId) === Number(group.id));
       if (groupLessons.length === 0) return [];
       const lessonIds = new Set(groupLessons.map((lesson) => Number(lesson.id)));
@@ -435,7 +453,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       }];
     });
     return rows.sort((left, right) => right.lessonVolume - left.lessonVolume);
-  }, [groups, periodAttendanceRecords, periodLessons]);
+  }, [activeGroups, periodAttendanceRecords, periodLessons]);
 
   /* `present` / `absent` are the labels on one student's two buttons; as pie
      slice names they came out as "Отсутствовал" — masculine singular about a
@@ -455,11 +473,11 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const teacherCourses = useMemo(() => {
     const courseIds = new Set<number>();
-    groups.forEach((group) => {
+    activeGroups.forEach((group) => {
       if (group.courseId) courseIds.add(group.courseId);
     });
     return data?.courses?.filter((course: any) => courseIds.has(course.id)) ?? [];
-  }, [groups, data]);
+  }, [activeGroups, data]);
 
   // Schedule: a real, navigable Monday-to-Sunday week synchronised with the URL.
   const currentWeekKey = weekStartDayKey(todayKey);
@@ -861,7 +879,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
           <TeacherOverviewKpis
             data={{
-              groupsCount: groups.length,
+              groupsCount: activeGroups.length,
               courseNames: teacherCourses.map((course: any) => course.name).join(', ') || t('noData'),
               totalStudents,
               totalCapacity,
@@ -900,13 +918,22 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       return (
         <TeacherGroupsSection
           groups={groups}
+          view={groupView}
           selectedGroup={selectedGroup}
           groupStudents={groupStudents}
           progressById={groupLessonProgressById}
           attendanceByStudentId={selectedGroupAttendanceByStudentId}
           dayNames={dayNames}
           dayNamesFull={dayNamesFull}
+          archivePendingGroupId={pendingGroupId}
           onSelectGroup={(groupId) => pushParams({ group: groupId === null ? null : String(groupId) })}
+          onChangeView={(nextView) => replaceParams({
+            groups: nextView === 'archive' ? 'archive' : null,
+            group: null,
+          })}
+          onArchiveGroup={(group) => archiveGroup.mutate(group)}
+          onRestoreGroup={(group) => restoreGroup.mutate(group)}
+          formatArchivedAt={(value) => formatAcademyDate(value, language)}
         />
       );
     }

@@ -645,6 +645,13 @@
       "when": 1788883200000,
       "tag": "0091_remove_capacity_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788969600000,
+      "tag": "0092_add_group_archive",
+      "breakpoints": true
     }
   ]
 }

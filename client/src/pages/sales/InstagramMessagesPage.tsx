@@ -2,32 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from 'wouter';
+import type { SanitizedUser } from '@shared/auth';
+import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import { apiRequest } from '@/lib/queryClient';
 import { SPRING } from '@/lib/motion';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useAuth } from '@/hooks/useAuth';
 import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
-import {
-  isInstagramLead,
-  isSyntheticInstagramPhone,
-  visibleLeadPhones,
-} from '@/lib/leadContact';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
+import type { DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage } from '@/components/ux/ModulePage';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 import {
   Tooltip,
   TooltipContent,
@@ -37,7 +34,6 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowDownUp,
-  AtSign,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -47,19 +43,15 @@ import {
   CornerUpLeft,
   ExternalLink,
   Image as ImageIcon,
-  Info,
   Instagram,
   Loader2,
   MailOpen,
   Maximize2,
   MessageCircle,
-  PanelRightClose,
-  PanelRightOpen,
   Plus,
   Play,
   RefreshCw,
   RotateCw,
-  Save,
   Search,
   SearchX,
   Send,
@@ -190,101 +182,35 @@ const safeHttpsUrl = (value?: string): string | undefined => {
   }
 };
 
-interface LookupOption {
-  id: number;
-  name: string;
-  code?: string;
-  channel?: string | null;
-  isActive?: boolean;
-  isPipeline?: boolean;
-  sortOrder?: number;
-}
-
-interface LeadDetails {
-  id: number;
-  contactName: string;
-  phone?: string | null;
-  phoneNumbers?: string[] | null;
-  messenger?: string | null;
-  studentName?: string | null;
-  studentAge?: number | null;
-  courseId?: number | null;
-  sourceId: number;
-  sourceName?: string | null;
-  sourceChannel?: string | null;
-  statusCode: string;
-  managerId?: number | null;
-  managerName?: string | null;
-  language?: string | null;
-  comment?: string | null;
-  updatedAt?: string | null;
-}
-
 interface SalesModuleData {
-  courses?: LookupOption[];
-  sources?: LookupOption[];
-  statuses?: LookupOption[];
-}
-
-interface LeadDraft {
-  contactName: string;
-  phoneNumbers: string[];
-  messenger: string;
-  studentName: string;
-  studentAge: string;
-  courseId: string;
-  sourceId: string;
-  statusCode: string;
-  language: string;
-  comment: string;
+  courses?: Array<{ id: number; name: string; lessonDurationMinutes?: number | null }>;
+  schools?: Array<{ id: number; name: string; isActive?: boolean }>;
+  groups?: Array<{
+    id: number;
+    name: string;
+    courseId?: number | null;
+    schoolId?: number | null;
+    status?: string;
+    currentStudents?: number;
+    reservedStudents?: number;
+    maxStudents?: number;
+  }>;
+  sources?: Array<{ id: number; name: string }>;
+  statuses?: Array<{
+    code: string;
+    name: string;
+    isActive?: boolean;
+    isPipeline?: boolean;
+    color?: string;
+    sortOrder?: number;
+  }>;
+  leads?: DemoLessonDialogLead[];
 }
 
 type ConversationFilter = 'all' | 'unread' | 'reply' | 'closed';
 
-const emptyLeadDraft: LeadDraft = {
-  contactName: '',
-  phoneNumbers: [''],
-  messenger: '',
-  studentName: '',
-  studentAge: '',
-  courseId: '',
-  sourceId: '',
-  statusCode: 'new_request',
-  language: 'ru',
-  comment: '',
-};
-
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'IG';
-
-const compact = (value: string) => value.trim();
-const compactPhones = (values: string[]) => {
-  const seen = new Set<string>();
-  return values.flatMap((value) => {
-    const phone = compact(value);
-    const key = phone.replace(/\D/g, '');
-    if (!phone || !key || seen.has(key)) return [];
-    seen.add(key);
-    return [phone];
-  });
-};
-
-const buildLeadDraft = (lead: LeadDetails): LeadDraft => {
-  const phoneNumbers = visibleLeadPhones(lead);
-
-  return {
-    contactName: lead.contactName ?? '',
-    phoneNumbers: phoneNumbers.length > 0 ? phoneNumbers : [''],
-    messenger: lead.messenger ?? '',
-    studentName: lead.studentName ?? '',
-    studentAge: lead.studentAge ? String(lead.studentAge) : '',
-    courseId: lead.courseId ? String(lead.courseId) : '',
-    sourceId: lead.sourceId ? String(lead.sourceId) : '',
-    statusCode: lead.statusCode ?? 'new_request',
-    language: lead.language ?? 'ru',
-    comment: lead.comment ?? '',
-  };
-};
 
 const startOfDay = (value: Date) =>
   new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
@@ -781,536 +707,21 @@ function Popover({
   );
 }
 
-function LeadPanel({
-  leadId,
-  conversation,
-  moduleData,
-  statusName,
-  replyAvailable,
-  replyWindowDeadlineText,
-  onCollapsedChange,
-  onChanged,
-  onCloseMobile,
-}: {
-  leadId?: number | null;
-  conversation?: InstagramConversation | null;
-  moduleData?: SalesModuleData;
-  statusName: (code: string) => string;
-  replyAvailable?: boolean;
-  replyWindowDeadlineText?: string;
-  onCollapsedChange: () => void;
-  onChanged: () => void;
-  onCloseMobile: () => void;
-}) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<LeadDraft>(emptyLeadDraft);
-  const hydratedKey = useRef<string | null>(null);
-  const hydratedLeadId = useRef<number | null>(null);
-  const dirtyDraftFields = useRef<Set<keyof LeadDraft>>(new Set());
-
-  const leadQuery = useQuery<LeadDetails>({
-    queryKey: ['/api/academy/leads', leadId],
-    queryFn: () => apiRequest('GET', `/api/academy/leads/${leadId}`),
-    enabled: Boolean(leadId),
-  });
-
-  const lead = leadQuery.data;
-  const leadSnapshotKey = useMemo(() => {
-    if (!lead) return null;
-    return [
-      lead.id,
-      lead.contactName,
-      (lead.phoneNumbers ?? []).join(','),
-      lead.phone ?? '',
-      lead.messenger ?? '',
-      lead.studentName ?? '',
-      lead.studentAge ?? '',
-      lead.courseId ?? '',
-      lead.sourceId ?? '',
-      lead.statusCode,
-      lead.language ?? '',
-      lead.comment ?? '',
-      lead.updatedAt ?? '',
-    ].join('|');
-  }, [lead]);
-
-  useEffect(() => {
-    if (!lead || !leadSnapshotKey) return;
-    const changedLead = hydratedLeadId.current !== lead.id;
-    if (changedLead) {
-      dirtyDraftFields.current.clear();
-      setDraft(buildLeadDraft(lead));
-      hydratedKey.current = leadSnapshotKey;
-      hydratedLeadId.current = lead.id;
-    } else if (hydratedKey.current !== leadSnapshotKey) {
-      const serverDraft = buildLeadDraft(lead);
-      setDraft((current) => Object.fromEntries(
-        (Object.keys(serverDraft) as Array<keyof LeadDraft>).map((field) => [
-          field,
-          dirtyDraftFields.current.has(field) ? current[field] : serverDraft[field],
-        ]),
-      ) as unknown as LeadDraft);
-      hydratedKey.current = leadSnapshotKey;
-    }
-  }, [lead, leadSnapshotKey]);
-
-  const baselineDraft = useMemo(() => (lead ? buildLeadDraft(lead) : emptyLeadDraft), [lead]);
-  const isDirty = useMemo(
-    () => JSON.stringify(draft) !== JSON.stringify(baselineDraft),
-    [baselineDraft, draft],
-  );
-
-  const courses = moduleData?.courses ?? [];
-  const sources = moduleData?.sources ?? [];
-  const statuses = useMemo(
-    () => [...(moduleData?.statuses ?? [])]
-      .filter((status) => (
-        status.isActive !== false
-        && (
-          !['enrolled', 'paid'].includes(String(status.code))
-          || status.code === lead?.statusCode
-        )
-      ))
-      .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
-    [lead?.statusCode, moduleData?.statuses],
-  );
-
-  const updateLead = useMutation({
-    mutationFn: () => {
-      const nextPhoneNumbers = compactPhones(draft.phoneNumbers);
-      const changed = dirtyDraftFields.current;
-      const hasOnlyHiddenInstagramPhone = Boolean(
-        lead
-        && nextPhoneNumbers.length === 0
-        && visibleLeadPhones(lead).length === 0
-        && (
-          isSyntheticInstagramPhone(lead.phone)
-          || (lead.phoneNumbers ?? []).some(isSyntheticInstagramPhone)
-        ),
-      );
-
-      const payload: Record<string, unknown> = { expectedUpdatedAt: lead?.updatedAt };
-      if (changed.has('contactName')) payload.contactName = compact(draft.contactName);
-      if (changed.has('phoneNumbers') && !hasOnlyHiddenInstagramPhone) payload.phoneNumbers = nextPhoneNumbers;
-      if (changed.has('messenger')) payload.messenger = compact(draft.messenger) || null;
-      if (changed.has('studentName')) payload.studentName = compact(draft.studentName) || null;
-      if (changed.has('studentAge')) payload.studentAge = compact(draft.studentAge) ? Number(draft.studentAge) : null;
-      if (changed.has('courseId')) payload.courseId = draft.courseId ? Number(draft.courseId) : null;
-      if (changed.has('sourceId')) payload.sourceId = Number(draft.sourceId || lead?.sourceId);
-      if (changed.has('statusCode')) payload.statusCode = draft.statusCode;
-      if (changed.has('language')) payload.language = draft.language;
-      if (changed.has('comment')) payload.comment = compact(draft.comment) || null;
-      return apiRequest('PATCH', `/api/academy/leads/${leadId}`, payload);
-    },
-    onSuccess: async (updatedLead: LeadDetails) => {
-      dirtyDraftFields.current.clear();
-      setDraft(buildLeadDraft(updatedLead));
-      hydratedKey.current = null;
-      toast({ title: t('leadSaved') });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['/api/academy/leads', leadId] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
-      ]);
-      onChanged();
-    },
-    onError: (error: Error) => {
-      toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' });
-    },
-  });
-
-  const patchDraft = (changes: Partial<LeadDraft>) => {
-    (Object.keys(changes) as Array<keyof LeadDraft>).forEach((field) => dirtyDraftFields.current.add(field));
-    setDraft((current) => ({ ...current, ...changes }));
-  };
-
-  const Header = (
-    <div className="flex items-center justify-between gap-2 border-b border-border p-4">
-      <div className="flex min-w-0 items-center gap-2">
-        <UserRoundCog className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <h2 className="truncate text-sm font-semibold text-foreground">{t('leadCard')}</h2>
-      </div>
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="xl:hidden"
-          aria-label={t('closeLeadPanel')}
-          onClick={onCloseMobile}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="hidden xl:inline-flex"
-          aria-label={t('collapseLeadCard')}
-          onClick={onCollapsedChange}
-        >
-          <PanelRightClose className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-
-  if (!leadId) {
-    const participantLabel = conversation?.participantName
-      || conversation?.participantUsername
-      || conversation?.contactName
-      || t('instagramUser');
-    return (
-      <aside className="flex min-h-0 flex-col border-t border-border bg-muted/20 xl:border-l xl:border-t-0">
-        {Header}
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('conversationDetails')}</p>
-          <div className="rounded-xl border border-border bg-background p-4">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-11 w-11">
-                {conversation?.participantProfilePictureUrl ? (
-                  <AvatarImage src={conversation.participantProfilePictureUrl} alt="" />
-                ) : null}
-                <AvatarFallback>{initials(participantLabel)}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-foreground">{participantLabel}</p>
-                {conversation?.participantUsername ? (
-                  <p className="truncate text-xs text-muted-foreground">@{conversation.participantUsername}</p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <AtSign className="h-3.5 w-3.5 shrink-0" />
-                <span className="shrink-0 font-medium text-slate-400">{t('conversationAccount')}:</span>
-                <span className="truncate">@{conversation?.accountUsername}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={replyAvailable ? 'success' : 'secondary'}>
-                  {replyAvailable ? t('replyWindowOpen') : t('replyWindowClosed')}
-                </Badge>
-                {conversation?.leadId ? <Badge variant="outline">#{conversation.leadId}</Badge> : null}
-              </div>
-              {replyAvailable && replyWindowDeadlineText ? (
-                <p className="text-[11px] text-muted-foreground">
-                  {t('replyWindowEndsAt').replace('{time}', replyWindowDeadlineText)}
-                </p>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4">
-            <div className="flex items-start gap-2">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <div>
-                <p className="text-sm font-medium text-amber-800">{t('notLinkedToLead')}</p>
-                <p className="mt-1 text-xs text-amber-700">{t('notLinkedToLeadHint')}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-    );
-  }
-
-  if (leadQuery.isError) {
-    return (
-      <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
-        {Header}
-        <div className="p-4">
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-            <AlertDescription>
-              <Button className="mt-3" variant="outline" size="sm" onClick={() => leadQuery.refetch()}>
-                {t('retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      </aside>
-    );
-  }
-
-  if (leadQuery.isLoading || !lead) {
-    return (
-      <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
-        {Header}
-        <div className="space-y-4 p-4">
-          <Skeleton className="h-8 w-44" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-28 w-full" />
-        </div>
-      </aside>
-    );
-  }
-
-  return (
-    <aside className="flex min-h-0 flex-col border-t border-border bg-background xl:border-l xl:border-t-0">
-      <div className="border-b border-border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-muted-foreground">{t('leadCard')}</p>
-            <h2 className="mt-1 truncate text-base font-semibold text-foreground">{lead.contactName}</h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              <span>{statusName(lead.statusCode)}</span>
-              {lead.managerName ? (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <UserRoundCog className="h-3.5 w-3.5" />
-                  {lead.managerName}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <Button asChild variant="outline" size="icon" aria-label={t('openPipeline')}>
-              <a href={`/sales/pipeline?lead=${lead.id}`}>
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="xl:hidden"
-              aria-label={t('closeLeadPanel')}
-              onClick={onCloseMobile}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="hidden xl:inline-flex"
-              aria-label={t('collapseLeadCard')}
-              onClick={onCollapsedChange}
-            >
-              <PanelRightClose className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-5 p-4">
-          <div className="space-y-2">
-            <Label htmlFor="instagram-lead-contact">{t('contactPersonName')}</Label>
-            <Input
-              id="instagram-lead-contact"
-              value={draft.contactName}
-              onChange={(event) => patchDraft({ contactName: event.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="space-y-2">
-              <Label htmlFor="instagram-lead-phone-0">{t('phone')}</Label>
-              {draft.phoneNumbers.map((phone, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    id={`instagram-lead-phone-${index}`}
-                    value={phone}
-                    onChange={(event) => {
-                      const phoneNumbers = [...draft.phoneNumbers];
-                      phoneNumbers[index] = event.target.value;
-                      patchDraft({ phoneNumbers });
-                    }}
-                    placeholder="+998..."
-                  />
-                  {draft.phoneNumbers.length > 1 ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      aria-label={t('removePhone')}
-                      onClick={() => patchDraft({ phoneNumbers: draft.phoneNumbers.filter((_, phoneIndex) => phoneIndex !== index) })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  ) : null}
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => patchDraft({ phoneNumbers: [...draft.phoneNumbers, ''] })}
-              >
-                <Plus className="h-4 w-4" />
-                {t('addPhone')}
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="instagram-lead-messenger">{t('instagramContactChannel')}</Label>
-              <Input
-                id="instagram-lead-messenger"
-                value={draft.messenger}
-                onChange={(event) => patchDraft({ messenger: event.target.value })}
-                placeholder="@username"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="space-y-2">
-              <Label htmlFor="instagram-student-name">{t('studentName')}</Label>
-              <Input
-                id="instagram-student-name"
-                value={draft.studentName}
-                onChange={(event) => patchDraft({ studentName: event.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="instagram-student-age">{t('age')}</Label>
-              <Input
-                id="instagram-student-age"
-                type="number"
-                min="1"
-                value={draft.studentAge}
-                onChange={(event) => patchDraft({ studentAge: event.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="instagram-lead-course">{t('course')}</Label>
-            <Select
-              value={draft.courseId || 'none'}
-              onValueChange={(value) => patchDraft({ courseId: value === 'none' ? '' : value })}
-              disabled={['enrolled', 'paid'].includes(lead.statusCode)}
-            >
-              <SelectTrigger id="instagram-lead-course" aria-label={t('course')}>
-                <SelectValue placeholder={t('courseNotSelected')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="none">{t('courseNotSelected')}</SelectItem>
-                  {courses.map((course) => (
-                    <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="space-y-2">
-              <Label htmlFor="instagram-lead-status">{t('status')}</Label>
-              <Select
-                value={draft.statusCode}
-                onValueChange={(value) => patchDraft({ statusCode: value })}
-                disabled={lead.statusCode === 'paid'}
-              >
-                <SelectTrigger id="instagram-lead-status" aria-label={t('status')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {statuses.map((status) => (
-                      <SelectItem key={status.code ?? status.id} value={String(status.code)}>
-                        {statusName(String(status.code))}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="instagram-lead-source">{t('source')}</Label>
-              <Select value={draft.sourceId} onValueChange={(value) => patchDraft({ sourceId: value })}>
-                <SelectTrigger id="instagram-lead-source" aria-label={t('source')}>
-                  <SelectValue placeholder={t('selectSource')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {sources.map((source) => (
-                      <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="instagram-lead-language">{t('communicationLanguage')}</Label>
-            <Select value={draft.language} onValueChange={(value) => patchDraft({ language: value })}>
-              <SelectTrigger id="instagram-lead-language" aria-label={t('communicationLanguage')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="ru">{t('russian')}</SelectItem>
-                  <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="instagram-lead-comment">{t('comment')}</Label>
-            <Textarea
-              id="instagram-lead-comment"
-              value={draft.comment}
-              onChange={(event) => patchDraft({ comment: event.target.value })}
-              className="min-h-24 resize-none"
-            />
-          </div>
-        </div>
-      </ScrollArea>
-
-      <div className="border-t border-border bg-muted/20 p-4">
-        {isDirty ? (
-          <p className="mb-2 text-xs font-medium text-amber-700" aria-live="polite">
-            {t('unsavedChanges')}
-          </p>
-        ) : null}
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="flex-1"
-            onClick={() => {
-              dirtyDraftFields.current.clear();
-              setDraft(baselineDraft);
-              hydratedKey.current = leadSnapshotKey;
-            }}
-            disabled={!isDirty || updateLead.isPending}
-          >
-            {t('reset')}
-          </Button>
-          <Button
-            className="flex-[1.4]"
-            onClick={() => updateLead.mutate()}
-            disabled={!isDirty || updateLead.isPending || !compact(draft.contactName) || !draft.sourceId}
-          >
-            {updateLead.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {updateLead.isPending ? t('saving') : t('saveChanges')}
-          </Button>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
 export default function MessagesPage() {
   const { t, language } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
+  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const isAdministrationModule = hasLeadershipAccess(user);
+  const hasSalesModule = getAssignedModules(user).includes('sales');
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   const [draftsByConversation, setDraftsByConversation] = useState<Record<number, string>>({});
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ConversationFilter>('all');
-  const [leadCollapsed, setLeadCollapsed] = useState(false);
+  const [leadSheetLeadId, setLeadSheetLeadId] = useState<number | null>(null);
+  const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
-  const [mobileLeadOpen, setMobileLeadOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
   const [conversationSearch, setConversationSearch] = useState('');
@@ -1358,6 +769,10 @@ export default function MessagesPage() {
     queryKey: ['/api/academy/modules/sales'],
   });
 
+  const usersQuery = useQuery<SanitizedUser[]>({
+    queryKey: ['/api/users'],
+  });
+
   const conversationsQuery = useQuery<InstagramConversation[]>({
     queryKey: ['/api/instagram/conversations'],
   });
@@ -1373,6 +788,32 @@ export default function MessagesPage() {
   const conversations = conversationsQuery.data ?? [];
   const syncStatus = syncStatusQuery.data;
   const syncStatusRunning = syncStatus?.status === 'running';
+  const salesManagers = useMemo(
+    () => (usersQuery.data ?? [])
+      .filter((employee) => getAssignedModules(employee).includes('sales') && employee.isActive)
+      .map((employee) => ({ id: employee.id, fullName: employee.fullName })),
+    [usersQuery.data],
+  );
+  const leadSheetManagers = useMemo(
+    () => isAdministrationModule
+      ? salesManagers
+      : salesManagers.filter((manager) => Number(manager.id) === Number(user?.id)),
+    [isAdministrationModule, salesManagers, user?.id],
+  );
+  const activePipelineStatusCodes = useMemo(
+    () => new Set(
+      (moduleQuery.data?.statuses ?? [])
+        .filter((status) => status.isActive !== false && status.isPipeline !== false)
+        .map((status) => status.code),
+    ),
+    [moduleQuery.data?.statuses],
+  );
+  const demoLeads = useMemo(
+    () => (moduleQuery.data?.leads ?? []).filter((lead) => (
+      !lead.isArchived && activePipelineStatusCodes.has(String(lead.statusCode))
+    )),
+    [activePipelineStatusCodes, moduleQuery.data?.leads],
+  );
 
   // The API provides the initial state, but a reply window can expire while the
   // inbox is open. Re-evaluate it locally so the composer never looks usable
@@ -1497,8 +938,6 @@ export default function MessagesPage() {
     if (!target) return;
     setFilter('all');
     setSearch('');
-    setLeadCollapsed(false);
-    setMobileLeadOpen(false);
     setReplyTarget(null);
     if (target.id !== selectedConversationId) {
       setSelectedConversationId(target.id);
@@ -1676,6 +1115,38 @@ export default function MessagesPage() {
     return status?.name ?? code;
   };
 
+  const dateTime = (value: string | null | undefined) => {
+    if (!value) return t('noData');
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return t('noData');
+    return date.toLocaleString(locale, {
+      timeZone: ACADEMY_TIME_ZONE,
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  };
+
+  const money = (value: number | string | null | undefined) =>
+    `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
+
+  const openLeadSheet = (leadId?: number | null) => {
+    if (!leadId) return;
+    setLeadSheetLeadId(leadId);
+    setLeadSheetOpen(true);
+  };
+
+  const handleLeadSheetOpenChange = (open: boolean) => {
+    setLeadSheetOpen(open);
+    if (!open) setLeadSheetLeadId(null);
+  };
+
+  const invalidateLeadContext = () => {
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
+      queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] }),
+    ]);
+  };
+
   const autoResize = () => {
     const el = textareaRef.current;
     if (!el) return;
@@ -1738,7 +1209,6 @@ export default function MessagesPage() {
     setQuickOpen(false);
     setEmojiOpen(false);
     setReplyTarget(null);
-    setMobileLeadOpen(false);
     if (window.matchMedia('(max-width: 1279px)').matches) {
       setMobileView('thread');
       requestAnimationFrame(() => {
@@ -1819,10 +1289,6 @@ export default function MessagesPage() {
     );
   }
 
-  const gridCols = leadCollapsed
-    ? 'xl:grid-cols-[320px_minmax(0,1fr)_56px]'
-    : 'xl:grid-cols-[320px_minmax(0,1fr)_340px]';
-
   return (
     <ModulePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
@@ -1900,7 +1366,7 @@ export default function MessagesPage() {
             </div>
           </div>
         ) : (
-          <div className={cn('grid min-h-0 flex-1 grid-cols-1', gridCols)}>
+          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)]">
             {/* Conversation list */}
             <div
               className={cn(
@@ -2195,30 +1661,26 @@ export default function MessagesPage() {
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className={cn('hidden xl:inline-flex', !leadCollapsed && 'bg-muted text-primary')}
-                            aria-label={leadCollapsed ? t('expandLeadCard') : t('collapseLeadCard')}
-                            aria-pressed={!leadCollapsed}
-                            onClick={() => setLeadCollapsed((collapsed) => !collapsed)}
-                          >
-                            {leadCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-                          </Button>
+                          <span className="inline-flex">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className={leadSheetOpen ? 'bg-muted text-primary' : ''}
+                              aria-label={selectedConversation.leadId ? t('openLeadPanel') : t('notLinkedToLead')}
+                              aria-haspopup="dialog"
+                              aria-expanded={leadSheetOpen && leadSheetLeadId === selectedConversation.leadId}
+                              disabled={!selectedConversation.leadId}
+                              onClick={() => openLeadSheet(selectedConversation.leadId)}
+                            >
+                              <UserRoundCog className="h-5 w-5" />
+                            </Button>
+                          </span>
                         </TooltipTrigger>
-                        <TooltipContent>{leadCollapsed ? t('expandLeadCard') : t('collapseLeadCard')}</TooltipContent>
+                        <TooltipContent>
+                          {selectedConversation.leadId ? t('openLeadPanel') : t('notLinkedToLead')}
+                        </TooltipContent>
                       </Tooltip>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="xl:hidden"
-                        aria-label={t('openLeadPanel')}
-                        onClick={() => setMobileLeadOpen(true)}
-                      >
-                        <UserRoundCog className="h-5 w-5" />
-                      </Button>
                     </div>
                   </div>
 
@@ -2697,79 +2159,33 @@ export default function MessagesPage() {
                 </div>
               )}
             </div>
-
-            {/* Lead panel (desktop) */}
-            {leadCollapsed ? (
-              <div className="hidden xl:flex flex-col items-center border-l border-border bg-muted/20 py-3">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10"
-                      aria-label={t('expandLeadCard')}
-                      onClick={() => setLeadCollapsed(false)}
-                    >
-                      <PanelRightOpen className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">{t('expandLeadCard')}</TooltipContent>
-                </Tooltip>
-                <span className="mt-3 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground [writing-mode:vertical-rl]">
-                  {t('leadCard')}
-                </span>
-              </div>
-            ) : (
-              <div className="hidden min-h-0 flex-col border-l border-border bg-background xl:flex">
-                <LeadPanel
-                  leadId={selectedConversation?.leadId}
-                  conversation={selectedConversation}
-                  moduleData={moduleQuery.data}
-                  statusName={statusName}
-                  replyAvailable={selectedCanReply}
-                  replyWindowDeadlineText={selectedReplyDeadline}
-                  onCollapsedChange={() => setLeadCollapsed(true)}
-                  onChanged={() => {
-                    queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-                    queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
-                  }}
-                  onCloseMobile={() => setMobileLeadOpen(false)}
-                />
-              </div>
-            )}
-
-            {/* Lead panel (mobile overlay) */}
-            <Sheet open={mobileLeadOpen} onOpenChange={setMobileLeadOpen}>
-              <SheetContent
-                side="right"
-                showCloseButton={false}
-                className="flex h-dvh w-full max-w-md flex-col gap-0 border-l border-border p-0 sm:max-w-md xl:hidden"
-              >
-                <SheetHeader className="sr-only">
-                  <SheetTitle>{t('leadCard')}</SheetTitle>
-                </SheetHeader>
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <LeadPanel
-                    leadId={selectedConversation?.leadId}
-                    conversation={selectedConversation}
-                    moduleData={moduleQuery.data}
-                    statusName={statusName}
-                    replyAvailable={selectedCanReply}
-                    replyWindowDeadlineText={selectedReplyDeadline}
-                    onCollapsedChange={() => setMobileLeadOpen(false)}
-                    onChanged={() => {
-                      queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
-                      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
-                    }}
-                    onCloseMobile={() => setMobileLeadOpen(false)}
-                  />
-                </div>
-              </SheetContent>
-            </Sheet>
           </div>
         )}
       </Card>
+
+      <LeadDetailSheet
+        leadId={leadSheetLeadId}
+        open={leadSheetOpen}
+        onOpenChange={handleLeadSheetOpenChange}
+        courses={moduleQuery.data?.courses ?? []}
+        schools={moduleQuery.data?.schools ?? []}
+        demoLeads={demoLeads}
+        groups={moduleQuery.data?.groups ?? []}
+        sources={moduleQuery.data?.sources ?? []}
+        statuses={moduleQuery.data?.statuses ?? []}
+        managers={leadSheetManagers}
+        currentUserId={user?.id}
+        canClaimUnassignedLead={hasSalesModule && !isAdministrationModule}
+        leadStatusName={statusName}
+        dateTime={dateTime}
+        money={money}
+        onChanged={invalidateLeadContext}
+        onMerged={(retainedLeadId) => {
+          setLeadSheetLeadId(retainedLeadId);
+          setLeadSheetOpen(true);
+          invalidateLeadContext();
+        }}
+      />
 
       {lightbox ? (
         <div

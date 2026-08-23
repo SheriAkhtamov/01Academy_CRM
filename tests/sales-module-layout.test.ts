@@ -67,4 +67,15 @@ describe('sales module layout', () => {
     expect(messages).toContain('className="mt-3 flex min-h-[30rem] flex-1 flex-col overflow-hidden');
     expect(messages).not.toContain('lg:mt-6');
   });
+
+  it('opens the shared lead sheet from the inbox instead of reserving an inline panel', () => {
+    expect(messages).toContain("import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';");
+    expect(messages).toContain('<LeadDetailSheet');
+    expect(messages).toContain('onClick={() => openLeadSheet(selectedConversation.leadId)}');
+    expect(messages).toContain('disabled={!selectedConversation.leadId}');
+    expect(messages).toContain('xl:grid-cols-[320px_minmax(0,1fr)]');
+    expect(messages).not.toContain('function LeadPanel(');
+    expect(messages).not.toContain('xl:grid-cols-[320px_minmax(0,1fr)_340px]');
+    expect(messages).not.toContain('Lead panel (desktop)');
+  });
 });

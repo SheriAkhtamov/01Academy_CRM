@@ -1,12 +1,19 @@
 import type { WebSocketEvent } from '@shared/websocket';
 
 export type RealtimeTransport = (event: WebSocketEvent) => void;
+export type RealtimeUserDisconnect = (userId: number) => void;
 
 const noopTransport: RealtimeTransport = () => undefined;
+const noopUserDisconnect: RealtimeUserDisconnect = () => undefined;
 let activeTransport: RealtimeTransport = noopTransport;
+let activeUserDisconnect: RealtimeUserDisconnect = noopUserDisconnect;
 
 export const publishRealtimeEvent = (event: WebSocketEvent): void => {
   activeTransport(event);
+};
+
+export const disconnectRealtimeUser = (userId: number): void => {
+  activeUserDisconnect(userId);
 };
 
 /**
@@ -20,6 +27,18 @@ export const setRealtimeTransport = (transport: RealtimeTransport): (() => void)
   return () => {
     if (activeTransport === transport) {
       activeTransport = noopTransport;
+    }
+  };
+};
+
+export const setRealtimeUserDisconnect = (
+  disconnect: RealtimeUserDisconnect,
+): (() => void) => {
+  activeUserDisconnect = disconnect;
+
+  return () => {
+    if (activeUserDisconnect === disconnect) {
+      activeUserDisconnect = noopUserDisconnect;
     }
   };
 };

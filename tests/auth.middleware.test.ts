@@ -54,6 +54,26 @@ describe("auth middleware", () => {
     expect(response.body).toEqual({ error: "Unauthorized" });
   });
 
+  it("destroys access for an archived account even if it is still marked active", async () => {
+    mockStorage.getUser.mockResolvedValue({
+      id: 7,
+      fullName: "Archived User",
+      email: "archived@example.com",
+      password: "hashed",
+      module: "sales",
+      isActive: true,
+      isArchived: true,
+      hasReportAccess: false,
+    });
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: 7 });
+
+    const response = await agent.get("/auth-only");
+
+    expect(response.status).toBe(401);
+  });
+
   it("blocks non-admin users from admin routes", async () => {
     mockStorage.getUser.mockResolvedValue({
       id: 7,

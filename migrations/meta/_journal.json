@@ -652,6 +652,13 @@
       "when": 1788969600000,
       "tag": "0092_add_group_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789056000000,
+      "tag": "0093_add_employee_archive",
+      "breakpoints": true
     }
   ]
 }

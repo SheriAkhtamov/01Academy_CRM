@@ -46,7 +46,7 @@ class AuthService {
       passwordForComparison,
       user?.password ?? DUMMY_PASSWORD_HASH,
     );
-    if (!user || !user.isActive || !isValidPassword) {
+    if (!user || !user.isActive || user.isArchived || !isValidPassword) {
       return null;
     }
 
@@ -64,7 +64,13 @@ class AuthService {
   }
 
   sanitizeUser(user: User): SanitizedUser {
-    const { password, credentialPasswordCiphertext, ...sanitizedUser } = user;
+    const {
+      password,
+      credentialPasswordCiphertext,
+      archivedPreviousIsActive,
+      archivedPreviousOnlinePbxIncomingEnabled,
+      ...sanitizedUser
+    } = user;
     return sanitizedUser;
   }
 }

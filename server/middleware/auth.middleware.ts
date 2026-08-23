@@ -11,7 +11,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
         }
 
         const user = await storage.getUser(req.session.userId);
-        if (!user || !user.isActive) {
+        if (!user || !user.isActive || user.isArchived) {
             req.session.destroy(() => { });
             return res.status(401).json({ error: 'Invalid or inactive user' });
         }

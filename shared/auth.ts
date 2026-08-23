@@ -11,6 +11,9 @@ export type SanitizedUser = {
   module: AcademyModule;
   hasReportAccess: boolean | null;
   isActive: boolean | null;
+  isArchived: boolean;
+  archivedAt: Date | string | null;
+  archivedBy: number | null;
   isOnline: boolean | null;
   onlinePbxIncomingEnabled: boolean;
   lastSeenAt: Date | string | null;

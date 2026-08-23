@@ -26,7 +26,7 @@ export async function resolveAuthSession(
     ? await storage.getUser(sessionData.userId)
     : undefined;
 
-  if (sessionData.userId && (!user || !user.isActive)) {
+  if (sessionData.userId && (!user || !user.isActive || user.isArchived)) {
     return {
       session: anonymousSession(),
       shouldDestroy: true,

@@ -276,6 +276,188 @@ describe('user route validation', () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it('never allows an administrator to archive their own account', async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+
+    const response = await agent.post('/api/users/7/archive');
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('cannotArchiveOwnAccount');
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
+  it('transfers all responsibilities and revokes access before archiving an employee', async () => {
+    const departingUser = {
+      ...administrationUser,
+      id: 16,
+      fullName: 'Departing Sales User',
+      module: 'sales',
+      modules: ['sales'],
+      isArchived: false,
+    };
+    const archivedUser = { ...departingUser, isActive: false, isArchived: true };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(departingUser)
+      .mockResolvedValueOnce(archivedUser);
+
+    const statements: string[] = [];
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        statements.push(statement.trim());
+        if (statement.includes('AS has_leadership')) {
+          return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
+        }
+        if (statement.includes('AS lead_count')) {
+          return { rows: [{ lead_count: 1, student_count: 1, open_task_count: 1 }] };
+        }
+        if (statement.includes('SELECT u.id, u.full_name')) {
+          return { rows: [{ id: 8, full_name: 'Replacement Sales User' }] };
+        }
+        if (statement.includes('FROM academy_leads') && statement.includes('FOR UPDATE')) {
+          return { rows: [{ id: 10 }] };
+        }
+        if (statement.includes('FROM academy_students') && statement.includes('FOR UPDATE')) {
+          return { rows: [{ id: 20 }] };
+        }
+        if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 1 };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive').send({ leadTransferManagerId: 8 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.transferredResponsibilityCount).toBe(3);
+    const transferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_leads'));
+    const archiveIndex = statements.findIndex((statement) => statement.includes('SET is_archived = true'));
+    const sessionRevocationIndex = statements.findIndex((statement) => statement.includes('DELETE FROM "session"'));
+    const commitIndex = statements.findIndex((statement) => statement === 'COMMIT');
+    expect(archiveIndex).toBeGreaterThan(transferIndex);
+    expect(sessionRevocationIndex).toBeGreaterThan(archiveIndex);
+    expect(commitIndex).toBeGreaterThan(sessionRevocationIndex);
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('blocks archiving the last active administrator inside the access lock', async () => {
+    const target = { ...administrationUser, id: 16, isArchived: false };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(target);
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        if (statement.includes('AS has_leadership')) {
+          return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: true }] };
+        }
+        if (statement.includes('COUNT(*)::int AS count')) return { rows: [{ count: 1 }] };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive');
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('cannotArchiveLastLeadershipAccount');
+    expect(client.query.mock.calls.some(([statement]) => String(statement).includes('SET is_archived = true'))).toBe(false);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('keeps repeated archive requests idempotent', async () => {
+    const archivedUser = {
+      ...administrationUser,
+      id: 16,
+      module: 'sales',
+      modules: ['sales'],
+      isActive: false,
+      isArchived: true,
+    };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(archivedUser)
+      .mockResolvedValueOnce(archivedUser);
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        if (statement.includes('AS has_leadership')) {
+          return { rows: [{ id: 16, is_active: false, is_archived: true, has_leadership: false }] };
+        }
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive');
+
+    expect(response.status).toBe(200);
+    expect(response.body.alreadyArchived).toBe(true);
+    expect(client.query.mock.calls.some(([statement]) => String(statement).includes('SET is_archived = true'))).toBe(false);
+    expect(mockStorage.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('restores the employee previous inactive state without granting access', async () => {
+    const archivedUser = {
+      ...administrationUser,
+      id: 16,
+      module: 'sales',
+      modules: ['sales'],
+      isActive: false,
+      isArchived: true,
+    };
+    const restoredUser = { ...archivedUser, isArchived: false };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(archivedUser)
+      .mockResolvedValueOnce(restoredUser);
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
+        if (statement.includes('archived_previous_is_active')) {
+          return {
+            rows: [{
+              id: 16,
+              full_name: 'Inactive Sales User',
+              module: 'sales',
+              is_archived: true,
+              archived_previous_is_active: false,
+              archived_previous_online_pbx_incoming_enabled: true,
+            }],
+          };
+        }
+        if (statement.includes('SELECT module FROM user_modules')) return { rows: [{ module: 'sales' }] };
+        if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/restore');
+
+    expect(response.status).toBe(200);
+    const restoreCall = client.query.mock.calls.find(([statement]) => (
+      String(statement).includes('SET is_archived = false')
+    ));
+    expect(restoreCall?.[1]).toEqual([16, false, false]);
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
   it('does not assign a telephony extension without Sales access', async () => {
     const currentUser = { ...administrationUser, onlinePbxExtension: null };
     const updatedUser = { ...administrationUser, onlinePbxExtension: null };

@@ -436,7 +436,7 @@ router.post('/accounts', requireAuth, accountLimiter, async (req: Request, res: 
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        if (!user.isActive) {
+        if (!user.isActive || user.isArchived) {
             return res.status(403).json({ error: 'Account is inactive' });
         }
 
@@ -521,7 +521,7 @@ router.post('/switch-account', requireAuth, accountLimiter, async (req: Request,
             return res.status(401).json({ error: 'Invalid or expired token' });
         }
 
-        if (!matchedAccount.accountUser.isActive) {
+        if (!matchedAccount.accountUser.isActive || matchedAccount.accountUser.isArchived) {
             return res.status(403).json({ error: 'Target account is inactive' });
         }
 

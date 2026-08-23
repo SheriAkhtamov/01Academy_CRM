@@ -134,6 +134,28 @@ describe("auth session routes", () => {
     expect(response.status).toBe(401);
   });
 
+  it("rejects an archived account even if legacy data still marks it active", async () => {
+    const password = "Secret123";
+    const hashedPassword = await bcrypt.hash(password, 1);
+    mockStorage.getUserByLoginOrEmail.mockResolvedValue({
+      id: 7,
+      email: "archived@example.com",
+      password: hashedPassword,
+      fullName: "Archived User",
+      module: "sales",
+      hasReportAccess: false,
+      isActive: true,
+      isArchived: true,
+    });
+
+    const app = await createApp();
+    const response = await request(app)
+      .post("/api/auth/login")
+      .send({ login: "archived@example.com", password });
+
+    expect(response.status).toBe(401);
+  });
+
   it("rejects non-string credentials without invoking password verification", async () => {
     const app = await createApp();
 

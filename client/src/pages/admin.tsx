@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { canManageUsers, formatUserModule } from '@/lib/auth';
@@ -54,14 +53,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import {
   Plus,
-  Search,
   Users,
-  Clock,
   Shield,
-  Edit,
-  Trash2,
   UserCheck,
-  UserX,
   Key,
   ArrowRight,
   Plug,
@@ -73,6 +67,19 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { devLog } from '@/lib/debug';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { EmployeeArchiveDialogs } from '@/features/employees/EmployeeArchiveDialogs';
+import { EmployeeRosterControls, EmployeeRowActions } from '@/features/employees/EmployeeRosterControls';
+import {
+  archiveEmployee,
+  createEmployee,
+  deleteEmployee,
+  getEmployeeCredentials,
+  getEmployeeResponsibilityImpact,
+  resetEmployeePassword,
+  restoreEmployee,
+  updateEmployee,
+  updateEmployeeCredentials,
+} from '@/features/employees/employees-api';
 import {
   ACADEMY_ACCESS_MODULES,
   ACADEMY_MODULES,
@@ -173,19 +180,22 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [userToArchive, setUserToArchive] = useState<any>(null);
+  const [userToRestore, setUserToRestore] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userCredentials, setUserCredentials] = useState<any>(null);
   const [pendingCredentialUpdate, setPendingCredentialUpdate] = useState<z.infer<ReturnType<typeof createCredentialsSchema>> | null>(null);
   const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
   const [salesModuleTransfer, setSalesModuleTransfer] = useState<{
     user: any;
-    action: 'update' | 'delete';
+    action: 'update' | 'delete' | 'archive';
     data?: UserFormValues;
     leadCount: number;
   } | null>(null);
   const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [moduleFilter, setModuleFilter] = useState('all');
+  const [employeeListView, setEmployeeListView] = useState<'current' | 'archive'>('current');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -250,13 +260,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     enabled: isEmployeesPage,
   });
 
-  const activeUserCount = users.filter((user: any) => user.isActive).length;
-  const inactiveUserCount = users.length - activeUserCount;
+  const activeUserCount = users.filter((candidate: any) => !candidate.isArchived && candidate.isActive).length;
+  const inactiveUserCount = users.filter((candidate: any) => !candidate.isArchived && !candidate.isActive).length;
+  const archivedUserCount = users.filter((candidate: any) => candidate.isArchived).length;
   const settingsSnapshotTime = new Date().toLocaleTimeString();
 
   const createUserMutation = useMutation({
     mutationFn: async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
-      return await apiRequest('POST', '/api/users', data);
+      return await createEmployee(data);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -279,7 +290,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: UserUpdatePayload }) => {
-      return await apiRequest('PUT', `/api/users/${id}`, data);
+      return await updateEmployee(id, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -289,10 +300,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       });
       handleUserModalState(false);
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: t('failedUpdateUserDescription'),
+        description: error.message || t('failedUpdateUserDescription'),
         variant: 'destructive',
       });
     },
@@ -300,10 +311,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const deleteUserMutation = useMutation({
     mutationFn: async ({ id, leadTransferManagerId }: { id: number; leadTransferManagerId?: number }) => {
-      const params = new URLSearchParams();
-      if (leadTransferManagerId) params.set('leadTransferManagerId', String(leadTransferManagerId));
-      const query = params.toString();
-      return await apiRequest('DELETE', `/api/users/${id}${query ? `?${query}` : ''}`);
+      return await deleteEmployee(id, leadTransferManagerId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -324,9 +332,51 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     },
   });
 
+  const archiveUserMutation = useMutation({
+    mutationFn: async ({ id, leadTransferManagerId }: { id: number; leadTransferManagerId?: number }) => (
+      archiveEmployee(id, leadTransferManagerId)
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: t('employeeArchivedTitle'),
+        description: t('employeeArchivedDescription'),
+      });
+      setUserToArchive(null);
+      setSalesModuleTransfer(null);
+      setSalesLeadTransferManagerId('');
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('error'),
+        description: error.message || t('failedArchiveEmployee'),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const restoreUserMutation = useMutation({
+    mutationFn: async (id: number) => restoreEmployee(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: t('employeeRestoredTitle'),
+        description: t('employeeRestoredDescription'),
+      });
+      setUserToRestore(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('error'),
+        description: error.message || t('failedRestoreEmployee'),
+        variant: 'destructive',
+      });
+    },
+  });
+
   const resetUserPasswordMutation = useMutation({
     mutationFn: async (userId: number) => {
-      return await apiRequest('POST', `/api/users/${userId}/reset-password`);
+      return await resetEmployeePassword(userId);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -353,7 +403,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       userId: number;
       data: z.infer<ReturnType<typeof createCredentialsSchema>>;
     }) => {
-      return await apiRequest('PATCH', `/api/users/${userId}/credentials`, data);
+      return await updateEmployeeCredentials(userId, data);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -381,7 +431,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     try {
       devLog('Fetching credentials for user ID:', userId);
 
-      const credentials = await apiRequest('GET', `/api/users/${userId}/credentials`);
+      const credentials = await getEmployeeCredentials(userId);
       devLog('Credentials received for user ID:', userId);
       setUserCredentials(credentials);
       setShowCredentialsModal(true);
@@ -398,6 +448,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const salesTransferManagers = useMemo(
     () => users.filter((candidate: any) => (
       candidate.isActive !== false
+      && !candidate.isArchived
       && Number(candidate.id) !== Number(salesModuleTransfer?.user.id ?? selectedUser?.id)
       && getAssignedModules(candidate).includes('sales')
     )),
@@ -408,6 +459,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     setSalesModuleTransfer(pending);
     const firstEligibleManager = users.find((candidate: any) => (
       candidate.isActive !== false
+      && !candidate.isArchived
       && Number(candidate.id) !== Number(pending?.user.id)
       && getAssignedModules(candidate).includes('sales')
     ));
@@ -415,11 +467,29 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const getAssignedResponsibilityCount = async (employee: any, includeAllOpenTasks = false) => {
-    const impact = await apiRequest('GET', `/api/users/${employee.id}/sales-lead-count`);
+    const impact = await getEmployeeResponsibilityImpact(employee.id);
     const fallback = Number(impact?.leadCount ?? 0);
     return Number(includeAllOpenTasks
       ? impact?.offboardingResponsibilityCount ?? fallback
       : impact?.salesResponsibilityCount ?? fallback);
+  };
+
+  const archiveEmployeeAfterImpactCheck = (employee: any) => {
+    void getAssignedResponsibilityCount(employee, true)
+      .then((leadCount) => {
+        if (leadCount > 0) {
+          openLeadTransferDialog({ user: employee, action: 'archive', leadCount });
+          return;
+        }
+        archiveUserMutation.mutate({ id: employee.id });
+      })
+      .catch((error: Error) => {
+        toast({
+          title: t('error'),
+          description: error.message || t('failedArchiveEmployee'),
+          variant: 'destructive',
+        });
+      });
   };
 
   const onSubmitUser = async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
@@ -498,11 +568,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const filteredUsers = users.filter((user: any) => {
+    const matchesArchiveView = employeeListView === 'archive'
+      ? user.isArchived === true
+      : user.isArchived !== true;
     const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesModule = moduleFilter === 'all' ||
       getAssignedModules(user).includes(moduleFilter as AcademyAccessModule);
-    return matchesSearch && matchesModule;
+    return matchesArchiveView && matchesSearch && matchesModule;
   });
 
   const getModuleColor = (module: string) => {
@@ -639,10 +712,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       key: 'status',
       header: t('status'),
       sortable: true,
-      accessor: (row) => row.isActive ? t('active') : t('inactive'),
+      accessor: (row) => row.isArchived ? t('employeeArchived') : row.isActive ? t('active') : t('inactive'),
       render: (row) => (
-        <Badge className={getStatusColor(row.isActive)}>
-          {row.isActive ? t('active') : t('inactive')}
+        <Badge
+          variant={row.isArchived ? 'outline' : 'default'}
+          className={row.isArchived ? 'border-slate-300 text-slate-700 dark:text-slate-300' : getStatusColor(row.isActive)}
+        >
+          {row.isArchived ? t('employeeArchived') : row.isActive ? t('active') : t('inactive')}
         </Badge>
       ),
     },
@@ -662,28 +738,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       header: t('actions'),
       cellClassName: 'text-right',
       render: (row) => (
-        <div className="flex items-center justify-end space-x-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchUserCredentials(row.id)}
-            title={t('viewCredentials')}
-          >
-            <Key className="h-3 w-3" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => openEditUserModal(row)}>
-            <Edit className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setUserToDelete(row)}
-            className="text-red-600 hover:text-red-800"
-            title={t('deleteUser')}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
+        <EmployeeRowActions
+          employee={row}
+          currentUserId={user?.id}
+          onCredentials={(employee) => fetchUserCredentials(employee.id)}
+          onEdit={openEditUserModal}
+          onArchive={setUserToArchive}
+          onRestore={setUserToRestore}
+          onDelete={setUserToDelete}
+        />
       ),
     },
   ];
@@ -1087,71 +1150,19 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card className="hover-lift">
-              <CardContent className="p-4 flex items-center space-x-3">
-                <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                  <UserCheck className="h-5 w-5 text-emerald-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-muted-foreground truncate">{t('activeUsers')}</p>
-                  <p className="text-lg font-bold text-foreground tabular-nums">{activeUserCount}</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="hover-lift">
-              <CardContent className="p-4 flex items-center space-x-3">
-                <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
-                  <UserX className="h-5 w-5 text-amber-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-muted-foreground truncate">{t('inactiveUsers')}</p>
-                  <p className="text-lg font-bold text-foreground tabular-nums">{inactiveUserCount}</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="hover-lift">
-              <CardContent className="p-4 flex items-center space-x-3">
-                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-muted-foreground truncate">{t('lastUpdated')}</p>
-                  <p className="text-lg font-bold text-foreground tabular-nums">{settingsSnapshotTime}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* User Filters */}
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder={t('searchUsers')}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={moduleFilter} onValueChange={setModuleFilter}>
-                  <SelectTrigger className="w-52">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="all">{t('allModules')}</SelectItem>
-                      {accessModuleOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+          <EmployeeRosterControls
+            activeCount={activeUserCount}
+            inactiveCount={inactiveUserCount}
+            archivedCount={archivedUserCount}
+            snapshotTime={settingsSnapshotTime}
+            view={employeeListView}
+            onViewChange={setEmployeeListView}
+            searchTerm={searchTerm}
+            onSearchTermChange={setSearchTerm}
+            moduleFilter={moduleFilter}
+            onModuleFilterChange={setModuleFilter}
+            moduleOptions={accessModuleOptions}
+          />
 
           {/* Users List */}
           <Card>
@@ -1179,10 +1190,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   emptyState={
                     <div className="px-6 py-12 text-center">
                       <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-foreground mb-2">{t('noUsersFound')}</h3>
+                      <h3 className="text-lg font-medium text-foreground mb-2">
+                        {employeeListView === 'archive' ? t('noArchivedEmployees') : t('noUsersFound')}
+                      </h3>
                       <p className="text-muted-foreground mb-4">
                         {searchTerm || moduleFilter !== 'all'
                           ? t('adjustSearchCriteria')
+                          : employeeListView === 'archive'
+                            ? t('noArchivedEmployeesDescription')
                           : t('createFirstUser')}
                       </p>
                     </div>
@@ -1262,7 +1277,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       <Dialog
         open={Boolean(salesModuleTransfer)}
         onOpenChange={(open) => {
-          if (!open && !updateUserMutation.isPending && !deleteUserMutation.isPending) {
+          if (!open && !updateUserMutation.isPending && !deleteUserMutation.isPending && !archiveUserMutation.isPending) {
             setSalesModuleTransfer(null);
             setSalesLeadTransferManagerId('');
           }
@@ -1286,7 +1301,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             <Select
               value={salesLeadTransferManagerId}
               onValueChange={setSalesLeadTransferManagerId}
-              disabled={updateUserMutation.isPending || deleteUserMutation.isPending || salesTransferManagers.length === 0}
+              disabled={updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending || salesTransferManagers.length === 0}
             >
               <SelectTrigger id="sales-lead-transfer-manager">
                 <SelectValue placeholder={t('selectResponsibleManager')} />
@@ -1312,18 +1327,22 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 setSalesModuleTransfer(null);
                 setSalesLeadTransferManagerId('');
               }}
-              disabled={updateUserMutation.isPending || deleteUserMutation.isPending}
+              disabled={updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending}
             >
               {t('cancel')}
             </Button>
             <Button
               type="button"
-              disabled={!salesLeadTransferManagerId || updateUserMutation.isPending || deleteUserMutation.isPending}
+              disabled={!salesLeadTransferManagerId || updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending}
               onClick={() => {
                 if (!salesModuleTransfer) return;
                 const leadTransferManagerId = Number(salesLeadTransferManagerId);
                 if (salesModuleTransfer.action === 'delete') {
                   deleteUserMutation.mutate({ id: salesModuleTransfer.user.id, leadTransferManagerId });
+                  return;
+                }
+                if (salesModuleTransfer.action === 'archive') {
+                  archiveUserMutation.mutate({ id: salesModuleTransfer.user.id, leadTransferManagerId });
                   return;
                 }
                 if (salesModuleTransfer.data) {
@@ -1335,7 +1354,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 }
               }}
             >
-              {updateUserMutation.isPending || deleteUserMutation.isPending ? t('saving') : t('disableSalesAndTransfer')}
+              {updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending
+                ? t('saving')
+                : t('disableSalesAndTransfer')}
             </Button>
           </div>
         </DialogContent>
@@ -1522,6 +1543,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           }
         }}
         variant="destructive"
+      />
+
+      <EmployeeArchiveDialogs
+        archiveTarget={userToArchive}
+        restoreTarget={userToRestore}
+        onArchiveOpenChange={(open) => { if (!open) setUserToArchive(null); }}
+        onRestoreOpenChange={(open) => { if (!open) setUserToRestore(null); }}
+        onArchive={archiveEmployeeAfterImpactCheck}
+        onRestore={(employee) => restoreUserMutation.mutate(employee.id)}
       />
 
       {/* Delete User Confirmation */}

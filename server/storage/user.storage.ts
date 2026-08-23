@@ -93,7 +93,7 @@ class UserStorage {
         const result = await db
             .update(users)
             .set({ ...user, updatedAt: new Date() })
-            .where(eq(users.id, id))
+            .where(and(eq(users.id, id), eq(users.isArchived, false)))
             .returning();
         if (!result[0]) {
             throw new Error('User not found or access denied');
@@ -157,7 +157,7 @@ class UserStorage {
         const result = await db
             .select()
             .from(users)
-            .where(eq(users.isActive, true))
+            .where(and(eq(users.isActive, true), eq(users.isArchived, false)))
             .orderBy(asc(users.fullName), desc(users.createdAt));
         return this.attachModulesToUsers(result);
     }

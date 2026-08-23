@@ -868,7 +868,7 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
   const previousMonthStart = previousRange.start;
   const activeGroups = data.groups.filter((group) => ['open', 'in_progress'].includes(group.status));
   const activeTeachers = data.teachers.filter((teacher) => teacher.status === 'active');
-  const activeUsers = users.filter((user) => user.isActive);
+  const activeUsers = users.filter((user) => user.isActive && !user.isArchived);
   const onlineUsers = activeUsers.filter((user) => user.isOnline);
 
   const percentageChange = (current: number, previous: number) => {

@@ -219,7 +219,7 @@ describe('employee modal starts every session from a clean form', () => {
     const employeeRow = Array.from(document.querySelectorAll('tr, [data-row]'))
       .find((row) => row.textContent?.includes('Продажник') && row.querySelector('button'));
     const editButton = Array.from(employeeRow?.querySelectorAll('button') ?? [])
-      .find((button) => !button.getAttribute('title'));
+      .find((button) => /Редактировать пользователя|Edit User/i.test(button.getAttribute('title') ?? ''));
     fireEvent.click(editButton as HTMLElement);
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
 

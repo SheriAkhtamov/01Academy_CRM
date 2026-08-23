@@ -32,6 +32,11 @@ export const users = pgTable("users", {
   module: varchar("module", { length: 50 }).$type<AcademyModule>().notNull(),
   hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: integer("archived_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+  archivedPreviousIsActive: boolean("archived_previous_is_active"),
+  archivedPreviousOnlinePbxIncomingEnabled: boolean("archived_previous_online_pbx_incoming_enabled"),
   isOnline: boolean("is_online").default(false),
   onlinePbxIncomingEnabled: boolean("online_pbx_incoming_enabled").notNull().default(false),
   lastSeenAt: timestamp("last_seen_at"),
@@ -41,6 +46,7 @@ export const users = pgTable("users", {
   emailIdx: index("users_email_idx").on(table.email),
   emailUnique: uniqueIndex("users_email_unique").on(sql`lower(${table.email})`),
   moduleIdx: index("users_module_idx").on(table.module),
+  archiveIdx: index("users_archive_idx").on(table.isArchived, table.archivedAt),
   moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
 
@@ -1091,6 +1097,7 @@ export const insertUserSchema = z.object({
   module: z.enum(ACADEMY_MODULES),
   hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
+  isArchived: z.boolean().default(false),
 });
 
 export const insertUserModuleSchema = createInsertSchema(userModules).omit({

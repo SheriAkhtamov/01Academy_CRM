@@ -20,6 +20,8 @@ import type { AcademyScheduleItem } from '@shared/scheduling';
 import { getPasswordPolicyError } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
+import { registerUserArchiveRoutes } from './user-archive.routes';
+import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 
 const router = Router();
 const primaryModuleSet = new Set<string>(ACADEMY_MODULES);
@@ -342,6 +344,7 @@ const getActiveSalesManagerForTransfer = async (managerId: number, executor: Que
          FROM users u
          WHERE u.id = $1
            AND u.is_active = true
+           AND u.is_archived = false
            AND (
              u.module = 'sales'
              OR EXISTS (
@@ -498,8 +501,12 @@ const replaceUserModules = async (
 router.get('/', requireAuth, async (req, res) => {
     try {
         const users = await storage.getUsers();
-        const sanitizedUsers = users.map(u => authService.sanitizeUser(u));
-        if (!getAssignedModules(req.user).includes('administration') || users.length === 0) {
+        const hasAdministrationAccess = getAssignedModules(req.user).includes('administration');
+        const visibleUsers = hasAdministrationAccess
+            ? users
+            : users.filter((user) => !user.isArchived);
+        const sanitizedUsers = visibleUsers.map(u => authService.sanitizeUser(u));
+        if (!hasAdministrationAccess || visibleUsers.length === 0) {
             return res.json(sanitizedUsers);
         }
         const teacherRows = await pool.query<{
@@ -512,7 +519,7 @@ router.get('/', requireAuth, async (req, res) => {
                     availability
              FROM academy_teachers
              WHERE user_id = ANY($1::int[])`,
-            [users.map((user) => user.id)],
+            [visibleUsers.map((user) => user.id)],
         );
         const teacherSettingsByUserId = new Map(
             teacherRows.rows.map((teacher) => [Number(teacher.userId), teacher]),
@@ -737,6 +744,9 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
+        if (user.isArchived) {
+            return res.status(409).json({ error: 'employeeArchived' });
+        }
 
         const updateData: Record<string, unknown> = {};
         let loginChanged = false;
@@ -853,6 +863,9 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
+        if (user.isArchived) {
+            return res.status(409).json({ error: 'employeeArchived' });
+        }
 
         const temporaryPassword = crypto.randomBytes(12).toString('base64url');
         const hashedPassword = await authService.hashPassword(temporaryPassword);
@@ -892,6 +905,18 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
     }
 });
 
+registerUserArchiveRoutes(router, {
+    connectDatabase: () => pool.connect(),
+    getUser: storage.getUser.bind(storage),
+    createAuditLog: storage.createAuditLog.bind(storage),
+    parsePositiveId,
+    userAccessAdvisoryLock: USER_ACCESS_ADVISORY_LOCK,
+    getAssignedWorkload,
+    getActiveSalesManagerForTransfer,
+    transferAssignedSalesLeads,
+    syncAcademyTeacherForUser,
+});
+
 router.put('/:id', requireAuth, async (req, res) => {
     try {
         const id = parsePositiveId(req.params.id);
@@ -908,6 +933,9 @@ router.put('/:id', requireAuth, async (req, res) => {
         const existingUser = await storage.getUser(id);
         if (!existingUser) {
             return res.status(404).json({ error: 'User not found' });
+        }
+        if (existingUser.isArchived) {
+            return res.status(409).json({ error: 'employeeArchived' });
         }
 
         const updateData: UserUpdateData = {};
@@ -1001,9 +1029,10 @@ router.put('/:id', requireAuth, async (req, res) => {
                 full_name: string;
                 module: AcademyModule;
                 is_active: boolean;
+                is_archived: boolean;
                 online_pbx_extension: string | null;
             }>(
-                `SELECT id, full_name, module, is_active, online_pbx_extension
+                `SELECT id, full_name, module, is_active, is_archived, online_pbx_extension
                  FROM users
                  WHERE id = $1
                  FOR UPDATE`,
@@ -1012,6 +1041,9 @@ router.put('/:id', requireAuth, async (req, res) => {
             const lockedUser = lockedUserResult.rows[0];
             if (!lockedUser) {
                 throw Object.assign(new Error('User not found'), { statusCode: 404 });
+            }
+            if (lockedUser.is_archived) {
+                throw Object.assign(new Error('employeeArchived'), { statusCode: 409 });
             }
 
             const assignedRows = await client.query<{ module: AcademyAccessModule }>(
@@ -1036,6 +1068,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                     `SELECT COUNT(*)::int AS count
                      FROM users u
                      WHERE u.is_active = true
+                       AND u.is_archived = false
                        AND (
                          u.module = 'administration'
                          OR EXISTS (
@@ -1102,6 +1135,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                 modules: nextModules,
                 isActive: nextIsActive,
             }, client, teacherSettings);
+            if (!nextIsActive) await revokeUserAuthenticationArtifacts(id, { executor: client });
             await client.query('COMMIT');
         } catch (error) {
             await client.query('ROLLBACK');
@@ -1112,6 +1146,8 @@ router.put('/:id', requireAuth, async (req, res) => {
 
         const updatedUser = await storage.getUser(id);
         if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+
+        if (!updatedUser.isActive) disconnectRealtimeUser(id);
 
         await storage.createAuditLog({
             userId: req.user!.id,
@@ -1187,6 +1223,7 @@ router.delete('/:id', requireAdministration, async (req, res) => {
                     `SELECT COUNT(*)::int AS count
                      FROM users u
                      WHERE u.is_active = true
+                       AND u.is_archived = false
                        AND (
                          u.module = 'administration'
                          OR EXISTS (

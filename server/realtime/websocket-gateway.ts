@@ -13,7 +13,7 @@ import {
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
 import type { SessionMiddleware } from '../infrastructure/session';
-import { setRealtimeTransport } from './realtime-hub';
+import { setRealtimeTransport, setRealtimeUserDisconnect } from './realtime-hub';
 
 const WS_OPEN_STATE = 1;
 const MAX_TOTAL_WEBSOCKET_CONNECTIONS = 1_000;
@@ -78,6 +78,13 @@ export const attachWebSocketGateway = async (
   };
 
   const resetRealtimeTransport = setRealtimeTransport(broadcastToClients);
+  const resetRealtimeUserDisconnect = setRealtimeUserDisconnect((userId) => {
+    for (const client of clients) {
+      if (clientContexts.get(client)?.userId === userId) {
+        client.close(1008, 'Access revoked');
+      }
+    }
+  });
   const presenceTracker = createPresenceTracker({
     updateUserOnlineStatus: storage.updateUserOnlineStatus.bind(storage),
     broadcast: broadcastToClients,
@@ -117,7 +124,7 @@ export const attachWebSocketGateway = async (
       }
 
       const user = await storage.getUser(sessionUserId);
-      if (!user || !user.isActive) {
+      if (!user || !user.isActive || user.isArchived) {
         ws.close(1008, 'Unauthorized');
         return;
       }
@@ -243,6 +250,7 @@ export const attachWebSocketGateway = async (
     clearInterval(heartbeat);
     clearInterval(telephonyRoutingHeartbeat);
     resetRealtimeTransport();
+    resetRealtimeUserDisconnect();
     for (const socket of allSockets) {
       socket.terminate();
     }

@@ -903,12 +903,14 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       return (
         <TeacherScheduleSection
           days={scheduleDays}
+          nextLesson={nextLesson}
           dayNames={dayNames}
           todayKey={todayKey}
           atToday={scheduleWeekKey === currentWeekKey}
           onPreviousWeek={() => replaceParams({ week: shiftDayKey(scheduleWeekKey, -7) })}
           onNextWeek={() => replaceParams({ week: shiftDayKey(scheduleWeekKey, 7) })}
           onToday={() => replaceParams({ week: null })}
+          onOpenNextLesson={openLessonInSchedule}
           onOpenAttendance={openAttendanceForLesson}
         />
       );

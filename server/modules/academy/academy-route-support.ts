@@ -153,6 +153,7 @@ export const prepareGroupMutation = async (options: {
   excludeGroupId?: number | null;
   forceAutoAssign?: boolean;
   allowUnassigned?: boolean;
+  allowFutureStart?: boolean;
 }) => {
   const courseId = Number(options.values.courseId ?? options.oldRow?.courseId);
   const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId);
@@ -169,6 +170,11 @@ export const prepareGroupMutation = async (options: {
   if (!GROUP_STATUSES.some((item) => item.code === status)) {
     throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
   }
+  assertFutureGroupStartAcknowledged({
+    status,
+    startDate: options.values.startDate ?? options.oldRow?.startDate,
+    allowFutureStart: options.allowFutureStart,
+  });
   await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
 
   if (
@@ -421,11 +427,52 @@ export const groupFieldsChanged = (
 export const groupSchedulePreparationRequired = (values: Row, row: Row) =>
   groupFieldsChanged(GROUP_SCHEDULE_PREPARATION_FIELDS, values, row);
 
-export const prepareGroupMetadataMutation = async (values: Row, row: Row) => {
+export const isFutureGroupInProgress = (
+  status: unknown,
+  startDate: unknown,
+  reference = new Date(),
+) => {
+  if (status !== 'in_progress' || !startDate) return false;
+  const parsedStartDate = new Date(startDate as string | number | Date);
+  if (Number.isNaN(parsedStartDate.getTime())) return false;
+  const groupStart = getZonedDateOnlyRange(parsedStartDate, ACADEMY_TIME_ZONE).start;
+  const today = getZonedDayRange(reference, ACADEMY_TIME_ZONE).start;
+  return groupStart.getTime() > today.getTime();
+};
+
+const assertFutureGroupStartAcknowledged = (options: {
+  status: unknown;
+  startDate: unknown;
+  allowFutureStart?: boolean;
+}) => {
+  if (
+    options.allowFutureStart
+    || !isFutureGroupInProgress(options.status, options.startDate)
+  ) return;
+
+  const startDate = new Date(options.startDate as string | number | Date)
+    .toISOString()
+    .slice(0, 10);
+  throw Object.assign(new Error('futureGroupInProgressRequiresConfirmation'), {
+    statusCode: 409,
+    startDate,
+  });
+};
+
+export const prepareGroupMetadataMutation = async (
+  values: Row,
+  row: Row,
+  options?: { allowFutureStart?: boolean },
+) => {
   const status = String(values.status ?? row.status ?? 'open');
   if (!GROUP_STATUSES.some((item) => item.code === status)) {
     throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
   }
+  assertFutureGroupStartAcknowledged({
+    status,
+    startDate: values.startDate ?? row.startDate,
+    allowFutureStart: options?.allowFutureStart,
+  });
 
   if (!Object.prototype.hasOwnProperty.call(values, 'maxStudents')) return;
   const maxStudents = Number(values.maxStudents);

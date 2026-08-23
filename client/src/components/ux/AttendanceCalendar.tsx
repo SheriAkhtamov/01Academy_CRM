@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, CircleCheck, Clock3, ListChecks } from 'lucide-react';
+import { CalendarClock, CalendarDays, CircleCheck, Clock3, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
@@ -204,6 +204,13 @@ export function AttendanceCalendar({
         new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
       ))[0] ?? null
   ), [lessons, now]);
+  const nextUpcoming = useMemo(() => (
+    [...lessons]
+      .filter((lesson) => lessonState(lesson, now) === 'upcoming')
+      .sort((left, right) => (
+        new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
+      ))[0] ?? null
+  ), [lessons, now]);
 
   const shift = (direction: number) => {
     setAnchorKey((current) => (
@@ -256,6 +263,12 @@ export function AttendanceCalendar({
     setAnchorKey(key);
     setHiddenStates(new Set());
     selectLesson(nextPending.id);
+  };
+
+  const jumpToUpcoming = () => {
+    if (!nextUpcoming) return;
+    setAnchorKey(academyDateKey(nextUpcoming.scheduledAt));
+    setHiddenStates(new Set());
   };
 
   const lessonButton = (lesson: AttendanceCalendarLesson, roomy = false) => {
@@ -403,6 +416,16 @@ export function AttendanceCalendar({
                   onClick={() => setHiddenStates(new Set())}
                 >
                   {t('resetFilters')}
+                </Button>
+              ) : nextUpcoming ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 gap-1.5"
+                  onClick={jumpToUpcoming}
+                >
+                  <CalendarClock />
+                  {t('showNextLesson')}
                 </Button>
               ) : undefined}
             />

@@ -47,6 +47,8 @@ import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
+import { FutureGroupStartDialog, futureGroupStatusNeedsConfirmation } from '@/components/ux/FutureGroupStartDialog';
+import { GroupStatusField } from '@/components/ux/GroupStatusField';
 import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
@@ -80,7 +82,6 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { ACADEMY_TIME_ZONE, academyDateInputValue } from '@/lib/localeFormat';
-
 interface School {
   id: number;
   name: string;
@@ -242,6 +243,7 @@ type RoomValues = z.infer<typeof roomSchema>;
 type CourseValues = z.infer<typeof courseSchema>;
 type StatusValues = z.infer<typeof statusSchema>;
 type GroupValues = z.infer<typeof groupSchema>;
+type GroupMutationValues = GroupValues & { allowFutureStart?: boolean };
 type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
 const AUTO_TEACHER_VALUE = 'auto';
 
@@ -379,6 +381,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   } | null>(null);
   const [archiveGroupTarget, setArchiveGroupTarget] = useState<Group | null>(null);
   const [restoreGroupTarget, setRestoreGroupTarget] = useState<Group | null>(null);
+  const [futureGroupStartValues, setFutureGroupStartValues] = useState<GroupValues | null>(null);
   const [pipelineTransferTargetId, setPipelineTransferTargetId] = useState('');
 
   const configuration = useQuery<ConfigurationData>({
@@ -566,7 +569,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   const saveGroup = useMutation({
-    mutationFn: (values: GroupValues) => {
+    mutationFn: (values: GroupMutationValues) => {
       const teacherId = values.teacherId && values.teacherId !== AUTO_TEACHER_VALUE
         ? Number(values.teacherId)
         : null;
@@ -584,6 +587,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         startDate: values.startDate || null,
         endDate: values.endDate || null,
         autoAssign: !teacherId,
+        allowFutureStart: values.allowFutureStart === true,
       };
       return editingGroup
         ? apiRequest('PATCH', `/api/academy/groups/${editingGroup.id}`, payload)
@@ -599,6 +603,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       });
       setGroupDialogOpen(false);
       setEditingGroup(null);
+      setFutureGroupStartValues(null);
       setGroupSchedule([]);
       groupForm.reset();
       invalidate();
@@ -617,6 +622,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         : '';
       const description = errorCode === 'groupLessonsLockSchedule'
         ? t('groupLessonsLockSchedule')
+        : errorCode === 'futureGroupInProgressRequiresConfirmation'
+          ? t('futureGroupInProgressRequiresConfirmation')
         : errorCode === 'groupHasScheduledLessons'
           ? t('groupHasScheduledLessons')
           : errorCode === 'groupHasReservedLeads'
@@ -957,6 +964,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     && selectedGroupEndDate
     && selectedGroupEndDate < minimumGroupEndDate,
   );
+  const submitGroupValues = (values: GroupValues) => {
+    if (futureGroupStatusNeedsConfirmation(values)) {
+      setFutureGroupStartValues(values);
+      return;
+    }
+    saveGroup.mutate(values);
+  };
 
   useEffect(() => {
     if (isGroupEndDateTooEarly) {
@@ -1871,7 +1885,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   }, { shouldFocus: true });
                   return;
                 }
-                saveGroup.mutate(values);
+                submitGroupValues(values);
               })}
             >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1882,22 +1896,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={groupForm.control} name="status" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('status')}</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="open">{t('groupStatusOpen')}</SelectItem>
-                          <SelectItem value="in_progress">{t('groupStatusInProgress')}</SelectItem>
-                          <SelectItem value="completed">{t('groupStatusCompleted')}</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+                <GroupStatusField />
                 <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('groupCapacity')}</FormLabel>
@@ -2056,6 +2055,15 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           </Form>
         </DialogContent>
       </Dialog>
+
+      <FutureGroupStartDialog
+        values={futureGroupStartValues}
+        isPending={saveGroup.isPending}
+        onDismiss={() => setFutureGroupStartValues(null)}
+        onReturnToStartDate={() => window.requestAnimationFrame(() => groupForm.setFocus('startDate'))}
+        onStatusChange={(status) => groupForm.setValue('status', status)}
+        onSave={(values) => saveGroup.mutate(values)}
+      />
 
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
         <DialogContent className="max-w-2xl">

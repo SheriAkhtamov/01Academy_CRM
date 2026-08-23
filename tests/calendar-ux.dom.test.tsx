@@ -7,6 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { SalesScheduleCalendar } from '../client/src/components/ux/SalesScheduleCalendar';
 import { AdminScheduleCalendar } from '../client/src/components/ux/AdminScheduleCalendar';
 import { AttendanceCalendar } from '../client/src/components/ux/AttendanceCalendar';
+import { TeacherScheduleSection } from '../client/src/components/ux/teacher/TeacherScheduleSection';
 import {
   WeekScheduleEditor,
   type WeekScheduleItem,
@@ -212,10 +213,10 @@ describe('attendance calendar', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  const renderAttendance = (onSelect = vi.fn()) => {
+  const renderAttendance = (onSelect = vi.fn(), visibleLessons = lessons) => {
     render(
       <AttendanceCalendar
-        lessons={lessons}
+        lessons={visibleLessons}
         selectedLessonId=""
         now={Date.UTC(2026, 5, 16, 6, 0)}
         onSelectLesson={onSelect}
@@ -252,6 +253,57 @@ describe('attendance calendar', () => {
     const card = screen.getByTestId('attendance-calendar-lesson-42');
     expect(card.getAttribute('style')).toContain('var(--calendar-emerald-background)');
     expect(card.className).not.toContain('bg-emerald-50');
+  });
+
+  it('jumps to the nearest future lesson when the current month is empty', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const futureLesson = {
+      id: 77,
+      groupName: 'Future Vibe Coding',
+      topic: 'First lesson',
+      scheduledAt: new Date(Date.UTC(2026, 8, 7, 15, 0)).toISOString(),
+      status: 'scheduled',
+    };
+    renderAttendance(vi.fn(), [futureLesson]);
+
+    expect(screen.queryByTestId('attendance-calendar-lesson-77')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show next lesson' }));
+
+    expect(screen.getByTestId('attendance-calendar-lesson-77')).toBeTruthy();
+    expect(screen.getByText('September 2026')).toBeTruthy();
+  });
+});
+
+describe('teacher schedule empty week', () => {
+  beforeEach(() => i18n.setLanguage('en'));
+
+  it('offers a direct jump to the nearest future lesson', async () => {
+    const user = userEvent.setup();
+    const onOpenNextLesson = vi.fn();
+    const days = Array.from({ length: 7 }, (_, index) => ({
+      dateKey: `2026-08-${String(17 + index).padStart(2, '0')}`,
+      date: new Date(Date.UTC(2026, 7, 17 + index)),
+      weekdayIndex: index,
+      lessons: [],
+    }));
+
+    render(
+      <TeacherScheduleSection
+        days={days}
+        nextLesson={{ id: 77 } as any}
+        dayNames={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
+        todayKey="2026-08-23"
+        atToday
+        onPreviousWeek={vi.fn()}
+        onNextWeek={vi.fn()}
+        onToday={vi.fn()}
+        onOpenNextLesson={onOpenNextLesson}
+        onOpenAttendance={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Show next lesson' }));
+    expect(onOpenNextLesson).toHaveBeenCalledWith('77');
   });
 });
 

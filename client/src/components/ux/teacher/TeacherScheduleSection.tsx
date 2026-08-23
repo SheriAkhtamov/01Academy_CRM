@@ -24,12 +24,14 @@ export type TeacherScheduleDayView = {
 
 interface TeacherScheduleSectionProps {
   days: TeacherScheduleDayView[];
+  nextLesson?: TeacherLesson | null;
   dayNames: string[];
   todayKey: string;
   atToday: boolean;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
+  onOpenNextLesson: (lessonId: string) => void;
   onOpenAttendance: (lessonId: string) => void;
 }
 
@@ -42,12 +44,14 @@ interface TeacherScheduleSectionProps {
  */
 export function TeacherScheduleSection({
   days,
+  nextLesson,
   dayNames,
   todayKey,
   atToday,
   onPreviousWeek,
   onNextWeek,
   onToday,
+  onOpenNextLesson,
   onOpenAttendance,
 }: TeacherScheduleSectionProps) {
   const { t, language } = useTranslation();
@@ -120,6 +124,16 @@ export function TeacherScheduleSection({
               icon={CalendarDays}
               title={t('noLessonsInRange')}
               description={t('scheduleEmptyWeekHint')}
+              action={nextLesson ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={() => onOpenNextLesson(String(nextLesson.id))}
+                >
+                  {t('showNextLesson')}
+                </Button>
+              ) : undefined}
             />
           </CardContent>
         </Card>

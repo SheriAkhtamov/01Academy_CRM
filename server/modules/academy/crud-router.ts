@@ -231,7 +231,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       }
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
-          await prepareGroupMutation({ values, forceAutoAssign: req.body.autoAssign === true });
+          await prepareGroupMutation({
+            values,
+            forceAutoAssign: req.body.autoAssign === true,
+            allowFutureStart: req.body.allowFutureStart === true,
+          });
           const group = await insertRow(table, values);
           await materializeGroupLessons(Number(group.id));
           return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [group.id]) ?? group;
@@ -259,6 +263,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, `Failed to create ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
+        ...(error.startDate ? { startDate: error.startDate } : {}),
       });
     }
   });
@@ -332,9 +337,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
               oldRow: lockedRow,
               excludeGroupId: id,
               forceAutoAssign: req.body.autoAssign === true,
+              allowFutureStart: req.body.allowFutureStart === true,
             });
           } else {
-            await prepareGroupMetadataMutation(values, lockedRow);
+            await prepareGroupMetadataMutation(values, lockedRow, {
+              allowFutureStart: req.body.allowFutureStart === true,
+            });
           }
           const updatedGroup = await updateRow(table, id, values);
           await materializeGroupLessons(id);
@@ -410,6 +418,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, `Failed to update ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
+        ...(error.startDate ? { startDate: error.startDate } : {}),
       });
     }
   });

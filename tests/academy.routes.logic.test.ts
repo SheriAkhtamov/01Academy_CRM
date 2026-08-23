@@ -2354,6 +2354,76 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
   });
 
+  it('requires explicit confirmation before starting a future group', async () => {
+    const group = groupFixture({
+      status: 'open',
+      start_date: new Date('2099-09-07T00:00:00.000Z'),
+      end_date: new Date('2099-11-07T00:00:00.000Z'),
+    });
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/groups/20')
+      .send({ status: 'in_progress' });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      error: 'futureGroupInProgressRequiresConfirmation',
+      startDate: '2099-09-07',
+    });
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
+  });
+
+  it('allows an explicitly confirmed future group status', async () => {
+    const group = groupFixture({
+      status: 'open',
+      start_date: new Date('2099-09-07T00:00:00.000Z'),
+      end_date: new Date('2099-11-07T00:00:00.000Z'),
+    });
+    const updatedGroup = { ...group, status: 'in_progress' };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        return { rows: [group] };
+      }
+      if (sql.includes('UPDATE "academy_groups"')) return { rows: [updatedGroup] };
+      if (sql.includes('SELECT id FROM academy_lessons WHERE group_id = $1')) {
+        return { rows: [{ id: 501 }] };
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) {
+        return { rows: [updatedGroup] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/groups/20')
+      .send({ status: 'in_progress', allowFutureStart: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('in_progress');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('renames a group with existing lessons without treating auto assignment as a schedule change', async () => {
     const group = groupFixture({ teacher_id: null });
     const updatedGroup = { ...group, name: 'Vibe Coding Advanced' };

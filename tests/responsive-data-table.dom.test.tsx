@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataTable, type DataTableColumn } from '../client/src/components/ux/DataTable';
+import { Tabs, TabsList, TabsTrigger } from '../client/src/components/ui/tabs';
 import { i18n } from '../client/src/lib/i18n';
 
 /**
@@ -176,5 +177,46 @@ describe('data table on a phone', () => {
 
     expect(screen.getByText('Nothing archived yet')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
+  });
+});
+
+describe('scrolling tab strips', () => {
+  it('never centres a strip that can scroll', () => {
+    /*
+      A flex or grid container with `justify-content: center` splits its
+      overflow across both ends, and a scroll container can only reach the end
+      one — the leading tabs go permanently out of reach. Content-sized strips
+      look the same aligned to the start, so `start` is the only safe pairing
+      with `overflow-x-auto`.
+    */
+    render(
+      <Tabs defaultValue="one">
+        <TabsList>
+          <TabsTrigger value="one">One</TabsTrigger>
+          <TabsTrigger value="two">Two</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+
+    const list = screen.getByRole('tablist');
+    expect(list.className).toContain('overflow-x-auto');
+    expect(list.className).toContain('justify-start');
+    expect(list.className).not.toContain('justify-center');
+  });
+
+  it('keeps the trigger focus ring inside the box that clips it', () => {
+    // `ring-offset-2` paints the ring 4px outside the trigger, where the
+    // scroll container above crops it away.
+    render(
+      <Tabs defaultValue="one">
+        <TabsList>
+          <TabsTrigger value="one">One</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+
+    const trigger = screen.getByRole('tab');
+    expect(trigger.className).toContain('focus-visible:ring-inset');
+    expect(trigger.className).not.toContain('focus-visible:ring-offset-2');
   });
 });

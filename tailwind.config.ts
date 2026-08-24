@@ -1,5 +1,24 @@
 import type { Config } from "tailwindcss";
 
+/*
+  Every theme colour is a CSS variable holding a complete colour — `hsl(...)`,
+  `#fff`, or another variable — rather than the bare channel triplet Tailwind
+  expects. Tailwind cannot slice an alpha channel into a value it cannot parse,
+  and rather than failing it silently emits nothing: `bg-card/95`,
+  `bg-muted/40` and `bg-background/85` produced no rule at all, so the sidebar
+  drawer, the task board columns and the sticky header were painted with no
+  background whatsoever. On a desktop that is invisible — those panels sit on a
+  page of the same colour — but on a phone the drawer is `fixed` above the
+  page, and the whole screen showed straight through the navigation.
+
+  `color-mix()` applies the alpha without Tailwind ever having to understand
+  the colour. Tailwind substitutes `<alpha-value>` here exactly as it would in
+  an `hsl(… / <alpha-value>)` string, and with no modifier it substitutes `1`,
+  which resolves back to the untouched colour.
+*/
+const themeColor = (variable: string) =>
+  `color-mix(in srgb, var(${variable}) calc(<alpha-value> * 100%), transparent)`;
+
 export default {
   darkMode: ["class"],
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
@@ -47,80 +66,80 @@ export default {
         "primary-lg": "var(--shadow-primary-lg)",
       },
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        background: themeColor("--background"),
+        foreground: themeColor("--foreground"),
         card: {
-          DEFAULT: "var(--card)",
-          foreground: "var(--card-foreground)",
+          DEFAULT: themeColor("--card"),
+          foreground: themeColor("--card-foreground"),
         },
         popover: {
-          DEFAULT: "var(--popover)",
-          foreground: "var(--popover-foreground)",
+          DEFAULT: themeColor("--popover"),
+          foreground: themeColor("--popover-foreground"),
         },
         primary: {
-          DEFAULT: "var(--primary)",
-          foreground: "var(--primary-foreground)",
+          DEFAULT: themeColor("--primary"),
+          foreground: themeColor("--primary-foreground"),
           // The brand ramp was only reachable through hand-written utilities
           // in index.css, so gradient/ring variants (from-primary-600,
           // ring-primary-50) silently produced nothing. Registering it here
           // makes every Tailwind variant of the ramp work.
-          "50": "var(--primary-50)",
-          "100": "var(--primary-100)",
-          "500": "var(--primary-500)",
-          "600": "var(--primary-600)",
-          "700": "var(--primary-700)",
+          "50": themeColor("--primary-50"),
+          "100": themeColor("--primary-100"),
+          "500": themeColor("--primary-500"),
+          "600": themeColor("--primary-600"),
+          "700": themeColor("--primary-700"),
         },
         secondary: {
-          DEFAULT: "var(--secondary)",
-          foreground: "var(--secondary-foreground)",
+          DEFAULT: themeColor("--secondary"),
+          foreground: themeColor("--secondary-foreground"),
         },
         muted: {
-          DEFAULT: "var(--muted)",
-          foreground: "var(--muted-foreground)",
+          DEFAULT: themeColor("--muted"),
+          foreground: themeColor("--muted-foreground"),
         },
         accent: {
-          DEFAULT: "var(--accent)",
-          foreground: "var(--accent-foreground)",
+          DEFAULT: themeColor("--accent"),
+          foreground: themeColor("--accent-foreground"),
         },
         destructive: {
-          DEFAULT: "var(--destructive)",
-          foreground: "var(--destructive-foreground)",
+          DEFAULT: themeColor("--destructive"),
+          foreground: themeColor("--destructive-foreground"),
         },
         border: {
-          DEFAULT: "var(--border)",
-          strong: "var(--border-strong)",
+          DEFAULT: themeColor("--border"),
+          strong: themeColor("--border-strong"),
         },
         input: {
-          DEFAULT: "var(--input)",
-          background: "var(--input-background)",
+          DEFAULT: themeColor("--input"),
+          background: themeColor("--input-background"),
         },
         elevated: {
-          DEFAULT: "var(--elevated)",
-          foreground: "var(--elevated-foreground)",
+          DEFAULT: themeColor("--elevated"),
+          foreground: themeColor("--elevated-foreground"),
         },
         surface: {
-          "1": "var(--surface-1)",
-          "2": "var(--surface-2)",
-          "3": "var(--surface-3)",
-          "4": "var(--surface-4)",
+          "1": themeColor("--surface-1"),
+          "2": themeColor("--surface-2"),
+          "3": themeColor("--surface-3"),
+          "4": themeColor("--surface-4"),
         },
-        ring: "var(--ring)",
+        ring: themeColor("--ring"),
         chart: {
-          "1": "var(--chart-1)",
-          "2": "var(--chart-2)",
-          "3": "var(--chart-3)",
-          "4": "var(--chart-4)",
-          "5": "var(--chart-5)",
+          "1": themeColor("--chart-1"),
+          "2": themeColor("--chart-2"),
+          "3": themeColor("--chart-3"),
+          "4": themeColor("--chart-4"),
+          "5": themeColor("--chart-5"),
         },
         sidebar: {
-          DEFAULT: "var(--sidebar-background)",
-          foreground: "var(--sidebar-foreground)",
-          primary: "var(--sidebar-primary)",
-          "primary-foreground": "var(--sidebar-primary-foreground)",
-          accent: "var(--sidebar-accent)",
-          "accent-foreground": "var(--sidebar-accent-foreground)",
-          border: "var(--sidebar-border)",
-          ring: "var(--sidebar-ring)",
+          DEFAULT: themeColor("--sidebar-background"),
+          foreground: themeColor("--sidebar-foreground"),
+          primary: themeColor("--sidebar-primary"),
+          "primary-foreground": themeColor("--sidebar-primary-foreground"),
+          accent: themeColor("--sidebar-accent"),
+          "accent-foreground": themeColor("--sidebar-accent-foreground"),
+          border: themeColor("--sidebar-border"),
+          ring: themeColor("--sidebar-ring"),
         },
       },
       // Motion timing shared with the framer-motion tokens in

@@ -121,7 +121,7 @@ const TabsList = React.forwardRef<
         // instead, without a scrollbar — the half-visible tab at the edge is
         // the affordance — and `useActiveTabBox` keeps the selected tab in
         // view when the value changes from outside the strip.
-        "relative inline-flex h-10 max-w-full items-center justify-center overflow-x-auto rounded-lg text-muted-foreground no-scrollbar",
+        "relative inline-flex h-10 max-w-full items-center justify-start overflow-x-auto rounded-lg text-muted-foreground no-scrollbar",
         indicator === "pill" && "bg-muted p-1",
         className
       )}
@@ -165,7 +165,7 @@ const TabsTrigger = React.forwardRef<
       // squeezes its own `whitespace-nowrap` label out past its box, which
       // both clips the text and makes the sliding pill measure the wrong
       // width. Grid-based lists ignore it.
-      "relative inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground ring-offset-background transition-colors duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-elevated-foreground",
+      "relative inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground ring-offset-background transition-colors duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-elevated-foreground",
       className
     )}
     {...props}

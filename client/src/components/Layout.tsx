@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -20,6 +20,18 @@ export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // The drawer dims the page and traps the eye like a dialog, so it answers to
+  // Escape like one. Bound only while it is open, so it can never swallow an
+  // Escape meant for a dialog above it.
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [sidebarOpen]);
   const containsOwnScrollArea = isContainedModuleRoute(location, user?.module);
   const realtime = useWebSocket();
 
@@ -56,7 +68,7 @@ export default function Layout({ children }: LayoutProps) {
         fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] md:relative md:translate-x-0 md:z-auto
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

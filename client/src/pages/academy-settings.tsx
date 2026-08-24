@@ -1203,7 +1203,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       sortable: true,
       accessor: (row) => row.lessonCount,
       render: (row) => (
-        <div className="min-w-44">
+        <div className="md:min-w-44">
           <p className="font-medium text-foreground">
             {row.lessonCount} {t('lessonsCount')} · {row.lessonDurationMinutes} {t('minuteShort')}
           </p>

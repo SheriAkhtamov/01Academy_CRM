@@ -30,7 +30,7 @@ import {
   ChevronDown,
   type LucideIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DURATION, EASE, SPRING } from '@/lib/motion';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
@@ -53,8 +53,9 @@ interface NavSection {
   items: NavItem[];
 }
 
-export default function Sidebar({ onClose }: { onClose?: () => void }) {
+export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isOpen?: boolean }) {
   const [location] = useLocation();
+  const navRef = useRef<HTMLDivElement | null>(null);
   const { user } = useAuth();
   const { t } = useTranslation();
   const hasSalesModule = canAccessAcademyModule(user, 'sales');
@@ -76,6 +77,54 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       ? { sales: true, teacher: true, marketing: true, administration: true }
       : {} as Record<string, boolean>
   ));
+
+  /*
+    Five modules expanded at once make this list about 1500px tall, and the
+    drawer opens at the top of it every time. On `/tasks` — the last item in
+    the list — that meant opening the navigation and being shown a screen with
+    no indication of where you were, and a scroll to find out.
+
+    Only the nav's own `scrollTop` moves: `scrollIntoView` would drag every
+    scrollable ancestor with it and jump the page underneath the drawer.
+  */
+  useEffect(() => {
+    // The drawer is always mounted and merely translated off-screen, so this
+    // has to wait for it to actually be on screen; `isOpen` is undefined on
+    // the docked desktop sidebar, where the route change alone is the cue.
+    if (isOpen === false) return undefined;
+
+    const reveal = () => {
+      const nav = navRef.current;
+      const active = nav?.querySelector<HTMLElement>('.sidebar-nav-item.active');
+      if (!nav || !active) return;
+
+      // Measured through rects, not `offsetTop`: each item sits inside a
+      // positioned stagger wrapper, so `offsetTop` reports 12px from that
+      // wrapper rather than its distance down the scrolling list.
+      const navBox = nav.getBoundingClientRect();
+      const itemBox = active.getBoundingClientRect();
+      if (itemBox.top >= navBox.top && itemBox.bottom <= navBox.bottom) return;
+
+      // Centred rather than barely in frame — the items above it are the
+      // context for the one you are on.
+      const contentTop = itemBox.top - navBox.top + nav.scrollTop;
+      nav.scrollTo({
+        top: Math.max(0, contentTop - nav.clientHeight / 2 + itemBox.height / 2),
+        behavior: 'auto',
+      });
+    };
+
+    reveal();
+    /*
+      And again once the entrance has finished. Opening the drawer within the
+      first half-second of a page load catches the staggered sections still
+      settling, and a position measured then is off by however far the items
+      still had to travel — which landed the scroll in blank space past the end
+      of the list. The second pass is a no-op whenever the first one was right.
+    */
+    const settled = window.setTimeout(reveal, 450);
+    return () => window.clearTimeout(settled);
+  }, [isOpen, location]);
 
   if (!user) return null;
 
@@ -206,7 +255,13 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm">
+      {/*
+        Frosted only where it is docked. As a drawer the panel sits above the
+        page, and 5% of a blue "add" button showing through reads as a
+        highlighted nav item — the one clear giveaway that this is an overlay
+        rendered on the cheap.
+      */}
+      <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card md:bg-card/95 md:backdrop-blur-sm">
         {/* Logo */}
         <div className="flex items-center border-b border-border/70 px-5 py-4">
           <div className="flex items-center w-full">
@@ -231,6 +286,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 
         {/* Navigation */}
         <StaggerGroup
+          ref={navRef}
           count={sections.length + 1}
           className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden"
           // A <nav> landmark is what screen readers navigate by; StaggerGroup

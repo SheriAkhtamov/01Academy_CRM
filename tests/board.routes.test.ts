@@ -156,7 +156,7 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, staffUser.id);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, staffUser.id, false);
   });
 
   it("lists all board tasks for administrators", async () => {
@@ -167,7 +167,30 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false);
+  });
+
+  it("lists accepted tasks only when the archive is requested", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.get("/api/board/tasks?archived=true");
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, staffUser.id, true);
+  });
+
+  it("rejects an invalid archive filter", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.get("/api/board/tasks?archived=eventually");
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Invalid archive filter" });
+    expect(mockStorage.board.getTasks).not.toHaveBeenCalled();
   });
 
   it("assigns new staff-created tasks to the current employee", async () => {
@@ -273,6 +296,46 @@ describe("board routes", () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Task must be in Done before it can be accepted" });
     expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+  });
+
+  it("records acceptance metadata before the task moves to the archive", async () => {
+    const completedTask = {
+      id: 100,
+      boardId: defaultBoard.id,
+      title: "Completed task",
+      description: null,
+      status: "done",
+      priority: "normal",
+      position: 0,
+      creatorId: staffUser.id,
+      assigneeId: assigneeUser.id,
+      dueAt: null,
+      acceptedAt: null,
+      acceptedBy: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    mockStorage.board.getTask.mockResolvedValue(completedTask);
+    mockStorage.board.updateTask.mockImplementation(async (_id: number, updates: any) => ({
+      ...completedTask,
+      ...updates,
+    }));
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.patch("/api/board/tasks/100/status").send({ status: "accepted" });
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.board.updateTask).toHaveBeenCalledWith(100, expect.objectContaining({
+      status: "accepted",
+      acceptedAt: expect.any(Date),
+      acceptedBy: staffUser.id,
+    }));
+    expect(mockStorage.board.createActivity).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 100,
+      type: "accepted",
+    }));
   });
 
   it("strictly rejects malformed and negative ids instead of truncating them", async () => {

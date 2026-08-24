@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CalendarDays, Columns3, Plus, Users, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Archive, CalendarDays, Columns3, ListTodo, Plus, Users, type LucideIcon } from 'lucide-react';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { TaskBoard } from '@/components/ux/board/TaskBoard';
 import { TaskCalendar } from '@/components/ux/board/TaskCalendar';
 import { CreateTaskDialog } from '@/components/ux/board/CreateTaskDialog';
 import { TaskDetailSheet } from '@/components/ux/board/TaskDetailSheet';
+import { TaskCard } from '@/components/ux/board/TaskCard';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -45,6 +46,7 @@ const OWNER_FILTER_SELF = 'me';
 // switch rather than a route, and it is remembered per person.
 const TASK_VIEWS = ['board', 'calendar'] as const;
 type TaskViewMode = (typeof TASK_VIEWS)[number];
+type TaskListView = 'active' | 'archive';
 
 const TASK_VIEW_META = {
     board: { labelKey: 'taskViewBoard', icon: Columns3 },
@@ -74,9 +76,12 @@ export default function TasksPage() {
     const [detailOpen, setDetailOpen] = useState(false);
     const [ownerFilter, setOwnerFilter] = useState<string>(OWNER_FILTER_SELF);
     const [taskView, setTaskView] = useCalendarPreference<TaskViewMode>('taskSectionView', TASK_VIEWS, 'board');
+    const [taskListView, setTaskListView] = useState<TaskListView>('active');
+    const isArchiveView = taskListView === 'archive';
 
     const { data, isLoading, isError, error, refetch, isFetching } = useQuery<BoardTasksResponse>({
-        queryKey: boardQueryKeys.tasks,
+        queryKey: isArchiveView ? boardQueryKeys.archive : boardQueryKeys.tasks,
+        queryFn: () => boardApi.listTasks<BoardTasksResponse>(isArchiveView),
     });
 
     const { data: usersData } = useQuery<ApiUser[]>({
@@ -153,11 +158,11 @@ export default function TasksPage() {
     const handleStatusChange = async (taskId: number, status: BoardStatus): Promise<boolean> => {
         try {
             await boardApi.updateTaskStatus(taskId, status);
-            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${taskId}`] });
             return true;
         } catch (error) {
-            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             toast({
                 title: t('taskUpdateFailed'),
                 description: error instanceof Error ? error.message : t('errorOccurred'),
@@ -170,12 +175,12 @@ export default function TasksPage() {
     const handleReschedule = async (taskId: number, dueAt: string | null): Promise<boolean> => {
         try {
             await boardApi.updateTaskDueAt(taskId, dueAt);
-            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${taskId}`] });
             toast({ title: dueAt ? t('taskRescheduled') : t('taskDueDateCleared') });
             return true;
         } catch (error) {
-            queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             toast({
                 title: t('taskUpdateFailed'),
                 description: error instanceof Error ? error.message : t('errorOccurred'),
@@ -187,10 +192,13 @@ export default function TasksPage() {
 
     const canMoveTask = (task: BoardTasksResponse['tasks'][number], status: BoardStatus) => {
         if (task.status === status) return true;
-        const canAcceptOrReopen = isTaskSupervisor || task.creator?.id === user?.id;
-        if (status === 'accepted') return task.status === 'done' && canAcceptOrReopen;
-        if (task.status === 'accepted') return canAcceptOrReopen;
-        return true;
+        return task.status !== 'accepted' && status !== 'accepted';
+    };
+
+    const changeTaskListView = (nextView: TaskListView) => {
+        setTaskListView(nextView);
+        setDetailOpen(false);
+        setSelectedTaskId(null);
     };
 
     const openTask = (taskId: number) => {
@@ -208,31 +216,69 @@ export default function TasksPage() {
                         <>
                             <div
                                 role="group"
-                                aria-label={t('taskViewMode')}
+                                aria-label={t('taskListMode')}
                                 className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
                             >
-                                {TASK_VIEWS.map((mode) => {
-                                    const { labelKey, icon: Icon } = TASK_VIEW_META[mode];
-                                    return (
-                                        <Button
-                                            key={mode}
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            data-testid={`task-view-${mode}`}
-                                            aria-pressed={mode === taskView}
-                                            className={cn(
-                                                'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
-                                                mode === taskView && 'bg-card text-foreground shadow-2xs hover:bg-card',
-                                            )}
-                                            onClick={() => setTaskView(mode)}
-                                        >
-                                            <Icon className="size-4" aria-hidden="true" />
-                                            {t(labelKey)}
-                                        </Button>
-                                    );
-                                })}
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    data-testid="task-list-active"
+                                    aria-pressed={!isArchiveView}
+                                    className={cn(
+                                        'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
+                                        !isArchiveView && 'bg-card text-foreground shadow-2xs hover:bg-card',
+                                    )}
+                                    onClick={() => changeTaskListView('active')}
+                                >
+                                    <ListTodo className="size-4" aria-hidden="true" />
+                                    {t('activeTasks')}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    data-testid="task-list-archive"
+                                    aria-pressed={isArchiveView}
+                                    className={cn(
+                                        'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
+                                        isArchiveView && 'bg-card text-foreground shadow-2xs hover:bg-card',
+                                    )}
+                                    onClick={() => changeTaskListView('archive')}
+                                >
+                                    <Archive className="size-4" aria-hidden="true" />
+                                    {t('taskArchive')}
+                                </Button>
                             </div>
+                            {!isArchiveView ? (
+                                <div
+                                    role="group"
+                                    aria-label={t('taskViewMode')}
+                                    className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+                                >
+                                    {TASK_VIEWS.map((mode) => {
+                                        const { labelKey, icon: Icon } = TASK_VIEW_META[mode];
+                                        return (
+                                            <Button
+                                                key={mode}
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                data-testid={`task-view-${mode}`}
+                                                aria-pressed={mode === taskView}
+                                                className={cn(
+                                                    'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
+                                                    mode === taskView && 'bg-card text-foreground shadow-2xs hover:bg-card',
+                                                )}
+                                                onClick={() => setTaskView(mode)}
+                                            >
+                                                <Icon className="size-4" aria-hidden="true" />
+                                                {t(labelKey)}
+                                            </Button>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
                             <Select value={ownerFilter} onValueChange={setOwnerFilter}>
                                 <SelectTrigger className="w-full sm:w-60" aria-label={t('taskOwnerFilter')}>
                                     <SelectValue>
@@ -268,18 +314,26 @@ export default function TasksPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Button className="gap-1.5" onClick={() => setCreateOpen(true)}>
-                                <Plus className="size-4" /> {t('addTask')}
-                            </Button>
+                            {!isArchiveView ? (
+                                <Button className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                                    <Plus className="size-4" /> {t('addTask')}
+                                </Button>
+                            ) : null}
                         </>
                     }
                 />
 
                 {isLoading ? (
                     /* The placeholder has to be shaped like whatever is loading:
-                       five column stubs where a calendar is about to appear read
+                       four column stubs where a calendar is about to appear read
                        as the wrong screen for the second it is up. */
-                    taskView === 'calendar' ? (
+                    isArchiveView ? (
+                        <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <Skeleton key={i} className="h-32 w-full rounded-lg" />
+                            ))}
+                        </div>
+                    ) : taskView === 'calendar' ? (
                         <div className="mt-2 space-y-3">
                             <Skeleton className="h-12 w-full rounded-xl" />
                             <div className="grid grid-cols-7 gap-2">
@@ -290,7 +344,7 @@ export default function TasksPage() {
                         </div>
                     ) : (
                         <div className="mt-2 flex gap-4 overflow-hidden">
-                            {Array.from({ length: 5 }).map((_, i) => (
+                            {Array.from({ length: 4 }).map((_, i) => (
                                 <div key={i} className="w-80 shrink-0 space-y-3">
                                     <Skeleton className="h-10 w-full rounded-xl" />
                                     <Skeleton className="h-24 w-full rounded-lg" />
@@ -318,7 +372,42 @@ export default function TasksPage() {
                     </Alert>
                 ) : (
                     <div className="mt-2 flex min-h-0 flex-1 flex-col">
-                        {taskView === 'calendar' ? (
+                        {isArchiveView ? (
+                            <section
+                                aria-label={t('taskArchive')}
+                                className="flex min-h-[30rem] flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/20"
+                            >
+                                <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-3">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                            <Archive className="size-4" aria-hidden="true" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h2 className="text-sm font-semibold text-foreground">{t('taskArchive')}</h2>
+                                            <p className="truncate text-xs text-muted-foreground">{t('taskArchiveDescription')}</p>
+                                        </div>
+                                    </div>
+                                    <span className="rounded-full bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-muted-foreground">
+                                        {visibleTasks.length}
+                                    </span>
+                                </div>
+                                <div className="min-h-0 flex-1 overflow-y-auto p-4 [scrollbar-gutter:stable]">
+                                    {visibleTasks.length > 0 ? (
+                                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                                            {visibleTasks.map((task) => (
+                                                <TaskCard key={task.id} task={task} onClick={() => openTask(task.id)} />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/60 p-6 text-center">
+                                            <Archive className="size-8 text-muted-foreground/50" aria-hidden="true" />
+                                            <p className="text-sm font-medium text-foreground">{t('taskArchiveEmpty')}</p>
+                                            <p className="max-w-sm text-xs text-muted-foreground">{t('taskArchiveEmptyDescription')}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+                        ) : taskView === 'calendar' ? (
                             <TaskCalendar
                                 tasks={visibleTasks}
                                 onTaskClick={openTask}

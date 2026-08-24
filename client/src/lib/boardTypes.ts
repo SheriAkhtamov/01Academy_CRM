@@ -118,7 +118,6 @@ export const BOARD_COLUMNS: { status: BoardStatus; labelKey: TranslationKey }[] 
     { status: 'todo', labelKey: 'colTodo' },
     { status: 'in_progress', labelKey: 'taskInProgress' },
     { status: 'done', labelKey: 'taskDone' },
-    { status: 'accepted', labelKey: 'colAccepted' },
 ];
 
 // Traffic-light priorities: urgent (red), normal (amber), non-urgent (green).

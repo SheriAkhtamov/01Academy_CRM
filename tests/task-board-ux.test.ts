@@ -9,6 +9,18 @@ const tasksPage = readFileSync(
   new URL('../client/src/pages/tasks.tsx', import.meta.url),
   'utf8',
 );
+const taskDetail = readFileSync(
+  new URL('../client/src/components/ux/board/TaskDetailSheet.tsx', import.meta.url),
+  'utf8',
+);
+const boardTypes = readFileSync(
+  new URL('../client/src/lib/boardTypes.ts', import.meta.url),
+  'utf8',
+);
+const boardStorage = readFileSync(
+  new URL('../server/storage/board.storage.ts', import.meta.url),
+  'utf8',
+);
 const taskCalendar = readFileSync(
   new URL('../client/src/components/ux/board/TaskCalendar.tsx', import.meta.url),
   'utf8',
@@ -62,6 +74,17 @@ describe('task board interaction UX', () => {
     // board feature rather than reaching for the transport itself.
     expect(tasksPage).not.toContain('apiRequest(');
     expect(tasksPage).toContain('boardApi.updateTaskDueAt');
+  });
+
+  it('moves accepted tasks out of the board and into a separate archive view', () => {
+    expect(boardTypes).not.toContain("{ status: 'accepted', labelKey: 'colAccepted' }");
+    expect(tasksPage).toContain('data-testid="task-list-archive"');
+    expect(tasksPage).toContain('boardApi.listTasks<BoardTasksResponse>(isArchiveView)');
+    expect(tasksPage).toContain('<TaskCard key={task.id} task={task}');
+    expect(taskDetail).toContain("statusMutation.mutate('accepted')");
+    expect(taskDetail).toContain("t('taskAcceptedAndArchived')");
+    expect(boardStorage).toContain("eq(boardTasks.status, 'accepted')");
+    expect(boardStorage).toContain("ne(boardTasks.status, 'accepted')");
   });
 
   /* `useDraggable` registers a node under its id whether or not dragging is

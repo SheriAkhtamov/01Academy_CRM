@@ -46,6 +46,7 @@ import {
     X,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
+import { boardQueryKeys } from '@/features/board/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -71,8 +72,8 @@ interface TaskDetailSheetProps {
     users: UserMini[];
 }
 
-// Statuses reachable through the plain move dropdown. Accept (-> accepted) and
-// re-open (out of accepted) are creator-only and handled by dedicated buttons.
+// Statuses reachable through the plain move dropdown. Accepted is the archive
+// state; accepting and restoring it are handled by dedicated buttons.
 const WORKING_STATUSES: BoardStatus[] = ['backlog', 'todo', 'in_progress', 'done'];
 const UNASSIGNED = 'unassigned';
 
@@ -166,7 +167,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
 
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey });
-        queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+        queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
     };
 
     const isTaskSupervisor = hasLeadershipAccess(user);
@@ -195,13 +196,22 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
 
     const statusMutation = useMutation({
         mutationFn: (status: BoardStatus) => apiRequest('PATCH', `/api/board/tasks/${taskId}/status`, { status }),
-        onSuccess: () => invalidate(),
+        onSuccess: (_updated, status) => {
+            invalidate();
+            if (status === 'accepted') {
+                toast({ title: t('taskAcceptedAndArchived') });
+                onOpenChange(false);
+            } else if (task?.status === 'accepted') {
+                toast({ title: t('taskReopened') });
+                onOpenChange(false);
+            }
+        },
         onError,
     });
 
     const deleteMutation = useMutation({
         mutationFn: () => apiRequest('DELETE', `/api/board/tasks/${taskId}`),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] }); toast({ title: t('taskDeletedToast') }); onOpenChange(false); },
+        onSuccess: () => { queryClient.invalidateQueries({ queryKey: boardQueryKeys.all }); toast({ title: t('taskDeletedToast') }); onOpenChange(false); },
         onError,
     });
 

@@ -715,7 +715,7 @@ export function LeadDetailSheet({
     }),
     onSuccess: async () => {
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
-      await queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+      await queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
       await finishMutation(t('taskCreated'));
     },
     onError: (error: Error) => toast({ title: t('taskCreateFailed'), description: error.message, variant: 'destructive' }),
@@ -724,7 +724,7 @@ export function LeadDetailSheet({
   const updateTask = useMutation({
     mutationFn: (taskId: number) => boardApi.updateTaskStatus(taskId, 'done'),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: boardQueryKeys.tasks });
+      await queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
       await finishMutation(t('taskUpdated'));
     },
     onError: (error: Error) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),

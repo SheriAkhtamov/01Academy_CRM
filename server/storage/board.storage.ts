@@ -16,7 +16,7 @@ import {
     type InsertBoardTaskAttachment,
     type InsertBoardTaskActivity,
 } from '../db/schema';
-import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 // Minimal user shape embedded in task payloads. Accepts the `users` table or
@@ -70,16 +70,19 @@ class BoardStorage {
     }
 
     // -- Tasks (list with embedded users + counts) -------------------------
-    async getTasks(boardId: number, visibleToUserId?: number) {
-        const visibilityWhere = visibleToUserId
-            ? and(
-                eq(boardTasks.boardId, boardId),
-                or(
+    async getTasks(boardId: number, visibleToUserId?: number, archived = false) {
+        const visibilityWhere = and(
+            eq(boardTasks.boardId, boardId),
+            archived
+                ? eq(boardTasks.status, 'accepted')
+                : ne(boardTasks.status, 'accepted'),
+            visibleToUserId
+                ? or(
                     eq(boardTasks.creatorId, visibleToUserId),
                     eq(boardTasks.assigneeId, visibleToUserId),
-                ),
-            )
-            : eq(boardTasks.boardId, boardId);
+                )
+                : undefined,
+        );
 
         const rows = await db
             .select({
@@ -107,7 +110,12 @@ class BoardStorage {
             .leftJoin(assignee, eq(boardTasks.assigneeId, assignee.id))
             .leftJoin(academyLeads, eq(boardTasks.leadId, academyLeads.id))
             .where(visibilityWhere)
-            .orderBy(asc(boardTasks.position), asc(boardTasks.id));
+            .orderBy(
+                archived
+                    ? sql`${boardTasks.acceptedAt} desc nulls last`
+                    : asc(boardTasks.position),
+                archived ? desc(boardTasks.id) : asc(boardTasks.id),
+            );
 
         const ids = rows.map((r) => r.id);
         const counts = await this.getTaskCounts(ids);

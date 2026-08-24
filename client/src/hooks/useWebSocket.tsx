@@ -7,6 +7,7 @@ import { devLog } from '@/lib/debug';
 import { leadQueryKeys } from '@/features/leads/api';
 import { messageQueryKeys } from '@/features/messages/api';
 import { telephonyQueryKeys } from '@/features/telephony/api';
+import { boardQueryKeys } from '@/features/board/api';
 
 /**
  * `connecting` covers both the first attempt and the backoff window, so the UI
@@ -125,7 +126,7 @@ export function useWebSocket() {
         case 'BOARD_TASK_CREATED':
         case 'BOARD_TASK_UPDATED':
         case 'BOARD_TASK_DELETED':
-          queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+          queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
           if (message.data?.id) {
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${message.data.id}`] });
           }

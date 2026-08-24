@@ -209,6 +209,11 @@ router.get('/boards', async (_req, res) => {
 router.get('/tasks', async (req, res) => {
     try {
         const hasBoardId = req.query.boardId !== undefined && req.query.boardId !== '';
+        const archivedParam = req.query.archived;
+        if (archivedParam !== undefined && archivedParam !== 'true' && archivedParam !== 'false') {
+            return res.status(400).json({ error: 'Invalid archive filter' });
+        }
+        const archived = archivedParam === 'true';
         let boardId = hasBoardId ? parseId(req.query.boardId) : null;
         if (hasBoardId && !boardId) {
             return res.status(400).json({ error: 'Invalid board id' });
@@ -221,7 +226,7 @@ router.get('/tasks', async (req, res) => {
         const visibleToUserId = isTaskSupervisor(req.user!) ? undefined : req.user!.id;
         const [board, tasks] = await Promise.all([
             storage.board.getBoard(boardId),
-            storage.board.getTasks(boardId, visibleToUserId),
+            storage.board.getTasks(boardId, visibleToUserId, archived),
         ]);
         if (!board) return res.status(404).json({ error: 'Board not found' });
         res.json({ board, tasks });

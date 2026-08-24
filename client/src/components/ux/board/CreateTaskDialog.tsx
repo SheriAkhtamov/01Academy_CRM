@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { apiRequest } from '@/lib/queryClient';
+import { boardQueryKeys } from '@/features/board/api';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { PRIORITY_ORDER, type BoardPriority, type UserMini } from '@/lib/boardTypes';
@@ -79,7 +80,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                 dueAt: dueAt ? new Date(dueAt).toISOString() : null,
             }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['/api/board/tasks'] });
+            queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             toast({ title: t('taskCreated') });
             reset();
             onOpenChange(false);

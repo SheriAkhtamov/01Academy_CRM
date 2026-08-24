@@ -11,10 +11,15 @@ export type CreateLeadTaskInput = {
 };
 
 export const boardQueryKeys = {
-  tasks: ['/api/board/tasks'] as const,
+  all: ['board-tasks'] as const,
+  tasks: ['board-tasks', 'active'] as const,
+  archive: ['board-tasks', 'archive'] as const,
 };
 
 export const boardApi = {
+  listTasks: <T>(archived = false) => (
+    apiRequest('GET', `/api/board/tasks${archived ? '?archived=true' : ''}`) as Promise<T>
+  ),
   createTask: <T>(input: CreateLeadTaskInput) => (
     apiRequest('POST', '/api/board/tasks', input) as Promise<T>
   ),

@@ -89,7 +89,8 @@ describe('sales schedule range events', () => {
         id: 500,
         groupId: 1,
         groupName: 'AI Kids — Morning',
-        scheduledAt: new Date(2026, 5, 15, 12, 0).toISOString(),
+        // Academy-offset instant: startMinutes must not depend on the runner's zone.
+        scheduledAt: '2026-06-15T12:00:00+05:00',
         durationMinutes: 90,
       }],
       demos: [],

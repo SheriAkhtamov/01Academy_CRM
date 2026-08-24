@@ -306,7 +306,8 @@ describe('demo lessons', () => {
       courseName: 'Vibe Coding',
       teacherName: 'Teacher',
       roomName: 'Room 2',
-      scheduledAt: new Date(2030, 6, 15, 10, 0).toISOString(),
+      // Academy-offset instant: startMinutes must not depend on the runner's zone.
+      scheduledAt: '2030-07-15T10:00:00+05:00',
       durationMinutes: 60,
       status: 'scheduled',
       participants: [{ leadId: 10 }, { leadId: 11 }],

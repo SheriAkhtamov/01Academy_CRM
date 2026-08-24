@@ -53,7 +53,7 @@ describe('sales schedule calendar', () => {
         groupId: 1,
         groupName: 'AI Kids A1',
         courseId: 10,
-        scheduledAt: '2026-06-15T12:00:00',
+        scheduledAt: '2026-06-15T12:00:00+05:00',
         durationMinutes: 90,
         status: 'scheduled',
       }],
@@ -170,12 +170,12 @@ describe('sales schedule calendar', () => {
       groupId: 1,
       teacherId: 11,
       teacherName: 'Substitute Teacher',
-      scheduledAt: '2026-06-15T12:00:00',
+      scheduledAt: '2026-06-15T12:00:00+05:00',
     }], [{
       id: 3,
       teacherId: 12,
       teacherName: 'Demo Teacher',
-      scheduledAt: '2026-06-15T09:00:00',
+      scheduledAt: '2026-06-15T09:00:00+05:00',
     }]);
 
     expect(teachers).toEqual([
@@ -197,7 +197,7 @@ describe('sales schedule calendar', () => {
         groupName: 'AI Kids A1',
         teacherId: 11,
         teacherName: 'Substitute Teacher',
-        scheduledAt: '2026-06-15T12:00:00',
+        scheduledAt: '2026-06-15T12:00:00+05:00',
         durationMinutes: 90,
         status: 'scheduled',
       }],
@@ -220,7 +220,7 @@ describe('sales schedule calendar', () => {
       id: 3,
       teacherId: 12,
       teacherName: 'Demo Teacher',
-      scheduledAt: '2026-06-15T09:00:00',
+      scheduledAt: '2026-06-15T09:00:00+05:00',
       status: 'scheduled',
     }], weekStart);
 

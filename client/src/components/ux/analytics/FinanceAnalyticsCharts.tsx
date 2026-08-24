@@ -70,7 +70,7 @@ export function FinanceAnalyticsCharts({
   const hasContributionData = contributionData.some((item) => Number(item.value || 0) !== 0);
 
   return (
-    <section className="grid gap-4 xl:grid-cols-2">
+    <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <AnalyticsChartCard
         title={t('financeExpenseDynamics')}
         description={t('financeExpenseDynamicsDescription')}
@@ -136,7 +136,7 @@ export function FinanceAnalyticsCharts({
         summary={`${t('financeProfitContribution')}. ${contributionData.map((item) => `${item.name}: ${money(item.value)}`).join(', ')}`}
         chartClassName="h-[258px]"
         footer={hasContributionData ? (
-          <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
             {contributionData.map((item) => (
               <div key={item.name} className="flex min-w-0 items-center justify-between gap-3 text-xs">
                 <span className="flex min-w-0 items-center gap-2 text-muted-foreground">

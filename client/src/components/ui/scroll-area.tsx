@@ -12,7 +12,19 @@ const ScrollArea = React.forwardRef<
     className={cn("relative overflow-hidden", className)}
     {...props}
   >
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+    {/*
+      Radix gives the viewport's content wrapper `display: table`, which is how
+      it measures content that is wider than the box. A table sizes to
+      max-content, so the wrapper never narrows to its container: inside the
+      lead filters dialog on a phone it settled at 413px in a 341px dialog, and
+      the segmented controls and toggles along its right edge were simply cut
+      off with no way to scroll to them.
+
+      Forcing the wrapper back to a block that may shrink is the documented fix
+      — vertical scrolling is unaffected, and a child that really is wider than
+      the box still scrolls, because the scrollbar lives on the viewport.
+    */}
+    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] [&>div]:!block [&>div]:!min-w-0">
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

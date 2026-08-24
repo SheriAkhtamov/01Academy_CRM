@@ -221,7 +221,9 @@ export function DataTable<T extends Record<string, any>>({
   };
 
   const renderSortBar = () => {
+    // Nothing to order, or nothing to order by.
     if (mobileColumns.sortable.length === 0) return null;
+    if (!isLoading && sortedData.length === 0) return null;
     return (
       <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-muted/20 px-3 py-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -354,6 +356,14 @@ export function DataTable<T extends Record<string, any>>({
   return (
     <div className={cn(rootClassName)} aria-busy={isLoading}>
       {isMobile ? renderSortBar() : null}
+      {/*
+        The pane keeps its height and its own scroll on a phone as well. Letting
+        the cards run to their natural length reads better in isolation, but
+        every caller wraps this in a `h-full … overflow-hidden` card sized for
+        the app shell: with nothing here to scroll, the list simply grew past
+        that card and was clipped, unreachable, at row three. The pane is the
+        scroller the surrounding layout is built around.
+      */}
       <div className={cn('overflow-x-auto', className)}>
         {isMobile ? renderCards() : (
         <Table containerClassName="overflow-visible">

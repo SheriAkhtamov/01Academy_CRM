@@ -2155,7 +2155,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <AlertDescription>{t('pipelineStageTransferBeforeDelete')}</AlertDescription>
               </Alert>
 
-              <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
+              <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/30 p-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
                 <div className="space-y-2">
                   <Label>{t('currentStage')}</Label>
                   <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">

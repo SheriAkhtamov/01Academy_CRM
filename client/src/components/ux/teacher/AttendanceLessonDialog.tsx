@@ -562,7 +562,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
                 {rescheduleOpen ? (
                   <div id={rescheduleBodyId} className="space-y-3 border-t border-amber-500/20 pt-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label htmlFor="reschedule-at" className="text-xs font-medium text-muted-foreground">
                           {t('newLessonDate')}

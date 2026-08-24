@@ -354,7 +354,7 @@ export function DemoLessonDetailsDialog({
             <DialogDescription>{demo.courseName ?? t('noCourse')}</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
             <div className="flex items-start gap-3">
               <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
               <div>
@@ -410,7 +410,7 @@ export function DemoLessonDetailsDialog({
                   : null;
 
                 return (
-                  <div key={participant.id} className="grid items-center gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                  <div key={participant.id} className="grid grid-cols-1 items-center gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
                     {onOpenLead && primaryName ? (
                       <button
                         type="button"
@@ -752,7 +752,7 @@ export function DemoLessonDetailsDialog({
               <DialogDescription>{t('rescheduleDemoLessonDescription')}</DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="demo-reschedule-date">{t('dateColumn')}</Label>
                 <Input

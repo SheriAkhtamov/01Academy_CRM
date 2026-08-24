@@ -250,7 +250,7 @@ export function MarketingAnalyticsCharts({
         className="xl:col-span-7"
         chartClassName="h-[252px]"
         footer={hasFunnelData ? (
-          <ol className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+          <ol className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
             {funnelSteps.map((stage, index) => (
               <li key={stage.code} className="flex min-w-0 items-center gap-2 text-xs">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-muted font-semibold tabular-nums">

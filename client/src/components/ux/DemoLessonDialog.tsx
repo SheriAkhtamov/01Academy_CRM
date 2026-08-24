@@ -275,7 +275,7 @@ export function DemoLessonDialog({
           <DialogDescription>{t('createDemoLessonDescription')}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="demo-format">{t('demoFormat')}</Label>
             <Select value={format} onValueChange={(value) => handleFormatChange(value as 'offline' | 'online')}>

@@ -100,7 +100,8 @@ describe('dashboard period filters and simplified actions', () => {
       expect(source).toContain('gap-4 xl:grid-cols-12');
       expect(source).not.toContain('gap-5 2xl:grid-cols-12');
     }
-    expect(financeCharts).toContain('grid gap-4 xl:grid-cols-2');
+    // One shrinkable column on a phone, two from `xl`.
+    expect(financeCharts).toContain('grid grid-cols-1 gap-4 xl:grid-cols-2');
     expect(adminHealthChart).toContain('chartClassName="h-[210px]"');
   });
 
@@ -123,7 +124,7 @@ describe('dashboard period filters and simplified actions', () => {
   it('keeps exact chart data understandable when labels are constrained', () => {
     expect(salesCharts).toContain('rankWithRemainder');
     expect(marketingCharts).toContain('rankWithRemainder');
-    expect(marketingCharts).toContain('<ol className="grid gap-x-4 gap-y-2 sm:grid-cols-2">');
+    expect(marketingCharts).toContain('<ol className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">');
     expect(financeCharts).toContain('layout="vertical"');
     expect(adminHealthChart).toContain('dataKey="shortLabel"');
   });

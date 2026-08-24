@@ -56,6 +56,11 @@ export function PaginationControls({
         the page counter and both arrows, so a 26-page archive could not be
         paged past the first screen. Reserving the corner fixes that for every
         table at once, without hard-coding the widget's size or position.
+
+        Which is also why the two groups stay left-aligned when they break onto
+        their own rows on a phone: spreading them with `justify-between` puts
+        the arrows back under the widget, which is exactly where they were when
+        this was a bug.
       */
       className={cn(
         'flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/70 bg-muted/10 px-4 py-3 text-xs text-muted-foreground sm:gap-x-6',
@@ -69,7 +74,7 @@ export function PaginationControls({
         third line; giving each group the full width and spreading it puts the
         arrows against the right edge, where the thumb already is.
       */}
-      <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 sm:w-auto sm:justify-start">
+      <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 sm:w-auto">
         <span className="font-medium tabular-nums text-foreground/80">{rangeLabel}</span>
         <div className="flex items-center gap-1.5">
           <span>{t('perPage')}</span>
@@ -90,7 +95,7 @@ export function PaginationControls({
         </div>
       </div>
 
-      <div className="flex w-full items-center justify-between gap-1.5 sm:w-auto sm:justify-start">
+      <div className="flex w-full items-center gap-1.5 sm:w-auto">
         <span className="mr-1 tabular-nums text-foreground/70">
           {t('page')} {currentPage} / {totalPages}
         </span>

@@ -541,7 +541,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'overview' && dashboard.data ? (
         <div className="flex flex-col gap-4">
-          <StaggerGroup count={5} className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]">
+          <StaggerGroup count={5} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]">
             <FinanceMetric
               label={copy.netProfit}
               value={compactCurrency(dashboard.data.summary.netProfit)}
@@ -570,7 +570,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <FinanceMetric label={copy.duePayroll} value={compactCurrency(dashboard.data.summary.payrollDueUzs)} fullValue={money(dashboard.data.summary.payrollDueUzs)} icon={WalletCards} tone="warning" />
           </StaggerGroup>
 
-          <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.55fr_1fr]">
             <Card className="border-border/60 shadow-sm">
               <CardHeader className="flex-row items-start justify-between gap-3 px-4 pb-2 pt-3.5">
                 <div>
@@ -687,12 +687,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'payroll' && payroll.data ? (
         <div className="flex flex-col gap-5">
-          <StaggerGroup count={3} className="grid gap-4 md:grid-cols-3">
+          <StaggerGroup count={3} className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <FinanceMetric label={copy.salaryFund} value={money(payroll.data.summary.payrollFundUzs)} icon={WalletCards} />
             <FinanceMetric label={copy.paidPayroll} value={money(payroll.data.summary.paidAmountUzs)} icon={Check} tone="success" />
             <FinanceMetric label={copy.remainingPayroll} value={money(payroll.data.summary.pendingAmountUzs)} icon={Clock3} tone="warning" />
           </StaggerGroup>
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <Card className="overflow-hidden">
               <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
               <CardContent className="p-0">
@@ -708,7 +708,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Card>
                 <CardHeader><CardTitle>{copy.employee}</CardTitle></CardHeader>
                 <CardContent>
-                  {selectedPayrollEntry ? <div className="flex flex-col gap-5"><div className="flex items-center gap-3"><Avatar className="size-12"><AvatarFallback>{initials(selectedPayrollEntry.employeeName)}</AvatarFallback></Avatar><div><p className="font-semibold">{selectedPayrollEntry.employeeName}</p><p className="text-sm text-muted-foreground">{selectedPayrollEntry.position || '—'}</p></div></div><div className="grid gap-4 border-t border-border/70 pt-4"><div><p className="text-xs text-muted-foreground">{copy.currentSalary}</p><p className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">{money(selectedPayrollEntry.baseSalaryUzs)}</p></div><div><p className="text-xs text-muted-foreground">{copy.effectiveFrom}</p><p className="mt-1 text-sm font-medium">{date(selectedPayrollEntry.effectiveFrom)}</p></div></div></div> : <p className="text-sm text-muted-foreground">{copy.selectEmployee}</p>}
+                  {selectedPayrollEntry ? <div className="flex flex-col gap-5"><div className="flex items-center gap-3"><Avatar className="size-12"><AvatarFallback>{initials(selectedPayrollEntry.employeeName)}</AvatarFallback></Avatar><div><p className="font-semibold">{selectedPayrollEntry.employeeName}</p><p className="text-sm text-muted-foreground">{selectedPayrollEntry.position || '—'}</p></div></div><div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4"><div><p className="text-xs text-muted-foreground">{copy.currentSalary}</p><p className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">{money(selectedPayrollEntry.baseSalaryUzs)}</p></div><div><p className="text-xs text-muted-foreground">{copy.effectiveFrom}</p><p className="mt-1 text-sm font-medium">{date(selectedPayrollEntry.effectiveFrom)}</p></div></div></div> : <p className="text-sm text-muted-foreground">{copy.selectEmployee}</p>}
                 </CardContent>
               </Card>
               <Card>
@@ -736,7 +736,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         <DialogContent className="sm:max-w-[620px]">
           <DialogHeader><DialogTitle>{copy.expenseDialogTitle}</DialogTitle><DialogDescription>{copy.expenseDialogDescription}</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field><FieldLabel htmlFor="expense-title">{copy.title}</FieldLabel><Input id="expense-title" value={expenseForm.title} onChange={(event) => setExpenseForm((form) => ({ ...form, title: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
               <Field><FieldLabel>{copy.category}</FieldLabel><Select value={expenseForm.category} onValueChange={(category) => setExpenseForm((form) => ({ ...form, category }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{EXPENSE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{categoryLabel(category)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
               <Field><FieldLabel htmlFor="expense-vendor">{copy.vendor}</FieldLabel><Input id="expense-vendor" value={expenseForm.vendor} onChange={(event) => setExpenseForm((form) => ({ ...form, vendor: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
@@ -768,7 +768,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         <DialogContent>
           <DialogHeader><DialogTitle>{copy.payoutDialogTitle}</DialogTitle><DialogDescription>{payoutTarget ? `${payoutTarget.employeeName} · ${payoutTarget.position || ''}` : ''}</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field><FieldLabel htmlFor="payout-period">{copy.calculationMonth}</FieldLabel><Input id="payout-period" type="month" value={period} disabled /></Field>
               <Field><FieldLabel htmlFor="payout-salary">{copy.salary}</FieldLabel><CurrencyInput id="payout-salary" value={payoutTarget?.baseSalaryUzs || 0} onValueChange={() => undefined} disabled /></Field>
               <Field><FieldLabel htmlFor="payout-bonus">{copy.bonus}</FieldLabel><CurrencyInput id="payout-bonus" value={payoutForm.bonusUzs} onValueChange={(bonusUzs) => setPayoutForm((form) => ({ ...form, bonusUzs }))} /></Field>

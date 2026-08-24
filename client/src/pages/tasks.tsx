@@ -328,7 +328,7 @@ export default function TasksPage() {
                        four column stubs where a calendar is about to appear read
                        as the wrong screen for the second it is up. */
                     isArchiveView ? (
-                        <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                             {Array.from({ length: 8 }).map((_, i) => (
                                 <Skeleton key={i} className="h-32 w-full rounded-lg" />
                             ))}
@@ -393,7 +393,7 @@ export default function TasksPage() {
                                 </div>
                                 <div className="min-h-0 flex-1 overflow-y-auto p-4 [scrollbar-gutter:stable]">
                                     {visibleTasks.length > 0 ? (
-                                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                                             {visibleTasks.map((task) => (
                                                 <TaskCard key={task.id} task={task} onClick={() => openTask(task.id)} />
                                             ))}

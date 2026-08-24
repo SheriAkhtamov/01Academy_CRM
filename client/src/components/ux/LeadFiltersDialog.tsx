@@ -181,7 +181,14 @@ function RangeRow({
     boundLabel: string,
   ) => {
     const shared = {
-      className: 'h-9',
+      /*
+        An <input> carries an intrinsic min-content width of roughly 170px, and
+        `min-width: auto` on a flex item means it is never asked to go below
+        it. Two of them side by side therefore demanded ~350px whatever the box
+        around them was, which pushed the whole filter card past the edge of
+        the dialog on a phone. `min-w-0` is what lets them share what there is.
+      */
+      className: 'h-9 min-w-0',
       'aria-label': `${label}: ${boundLabel}`,
       placeholder: boundLabel,
     };
@@ -287,7 +294,7 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
           }}
         >
           <ScrollArea className="min-h-0">
-            <div className="grid gap-3 p-4 lg:grid-cols-2">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-4 lg:grid-cols-2">
               <FilterCard title={t('leadFiltersChannels')} icon={Radio}>
                 {sources.length > 0 ? (
                   <ChipGroup
@@ -356,7 +363,7 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                 icon={CalendarRange}
                 className="lg:col-span-2"
               >
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <RangeRow
                     label={t('age')}
                     fromValue={draft.ageFrom}
@@ -391,7 +398,7 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
             </div>
           </ScrollArea>
 
-          <DialogFooter className="flex-row items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-5 py-3 sm:justify-between">
+          <DialogFooter className="flex-row flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-border/60 bg-muted/30 px-4 py-3 sm:flex-nowrap sm:px-5 sm:justify-between">
             <span className="text-sm text-muted-foreground" role="status">
               {t('leadFilterMatches')
                 .replace('{count}', String(draftMatches))

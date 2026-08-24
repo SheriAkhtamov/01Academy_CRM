@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  demoLessonAttendanceSchema,
   demoLessonEnrollmentSchema,
   demoLessonMutationSchema,
   demoLessonResourceAvailabilitySchema,
@@ -19,6 +20,10 @@ const journal = JSON.parse(readFileSync(
 )) as { entries: Array<{ idx: number; tag: string }> };
 const capacityMigration = readFileSync(
   new URL('../migrations/0091_remove_capacity_limits.sql', import.meta.url),
+  'utf8',
+);
+const noShowReasonMigration = readFileSync(
+  new URL('../migrations/0094_add_demo_no_show_reasons.sql', import.meta.url),
   'utf8',
 );
 const schema = readFileSync(
@@ -106,6 +111,48 @@ describe('demo lessons', () => {
     expect(journal.entries.find((entry) => entry.idx === 74)?.tag)
       .toBe('0074_add_demo_lessons');
     expect(journal.entries.filter((entry) => entry.idx === 74)).toHaveLength(1);
+  });
+
+  it('stores structured no-show reasons without rewriting legacy rows', () => {
+    expect(noShowReasonMigration).toContain('ADD COLUMN IF NOT EXISTS "no_show_reason_code" varchar(40)');
+    expect(noShowReasonMigration).toContain('ADD COLUMN IF NOT EXISTS "no_show_reason_note" text');
+    expect(noShowReasonMigration).toContain('academy_demo_lesson_participants_no_show_reason_code_check');
+    expect(noShowReasonMigration).toContain('academy_demo_lesson_participants_no_show_reason_state_check');
+    expect(noShowReasonMigration).not.toContain('UPDATE "academy_demo_lesson_participants"');
+    expect(journal.entries.find((entry) => entry.idx === 94)?.tag)
+      .toBe('0094_add_demo_no_show_reasons');
+    expect(schema).toContain("noShowReasonCode: varchar('no_show_reason_code', { length: 40 })");
+    expect(schema).toContain("noShowReasonNote: text('no_show_reason_note')");
+  });
+
+  it('requires a classified reason for every newly saved no-show', () => {
+    expect(demoLessonAttendanceSchema.safeParse({
+      participants: [{ leadId: 10, status: 'no_show', result: null }],
+    }).error?.issues[0]?.message).toBe('demoNoShowReasonRequired');
+    expect(demoLessonAttendanceSchema.safeParse({
+      participants: [{
+        leadId: 10,
+        status: 'no_show',
+        result: null,
+        noShowReasonCode: 'forgot',
+        noShowReasonNote: null,
+      }],
+    }).success).toBe(true);
+    expect(demoLessonAttendanceSchema.safeParse({
+      participants: [{
+        leadId: 10,
+        status: 'no_show',
+        noShowReasonCode: 'other',
+        noShowReasonNote: '   ',
+      }],
+    }).error?.issues[0]?.message).toBe('demoNoShowOtherNoteRequired');
+    expect(demoLessonAttendanceSchema.safeParse({
+      participants: [{
+        leadId: 10,
+        status: 'attended',
+        noShowReasonCode: 'forgot',
+      }],
+    }).error?.issues[0]?.message).toBe('demoNoShowReasonOnlyForAbsence');
   });
 
   it('creates a demo lesson without participants and without a seat limit', () => {
@@ -240,6 +287,17 @@ describe('demo lessons', () => {
     expect(detailsDialog).toContain('<AlertDialog');
     expect(detailsDialog).toContain("t('cancelDemoLessonTitle')");
     expect(detailsDialog).toContain('cancelReason.trim()');
+    expect(detailsDialog).toContain("t('demoNoShowReasonTitle')");
+    expect(detailsDialog).toContain('confirmNoShowReason');
+    expect(detailsDialog).toContain('noShowReasonCode');
+  });
+
+  it('keeps legacy lead state aligned without regressing newer sales outcomes', () => {
+    expect(routes).toContain('ownsLegacyBooking');
+    expect(routes).toContain("currentStatus === 'demo_attended' ? 'demo_invited' : currentStatus");
+    expect(routes).toContain('canAdvanceToDemoAttended');
+    expect(routes).toContain('no_show_reason_code = $5');
+    expect(routes).toContain('{ demoLesson: locked, participants: lockedParticipants }');
   });
 
   it('enrolls directly from lead cards through an existing-demo dialog without creating a student', () => {

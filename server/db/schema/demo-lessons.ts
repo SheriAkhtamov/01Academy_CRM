@@ -57,6 +57,8 @@ export const createAcademyDemoTables = (references: {
     leadId: integer('lead_id').references(() => references.leadId, { onDelete: 'cascade' }).notNull(),
     status: varchar('status', { length: 30 }).notNull().default('invited'),
     result: text('result'),
+    noShowReasonCode: varchar('no_show_reason_code', { length: 40 }),
+    noShowReasonNote: text('no_show_reason_note'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   }, (table) => ({
@@ -66,6 +68,18 @@ export const createAcademyDemoTables = (references: {
     statusCheck: check(
       'academy_demo_lesson_participants_status_check',
       sql`${table.status} IN ('invited', 'confirmed', 'attended', 'no_show', 'cancelled')`,
+    ),
+    noShowReasonCodeCheck: check(
+      'academy_demo_lesson_participants_no_show_reason_code_check',
+      sql`${table.noShowReasonCode} IS NULL OR ${table.noShowReasonCode} IN ('no_contact', 'forgot', 'reschedule_requested', 'illness_or_emergency', 'could_not_reach_location', 'technical_issue', 'not_interested', 'other')`,
+    ),
+    noShowReasonStateCheck: check(
+      'academy_demo_lesson_participants_no_show_reason_state_check',
+      sql`${table.status} = 'no_show' OR (${table.noShowReasonCode} IS NULL AND ${table.noShowReasonNote} IS NULL)`,
+    ),
+    noShowReasonNoteLengthCheck: check(
+      'academy_demo_lesson_participants_no_show_reason_note_length_check',
+      sql`${table.noShowReasonNote} IS NULL OR char_length(${table.noShowReasonNote}) <= 500`,
     ),
   }));
 

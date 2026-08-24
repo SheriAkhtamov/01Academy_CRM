@@ -9,6 +9,16 @@ export const DEMO_PARTICIPANT_STATUSES = [
   'no_show',
   'cancelled',
 ] as const;
+export const DEMO_NO_SHOW_REASON_CODES = [
+  'no_contact',
+  'forgot',
+  'reschedule_requested',
+  'illness_or_emergency',
+  'could_not_reach_location',
+  'technical_issue',
+  'not_interested',
+  'other',
+] as const;
 
 const entityId = z.coerce.number().int().positive();
 // A demo lesson takes as many guests as the branch invites, so the only rule
@@ -62,6 +72,32 @@ export const demoLessonAttendanceSchema = z.object({
     leadId: entityId,
     status: z.enum(['attended', 'no_show']),
     result: z.string().trim().max(2_000).nullable().optional(),
+    noShowReasonCode: z.enum(DEMO_NO_SHOW_REASON_CODES).nullable().optional(),
+    noShowReasonNote: z.string().trim().max(500).nullable().optional(),
+  }).superRefine((item, context) => {
+    if (item.status === 'no_show' && !item.noShowReasonCode) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['noShowReasonCode'],
+        message: 'demoNoShowReasonRequired',
+      });
+    }
+    if (item.status === 'no_show'
+      && item.noShowReasonCode === 'other'
+      && !item.noShowReasonNote?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['noShowReasonNote'],
+        message: 'demoNoShowOtherNoteRequired',
+      });
+    }
+    if (item.status === 'attended' && (item.noShowReasonCode || item.noShowReasonNote)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['noShowReasonCode'],
+        message: 'demoNoShowReasonOnlyForAbsence',
+      });
+    }
   })).min(1)
     .refine((items) => new Set(items.map((item) => item.leadId)).size === items.length, 'duplicateDemoParticipants'),
 });
@@ -74,3 +110,4 @@ export type DemoLessonMutation = z.infer<typeof demoLessonMutationSchema>;
 export type DemoLessonAttendance = z.infer<typeof demoLessonAttendanceSchema>;
 export type DemoLessonEnrollment = z.infer<typeof demoLessonEnrollmentSchema>;
 export type DemoLessonResourceAvailabilityRequest = z.infer<typeof demoLessonResourceAvailabilitySchema>;
+export type DemoNoShowReasonCode = typeof DEMO_NO_SHOW_REASON_CODES[number];

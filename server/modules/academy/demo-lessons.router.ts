@@ -46,6 +46,8 @@ const getDemoLesson = async (id: number) => queryOne(
             'leadId', participant.lead_id,
             'status', participant.status,
             'result', participant.result,
+            'noShowReasonCode', participant.no_show_reason_code,
+            'noShowReasonNote', participant.no_show_reason_note,
             'contactName', lead.contact_name,
             'studentName', lead.student_name,
             'managerId', lead.manager_id
@@ -288,6 +290,8 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
                   'leadId', participant.lead_id,
                   'status', participant.status,
                   'result', participant.result,
+                  'noShowReasonCode', participant.no_show_reason_code,
+                  'noShowReasonNote', participant.no_show_reason_note,
                   'contactName', lead.contact_name,
                   'studentName', lead.student_name,
                   'managerId', lead.manager_id
@@ -459,6 +463,8 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
             await updateRow('academy_demo_lesson_participants', Number(existing.id), {
               status: 'invited',
               result: null,
+              noShowReasonCode: null,
+              noShowReasonNote: null,
             });
           } else {
             await insertRow('academy_demo_lesson_participants', {
@@ -600,33 +606,86 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (locked.status === 'cancelled') {
           throw Object.assign(new Error('cancelledDemoAttendanceNotAllowed'), { statusCode: 409 });
         }
+        const lockedParticipants = await query(
+          `SELECT *
+           FROM academy_demo_lesson_participants
+           WHERE demo_lesson_id = $1
+           ORDER BY id
+           FOR UPDATE`,
+          [id],
+        );
+        const lockedParticipantByLeadId = new Map(
+          lockedParticipants.map((participant) => [Number(participant.leadId), participant]),
+        );
         for (const item of parsed.data.participants) {
+          if (!lockedParticipantByLeadId.has(item.leadId)) {
+            throw Object.assign(new Error('demoParticipantNotFound'), { statusCode: 404 });
+          }
+          const noShowReasonCode = item.status === 'no_show'
+            ? item.noShowReasonCode ?? null
+            : null;
+          const noShowReasonNote = item.status === 'no_show'
+            ? item.noShowReasonNote?.trim() || null
+            : null;
           await query(
             `UPDATE academy_demo_lesson_participants
-             SET status = $3, result = $4, updated_at = NOW()
+             SET status = $3,
+                 result = $4,
+                 no_show_reason_code = $5,
+                 no_show_reason_note = $6,
+                 updated_at = NOW()
              WHERE demo_lesson_id = $1 AND lead_id = $2`,
-            [id, item.leadId, item.status, item.result ?? null],
+            [
+              id,
+              item.leadId,
+              item.status,
+              item.result ?? null,
+              noShowReasonCode,
+              noShowReasonNote,
+            ],
           );
-          if (item.status === 'attended') {
-            const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [item.leadId]);
-            if (lead) {
-              const updatedLead = await updateRow('academy_leads', item.leadId, {
-                demoAttended: true,
-                demoResult: item.result ?? null,
-                statusCode: 'demo_attended',
-              });
-              if (!updatedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-              if (lead.statusCode !== 'demo_attended') {
-                await createStageHistory(
-                  item.leadId,
-                  String(lead.statusCode),
-                  'demo_attended',
-                  Number(req.user!.id),
-                  'Посещение демо-урока отмечено',
-                );
-                await handleLeadStatusEffects(req.actor!, updatedLead, String(lead.statusCode));
-              }
-            }
+          const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [item.leadId]);
+          if (!lead) continue;
+
+          // Participant rows are the source of truth. Mirror an attendance
+          // correction to the legacy lead fields only while this is still the
+          // lead's current demo; editing an older attempt must not overwrite a
+          // newer booking or its pipeline stage.
+          const ownsLegacyBooking = Boolean(
+            lead.demoAt
+            && new Date(lead.demoAt).getTime() === new Date(locked.scheduledAt).getTime(),
+          );
+          if (!ownsLegacyBooking) continue;
+
+          const currentStatus = String(lead.statusCode);
+          const canAdvanceToDemoAttended = [
+            'new_request',
+            'first_contact',
+            'qualified',
+            'demo_invited',
+          ].includes(currentStatus);
+          const nextStatus = item.status === 'attended'
+            ? (canAdvanceToDemoAttended ? 'demo_attended' : currentStatus)
+            : (currentStatus === 'demo_attended' ? 'demo_invited' : currentStatus);
+          const updatedLead = await updateRow('academy_leads', item.leadId, {
+            demoAttended: item.status === 'attended',
+            demoResult: item.status === 'attended'
+              ? item.result ?? null
+              : noShowReasonNote ?? noShowReasonCode,
+            statusCode: nextStatus,
+          });
+          if (!updatedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+          if (currentStatus !== nextStatus) {
+            await createStageHistory(
+              item.leadId,
+              currentStatus,
+              nextStatus,
+              Number(req.user!.id),
+              item.status === 'attended'
+                ? 'Посещение демо-урока отмечено'
+                : 'Посещение демо-урока исправлено: лид не пришёл',
+            );
+            await handleLeadStatusEffects(req.actor!, updatedLead, currentStatus);
           }
         }
         const pending = await queryOne<{ count: number }>(
@@ -635,19 +694,25 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
            WHERE demo_lesson_id = $1 AND status IN ('invited', 'confirmed')`,
           [id],
         );
-        const updated = Number(pending?.count ?? 0) === 0
-          ? await updateRow('academy_demo_lessons', id, {
-            status: 'completed',
-            updatedBy: req.user!.id,
-          })
-          : locked;
+        const updated = await updateRow('academy_demo_lessons', id, {
+          status: Number(pending?.count ?? 0) === 0 ? 'completed' : locked.status,
+          updatedBy: req.user!.id,
+        });
+        if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        const updatedParticipants = await query(
+          `SELECT *
+           FROM academy_demo_lesson_participants
+           WHERE demo_lesson_id = $1
+           ORDER BY id`,
+          [id],
+        );
         await createAudit(
           req.actor!,
           'UPDATE_ACADEMY_DEMO_ATTENDANCE',
           'academy_demo_lesson',
           id,
-          parsed.data,
-          locked,
+          { demoLesson: updated, participants: updatedParticipants },
+          { demoLesson: locked, participants: lockedParticipants },
         );
         return updated;
       });

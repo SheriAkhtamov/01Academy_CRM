@@ -2,6 +2,7 @@ import type {
   DemoLessonAttendance,
   DemoLessonEnrollment,
   DemoLessonMutation,
+  DemoNoShowReasonCode,
   DemoLessonResourceAvailabilityRequest,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
@@ -11,6 +12,8 @@ export interface DemoLessonParticipant {
   leadId: number;
   status: 'invited' | 'confirmed' | 'attended' | 'no_show' | 'cancelled';
   result?: string | null;
+  noShowReasonCode?: DemoNoShowReasonCode | null;
+  noShowReasonNote?: string | null;
   contactName?: string | null;
   studentName?: string | null;
   managerId?: number | null;

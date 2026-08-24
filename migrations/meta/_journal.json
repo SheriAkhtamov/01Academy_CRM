@@ -659,6 +659,13 @@
       "when": 1789056000000,
       "tag": "0093_add_employee_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789142400000,
+      "tag": "0094_add_demo_no_show_reasons",
+      "breakpoints": true
     }
   ]
 }

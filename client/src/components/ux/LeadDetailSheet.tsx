@@ -1275,7 +1275,7 @@ export function LeadDetailSheet({
                       </Card>
 
                       {dealFormDirty || updateLead.isPending ? (
-                        <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-0 flex flex-wrap items-center gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
+                        <div className="sticky bottom-0 z-10 -mx-4 -mb-4 mt-0 flex flex-wrap items-center gap-3 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6">
                           <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
                           <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{t('unsavedChanges')}</p>
                           <Button

@@ -57,8 +57,8 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('<ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">');
     // The card fills the desktop viewport but keeps its 32rem floor there, so
     // a short screen scrolls the page instead of hiding the bottom of the list.
-    expect(callJournal).toContain('className="flex flex-col gap-3 overflow-y-auto"');
-    expect(callJournal).toContain('className="flex min-h-[32rem] shrink-0 flex-col overflow-hidden lg:flex-1"');
+    expect(callJournal).toContain('className="flex flex-col gap-3 overflow-y-auto [scrollbar-gutter:stable]"');
+    expect(callJournal).toContain('className="flex min-h-[26rem] shrink-0 flex-col overflow-hidden xl:min-h-[32rem] lg:flex-1"');
   });
 
   it('shows a localized red indicator beside every unread missed call status', () => {

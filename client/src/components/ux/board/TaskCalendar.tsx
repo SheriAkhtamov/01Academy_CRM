@@ -612,7 +612,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                 })}
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
+                            <div>
                                 <div className={cn(effectiveView === 'month' ? 'min-w-[760px]' : 'min-w-[640px]')}>
                                     <div className="grid grid-cols-7 border-b bg-muted/30">
                                         {dayNames.map((dayName, index) => (

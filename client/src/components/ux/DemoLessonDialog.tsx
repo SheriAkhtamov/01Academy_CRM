@@ -319,8 +319,8 @@ export function DemoLessonDialog({
       if (createDemo.isPending) return;
       demoGuard.handleOpenChange(nextOpen);
     }}>
-      <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus2 data-icon="inline-start" />
             {t('createDemoLesson')}
@@ -328,6 +328,7 @@ export function DemoLessonDialog({
           <DialogDescription>{t('createDemoLessonDescription')}</DialogDescription>
         </DialogHeader>
 
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="demo-format">{t('demoFormat')}</Label>
@@ -488,8 +489,9 @@ export function DemoLessonDialog({
             maxLength={2_000}
           />
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
           <Button type="button" variant="outline" onClick={() => demoGuard.handleOpenChange(false)} disabled={createDemo.isPending}>
             {t('cancel')}
           </Button>

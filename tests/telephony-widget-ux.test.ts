@@ -76,7 +76,7 @@ describe('telephony widget drag surface', () => {
     expect(dialer).toContain('grid max-w-60 grid-cols-3 gap-2" data-no-drag');
     expect(widget).toContain('role="tablist"');
     expect(widget).toMatch(/role="tablist"[\s\S]{0,200}?data-no-drag/);
-    expect(activeCall).toContain('items-center justify-center gap-3 pt-6" data-no-drag');
+    expect(activeCall).toContain('items-center justify-center gap-3 border-t bg-background/95 px-4 py-3" data-no-drag');
     expect(activeCall).toContain("'telephony-control cursor-pointer'");
   });
 

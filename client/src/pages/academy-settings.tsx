@@ -1408,6 +1408,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
+                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
                 columns={schoolColumns}
                 data={schools}
                 keyExtractor={(row) => `school-${row.id}`}
@@ -1431,6 +1432,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
+                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
                 columns={roomColumns}
                 data={rooms}
                 keyExtractor={(row) => `room-${row.id}`}
@@ -1454,6 +1456,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
+                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
                 columns={courseColumns}
                 data={courses}
                 keyExtractor={(row) => `course-${row.id}`}
@@ -1517,6 +1520,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
+                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
                 columns={groupColumns}
                 data={displayedGroups}
                 keyExtractor={(row) => `group-${row.id}`}
@@ -1622,13 +1626,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </ModulePageBody>
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingSchool ? t('editSchool') : t('addSchool')}</DialogTitle>
             <DialogDescription>{t('schoolFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...schoolForm}>
-            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={schoolForm.handleSubmit((values) => saveSchool.mutate(values))}>
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={schoolForm.handleSubmit((values) => saveSchool.mutate(values))}>
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
               <FormField control={schoolForm.control} name="name" render={({ field }) => (
                 <FormItem>
                   <FormLabel required>{t('schoolName')}</FormLabel>
@@ -1666,7 +1671,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
-              <div className="flex justify-end gap-2 md:col-span-2">
+              </div>
+              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => schoolGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveSchool.isPending}>
                   {saveSchool.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
@@ -1679,13 +1685,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={roomDialogOpen} onOpenChange={roomGuard.handleOpenChange}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
             <DialogDescription>{t('roomFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...roomForm}>
-            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
               <FormField control={roomForm.control} name="schoolId" render={({ field }) => (
                 <FormItem>
                   <FormLabel required>{t('school')}</FormLabel>
@@ -1722,7 +1729,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
-              <div className="flex justify-end gap-2 md:col-span-2">
+              </div>
+              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => roomGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
               </div>
@@ -1732,13 +1740,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={courseDialogOpen} onOpenChange={courseGuard.handleOpenChange}>
-        <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingCourse ? t('editCourse') : t('addCourse')}</DialogTitle>
             <DialogDescription>{t('courseFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...courseForm}>
-            <form className="flex flex-col gap-5" onSubmit={courseForm.handleSubmit((values) => saveCourse.mutate(values))}>
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={courseForm.handleSubmit((values) => saveCourse.mutate(values))}>
+              <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-6 py-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <FormField control={courseForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
@@ -1779,8 +1788,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
-
-              <div className="flex justify-end gap-2">
+              </div>
+              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => courseGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveCourse.isPending}>{saveCourse.isPending ? t('saving') : t('save')}</Button>
               </div>
@@ -1790,14 +1799,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={groupDialogOpen} onOpenChange={groupGuard.handleOpenChange}>
-        <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
             <DialogDescription>{t('groupFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...groupForm}>
             <form
-              className="flex flex-col gap-5"
+              className="flex min-h-0 flex-1 flex-col"
               onSubmit={groupForm.handleSubmit((values) => {
                 const scheduleError = getGroupScheduleValidationError(groupSchedule);
                 if (scheduleError) {
@@ -1830,6 +1839,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 submitGroupValues(values);
               })}
             >
+              <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-6 py-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <FormField control={groupForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
@@ -1984,8 +1994,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   endLabel={t('end')}
                 />
               </div>
+              </div>
 
-              <div className="flex justify-end gap-2">
+              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => groupGuard.handleOpenChange(false)}>
                   {t('cancel')}
                 </Button>
@@ -2008,13 +2019,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       />
 
       <Dialog open={statusDialogOpen} onOpenChange={statusGuard.handleOpenChange}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingStatus ? t('editPipelineStage') : t('addPipelineStage')}</DialogTitle>
             <DialogDescription>{t('pipelineStageFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...statusForm}>
-            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); statusForm.handleSubmit((values) => saveStatus.mutate(values))(event); }}>
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); statusForm.handleSubmit((values) => saveStatus.mutate(values))(event); }}>
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
               <FormField control={statusForm.control} name="name" render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t('name')}</FormLabel>
@@ -2051,7 +2063,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
-              <div className="flex justify-end gap-2 md:col-span-2">
+              </div>
+              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button
                   type="submit"
@@ -2074,8 +2087,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           setPipelineTransferTargetId('');
         }}
       >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{t('pipelineStageDeleteTransferTitle')}</DialogTitle>
             <DialogDescription>
               {pipelineDeleteTarget
@@ -2085,7 +2098,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           </DialogHeader>
 
           {pipelineDeleteTarget ? (
-            <div className="flex flex-col gap-4">
+            <>
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>
@@ -2150,7 +2164,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </div>
               </div>
 
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t bg-background/95 px-6 py-4 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
                   variant="outline"
@@ -2175,7 +2191,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   {transferAndDeletePipelineStatus.isPending ? t('saving') : t('transferLeadsAndDeleteStage')}
                 </Button>
               </div>
-            </div>
+              </>
           ) : null}
         </DialogContent>
       </Dialog>

@@ -58,6 +58,7 @@ export function IncomeRegistryTable({
 
   return (
     <DataTable
+      className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
       columns={columns}
       data={rows}
       keyExtractor={(row) => String(row.id)}

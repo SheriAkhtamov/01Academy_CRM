@@ -235,8 +235,8 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   return (
     <>
       <Dialog open={open} onOpenChange={settingsDialogGuard.handleOpenChange}>
-        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
-        <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0" aria-describedby={undefined}>
+        <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
             {t('accountSettings')}
@@ -244,12 +244,8 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         </DialogHeader>
 
         <Form {...form}>
-          {/*
-            The password boxes below keep their own autocomplete hints, which
-            take priority; switching the form off only stops the browser from
-            volunteering address data into the profile fields.
-          */}
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" autoComplete="off">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col" autoComplete="off">
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Full Name */}
               <FormField
@@ -434,9 +430,9 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 {formatUserModule(user?.module || 'sales', t)}
               </p>
             </div>
+            </div>
 
-            {/* Form Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t bg-background/95 px-6 py-4">
               <Button
                 type="button"
                 variant="outline"

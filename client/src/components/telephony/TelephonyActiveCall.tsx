@@ -187,7 +187,8 @@ export function TelephonyActiveCall({
   const canTransferToNumber = transferDigits.length >= 7;
 
   return (
-    <div className="flex min-h-[min(386px,calc(100dvh-88px))] flex-1 flex-col items-center overflow-y-auto overscroll-contain px-4 pb-4 pt-5 text-center">
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-[min(386px,calc(100dvh-88px))] flex-1 flex-col items-center overflow-y-auto overscroll-contain px-4 pb-4 pt-5 text-center">
       <ContactAvatar call={call} />
       <Badge variant="secondary" className="mt-4 rounded-full px-3 py-0.5 text-xs font-medium">
         {call.direction === 'incoming' ? t('telephonyIncomingCall') : t('telephonyOutgoingCall')}
@@ -342,7 +343,9 @@ export function TelephonyActiveCall({
         />
       ) : null}
 
-      <div className="mt-auto flex w-full items-center justify-center gap-3 pt-6" data-no-drag>
+      </div>
+
+      <div className="flex w-full shrink-0 items-center justify-center gap-3 border-t bg-background/95 px-4 py-3" data-no-drag>
         {call.direction === 'incoming' && call.status === 'ringing' ? (
           // The halos around the avatar carry the urgency. The button itself
           // holds still: a target that drifts 8px on a loop is one the manager

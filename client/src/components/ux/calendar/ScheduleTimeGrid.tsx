@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { format, isSameDay } from 'date-fns';
 import type { Locale } from 'date-fns';
 import { Minimize2, UserRoundCheck } from 'lucide-react';
@@ -76,6 +76,30 @@ export function ScheduleTimeGrid({
   const dayCount = Math.max(1, days.length);
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const todayIndex = days.findIndex((day) => isSameDay(day, now));
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const autoScrollRef = useRef({ signature: '', dateKey: '', top: -1 });
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    const entry = todayIndex >= 0 ? days[todayIndex] : null;
+    if (!element || typeof element.scrollTo !== 'function' || !entry) return;
+    const dateKey = format(entry, 'yyyy-MM-dd');
+    const signature = `${dateKey}|${timeScale.startMinutes}-${timeScale.endMinutes}-${Math.round(timeScale.totalSize)}`;
+    const previous = autoScrollRef.current;
+    if (previous.signature === signature) return;
+    const target = Math.max(
+      0,
+      getCalendarMinutePosition(timeScale, currentMinutes) - element.clientHeight / 3,
+    );
+    const userScrolled = previous.dateKey === dateKey
+      && previous.top >= 0
+      && Math.abs(element.scrollTop - previous.top) > 1;
+    const appliedTop = Math.min(target, Math.max(0, element.scrollHeight - element.clientHeight));
+    autoScrollRef.current = { signature, dateKey, top: userScrolled ? previous.top : appliedTop };
+    if (userScrolled) return;
+    element.scrollTo({ top: target, behavior: 'auto' });
+  });
+
   const showCurrentTime = todayIndex >= 0
     && timeScale.markers.length > 0
     && currentMinutes >= timeScale.startMinutes
@@ -94,7 +118,7 @@ export function ScheduleTimeGrid({
   };
 
   return (
-    <div className="h-full overflow-auto overscroll-contain [scrollbar-gutter:stable]">
+    <div ref={scrollRef} className="h-full overflow-auto overscroll-contain [scrollbar-gutter:stable]">
       <div style={{ minWidth: TIME_COLUMN_WIDTH + dayCount * MIN_DAY_WIDTH }}>
         <div
           className="sticky top-0 z-30 grid border-b border-border bg-card/95 backdrop-blur-sm"

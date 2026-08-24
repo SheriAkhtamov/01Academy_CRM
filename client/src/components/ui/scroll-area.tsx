@@ -24,7 +24,7 @@ const ScrollArea = React.forwardRef<
       — vertical scrolling is unaffected, and a child that really is wider than
       the box still scrolls, because the scrollbar lives on the viewport.
     */}
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] [&>div]:!block [&>div]:!min-w-0">
+    <ScrollAreaPrimitive.Viewport className="h-full w-full overscroll-contain rounded-[inherit] [&>div]:!block [&>div]:!min-w-0">
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

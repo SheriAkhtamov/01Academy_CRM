@@ -34,6 +34,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -506,6 +507,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             </CardHeader>
             <CardContent>
               <DataTable
+                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
                 columns={sourceColumns}
                 data={bySource}
                 keyExtractor={(row) => String(row.sourceId)}
@@ -678,6 +680,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             </CardHeader>
             <CardContent>
               <DataTable
+                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
                 columns={referralColumns}
                 data={topReferrers}
                 keyExtractor={(row) => String(row.studentId)}
@@ -716,6 +719,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             </CardHeader>
             <CardContent>
               <DataTable
+                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
                 columns={expenseColumns}
                 data={filteredExpenses}
                 keyExtractor={(row, index) => String(row.id ?? index)}
@@ -732,12 +736,13 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       {/* ─── Expense Dialog ─── */}
       {canManageExpenses && (
         <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
+          <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
+            <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left">
               <DialogTitle>{t('marketingExpenseTitle')}</DialogTitle>
               <DialogDescription>{t('addExpense')}</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label={t('source')}>
                 <Select value={expenseForm.sourceId} onValueChange={(sourceId) => setExpenseForm({ ...expenseForm, sourceId })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -773,22 +778,23 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 value={{ from: expenseForm.periodStart, to: expenseForm.periodEnd }}
                 onChange={(range) => setExpenseForm({ ...expenseForm, periodStart: range.from, periodEnd: range.to })}
               />
-              <div className="md:col-span-2 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
-                <Button
-                  onClick={() => {
-                    if (!expenseFormValid) {
-                      toast({ title: t('invalidData'), variant: 'destructive' });
-                      return;
-                    }
-                    createExpense.mutate();
-                  }}
-                  disabled={createExpense.isPending}
-                >
-                  {createExpense.isPending ? t('saving') : t('saveExpense')}
-                </Button>
               </div>
             </div>
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+              <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
+              <Button
+                onClick={() => {
+                  if (!expenseFormValid) {
+                    toast({ title: t('invalidData'), variant: 'destructive' });
+                    return;
+                  }
+                  createExpense.mutate();
+                }}
+                disabled={createExpense.isPending}
+              >
+                {createExpense.isPending ? t('saving') : t('saveExpense')}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}

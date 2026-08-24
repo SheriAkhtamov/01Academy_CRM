@@ -1167,6 +1167,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 </div>
               ) : (
                 <DataTable
+                  className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
                   columns={userColumns}
                   data={filteredUsers}
                   keyExtractor={(row) => `user-${row.id}`}
@@ -1348,8 +1349,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
       {/* User Credentials Modal */}
       <Dialog open={showCredentialsModal} onOpenChange={handleCredentialsModalState}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-lg overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle className="flex items-center space-x-2">
               <Key className="h-5 w-5" />
               <span>{t('userCredentials')}</span>
@@ -1360,7 +1361,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           </DialogHeader>
           {userCredentials && (
             <Form {...credentialsForm}>
-              <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="flex flex-col gap-4">
+              <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="flex min-h-0 flex-1 flex-col">
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-6 py-4">
                 <div className="rounded-lg border border-border bg-muted/50 p-3">
                   <p className="text-sm font-medium text-foreground">{userCredentials.fullName}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1447,7 +1449,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   />
                 </div>
 
-                <div className="flex flex-wrap justify-end gap-2 pt-2">
+                </div>
+
+                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t bg-background/95 px-6 py-4">
                   {userCredentials.id && (
                     <Button
                       type="button"

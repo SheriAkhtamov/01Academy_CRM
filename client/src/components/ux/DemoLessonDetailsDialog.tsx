@@ -348,12 +348,13 @@ export function DemoLessonDetailsDialog({
           onOpenChange(nextOpen);
         }
       }}>
-        <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{t('demoLesson')}</DialogTitle>
             <DialogDescription>{demo.courseName ?? t('noCourse')}</DialogDescription>
           </DialogHeader>
 
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
           <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
             <div className="flex items-start gap-3">
               <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
@@ -551,8 +552,9 @@ export function DemoLessonDetailsDialog({
               ) : null}
             </div>
           ) : null}
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 {t('close')}
@@ -574,16 +576,17 @@ export function DemoLessonDetailsDialog({
       <Dialog open={reasonLeadId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen) closeNoShowReason();
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             confirmNoShowReason();
-          }} className="space-y-5">
-            <DialogHeader>
+          }} className="flex min-h-0 flex-1 flex-col">
+            <DialogHeader className="shrink-0 border-b px-6 py-4">
               <DialogTitle>{t('demoNoShowReasonTitle')}</DialogTitle>
               <DialogDescription>{t('demoNoShowReasonDescription')}</DialogDescription>
             </DialogHeader>
 
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="rounded-lg bg-muted/60 px-3 py-2 text-sm font-medium">
               {reasonParticipant?.studentName
                 || reasonParticipant?.contactName
@@ -630,8 +633,9 @@ export function DemoLessonDetailsDialog({
                 rows={3}
               />
             </div>
+            </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
               <Button type="button" variant="outline" onClick={closeNoShowReason}>
                 {t('back')}
               </Button>
@@ -669,7 +673,7 @@ export function DemoLessonDetailsDialog({
       <Dialog open={notConductedOpen} onOpenChange={(nextOpen) => {
         if (!finalizeDemo.isPending) setNotConductedOpen(nextOpen);
       }}>
-        <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (!notConductedReasonCode || !notConductedReasonValid) return;
@@ -678,12 +682,13 @@ export function DemoLessonDetailsDialog({
               reasonCode: notConductedReasonCode,
               reasonNote: notConductedReasonNote.trim() || null,
             });
-          }} className="space-y-5">
-            <DialogHeader>
+          }} className="flex min-h-0 flex-1 flex-col">
+            <DialogHeader className="shrink-0 border-b px-6 py-4">
               <DialogTitle>{t('markDemoNotConductedTitle')}</DialogTitle>
               <DialogDescription>{t('markDemoNotConductedDescription')}</DialogDescription>
             </DialogHeader>
 
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-4">
             <fieldset className="space-y-2">
               <legend className="mb-2 text-sm font-medium">{t('demoNotConductedReason')}</legend>
               {DEMO_NOT_CONDUCTED_REASON_CODES
@@ -726,8 +731,9 @@ export function DemoLessonDetailsDialog({
                 rows={3}
               />
             </div>
+            </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
               <Button type="button" variant="outline" onClick={() => setNotConductedOpen(false)}>
                 {t('back')}
               </Button>

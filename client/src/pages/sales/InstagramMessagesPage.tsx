@@ -568,7 +568,7 @@ function MessagesSkeleton() {
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-6 lg:p-8">
       <Skeleton className="h-10 w-72" />
-      <div className="grid h-[calc(100dvh-9rem)] min-h-[620px] grid-cols-1 rounded-2xl border border-border bg-card xl:grid-cols-[340px_minmax(0,1fr)_372px]">
+      <div className="grid h-[calc(100dvh-9rem)] min-h-[30rem] grid-cols-1 grid-rows-[minmax(0,1fr)] rounded-lg border border-border bg-card xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="hidden flex-col gap-3 border-r border-border p-4 xl:flex">
           <Skeleton className="h-9 w-full" />
           <div className="flex gap-2">
@@ -1424,7 +1424,7 @@ export default function MessagesPage() {
             </div>
           </div>
         ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
             {/* Conversation list */}
             <div
               className={cn(

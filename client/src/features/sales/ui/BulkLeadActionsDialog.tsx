@@ -146,8 +146,8 @@ export function BulkLeadActionsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
             <div className="flex flex-wrap items-center gap-2 pr-8">
               <DialogTitle>{t('bulkLeadActionsTitle')}</DialogTitle>
               <Badge variant="secondary">
@@ -159,6 +159,7 @@ export function BulkLeadActionsDialog({
             </DialogDescription>
           </DialogHeader>
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
           <Tabs value={action} onValueChange={(value) => setAction(value as BulkAction)}>
             <TabsList className={canManageAllLeads ? 'grid h-auto w-full grid-cols-2 sm:grid-cols-4' : 'grid h-auto w-full grid-cols-2'}>
               <TabsTrigger value="status" className="gap-2 py-2.5">
@@ -298,8 +299,9 @@ export function BulkLeadActionsDialog({
               </TabsContent>
             ) : null}
           </Tabs>
+          </div>
 
-          <DialogFooter className="sm:items-center sm:justify-between">
+          <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4 sm:items-center sm:justify-between">
             <Button
               type="button"
               variant="ghost"

@@ -194,8 +194,8 @@ export function StudentDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto p-4 sm:max-w-2xl sm:p-6">
-        <SheetHeader className="pb-4">
+      <SheetContent className="flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <SheetHeader className="shrink-0 border-b px-4 py-3">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-border">
               <AvatarFallback className="bg-gradient-to-br from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] text-white text-lg">
@@ -276,7 +276,8 @@ export function StudentDetailSheet({
           </div>
         </SheetHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid grid-cols-3 h-auto mb-4">
             {tabs.map((tab) => {
               const Icon = tab.icon;
@@ -508,6 +509,7 @@ export function StudentDetailSheet({
             </div>
           </TabsContent>
         </Tabs>
+        </div>
       </SheetContent>
 
       <AlertDialog open={confirmRemoveGroupId !== null} onOpenChange={(open) => { if (!open) setConfirmRemoveGroupId(null); }}>

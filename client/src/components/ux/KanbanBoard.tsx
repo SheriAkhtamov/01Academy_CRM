@@ -507,7 +507,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 [scrollbar-gutter:stable]">
         {/*
           Default (sync) mode, not popLayout: popLayout has to absolutely
           position the leaving child and so requires every direct child of

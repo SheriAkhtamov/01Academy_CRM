@@ -299,7 +299,7 @@ export default function CallJournalPage() {
         contained
         scroll="hidden"
         ariaLabel={t('callJournal')}
-        className="flex flex-col gap-3 overflow-y-auto"
+        className="flex flex-col gap-3 overflow-y-auto [scrollbar-gutter:stable]"
       >
         <section className="grid shrink-0 grid-cols-tile gap-3" aria-label={t('callJournalSummary')}>
           <SummaryCard icon={PhoneCall} title={t('totalCalls')} value={journalQuery.data?.total ?? 0} />
@@ -353,7 +353,7 @@ export default function CallJournalPage() {
           </CardContent>
         </Card>
 
-        <Card className="flex min-h-[32rem] shrink-0 flex-col overflow-hidden lg:flex-1">
+        <Card className="flex min-h-[26rem] shrink-0 flex-col overflow-hidden xl:min-h-[32rem] lg:flex-1">
           {journalQuery.isLoading ? (
             <div className="space-y-3 p-5">
               {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-14 w-full" />)}

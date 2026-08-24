@@ -147,8 +147,8 @@ export function CreateLeadStudentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <GraduationCap className="size-5" />
@@ -159,7 +159,8 @@ export function CreateLeadStudentDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form className="grid grid-cols-1 gap-5 md:grid-cols-2" onSubmit={form.handleSubmit((values) => createStudent.mutate(values))}>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={form.handleSubmit((values) => createStudent.mutate(values))}>
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
             <FormField
               control={form.control}
               name="studentName"
@@ -277,8 +278,9 @@ export function CreateLeadStudentDialog({
                 )}
               />
             ) : null}
+            </div>
 
-            <DialogFooter className="md:col-span-2">
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createStudent.isPending}>
                 {t('cancel')}
               </Button>

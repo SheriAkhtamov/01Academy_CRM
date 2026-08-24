@@ -127,13 +127,14 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
-                <DialogHeader>
+            <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+                <DialogHeader className="shrink-0 border-b px-6 py-4">
                     <DialogTitle>{t('addTask')}</DialogTitle>
                     <DialogDescription className="sr-only">{t('addTask')}</DialogDescription>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
                     <div className="space-y-1.5">
                         <Label htmlFor="create-task-title" className="text-xs text-muted-foreground">{t('taskTitle')} <span aria-hidden="true" className="select-none text-destructive">*</span></Label>
                         <Input
@@ -206,8 +207,9 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                         <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
                         <Input id="create-task-due" type="datetime-local" min={`${academyToday()}T00:00`} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
                     </div>
+                    </div>
 
-                    <div className="flex justify-end gap-2 pt-2">
+                    <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                         <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                             {t('cancel')}
                         </Button>

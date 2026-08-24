@@ -454,6 +454,7 @@ export function LeadAssignmentContent() {
                 keyExtractor={(lead) => `lead-${lead.id}`}
                 defaultSortKey="createdAt"
                 defaultSortDirection="desc"
+                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
                 emptyState={
                   <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
                     <div className="flex size-12 items-center justify-center rounded-2xl bg-muted">

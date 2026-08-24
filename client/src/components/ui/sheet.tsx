@@ -46,9 +46,9 @@ const sheetVariants = cva(
         // 375px phone is a column too narrow to read a lead in, with a strip of
         // unreachable page showing beside it. Below `sm` the drawer takes the
         // whole screen.
-        left: "inset-y-0 left-0 h-full w-full border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:w-3/4 sm:max-w-sm",
+        left: "inset-y-0 left-0 h-full w-full overflow-y-auto overscroll-contain border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:w-3/4 sm:max-w-sm",
         right:
-          "inset-y-0 right-0 h-full w-full border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:w-3/4 sm:max-w-sm",
+          "inset-y-0 right-0 h-full w-full overflow-y-auto overscroll-contain border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:w-3/4 sm:max-w-sm",
       },
     },
     defaultVariants: {

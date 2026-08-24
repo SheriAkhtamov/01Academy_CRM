@@ -120,6 +120,15 @@ export function AttendanceCalendar({
     setExpandedDayKey(null);
   }, [anchorKey, effectiveView]);
 
+  const toggleExpandedDay = (dateKey: string) => {
+    const willExpand = expandedDayKey !== dateKey;
+    setExpandedDayKey(willExpand ? dateKey : null);
+    if (!willExpand || typeof window === 'undefined') return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(`attendance-day-${dateKey}`)?.scrollIntoView({ block: 'nearest' });
+    });
+  };
+
   /* The lesson can arrive from outside the calendar — a `?lesson=` link, the
      "attendance" button on a lesson three weeks back in the schedule, the
      overview CTA that opens the oldest unmarked lesson. Without this the modal
@@ -528,7 +537,7 @@ export function AttendanceCalendar({
                           aria-expanded={isExpanded}
                           aria-controls={`attendance-day-${day.dateKey}`}
                           className="min-h-9 rounded px-1 py-0.5 text-left text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => setExpandedDayKey(isExpanded ? null : day.dateKey)}
+                          onClick={() => toggleExpandedDay(day.dateKey)}
                         >
                           {isExpanded
                             ? t('collapseDay')

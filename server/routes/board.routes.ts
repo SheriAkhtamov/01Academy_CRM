@@ -8,6 +8,7 @@ import path from 'path';
 import {
     BOARD_TASK_STATUSES,
     BOARD_TASK_PRIORITIES,
+    BOARD_TASK_COLORS,
     type BoardTask,
     type BoardTaskStatus,
     type User,
@@ -121,6 +122,9 @@ const uploadSingleBoardAttachment = (
 
 const isStatus = (value: unknown): value is BoardTaskStatus =>
     typeof value === 'string' && (BOARD_TASK_STATUSES as readonly string[]).includes(value);
+
+const isTaskColor = (value: unknown) =>
+    typeof value === 'string' && (BOARD_TASK_COLORS as readonly string[]).includes(value);
 
 const hasAssigneeValue = (value: unknown) => value !== undefined && value !== null && value !== '';
 
@@ -252,7 +256,7 @@ router.get('/tasks/:id', async (req, res) => {
 
 router.post('/tasks', async (req, res) => {
     try {
-        const { title, description, priority, status, assigneeId, dueAt, leadId } = req.body;
+        const { title, description, priority, color, status, assigneeId, dueAt, leadId } = req.body;
         let { boardId } = req.body;
 
         if (!title || typeof title !== 'string' || !title.trim()) {
@@ -267,6 +271,9 @@ router.post('/tasks', async (req, res) => {
         }
         if (priority !== undefined && !(BOARD_TASK_PRIORITIES as readonly string[]).includes(priority)) {
             return res.status(400).json({ error: 'Invalid priority' });
+        }
+        if (color !== undefined && color !== null && !isTaskColor(color)) {
+            return res.status(400).json({ error: 'Invalid task color' });
         }
         if (status !== undefined && !isStatus(status)) {
             return res.status(400).json({ error: 'Invalid status' });
@@ -323,6 +330,7 @@ router.post('/tasks', async (req, res) => {
             description: normalizedDescription.value,
             status: targetStatus,
             priority: priority ?? 'normal',
+            color: color ?? null,
             position,
             creatorId: req.user!.id,
             assigneeId: resolvedAssignee.assigneeId,
@@ -352,7 +360,7 @@ router.post('/tasks', async (req, res) => {
     }
 });
 
-// Update core fields (title, description, priority, assignee, due date).
+// Update core fields (title, description, priority, colour, assignee, due date).
 router.patch('/tasks/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
@@ -365,7 +373,7 @@ router.patch('/tasks/:id', async (req, res) => {
         }
 
         const updates: Record<string, unknown> = {};
-        const { title, description, priority, assigneeId, dueAt } = req.body;
+        const { title, description, priority, color, assigneeId, dueAt } = req.body;
 
         if (title !== undefined) {
             if (typeof title !== 'string' || !title.trim()) {
@@ -384,6 +392,12 @@ router.patch('/tasks/:id', async (req, res) => {
                 return res.status(400).json({ error: 'Invalid priority' });
             }
             updates.priority = priority;
+        }
+        if (color !== undefined) {
+            if (color !== null && !isTaskColor(color)) {
+                return res.status(400).json({ error: 'Invalid task color' });
+            }
+            updates.color = color;
         }
         if (assigneeId !== undefined) {
             const resolvedAssignee = await resolveAssignee(assigneeId, req.user!, { forceSelfForStaff: false });
@@ -414,6 +428,15 @@ router.patch('/tasks/:id', async (req, res) => {
                 type: 'priority_changed',
                 fromValue: task.priority,
                 toValue: String(updates.priority),
+                meta: null,
+            });
+        }
+        if (updates.color !== undefined && updates.color !== task.color) {
+            activities.push({
+                actorId: req.user!.id,
+                type: 'color_changed',
+                fromValue: task.color,
+                toValue: updates.color ? String(updates.color) : null,
                 meta: null,
             });
         }

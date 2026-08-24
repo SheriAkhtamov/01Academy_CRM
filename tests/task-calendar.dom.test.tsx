@@ -26,6 +26,7 @@ const task = (overrides: Partial<TaskSummary> & Pick<TaskSummary, 'id'>): TaskSu
   description: null,
   status: 'todo',
   priority: 'normal',
+  color: null,
   position: 0,
   leadId: null,
   lead: null,
@@ -62,10 +63,10 @@ describe('task calendar', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  const renderCalendar = () => {
+  const renderCalendar = (calendarTasks = tasks) => {
     const onTaskClick = vi.fn();
     const onReschedule = vi.fn().mockResolvedValue(true);
-    render(<TaskCalendar tasks={tasks} onTaskClick={onTaskClick} onReschedule={onReschedule} />);
+    render(<TaskCalendar tasks={calendarTasks} onTaskClick={onTaskClick} onReschedule={onReschedule} />);
     return { onTaskClick, onReschedule };
   };
 
@@ -115,6 +116,22 @@ describe('task calendar', () => {
     const overdue = screen.getByTestId('task-calendar-task-2');
     expect(overdue.getAttribute('style')).toContain('var(--calendar-rose-background)');
     expect(overdue.className).not.toContain('bg-red-50');
+  });
+
+  it('uses the chosen colour while preserving the calendar-state accent', () => {
+    renderCalendar([
+      task({
+        id: 5,
+        title: 'Prepare the presentation',
+        color: 'violet',
+        dueAt: '2026-06-18T13:00:00.000Z',
+      }),
+    ]);
+
+    const colouredTask = screen.getByTestId('task-calendar-task-5');
+    expect(colouredTask.getAttribute('data-task-color')).toBe('violet');
+    expect(colouredTask.getAttribute('style')).toContain('var(--calendar-violet-background)');
+    expect(colouredTask.getAttribute('style')).toContain('var(--calendar-blue-solid)');
   });
 
   it('moves between months and comes back to today', async () => {

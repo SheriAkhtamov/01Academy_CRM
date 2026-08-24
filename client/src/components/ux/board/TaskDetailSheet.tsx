@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { boardQueryKeys } from '@/features/board/api';
+import { TaskColorPicker } from './TaskColorPicker';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -56,10 +57,12 @@ import { cn } from '@/lib/utils';
 import {
     PRIORITY_META,
     PRIORITY_ORDER,
+    TASK_COLOR_META,
     formatBoardDateTime,
     formatFileSize,
     type BoardPriority,
     type BoardStatus,
+    type BoardTaskColor,
     type TaskActivity,
     type TaskDetail,
     type UserMini,
@@ -101,6 +104,7 @@ function activityLabel(item: TaskActivity, t: (k: any) => string): string {
         case 'assigned': return t('activityAssigned');
         case 'unassigned': return t('activityUnassigned');
         case 'priority_changed': return t('activityPriorityChanged');
+        case 'color_changed': return t('activityColorChanged');
         case 'comment_added': return t('activityCommented');
         case 'attachment_added': return t('activityAttached');
         default: return item.type;
@@ -134,6 +138,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     const [draftTitle, setDraftTitle] = useState('');
     const [draftDescription, setDraftDescription] = useState('');
     const [draftPriority, setDraftPriority] = useState<BoardPriority>('normal');
+    const [draftColor, setDraftColor] = useState<BoardTaskColor | null>(null);
     const [draftAssignee, setDraftAssignee] = useState<string>(UNASSIGNED);
     const [draftDue, setDraftDue] = useState('');
     const [commentText, setCommentText] = useState('');
@@ -160,6 +165,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
             setDraftTitle(task.title);
             setDraftDescription(task.description ?? '');
             setDraftPriority(task.priority);
+            setDraftColor(task.color);
             setDraftAssignee(task.assigneeId ? String(task.assigneeId) : UNASSIGNED);
             setDraftDue(task.dueAt ? toLocalInput(task.dueAt) : '');
         }
@@ -183,6 +189,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                 title: draftTitle.trim(),
                 description: draftDescription.trim() || null,
                 priority: draftPriority,
+                color: draftColor,
                 dueAt: draftDue ? new Date(draftDue).toISOString() : null,
             };
             if (isTaskSupervisor) {
@@ -393,6 +400,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             <Label htmlFor="task-detail-description" className="text-xs text-muted-foreground">{t('description')}</Label>
                                             <Textarea id="task-detail-description" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
                                         </div>
+                                        <TaskColorPicker value={draftColor} onChange={setDraftColor} disabled={saveMutation.isPending} />
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                             <div className="space-y-1.5">
                                                 <Label htmlFor="task-detail-priority" className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
@@ -438,6 +446,16 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                             </MetaRow>
                                             <MetaRow label={t('priorityLabel')}>
                                                 {priorityMeta ? <span className="text-foreground">{t(priorityMeta.labelKey)}</span> : null}
+                                            </MetaRow>
+                                            <MetaRow label={t('taskColorLabel')}>
+                                                {task.color ? (
+                                                    <span className="flex items-center gap-2 text-foreground">
+                                                        <span className={cn('size-3 rounded-full', TASK_COLOR_META[task.color].swatch)} aria-hidden="true" />
+                                                        {t(TASK_COLOR_META[task.color].labelKey)}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-foreground">{t('taskColorNone')}</span>
+                                                )}
                                             </MetaRow>
                                         </div>
                                     </>

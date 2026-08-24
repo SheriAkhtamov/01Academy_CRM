@@ -23,7 +23,8 @@ import { apiRequest } from '@/lib/queryClient';
 import { boardQueryKeys } from '@/features/board/api';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import { PRIORITY_ORDER, type BoardPriority, type UserMini } from '@/lib/boardTypes';
+import { TaskColorPicker } from './TaskColorPicker';
+import { PRIORITY_ORDER, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
 
 interface CreateTaskDialogProps {
     open: boolean;
@@ -51,6 +52,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [priority, setPriority] = useState<BoardPriority>('normal');
+    const [color, setColor] = useState<BoardTaskColor | null>(null);
     const [assigneeId, setAssigneeId] = useState<string>(defaultAssigneeId);
     const [dueAt, setDueAt] = useState('');
 
@@ -58,6 +60,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
         setTitle('');
         setDescription('');
         setPriority('normal');
+        setColor(null);
         setAssigneeId(defaultAssigneeId);
         setDueAt('');
     };
@@ -74,6 +77,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                 title: title.trim(),
                 description: description.trim() || null,
                 priority,
+                color,
                 assigneeId: canAssignUsers
                     ? assigneeId === UNASSIGNED ? null : Number(assigneeId)
                     : currentUser?.id ?? null,
@@ -127,6 +131,8 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                             autoFocus
                         />
                     </div>
+
+                    <TaskColorPicker value={color} onChange={setColor} disabled={mutation.isPending} />
 
                     <div className="space-y-1.5">
                         <Label htmlFor="create-task-description" className="text-xs text-muted-foreground">{t('description')}</Label>

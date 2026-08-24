@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
     PRIORITY_META,
+    TASK_COLOR_META,
     formatBoardDate,
     isOverdue,
     type TaskSummary,
@@ -26,6 +27,7 @@ interface TaskCardProps {
 export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
     const { t, language } = useTranslation();
     const priority = PRIORITY_META[task.priority];
+    const taskColor = task.color ? TASK_COLOR_META[task.color] : null;
     const overdue = isOverdue(task);
 
     return (
@@ -35,6 +37,7 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
             onClick={onClick}
             className={cn(
                 'group w-full rounded-lg border border-border/80 bg-card p-3 text-left shadow-2xs transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                taskColor?.card,
                 dragProps && 'cursor-grab active:cursor-grabbing',
             )}
         >

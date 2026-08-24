@@ -4,6 +4,7 @@ import { formatAcademyDate } from '@/lib/localeFormat';
 
 export type BoardStatus = 'backlog' | 'todo' | 'in_progress' | 'done' | 'accepted';
 export type BoardPriority = 'urgent' | 'normal' | 'low';
+export type BoardTaskColor = 'blue' | 'emerald' | 'amber' | 'violet' | 'rose' | 'cyan';
 
 export interface UserMini {
     id: number;
@@ -19,6 +20,7 @@ export interface TaskSummary {
     description: string | null;
     status: BoardStatus;
     priority: BoardPriority;
+    color: BoardTaskColor | null;
     position: number;
     leadId: number | null;
     lead: { id: number; contactName: string } | null;
@@ -82,6 +84,7 @@ export interface TaskDetail {
     description: string | null;
     status: BoardStatus;
     priority: BoardPriority;
+    color: BoardTaskColor | null;
     position: number;
     creatorId: number | null;
     assigneeId: number | null;
@@ -130,6 +133,55 @@ export const PRIORITY_META = {
 } satisfies Record<BoardPriority, { labelKey: TranslationKey; dot: string; badge: string }>;
 
 export const PRIORITY_ORDER: BoardPriority[] = ['urgent', 'normal', 'low'];
+
+export const TASK_COLOR_ORDER = ['blue', 'emerald', 'amber', 'violet', 'rose', 'cyan'] as const satisfies readonly BoardTaskColor[];
+
+// Controlled colour tokens keep task cards legible in both themes and map to
+// the same semantic palette used by the calendar. `null` remains the neutral
+// card, so existing tasks do not change appearance after the migration.
+export const TASK_COLOR_META = {
+    blue: {
+        labelKey: 'taskColorBlue',
+        swatch: 'bg-blue-500',
+        card: 'border-blue-300 bg-blue-50/70 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:border-blue-700',
+        calendarToneIndex: 0,
+    },
+    emerald: {
+        labelKey: 'taskColorEmerald',
+        swatch: 'bg-emerald-500',
+        card: 'border-emerald-300 bg-emerald-50/70 hover:border-emerald-400 dark:border-emerald-800 dark:bg-emerald-950/30 dark:hover:border-emerald-700',
+        calendarToneIndex: 1,
+    },
+    amber: {
+        labelKey: 'taskColorAmber',
+        swatch: 'bg-amber-400',
+        card: 'border-amber-300 bg-amber-50/80 hover:border-amber-400 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:border-amber-700',
+        calendarToneIndex: 2,
+    },
+    violet: {
+        labelKey: 'taskColorViolet',
+        swatch: 'bg-violet-500',
+        card: 'border-violet-300 bg-violet-50/70 hover:border-violet-400 dark:border-violet-800 dark:bg-violet-950/30 dark:hover:border-violet-700',
+        calendarToneIndex: 3,
+    },
+    rose: {
+        labelKey: 'taskColorRose',
+        swatch: 'bg-rose-500',
+        card: 'border-rose-300 bg-rose-50/70 hover:border-rose-400 dark:border-rose-800 dark:bg-rose-950/30 dark:hover:border-rose-700',
+        calendarToneIndex: 4,
+    },
+    cyan: {
+        labelKey: 'taskColorCyan',
+        swatch: 'bg-cyan-500',
+        card: 'border-cyan-300 bg-cyan-50/70 hover:border-cyan-400 dark:border-cyan-800 dark:bg-cyan-950/30 dark:hover:border-cyan-700',
+        calendarToneIndex: 5,
+    },
+} satisfies Record<BoardTaskColor, {
+    labelKey: TranslationKey;
+    swatch: string;
+    card: string;
+    calendarToneIndex: number;
+}>;
 
 // These took the browser locale, so a task card's due date could disagree with
 // every other date on screen. They follow the language the user picked instead.

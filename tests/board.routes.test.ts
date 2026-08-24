@@ -105,6 +105,7 @@ describe("board routes", () => {
       description: null,
       status: "todo",
       priority: "normal",
+      color: null,
       position: 0,
       creatorId: staffUser.id,
       assigneeId: staffUser.id,
@@ -119,6 +120,7 @@ describe("board routes", () => {
     mockStorage.board.createTask.mockImplementation(async (data: any) => ({
       id: 100,
       ...data,
+      color: data.color ?? null,
       acceptedAt: null,
       acceptedBy: null,
       createdAt: new Date(),
@@ -204,6 +206,60 @@ describe("board routes", () => {
     expect(mockStorage.board.createTask).toHaveBeenCalledWith(expect.objectContaining({
       creatorId: staffUser.id,
       assigneeId: staffUser.id,
+    }));
+  });
+
+  it("stores a selected palette colour on a new task", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.post("/api/board/tasks").send({
+      title: "Colour-coded follow up",
+      color: "violet",
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.board.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      color: "violet",
+    }));
+  });
+
+  it("rejects arbitrary task colours on creation and update", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const createResponse = await agent.post("/api/board/tasks").send({
+      title: "Unsafe colour",
+      color: "#fff; background: url(https://example.com)",
+    });
+    const updateResponse = await agent.patch("/api/board/tasks/100").send({ color: "transparent" });
+
+    expect(createResponse.status).toBe(400);
+    expect(updateResponse.status).toBe(400);
+    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("records a task colour change in its activity history", async () => {
+    mockStorage.board.updateTask.mockImplementation(async (_id: number, updates: any) => ({
+      ...await mockStorage.board.getTask(100),
+      ...updates,
+    }));
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.patch("/api/board/tasks/100").send({ color: "cyan" });
+
+    expect(response.status).toBe(200);
+    expect(mockStorage.board.updateTask).toHaveBeenCalledWith(100, { color: "cyan" });
+    expect(mockStorage.board.createActivity).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 100,
+      type: "color_changed",
+      fromValue: null,
+      toValue: "cyan",
     }));
   });
 
@@ -306,6 +362,7 @@ describe("board routes", () => {
       description: null,
       status: "done",
       priority: "normal",
+      color: null,
       position: 0,
       creatorId: staffUser.id,
       assigneeId: assigneeUser.id,

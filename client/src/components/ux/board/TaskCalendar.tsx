@@ -39,6 +39,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
 import {
     PRIORITY_META,
+    TASK_COLOR_META,
     formatBoardDateTime,
     type TaskSummary,
 } from '@/lib/boardTypes';
@@ -155,7 +156,9 @@ function TaskChip({
     onClick?: () => void;
 }) {
     const { t, language } = useTranslation();
-    const tone = STATE_TONES[state];
+    const stateTone = STATE_TONES[state];
+    const taskColor = task.color ? TASK_COLOR_META[task.color] : null;
+    const tone = taskColor ? CALENDAR_TONES[taskColor.calendarToneIndex] : stateTone;
     const priority = PRIORITY_META[task.priority];
     const time = task.dueAt ? academyTimeOfDay(task.dueAt) : '';
     const due = task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('noDueDate');
@@ -165,8 +168,15 @@ function TaskChip({
             {...dragProps}
             type="button"
             data-testid={`task-calendar-task-${task.id}`}
+            data-task-color={task.color ?? 'none'}
             aria-haspopup="dialog"
-            aria-label={`${task.title}. ${due}. ${t(STATE_LABEL_KEYS[state])}. ${t(priority.labelKey)}`}
+            aria-label={[
+                task.title,
+                due,
+                t(STATE_LABEL_KEYS[state]),
+                t(priority.labelKey),
+                taskColor ? t(taskColor.labelKey) : null,
+            ].filter(Boolean).join('. ')}
             /* A month cell is too narrow to finish most titles, so the whole
                title stays reachable without opening the task. */
             title={task.title}
@@ -181,7 +191,7 @@ function TaskChip({
             style={{
                 backgroundColor: tone.background,
                 borderColor: tone.border,
-                borderLeftColor: tone.solid,
+                borderLeftColor: stateTone.solid,
                 color: tone.foreground,
             }}
         >

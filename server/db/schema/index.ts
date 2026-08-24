@@ -1452,6 +1452,9 @@ export type BoardTaskStatus = (typeof BOARD_TASK_STATUSES)[number];
 export const BOARD_TASK_PRIORITIES = ["urgent", "normal", "low"] as const;
 export type BoardTaskPriority = (typeof BOARD_TASK_PRIORITIES)[number];
 
+export const BOARD_TASK_COLORS = ["blue", "emerald", "amber", "violet", "rose", "cyan"] as const;
+export type BoardTaskColor = (typeof BOARD_TASK_COLORS)[number];
+
 export const boards = pgTable("boards", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -1472,6 +1475,7 @@ export const boardTasks = pgTable("board_tasks", {
   description: text("description"),
   status: varchar("status", { length: 20 }).notNull().default("backlog"),
   priority: varchar("priority", { length: 10 }).notNull().default("normal"),
+  color: varchar("color", { length: 20 }),
   position: integer("position").notNull().default(0),
   creatorId: integer("creator_id").references(() => users.id, { onDelete: "set null" }),
   assigneeId: integer("assignee_id").references(() => users.id, { onDelete: "set null" }),
@@ -1496,6 +1500,7 @@ export const boardTasks = pgTable("board_tasks", {
     .where(sql`${table.telephonyCallId} IS NOT NULL`),
   statusCheck: check("board_tasks_status_check", sql`${table.status} IN ('backlog', 'todo', 'in_progress', 'done', 'accepted')`),
   priorityCheck: check("board_tasks_priority_check", sql`${table.priority} IN ('urgent', 'normal', 'low')`),
+  colorCheck: check("board_tasks_color_check", sql`${table.color} IS NULL OR ${table.color} IN ('blue', 'emerald', 'amber', 'violet', 'rose', 'cyan')`),
 }));
 
 export const boardTaskComments = pgTable("board_task_comments", {

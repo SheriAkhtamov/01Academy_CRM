@@ -35,7 +35,8 @@ describe('lead and student UX separation', () => {
       expect(source).not.toContain('name="courseId"');
       expect(source).not.toContain('name="enrolledGroupId"');
     }
-    expect(leadSheet).toContain('<LeadChannelLinks channels={lead.channels} leadId={lead.id} showLabels />');
+    expect(leadSheet).toContain('<LeadSocialAccountsEditor');
+    expect(leadSheet).toContain('channels={lead.channels}');
   });
 
   it('provides an explicit multi-student creation flow with group enrollment', () => {

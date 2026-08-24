@@ -52,6 +52,14 @@ const localizeApiErrorMessage = (message: string, status: number) => {
     return demoLessonErrors[normalized as keyof typeof demoLessonErrors];
   }
 
+  const leadSocialAccountErrors = {
+    leadSocialAccountNotFound: i18n.t("leadSocialAccountNotFound"),
+    leadSocialAccountSystemManaged: i18n.t("leadSocialAccountSystemManaged"),
+  } as const;
+  if (normalized in leadSocialAccountErrors) {
+    return leadSocialAccountErrors[normalized as keyof typeof leadSocialAccountErrors];
+  }
+
   if (normalized in translations) {
     return i18n.t(normalized as keyof typeof translations);
   }

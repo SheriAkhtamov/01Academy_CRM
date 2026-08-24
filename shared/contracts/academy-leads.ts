@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { normalizeLeadTagName } from '../lead-tags';
+import { LEAD_CHANNELS } from '../lead-channels';
 import { positiveIdSchema } from './messages';
 
 const optionalPositiveIdInput = z.preprocess(
@@ -125,6 +126,16 @@ export const leadCommentRequestSchema = z.object({
   body: z.string().trim().min(1).max(5_000),
 });
 
+export const leadSocialAccountRequestSchema = z.object({
+  channel: z.enum(LEAD_CHANNELS),
+  value: z.string().trim().min(1).max(500),
+  assignToSelf: z.boolean().optional(),
+});
+
+export const leadSocialAccountDeleteRequestSchema = z.object({
+  assignToSelf: z.boolean().optional(),
+});
+
 export const leadGroupRequestSchema = z.object({
   groupId: positiveIdSchema,
 });
@@ -190,6 +201,8 @@ export type BulkArchiveLeadsRequest = z.infer<typeof bulkArchiveLeadsRequestSche
 export type RestoreLeadRequest = z.infer<typeof restoreLeadRequestSchema>;
 export type LeadTagRequest = z.infer<typeof leadTagRequestSchema>;
 export type LeadCommentRequest = z.infer<typeof leadCommentRequestSchema>;
+export type LeadSocialAccountRequest = z.infer<typeof leadSocialAccountRequestSchema>;
+export type LeadSocialAccountDeleteRequest = z.infer<typeof leadSocialAccountDeleteRequestSchema>;
 export type CreateLeadStudentRequest = Omit<
   z.infer<typeof createLeadStudentRequestSchema>,
   'enrolledAt'

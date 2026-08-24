@@ -22,6 +22,7 @@ import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
+import { LeadSocialAccountsEditor } from '@/components/ux/lead/LeadSocialAccountsEditor';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import {
   LeadStageStepper,
@@ -400,6 +401,7 @@ export function LeadDetailSheet({
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const [socialAccountsDirty, setSocialAccountsDirty] = useState(false);
   const studentsCardRef = useRef<HTMLDivElement | null>(null);
 
   const leadQuery = useLeadDetailsQuery<LeadDetails>(leadId, open);
@@ -436,7 +438,8 @@ export function LeadDetailSheet({
   const sheetHasUnsavedChanges = leadForm.formState.isDirty
     || paymentForm.formState.isDirty
     || taskForm.formState.isDirty
-    || commentDraft.trim().length > 0;
+    || commentDraft.trim().length > 0
+    || socialAccountsDirty;
   const closeSheet = useCallback((nextOpen: boolean) => {
     if (!nextOpen) setTagDropdownOpen(false);
     onOpenChange(nextOpen);
@@ -458,6 +461,7 @@ export function LeadDetailSheet({
     setPendingPaymentClaim(null);
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
+    setSocialAccountsDirty(false);
   }, [leadId, taskForm]);
 
   // Track which lead snapshot we last hydrated the forms from. Background refetches
@@ -543,6 +547,7 @@ export function LeadDetailSheet({
       setDuplicateHint(null);
       setCreateStudentOpen(false);
       setTagDropdownOpen(false);
+      setSocialAccountsDirty(false);
       setCommentDraft('');
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
       // Drop unsaved edits so the dirty flag clears; reopening reseeds the
@@ -1034,12 +1039,18 @@ export function LeadDetailSheet({
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          {(lead.channels ?? []).length > 0 ? (
-                            <FormItem className="md:col-span-2">
-                              <FormLabel>{t('contactChannels')}</FormLabel>
-                              <LeadChannelLinks channels={lead.channels} leadId={lead.id} showLabels />
-                            </FormItem>
-                          ) : null}
+                          <LeadSocialAccountsEditor
+                            leadId={lead.id}
+                            leadName={lead.contactName}
+                            managerId={lead.managerId}
+                            channels={lead.channels}
+                            canClaimUnassignedLead={canClaimUnassignedLead}
+                            onDirtyChange={setSocialAccountsDirty}
+                            onChanged={async () => {
+                              await leadQuery.refetch();
+                              onChanged();
+                            }}
+                          />
                           <FormField
                             control={leadForm.control}
                             name="contactName"

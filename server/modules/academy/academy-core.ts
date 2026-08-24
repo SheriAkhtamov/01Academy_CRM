@@ -237,7 +237,8 @@ export const leadChannelsSelect = (leadAlias = 'l') => `
           'externalId', channel.external_id,
           'handle', channel.handle,
           'displayName', channel.display_name,
-          'profileUrl', channel.profile_url
+          'profileUrl', channel.profile_url,
+          'isManual', COALESCE(channel.metadata ->> 'source' = 'manual', false)
         )
         ORDER BY channel.channel, channel.created_at, channel.id
       )

@@ -9,6 +9,8 @@ import type {
   CreateLeadStudentRequest,
   LeadCommentRequest,
   LeadTagRequest,
+  LeadSocialAccountDeleteRequest,
+  LeadSocialAccountRequest,
   MergeLeadDraftRequest,
   MergeLeadIds,
   RestoreLeadRequest,
@@ -80,6 +82,23 @@ export const leadsApi = {
   ),
   removeTag: <T>(leadId: number, assignmentId: number) => (
     apiRequest('DELETE', `/api/academy/leads/${leadId}/tags/${assignmentId}`) as Promise<T>
+  ),
+  addSocialAccount: <T>(leadId: number, input: LeadSocialAccountRequest) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/social-accounts`, input) as Promise<T>
+  ),
+  updateSocialAccount: <T>(
+    leadId: number,
+    accountId: number,
+    input: LeadSocialAccountRequest,
+  ) => (
+    apiRequest('PATCH', `/api/academy/leads/${leadId}/social-accounts/${accountId}`, input) as Promise<T>
+  ),
+  removeSocialAccount: <T>(
+    leadId: number,
+    accountId: number,
+    input: LeadSocialAccountDeleteRequest = {},
+  ) => (
+    apiRequest('DELETE', `/api/academy/leads/${leadId}/social-accounts/${accountId}`, input) as Promise<T>
   ),
   addComment: <T>(leadId: number, input: LeadCommentRequest) => (
     apiRequest('POST', `/api/academy/leads/${leadId}/comments`, input) as Promise<T>

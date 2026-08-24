@@ -22,6 +22,7 @@ import { registerAcademyOperationsRoutes } from './operations.router';
 import { registerAcademyResourceRoutes } from './resources.router';
 import { registerAcademyDemoLessonRoutes } from './demo-lessons.router';
 import { registerAcademyBulkLeadActionRoutes } from './bulk-lead-actions.router';
+import { registerAcademyLeadSocialAccountRoutes } from './lead-social-accounts.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -51,6 +52,7 @@ router.use(createLeadLifecycleRouter(
 ));
 
 registerAcademyBulkLeadActionRoutes(router);
+registerAcademyLeadSocialAccountRoutes(router);
 registerAcademyModuleRoutes(router);
 registerAcademyLeadRoutes(router);
 registerAcademyLearningRoutes(router);

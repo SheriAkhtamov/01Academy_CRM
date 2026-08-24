@@ -472,7 +472,7 @@ export function AttendanceCalendar({
               <div className="grid grid-cols-7 border-b bg-muted/30">
                 {dayNames.map((dayName, index) => (
                   <div
-                    key={`day-header-`}
+                    key={`day-header-${index}`}
                     className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                   >
                     {dayName}

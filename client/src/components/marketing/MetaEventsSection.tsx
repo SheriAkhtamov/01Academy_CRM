@@ -16,6 +16,7 @@ import {
 } from '@/features/marketing/meta-api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { formatAcademyDate } from '@/lib/localeFormat';
 
 function EventMetric({ label, value, icon: Icon }: { label: string; value: string | number; icon: typeof ListChecks }) {
   return (
@@ -35,7 +36,6 @@ function EventMetric({ label, value, icon: Icon }: { label: string; value: strin
 
 export function MetaEventsSection() {
   const { t, language } = useTranslation();
-  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<MetaEventRow | null>(null);
   const queryKey = metaMarketingQueryKeys.events;
@@ -56,9 +56,16 @@ export function MetaEventsSection() {
       variant: 'destructive',
     }),
   });
-  const dateTime = (value?: string | null) => value
-    ? new Date(value).toLocaleString(locale)
-    : t('noData');
+  const dateTime = (value?: string | null) => {
+    if (!value) return t('noData');
+    return formatAcademyDate(value, language, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) || t('noData');
+  };
   const statusLabel = (status: MetaEventRow['status']) => {
     if (status === 'sent') return t('messageDelivered');
     if (status === 'failed') return t('error');

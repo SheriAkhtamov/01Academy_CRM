@@ -302,6 +302,7 @@ export function DataTable<T extends Record<string, any>>({
               className={cn(
                 'px-4 py-3 transition-colors',
                 onRowClick && 'cursor-pointer active:bg-accent/50',
+                onRowClick && 'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary',
                 rowClassName?.(row),
               )}
               /*
@@ -312,6 +313,14 @@ export function DataTable<T extends Record<string, any>>({
                 not nest inside a button.
               */
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              role={onRowClick ? 'button' : undefined}
+              onKeyDown={onRowClick ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onRowClick(row);
+                }
+              } : undefined}
               initial={animateRows ? { opacity: 0, y: 6 } : false}
               animate={animateRows ? { opacity: 1, y: 0 } : undefined}
               transition={animateRows ? {
@@ -430,9 +439,18 @@ export function DataTable<T extends Record<string, any>>({
                   className={cn(
                     'border-b border-border/50 transition-colors hover:bg-accent/40',
                     onRowClick && 'cursor-pointer',
+                    onRowClick && 'focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary',
                     rowClassName?.(row)
                   )}
                   onClick={() => onRowClick?.(row)}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  role={onRowClick ? 'button' : undefined}
+                  onKeyDown={onRowClick ? (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onRowClick(row);
+                    }
+                  } : undefined}
                   initial={animateRows ? { opacity: 0, y: 6 } : false}
                   animate={animateRows ? { opacity: 1, y: 0 } : undefined}
                   transition={animateRows ? {

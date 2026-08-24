@@ -30,13 +30,14 @@ import {
   ChevronDown,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { DURATION, EASE, SPRING } from '@/lib/motion';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import { unviewedLeadCountQueryOptions } from '@/features/leads/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
+import { useStickyState } from '@/hooks/useStickyState';
 
 interface NavItem {
   name: string;
@@ -72,11 +73,12 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
   });
   const newLeadCount = Number(unviewedLeads.count) || 0;
   const newLeadsLabel = t('newLeadsCount').replace('{count}', String(newLeadCount));
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => (
+  const [collapsedSections, setCollapsedSections] = useStickyState<Record<string, boolean>>(
+    'sidebar-collapsed-sections',
     location.startsWith('/finance')
       ? { sales: true, teacher: true, marketing: true, administration: true }
-      : {} as Record<string, boolean>
-  ));
+      : {},
+  );
 
   /*
     Five modules expanded at once make this list about 1500px tall, and the
@@ -204,7 +206,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
   };
 
   const toggleSection = (sectionId: string) => {
-    setCollapsedSections((prev) => ({ ...prev, [sectionId]: !prev[sectionId] }));
+    setCollapsedSections({ ...collapsedSections, [sectionId]: !collapsedSections[sectionId] });
   };
 
   const renderNavItem = (item: NavItem) => {

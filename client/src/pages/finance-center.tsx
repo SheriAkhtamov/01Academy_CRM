@@ -46,13 +46,16 @@ import {
   financeRoutes,
   type FinanceSection,
 } from '@/lib/financeCenter';
+import { FinanceError, FinanceLoading, FinanceMetric } from '@/components/finance/FinanceMetrics';
+import { IncomeRegistryTable } from '@/components/finance/IncomeRegistryTable';
+import { StatusBadge } from '@/components/finance/StatusBadge';
+import { TransactionTable } from '@/components/finance/TransactionTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { FinanceAnalyticsCharts } from '@/components/ux/analytics/FinanceAnalyticsCharts';
-import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
-import { StaggerGroup, StaggerItem, useChartEntrance } from '@/components/ux/motion';
+import { StaggerGroup, useChartEntrance } from '@/components/ux/motion';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -63,9 +66,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { DataTable } from '@/components/ux/DataTable';
+import type { DataTableColumn } from '@/components/ux/DataTable';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   isReportingPresetKey,
@@ -74,8 +77,7 @@ import {
 } from '@/lib/reportingDateRange';
 import { useStickyState } from '@/hooks/useStickyState';
 import { ACADEMY_TIME_ZONE, academyToday } from '@/lib/localeFormat';
-
-type Row = Record<string, any>;
+import type { ExpenseRegistryRow, Row } from '@/lib/financeRows';
 
 interface DashboardData {
   period: string;
@@ -140,172 +142,6 @@ const initials = (name: string) => name
   .map((part) => part[0])
   .join('')
   .toUpperCase();
-
-function FinanceMetric({
-  label,
-  value,
-  icon: Icon,
-  tone = 'neutral',
-  large = false,
-  detail,
-  fullValue,
-}: {
-  label: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone?: 'neutral' | 'success' | 'danger' | 'warning';
-  large?: boolean;
-  detail?: React.ReactNode;
-  fullValue?: string;
-}) {
-  return (
-    // Each metric is its own stagger item, so any grid that holds them only has
-    // to be a StaggerGroup — the cards do not need wrapping at every call site.
-    <StaggerItem preset="pop" className="h-full">
-    <Card className={cn(
-      'h-full overflow-hidden border-border/60 shadow-sm transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:border-border hover:shadow-lg',
-      large && 'border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20',
-    )}>
-      <CardContent className="flex h-full items-start justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          <p title={fullValue} className={cn(
-            'mt-1 block max-w-full truncate whitespace-nowrap font-bold tabular-nums tracking-tight text-foreground',
-            large ? 'text-[26px] text-emerald-700' : 'text-xl',
-            tone === 'success' && !large && 'text-emerald-700',
-            tone === 'danger' && 'text-destructive',
-            tone === 'warning' && 'text-amber-700',
-          )}>
-            {value}
-          </p>
-          {detail ? <div className="mt-1.5 text-xs leading-4 text-muted-foreground">{detail}</div> : null}
-        </div>
-        <div className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground',
-          tone === 'success' && 'bg-emerald-100 text-emerald-700',
-          tone === 'danger' && 'bg-destructive/10 text-destructive',
-          tone === 'warning' && 'bg-amber-100 text-amber-700',
-          large && 'bg-emerald-100 text-emerald-700',
-        )}>
-          <Icon className="size-4" />
-        </div>
-      </CardContent>
-    </Card>
-    </StaggerItem>
-  );
-}
-
-function FinanceLoading({
-  showAnalytics = false,
-  metricCards = 4,
-}: {
-  showAnalytics?: boolean;
-  metricCards?: number;
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      <div className={cn(
-        'grid gap-3 md:grid-cols-2',
-        showAnalytics ? 'xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]' : 'xl:grid-cols-4',
-      )}>
-        {Array.from({ length: metricCards }, (_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
-      </div>
-      <Skeleton className="h-[300px] rounded-xl" />
-      {showAnalytics ? <AnalyticsChartsSkeleton cards={2} /> : null}
-      <Skeleton className="h-56 rounded-xl" />
-    </div>
-  );
-}
-
-function FinanceError({ copy, onRetry }: { copy: ReturnType<typeof financeCopy>; onRetry: () => void }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
-        <XCircle className="size-9 text-destructive" />
-        <p className="text-sm text-muted-foreground">{copy.error}</p>
-        <Button variant="outline" onClick={onRetry}><RotateCcw data-icon="inline-start" />{copy.retry}</Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusBadge({ status, copy }: { status: string; copy: ReturnType<typeof financeCopy> }) {
-  const statusMap: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'destructive' | 'outline' }> = {
-    paid: { label: copy.paid, variant: 'success' },
-    pending: { label: copy.pending, variant: 'warning' },
-    planned: { label: copy.planned, variant: 'warning' },
-    approved: { label: copy.approved, variant: 'success' },
-    cancelled: { label: copy.cancelled, variant: 'secondary' },
-    refunded: { label: copy.refunded, variant: 'secondary' },
-    unconfigured: { label: copy.unconfigured, variant: 'outline' },
-  };
-  const item = statusMap[status] ?? { label: status || copy.recorded, variant: 'outline' as const };
-  return <Badge variant={item.variant}>{item.label}</Badge>;
-}
-
-function TransactionTable({
-  rows,
-  copy,
-  money,
-  dateTime,
-  categoryLabel,
-  compact = false,
-}: {
-  rows: Row[];
-  copy: ReturnType<typeof financeCopy>;
-  money: (value: number) => string;
-  dateTime: (value: unknown) => string;
-  categoryLabel: (value: string) => string;
-  compact?: boolean;
-}) {
-  /*
-    Six columns do not fit a phone, and letting them scroll sideways hides the
-    amount — the one number anybody opens this table for. Below `md` the
-    secondary columns collapse into the operation cell, leaving what the row is
-    and what it cost side by side.
-  */
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="hidden md:table-cell">{copy.date}</TableHead>
-          <TableHead>{copy.operation}</TableHead>
-          <TableHead className="hidden md:table-cell">{copy.category}</TableHead>
-          {!compact ? <TableHead className="hidden lg:table-cell">{copy.counterparty}</TableHead> : null}
-          <TableHead className="hidden sm:table-cell">{copy.status}</TableHead>
-          <TableHead className="text-right">{copy.amount}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.id}>
-            <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{dateTime(row.occurredAt)}</TableCell>
-            <TableCell className="max-w-[280px] font-medium">
-              <span className="block truncate">{row.title || '—'}</span>
-              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground md:hidden">
-                <span>{dateTime(row.occurredAt)}</span>
-                <span>· {categoryLabel(row.category || row.kind)}</span>
-                <span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span>
-              </span>
-            </TableCell>
-            <TableCell className="hidden md:table-cell">{categoryLabel(row.category || row.kind)}</TableCell>
-            {!compact ? <TableCell className="hidden max-w-[240px] text-muted-foreground lg:table-cell"><span className="block truncate">{row.counterparty || '—'}</span></TableCell> : null}
-            <TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell>
-            <TableCell className={cn(
-              'whitespace-nowrap text-right font-semibold tabular-nums',
-              row.direction === 'in' ? 'text-emerald-700' : 'text-destructive',
-            )}>
-              {row.direction === 'in' ? '+' : '−'}{money(row.amountUzs)}
-            </TableCell>
-          </TableRow>
-        ))}
-        {rows.length === 0 ? (
-          <TableRow><TableCell colSpan={compact ? 5 : 6} className="h-36 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow>
-        ) : null}
-      </TableBody>
-    </Table>
-  );
-}
 
 export default function FinanceCenter({ section = 'overview' }: { section?: FinanceSection }) {
   // Draws once on mount; later refetches update the geometry silently.
@@ -566,7 +402,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                 <div className="flex flex-col gap-2">
                   <span className={cn('flex items-center gap-1 font-medium', dashboard.data.summary.profitChangePercent >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                     {dashboard.data.summary.profitChangePercent >= 0 ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-                    {dashboard.data.summary.profitChangePercent > 0 ? '+' : ''}{dashboard.data.summary.profitChangePercent}% {copy.vsPreviousPeriod}
+                    {dashboard.data.summary.profitChangePercent > 0 ? '+' : ''}{Math.round(dashboard.data.summary.profitChangePercent)}% {copy.vsPreviousPeriod}
                   </span>
                   <span>{copy.profitFormula}</span>
                 </div>
@@ -662,13 +498,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.incomeRegistry}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader><TableRow><TableHead className="hidden md:table-cell">{copy.date}</TableHead><TableHead>{copy.customer}</TableHead><TableHead className="hidden lg:table-cell">{copy.course}</TableHead><TableHead className="hidden xl:table-cell">{copy.manager}</TableHead><TableHead className="hidden lg:table-cell">{copy.method}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {income.data.rows.map((row) => <TableRow key={row.id}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{dateTime(row.paidAt || row.createdAt)}</TableCell><TableCell className="font-medium">{row.customerName || '—'}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground md:hidden"><span>{dateTime(row.paidAt || row.createdAt)}</span>{row.courseName ? <span>· {row.courseName}</span> : null}<span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell">{row.courseName || '—'}</TableCell><TableCell className="hidden xl:table-cell">{row.managerName || '—'}</TableCell><TableCell className="hidden lg:table-cell">{methodLabel(row.method)}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className={cn('whitespace-nowrap text-right font-semibold tabular-nums', row.status === 'paid' && 'text-emerald-700')}>{money(row.amountUzs)}</TableCell></TableRow>)}
-                  {!income.data.rows.length ? <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow> : null}
-                </TableBody>
-              </Table>
+              <IncomeRegistryTable rows={income.data.rows} copy={copy} money={money} dateTime={dateTime} methodLabel={methodLabel} />
             </CardContent>
           </Card>
         </div>
@@ -685,14 +515,91 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.expenseRegistry}</CardTitle><CardDescription>{copy.methodology}</CardDescription></CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader><TableRow><TableHead className="hidden md:table-cell">{copy.date}</TableHead><TableHead>{copy.title}</TableHead><TableHead className="hidden lg:table-cell">{copy.source}</TableHead><TableHead className="hidden lg:table-cell">{copy.category}</TableHead><TableHead className="hidden xl:table-cell">{copy.vendor}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.expenseDate)}</span><span>· {categoryLabel(row.category)}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{categoryLabel(row.category)}</TableCell><TableCell className="hidden xl:table-cell">{row.vendor || '—'}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => setPayTarget(row)} disabled={payExpense.isPending}><Check data-icon="inline-start" />{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
-                  {expenses.data.marketing.map((row) => <TableRow key={`marketing-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.periodStart)}</TableCell><TableCell className="font-medium">{row.campaignName || row.channel}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.periodStart)}</span><span>· {copy.marketing}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="purple">{copy.marketingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{copy.marketing}</TableCell><TableCell className="hidden xl:table-cell">{row.sourceName || row.channel}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.recognizedAmountUzs || row.amountUzs)}</TableCell><TableCell /></TableRow>)}
-                  {!expenses.data.operating.length && !expenses.data.marketing.length ? <TableRow><TableCell colSpan={8} className="h-40 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow> : null}
-                </TableBody>
-              </Table>
+              <DataTable
+                columns={[
+                  {
+                    key: 'expenseDate',
+                    header: copy.date,
+                    accessor: (row: ExpenseRegistryRow) => new Date(String(row.entryKind === 'operating' ? row.expenseDate : row.periodStart || 0)).getTime() || 0,
+                    render: (row: ExpenseRegistryRow) => date(row.entryKind === 'operating' ? row.expenseDate : row.periodStart),
+                    sortable: true,
+                    cellClassName: 'whitespace-nowrap text-muted-foreground',
+                  },
+                  {
+                    key: 'title',
+                    header: copy.title,
+                    accessor: (row: ExpenseRegistryRow) => (row.entryKind === 'operating' ? row.title : row.campaignName || row.channel || ''),
+                    render: (row: ExpenseRegistryRow) => (
+                      <span className="block max-w-[280px] truncate font-medium" title={row.entryKind === 'operating' ? row.title : row.campaignName || row.channel}>
+                        {row.entryKind === 'operating' ? row.title : row.campaignName || row.channel}
+                      </span>
+                    ),
+                    sortable: true,
+                    mobilePrimary: true,
+                  },
+                  {
+                    key: 'source',
+                    header: copy.source,
+                    accessor: (row: ExpenseRegistryRow) => row.entryKind,
+                    render: (row: ExpenseRegistryRow) => (
+                      <Badge variant={row.entryKind === 'marketing' ? 'purple' : 'outline'}>
+                        {row.entryKind === 'marketing' ? copy.marketingSource : copy.operatingSource}
+                      </Badge>
+                    ),
+                    sortable: true,
+                  },
+                  {
+                    key: 'category',
+                    header: copy.category,
+                    accessor: (row: ExpenseRegistryRow) => (row.entryKind === 'operating' ? categoryLabel(row.category) : copy.marketing),
+                    sortable: true,
+                  },
+                  {
+                    key: 'vendor',
+                    header: copy.vendor,
+                    accessor: (row: ExpenseRegistryRow) => (row.entryKind === 'operating' ? row.vendor || '' : row.sourceName || row.channel || ''),
+                    render: (row: ExpenseRegistryRow) => (row.entryKind === 'operating' ? row.vendor || '—' : row.sourceName || row.channel || '—'),
+                    sortable: true,
+                  },
+                  {
+                    key: 'status',
+                    header: copy.status,
+                    accessor: (row: ExpenseRegistryRow) => row.status || '',
+                    render: (row: ExpenseRegistryRow) => <StatusBadge status={row.status} copy={copy} />,
+                    sortable: true,
+                  },
+                  {
+                    key: 'amountUzs',
+                    header: copy.amount,
+                    accessor: (row: ExpenseRegistryRow) => Number((row.entryKind === 'marketing' ? row.recognizedAmountUzs || row.amountUzs : row.amountUzs) || 0),
+                    render: (row: ExpenseRegistryRow) => money(row.entryKind === 'marketing' ? row.recognizedAmountUzs || row.amountUzs : row.amountUzs),
+                    sortable: true,
+                    cellClassName: 'whitespace-nowrap text-right font-semibold tabular-nums',
+                  },
+                  {
+                    key: 'actions',
+                    header: copy.actions,
+                    cellClassName: 'text-right',
+                    mobileLabel: '',
+                    render: (row: ExpenseRegistryRow) => (
+                      <div className="flex justify-end gap-1">
+                        {row.entryKind === 'operating' && row.status === 'planned' ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => setPayTarget(row)} disabled={payExpense.isPending}><Check data-icon="inline-start" />{copy.pay}</Button>
+                            <Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button>
+                          </>
+                        ) : null}
+                      </div>
+                    ),
+                  },
+                ] satisfies DataTableColumn<ExpenseRegistryRow>[]}
+                data={[
+                  ...expenses.data.operating.map((row): ExpenseRegistryRow => ({ ...row, entryKind: 'operating' })),
+                  ...expenses.data.marketing.map((row): ExpenseRegistryRow => ({ ...row, entryKind: 'marketing' })),
+                ]}
+                keyExtractor={(row) => `${row.entryKind}-${row.id}`}
+                emptyState={<div className="py-12 text-center text-sm text-muted-foreground">{copy.noData}</div>}
+              />
             </CardContent>
           </Card>
         </div>
@@ -709,12 +616,88 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <Card className="overflow-hidden">
               <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>{copy.employee}</TableHead><TableHead className="hidden lg:table-cell">{copy.position}</TableHead><TableHead className="hidden text-right xl:table-cell">{copy.salary}</TableHead><TableHead className="hidden text-right xl:table-cell">{copy.bonus}</TableHead><TableHead className="hidden text-right xl:table-cell">{copy.deduction}</TableHead><TableHead className="text-right">{copy.payoutAmount}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {payroll.data.entries.map((entry) => <TableRow key={entry.employeeUserId} data-state={selectedPayrollEntry?.employeeUserId === entry.employeeUserId ? 'selected' : undefined} onClick={() => setSelectedEmployeeId(entry.employeeUserId)} className="cursor-pointer"><TableCell><div className="flex items-center gap-3"><Avatar className="hidden size-9 sm:flex"><AvatarFallback>{initials(entry.employeeName)}</AvatarFallback></Avatar><div className="min-w-0"><span className="font-medium">{entry.employeeName}</span><span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden">{entry.position ? <span>{entry.position}</span> : null}<span className="sm:hidden"><StatusBadge status={entry.status} copy={copy} /></span></span></div></div></TableCell><TableCell className="hidden text-muted-foreground lg:table-cell">{entry.position || '—'}</TableCell><TableCell className="hidden text-right tabular-nums xl:table-cell">{money(entry.baseSalaryUzs)}</TableCell><TableCell className="hidden text-right tabular-nums xl:table-cell">{entry.status === 'paid' ? money(entry.bonusUzs) : '—'}</TableCell><TableCell className="hidden text-right tabular-nums xl:table-cell">{entry.status === 'paid' ? money(entry.deductionUzs) : '—'}</TableCell><TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{money(entry.amountUzs ?? entry.baseSalaryUzs)}</TableCell><TableCell className="hidden sm:table-cell"><div className="flex flex-col items-start gap-1"><StatusBadge status={entry.status} copy={copy} />{entry.paidAt ? <span className="text-xs text-muted-foreground">{date(entry.paidAt)}</span> : null}</div></TableCell><TableCell className="text-right" onClick={(event) => event.stopPropagation()}>{entry.status === 'pending' ? <Button size="sm" onClick={() => openPayoutDialog(entry)}>{copy.pay}</Button> : entry.status === 'unconfigured' ? <Button size="sm" variant="outline" onClick={() => openSalaryDialog(entry)}>{copy.configureSalary}</Button> : null}</TableCell></TableRow>)}
-                  </TableBody>
-                </Table>
+                <DataTable
+                  columns={[
+                    {
+                      key: 'employeeName',
+                      header: copy.employee,
+                      accessor: (row: Row) => row.employeeName || '',
+                      render: (row: Row) => (
+                        <div className="flex items-center gap-3">
+                          <Avatar className="hidden size-9 sm:flex"><AvatarFallback>{initials(row.employeeName)}</AvatarFallback></Avatar>
+                          <span className="min-w-0 truncate font-medium">{row.employeeName}</span>
+                        </div>
+                      ),
+                      sortable: true,
+                      mobilePrimary: true,
+                    },
+                    { key: 'position', header: copy.position, accessor: (row: Row) => row.position || '', render: (row: Row) => <span className="text-muted-foreground">{row.position || '—'}</span>, sortable: true },
+                    {
+                      key: 'baseSalaryUzs',
+                      header: copy.salary,
+                      accessor: (row: Row) => Number(row.baseSalaryUzs || 0),
+                      render: (row: Row) => money(row.baseSalaryUzs),
+                      sortable: true,
+                      cellClassName: 'whitespace-nowrap text-right tabular-nums',
+                    },
+                    {
+                      key: 'bonusUzs',
+                      header: copy.bonus,
+                      accessor: (row: Row) => (row.status === 'paid' ? Number(row.bonusUzs || 0) : -1),
+                      render: (row: Row) => (row.status === 'paid' ? money(row.bonusUzs) : '—'),
+                      sortable: true,
+                      cellClassName: 'whitespace-nowrap text-right tabular-nums',
+                    },
+                    {
+                      key: 'deductionUzs',
+                      header: copy.deduction,
+                      accessor: (row: Row) => (row.status === 'paid' ? Number(row.deductionUzs || 0) : -1),
+                      render: (row: Row) => (row.status === 'paid' ? money(row.deductionUzs) : '—'),
+                      sortable: true,
+                      cellClassName: 'whitespace-nowrap text-right tabular-nums',
+                    },
+                    {
+                      key: 'amountUzs',
+                      header: copy.payoutAmount,
+                      accessor: (row: Row) => Number(row.amountUzs ?? row.baseSalaryUzs ?? 0),
+                      render: (row: Row) => money(row.amountUzs ?? row.baseSalaryUzs),
+                      sortable: true,
+                      cellClassName: 'whitespace-nowrap text-right font-semibold tabular-nums',
+                    },
+                    {
+                      key: 'status',
+                      header: copy.status,
+                      accessor: (row: Row) => row.status || '',
+                      render: (row: Row) => (
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge status={row.status} copy={copy} />
+                          {row.paidAt ? <span className="text-xs text-muted-foreground">{date(row.paidAt)}</span> : null}
+                        </div>
+                      ),
+                      sortable: true,
+                    },
+                    {
+                      key: 'actions',
+                      header: copy.actions,
+                      cellClassName: 'text-right',
+                      mobileLabel: '',
+                      render: (row: Row) => (
+                        <div className="flex justify-end" onClick={(event) => event.stopPropagation()}>
+                          {row.status === 'pending' ? (
+                            <Button size="sm" onClick={() => openPayoutDialog(row)}>{copy.pay}</Button>
+                          ) : row.status === 'unconfigured' ? (
+                            <Button size="sm" variant="outline" onClick={() => openSalaryDialog(row)}>{copy.configureSalary}</Button>
+                          ) : null}
+                        </div>
+                      ),
+                    },
+                  ] satisfies DataTableColumn<Row>[]}
+                  data={payroll.data.entries}
+                  keyExtractor={(row) => String(row.employeeUserId)}
+                  onRowClick={(row) => setSelectedEmployeeId(row.employeeUserId)}
+                  rowClassName={(row) => (selectedPayrollEntry?.employeeUserId === row.employeeUserId ? 'bg-accent/40' : '')}
+                  emptyState={<div className="py-12 text-center text-sm text-muted-foreground">{copy.noData}</div>}
+                />
               </CardContent>
             </Card>
             <div className="flex flex-col gap-5">
@@ -795,7 +778,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription} {t('payAllConfirmCount').replace('{count}', String(payroll.data?.summary.pendingCount ?? 0))} {t('payAllConfirmTotal').replace('{amount}', money(payroll.data?.summary.pendingAmountUzs ?? 0))}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(payTarget)} onOpenChange={(open) => !open && setPayTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmPayTitle}</AlertDialogTitle><AlertDialogDescription>{payTarget ? `${payTarget.title} · ${money(payTarget.amountUzs)}` : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={payExpense.isPending}>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={payExpense.isPending} onClick={(event) => { event.preventDefault(); if (payTarget) payExpense.mutate(payTarget.id); setPayTarget(null); }}>{payExpense.isPending ? `${copy.pay}…` : copy.confirmPay}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} onKeyDown={submitOnEnter(() => cancelExpense.mutate(), { disabled: !cancelReason.trim() || cancelExpense.isPending })} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       

@@ -67,6 +67,7 @@ import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
+import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { addReportingDays, isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import { useStickyState } from '@/hooks/useStickyState';
@@ -675,7 +676,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     () => myLeads.filter((lead) => !lead.isArchived && activePipelineCodes.has(lead.statusCode)),
     [activePipelineCodes, myLeads],
   );
-  const { filters: leadFilters, applyFilters } = useLeadFilters();
+  const { filters: leadFilters, applyFilters } = useLeadFilters({ urlSync: section === 'pipeline' });
   const filteredPipelineLeads = useMemo(
     () => pipelineLeads.filter((lead) => leadMatchesFilters(lead, leadFilters)),
     [leadFilters, pipelineLeads],
@@ -768,7 +769,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         toast({ title: t('clientAlreadyExists') });
         return;
       }
-      toast({ title: t('leadCreateFailed'), description: error.message, variant: 'destructive' });
+      toast({
+        title: t('leadCreateFailed'),
+        description: localizeApiErrorMessage(error.message, error.status ?? 0),
+        variant: 'destructive',
+      });
     },
   });
 
@@ -797,7 +802,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       toast({ title: t('statusUpdated') });
       invalidate();
     },
-    onError: (error: any) => toast({ title: t('statusNotUpdated'), description: error.message, variant: 'destructive' }),
+    onError: (error: any) => toast({
+      title: t('statusNotUpdated'),
+      description: localizeApiErrorMessage(error.message, error.status ?? 0),
+      variant: 'destructive',
+    }),
   });
 
   const assignAndMoveLead = useMutation({
@@ -811,7 +820,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     },
     onError: (error: Error) => toast({
       title: t('statusNotUpdated'),
-      description: error.message,
+      description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
       variant: 'destructive',
     }),
   });
@@ -831,7 +840,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       invalidate();
     },
-    onError: (error: any) => toast({ title: t('leadArchiveFailed'), description: error.message, variant: 'destructive' }),
+    onError: (error: any) => toast({
+      title: t('leadArchiveFailed'),
+      description: localizeApiErrorMessage(error.message, error.status ?? 0),
+      variant: 'destructive',
+    }),
   });
 
   const restoreLead = useMutation({
@@ -841,7 +854,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       toast({ title: t('leadRestored') });
       invalidate();
     },
-    onError: (error: any) => toast({ title: t('leadRestoreFailed'), description: error.message, variant: 'destructive' }),
+    onError: (error: any) => toast({
+      title: t('leadRestoreFailed'),
+      description: localizeApiErrorMessage(error.message, error.status ?? 0),
+      variant: 'destructive',
+    }),
   });
 
   const updateStudentStatus = useMutation({
@@ -852,7 +869,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       setSelectedStudent((current) => current?.id === student.id ? { ...current, ...student } : current);
       invalidate();
     },
-    onError: (error: Error) => toast({ title: ceoCopy.student.updateFailed, description: error.message, variant: 'destructive' }),
+    onError: (error: Error) => toast({
+      title: ceoCopy.student.updateFailed,
+      description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+      variant: 'destructive',
+    }),
   });
 
   const addStudentGroup = useMutation({
@@ -864,7 +885,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     },
     onError: (error: Error) => toast({
       title: t('studentGroupUpdateFailed'),
-      description: error.message,
+      description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
       variant: 'destructive',
     }),
   });
@@ -880,7 +901,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       title: t('studentGroupUpdateFailed'),
       description: error?.data?.error === 'studentRequiresAtLeastOneGroup'
         ? t('studentRequiresAtLeastOneGroup')
-        : error.message,
+        : localizeApiErrorMessage(error.message ?? '', error.status ?? 0),
       variant: 'destructive',
     }),
   });

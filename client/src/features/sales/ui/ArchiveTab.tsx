@@ -25,6 +25,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataTable } from '@/components/ux/DataTable';
 import { EmptyState } from '@/components/ux/EmptyState';
+import { useStickyState } from '@/hooks/useStickyState';
 import { leadContactSummary } from '@/lib/leadContact';
 import type { TranslationKey } from '@/lib/i18n';
 
@@ -72,9 +73,9 @@ export function ArchiveTab({
   onRestore: (leadId: number, statusCode: string) => void;
   isPending: boolean;
 }) {
-  const [search, setSearch] = useState('');
-  const [reasonFilter, setReasonFilter] = useState('all');
-  const [managerFilter, setManagerFilter] = useState('all');
+  const [search, setSearch] = useStickyState('sales.archive.search', '');
+  const [reasonFilter, setReasonFilter] = useStickyState('sales.archive.reasonFilter', 'all');
+  const [managerFilter, setManagerFilter] = useStickyState('sales.archive.managerFilter', 'all');
   // Restoring moves a lead back into the live pipeline: like every other
   // archive action it asks for confirmation instead of firing from a menu item.
   const [restoreTarget, setRestoreTarget] = useState<{ lead: ArchivedLead; statusCode: string } | null>(null);

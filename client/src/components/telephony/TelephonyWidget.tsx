@@ -70,6 +70,7 @@ export function TelephonyWidget() {
   const tabPanelId = useId();
   const pillRef = useRef<HTMLButtonElement | null>(null);
   const shouldRestoreFocusRef = useRef(false);
+  const noteDirtyRef = useRef(false);
   const {
     widgetRef,
     widgetStyle,
@@ -122,13 +123,23 @@ export function TelephonyWidget() {
   // Closing with Escape must never swallow what the manager is typing —
   // the dialer, the transfer field and the note editor all live here. It also
   // must not close alongside an open dialog/sheet that is consuming the same
-  // Escape keypress.
+  // Escape keypress, nor while a note draft is in progress.
+  useEffect(() => {
+    const syncNoteDirty = (event: Event) => {
+      const detail = (event as CustomEvent<{ dirty?: boolean }>).detail;
+      noteDirtyRef.current = Boolean(detail?.dirty);
+    };
+    window.addEventListener('crm:call-note-dirty', syncNoteDirty);
+    return () => window.removeEventListener('crm:call-note-dirty', syncNoteDirty);
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return undefined;
     const modalOpen = () => document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
     const handleKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || isEditableTarget(event.target)) return;
       if (modalOpen()) return;
+      if (noteDirtyRef.current) return;
       collapse();
     };
     window.addEventListener('keydown', handleKey);
@@ -187,26 +198,30 @@ export function TelephonyWidget() {
 
   return (
     <>
-      {isOpen ? (
-        // The entrance is a CSS keyframe rather than framer: this node carries
-        // useMovableWidget's `onDragStart`, and a motion component redefines
-        // that prop as its own pan-gesture callback, so the two cannot share
-        // an element.
+      {/* The entrance is a CSS keyframe rather than framer: this node carries
+          useMovableWidget's `onDragStart`, and a motion component redefines
+          that prop as its own pan-gesture callback, so the two cannot share
+          an element. The panel stays mounted while collapsed so dialer and
+          note drafts survive the toggle; only visibility switches. */}
+      <div
+        ref={widgetRef}
+        style={dockedStyle}
+        {...dockedDragProps}
+        data-telephony-widget
+        data-dragging={isDragging || undefined}
+        className="pointer-events-auto fixed z-40 isolate"
+      >
         <div
-          ref={widgetRef}
-          style={dockedStyle}
-          {...dockedDragProps}
-          data-telephony-widget
-          data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] isolate flex max-h-[min(660px,calc(100dvh-24px))] w-[min(372px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
-            !isMobile && 'cursor-move',
-            'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3 duration-300 ease-out-expo',
+            'flex max-h-[min(660px,calc(100dvh-24px))] w-[min(372px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
+            !isMobile && 'touch-none cursor-move',
             isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
+            isOpen ? 'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3 duration-300 ease-out-expo' : 'hidden',
           )}
           role="dialog"
           aria-modal="false"
           aria-label={t('telephonyTitle')}
+          aria-hidden={!isOpen || undefined}
         >
           <header
             className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 py-2 pl-3.5 pr-2"
@@ -357,24 +372,20 @@ export function TelephonyWidget() {
             )}
           </div>
         </div>
-      ) : (
-        // The collapsed pill turns green and gains a pulsing ring while a call
-        // is live, so it stays readable as a status light after the operator
-        // has parked it in a corner and gone back to work.
+
+        {/* The collapsed pill turns green and gains a pulsing ring while a call
+            is live, so it stays readable as a status light after the operator
+            has parked it in a corner and gone back to work. */}
         <div
-          ref={widgetRef}
-          style={dockedStyle}
-          {...dockedDragProps}
-          data-telephony-widget
-          data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] flex h-14 items-center overflow-hidden rounded-full pr-1 text-white shadow-xl',
+            'flex h-14 items-center overflow-hidden rounded-full pr-1 text-white shadow-xl',
             !isMobile && 'touch-none cursor-move',
             'animate-in fade-in-0 zoom-in-90 duration-300 ease-out-expo',
             isLive
               ? 'bg-emerald-600 ring-4 ring-emerald-500/30'
               : telephony.connectionState === 'ready' ? 'bg-slate-950' : 'bg-slate-600',
             isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
+            isOpen ? 'hidden' : '',
           )}
         >
           <button
@@ -446,7 +457,7 @@ export function TelephonyWidget() {
             </div>
           ) : null}
         </div>
-      )}
+      </div>
     </>
   );
 }

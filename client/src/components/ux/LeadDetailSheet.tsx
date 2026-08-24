@@ -13,8 +13,8 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { TranslationKey } from '@/lib/i18n';
-import { academyDateInputValue } from '@/lib/localeFormat';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
+import { deadlineInputToInstant, nextPaymentDate } from '@/lib/leadScheduleInputs';
 import { cn } from '@/lib/utils';
 import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
@@ -81,9 +81,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { getInitials } from '@/lib/auth';
 import {
+  compactPhoneNumbers,
   isSyntheticInstagramPhone,
   leadMessageTarget,
   primaryVisibleLeadPhone,
+  uniquePhoneNumbers,
   visibleLeadPhones,
 } from '@/lib/leadContact';
 import {
@@ -286,22 +288,6 @@ const optionalPhoneString = z.string().trim().refine(
   (value) => value === '' || value.length >= 7,
   'invalidData',
 );
-const phoneKey = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '');
-const compactPhoneNumbers = (values: string[]) => {
-  const seen = new Set<string>();
-  return values.flatMap((value) => {
-    const trimmed = value.trim();
-    const key = phoneKey(trimmed);
-    if (!trimmed || !key || seen.has(key)) return [];
-    seen.add(key);
-    return [trimmed];
-  });
-};
-const uniquePhoneNumbers = (values: string[]) => {
-  const keys = values.map(phoneKey).filter(Boolean);
-  return new Set(keys).size === keys.length;
-};
-
 const leadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
@@ -360,18 +346,6 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   language: lead.language ?? 'ru',
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
 });
-
-const toInputDate = academyDateInputValue;
-
-const nextPaymentDate = (payments?: LeadDetails['payments']) => {
-  const latestPaidUntil = (payments ?? []).reduce((latest, payment) => {
-    if (!payment.paidUntil) return latest;
-    const timestamp = new Date(payment.paidUntil).getTime();
-    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
-  }, 0);
-  const baseTimestamp = Math.max(Date.now(), latestPaidUntil);
-  return toInputDate(new Date(baseTimestamp + 30 * 24 * 60 * 60 * 1000).toISOString());
-};
 
 export function LeadDetailSheet({
   leadId,
@@ -716,7 +690,7 @@ export function LeadDetailSheet({
     mutationFn: (values: TaskFormValues) => boardApi.createTask({
       title: values.title,
       description: values.description,
-      dueAt: values.deadlineAt ? new Date(values.deadlineAt).toISOString() : null,
+      dueAt: values.deadlineAt ? deadlineInputToInstant(values.deadlineAt) : null,
       assigneeId: currentUserId,
       status: 'backlog',
       priority: 'normal',
@@ -915,22 +889,33 @@ export function LeadDetailSheet({
                   </div>
                   <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
 
-                  {/* Phone chips copy the number on click */}
+                  {/* Phone chips dial via tel:; the trailing button copies the number */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {visiblePhoneNumbers.length > 0 ? (
                       visiblePhoneNumbers.map((phone) => (
-                        <button
+                        <span
                           key={phone}
-                          type="button"
-                          title={t('clickToCopy')}
-                          className="group/phone inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                          onClick={() => copyPhone(phone)}
+                          className="group/phone inline-flex max-w-full items-center gap-1 rounded-md bg-muted/60 py-1 pl-2 pr-1 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                         >
                           <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                          <span className="truncate tabular-nums">{phone}</span>
-                          <Copy className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/phone:opacity-100" aria-hidden="true" />
-                          <span className="sr-only">{t('clickToCopy')}</span>
-                        </button>
+                          <a
+                            href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+                            title={t('callShort')}
+                            className="truncate tabular-nums transition-colors hover:text-primary"
+                          >
+                            {phone}
+                          </a>
+                          <button
+                            type="button"
+                            title={t('clickToCopy')}
+                            aria-label={`${t('clickToCopy')}: ${phone}`}
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => copyPhone(phone)}
+                          >
+                            <Copy className="size-3 opacity-0 transition-opacity group-hover/phone:opacity-100 group-focus-within/phone:opacity-100" aria-hidden="true" />
+                            <span className="sr-only">{t('clickToCopy')}</span>
+                          </button>
+                        </span>
                       ))
                     ) : (
                       <span className="text-xs italic text-muted-foreground">{t('leadSheetNoContactInfo')}</span>

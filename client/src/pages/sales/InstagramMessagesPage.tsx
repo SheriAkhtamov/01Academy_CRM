@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from 'wouter';
 import type { SanitizedUser } from '@shared/auth';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, localizeApiErrorMessage } from '@/lib/queryClient';
 import { SPRING } from '@/lib/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
@@ -17,15 +17,17 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import type { DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage } from '@/components/ux/ModulePage';
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, academyDateInputValue, academyDateTimeFormat } from '@/lib/localeFormat';
 import {
   Tooltip,
   TooltipContent,
@@ -213,40 +215,55 @@ type ConversationFilter = 'all' | 'unread' | 'reply' | 'closed';
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'IG';
 
-const startOfDay = (value: Date) =>
-  new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-
-const listTimestamp = (value?: string | null, t?: (key: TranslationKey) => string) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
-  if (diffDays <= 0) return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1 && t) return t('yesterday');
-  if (diffDays < 7) return date.toLocaleDateString(undefined, { weekday: 'short' });
-  return date.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
+const academyDayDistance = (dayKey: string) => {
+  const toDays = (key: string) => Date.parse(`${key}T00:00:00Z`) / 86_400_000;
+  return Math.round(toDays(academyDateInputValue(new Date())) - toDays(dayKey));
 };
 
-const daySeparatorLabel = (value: string | undefined, t: (key: TranslationKey) => string) => {
+const listTimestamp = (
+  value?: string | null,
+  t?: (key: TranslationKey) => string,
+  language = 'en',
+) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+  const dayKey = academyDateInputValue(date);
+  if (!dayKey) return '';
+  const diffDays = academyDayDistance(dayKey);
+  if (diffDays <= 0) {
+    return academyDateTimeFormat(language, { hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+  if (diffDays === 1 && t) return t('yesterday');
+  if (diffDays < 7) return academyDateTimeFormat(language, { weekday: 'short' }).format(date);
+  return academyDateTimeFormat(language, { day: '2-digit', month: '2-digit' }).format(date);
+};
+
+const daySeparatorLabel = (
+  value: string | undefined,
+  t: (key: TranslationKey) => string,
+  language = 'en',
+) => {
+  if (!value) return '';
+  const date = new Date(value);
+  const dayKey = Number.isNaN(date.getTime()) ? '' : academyDateInputValue(date);
+  if (!dayKey) return '';
+  const diffDays = academyDayDistance(dayKey);
   if (diffDays === 0) return t('today');
   if (diffDays === 1) return t('yesterday');
-  const sameYear = new Date().getFullYear() === date.getFullYear();
-  return date.toLocaleDateString(undefined, {
+  const sameYear = dayKey.slice(0, 4) === academyDateInputValue(new Date()).slice(0, 4);
+  return academyDateTimeFormat(language, {
     day: 'numeric',
     month: 'long',
     ...(sameYear ? {} : { year: 'numeric' }),
-  });
+  }).format(date);
 };
 
-const clockTime = (value?: string | null) => {
+const clockTime = (value?: string | null, language = 'en') => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return academyDateTimeFormat(language, { hour: '2-digit', minute: '2-digit' }).format(date);
 };
 
 const isReplyWindowOpen = (conversation: InstagramConversation, now = Date.now()) => {
@@ -295,6 +312,7 @@ const buildThreadItems = (
   t: (key: TranslationKey) => string,
   searchQuery = '',
   unreadCount = 0,
+  language = 'en',
 ): ThreadItem[] => {
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const visibleMessages = normalizedSearch
@@ -321,9 +339,9 @@ const buildThreadItems = (
   let lastTime = 0;
 
   for (const message of visibleMessages) {
-    const day = (message.createdAt || '').slice(0, 10);
+    const day = academyDateInputValue(message.createdAt);
     if (day && day !== lastDay) {
-      items.push({ kind: 'date', id: `date-${day}`, label: daySeparatorLabel(message.createdAt, t) });
+      items.push({ kind: 'date', id: `date-${day}`, label: daySeparatorLabel(message.createdAt, t, language) });
       lastDay = day;
       lastDirection = null;
     }
@@ -604,14 +622,17 @@ const FILTERS = [
 
 const QUICK_REPLIES_STORAGE_KEY = 'ig_quick_replies_v1';
 
-const DEFAULT_QUICK_REPLIES = [
-  'Здравствуйте! Чем можем помочь? 😊',
-  'Спасибо за интерес к нашей академии!',
-  'Подскажите, какого возраста ребёнок?',
-  'Запишитесь на бесплатное пробное занятие 🎓',
-  'Отправьте, пожалуйста, удобное время для звонка',
-  'Курсы стартуют уже на этой неделе 🚀',
-];
+const DEFAULT_QUICK_REPLY_KEYS = [
+  'quickReplyDefault1',
+  'quickReplyDefault2',
+  'quickReplyDefault3',
+  'quickReplyDefault4',
+  'quickReplyDefault5',
+  'quickReplyDefault6',
+] as const satisfies readonly TranslationKey[];
+
+const defaultQuickReplies = (t: (key: TranslationKey) => string) =>
+  DEFAULT_QUICK_REPLY_KEYS.map((key) => t(key));
 
 const EMOJI_SET = [
   '😊', '😍', '🙂', '😉', '🤩', '👍', '🙏', '🔥', '🎉', '🎓',
@@ -619,7 +640,26 @@ const EMOJI_SET = [
   '📞', '⏰', '💬', '📩', '👌', '🤗', '😎', '🥳', '💯', '🌟',
 ];
 
+const DRAFTS_STORAGE_KEY = 'ig_message_drafts_v1';
+
+const readStoredDrafts = (): Record<number, string> => {
+  try {
+    const raw = sessionStorage.getItem(DRAFTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .map(([key, value]) => [Number(key), typeof value === 'string' ? value : ''] as const)
+        .filter(([id, value]) => Number.isSafeInteger(id) && id > 0 && value !== ''),
+    );
+  } catch {
+    return {};
+  }
+};
+
 function useQuickReplies() {
+  const { t } = useTranslation();
   const [replies, setReplies] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(QUICK_REPLIES_STORAGE_KEY);
@@ -630,7 +670,7 @@ function useQuickReplies() {
     } catch {
       /* ignore */
     }
-    return DEFAULT_QUICK_REPLIES;
+    return defaultQuickReplies(t);
   });
 
   const persist = (next: string[]) => {
@@ -717,7 +757,7 @@ export default function MessagesPage() {
   const isAdministrationModule = hasLeadershipAccess(user);
   const hasSalesModule = getAssignedModules(user).includes('sales');
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
-  const [draftsByConversation, setDraftsByConversation] = useState<Record<number, string>>({});
+  const [draftsByConversation, setDraftsByConversation] = useState<Record<number, string>>(readStoredDrafts);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useStickyState<ConversationFilter>('instagram-inbox-filter', 'all');
   const [leadSheetLeadId, setLeadSheetLeadId] = useState<number | null>(null);
@@ -725,11 +765,11 @@ export default function MessagesPage() {
   const [mobileView, setMobileView] = useStickyState<'list' | 'thread'>('instagram-mobile-view', 'list');
   const [atBottom, setAtBottom] = useState(true);
   const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
-  const lightboxCloseRef = useRef<HTMLButtonElement | null>(null);
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [replyToDelete, setReplyToDelete] = useState<string | null>(null);
   const [newTemplate, setNewTemplate] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [sortByUnread, setSortByUnread] = useState<boolean>(() => {
@@ -766,6 +806,14 @@ export default function MessagesPage() {
       return { ...currentDrafts, [selectedConversationId]: next };
     });
   };
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(draftsByConversation));
+    } catch {
+      /* ignore */
+    }
+  }, [draftsByConversation]);
 
   const moduleQuery = useQuery<SalesModuleData>({
     queryKey: ['/api/academy/modules/sales'],
@@ -1072,7 +1120,7 @@ export default function MessagesPage() {
       );
       toast({
         title: t('instagramMessageNotSent'),
-        description: error.message || t('instagramSendFailed'),
+        description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0) || t('instagramSendFailed'),
         variant: 'destructive',
       });
     },
@@ -1112,7 +1160,11 @@ export default function MessagesPage() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: t('instagramSyncFailed'), description: error.message, variant: 'destructive' });
+      toast({
+        title: t('instagramSyncFailed'),
+        description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+        variant: 'destructive',
+      });
     },
   });
   const syncRunning = syncConversations.isPending || syncStatusRunning;
@@ -1195,11 +1247,16 @@ export default function MessagesPage() {
     });
   };
 
-  const copyMessage = (text: string, id: number) => {
+  const copyMessage = async (text: string, id: number) => {
     if (!text) return;
-    navigator.clipboard?.writeText(text).catch(() => undefined);
-    setCopiedId(id);
     setActiveMessageId(null);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      toast({ title: t('copyFailed'), variant: 'destructive' });
+      return;
+    }
+    setCopiedId(id);
     window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1400);
   };
 
@@ -1227,18 +1284,6 @@ export default function MessagesPage() {
     }
   };
 
-  useEffect(() => {
-    if (!lightbox) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLightbox(null);
-    };
-    window.addEventListener('keydown', onKey);
-    // Move focus into the lightbox so keyboard and screen-reader users land in
-    // the dialog instead of staying on the button that opened it.
-    requestAnimationFrame(() => lightboxCloseRef.current?.focus());
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightbox]);
-
   const handleListKeyDown = (event: React.KeyboardEvent) => {
     if (sortedConversations.length === 0) return;
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -1259,8 +1304,8 @@ export default function MessagesPage() {
 
   const conversationSearchQuery = conversationSearch.trim().toLowerCase();
   const threadItems = useMemo(
-    () => buildThreadItems(messages, t, conversationSearchQuery, threadUnreadCount),
-    [messages, t, conversationSearchQuery, threadUnreadCount],
+    () => buildThreadItems(messages, t, conversationSearchQuery, threadUnreadCount, language),
+    [messages, t, conversationSearchQuery, threadUnreadCount, language],
   );
   const threadMatchCount = useMemo(
     () => threadItems.filter((item) => item.kind === 'message').length,
@@ -1438,6 +1483,7 @@ export default function MessagesPage() {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder={t('instagramSearchPlaceholder')}
+                    aria-label={t('instagramSearchPlaceholder')}
                     className="pr-9 pl-9"
                   />
                   {search ? (
@@ -1558,7 +1604,7 @@ export default function MessagesPage() {
                                 <Highlight text={conversation.participantUsername ? `@${conversation.participantUsername}` : participantLabel} query={search} />
                               </p>
                               <span className="ml-auto shrink-0 text-[11px] text-slate-400">
-                                {listTimestamp(conversation.lastMessageAt, t)}
+                                {listTimestamp(conversation.lastMessageAt, t, language)}
                               </span>
                             </div>
                             <p className={cn('mt-1 flex items-center gap-1 truncate text-xs', unread ? 'text-slate-700' : 'text-muted-foreground')}>
@@ -1712,6 +1758,7 @@ export default function MessagesPage() {
                             }
                           }}
                           placeholder={t('searchInConversation')}
+                          aria-label={t('searchInConversation')}
                           className="pl-9"
                         />
                       </div>
@@ -1832,7 +1879,7 @@ export default function MessagesPage() {
                                   outbound ? 'justify-end text-slate-400' : 'text-slate-400',
                                 )}
                               >
-                                {item.showTime ? <span>{clockTime(message.createdAt)}</span> : null}
+                                {item.showTime ? <span>{clockTime(message.createdAt, language)}</span> : null}
                                 {message.pending ? (
                                   <span className="inline-flex items-center gap-1" title={t('sendingMessage')}>
                                     {t('sendingMessage')}
@@ -2020,7 +2067,7 @@ export default function MessagesPage() {
                                     type="button"
                                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     aria-label={t('delete')}
-                                    onClick={() => removeReply(reply)}
+                                    onClick={() => setReplyToDelete(reply)}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
@@ -2201,42 +2248,61 @@ export default function MessagesPage() {
       />
 
       {lightbox ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setLightbox(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('viewMedia')}
-        >
-          <Button
-            ref={lightboxCloseRef}
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="absolute right-4 top-4 text-white hover:bg-white/10 hover:text-white"
-            aria-label={t('close')}
-            onClick={() => setLightbox(null)}
+        <Dialog open onOpenChange={(open) => {
+          if (!open) setLightbox(null);
+        }}>
+          <DialogContent
+            aria-describedby={undefined}
+            className="max-h-none w-[calc(100%-2rem)] max-w-none overflow-visible border-none bg-transparent p-0 shadow-none [&>button]:hidden sm:w-full"
           >
-            <X className="h-5 w-5" />
-          </Button>
-          <div className="max-h-full max-w-full" onClick={(event) => event.stopPropagation()}>
-            {lightbox.type === 'video' ? (
-              <video
-                src={lightbox.url}
-                controls
-                autoPlay
-                className="max-h-[90dvh] max-w-[90vw] rounded-lg bg-black"
-              />
-            ) : (
-              <img
-                src={lightbox.url}
-                alt={lightbox.title || ''}
-                className="max-h-[90dvh] max-w-[90vw] rounded-lg object-contain"
-              />
-            )}
-          </div>
-        </div>
+            <DialogTitle className="sr-only">{lightbox.title || t('viewMedia')}</DialogTitle>
+            <div className="relative">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-2 top-2 z-10 text-white hover:bg-white/10 hover:text-white"
+                aria-label={t('close')}
+                onClick={() => setLightbox(null)}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+              <div className="flex items-center justify-center">
+                {lightbox.type === 'video' ? (
+                  <video
+                    src={lightbox.url}
+                    controls
+                    autoPlay
+                    className="max-h-[90dvh] max-w-[90vw] rounded-lg bg-black"
+                  />
+                ) : (
+                  <img
+                    src={lightbox.url}
+                    alt={lightbox.title || ''}
+                    className="max-h-[90dvh] max-w-[90vw] rounded-lg object-contain"
+                  />
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
+
+      <ConfirmDialog
+        open={replyToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setReplyToDelete(null);
+        }}
+        title={t('deleteQuickReplyTitle')}
+        description={`${replyToDelete ?? ''}. ${t('deleteQuickReplyDescription')}`}
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
+        variant="destructive"
+        onConfirm={() => {
+          if (replyToDelete) removeReply(replyToDelete);
+          setReplyToDelete(null);
+        }}
+      />
     </ModulePage>
   );
 }

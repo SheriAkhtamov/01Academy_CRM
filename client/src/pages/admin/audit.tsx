@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import type { AcademyModule } from '@shared/academy';
@@ -60,23 +61,41 @@ interface PaginationMeta {
 }
 
 type AuditCopy = ReturnType<typeof useCeoCopy>['audit'];
+type Translate = (key: TranslationKey) => string;
 
-const actionLabel = (action: string, copy: AuditCopy) => {
+const integrationCodeLabel = (code: string) => code
+  .split('_')
+  .filter(Boolean)
+  .map((part) => part[0].toUpperCase() + part.slice(1))
+  .join(' ');
+
+const actionLabel = (action: string, copy: AuditCopy, t: Translate) => {
   if (action.startsWith('CREATE')) return copy.created;
   if (action.startsWith('DELETE')) return copy.deleted;
   if (action.includes('REFUND')) return copy.refund;
   if (action.includes('APPROVE')) return copy.approved;
   if (action.startsWith('UPDATE')) return copy.changed;
-  return action.replace(/_/g, ' ');
+  return `${t('auditAction')} (${action})`;
 };
 
-const entityLabel = (entity: string, copy: AuditCopy) => ({
+const entityLabel = (entity: string, copy: AuditCopy, t: Translate) => ({
   academy_lead: copy.lead, academy_leads: copy.lead, academy_student: copy.student, academy_students: copy.student,
   academy_payment: copy.payment, academy_payments: copy.payment, academy_group: copy.group, academy_groups: copy.group,
   academy_lesson: copy.schedule, academy_lessons: copy.schedule, academy_marketing_expense: copy.expense,
   academy_task: copy.task, academy_company_settings: copy.kpi,
-}[entity] ?? entity.replace(/_/g, ' '));
+}[entity] ?? `${t('auditObject')} (${entity})`);
 
+const integrationStatusLabel = (status: string, t: Translate) => ({
+  failed: t('integrationStatusFailed'),
+  connected: t('integrationStatusConnected'),
+  sent: t('messageSent'),
+  pending: t('integrationStatusPending'),
+  completed: t('integrationStatusCompleted'),
+} as Record<string, string>)[status] ?? integrationCodeLabel(status);
+
+const integrationProviderLabel = (provider: string, t: Translate) => (
+  provider === 'website' ? t('integrationProviderWebsite') : integrationCodeLabel(provider)
+);
 const jsonObject = (value: unknown): Record<string, unknown> => {
   const unwrapped = Array.isArray(value) ? value[0] : value;
   if (!unwrapped || typeof unwrapped !== 'object') return {};
@@ -216,9 +235,9 @@ export default function AuditPage() {
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>
-                            {actionLabel(log.action, ceoCopy.audit)}
+                            {actionLabel(log.action, ceoCopy.audit, t)}
                           </Badge>
-                          <span className="text-sm font-medium">{entityLabel(log.entityType, ceoCopy.audit)}</span>
+                          <span className="text-sm font-medium">{entityLabel(log.entityType, ceoCopy.audit, t)}</span>
                           {log.entityId ? <span className="text-sm text-muted-foreground">#{log.entityId}</span> : null}
                         </div>
                         <p className="truncate text-sm">{log.userName ?? ceoCopy.audit.system}</p>
@@ -247,7 +266,7 @@ export default function AuditPage() {
                 <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.date}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.employee}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.action}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.object}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.changes}</th><th className="w-12 px-3 py-3" /></tr></thead>
                   <tbody>
-                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ?? '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action, ceoCopy.audit)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType, ceoCopy.audit)}</span>{log.entityId ? <span className="ml-1 text-muted-foreground">#{log.entityId}</span> : null}</td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
+                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ?? '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action, ceoCopy.audit, t)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType, ceoCopy.audit, t)}</span>{log.entityId ? <span className="ml-1 text-muted-foreground">#{log.entityId}</span> : null}</td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
                     {isError ? <tr><td colSpan={6} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span><Button className="ml-3" variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>{t('retry')}</Button></td></tr> : null}
                     {!isLoading && !isError && (data?.logs.length ?? 0) === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noResults}</td></tr> : null}
                   </tbody>
@@ -276,8 +295,8 @@ export default function AuditPage() {
                 {(data?.integrationLogs ?? []).map((log) => (
                   <li key={log.id} className="space-y-1.5 px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{log.provider}</span>
-                      <Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge>
+                      <span className="text-sm font-medium">{integrationProviderLabel(log.provider, t)}</span>
+                      <Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{integrationStatusLabel(log.status, t)}</Badge>
                     </div>
                     <p className="break-words text-xs text-muted-foreground">
                       {log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}
@@ -296,7 +315,7 @@ export default function AuditPage() {
                   <li className="px-4 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</li>
                 ) : null}
               </ul>
-              <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{log.provider}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div>
+              <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{integrationProviderLabel(log.provider, t)}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{integrationStatusLabel(log.status, t)}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div>
               <PaginationControls
                 page={integrationPagination.page}
                 pageSize={integrationPagination.limit}
@@ -316,7 +335,7 @@ export default function AuditPage() {
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          <SheetHeader><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType, ceoCopy.audit)} #${selected.entityId ?? '—'} · ${new Date(selected.createdAt).toLocaleString('ru-RU')}` : ''}</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType, ceoCopy.audit, t)} #${selected.entityId ?? '—'} · ${formatAcademyDate(selected.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}` : ''}</SheetDescription></SheetHeader>
           {/*
             Field / before / after reads as three columns only when there is
             room for three. On a phone the header strip is dropped and each

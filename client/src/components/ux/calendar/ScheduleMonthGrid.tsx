@@ -46,7 +46,7 @@ export function ScheduleMonthGrid({
         <div className="sticky top-0 z-20 grid grid-cols-7 border-b border-border bg-card/95 backdrop-blur-sm">
           {dayNames.map((dayName, index) => (
             <div
-              key={`day-header-`}
+              key={`day-header-${index}`}
               className="px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
             >
               {dayName}

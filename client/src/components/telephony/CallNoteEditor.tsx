@@ -20,20 +20,32 @@ export function CallNoteEditor({
   autoFocus,
   className,
   onSaved,
+  onDirtyChange,
 }: {
   callId: number;
   note: string | null;
   autoFocus?: boolean;
   className?: string;
   onSaved?: (note: string | null) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(note ?? '');
+  const isDirty = draft.trim().length > 0;
 
   useEffect(() => {
     setDraft(note ?? '');
   }, [callId, note]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    window.dispatchEvent(new CustomEvent('crm:call-note-dirty', { detail: { dirty: isDirty } }));
+    return () => {
+      onDirtyChange?.(false);
+      window.dispatchEvent(new CustomEvent('crm:call-note-dirty', { detail: { dirty: false } }));
+    };
+  }, [isDirty, onDirtyChange]);
 
   const saveNote = useMutation({
     mutationFn: () => telephonyApi.saveCallNote(callId, draft.trim() || null),
@@ -61,6 +73,10 @@ export function CallNoteEditor({
         autoFocus={autoFocus}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
+          if (event.key === 'Escape' && isDirty) {
+            event.stopPropagation();
+            return;
+          }
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isUnchanged) {
             event.preventDefault();
             saveNote.mutate();

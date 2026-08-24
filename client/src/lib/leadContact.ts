@@ -51,3 +51,21 @@ export const leadMessageTarget = (lead?: LeadContactFields | null): LeadMessageT
 
   return null;
 };
+
+export const phoneKey = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '');
+
+export const compactPhoneNumbers = (values: string[]) => {
+  const seen = new Set<string>();
+  return values.flatMap((value) => {
+    const trimmed = value.trim();
+    const key = phoneKey(trimmed);
+    if (!trimmed || !key || seen.has(key)) return [];
+    seen.add(key);
+    return [trimmed];
+  });
+};
+
+export const uniquePhoneNumbers = (values: string[]) => {
+  const keys = values.map(phoneKey).filter(Boolean);
+  return new Set(keys).size === keys.length;
+};

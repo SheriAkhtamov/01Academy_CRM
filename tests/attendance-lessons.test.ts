@@ -12,6 +12,6 @@ describe('attendance lesson ordering', () => {
       { id: 6, status: 'scheduled', scheduledAt: '2026-07-13T05:00:00.000Z' },
     ], new Date('2026-07-12T00:00:00.000Z').getTime());
 
-    expect(lessons.map((lesson) => lesson.id)).toEqual([4, 3, 2, 6, 1]);
+    expect(lessons.map((lesson) => lesson.id)).toEqual([3, 4, 2, 6, 1]);
   });
 });

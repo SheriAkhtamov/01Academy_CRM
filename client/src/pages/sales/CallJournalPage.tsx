@@ -34,6 +34,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiRequest } from '@/lib/queryClient';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 import {
   activeTelephonyStatuses,
   formatCallDuration,
@@ -189,13 +190,18 @@ export default function CallJournalPage() {
     ...missedCallUnreadQueryOptions,
   });
 
-  const dateTime = (value: string) => new Date(value).toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const dateTime = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US', {
+      timeZone: ACADEMY_TIME_ZONE,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
   const items = journalQuery.data?.items ?? [];
   const missedCallCount = Number(missedCallUnread?.count) || 0;
   const lastSeenMissedCallId = missedCallUnread
@@ -562,15 +568,30 @@ function CallNote({ note, className }: { note: string | null; className?: string
 }
 
 function LeadCell({ call }: { call: JournalCall }) {
-  const content = (
+  const name = call.leadName || call.contactName || call.phone;
+  const phoneAnchor = (
+    <a
+      href={`tel:${call.phone.replace(/[^\d+]/g, '')}`}
+      className="mt-0.5 block w-fit text-xs text-muted-foreground transition-colors hover:text-primary"
+    >
+      {call.phone}
+    </a>
+  );
+  if (!call.leadId) {
+    return (
+      <div className="min-w-0">
+        <p className="max-w-64 truncate font-medium">{name}</p>
+        {phoneAnchor}
+      </div>
+    );
+  }
+  return (
     <div className="min-w-0">
-      <p className="max-w-64 truncate font-medium">{call.leadName || call.contactName || call.phone}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{call.phone}</p>
+      <Link href={`/sales/pipeline?lead=${call.leadId}`} className="inline-flex max-w-64 items-center gap-2 rounded-md hover:text-primary">
+        <UserRound className="size-4 shrink-0" />
+        <span className="truncate font-medium">{name}</span>
+      </Link>
+      {phoneAnchor}
     </div>
   );
-  return call.leadId ? (
-    <Link href={`/sales/pipeline?lead=${call.leadId}`} className="inline-flex items-center gap-2 rounded-md hover:text-primary">
-      <UserRound className="size-4 shrink-0" />{content}
-    </Link>
-  ) : content;
 }

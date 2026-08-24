@@ -49,7 +49,7 @@ export const createGroupSchema = (t: Translate) => z.object({
   lessonDurationMinutes: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(15, t('invalidDataFormat')),
   maxStudents: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(1, t('invalidDataFormat')),
   status: z.enum(['open', 'in_progress', 'completed']),
-  startDate: z.string(),
+  startDate: z.string().min(1, t('fieldRequired')),
   endDate: z.string(),
 }).superRefine((values, context) => {
   if (values.startDate && values.endDate && values.endDate < values.startDate) {

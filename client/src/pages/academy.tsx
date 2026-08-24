@@ -256,8 +256,12 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     onSuccess: (result) => {
       window.location.assign(result.url);
     },
-    onError: (error: Error) => {
-      const isNotConfigured = error.message === t('instagramIntegrationNotConfigured');
+    onError: (error: Error & { rawMessage?: string }) => {
+      const notConfiguredCode = 'instagramIntegrationNotConfigured';
+      const normalized = `${error.rawMessage ?? error.message}`.replace(/^\d+:\s*/, '').trim();
+      const isNotConfigured = normalized === notConfiguredCode
+        || error.message === notConfiguredCode
+        || error.message === t('instagramIntegrationNotConfigured');
       toast({
         title: isNotConfigured ? t('instagramSetupRequired') : t('instagramConnectionFailed'),
         description: isNotConfigured ? t('instagramSetupRequiredDesc') : error.message,

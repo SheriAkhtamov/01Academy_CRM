@@ -262,6 +262,17 @@ export function TelephonyCallHistory({
           {!historyQuery.isLoading && calls.length > 0 && visibleCalls.length === 0 ? (
             <p className="px-6 py-16 text-center text-sm text-muted-foreground">{t('telephonyNoCallsFound')}</p>
           ) : null}
+
+          {calls.length >= 50 ? (
+            <Link
+              href="/sales/calls"
+              onClick={onCollapse}
+              className="flex items-center justify-center gap-1 px-3 py-3 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-primary"
+            >
+              {t('telephonyHistoryCapped')}
+              <ArrowUpRight className="size-3.5 shrink-0" />
+            </Link>
+          ) : null}
         </div>
       </ScrollArea>
     </div>

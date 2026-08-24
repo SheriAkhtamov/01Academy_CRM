@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Headphones, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -17,8 +17,28 @@ export function CallRecordingPlayer({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const playerId = useId();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const pauseForForeignPlayback = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string }>).detail;
+      if (!detail || detail.id === playerId) return;
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+      }
+    };
+    window.addEventListener('crm:recording-play', pauseForForeignPlayback);
+    return () => window.removeEventListener('crm:recording-play', pauseForForeignPlayback);
+  }, [playerId]);
+
+  useEffect(() => {
+    if (!url) return undefined;
+    window.dispatchEvent(new CustomEvent('crm:recording-play', { detail: { id: playerId } }));
+    return undefined;
+  }, [url, playerId]);
 
   if (!hasRecording) return null;
 
@@ -63,6 +83,7 @@ export function CallRecordingPlayer({
   return (
     <div className={cn('flex min-w-0 items-center gap-2', className)}>
       <audio
+        ref={audioRef}
         src={url}
         controls
         autoPlay

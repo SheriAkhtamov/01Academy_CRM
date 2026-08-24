@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
 import type { TranslationKey } from '@/lib/i18n';
+import { academyDateInputValue, academyDateTimeFormat, academyToday } from '@/lib/localeFormat';
 import { DURATION, EASE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import {
@@ -227,7 +228,7 @@ const dayKeyOf = (value?: string | null) => {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  return academyDateInputValue(date);
 };
 
 export function ActivityTimeline({
@@ -334,17 +335,15 @@ export function ActivityTimeline({
   const dayLabelOf = (value?: string | null) => {
     if (!value) return t('noData');
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return t('noData');
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    if (day.getTime() === today.getTime()) return t('today');
-    if (day.getTime() === yesterday.getTime()) return t('yesterday');
-    return new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
+    const dayKey = Number.isNaN(date.getTime()) ? '' : academyDateInputValue(date);
+    if (!dayKey) return t('noData');
+    const todayKey = academyToday();
+    if (dayKey === todayKey) return t('today');
+    if (dayKey === academyDateInputValue(Date.now() - 24 * 60 * 60 * 1000)) return t('yesterday');
+    return academyDateTimeFormat(language, {
       day: 'numeric',
       month: 'long',
-      ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+      ...(dayKey.slice(0, 4) !== todayKey.slice(0, 4) ? { year: 'numeric' } : {}),
     }).format(date);
   };
 

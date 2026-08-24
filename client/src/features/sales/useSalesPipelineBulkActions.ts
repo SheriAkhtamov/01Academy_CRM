@@ -5,6 +5,11 @@ import { leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
+import { localizeApiErrorMessage } from '@/lib/queryClient';
+
+const localizedError = (error: Error) => (
+  localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0)
+);
 
 interface SelectablePipelineLead {
   id: number;
@@ -77,7 +82,7 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     },
     onError: (error: Error) => toast({
       title: t('bulkMoveFailed'),
-      description: error.message,
+      description: localizedError(error),
       variant: 'destructive',
     }),
   });
@@ -94,7 +99,7 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     },
     onError: (error: Error) => toast({
       title: t('leadTransferFailed'),
-      description: error.message,
+      description: localizedError(error),
       variant: 'destructive',
     }),
   });
@@ -110,7 +115,7 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     },
     onError: (error: Error) => toast({
       title: t('bulkDeleteFailed'),
-      description: error.message,
+      description: localizedError(error),
       variant: 'destructive',
     }),
   });
@@ -141,7 +146,7 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     },
     onError: (error: Error) => toast({
       title: t('bulkArchiveFailed'),
-      description: error.message,
+      description: localizedError(error),
       variant: 'destructive',
     }),
   });

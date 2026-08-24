@@ -165,6 +165,47 @@ function toDateTimeLocal(value: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+type PersistedAttendanceDraft = {
+  draft: TeacherAttendanceDraft;
+  note: string;
+  noteDirty: boolean;
+};
+
+const attendanceDraftStorageKey = (lessonId: number) => (
+  `teacher-module-attendance-draft-${lessonId}`
+);
+
+function readPersistedAttendanceDraft(lessonId: number): PersistedAttendanceDraft | null {
+  try {
+    const raw = sessionStorage.getItem(attendanceDraftStorageKey(lessonId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedAttendanceDraft> | null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const draft: TeacherAttendanceDraft = {};
+    for (const [studentId, status] of Object.entries(parsed.draft ?? {})) {
+      if (status === 'present' || status === 'absent') draft[Number(studentId)] = status;
+    }
+    const note = typeof parsed.note === 'string' ? parsed.note : '';
+    if (Object.keys(draft).length === 0 && !note.trim()) return null;
+    return { draft, note, noteDirty: parsed.noteDirty === true };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedAttendanceDraft(
+  lessonId: number | null,
+  value: PersistedAttendanceDraft | null,
+) {
+  if (!lessonId) return;
+  try {
+    if (value) sessionStorage.setItem(attendanceDraftStorageKey(lessonId), JSON.stringify(value));
+    else sessionStorage.removeItem(attendanceDraftStorageKey(lessonId));
+  } catch {
+    return;
+  }
+}
+
 /* A minute is the finest granularity anything on this screen cares about. The
    page used to re-render — and re-sort every lesson — once a second. */
 const CLOCK_TICK_MS = 30_000;
@@ -191,7 +232,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
      what the browser promises, and the schedule's "attendance" button can hand
      a specific lesson to another route instead of losing it on unmount. */
   const searchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
-  const lessonParam = searchParams.get('lesson') ?? '';
   const groupParam = searchParams.get('group') ?? '';
   const weekParam = searchParams.get('week') ?? '';
   const groupView: TeacherGroupView = searchParams.get('groups') === 'archive' ? 'archive' : 'active';
@@ -273,6 +313,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       toast({ title: t('attendanceSaved'), description: t('attendanceSavedDesc') });
       attendanceDraftDirty.current = false;
       attendanceNoteDirty.current = false;
+      writePersistedAttendanceDraft(variables.lessonId, null);
       queryClient.invalidateQueries({
         queryKey: ['/api/academy/lessons', variables.lessonId, 'attendance-roster'],
       });
@@ -509,7 +550,11 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     }));
   }, [lessons, scheduleWeekKey]);
 
-  const selectedLessonId = section === 'attendance' ? lessonParam : '';
+  const rawLessonParam = section === 'attendance' ? searchParams.get('lesson') : null;
+  const parsedLessonId = rawLessonParam ? Number(rawLessonParam) : Number.NaN;
+  const selectedLessonId = Number.isSafeInteger(parsedLessonId) && parsedLessonId > 0
+    ? String(parsedLessonId)
+    : '';
   const selectedLesson = useMemo(
     () => lessons.find((lesson) => String(lesson.id) === selectedLessonId),
     [lessons, selectedLessonId],
@@ -634,7 +679,25 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     hydratedAttendanceLessonId.current = attendanceHydration.lessonId;
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
+    const restored = readPersistedAttendanceDraft(attendanceHydration.lessonId);
+    if (restored) {
+      setAttendanceDraft(restored.draft);
+      setAttendanceNote(restored.note);
+      attendanceDraftDirty.current = true;
+      attendanceNoteDirty.current = restored.noteDirty;
+    }
   }, [attendanceHydration]);
+
+  useEffect(() => {
+    const lessonId = hydratedAttendanceLessonId.current;
+    if (!lessonId) return;
+    if (!attendanceDraftDirty.current && !attendanceNoteDirty.current) return;
+    writePersistedAttendanceDraft(lessonId, {
+      draft: attendanceDraft,
+      note: attendanceNote,
+      noteDirty: attendanceNoteDirty.current,
+    });
+  }, [attendanceDraft, attendanceNote]);
 
   const allAttendanceMarked = selectedLessonStudents.every(
     (student) => attendanceDraft[student.id] !== undefined,
@@ -815,6 +878,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const confirmDialogClose = useCallback(() => {
     setPendingDialogClose(false);
+    writePersistedAttendanceDraft(hydratedAttendanceLessonId.current, null);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     replaceParams({ lesson: null });
@@ -822,6 +886,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const confirmLessonSwitch = useCallback(() => {
     if (!pendingLessonSwitch) return;
+    writePersistedAttendanceDraft(hydratedAttendanceLessonId.current, null);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     replaceParams({ lesson: pendingLessonSwitch });

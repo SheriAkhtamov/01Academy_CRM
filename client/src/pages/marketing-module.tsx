@@ -44,6 +44,7 @@ import {
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
+import { formatAcademyDate } from '@/lib/localeFormat';
 import {
   Megaphone,
   TrendingUp,
@@ -123,13 +124,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function RoasBadge({ value }: { value: number }) {
-  if (value >= TARGET_ROAS) {
-    return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200">{value}x</Badge>;
+  const rounded = Math.round(value * 100) / 100;
+  if (rounded >= TARGET_ROAS) {
+    return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200">{rounded}x</Badge>;
   }
-  if (value >= 1) {
-    return <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200">{value}x</Badge>;
+  if (rounded >= 1) {
+    return <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200">{rounded}x</Badge>;
   }
-  return <Badge className="bg-red-50 text-red-700 hover:bg-red-50 border-red-200">{value}x</Badge>;
+  return <Badge className="bg-red-50 text-red-700 hover:bg-red-50 border-red-200">{rounded}x</Badge>;
 }
 
 function ConversionBar({ label, value, total, color = '#2563eb' }: {
@@ -162,16 +164,14 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useStickyState('marketing-funnel-source', 'all');
   const [expensePeriodFilter, setExpensePeriodFilter] = useStickyState('marketing-expense-period', '');
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
+  const [reportingRange, setReportingRange] = useStickyState('marketing-reporting-range', reportingRangeForPreset('today'));
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
 
   const dateOnly = (value: string | null | undefined) => {
     if (!value) return t('noData');
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return t('noData');
-    return date.toLocaleDateString(locale);
+    return formatAcademyDate(value, language) || t('noData');
   };
 
   const reportingQuery = reportingRangeQuery(reportingRange);
@@ -265,7 +265,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     return Array.from(map.values())
       .map((r: any) => ({
         ...r,
-        level: r.paid >= 5 ? t('aiAmbassador') : r.paid >= 3 ? t('freeMonth') : r.paid >= 1 ? '15%' : '-',
+        level: r.paid >= 5 ? t('aiAmbassador') : r.paid >= 3 ? t('freeMonth') : r.paid >= 1 ? t('referralLevelCashbackPercent') : '-',
       }))
       .sort((a: any, b: any) => b.referred - a.referred);
   }, [referrals, students, t]);
@@ -327,7 +327,14 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       sortable: true,
       cellClassName: 'tabular-nums',
     },
-    { key: 'ltvCac', header: t('ltvCacLabel'), accessor: (row: any) => Number(row.ltvCac || 0), render: (row: any) => `${row.ltvCac}:1`, sortable: true, cellClassName: 'tabular-nums' },
+    {
+      key: 'ltvCac',
+      header: t('ltvCacLabel'),
+      accessor: (row: any) => Number(row.ltvCac || 0),
+      render: (row: any) => `${Number.isFinite(Number(row.ltvCac)) ? Number(row.ltvCac) : 0}:1`,
+      sortable: true,
+      cellClassName: 'tabular-nums',
+    },
   ];
 
   /* ─── tab: referrals ─── */
@@ -422,13 +429,11 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         }
       />
 
-      {section === 'overview' || section === 'meta-attribution' ? (
-        <ReportingDateRangeFilter
-          value={reportingRange}
-          onChange={setReportingRange}
-          isFetching={isFetching}
-        />
-      ) : null}
+      <ReportingDateRangeFilter
+        value={reportingRange}
+        onChange={setReportingRange}
+        isFetching={isFetching}
+      />
 
       {/* ─── KPI cards ─── */}
       {section === 'overview' ? (
@@ -615,7 +620,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">{t('roasLabel')}</span>
-                    <strong className="text-emerald-600 tabular-nums">{summary.roas}x</strong>
+                    <strong className="text-emerald-600 tabular-nums">{summary.roas ?? 0}x</strong>
                   </div>
                 </div>
               </CardContent>

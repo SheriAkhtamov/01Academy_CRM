@@ -36,6 +36,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
+import { formatAcademyDate } from '@/lib/localeFormat';
 
 function AttributionMetric({
   label,
@@ -178,9 +179,16 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       ? `$${Number(value).toLocaleString(locale, { maximumFractionDigits: 2 })}`
       : money(value);
   };
-  const dateTime = (value?: string | null) => value
-    ? new Date(value).toLocaleString(locale)
-    : t('noData');
+  const dateTime = (value?: string | null) => {
+    if (!value) return t('noData');
+    return formatAcademyDate(value, language, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) || t('noData');
+  };
   const formatLabel = (value?: string | null) => {
     if (value === 'video') return t('mediaVideo');
     if (value === 'image') return t('creativeImage');
@@ -364,7 +372,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
           <AlertDescription>{t('metaAttributionNotConfiguredDesc')}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <AttributionMetric
           label={t('metaAdsWithLeads')}
           value={`${summary.creatives} / ${summary.totalAds}`}
@@ -469,7 +477,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
                 selected.utmTerm && `utm_term=${selected.utmTerm}`,
               ].filter(Boolean).join('\n')} />
               <Detail label={t('metaCapturedPeriod')} value={`${dateTime(selected.firstCapturedAt)} — ${dateTime(selected.lastCapturedAt)}`} />
-              <Detail label={t('utmTags')} value={selected.utmDerived ? t('metaDerivedUtm') : t('metaDeclaredUtm')} />
+              <Detail label={t('utmSourceType')} value={selected.utmDerived ? t('metaDerivedUtm') : t('metaDeclaredUtm')} />
             </div>
           ) : null}
         </DialogContent>

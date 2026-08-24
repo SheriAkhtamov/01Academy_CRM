@@ -28,6 +28,9 @@ export default function Layout({ children }: LayoutProps) {
   const mainRef = useRef<HTMLElement | null>(null);
   const lastLocation = useRef(location);
   const popNavigation = useRef(false);
+  const pageContentRef = useRef<HTMLDivElement | null>(null);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const menuToggleRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const markPop = () => {
@@ -44,6 +47,7 @@ export default function Layout({ children }: LayoutProps) {
     lastLocation.current = location;
     const el = mainRef.current;
     if (!el) return undefined;
+    el.focus({ preventScroll: true });
     if (!isPop) {
       el.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
       return undefined;
@@ -91,6 +95,52 @@ export default function Layout({ children }: LayoutProps) {
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [sidebarOpen]);
+
+  // While the mobile drawer is open the page behind it becomes inert, focus
+  // starts on the drawer's first link, closing hands focus back to the burger,
+  // and Tab cycles inside the drawer. Docked desktop navigation never opens
+  // through this path, so a resize race leaves the page untouched.
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+      return undefined;
+    }
+    const page = pageContentRef.current;
+    const toggle = menuToggleRef.current;
+    const frame = requestAnimationFrame(() => {
+      const drawer = drawerRef.current;
+      drawer?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus();
+    });
+    if (page) page.inert = true;
+    return () => {
+      cancelAnimationFrame(frame);
+      if (page) page.inert = false;
+      toggle?.focus({ preventScroll: true });
+    };
+  }, [sidebarOpen]);
+
+  const handleDrawerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !sidebarOpen) return;
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    const focusables = Array.from(
+      drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    const inside = active instanceof Node && drawer.contains(active);
+    if (event.shiftKey) {
+      if (!inside || active === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else if (!inside || active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
   const containsOwnScrollArea = isContainedModuleRoute(location, user?.module);
   const realtime = useWebSocket();
 
@@ -127,6 +177,8 @@ export default function Layout({ children }: LayoutProps) {
         the slide-out finishes.
       */}
       <div
+        ref={drawerRef}
+        onKeyDown={handleDrawerKeyDown}
         className={`
           fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] md:relative md:translate-x-0 md:visible md:z-auto
           ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
@@ -140,8 +192,8 @@ export default function Layout({ children }: LayoutProps) {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header onMenuToggle={() => setSidebarOpen(true)} />
+      <div ref={pageContentRef} className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Header onMenuToggle={() => setSidebarOpen(true)} menuButtonRef={menuToggleRef} />
         <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
         {/*
           <main> scrolls on every route, including the module pages that build
@@ -156,7 +208,8 @@ export default function Layout({ children }: LayoutProps) {
         */}
         <main
           ref={mainRef}
-          className={`min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain ${
+          tabIndex={-1}
+          className={`min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain outline-none ${
             containsOwnScrollArea ? '' : '[scrollbar-gutter:stable]'
           }`}
           data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}

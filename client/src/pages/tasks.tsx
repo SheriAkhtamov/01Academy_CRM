@@ -114,14 +114,37 @@ export default function TasksPage() {
     const tasks = useMemo(() => data?.tasks ?? [], [data]);
     const taskCounts = useMemo(() => countTasksByOwner(tasks), [tasks]);
 
-    // Deep link: `?task=<id>` opens that task once the board has loaded.
+    // Deep link: `?task=<id>` opens that task once the board has loaded. The
+    // sheet keeps living in the URL like openTask does — the landing entry is
+    // rewritten to the bare board and the opened task is pushed on top, so
+    // browser Back closes the sheet instead of leaving it. A Back that only
+    // switches between tasks syncs state without touching history.
     useEffect(() => {
-        if (isLoading || detailOpen) return;
+        if (isLoading) return;
         const requested = Number(new URLSearchParams(routeSearch).get('task'));
-        if (!Number.isSafeInteger(requested) || requested <= 0) return;
+        const isValid = Number.isSafeInteger(requested) && requested > 0;
+        if (!isValid) {
+            if (selectedTaskId !== null) {
+                setSelectedTaskId(null);
+                setDetailOpen(false);
+            }
+            return;
+        }
+        if (selectedTaskId === requested && detailOpen) return;
+        if (!detailOpen) {
+            setSelectedTaskId(requested);
+            setDetailOpen(true);
+            const baseParams = new URLSearchParams(routeSearch);
+            baseParams.delete('task');
+            const baseQuery = baseParams.toString();
+            setLocation(baseQuery ? `/tasks?${baseQuery}` : '/tasks', { replace: true });
+            const overlayParams = new URLSearchParams(routeSearch);
+            overlayParams.set('task', String(requested));
+            setLocation(`/tasks?${overlayParams.toString()}`);
+            return;
+        }
         setSelectedTaskId(requested);
-        setDetailOpen(true);
-    }, [isLoading, detailOpen, routeSearch]);
+    }, [detailOpen, isLoading, routeSearch, selectedTaskId, setLocation]);
 
     const selectedOwner: TaskOwnerFilter = useMemo(() => {
         if (ownerFilter === TASK_OWNER_ALL) return TASK_OWNER_ALL;
@@ -208,12 +231,6 @@ export default function TasksPage() {
         return task.status !== 'accepted' && status !== 'accepted';
     };
 
-    const changeTaskListView = (nextView: TaskListView) => {
-        setTaskListView(nextView);
-        setDetailOpen(false);
-        setSelectedTaskId(null);
-    };
-
     // The open task lives in the URL (`?task=`): browser Back closes the sheet
     // instead of leaving the board, and an open task can be deep-linked.
     const openTask = (taskId: number) => {
@@ -232,6 +249,11 @@ export default function TasksPage() {
         params.delete('task');
         const query = params.toString();
         setLocation(query ? `/tasks?${query}` : '/tasks', { replace: true });
+    };
+
+    const changeTaskListView = (nextView: TaskListView) => {
+        setTaskListView(nextView);
+        closeTask();
     };
 
     return (

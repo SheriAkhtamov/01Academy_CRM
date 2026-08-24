@@ -47,7 +47,7 @@ describe('lead and student UX separation', () => {
     expect(studentDialog).toContain('primaryGroupId: Number(values.primaryGroupId)');
   });
 
-  it('keeps telephony interactive above dialogs and notifications above telephony', () => {
+  it('keeps telephony above page content but below dialogs and sheets', () => {
     expect(telephonyWidget).toContain('useMovableWidget<HTMLDivElement>');
     expect(telephonyWidget).toContain('data-telephony-widget');
     // Spread through `dockedDragProps`, which is `widgetDragProps` on a
@@ -55,7 +55,10 @@ describe('lead and student UX separation', () => {
     expect(telephonyWidget).toContain('{...dockedDragProps}');
     expect(telephonyWidget).not.toContain('GripHorizontal');
     expect(telephonyWidget).not.toContain('dragHandleProps');
-    expect(telephonyWidget).toContain('pointer-events-auto fixed z-[70]');
+    // Above the header and page content (z-30) but below Radix overlays
+    // (z-50), so an open dialog or sheet never fights the widget.
+    expect(telephonyWidget).toContain('pointer-events-auto fixed z-40');
+    expect(telephonyWidget).not.toContain('z-[70]');
     expect(telephonyWidget).toContain('aria-modal="false"');
     expect(toast).toContain('pointer-events-none fixed top-0 z-[200]');
     expect(toast).toContain('group pointer-events-auto');

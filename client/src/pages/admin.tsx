@@ -67,6 +67,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useStickyState } from '@/hooks/useStickyState';
+import { academyDateInputValue, formatAcademyDate } from '@/lib/localeFormat';
 import { devLog } from '@/lib/debug';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -98,12 +99,9 @@ import {
   type UserUpdatePayload,
 } from '@/features/employees/employeeFormSchema';
 
-const formatDateInputValue = (value: unknown) => {
-  if (!value) return '';
-  if (typeof value === 'string') return value.slice(0, 10);
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
-  return '';
-};
+const formatDateInputValue = (value: unknown) => (
+  academyDateInputValue(value as Date | string | number | null | undefined)
+);
 
 interface AdminProps {
   mode?: 'admin' | 'employees';
@@ -133,7 +131,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   // Create schemas with translations
   const userSchema = createUserSchema(t);
@@ -193,7 +191,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onOpenChange: handleUserModalState,
   });
 
-  const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers } = useQuery<any[]>({
+  const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers, dataUpdatedAt: usersUpdatedAt } = useQuery<any[]>({
     queryKey: ['/api/users'],
   });
   const { data: schools = [], isError: schoolsError, refetch: refetchSchools } = useQuery<Array<{
@@ -209,8 +207,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const inactiveUserCount = users.filter((candidate: any) => !candidate.isArchived && !candidate.isActive).length;
   const archivedUserCount = users.filter((candidate: any) => candidate.isArchived).length;
   // A stable "as of" label: recomputing it on every render would turn it into
-  // a live clock that changes on every keystroke in the search box.
-  const [settingsSnapshotTime] = useState(() => new Date().toLocaleTimeString());
+  // a live clock that changes on every keystroke in the search box. It follows
+  // the last successful users fetch, not the moment the page was mounted.
+  const settingsSnapshotTime = useMemo(
+    () => formatAcademyDate(usersUpdatedAt ? new Date(usersUpdatedAt) : null, language, {
+      dateStyle: 'short',
+      timeStyle: 'medium',
+    }),
+    [language, usersUpdatedAt],
+  );
 
   const createUserMutation = useMutation({
     mutationFn: async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
@@ -692,7 +697,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       accessor: (row) => row.createdAt ? new Date(row.createdAt).getTime() : 0,
       render: (row) => (
         <span className="text-sm text-muted-foreground">
-          {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : t('notAvailable')}
+          {formatAcademyDate(row.createdAt, language) || t('notAvailable')}
         </span>
       ),
     },
@@ -1457,18 +1462,25 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
+                    onClick={async () => {
                       const credentialLines = [`${t('email')}: ${userCredentials.email}`];
                       if (userCredentials.temporaryPassword) {
                         credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
                       }
                       credentialLines.push(`${t('primaryModule')}: ${getModuleLabel(userCredentials.module)}`);
                       credentialLines.push(`${t('accessModules')}: ${getModuleLabels(userCredentials).join(', ')}`);
-                      navigator.clipboard.writeText(credentialLines.join('\n'));
-                      toast({
-                        title: t('copiedToClipboard'),
-                        description: t('credentialsCopied'),
-                      });
+                      try {
+                        await navigator.clipboard.writeText(credentialLines.join('\n'));
+                        toast({
+                          title: t('copiedToClipboard'),
+                          description: t('credentialsCopied'),
+                        });
+                      } catch {
+                        toast({
+                          title: t('copyFailed'),
+                          variant: 'destructive',
+                        });
+                      }
                     }}
                   >
                     {t('copyCredentials')}
@@ -1538,7 +1550,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         open={!!userToDelete}
         onOpenChange={(open) => !open && setUserToDelete(null)}
         title={t('areYouSureDeleteUser')}
-        description={`${t('areYouSureDeleteUser')} "${userToDelete?.fullName}"? ${t('thisActionCannotBeUndone')}`}
+        description={`${t('deleteUserConfirmDescription').replace('{name}', userToDelete?.fullName ?? '')} ${t('thisActionCannotBeUndone')}`}
         confirmLabel={t('delete')}
         cancelLabel={t('cancel')}
         onConfirm={() => {

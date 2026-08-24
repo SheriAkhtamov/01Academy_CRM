@@ -184,7 +184,18 @@ function LeadCardContent({
             ) : null}
             {lead.contactName}
           </p>
-          {visiblePhone ? <div className="truncate text-xs text-muted-foreground">{visiblePhone}</div> : null}
+          {visiblePhone ? (
+            <a
+              href={`tel:${String(visiblePhone).replace(/[^\d+]/g, '')}`}
+              className="block w-fit max-w-full truncate text-xs text-muted-foreground transition-colors hover:text-primary"
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onClick={stopCardInteraction}
+            >
+              {visiblePhone}
+            </a>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <DropdownMenu>

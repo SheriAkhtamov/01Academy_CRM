@@ -3,10 +3,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useLocation, useSearch } from 'wouter';
-import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/lib/i18n';
 import {
   createCourseSchema,
   createGroupSchema,
@@ -70,6 +68,14 @@ import { FutureGroupStartDialog, futureGroupStatusNeedsConfirmation } from '@/co
 import { GroupStatusField } from '@/components/ux/GroupStatusField';
 import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
+import {
+  DEFAULT_COMPANY_SETTINGS,
+  KPI_FIELD_BOUNDS,
+  KpiSettingsCard,
+  createKpiFieldSchema,
+  type CompanySettings,
+  type KpiNumberSetting,
+} from '@/components/ux/academy/KpiSettingsCard';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   WeekScheduleEditor,
@@ -183,30 +189,8 @@ interface ConfigurationData {
   groups: Group[];
 }
 
-interface CompanySettings {
-  targetRevenueMonthlyUzs: number;
-  targetNewLeadsMonthly: number;
-  maxCacUzs: number;
-  maxCplUzs: number;
-  targetRoas: number;
-  targetAttendancePercent: number;
-  targetNps: number;
-  salesPhoneVisibility: 'own_leads' | 'mask_until_assigned';
-}
-
-const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
-  targetRevenueMonthlyUzs: 0,
-  targetNewLeadsMonthly: 0,
-  maxCacUzs: 300000,
-  maxCplUzs: 0,
-  targetRoas: 5,
-  targetAttendancePercent: 70,
-  targetNps: 50,
-  salesPhoneVisibility: 'own_leads',
-};
-
 type GroupMutationValues = GroupValues & { allowFutureStart?: boolean };
-type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
+
 const AUTO_TEACHER_VALUE = 'auto';
 
 const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekScheduleItem[] => {
@@ -312,9 +296,19 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     queryKey: ['/api/academy/company-settings'],
   });
   const [kpiDraft, setKpiDraft] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
+  const [kpiText, setKpiText] = useState<Partial<Record<KpiNumberSetting, string>>>({});
+  const [kpiErrors, setKpiErrors] = useState<Partial<Record<KpiNumberSetting, string>>>({});
 
   useEffect(() => {
-    if (companySettings.data) setKpiDraft({ ...DEFAULT_COMPANY_SETTINGS, ...companySettings.data });
+    if (!companySettings.data) return;
+    const merged = { ...DEFAULT_COMPANY_SETTINGS, ...companySettings.data };
+    setKpiDraft(merged);
+    const text: Partial<Record<KpiNumberSetting, string>> = {};
+    for (const key of Object.keys(KPI_FIELD_BOUNDS) as KpiNumberSetting[]) {
+      text[key] = String(merged[key]);
+    }
+    setKpiText(text);
+    setKpiErrors({});
   }, [companySettings.data]);
 
   useEffect(() => {
@@ -640,7 +634,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   const saveCompanySettings = useMutation({
-    mutationFn: () => apiRequest('PATCH', '/api/academy/company-settings', kpiDraft),
+    mutationFn: (payload: CompanySettings) => apiRequest('PATCH', '/api/academy/company-settings', payload),
     onSuccess: () => {
       toast({ title: ceoCopy.settings.saved });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/company-settings'] });
@@ -652,6 +646,25 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       variant: 'destructive',
     }),
   });
+
+  const handleSaveCompanySettings = () => {
+    const nextErrors: Partial<Record<KpiNumberSetting, string>> = {};
+    const nextValues = {} as Record<KpiNumberSetting, number>;
+    for (const key of Object.keys(KPI_FIELD_BOUNDS) as KpiNumberSetting[]) {
+      const result = createKpiFieldSchema(t, KPI_FIELD_BOUNDS[key]).safeParse(kpiText[key] ?? '');
+      if (!result.success) {
+        nextErrors[key] = result.error.issues[0]?.message ?? t('fieldRequired');
+        continue;
+      }
+      nextValues[key] = Number(result.data);
+    }
+    if (Object.values(nextErrors).some(Boolean)) {
+      setKpiErrors(nextErrors);
+      return;
+    }
+    setKpiErrors({});
+    saveCompanySettings.mutate({ ...kpiDraft, ...nextValues } as CompanySettings);
+  };
 
   const deleteResource = useMutation({
     mutationFn: ({ resource, id }: NonNullable<typeof deleteTarget>) =>
@@ -1591,62 +1604,18 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="kpi" className="mt-0">
-          <Card>
-            <CardHeader>
-              <CardTitle>{ceoCopy.settings.title}</CardTitle>
-              <CardDescription>{ceoCopy.settings.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {[
-                  ['targetRevenueMonthlyUzs', ceoCopy.settings.revenue, ceoCopy.settings.sum],
-                  ['targetNewLeadsMonthly', ceoCopy.settings.newLeads, ceoCopy.settings.leads],
-                  ['maxCacUzs', ceoCopy.settings.maxCac, ceoCopy.settings.sum],
-                  ['maxCplUzs', ceoCopy.settings.maxCpl, ceoCopy.settings.sum],
-                  ['targetRoas', ceoCopy.settings.roas, 'x'],
-                  ['targetAttendancePercent', ceoCopy.settings.attendance, '%'],
-                  ['targetNps', ceoCopy.settings.nps, ''],
-                ].map(([key, label, suffix]) => {
-                  const numericKey = key as KpiNumberSetting;
-                  return <div key={numericKey} className="space-y-2 rounded-lg border border-border/70 p-4">
-                    <Label htmlFor={`kpi-${key}`}>{label}</Label>
-                    <div className="relative">
-                      <Input
-                        id={`kpi-${key}`}
-                        type="number"
-                        min={key === 'targetNps' ? -100 : 0}
-                        max={key === 'targetAttendancePercent' ? 100 : undefined}
-                        value={kpiDraft[numericKey]}
-                        onChange={(event) => setKpiDraft((current) => ({
-                          ...current,
-                          [numericKey]: Number(event.target.value) || 0,
-                        }))}
-                        className="pr-12"
-                      />
-                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{suffix}</span>
-                    </div>
-                  </div>;
-                })}
-              </div>
-              <div className="mt-5 grid grid-cols-1 gap-4 border-t border-border/70 pt-5 md:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-2 rounded-lg border border-border/70 p-4">
-                  <Label htmlFor="settings-phone-visibility">{ceoCopy.settings.phoneVisibility}</Label>
-                  <Select value={kpiDraft.salesPhoneVisibility} onValueChange={(value: CompanySettings['salesPhoneVisibility']) => setKpiDraft((current) => ({ ...current, salesPhoneVisibility: value }))}>
-                    <SelectTrigger id="settings-phone-visibility"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="own_leads">{ceoCopy.settings.ownLeadsOnly}</SelectItem>
-                      <SelectItem value="mask_until_assigned">{ceoCopy.settings.maskUntilAssigned}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <Button onClick={() => saveCompanySettings.mutate()} disabled={saveCompanySettings.isPending}>
-                  {saveCompanySettings.isPending ? t('saving') : ceoCopy.settings.save}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <KpiSettingsCard
+            values={kpiText}
+            errors={kpiErrors}
+            onNumberChange={(key, value) => {
+              setKpiText((current) => ({ ...current, [key]: value }));
+              setKpiErrors((current) => ({ ...current, [key]: undefined }));
+            }}
+            phoneVisibility={kpiDraft.salesPhoneVisibility}
+            onPhoneVisibilityChange={(value) => setKpiDraft((current) => ({ ...current, salesPhoneVisibility: value }))}
+            isPending={saveCompanySettings.isPending}
+            onSave={handleSaveCompanySettings}
+          />
         </TabsContent>
 
       </Tabs>
@@ -1713,7 +1682,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
-            <DialogDescription>{t('noRoomsDescription')}</DialogDescription>
+            <DialogDescription>{t('roomFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...roomForm}>
             <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>

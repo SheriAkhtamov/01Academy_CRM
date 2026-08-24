@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, localizeApiErrorMessage } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useStickyState } from '@/hooks/useStickyState';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
@@ -64,8 +65,8 @@ export function LeadAssignmentContent() {
   const { t, language } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [managerFilter, setManagerFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [managerFilter, setManagerFilter] = useStickyState('leads.admin.managerFilter', 'all');
+  const [statusFilter, setStatusFilter] = useStickyState('leads.admin.statusFilter', 'all');
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(() => new Set());
   const [bulkManagerId, setBulkManagerId] = useState('');
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false);
@@ -132,7 +133,11 @@ export function LeadAssignmentContent() {
       invalidateLeads();
     },
     onError: (error: Error) => {
-      toast({ title: t('leadTransferFailed'), description: error.message, variant: 'destructive' });
+      toast({
+        title: t('leadTransferFailed'),
+        description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+        variant: 'destructive',
+      });
       invalidateLeads();
     },
   });
@@ -153,7 +158,11 @@ export function LeadAssignmentContent() {
       invalidateLeads();
     },
     onError: (error: Error) => {
-      toast({ title: t('leadTransferFailed'), description: error.message, variant: 'destructive' });
+      toast({
+        title: t('leadTransferFailed'),
+        description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+        variant: 'destructive',
+      });
       setBulkConfirmationOpen(false);
     },
   });
@@ -171,7 +180,11 @@ export function LeadAssignmentContent() {
       invalidateLeads();
     },
     onError: (error: Error) => {
-      toast({ title: t('leadDeleteFailed'), description: error.message, variant: 'destructive' });
+      toast({
+        title: t('leadDeleteFailed'),
+        description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+        variant: 'destructive',
+      });
     },
   });
 
@@ -224,7 +237,16 @@ export function LeadAssignmentContent() {
       render: (lead) => (
         <div className="min-w-52">
           <p className="font-medium text-foreground">{lead.contactName}</p>
-          <p className="text-sm text-muted-foreground">{lead.phone || t('notAvailable')}</p>
+          {lead.phone ? (
+            <a
+              href={`tel:${lead.phone.replace(/[^\d+]/g, '')}`}
+              className="text-sm text-muted-foreground transition-colors hover:text-primary"
+            >
+              {lead.phone}
+            </a>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t('notAvailable')}</p>
+          )}
           {lead.studentName ? <p className="text-xs text-muted-foreground">{lead.studentName}</p> : null}
         </div>
       ),

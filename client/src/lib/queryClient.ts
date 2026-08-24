@@ -4,7 +4,7 @@ import { devLog } from "@/lib/debug";
 import { i18n, translations } from "@/lib/i18n";
 import { toast } from "@/hooks/use-toast";
 
-const localizeApiErrorMessage = (message: string, status: number) => {
+export const localizeApiErrorMessage = (message: string, status: number) => {
   if (!message) {
     return i18n.t("errorOccurred");
   }
@@ -62,6 +62,12 @@ const localizeApiErrorMessage = (message: string, status: number) => {
 
   if (normalized in translations) {
     return i18n.t(normalized as keyof typeof translations);
+  }
+
+  const dictionaryValueMatch = (Object.keys(translations) as Array<keyof typeof translations>)
+    .find((key) => translations[key].en === normalized || translations[key].ru === normalized);
+  if (dictionaryValueMatch) {
+    return i18n.t(dictionaryValueMatch);
   }
 
   const lower = normalized.toLowerCase();
@@ -125,7 +131,7 @@ const localizeApiErrorMessage = (message: string, status: number) => {
   if (lower.startsWith("failed to delete")) {
     return i18n.t("failedToDeleteResource");
   }
-  return normalized;
+  return i18n.t("apiErrorGeneric");
 };
 
 async function throwIfResNotOk(res: Response) {

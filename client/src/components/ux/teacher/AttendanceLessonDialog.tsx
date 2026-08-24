@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Clock3,
+  Loader2,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ import { EmptyState } from '@/components/ux/EmptyState';
 import { LessonStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import {
   TEACHER_CARD_PADDING,
@@ -707,10 +709,23 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
           <p className={cn('rounded-xl border p-3 text-xs', TEACHER_TONE_CLASS.warning)}>
             {t('rescheduleChainWarning')}
           </p>
+          {lesson?.status === 'conducted' ? (
+            <p className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-xs font-medium text-destructive">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>{t('rescheduleConductedWarning' as TranslationKey)}</span>
+            </p>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmReschedule}>
-              {t('rescheduleLesson')}
+            <AlertDialogCancel disabled={isRescheduling}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                onConfirmReschedule();
+              }}
+              disabled={isRescheduling}
+            >
+              {isRescheduling ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+              {isRescheduling ? t('saving') : t('rescheduleLesson')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

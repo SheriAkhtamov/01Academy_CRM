@@ -311,10 +311,12 @@ export default function AdminDashboardPage() {
   });
 
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+  const [pendingAlertTaskKey, setPendingAlertTaskKey] = useState<string | null>(null);
   const createAlertTask = useMutation({
     mutationFn: (key: string) => apiRequest('POST', `/api/academy/dashboard/alerts/${key}/task`),
     onSuccess: () => toast({ title: ceoCopy.dashboard.taskCreated }),
     onError: (error: Error) => toast({ title: ceoCopy.dashboard.taskFailed, description: error.message, variant: 'destructive' }),
+    onSettled: () => setPendingAlertTaskKey(null),
   });
   const money = (value: number) =>
     new Intl.NumberFormat(locale, {
@@ -839,10 +841,13 @@ export default function AdminDashboardPage() {
                       size="sm"
                       variant="outline"
                       className="shrink-0 text-xs"
-                      disabled={createAlertTask.isPending}
-                      onClick={() => createAlertTask.mutate(item.key)}
+                      disabled={pendingAlertTaskKey === item.key}
+                      onClick={() => {
+                        setPendingAlertTaskKey(item.key);
+                        createAlertTask.mutate(item.key);
+                      }}
                     >
-                      {createAlertTask.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                      {pendingAlertTaskKey === item.key ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                       {ceoCopy.dashboard.createTask}
                     </Button>
                   ) : null}

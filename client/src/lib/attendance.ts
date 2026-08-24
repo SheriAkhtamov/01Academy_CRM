@@ -23,6 +23,6 @@ export const sortAttendanceLessons = <T extends AttendanceLesson>(
 
       const leftTime = new Date(left.scheduledAt).getTime();
       const rightTime = new Date(right.scheduledAt).getTime();
-      return leftPriority === 2 ? leftTime - rightTime : rightTime - leftTime;
+      return leftTime - rightTime;
     });
 };

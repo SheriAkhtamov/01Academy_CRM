@@ -139,6 +139,7 @@ export default function Login() {
                       <FormControl>
                         <Input
                           type="text"
+                          autoComplete="username"
                           placeholder={t('loginOrEmailPlaceholder')}
                           {...field}
                           onChange={(event) => {
@@ -163,6 +164,7 @@ export default function Login() {
                       <FormControl>
                         <Input
                           type="password"
+                          autoComplete="current-password"
                           placeholder={t('password')}
                           {...field}
                           onChange={(event) => {

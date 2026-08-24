@@ -293,7 +293,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   metaCapiNotConfiguredDesc: { en: 'CRM events will remain queued until a Dataset ID and a permitted Meta access token are configured.', ru: 'CRM-события останутся в очереди, пока не будут настроены Dataset ID и токен Meta с нужными правами.' },
   metaConfigured: { en: 'Configured', ru: 'Настроено' }, metaNotConfigured: { en: 'Not configured', ru: 'Не настроено' },
   metaApiVersion: { en: 'Graph API version', ru: 'Версия Graph API' }, metaAdAccountId: { en: 'Ad account ID', ru: 'ID рекламного аккаунта' },
-  metaBusinessId: { en: 'Business portfolio ID', ru: 'ID бизнес-портфолио' }, metaDatasetId: { en: 'Dataset ID', ru: 'ID набора данных (Dataset)' },
+  metaBusinessId: { en: 'Business portfolio ID', ru: 'ID бизнес-портфолио' }, utmSourceType: { en: 'UTM source type', ru: 'Тип UTM-источника' },
   metaPageId: { en: 'Facebook Page ID', ru: 'ID страницы Facebook' }, metaConversionMapping: { en: 'Stages sent to Meta', ru: 'Этапов отправляется в Meta' },
   metaStageEventsTitle: { en: 'Events available in Ads Manager', ru: 'События для выбора в Ads Manager' },
   metaStageEventsHint: {
@@ -1108,6 +1108,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   statusUpdated: { en: 'Status updated', ru: 'Статус обновлён' },
   taskUpdateFailed: { en: 'Task update failed', ru: 'Не удалось обновить задачу' },
   taskUpdated: { en: 'Task updated', ru: 'Задача обновлена' },
+  referralLevelCashbackPercent: { en: '15% cashback', ru: 'Кешбэк 15%' },
   topReferrers: { en: 'Top Referrers', ru: 'Лучшие рефереры' },
   totalReferrals: { en: 'Total Referrals', ru: 'Всего рефералов' },
   unknown: { en: 'Unknown', ru: 'Неизвестно' },
@@ -2519,6 +2520,38 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'Add a reply and press Enter',
     ru: 'Добавьте ответ и нажмите Enter',
   },
+  deleteQuickReplyTitle: {
+    en: 'Delete saved reply?',
+    ru: 'Удалить сохранённый ответ?',
+  },
+  deleteQuickReplyDescription: {
+    en: 'This reply will be removed from your saved replies. This cannot be undone.',
+    ru: 'Этот ответ будет удалён из сохранённых. Действие нельзя отменить.',
+  },
+  quickReplyDefault1: {
+    en: 'Hello! How can we help? 😊',
+    ru: 'Здравствуйте! Чем можем помочь? 😊',
+  },
+  quickReplyDefault2: {
+    en: 'Thank you for your interest in our academy!',
+    ru: 'Спасибо за интерес к нашей академии!',
+  },
+  quickReplyDefault3: {
+    en: 'Could you tell us the child’s age?',
+    ru: 'Подскажите, какого возраста ребёнок?',
+  },
+  quickReplyDefault4: {
+    en: 'Sign up for a free trial lesson 🎓',
+    ru: 'Запишитесь на бесплатное пробное занятие 🎓',
+  },
+  quickReplyDefault5: {
+    en: 'Please share a convenient time for us to call you back',
+    ru: 'Отправьте, пожалуйста, удобное время для звонка',
+  },
+  quickReplyDefault6: {
+    en: 'Courses start this very week 🚀',
+    ru: 'Курсы стартуют уже на этой неделе 🚀',
+  },
   emoji: { en: 'Emoji', ru: 'Эмодзи' },
   copy: { en: 'Copy', ru: 'Копировать' },
   add: { en: 'Add', ru: 'Добавить' },
@@ -2848,6 +2881,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     ru: 'Будут выплачены базовые оклады всем сотрудникам с настроенной ставкой. Бонусы и удержания для массовой выплаты не применяются.',
   },
   financeCenterConfirmBatch: { en: 'Confirm all payouts', ru: 'Выплатить всем' },
+  payAllConfirmCount: { en: 'Employees to be paid: {count}.', ru: 'Сотрудников к выплате: {count}.' },
+  payAllConfirmTotal: { en: 'Total payout amount: {amount}.', ru: 'Общая сумма выплаты: {amount}.' },
   financeCenterSaved: { en: 'Financial record saved', ru: 'Сохранено' },
   financeCenterPayoutSaved: { en: 'Payout recorded', ru: 'Выплата зафиксирована' },
   financeCenterBatchSaved: { en: 'Payroll statement paid', ru: 'Ведомость выплачена' },
@@ -2975,6 +3010,27 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   sortAscending: { en: 'Ascending', ru: 'По возрастанию' },
   sortDescending: { en: 'Descending', ru: 'По убыванию' },
   toggleSortDirection: { en: 'Reverse sort order', ru: 'Изменить направление сортировки' },
+  switchLanguage: { en: 'Switch language', ru: 'Сменить язык' },
+  apiErrorGeneric: { en: 'Something went wrong. Please try again.', ru: 'Что-то пошло не так. Попробуйте ещё раз.' },
+  telephonyHistoryCapped: { en: 'Showing last 50 calls — open full journal', ru: 'Показаны последние 50 звонков — открыть весь журнал' },
+  valueMustBeAtLeast: { en: 'Must be at least {min}', ru: 'Значение не меньше {min}' },
+  valueMustBeAtMost: { en: 'Must be at most {max}', ru: 'Значение не больше {max}' },
+  roomFormDescription: {
+    en: 'Fill in the room details and save to add it to the school.',
+    ru: 'Заполните данные кабинета и сохраните, чтобы добавить его в филиал.',
+  },
+  scheduleResetTitle: { en: 'Reset the schedule?', ru: 'Сбросить расписание?' },
+  scheduleResetDescription: {
+    en: 'All selected days and times will be cleared.',
+    ru: 'Все выбранные дни и время будут очищены.',
+  },
+  integrationStatusFailed: { en: 'Failed', ru: 'Ошибка' },
+  integrationStatusPending: { en: 'Pending', ru: 'В ожидании' },
+  integrationStatusCompleted: { en: 'Completed', ru: 'Завершено' },
+  deleteUserConfirmDescription: {
+    en: 'The account of {name} will be deleted permanently.',
+    ru: 'Аккаунт {name} будет удалён навсегда.',
+  },
 } as const;
 
 
@@ -3008,6 +3064,12 @@ const persistLanguage = (language: Language) => {
   localStorage.setItem(LEGACY_LANGUAGE_STORAGE_KEY, language);
 };
 
+const applyDocumentLanguage = (language: Language) => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = language;
+  }
+};
+
 class I18nService {
   private currentLanguage: Language = DEFAULT_LANGUAGE;
   private listeners: Array<(lang: Language) => void> = [];
@@ -3023,6 +3085,7 @@ class I18nService {
   setLanguage(lang: Language): void {
     this.currentLanguage = lang;
     persistLanguage(lang);
+    applyDocumentLanguage(lang);
     this.listeners.forEach(callback => callback(lang));
   }
 
@@ -3044,3 +3107,5 @@ class I18nService {
 }
 
 export const i18n = new I18nService();
+
+applyDocumentLanguage(i18n.getCurrentLanguage());

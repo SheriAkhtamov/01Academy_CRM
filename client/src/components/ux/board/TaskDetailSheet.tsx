@@ -50,6 +50,7 @@ import {
     attachmentErrorKey,
     validateAttachment,
 } from '@/lib/attachments';
+import { academyDateInputValue, academyInstant, academyTimeOfDay } from '@/lib/localeFormat';
 import { boardQueryKeys } from '@/features/board/api';
 import { TaskColorPicker } from './TaskColorPicker';
 import { useToast } from '@/hooks/use-toast';
@@ -195,7 +196,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                 description: draftDescription.trim() || null,
                 priority: draftPriority,
                 color: draftColor,
-                dueAt: draftDue ? new Date(draftDue).toISOString() : null,
+                dueAt: draftDue ? dueInputToInstant(draftDue) : null,
             };
             if (isTaskSupervisor) {
                 payload.assigneeId = draftAssignee === UNASSIGNED ? null : Number(draftAssignee);
@@ -704,10 +705,16 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 function toLocalInput(iso: string): string {
-    const d = new Date(iso);
-    const off = d.getTimezoneOffset();
-    const local = new Date(d.getTime() - off * 60000);
-    return local.toISOString().slice(0, 16);
+    const dateKey = academyDateInputValue(iso);
+    const time = academyTimeOfDay(iso);
+    return dateKey && time ? `${dateKey}T${time}` : '';
+}
+
+function dueInputToInstant(value: string): string | null {
+    const [dateKey, timePart] = value.split('T');
+    if (!dateKey || !timePart || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
+    const instant = academyInstant(dateKey, timePart.slice(0, 5));
+    return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
 }
 
 export default TaskDetailSheet;

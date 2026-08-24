@@ -44,7 +44,7 @@ export function useCalendarShortcuts({
       const scope = scopeRef?.current;
       if (scope && !scope.contains(document.activeElement)) return;
       // A dialog, sheet or dropdown owns the keyboard while it is open.
-      if (document.querySelector('[role="dialog"],[role="menu"],[role="listbox"]')) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"],[role="menu"],[role="listbox"]')) return;
 
       const viewIndex = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(event.code);
       if (viewIndex >= 0 && onView) {

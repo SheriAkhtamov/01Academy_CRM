@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { CircleAlert, CopyCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   Select,
   SelectContent,
@@ -73,6 +75,7 @@ export function WeekScheduleEditor({
   className,
 }: WeekScheduleEditorProps) {
   const { t } = useTranslation();
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const resolvedAllSchoolsLabel = allSchoolsLabel ?? t('allSchools');
   const resolvedStartLabel = startLabel ?? t('start');
   const resolvedEndLabel = endLabel ?? t('end');
@@ -160,11 +163,24 @@ export function WeekScheduleEditor({
           size="sm"
           className="ml-auto h-7 px-2 text-xs"
           disabled={disabled || value.length === 0}
-          onClick={() => onChange([])}
+          onClick={() => setResetConfirmOpen(true)}
         >
           {t('reset')}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        title={t('scheduleResetTitle')}
+        description={`${t('scheduleResetDescription')} ${t('thisActionCannotBeUndone')}`}
+        confirmLabel={t('reset')}
+        variant="destructive"
+        onConfirm={() => {
+          setResetConfirmOpen(false);
+          onChange([]);
+        }}
+      />
 
       <div className="overflow-hidden rounded-xl border border-border">
         {dayNames.map((dayName, index) => {

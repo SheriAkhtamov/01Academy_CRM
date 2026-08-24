@@ -3,13 +3,22 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { MetaIntegrationState } from '@/features/marketing/meta-api';
 import { useTranslation } from '@/hooks/useTranslation';
 
-function ConfigRow({ label, value, ready }: { label: string; value: string; ready?: boolean }) {
+function ConfigRow({ label, value, ready, badgeVariant }: {
+  label: string;
+  value: string;
+  ready?: boolean;
+  badgeVariant?: 'warning' | 'secondary';
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border/60 py-3 last:border-b-0">
       <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex min-w-0 items-center gap-2 text-right">
-        <span className="break-all font-mono text-xs text-foreground">{value}</span>
+        {badgeVariant ? (
+          <Badge variant={badgeVariant}>{value}</Badge>
+        ) : (
+          <span className="break-all font-mono text-xs text-foreground">{value}</span>
+        )}
         {ready !== undefined ? (
           <Badge variant={ready ? 'success' : 'outline'}>
             {ready ? t('metaConfigured') : t('metaNotConfigured')}
@@ -42,29 +51,33 @@ export function MetaIntegrationDialog({
         </DialogHeader>
         <div className="mt-2 rounded-xl border border-border/70 bg-muted/20 px-4">
           <ConfigRow
-            label={t('metaAttribution')}
-            value={integration?.adAccountId || missing}
-            ready={Boolean(integration?.attributionConfigured)}
-          />
-          <ConfigRow
             label={t('metaEventManager')}
             value={integration?.datasetId || missing}
             ready={Boolean(integration?.capiConfigured)}
           />
-          <ConfigRow label={t('metaApiVersion')} value={integration?.apiVersion || missing} />
-          <ConfigRow label={t('metaAdAccountId')} value={integration?.adAccountId || missing} />
-          <ConfigRow label={t('metaBusinessId')} value={integration?.businessId || missing} />
-          <ConfigRow label={t('metaDatasetId')} value={integration?.datasetId || missing} />
-          <ConfigRow label={t('metaPageId')} value={integration?.pageId || missing} />
+          <ConfigRow label={t('metaApiVersion')} value={integration?.apiVersion || missing} ready={Boolean(integration?.apiVersion)} />
+          <ConfigRow
+            label={t('metaAdAccountId')}
+            value={integration?.adAccountId || missing}
+            ready={Boolean(integration?.attributionConfigured)}
+          />
+          <ConfigRow label={t('metaBusinessId')} value={integration?.businessId || missing} ready={Boolean(integration?.businessId)} />
+          <ConfigRow label={t('metaPageId')} value={integration?.pageId || missing} ready={Boolean(integration?.pageId)} />
           <ConfigRow
             label={t('metaConversionMapping')}
             value={stages.length ? String(stages.length) : missing}
+            ready={stages.length > 0}
           />
           <ConfigRow
             label={t('metaTestMode')}
             value={integration?.testMode ? t('metaTestModeOn') : t('metaTestModeOff')}
+            badgeVariant={integration?.testMode ? 'warning' : 'secondary'}
           />
-          <ConfigRow label={t('metaRequiredPermissions')} value={t('metaRequiredPermissionsValue')} />
+          <ConfigRow
+            label={t('metaRequiredPermissions')}
+            value={t('metaRequiredPermissionsValue')}
+            ready={Boolean(integration?.accessTokenConfigured)}
+          />
         </div>
         {stages.length ? (
           <div className="rounded-xl border border-border/70 bg-muted/20 p-4">

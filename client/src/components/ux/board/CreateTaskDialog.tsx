@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/select';
 import { apiRequest } from '@/lib/queryClient';
 import { boardQueryKeys } from '@/features/board/api';
+import { academyInstant, academyToday } from '@/lib/localeFormat';
+import type { TranslationKey } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { TaskColorPicker } from './TaskColorPicker';
@@ -35,6 +37,13 @@ interface CreateTaskDialogProps {
 }
 
 const UNASSIGNED = 'unassigned';
+
+const dueInputToInstant = (value: string): string | null => {
+    const [dateKey, timePart] = value.split('T');
+    if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
+    const instant = academyInstant(dateKey, (timePart ?? '').slice(0, 5) || '00:00');
+    return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
+};
 
 export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAssignUsers }: CreateTaskDialogProps) {
     const { t } = useTranslation();
@@ -81,7 +90,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                 assigneeId: canAssignUsers
                     ? assigneeId === UNASSIGNED ? null : Number(assigneeId)
                     : currentUser?.id ?? null,
-                dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+                dueAt: dueAt ? dueInputToInstant(dueAt) : null,
             }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
@@ -99,6 +108,10 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
         if (mutation.isPending) return;
         if (!title.trim()) {
             toast({ title: t('titleRequired'), variant: 'destructive' });
+            return;
+        }
+        if (dueAt && dueAt.slice(0, 10) < academyToday()) {
+            toast({ title: t('taskDueDateInPast' as TranslationKey), variant: 'destructive' });
             return;
         }
         mutation.mutate();
@@ -191,7 +204,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
 
                     <div className="space-y-1.5">
                         <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
-                        <Input id="create-task-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+                        <Input id="create-task-due" type="datetime-local" min={`${academyToday()}T00:00`} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
                     </div>
 
                     <div className="flex justify-end gap-2 pt-2">

@@ -35,12 +35,14 @@ interface HeaderProps {
   title?: string;
   subtitle?: string;
   onMenuToggle?: () => void;
+  menuButtonRef?: React.Ref<HTMLButtonElement>;
 }
 
 export default function Header({
   title,
   subtitle,
   onMenuToggle,
+  menuButtonRef,
 }: HeaderProps) {
   const { logout, user } = useAuth();
   const { t } = useTranslation();
@@ -161,6 +163,7 @@ export default function Header({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3 md:flex-nowrap">
           {onMenuToggle && (
             <button
+              ref={menuButtonRef}
               onClick={onMenuToggle}
               className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
               aria-label={t('openNavigation')}
@@ -341,45 +344,41 @@ export default function Header({
                   <>
                     <DropdownMenuLabel className="text-xs">{t('savedAccounts')}</DropdownMenuLabel>
                     {accounts.map((account) => (
-                      <DropdownMenuItem
-                        key={account.id}
-                        disabled={isSwitching}
-                        onClick={async () => {
-                          try {
-                            await switchToAccount(account);
-                            toast({ title: t('accountSwitched') });
-                            window.location.assign('/');
-                          } catch (err: any) {
-                            toast({ title: t('error'), description: err?.message, variant: 'destructive' });
-                          }
-                        }}
-                        className="group"
-                      >
-                        <div className="flex items-center gap-2 w-full">
-                          <div
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0"
-                            style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
-                          >
-                            {getInitials(account.accountUser.fullName)}
-                          </div>
-                          <span className="text-sm truncate flex-1">{account.accountUser.fullName}</span>
-                          {isSwitching ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setAccountToRemove(account);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-                              aria-label={t('removeAccount')}
+                      <div key={account.id} className="flex items-center gap-1 pr-1">
+                        <DropdownMenuItem
+                          disabled={isSwitching}
+                          onClick={async () => {
+                            try {
+                              await switchToAccount(account);
+                              toast({ title: t('accountSwitched') });
+                              window.location.assign('/');
+                            } catch (err: any) {
+                              toast({ title: t('error'), description: err?.message, variant: 'destructive' });
+                            }
+                          }}
+                          className="min-w-0 flex-1"
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <div
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0"
+                              style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
                             >
-                              <X className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      </DropdownMenuItem>
+                              {getInitials(account.accountUser.fullName)}
+                            </div>
+                            <span className="text-sm truncate flex-1">{account.accountUser.fullName}</span>
+                            {isSwitching && (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                            )}
+                          </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="size-6 shrink-0 justify-center rounded-full p-0 text-destructive focus:text-destructive"
+                          aria-label={t('removeAccount')}
+                          onSelect={() => setAccountToRemove(account)}
+                        >
+                          <X className="h-3 w-3" />
+                        </DropdownMenuItem>
+                      </div>
                     ))}
                     <DropdownMenuSeparator />
                   </>

@@ -235,7 +235,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   return (
     <>
       <Dialog open={open} onOpenChange={settingsDialogGuard.handleOpenChange}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />

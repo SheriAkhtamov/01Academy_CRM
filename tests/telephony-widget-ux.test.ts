@@ -59,8 +59,9 @@ describe('telephony widget drag surface', () => {
     // phone has nowhere to park the widget anyway.
     expect(widget).toContain("import { useIsMobileViewport } from '@/hooks/useMediaQuery';");
     expect(widget).toContain('const dockedStyle = isMobile ?');
-    expect(widget).toContain("!isMobile && 'cursor-move'");
-    expect(widget).toContain("!isMobile && 'touch-none cursor-move'");
+    // Both the expanded panel and the collapsed pill take the whole surface
+    // as the drag handle, so both need touch panning switched off on desktop.
+    expect(widget.match(/!isMobile && 'touch-none cursor-move'/g) ?? []).toHaveLength(2);
   });
 
   it('lets text fields and scroll regions keep the press for themselves', () => {

@@ -159,8 +159,15 @@ describe('data table on a phone', () => {
     setViewportWidth(375);
     renderTable({ onRowClick });
 
-    await user.click(within(screen.getByRole('list')).getAllByRole('listitem')[1]);
+    const card = screen.getByRole('button', { name: /Alisher Karimov/ });
+    await user.click(card);
 
+    expect(onRowClick).toHaveBeenCalledWith(rows[1]);
+
+    // The clickable card is reachable and operable from the keyboard too.
+    onRowClick.mockClear();
+    card.focus();
+    await user.keyboard('{Enter}');
     expect(onRowClick).toHaveBeenCalledWith(rows[1]);
   });
 

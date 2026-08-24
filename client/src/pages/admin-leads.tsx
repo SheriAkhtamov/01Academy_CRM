@@ -70,6 +70,7 @@ export function LeadAssignmentContent() {
   const [bulkManagerId, setBulkManagerId] = useState('');
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false);
   const [deleteLeadTarget, setDeleteLeadTarget] = useState<AdminLead | null>(null);
+  const [reassignTarget, setReassignTarget] = useState<{ lead: AdminLead; managerId: number } | null>(null);
 
   const leadsQuery = useQuery<AdminLead[]>({ queryKey: ['/api/academy/leads'] });
   const usersQuery = useQuery<any[]>({ queryKey: ['/api/users'] });
@@ -127,6 +128,7 @@ export function LeadAssignmentContent() {
       apiRequest('POST', `/api/academy/leads/${leadId}/assign`, { managerId }),
     onSuccess: () => {
       toast({ title: t('leadTransferred') });
+      setReassignTarget(null);
       invalidateLeads();
     },
     onError: (error: Error) => {
@@ -258,7 +260,7 @@ export function LeadAssignmentContent() {
       render: (lead) => (
         <Select
           value={lead.managerId ? String(lead.managerId) : undefined}
-          onValueChange={(value) => assignLead.mutate({ leadId: lead.id, managerId: Number(value) })}
+          onValueChange={(value) => setReassignTarget({ lead, managerId: Number(value) })}
           disabled={assignLead.isPending}
         >
           <SelectTrigger className="w-full max-w-56">
@@ -324,12 +326,22 @@ export function LeadAssignmentContent() {
   ]);
 
   if (leadsQuery.isError || usersQuery.isError || statusesQuery.isError) {
+    const refetchAll = () => Promise.all([
+      leadsQuery.refetch(),
+      usersQuery.refetch(),
+      statusesQuery.refetch(),
+    ]);
     return (
-      <Alert variant="destructive">
-        <AlertCircle />
-        <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-        <AlertDescription>{t('retry')}</AlertDescription>
-      </Alert>
+      <div className="flex flex-col items-start gap-3">
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+          <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
+        </Alert>
+        <Button variant="outline" onClick={() => refetchAll()} disabled={leadsQuery.isFetching || usersQuery.isFetching || statusesQuery.isFetching}>
+          {t('retry')}
+        </Button>
+      </div>
     );
   }
 
@@ -473,6 +485,38 @@ export function LeadAssignmentContent() {
               }}
             >
               {bulkAssign.isPending ? t('saving') : t('assignSelected')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(reassignTarget)} onOpenChange={(open) => {
+        if (!open) setReassignTarget(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('confirmLeadTransfer')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('confirmLeadTransferDescription')
+                .replace('{lead}', reassignTarget?.lead.contactName ?? '')
+                .replace(
+                  '{manager}',
+                  managers.find((manager) => manager.id === reassignTarget?.managerId)?.fullName ?? '',
+                )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={assignLead.isPending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={assignLead.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (reassignTarget) {
+                  assignLead.mutate({ leadId: reassignTarget.lead.id, managerId: reassignTarget.managerId });
+                }
+              }}
+            >
+              {t('transfer')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

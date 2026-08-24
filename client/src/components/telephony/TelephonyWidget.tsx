@@ -86,7 +86,9 @@ export function TelephonyWidget() {
     than replayed on the phone, where those coordinates mean nothing.
   */
   const isMobile = useIsMobileViewport();
-  const dockedStyle = isMobile ? { bottom: '12px', right: '12px' } : widgetStyle;
+  // On a phone the docked corner sits right where sheets pin their sticky
+  // action footer, so the widget is lifted above it.
+  const dockedStyle = isMobile ? { bottom: '84px', right: '12px' } : widgetStyle;
   const dockedDragProps = isMobile ? {} : widgetDragProps;
   const { talk: callDuration, elapsed: callElapsed } = useCallDuration(telephony.activeCall);
   const activeCall = telephony.activeCall;
@@ -106,6 +108,9 @@ export function TelephonyWidget() {
   const markMissedRead = useMutation({
     mutationFn: telephonyApi.markMissedCallsRead,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread }),
+    // Without this a failed request left the red badge lit forever, with the
+    // manager clicking History repeatedly believing taps were ignored.
+    onError: () => queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread }),
   });
 
   useEffect(() => {
@@ -115,11 +120,15 @@ export function TelephonyWidget() {
   }, [activeCallKey]);
 
   // Closing with Escape must never swallow what the manager is typing —
-  // the dialer, the transfer field and the note editor all live here.
+  // the dialer, the transfer field and the note editor all live here. It also
+  // must not close alongside an open dialog/sheet that is consuming the same
+  // Escape keypress.
   useEffect(() => {
     if (!isOpen) return undefined;
+    const modalOpen = () => document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
     const handleKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || isEditableTarget(event.target)) return;
+      if (modalOpen()) return;
       collapse();
     };
     window.addEventListener('keydown', handleKey);

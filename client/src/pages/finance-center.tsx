@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
@@ -68,9 +68,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
+  isReportingPresetKey,
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
+import { useStickyState } from '@/hooks/useStickyState';
 import { ACADEMY_TIME_ZONE, academyToday } from '@/lib/localeFormat';
 
 type Row = Record<string, any>;
@@ -312,13 +314,24 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const copy = financeCopy(t);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState(currentFinancePeriod);
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
+  // The reporting preset sticks across section switches (see useStickyState).
+  const [storedReportingPreset, setStoredReportingPreset] = useStickyState<string>('finance-range', 'today');
+  const [reportingRange, setReportingRange] = useState(() => (
+    isReportingPresetKey(storedReportingPreset)
+      ? reportingRangeForPreset(storedReportingPreset)
+      : reportingRangeForPreset('today')
+  ));
+  const handleReportingRangeChange = useCallback((next: typeof reportingRange) => {
+    setReportingRange(next);
+    setStoredReportingPreset(next.preset);
+  }, [setStoredReportingPreset]);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [salaryDialogOpen, setSalaryDialogOpen] = useState(false);
   const [payoutTarget, setPayoutTarget] = useState<Row | null>(null);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<Row | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [payTarget, setPayTarget] = useState<Row | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [transactionFilter, setTransactionFilter] = useState('all');
   
@@ -340,7 +353,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const compactMoney = (value: number) => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value || 0));
   const compactCurrency = (value: number) => `${compactMoney(value)}${t('uzs')}`;
   const date = (value: unknown) => value ? new Date(String(value)).toLocaleDateString(locale, { timeZone: ACADEMY_TIME_ZONE }) : '—';
-  const dateTime = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale, { timeZone: ACADEMY_TIME_ZONE, dateStyle: 'short', timeStyle: 'short' }) : '—';
+  const dateTime = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale, { timeZone: ACADEMY_TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
   const monthLabel = (value: string) => new Date(`${value}-15T12:00:00+05:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric', timeZone: ACADEMY_TIME_ZONE });
   const categoryLabel = (value: string) => {
     const labels: Record<string, string> = {
@@ -526,7 +539,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       {section === 'overview' ? (
         <ReportingDateRangeFilter
           value={reportingRange}
-          onChange={setReportingRange}
+          onChange={handleReportingRangeChange}
           isFetching={dashboard.isFetching}
         />
       ) : null}
@@ -675,7 +688,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Table>
                 <TableHeader><TableRow><TableHead className="hidden md:table-cell">{copy.date}</TableHead><TableHead>{copy.title}</TableHead><TableHead className="hidden lg:table-cell">{copy.source}</TableHead><TableHead className="hidden lg:table-cell">{copy.category}</TableHead><TableHead className="hidden xl:table-cell">{copy.vendor}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.expenseDate)}</span><span>· {categoryLabel(row.category)}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{categoryLabel(row.category)}</TableCell><TableCell className="hidden xl:table-cell">{row.vendor || '—'}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => payExpense.mutate(row.id)} disabled={payExpense.isPending}>{payExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
+                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.expenseDate)}</span><span>· {categoryLabel(row.category)}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{categoryLabel(row.category)}</TableCell><TableCell className="hidden xl:table-cell">{row.vendor || '—'}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => setPayTarget(row)} disabled={payExpense.isPending}><Check data-icon="inline-start" />{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
                   {expenses.data.marketing.map((row) => <TableRow key={`marketing-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.periodStart)}</TableCell><TableCell className="font-medium">{row.campaignName || row.channel}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.periodStart)}</span><span>· {copy.marketing}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="purple">{copy.marketingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{copy.marketing}</TableCell><TableCell className="hidden xl:table-cell">{row.sourceName || row.channel}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.recognizedAmountUzs || row.amountUzs)}</TableCell><TableCell /></TableRow>)}
                   {!expenses.data.operating.length && !expenses.data.marketing.length ? <TableRow><TableCell colSpan={8} className="h-40 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow> : null}
                 </TableBody>
@@ -783,6 +796,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       </Dialog>
 
       <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={Boolean(payTarget)} onOpenChange={(open) => !open && setPayTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmPayTitle}</AlertDialogTitle><AlertDialogDescription>{payTarget ? `${payTarget.title} · ${money(payTarget.amountUzs)}` : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={payExpense.isPending}>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={payExpense.isPending} onClick={(event) => { event.preventDefault(); if (payTarget) payExpense.mutate(payTarget.id); setPayTarget(null); }}>{payExpense.isPending ? `${copy.pay}…` : copy.confirmPay}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} onKeyDown={submitOnEnter(() => cancelExpense.mutate(), { disabled: !cancelReason.trim() || cancelExpense.isPending })} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       
       <UnsavedChangesDialog

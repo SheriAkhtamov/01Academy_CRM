@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useSearch } from 'wouter';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Archive, CalendarDays, Columns3, ListTodo, Plus, Users, type LucideIcon } from 'lucide-react';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -15,6 +16,7 @@ import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
+import { useStickyState } from '@/hooks/useStickyState';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { hasLeadershipAccess, type AcademyModule } from '@shared/academy';
@@ -73,8 +75,10 @@ export default function TasksPage() {
 
     const [createOpen, setCreateOpen] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+    const [, setLocation] = useLocation();
+    const routeSearch = useSearch();
     const [detailOpen, setDetailOpen] = useState(false);
-    const [ownerFilter, setOwnerFilter] = useState<string>(OWNER_FILTER_SELF);
+    const [ownerFilter, setOwnerFilter] = useStickyState<string>('tasks-owner-filter', OWNER_FILTER_SELF);
     const [taskView, setTaskView] = useCalendarPreference<TaskViewMode>('taskSectionView', TASK_VIEWS, 'board');
     const [taskListView, setTaskListView] = useState<TaskListView>('active');
     const isArchiveView = taskListView === 'archive';
@@ -109,6 +113,15 @@ export default function TasksPage() {
 
     const tasks = useMemo(() => data?.tasks ?? [], [data]);
     const taskCounts = useMemo(() => countTasksByOwner(tasks), [tasks]);
+
+    // Deep link: `?task=<id>` opens that task once the board has loaded.
+    useEffect(() => {
+        if (isLoading || detailOpen) return;
+        const requested = Number(new URLSearchParams(routeSearch).get('task'));
+        if (!Number.isSafeInteger(requested) || requested <= 0) return;
+        setSelectedTaskId(requested);
+        setDetailOpen(true);
+    }, [isLoading, detailOpen, routeSearch]);
 
     const selectedOwner: TaskOwnerFilter = useMemo(() => {
         if (ownerFilter === TASK_OWNER_ALL) return TASK_OWNER_ALL;
@@ -147,7 +160,7 @@ export default function TasksPage() {
         if (!ownerOptions.some((option) => String(option.id) === ownerFilter)) {
             setOwnerFilter(OWNER_FILTER_SELF);
         }
-    }, [isLoading, ownerFilter, ownerOptions]);
+    }, [isLoading, ownerFilter, ownerOptions, setOwnerFilter]);
 
     const selectedOwnerName = useMemo(() => {
         if (ownerFilter === TASK_OWNER_ALL) return t('allEmployees');
@@ -201,9 +214,24 @@ export default function TasksPage() {
         setSelectedTaskId(null);
     };
 
+    // The open task lives in the URL (`?task=`): browser Back closes the sheet
+    // instead of leaving the board, and an open task can be deep-linked.
     const openTask = (taskId: number) => {
         setSelectedTaskId(taskId);
         setDetailOpen(true);
+        const params = new URLSearchParams(routeSearch);
+        params.set('task', String(taskId));
+        setLocation(`/tasks?${params.toString()}`);
+    };
+
+    const closeTask = () => {
+        setDetailOpen(false);
+        setSelectedTaskId(null);
+        const params = new URLSearchParams(routeSearch);
+        if (!params.has('task')) return;
+        params.delete('task');
+        const query = params.toString();
+        setLocation(query ? `/tasks?${query}` : '/tasks', { replace: true });
     };
 
     return (
@@ -432,7 +460,7 @@ export default function TasksPage() {
                 currentUser={currentUser}
                 canAssignUsers
             />
-            <TaskDetailSheet taskId={selectedTaskId} open={detailOpen} onOpenChange={setDetailOpen} users={users} />
+            <TaskDetailSheet taskId={selectedTaskId} open={detailOpen} onOpenChange={(open) => (open ? setDetailOpen(true) : closeTask())} users={users} />
         </div>
     );
 }

@@ -8,6 +8,11 @@ import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import { toast } from '@/hooks/use-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { PhoneInput } from '@/components/ux/FormattedInputs';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -349,6 +354,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     }) !== comparableOnlinePbxDraft(onlinePbxRoutingDraft)
   );
 
+  // Closing the PBX settings with unsaved edits asks for confirmation.
+  const onlinePbxGuard = useUnsavedChangesGuard({
+    open: onlinePbxSettingsOpen,
+    isDirty: routingSettingsChanged,
+    onOpenChange: setOnlinePbxSettingsOpen,
+  });
+
   const addManagerAssignment = () => {
     const managerId = Number(newManagerId);
     if (!Number.isInteger(managerId) || !newExtension || assignedManagerIds.has(managerId)) return;
@@ -409,7 +421,18 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       />
 
       <div aria-label={t('navIntegrations')} className="space-y-3 pb-24">
-        {integrations.isLoading ? (
+        {integrations.isError ? (
+          <div className="flex flex-col items-start gap-3">
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+              <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
+            </Alert>
+            <Button variant="outline" onClick={() => integrations.refetch()} disabled={integrations.isFetching}>
+              {t('retry')}
+            </Button>
+          </div>
+        ) : integrations.isLoading ? (
           Array.from({ length: 4 }).map((_, index) => (
             <Card key={index}>
               <CardHeader>
@@ -536,7 +559,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         integration={metaIntegration?.details}
       />
 
-      <Dialog open={onlinePbxSettingsOpen} onOpenChange={setOnlinePbxSettingsOpen}>
+      <Dialog open={onlinePbxSettingsOpen} onOpenChange={onlinePbxGuard.handleOpenChange}>
         <DialogContent className="overflow-hidden sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('onlinePbxSettingsTitle')}</DialogTitle>
@@ -780,21 +803,18 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                     <Label htmlFor="onlinepbx-forwarding-phone">
                       {t('onlinePbxForwardingPhone')}
                     </Label>
-                    <Input
+                    <PhoneInput
                       id="onlinepbx-forwarding-phone"
-                      type="tel"
-                      inputMode="tel"
                       value={onlinePbxRoutingDraft.forwarding.phone}
-                      onChange={(event) => {
+                      onValueChange={(phone) => {
                         setOnlinePbxRoutingDraft((current) => ({
                           ...current,
                           forwarding: {
                             ...current.forwarding,
-                            phone: event.target.value,
+                            phone,
                           },
                         }));
                       }}
-                      placeholder="+998 90 123 45 67"
                     />
                     <p className="text-xs text-muted-foreground">
                       {onlinePbxRoutingDraft.forwarding.enabled
@@ -811,7 +831,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOnlinePbxSettingsOpen(false)}
+              onClick={() => onlinePbxGuard.handleOpenChange(false)}
             >
               {t('close')}
             </Button>
@@ -854,6 +874,12 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           }
         }}
         variant="destructive"
+      />
+
+      <UnsavedChangesDialog
+        open={onlinePbxGuard.confirmationOpen}
+        onOpenChange={onlinePbxGuard.setConfirmationOpen}
+        onDiscard={onlinePbxGuard.discardChanges}
       />
 
       <ConfirmDialog

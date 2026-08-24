@@ -46,6 +46,10 @@ import {
     X,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
+import {
+    attachmentErrorKey,
+    validateAttachment,
+} from '@/lib/attachments';
 import { boardQueryKeys } from '@/features/board/api';
 import { TaskColorPicker } from './TaskColorPicker';
 import { useToast } from '@/hooks/use-toast';
@@ -151,6 +155,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
         | null
     >(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [uploadPercent, setUploadPercent] = useState<number | null>(null);
 
     useEffect(() => {
         setEditing(false);
@@ -254,14 +259,61 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     });
 
     const uploadMutation = useMutation({
-        mutationFn: (file: File) => {
+        mutationFn: ({ file, onProgress }: { file: File; onProgress: (percent: number) => void }) => {
             const form = new FormData();
             form.append('file', file);
-            return apiRequest('POST', `/api/board/tasks/${taskId}/attachments`, form);
+            // XHR (not fetch) so large uploads can show real progress instead
+            // of a spinner with no feedback for minutes.
+            return new Promise<{ ok?: boolean }>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', `/api/board/tasks/${taskId}/attachments`);
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+                    }
+                });
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            resolve(JSON.parse(xhr.responseText));
+                        } catch {
+                            resolve({});
+                        }
+                        return;
+                    }
+                    let message = '';
+                    try {
+                        message = String(JSON.parse(xhr.responseText)?.message ?? '');
+                    } catch {
+                        message = '';
+                    }
+                    reject(new Error(message || `HTTP ${xhr.status}`));
+                });
+                xhr.addEventListener('error', () => reject(new Error('Network error')));
+                xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+                xhr.send(form);
+            });
         },
-        onSuccess: () => invalidate(),
-        onError,
+        onSuccess: () => {
+            setUploadPercent(null);
+            invalidate();
+        },
+        onError: (error: Error) => {
+            setUploadPercent(null);
+            toast({ title: t(attachmentErrorKey(error.message)), description: error.message, variant: 'destructive' });
+        },
     });
+
+    const handleAttachmentSelected = (file: File | undefined) => {
+        if (!file) return;
+        const validationError = validateAttachment(file);
+        if (validationError) {
+            toast({ title: t(validationError), variant: 'destructive' });
+            return;
+        }
+        setUploadPercent(0);
+        uploadMutation.mutate({ file, onProgress: setUploadPercent });
+    };
 
     const deleteAttachmentMutation = useMutation({
         mutationFn: (id: number) => apiRequest('DELETE', `/api/board/attachments/${id}`),
@@ -541,11 +593,22 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                         ref={fileInputRef}
                                         type="file"
                                         className="hidden"
-                                        onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMutation.mutate(f); e.target.value = ''; }}
+                                        onChange={(e) => { const f = e.target.files?.[0]; handleAttachmentSelected(f); e.target.value = ''; }}
                                     />
-                                    <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
-                                        {uploadMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} {t('attachFile')}
-                                    </Button>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
+                                            {uploadMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} {t('attachFile')}
+                                        </Button>
+                                        <span className="text-xs text-muted-foreground">{t('attachmentSizeHint')}</span>
+                                    </div>
+                                    {uploadPercent !== null ? (
+                                        <div className="flex items-center gap-2" role="progressbar" aria-valuenow={uploadPercent} aria-valuemin={0} aria-valuemax={100}>
+                                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadPercent}%` }} />
+                                            </div>
+                                            <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{uploadPercent}%</span>
+                                        </div>
+                                    ) : null}
                                     {task.attachments.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noAttachmentsYet')}</p>
                                     ) : (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarPlus2,
@@ -30,6 +30,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import {
   demoLessonQueryKeys,
   demoLessonsApi,
@@ -107,6 +111,11 @@ export function DemoLessonDialog({
   const [demoTime, setDemoTime] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('60');
   const [notes, setNotes] = useState('');
+  // Values the form was seeded with. Comparing them against the live fields
+  // tells "the user typed something" apart from "a background refetch replaced
+  // the props", so reseeding never wipes in-progress input.
+  const seededValuesRef = useRef<Record<string, string>>({});
+  const [seededValues, setSeededValues] = useState<Record<string, string>>({});
 
   const activeLeads = useMemo(
     () => leads.filter((lead) => !lead.isArchived && lead.statusCode !== 'paid'),
@@ -128,25 +137,68 @@ export function DemoLessonDialog({
   const duration = Number(durationMinutes);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      seededValuesRef.current = {};
+      setSeededValues({});
+      return;
+    }
+    const current: Record<string, string> = {
+      format, courseId, schoolId, teacherId, roomId,
+      demoDate, demoTime, durationMinutes, notes,
+    };
+    // Re-seed only while every field still holds its seeded value. Once the
+    // user edits anything, background refetches must not reset their draft.
+    const previousSeeded = seededValuesRef.current;
+    const untouched = Object.entries(previousSeeded).every(
+      ([key, value]) => current[key] === value,
+    );
+    if (previousSeeded && !untouched) return;
     const nextCourseId = initialLead?.courseId ? String(initialLead.courseId) : '';
     const courseDuration = courses.find((course) => String(course.id) === nextCourseId)
       ?.lessonDurationMinutes;
     const defaults = defaultDemoDateTime();
-    setCourseId(nextCourseId);
-    setSchoolId(initialSchoolId
-      ? String(initialSchoolId)
-      : initialLead?.schoolId
-        ? String(initialLead.schoolId)
-        : '');
-    setTeacherId('');
-    setRoomId('');
-    setDemoDate(initialDate || defaults.date);
-    setDemoTime(initialTime || defaults.time);
-    setDurationMinutes(String(Number(courseDuration) >= 15 ? courseDuration : 60));
-    setFormat('offline');
-    setNotes('');
-  }, [courses, initialDate, initialLead, initialSchoolId, initialTime, open]);
+    const next: Record<string, string> = {
+      format: 'offline',
+      courseId: nextCourseId,
+      schoolId: initialSchoolId
+        ? String(initialSchoolId)
+        : initialLead?.schoolId
+          ? String(initialLead.schoolId)
+          : '',
+      teacherId: '',
+      roomId: '',
+      demoDate: initialDate || defaults.date,
+      demoTime: initialTime || defaults.time,
+      durationMinutes: String(Number(courseDuration) >= 15 ? courseDuration : 60),
+      notes: '',
+    };
+    setFormat(next.format as 'offline' | 'online');
+    setCourseId(next.courseId);
+    setSchoolId(next.schoolId);
+    setTeacherId(next.teacherId);
+    setRoomId(next.roomId);
+    setDemoDate(next.demoDate);
+    setDemoTime(next.demoTime);
+    setDurationMinutes(next.durationMinutes);
+    setNotes(next.notes);
+    seededValuesRef.current = next;
+    setSeededValues(next);
+  }, [courses, demoDate, demoTime, durationMinutes, format, courseId, schoolId, teacherId, roomId, notes, initialDate, initialLead, initialSchoolId, initialTime, open]);
+
+  const isDirty = useMemo(() => Object.entries(seededValues).some(([key, value]) => ({
+    format, courseId, schoolId, teacherId, roomId, demoDate, demoTime, durationMinutes, notes,
+  } as Record<string, string>)[key] !== value), [seededValues, format, courseId, schoolId, teacherId, roomId, demoDate, demoTime, durationMinutes, notes]);
+
+  const demoGuard = useUnsavedChangesGuard({
+    open,
+    isDirty,
+    onOpenChange,
+  });
+
+  const seededDuration = Number(seededValues.durationMinutes);
+  const durationOutOfRange = Boolean(durationMinutes)
+    && !(Number(durationMinutes) >= 15 && Number(durationMinutes) <= 480)
+    && Number(durationMinutes) !== seededDuration;
 
   const availabilityRequest = useMemo(() => {
     if (
@@ -264,7 +316,8 @@ export function DemoLessonDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => {
-      if (!createDemo.isPending) onOpenChange(nextOpen);
+      if (createDemo.isPending) return;
+      demoGuard.handleOpenChange(nextOpen);
     }}>
       <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
         <DialogHeader>
@@ -386,7 +439,12 @@ export function DemoLessonDialog({
           </div>
 
           <div aria-live="polite">
-            {!availabilityRequest ? (
+            {durationOutOfRange ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{t('demoDurationRangeHint')}</AlertDescription>
+              </Alert>
+            ) : !availabilityRequest ? (
               <p className="text-sm text-muted-foreground">{t('completeDemoScheduleForAvailability')}</p>
             ) : resourceAvailability.isFetching ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -432,7 +490,7 @@ export function DemoLessonDialog({
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createDemo.isPending}>
+          <Button type="button" variant="outline" onClick={() => demoGuard.handleOpenChange(false)} disabled={createDemo.isPending}>
             {t('cancel')}
           </Button>
           <Button type="button" onClick={() => createDemo.mutate()} disabled={!canSubmit}>
@@ -443,6 +501,12 @@ export function DemoLessonDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <UnsavedChangesDialog
+        open={demoGuard.confirmationOpen}
+        onOpenChange={demoGuard.setConfirmationOpen}
+        onDiscard={demoGuard.discardChanges}
+      />
     </Dialog>
   );
 }

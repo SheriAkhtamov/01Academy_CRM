@@ -149,20 +149,22 @@ export function DataTable<T extends Record<string, any>>({
     });
   }, [data, sortKey, sortDirection, columns]);
 
-  // Reset to the first page only when sorting, page size, or the visible row set
-  // changes (filtering). Background refetches keep the array contents but change its
-  // identity, so depending on `data` itself would kick the user back to page 1
-  // after every mutation; out-of-range pages are clamped below instead.
+  // Reset to the first page only when sorting or page size changes. A row
+  // arriving from a background refetch must not kick a user browsing page 4
+  // back to page 1: out-of-range pages are clamped below instead, and the
+  // clamp is applied during render so shrinking result sets never paint an
+  // empty body frame.
   useEffect(() => {
     setCurrentPage(1);
-  }, [data.length, sortKey, sortDirection, pageSize]);
+  }, [sortKey, sortDirection, pageSize]);
 
   const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(sortedData.length / pageSize)) : 1;
+  const safePage = Math.min(currentPage, totalPages);
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages));
   }, [totalPages]);
-  const pagedData = pageSize > 0 ? sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize) : sortedData;
+  const pagedData = pageSize > 0 ? sortedData.slice((safePage - 1) * pageSize, safePage * pageSize) : sortedData;
 
   const handleSort = (key: string, sortable?: boolean) => {
     if (!sortable) return;
@@ -367,7 +369,7 @@ export function DataTable<T extends Record<string, any>>({
       <div className={cn('overflow-x-auto', className)}>
         {isMobile ? renderCards() : (
         <Table containerClassName="overflow-visible">
-          <TableHeader className="sticky top-0 z-10 bg-muted/70">
+          <TableHeader className="sticky top-0 z-10 bg-muted/70 backdrop-blur-sm">
             <TableRow className="border-b border-border/70 hover:bg-transparent">
               {columns.map((column) => (
                 <TableHead
@@ -461,7 +463,7 @@ export function DataTable<T extends Record<string, any>>({
       </div>
       {!isLoading ? (
         <PaginationControls
-          page={currentPage}
+          page={safePage}
           pageSize={pageSize}
           totalItems={sortedData.length}
           onPageChange={setCurrentPage}

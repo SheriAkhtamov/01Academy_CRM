@@ -24,7 +24,11 @@ export default function Login() {
   const { login, isLoading } = useAuth();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  // The URL the user originally asked for (deep link or the page open when the
+  // session expired): returning there instead of a blind redirect to `/`
+  // keeps shared links and mid-session expiry painless.
+  const returnTo = location && location !== '/' ? location : '/';
   const loginSchema = z.object({
     login: z.string().min(1, t('loginOrEmailRequired')),
     password: z.string().min(1, t('passwordRequired')),
@@ -51,7 +55,7 @@ export default function Login() {
       devLog('[LOGIN] Login successful!');
       queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
       setIsSubmitting(false);
-      setLocation('/');
+      setLocation(returnTo);
     } catch (err: any) {
       if (err?.status === 401) {
         setError(t('invalidCredentialsMessage'));

@@ -43,7 +43,7 @@ const createSettingsSchema = (
 ) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
   email: z.string().email(t('validEmailRequired')),
-  position: z.string().max(255),
+  position: z.string().max(255, t('fieldTooLong')),
   phone: z.string().optional(),
   hasReportAccess: z.boolean().optional(),
   currentPassword: z.string().optional(),

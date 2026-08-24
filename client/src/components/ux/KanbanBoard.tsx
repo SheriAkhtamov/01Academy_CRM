@@ -6,11 +6,14 @@ import {
   KeyboardCode,
   KeyboardSensor,
   MouseSensor,
+  pointerWithin,
+  rectIntersection,
   TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
@@ -287,6 +290,7 @@ const leadCardVariants: Variants = {
 
 interface DraggableLeadCardProps extends LeadCardContentProps {
   onLeadClick?: KanbanBoardProps['onLeadClick'];
+  dragDisabled?: boolean;
 }
 
 function DraggableLeadCard(props: DraggableLeadCardProps) {
@@ -297,6 +301,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     onLeadClick,
     selected,
     selectionMode,
+    dragDisabled,
     t,
   } = props;
   // FLIP reflow is the most expensive animation on the board: every card in
@@ -312,7 +317,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
   } = useDraggable({
     id: `lead-${lead.id}`,
     data: { leadId: lead.id, statusCode: currentStatus.code },
-    disabled: isPending || selectionMode,
+    disabled: isPending || selectionMode || dragDisabled,
   });
 
   const card = (
@@ -366,6 +371,8 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
 }
 
 interface KanbanColumnProps {
+  /** Board-global: any active selection stops dragging in every stage. */
+  dragDisabled?: boolean;
   status: KanbanStatus;
   leads: KanbanLead[];
   onQuickAction?: KanbanBoardProps['onQuickAction'];
@@ -379,11 +386,13 @@ interface KanbanColumnProps {
   onLeadClick?: KanbanBoardProps['onLeadClick'];
   selectedLeadIds: ReadonlySet<number>;
   onSelectedLeadIdsChange?: KanbanBoardProps['onSelectedLeadIdsChange'];
+  selectionMode?: boolean;
 }
 
 function KanbanColumn({
   status,
   leads,
+  dragDisabled = false,
   onQuickAction,
   onArchiveLead,
   onEnrollDemo,
@@ -395,6 +404,7 @@ function KanbanColumn({
   onLeadClick,
   selectedLeadIds,
   onSelectedLeadIdsChange,
+  selectionMode: boardSelectionMode = false,
 }: KanbanColumnProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: `status-${status.code}`,
@@ -415,6 +425,8 @@ function KanbanColumn({
   );
   const allSelected = leads.length > 0 && selectedCount === leads.length;
   const someSelected = selectedCount > 0 && !allSelected;
+  // Checkboxes appear per stage (as before); only *dragging* is what the
+  // global flag disables.
   const selectionMode = selectedCount > 0;
 
   const toggleStageLeads = (selected: boolean) => {
@@ -503,6 +515,7 @@ function KanbanColumn({
               onArchiveLead={onArchiveLead}
               onEnrollDemo={onEnrollDemo}
               isPending={isPending}
+              dragDisabled={dragDisabled}
               showPaymentAction={showPaymentAction}
               showManager={showManager}
               selectionMode={selectionMode}
@@ -632,6 +645,24 @@ export function KanbanBoard({
     board keeps a floor instead and pushes past the page when it has to — the
     shell scroller catches the overflow.
   */
+  /*
+    Pointer-first collision detection, same hybrid as the task board:
+    `closestCorners` ignores the cursor and can resolve a drop to the
+    neighbouring column whose corner is marginally closer than the one under
+    the pointer. The pointer result wins when there is one.
+  */
+  const columnCollisionDetection: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) return pointerCollisions;
+    const intersectingColumns = rectIntersection(args);
+    return intersectingColumns.length > 0 ? intersectingColumns : closestCorners(args);
+  };
+
+  const selectedLeadCount = selectedLeadIds.size;
+  // Selection mode is board-global: picking a lead in one stage disables
+  // dragging everywhere, so the affordance stays consistent across columns.
+  const boardSelectionMode = onSelectedLeadIdsChange !== undefined && selectedLeadCount > 0;
+
   return (
     <div
       className="flex min-h-[26rem] min-w-0 max-w-full flex-1 flex-col gap-2 overflow-hidden"
@@ -639,7 +670,7 @@ export function KanbanBoard({
     >
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={columnCollisionDetection}
         onDragStart={handleDragStart}
         onDragCancel={() => setActiveLeadId(null)}
         onDragEnd={handleDragEnd}
@@ -662,6 +693,7 @@ export function KanbanBoard({
                 onLeadClick={onLeadClick}
                 selectedLeadIds={selectedLeadIds}
                 onSelectedLeadIdsChange={onSelectedLeadIdsChange}
+                dragDisabled={boardSelectionMode}
               />
             ))}
           </div>

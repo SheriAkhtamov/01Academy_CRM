@@ -29,7 +29,7 @@ const nonLocalizedValueKeys = new Set([
   'smtpPortPlaceholder',
   'uzbekLang',
 ]);
-const hardcodedTextAllowlist = new Set(['.csv', 'Enter', 'K', 'x']);
+const hardcodedTextAllowlist = new Set(['.csv', 'Ctrl+', 'Enter', 'K', 'x']);
 const nonLocalizedContentArrays = new Set(['DEFAULT_QUICK_REPLIES']);
 const uiTextProperties = new Set([
   'alt',

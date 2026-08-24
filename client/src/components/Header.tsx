@@ -44,6 +44,8 @@ export default function Header({
 }: HeaderProps) {
   const { logout, user } = useAuth();
   const { t } = useTranslation();
+  const isApplePlatform = typeof navigator !== 'undefined'
+    && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
   const { accounts, switchToAccount, removeAccount, isSwitching, isRemoving } = useAccounts();
   const { toast } = useToast();
   const [showChat, setShowChat] = useState(false);
@@ -94,7 +96,10 @@ export default function Header({
       ));
       return context;
     },
-    onError: (_error, _notificationId, context) => restoreNotifications(context),
+    onError: (error: Error, _notificationId, context) => {
+      restoreNotifications(context);
+      toast({ title: t('updateFailed'), description: error.message, variant: 'destructive' });
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
     },
@@ -186,7 +191,8 @@ export default function Header({
               <Search className="h-4 w-4" />
               <span className="text-sm">{t('search')}</span>
               <kbd className="hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex">
-                <span className="text-xs">⌘</span>K
+                {/* The binding accepts both modifiers; the hint matches the platform. */}
+                <span className="text-xs">{isApplePlatform ? '⌘' : 'Ctrl+'}</span>K
               </kbd>
             </Button>
 

@@ -88,3 +88,41 @@ export const academyTimeOfDay = (value: Date | string | number) => {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? '' : academyTimeFormatter.format(date);
 };
+
+const academyMinutesFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: ACADEMY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/**
+ * Minutes since midnight on the academy clock for an instant.
+ *
+ * Schedule grids must position booked lessons with this instead of
+ * `Date.getHours()` — the browser-local getter shifts lessons when the device
+ * is not in the academy time zone and misaligns them against recurring
+ * timetable slots rendered from wall-clock numbers.
+ */
+export const academyMinutesOfDay = (value: Date | string | number) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  const parts: Record<string, string> = {};
+  for (const part of academyMinutesFormatter.formatToParts(date)) {
+    if (part.type !== 'literal') parts[part.type] = part.value;
+  }
+  return Number(parts.hour) % 24 * 60 + Number(parts.minute);
+};
+
+/**
+ * A pseudo-instant whose *browser-local* wall clock reads the academy clock.
+ *
+ * Display-only shim for legacy math that reads local getters directly
+ * (`getHours()`, `isSameDay()`): schedule grids can treat it as "now" and stay
+ * on the academy clock on any device. Real instants must go through the
+ * Intl formatters above or `academyInstant`.
+ */
+export const academyNowLocalView = () => {
+  const now = new Date();
+  return new Date(`${academyDateInputValue(now)}T${academyTimeOfDay(now)}:00`);
+};

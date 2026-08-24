@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import {
   Clock3,
   Headphones,
@@ -95,13 +95,21 @@ export default function CallJournalPage() {
   const { user } = useAuth();
   const onlinePbxCall = useOnlinePbxCall();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
-  const [direction, setDirection] = useState('all');
-  const [status, setStatus] = useState('all');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [page, setPage] = useState(1);
+  // Filters live in the URL: a configured view ("missed, last week, Anna")
+  // survives navigation, refresh and can be shared as a link.
+  const [, setRoute] = useLocation();
+  const routeSearch = useSearch();
+  const initialParams = useRef(new URLSearchParams(routeSearch));
+  const [search, setSearch] = useState(() => initialParams.current.get('q') ?? '');
+  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(() => {
+    const value = initialParams.current.get('userId');
+    return value && value !== ALL_EMPLOYEES ? value : null;
+  });
+  const [direction, setDirection] = useState(() => initialParams.current.get('direction') ?? 'all');
+  const [status, setStatus] = useState(() => initialParams.current.get('status') ?? 'all');
+  const [from, setFrom] = useState(() => initialParams.current.get('from') ?? '');
+  const [to, setTo] = useState(() => initialParams.current.get('to') ?? '');
+  const [page, setPage] = useState(() => Math.max(1, Number(initialParams.current.get('page')) || 1));
   const [pageSize, setPageSize] = useState(CALL_JOURNAL_DEFAULT_PAGE_SIZE);
   const journalListRef = useRef<HTMLDivElement | null>(null);
   const pendingMissedCallReadRef = useRef(false);
@@ -144,6 +152,30 @@ export default function CallJournalPage() {
     if (to) params.set('to', to);
     return params.toString();
   }, [deferredSearch, direction, employee, from, page, pageSize, status, to]);
+
+  // Mirror the active view into the URL (replace: filters are not history
+  // steps). The page number is only written when it is not the first one.
+  useEffect(() => {
+    const params = new URLSearchParams(routeSearch);
+    const apply = (changes: Record<string, string | null>) => {
+      Object.entries(changes).forEach(([key, value]) => {
+        if (value === null) params.delete(key);
+        else params.set(key, value);
+      });
+    };
+    apply({
+      q: deferredSearch || null,
+      userId: employee !== ALL_EMPLOYEES ? employee : null,
+      direction: direction !== 'all' ? direction : null,
+      status: status !== 'all' ? status : null,
+      from: from || null,
+      to: to || null,
+      page: page > 1 ? String(page) : null,
+    });
+    const query = params.toString();
+    if (query === routeSearch) return;
+    setRoute(query ? `/sales/calls?${query}` : '/sales/calls', { replace: true });
+  }, [deferredSearch, direction, employee, from, page, routeSearch, setRoute, status, to]);
 
   const journalQuery = useQuery<JournalResponse>({
     queryKey: ['/api/telephony/calls/journal', queryString],

@@ -51,6 +51,7 @@ import {
   type CalendarViewMode,
 } from '@/lib/calendarPreferences';
 import type { TranslationKey } from '@/lib/i18n';
+import { academyNowLocalView } from '@/lib/localeFormat';
 import { cn } from '@/lib/utils';
 import {
   buildSalesScheduleFilterTree,
@@ -118,13 +119,17 @@ export function SalesScheduleCalendar({
     'open',
   );
   const filtersOpen = filterState === 'open';
-  const [cursor, setCursor] = useState(() => startOfDay(new Date()));
-  const [now, setNow] = useState(() => new Date());
+  // "Now" on the academy clock: the shifted view keeps legacy local getters
+  // (`getHours`, `isSameDay`) aligned with academy-positioned events on any
+  // device time zone.
+  const [now, setNow] = useState(() => academyNowLocalView());
+  const [cursor, setCursor] = useState(() => startOfDay(academyNowLocalView()));
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
   const [demoDraft, setDemoDraft] = useState<{ date: string; time: string } | null>(null);
   const [selectedDemoId, setSelectedDemoId] = useState<number | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<SalesScheduleEvent | null>(null);
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<Set<number>>(() => new Set());
+  const gridScopeRef = useRef<HTMLDivElement | null>(null);
 
   const weekStart = useMemo(() => startOfWeek(cursor, { weekStartsOn: 1 }), [cursor]);
   const monthAnchor = useMemo(() => startOfMonth(cursor), [cursor]);
@@ -214,7 +219,7 @@ export function SalesScheduleCalendar({
   }, [teacherIds]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    const timer = window.setInterval(() => setNow(academyNowLocalView()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -275,7 +280,7 @@ export function SalesScheduleCalendar({
       view === 'month' ? addMonths(current, 1) : addDays(current, step)
     ));
   }, [step, view]);
-  const goToday = useCallback(() => setCursor(startOfDay(new Date())), []);
+  const goToday = useCallback(() => setCursor(startOfDay(academyNowLocalView())), []);
   const changeViewByIndex = useCallback((index: number) => {
     const nextView = VIEWS[index];
     if (nextView) setView(nextView);
@@ -286,6 +291,9 @@ export function SalesScheduleCalendar({
     onNext: goNext,
     onToday: goToday,
     onView: changeViewByIndex,
+    // Scoped like every other calendar: otherwise arrows pressed anywhere on
+    // the page (including horizontal grid panning) silently flip weeks.
+    scopeRef: gridScopeRef,
   });
 
   const atToday = view === 'day'
@@ -363,7 +371,10 @@ export function SalesScheduleCalendar({
      viewport too short for the calendar's floor gets a scrollbar instead of a
      hidden bottom half. */
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-y-contain">
+    <div
+      ref={gridScopeRef}
+      className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-y-contain"
+    >
       <Card className="shrink-0">
         <CardHeader className="gap-3 px-3 py-2.5 sm:px-4">
           <CalendarNavigator

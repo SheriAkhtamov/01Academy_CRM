@@ -16,7 +16,7 @@ import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { MessageCircle, Send, User, Circle, Search } from 'lucide-react';
+import { Loader2, MessageCircle, Send, User, Circle, Search } from 'lucide-react';
 import { format, isToday } from 'date-fns';
 import { ru, enUS } from 'date-fns/locale';
 import type {
@@ -64,7 +64,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   });
 
   // Fetch employees with whom user has conversations
-  const { data: conversationEmployees = [] } = useQuery<ConversationUserDto[]>({
+  const { data: conversationEmployees = [], isLoading: conversationsLoading } = useQuery<ConversationUserDto[]>({
     ...conversationQueryOptions,
     enabled: open,
   });
@@ -362,7 +362,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     </button>
                   );
                 })}
-                {filteredEmployees.length === 0 && (
+                {filteredEmployees.length === 0 && conversationsLoading && (
+                  <div className="py-8 text-center text-muted-foreground" aria-live="polite">
+                    <Loader2 className="mx-auto mb-2 size-6 animate-spin opacity-50" />
+                    <p className="text-sm">{t('loading')}</p>
+                  </div>
+                )}
+                {filteredEmployees.length === 0 && !conversationsLoading && (
                   <div className="py-8 text-center text-muted-foreground">
                     <User className="mx-auto mb-2 size-8 opacity-40" />
                     <p className="text-sm">

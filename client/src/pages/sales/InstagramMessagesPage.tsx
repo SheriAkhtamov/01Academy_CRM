@@ -8,6 +8,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { SPRING } from '@/lib/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
+import { useStickyState } from '@/hooks/useStickyState';
 import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -718,12 +719,13 @@ export default function MessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   const [draftsByConversation, setDraftsByConversation] = useState<Record<number, string>>({});
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<ConversationFilter>('all');
+  const [filter, setFilter] = useStickyState<ConversationFilter>('instagram-inbox-filter', 'all');
   const [leadSheetLeadId, setLeadSheetLeadId] = useState<number | null>(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
-  const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
+  const [mobileView, setMobileView] = useStickyState<'list' | 'thread'>('instagram-mobile-view', 'list');
   const [atBottom, setAtBottom] = useState(true);
   const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
+  const lightboxCloseRef = useRef<HTMLButtonElement | null>(null);
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -952,6 +954,11 @@ export default function MessagesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
     },
+    // A failed mark-read would leave unread counters wrong forever (there is
+    // no polling on this query), so resync from the server immediately.
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+    },
   });
 
   useEffect(() => {
@@ -1121,8 +1128,11 @@ export default function MessagesPage() {
     if (Number.isNaN(date.getTime())) return t('noData');
     return date.toLocaleString(locale, {
       timeZone: ACADEMY_TIME_ZONE,
-      dateStyle: 'short',
-      timeStyle: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -1223,6 +1233,9 @@ export default function MessagesPage() {
       if (event.key === 'Escape') setLightbox(null);
     };
     window.addEventListener('keydown', onKey);
+    // Move focus into the lightbox so keyboard and screen-reader users land in
+    // the dialog instead of staying on the button that opened it.
+    requestAnimationFrame(() => lightboxCloseRef.current?.focus());
     return () => window.removeEventListener('keydown', onKey);
   }, [lightbox]);
 
@@ -2196,6 +2209,7 @@ export default function MessagesPage() {
           aria-label={t('viewMedia')}
         >
           <Button
+            ref={lightboxCloseRef}
             type="button"
             variant="ghost"
             size="icon"

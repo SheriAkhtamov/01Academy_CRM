@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ux/DataTable';
@@ -52,6 +53,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import {
+  AlertCircle,
   Plus,
   Users,
   Shield,
@@ -64,6 +66,7 @@ import {
   PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useStickyState } from '@/hooks/useStickyState';
 import { devLog } from '@/lib/debug';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -87,82 +90,13 @@ import {
   type AcademyAccessModule,
   type AcademyModule,
 } from '@shared/academy';
-
-// Schema functions that use runtime translation
-const createUserSchema = (t: any) => z.object({
-  email: z.preprocess(
-    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().email(t('invalidEmailAddress')).optional()
-  ),
-  fullName: z.string().min(1, t('fullNameRequired')),
-  phone: z.string().optional(),
-  dateOfBirth: z.string().optional(),
-  position: z.string().optional(),
-  module: z.enum(ACADEMY_MODULES),
-  modules: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneModule')),
-  teacherSchoolIds: z.array(z.number().int().positive()).default([]),
-  teacherAvailability: z.array(z.object({
-    dayOfWeek: z.number().int().min(1).max(7),
-    startTime: z.string(),
-    endTime: z.string(),
-    schoolId: z.number().int().positive().nullable().optional(),
-  })).default([]),
-  isActive: z.boolean().default(true),
-});
-
-const createCredentialsSchema = (t: any) => z.object({
-  email: z.string().email(t('invalidEmailAddress')),
-  password: z.string().optional(),
-  confirmPassword: z.string().optional(),
-}).superRefine((values, ctx) => {
-  const wantsPasswordChange = Boolean(values.password || values.confirmPassword);
-
-  if (!wantsPasswordChange) return;
-
-  if (!values.password) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['password'],
-      message: t('newPasswordRequired'),
-    });
-  } else if (values.password.length < 12) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['password'],
-      message: t('passwordTooShort'),
-    });
-  } else if (new TextEncoder().encode(values.password).length > 72) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['password'],
-      message: t('passwordTooLong'),
-    });
-  }
-
-  if (values.password !== values.confirmPassword) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['confirmPassword'],
-      message: t('passwordsDoNotMatch'),
-    });
-  }
-});
-
-type UserFormValues = z.infer<ReturnType<typeof createUserSchema>>;
-type UserUpdatePayload = Partial<UserFormValues> & { leadTransferManagerId?: number };
-
-const defaultUserFormValues: UserFormValues = {
-  email: '',
-  fullName: '',
-  phone: '',
-  dateOfBirth: '',
-  position: '',
-  module: 'sales',
-  modules: ['sales'],
-  teacherSchoolIds: [],
-  teacherAvailability: [],
-  isActive: true,
-};
+import {
+  createCredentialsSchema,
+  createUserSchema,
+  defaultUserFormValues,
+  type UserFormValues,
+  type UserUpdatePayload,
+} from '@/features/employees/employeeFormSchema';
 
 const formatDateInputValue = (value: unknown) => {
   if (!value) return '';
@@ -193,9 +127,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     leadCount: number;
   } | null>(null);
   const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [moduleFilter, setModuleFilter] = useState('all');
-  const [employeeListView, setEmployeeListView] = useState<'current' | 'archive'>('current');
+  const [searchTerm, setSearchTerm] = useStickyState('employees-search', '');
+  const [moduleFilter, setModuleFilter] = useStickyState('employees-module-filter', 'all');
+  const [employeeListView, setEmployeeListView] = useStickyState<'current' | 'archive'>('employees-list-view', 'current');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -226,6 +160,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     });
   }, [credentialsForm, userCredentials]);
 
+  // Closing the credentials modal clears the password drafts immediately:
+  // otherwise typed passwords linger in form state after Escape/X/backdrop.
+  const handleCredentialsModalState = (open: boolean) => {
+    setShowCredentialsModal(open);
+    if (!open) {
+      setUserCredentials(null);
+      setPendingCredentialUpdate(null);
+      credentialsForm.reset({ email: '', password: '', confirmPassword: '' });
+    }
+  };
+
   const handleUserModalState = (open: boolean) => {
     setShowCreateUserModal(open);
     if (!open) {
@@ -248,10 +193,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onOpenChange: handleUserModalState,
   });
 
-  const { data: users = [], isLoading: usersLoading } = useQuery<any[]>({
+  const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers } = useQuery<any[]>({
     queryKey: ['/api/users'],
   });
-  const { data: schools = [] } = useQuery<Array<{
+  const { data: schools = [], isError: schoolsError, refetch: refetchSchools } = useQuery<Array<{
     id: number;
     name: string;
     isActive?: boolean;
@@ -263,7 +208,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const activeUserCount = users.filter((candidate: any) => !candidate.isArchived && candidate.isActive).length;
   const inactiveUserCount = users.filter((candidate: any) => !candidate.isArchived && !candidate.isActive).length;
   const archivedUserCount = users.filter((candidate: any) => candidate.isArchived).length;
-  const settingsSnapshotTime = new Date().toLocaleTimeString();
+  // A stable "as of" label: recomputing it on every render would turn it into
+  // a live clock that changes on every keystroke in the search box.
+  const [settingsSnapshotTime] = useState(() => new Date().toLocaleTimeString());
 
   const createUserMutation = useMutation({
     mutationFn: async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
@@ -492,7 +439,23 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       });
   };
 
+  // Ref-based lock: RHF flips `isSubmitting` before this handler runs, so
+  // checking it here would deadlock the form. The lock covers the async
+  // impact-check window where mutation flags are still idle.
+  const userSubmitLockRef = useRef(false);
   const onSubmitUser = async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
+    if (createUserMutation.isPending || updateUserMutation.isPending || userSubmitLockRef.current) {
+      return;
+    }
+    userSubmitLockRef.current = true;
+    try {
+      await submitUser(data);
+    } finally {
+      userSubmitLockRef.current = false;
+    }
+  };
+
+  const submitUser = async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
     const modules = Array.from(new Set([data.module, ...data.modules]));
     const payload = {
       ...data,
@@ -571,8 +534,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     const matchesArchiveView = employeeListView === 'archive'
       ? user.isArchived === true
       : user.isArchived !== true;
-    const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (user.fullName ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.email ?? '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesModule = moduleFilter === 'all' ||
       getAssignedModules(user).includes(moduleFilter as AcademyAccessModule);
     return matchesArchiveView && matchesSearch && matchesModule;
@@ -817,7 +780,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             name="fullName"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('fullName')}</FormLabel>
+                                <FormLabel required>{t('fullName')}</FormLabel>
                                 <FormControl>
                                   <Input placeholder={t('fullNamePlaceholder')} {...field} />
                                 </FormControl>
@@ -830,7 +793,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             name="email"
                             render={({ field }) => selectedUser ? (
                                 <FormItem>
-                                  <FormLabel>{t('loginLabel')}</FormLabel>
+                                  <FormLabel required>{t('loginLabel')}</FormLabel>
                                   <FormControl>
                                     <Input
                                       type="email"
@@ -844,7 +807,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                 </FormItem>
                               ) : (
                                 <FormItem>
-                                  <FormLabel>{t('loginLabel')}</FormLabel>
+                                  <FormLabel required>{t('loginLabel')}</FormLabel>
                                   <div className="rounded-lg border border-dashed border-border bg-muted/70 p-3">
                                     <p className="text-sm font-medium text-foreground">{t('employeeLoginGenerated')}</p>
                                     <p className="mt-1 text-xs text-muted-foreground">{t('employeeLoginHint')}</p>
@@ -919,7 +882,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             name="module"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>{t('primaryModule')}</FormLabel>
+                                <FormLabel required>{t('primaryModule')}</FormLabel>
                                 <Select
                                   onValueChange={(value) => {
                                     const nextModule = value as AcademyModule;
@@ -1059,7 +1022,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                       );
                                     })}
                                   </div>
-                                  {teacherScheduleSchools.length === 0 ? (
+                                  {schoolsError ? (
+                                    <div className="flex items-center gap-2 text-sm text-destructive">
+                                      <span>{t('failedToLoadData')}</span>
+                                      <Button type="button" variant="outline" size="sm" onClick={() => refetchSchools()}>
+                                        {t('retry')}
+                                      </Button>
+                                    </div>
+                                  ) : teacherScheduleSchools.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">{t('noSchools')}</p>
                                   ) : null}
                                   <FormMessage />
@@ -1129,7 +1099,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           </Button>
                           <Button
                             type="submit"
-                            disabled={createUserMutation.isPending || updateUserMutation.isPending}
+                            disabled={createUserMutation.isPending || updateUserMutation.isPending || userForm.formState.isSubmitting}
                             className="w-full sm:w-auto"
                           >
                             {createUserMutation.isPending || updateUserMutation.isPending
@@ -1167,7 +1137,16 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           {/* Users List */}
           <Card>
             <CardContent className="p-0">
-              {usersLoading ? (
+              {usersError ? (
+                <div className="flex flex-col items-start gap-3 p-4">
+                  <Alert variant="destructive">
+                    <AlertCircle />
+                    <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+                    <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
+                  </Alert>
+                  <Button variant="outline" size="sm" onClick={() => refetchUsers()}>{t('retry')}</Button>
+                </div>
+              ) : usersLoading ? (
                 <div className="p-4 space-y-3">
                   {Array.from({ length: 5 }, (_, i) => (
                     <div key={i} className="flex items-center gap-4 rounded-lg border border-slate-100 p-3">
@@ -1363,7 +1342,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       </Dialog>
 
       {/* User Credentials Modal */}
-      <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
+      <Dialog open={showCredentialsModal} onOpenChange={handleCredentialsModalState}>
         <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
@@ -1401,7 +1380,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('loginLabel')}</FormLabel>
+                      <FormLabel required>{t('loginLabel')}</FormLabel>
                       <FormControl>
                         <Input type="email" autoComplete="username" {...field} />
                       </FormControl>
@@ -1430,7 +1409,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     name="password"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('newPassword')}</FormLabel>
+                        <FormLabel required>{t('newPassword')}</FormLabel>
                         <FormControl>
                           <Input
                             type="password"
@@ -1500,7 +1479,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   >
                     {updateUserCredentialsMutation.isPending ? t('saving') : t('saveCredentials')}
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => setShowCredentialsModal(false)}>
+                  <Button type="button" variant="outline" onClick={() => handleCredentialsModalState(false)}>
                     {t('close')}
                   </Button>
                 </div>

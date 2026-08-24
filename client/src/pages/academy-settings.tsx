@@ -6,6 +6,19 @@ import { useLocation, useSearch } from 'wouter';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
+import {
+  createCourseSchema,
+  createGroupSchema,
+  createRoomSchema,
+  createSchoolSchema,
+  createStatusSchema,
+  type CourseValues,
+  type GroupValues,
+  type RoomValues,
+  type SchoolValues,
+  type StatusValues,
+} from '@/lib/academyResourceSchemas';
 import { formatAcademyNumber } from '@/lib/localeFormat';
 import { toast } from '@/hooks/use-toast';
 import { LeadAssignmentContent } from '@/pages/admin-leads';
@@ -26,8 +39,10 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
 } from '@/components/ui/form';
+import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
+import { buildUniqueCourseSlug, slugify } from '@/lib/slugify';
+import { formatLeadCount } from '@/lib/formatLeadCount';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -43,6 +58,10 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import {
+  UnsavedChangesDialog,
+  useUnsavedChangesGuard,
+} from '@/components/ux/UnsavedChangesGuard';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
@@ -186,63 +205,6 @@ const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   salesPhoneVisibility: 'own_leads',
 };
 
-const schoolSchema = z.object({
-  name: z.string().trim().min(1),
-  code: z.string().trim().min(1).regex(/^[a-z0-9_-]+$/),
-  address: z.string().trim().min(1),
-  timezone: z.string().trim().min(1),
-  isActive: z.boolean(),
-});
-
-const roomSchema = z.object({
-  schoolId: z.string().min(1),
-  name: z.string().trim().min(1),
-  capacity: z.coerce.number().int().min(1),
-  isActive: z.boolean(),
-});
-
-const courseSchema = z.object({
-  name: z.string().trim().min(1),
-  ageCategory: z.string().trim().min(1),
-  description: z.string(),
-  basePriceUzs: z.coerce.number().int().min(0),
-  isActive: z.boolean(),
-});
-
-const statusSchema = z.object({
-  name: z.string().trim().min(1),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  sortOrder: z.coerce.number().int().min(0),
-  isPipeline: z.boolean(),
-  isActive: z.boolean(),
-});
-
-const groupSchema = z.object({
-  name: z.string().trim().min(1),
-  courseId: z.string().min(1),
-  schoolId: z.string().min(1),
-  roomId: z.string().min(1),
-  teacherId: z.string(),
-  lessonCount: z.coerce.number().int().min(1),
-  lessonDurationMinutes: z.coerce.number().int().min(15),
-  maxStudents: z.coerce.number().int().min(1),
-  status: z.enum(['open', 'in_progress', 'completed']),
-  startDate: z.string(),
-  endDate: z.string(),
-}).superRefine((values, context) => {
-  if (values.startDate && values.endDate && values.endDate < values.startDate) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['endDate'],
-    });
-  }
-});
-
-type SchoolValues = z.infer<typeof schoolSchema>;
-type RoomValues = z.infer<typeof roomSchema>;
-type CourseValues = z.infer<typeof courseSchema>;
-type StatusValues = z.infer<typeof statusSchema>;
-type GroupValues = z.infer<typeof groupSchema>;
 type GroupMutationValues = GroupValues & { allowFutureStart?: boolean };
 type KpiNumberSetting = 'targetRevenueMonthlyUzs' | 'targetNewLeadsMonthly' | 'maxCacUzs' | 'maxCplUzs' | 'targetRoas' | 'targetAttendancePercent' | 'targetNps';
 const AUTO_TEACHER_VALUE = 'auto';
@@ -272,50 +234,6 @@ const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekS
 };
 
 const toDateInput = academyDateInputValue;
-
-const transliterationMap: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
-  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh',
-  щ: 'sh', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-};
-
-const slugify = (value: string) => value
-  .trim()
-  .toLowerCase()
-  .split('')
-  .map((character) => transliterationMap[character] ?? character)
-  .join('')
-  .replace(/[^a-z0-9а-яё]+/gi, '-')
-  .replace(/[^a-z0-9-]+/g, '')
-  .replace(/^-+|-+$/g, '');
-
-const buildUniqueCourseSlug = (name: string, courses: Course[], ignoredCourseId?: number | null) => {
-  const baseSlug = slugify(name) || 'course';
-  const usedSlugs = new Set(
-    courses
-      .filter((course) => course.id !== ignoredCourseId)
-      .map((course) => course.slug),
-  );
-  if (!usedSlugs.has(baseSlug)) return baseSlug;
-
-  let suffix = 2;
-  while (usedSlugs.has(`${baseSlug}-${suffix}`)) suffix += 1;
-  return `${baseSlug}-${suffix}`;
-};
-
-const formatLeadCount = (
-  count: number,
-  language: string,
-  labels: { one: string; few: string; many: string },
-) => {
-  const formattedCount = new Intl.NumberFormat(language === 'ru' ? 'ru-RU' : 'en-US').format(count);
-  if (language !== 'ru') return `${formattedCount} ${count === 1 ? labels.one : labels.many}`;
-
-  const plural = new Intl.PluralRules('ru-RU').select(count);
-  const noun = plural === 'one' ? labels.one : plural === 'few' ? labels.few : labels.many;
-  return `${formattedCount} ${noun}`;
-};
 
 function EmptyTableState({ title, description }: { title: string; description: string }) {
   return (
@@ -370,6 +288,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [editingStatus, setEditingStatus] = useState<PipelineStatus | null>(null);
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
+  // Snapshot taken when the group dialog opens: lets the unsaved-changes
+  // guard notice edits made in the week-schedule editor itself.
+  const [groupScheduleBaseline, setGroupScheduleBaseline] = useState<WeekScheduleItem[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
     resource: 'schools' | 'rooms' | 'courses' | 'groups' | 'pipeline-statuses';
     id: number;
@@ -432,8 +353,15 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     t('sunday'),
   ];
 
+  // Schema factories resolve validation messages through the active language.
+  const schoolSchemaMemo = useMemo(() => createSchoolSchema(t), [t]);
+  const roomSchemaMemo = useMemo(() => createRoomSchema(t), [t]);
+  const courseSchemaMemo = useMemo(() => createCourseSchema(t), [t]);
+  const statusSchemaMemo = useMemo(() => createStatusSchema(t), [t]);
+  const groupSchemaMemo = useMemo(() => createGroupSchema(t), [t]);
+
   const schoolForm = useForm<SchoolValues>({
-    resolver: zodResolver(schoolSchema),
+    resolver: zodResolver(schoolSchemaMemo),
     defaultValues: {
       name: '',
       code: '',
@@ -444,7 +372,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   const roomForm = useForm<RoomValues>({
-    resolver: zodResolver(roomSchema),
+    resolver: zodResolver(roomSchemaMemo),
     defaultValues: {
       schoolId: '',
       name: '',
@@ -454,7 +382,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   const courseForm = useForm<CourseValues>({
-    resolver: zodResolver(courseSchema),
+    resolver: zodResolver(courseSchemaMemo),
     defaultValues: {
       name: '',
       ageCategory: '',
@@ -465,7 +393,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   const statusForm = useForm<StatusValues>({
-    resolver: zodResolver(statusSchema),
+    resolver: zodResolver(statusSchemaMemo),
     defaultValues: {
       name: '',
       color: '#2563eb',
@@ -476,7 +404,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   const groupForm = useForm<GroupValues>({
-    resolver: zodResolver(groupSchema),
+    resolver: zodResolver(groupSchemaMemo),
     defaultValues: {
       name: '',
       courseId: '',
@@ -489,6 +417,50 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       status: 'open',
       startDate: '',
       endDate: '',
+    },
+  });
+
+  // Closing any resource dialog with unsaved edits asks for confirmation
+  // instead of silently discarding them.
+  const schoolGuard = useUnsavedChangesGuard({
+    open: schoolDialogOpen,
+    isDirty: schoolForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setSchoolDialogOpen(open);
+      if (!open) setEditingSchool(null);
+    },
+  });
+  const roomGuard = useUnsavedChangesGuard({
+    open: roomDialogOpen,
+    isDirty: roomForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setRoomDialogOpen(open);
+      if (!open) setEditingRoom(null);
+    },
+  });
+  const courseGuard = useUnsavedChangesGuard({
+    open: courseDialogOpen,
+    isDirty: courseForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setCourseDialogOpen(open);
+      if (!open) setEditingCourse(null);
+    },
+  });
+  const statusGuard = useUnsavedChangesGuard({
+    open: statusDialogOpen,
+    isDirty: statusForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setStatusDialogOpen(open);
+      if (!open) setEditingStatus(null);
+    },
+  });
+  const groupGuard = useUnsavedChangesGuard({
+    open: groupDialogOpen,
+    isDirty: groupForm.formState.isDirty
+      || JSON.stringify(groupSchedule) !== JSON.stringify(groupScheduleBaseline),
+    onOpenChange: (open) => {
+      setGroupDialogOpen(open);
+      if (!open) setEditingGroup(null);
     },
   });
 
@@ -873,6 +845,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       endDate: '',
     });
     setGroupSchedule(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
+    setGroupScheduleBaseline(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
     setGroupDialogOpen(true);
   };
 
@@ -1679,7 +1652,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Tabs>
       </ModulePageBody>
 
-      <Dialog open={schoolDialogOpen} onOpenChange={setSchoolDialogOpen}>
+      <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingSchool ? t('editSchool') : t('addSchool')}</DialogTitle>
@@ -1689,33 +1662,33 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={schoolForm.handleSubmit((values) => saveSchool.mutate(values))}>
               <FormField control={schoolForm.control} name="name" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('schoolName')}</FormLabel>
+                  <FormLabel required>{t('schoolName')}</FormLabel>
                   <FormControl><Input {...field} onBlur={(event) => {
                     field.onBlur();
                     if (!schoolForm.getValues('code')) schoolForm.setValue('code', slugify(event.target.value));
                   }} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={schoolForm.control} name="code" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('code')}</FormLabel>
+                  <FormLabel required>{t('code')}</FormLabel>
                   <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={schoolForm.control} name="address" render={({ field }) => (
                 <FormItem className="md:col-span-2">
-                  <FormLabel>{t('address')}</FormLabel>
+                  <FormLabel required>{t('address')}</FormLabel>
                   <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={schoolForm.control} name="timezone" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('timezone')}</FormLabel>
+                  <FormLabel required>{t('timezone')}</FormLabel>
                   <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={schoolForm.control} name="isActive" render={({ field }) => (
@@ -1725,7 +1698,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </FormItem>
               )} />
               <div className="flex justify-end gap-2 md:col-span-2">
-                <Button type="button" variant="outline" onClick={() => setSchoolDialogOpen(false)}>{t('cancel')}</Button>
+                <Button type="button" variant="outline" onClick={() => schoolGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveSchool.isPending}>
                   {saveSchool.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                   {saveSchool.isPending ? t('saving') : t('save')}
@@ -1736,7 +1709,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </DialogContent>
       </Dialog>
 
-      <Dialog open={roomDialogOpen} onOpenChange={setRoomDialogOpen}>
+      <Dialog open={roomDialogOpen} onOpenChange={roomGuard.handleOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
@@ -1746,7 +1719,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>
               <FormField control={roomForm.control} name="schoolId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('school')}</FormLabel>
+                  <FormLabel required>{t('school')}</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -1757,21 +1730,21 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={roomForm.control} name="name" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('roomName')}</FormLabel>
+                  <FormLabel required>{t('roomName')}</FormLabel>
                   <FormControl><Input {...field} placeholder={t('roomPlaceholder')} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={roomForm.control} name="capacity" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('roomCapacity')}</FormLabel>
+                  <FormLabel required>{t('roomCapacity')}</FormLabel>
                   <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={roomForm.control} name="isActive" render={({ field }) => (
@@ -1781,7 +1754,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </FormItem>
               )} />
               <div className="flex justify-end gap-2 md:col-span-2">
-                <Button type="button" variant="outline" onClick={() => setRoomDialogOpen(false)}>{t('cancel')}</Button>
+                <Button type="button" variant="outline" onClick={() => roomGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
               </div>
             </form>
@@ -1789,7 +1762,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </DialogContent>
       </Dialog>
 
-      <Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
+      <Dialog open={courseDialogOpen} onOpenChange={courseGuard.handleOpenChange}>
         <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingCourse ? t('editCourse') : t('addCourse')}</DialogTitle>
@@ -1800,30 +1773,30 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <FormField control={courseForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
-                    <FormLabel>{t('courseName')}</FormLabel>
+                    <FormLabel required>{t('courseName')}</FormLabel>
                     <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={courseForm.control} name="ageCategory" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('ageCategory')}</FormLabel>
+                    <FormLabel required>{t('ageCategory')}</FormLabel>
                     <FormControl><Input {...field} placeholder="10–15" /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={courseForm.control} name="basePriceUzs" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('basePrice')}</FormLabel>
+                    <FormLabel required>{t('basePrice')}</FormLabel>
                     <FormControl><Input type="number" min="0" step="1000" {...field} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={courseForm.control} name="description" render={({ field }) => (
                   <FormItem className="md:col-span-2">
                     <FormLabel>{t('description')}</FormLabel>
                     <FormControl><Textarea {...field} rows={3} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
               </div>
@@ -1839,7 +1812,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               )} />
 
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setCourseDialogOpen(false)}>{t('cancel')}</Button>
+                <Button type="button" variant="outline" onClick={() => courseGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveCourse.isPending}>{saveCourse.isPending ? t('saving') : t('save')}</Button>
               </div>
             </form>
@@ -1847,7 +1820,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </DialogContent>
       </Dialog>
 
-      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+      <Dialog open={groupDialogOpen} onOpenChange={groupGuard.handleOpenChange}>
         <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
@@ -1891,23 +1864,23 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <FormField control={groupForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
-                    <FormLabel>{t('groupName')}</FormLabel>
+                    <FormLabel required>{t('groupName')}</FormLabel>
                     <FormControl><Input {...field} placeholder={t('groupNamePlaceholder')} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <GroupStatusField />
                 <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('groupCapacity')}</FormLabel>
+                    <FormLabel required>{t('groupCapacity')}</FormLabel>
                     <FormControl><Input type="number" min="1" {...field} /></FormControl>
                     <p className="text-[11px] text-muted-foreground">{t('groupCapacityDescription')}</p>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="courseId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('course')}</FormLabel>
+                    <FormLabel required>{t('course')}</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -1921,12 +1894,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="schoolId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('school')}</FormLabel>
+                    <FormLabel required>{t('school')}</FormLabel>
                     <Select value={field.value} onValueChange={(value) => {
                       field.onChange(value);
                       if (value !== selectedGroupSchoolId) groupForm.setValue('roomId', '');
@@ -1940,12 +1913,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="roomId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('room')}</FormLabel>
+                    <FormLabel required>{t('room')}</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange} disabled={!selectedGroupSchoolId}>
                       <FormControl><SelectTrigger><SelectValue placeholder={t('roomRequired')} /></SelectTrigger></FormControl>
                       <SelectContent>
@@ -1958,7 +1931,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="teacherId" render={({ field }) => (
@@ -1980,33 +1953,33 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     {groupTeachers.length === 0 ? (
                       <p className="text-xs text-muted-foreground">{t('noTeachers')}</p>
                     ) : null}
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="lessonCount" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('lessonsCount')}</FormLabel>
+                    <FormLabel required>{t('lessonsCount')}</FormLabel>
                     <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="lessonDurationMinutes" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('lessonDurationMinutes')}</FormLabel>
+                    <FormLabel required>{t('lessonDurationMinutes')}</FormLabel>
                     <FormControl><Input type="number" min="15" step="15" {...field} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="startDate" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('startDate')}</FormLabel>
+                    <FormLabel required>{t('startDate')}</FormLabel>
                     <FormControl><Input type="date" {...field} /></FormControl>
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
                 <FormField control={groupForm.control} name="endDate" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('endDate')}</FormLabel>
+                    <FormLabel required>{t('endDate')}</FormLabel>
                     <FormControl>
                       <Input
                         type="date"
@@ -2020,7 +1993,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                         {t('minimumGroupEndDate').replace('{date}', formattedMinimumGroupEndDate)}
                       </p>
                     ) : null}
-                    <FormMessage />
+                    <LocalizedFormMessage />
                   </FormItem>
                 )} />
               </div>
@@ -2044,7 +2017,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setGroupDialogOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => groupGuard.handleOpenChange(false)}>
                   {t('cancel')}
                 </Button>
                 <Button type="submit" disabled={saveGroup.isPending}>
@@ -2065,7 +2038,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         onSave={(values) => saveGroup.mutate(values)}
       />
 
-      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+      <Dialog open={statusDialogOpen} onOpenChange={statusGuard.handleOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingStatus ? t('editPipelineStage') : t('addPipelineStage')}</DialogTitle>
@@ -2077,24 +2050,24 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <FormItem>
                   <FormLabel>{t('name')}</FormLabel>
                   <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={statusForm.control} name="color" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('color')}</FormLabel>
+                  <FormLabel required>{t('color')}</FormLabel>
                   <div className="flex gap-2">
                     <FormControl><Input type="color" className="w-16 p-1" {...field} /></FormControl>
                     <Input value={field.value} onChange={field.onChange} />
                   </div>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={statusForm.control} name="sortOrder" render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t('sortOrder')}</FormLabel>
                   <FormControl><Input type="number" min="0" step="10" {...field} /></FormControl>
-                  <FormMessage />
+                  <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={statusForm.control} name="isPipeline" render={({ field }) => (
@@ -2110,7 +2083,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </FormItem>
               )} />
               <div className="flex justify-end gap-2 md:col-span-2">
-                <Button type="button" variant="outline" onClick={() => setStatusDialogOpen(false)}>{t('cancel')}</Button>
+                <Button type="button" variant="outline" onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button
                   type="submit"
                   disabled={saveStatus.isPending}
@@ -2294,6 +2267,32 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         onConfirm={() => {
           if (deleteTarget) deleteResource.mutate(deleteTarget);
         }}
+      />
+
+      <UnsavedChangesDialog
+        open={schoolGuard.confirmationOpen}
+        onOpenChange={schoolGuard.setConfirmationOpen}
+        onDiscard={schoolGuard.discardChanges}
+      />
+      <UnsavedChangesDialog
+        open={roomGuard.confirmationOpen}
+        onOpenChange={roomGuard.setConfirmationOpen}
+        onDiscard={roomGuard.discardChanges}
+      />
+      <UnsavedChangesDialog
+        open={courseGuard.confirmationOpen}
+        onOpenChange={courseGuard.setConfirmationOpen}
+        onDiscard={courseGuard.discardChanges}
+      />
+      <UnsavedChangesDialog
+        open={groupGuard.confirmationOpen}
+        onOpenChange={groupGuard.setConfirmationOpen}
+        onDiscard={groupGuard.discardChanges}
+      />
+      <UnsavedChangesDialog
+        open={statusGuard.confirmationOpen}
+        onOpenChange={statusGuard.setConfirmationOpen}
+        onDiscard={statusGuard.discardChanges}
       />
     </ModulePage>
   );

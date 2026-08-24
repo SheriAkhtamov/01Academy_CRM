@@ -44,9 +44,9 @@ export function ScheduleMonthGrid({
     <div className="h-full overflow-auto overscroll-contain">
       <div className="min-w-[640px]">
         <div className="sticky top-0 z-20 grid grid-cols-7 border-b border-border bg-card/95 backdrop-blur-sm">
-          {dayNames.map((dayName) => (
+          {dayNames.map((dayName, index) => (
             <div
-              key={dayName}
+              key={`day-header-`}
               className="px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
             >
               {dayName}

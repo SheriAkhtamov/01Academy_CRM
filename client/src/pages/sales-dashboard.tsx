@@ -21,6 +21,7 @@ import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { toast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ux/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -67,7 +68,8 @@ import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
-import { addReportingDays, isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
+import { addReportingDays, isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
+import { useStickyState } from '@/hooks/useStickyState';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -271,20 +273,6 @@ function LocalizedFormMessage() {
     <p id={formMessageId} className="text-sm font-medium text-destructive">
       {t(key)}
     </p>
-  );
-}
-
-function EmptyState({ title, text, icon: Icon = TrendingUp }: { title: string; text: string; icon?: any }) {
-  return (
-    <Card className="border-dashed">
-      <CardContent className="py-14 px-6 text-center">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
-          <Icon className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">{text}</p>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -530,8 +518,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (Number.isNaN(date.getTime())) return t('noData');
     return date.toLocaleString(locale, {
       timeZone: ACADEMY_TIME_ZONE,
-      dateStyle: 'short',
-      timeStyle: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -553,16 +544,29 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveCustomReason, setArchiveCustomReason] = useState('');
   const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
   const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
+  // The reporting preset sticks: switching sections and coming back used to
+  // silently reset the metrics to "today" mid-comparison.
+  const [storedReportingPreset, setStoredReportingPreset] = useStickyState<string>('sales-overview-range', 'today');
+  const [reportingRange, setReportingRange] = useState(() => (
+    isReportingPresetKey(storedReportingPreset)
+      ? reportingRangeForPreset(storedReportingPreset)
+      : reportingRangeForPreset('today')
+  ));
+  const handleReportingRangeChange = useCallback((next: typeof reportingRange) => {
+    setReportingRange(next);
+    setStoredReportingPreset(next.preset);
+  }, [setStoredReportingPreset]);
 
-  const replaceSalesParams = useCallback((changes: Record<string, string | null>) => {
+  const replaceSalesParams = useCallback((changes: Record<string, string | null>, options?: { push?: boolean }) => {
     const params = new URLSearchParams(routeSearch);
     Object.entries(changes).forEach(([key, value]) => {
       if (value === null) params.delete(key);
       else params.set(key, value);
     });
     const query = params.toString();
-    setLocation(query ? `${pagePath}?${query}` : pagePath, { replace: true });
+    // Push when opening a sheet so browser Back closes it instead of leaving
+    // the page; closing strips the param in place.
+    setLocation(query ? `${pagePath}?${query}` : pagePath, { replace: !options?.push });
   }, [pagePath, routeSearch, setLocation]);
 
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
@@ -884,11 +888,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   // The red "new lead" dot stays until its card is actually opened.
   useLeadViewTracking({ leadId: selectedLeadId, open: leadSheetOpen, leads: myLeads });
 
-  const openLead = useCallback((leadId: number, tab: LeadSheetTab = 'deal') => {
+  const openLead = useCallback((leadId: number, tab: LeadSheetTab = "deal") => {
     setSelectedLeadId(leadId);
     setLeadSheetTab(tab);
     setLeadSheetOpen(true);
-    replaceSalesParams({ lead: String(leadId), student: null });
+    replaceSalesParams({ lead: String(leadId), student: null }, { push: true });
   }, [replaceSalesParams]);
 
   const handleLeadSheetState = useCallback((open: boolean) => {
@@ -902,7 +906,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const openStudent = useCallback((student: Student) => {
     setSelectedStudent(student);
     setStudentSheetOpen(true);
-    replaceSalesParams({ student: String(student.id), lead: null });
+    replaceSalesParams({ student: String(student.id), lead: null }, { push: true });
   }, [replaceSalesParams]);
 
   const handleStudentSheetState = useCallback((open: boolean) => {
@@ -1108,7 +1112,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
       {section === 'overview' ? (
         <div className="space-y-5">
-          <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
+          <ReportingDateRangeFilter value={reportingRange} onChange={handleReportingRangeChange} />
           <SalesOverviewMetrics
             reportingRange={reportingRange}
             isAdministrationModule={isAdministrationModule}
@@ -1142,6 +1146,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           onArchiveLead={openArchiveDialog}
           onStatusChange={async (leadId, statusCode) => {
             if (statusCode === 'paid') {
+              // The move is rejected (the card snaps back): explain why instead
+              // of leaving the user to guess.
+              toast({ title: t('paidMoveRequiresPaymentTitle'), description: t('paidMoveRequiresPaymentDescription') });
               openLead(leadId, 'payment');
               return false;
             }
@@ -1416,7 +1423,7 @@ function StudentsTab({
       render: (student: Student) => (
         <div className="w-28">
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-muted-foreground">{student.attendancePercent}%</span>
+            <span className="tabular-nums text-muted-foreground">{student.attendancePercent}%</span>
           </div>
           <Progress value={student.attendancePercent} />
         </div>
@@ -1430,7 +1437,7 @@ function StudentsTab({
       render: (student: Student) => (
         <div className="w-28">
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-muted-foreground">{student.progressPercent}%</span>
+            <span className="tabular-nums text-muted-foreground">{student.progressPercent}%</span>
           </div>
           <Progress value={student.progressPercent} />
         </div>
@@ -1440,7 +1447,12 @@ function StudentsTab({
       key: 'paymentStatus',
       header: t('paymentStatus'),
       sortable: true,
-      accessor: (student: Student) => student.paymentStatus || student.status,
+      // Sort by the same derived value the cell renders, so a row displaying
+      // "Overdue" cannot sort as if it were "pending".
+      accessor: (student: Student) => {
+        const isOverdue = student.nextPaymentAt && new Date(student.nextPaymentAt) < new Date();
+        return isOverdue ? 'overdue' : student.paymentStatus ?? 'paid';
+      },
       render: (student: Student) => {
         const isOverdue = student.nextPaymentAt && new Date(student.nextPaymentAt) < new Date();
         const paymentStatus = isOverdue ? 'overdue' : student.paymentStatus ?? 'paid';
@@ -1468,7 +1480,7 @@ function StudentsTab({
             keyExtractor={(student: Student) => `student-${student.id}`}
             emptyState={
               <div className="p-8">
-                <EmptyState title={t('noClientsYet')} text={t('noClientsYetDesc')} icon={UserCheck} />
+                <EmptyState title={t('noClientsYet')} description={t('noClientsYetDesc')} icon={UserCheck} />
               </div>
             }
             onRowClick={openStudent}
@@ -1507,8 +1519,34 @@ function LeadForm({
   managers: Array<{ id: number; fullName: string }>;
   managerSelectDisabled: boolean;
 }) {
-  const phoneNumbers = form.watch('phoneNumbers') ?? [''];
-  const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
+  const phoneNumbersRaw = form.watch('phoneNumbers');
+  const phoneValues = useMemo(() => (phoneNumbersRaw && phoneNumbersRaw.length > 0 ? phoneNumbersRaw : ['']), [phoneNumbersRaw]);
+  /*
+    Parallel stable ids for the phone rows: React must not reuse one input's
+    DOM node for a different logical phone after deleting a middle row (focus
+    and IME composition would attach to the wrong field). RHF's useFieldArray
+    cannot type arrays of plain strings, so ids are tracked alongside.
+  */
+  const [phoneKeys, setPhoneKeys] = useState<string[]>(() => phoneValues.map((_, i) => `phone-${Date.now()}-${i}`));
+  useEffect(() => {
+    setPhoneKeys((current) => {
+      if (current.length === phoneValues.length) return current;
+      if (current.length > phoneValues.length) return current.slice(0, phoneValues.length);
+      return [...current, ...phoneValues.slice(current.length).map((_, i) => `phone-new-${Date.now()}-${current.length + i}`)];
+    });
+  }, [phoneValues]);
+  const addPhoneRow = () => {
+    setPhoneKeys((current) => [...current, `phone-new-${Date.now()}-${current.length}`]);
+    form.setValue('phoneNumbers', [...phoneValues, ''], { shouldDirty: true, shouldValidate: true });
+  };
+  const removePhoneRow = (index: number) => {
+    setPhoneKeys((current) => current.filter((_, i) => i !== index));
+    const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+    form.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  };
   const activeSources = (data.sources ?? []).filter((source: any) => source.isActive !== false);
   const phoneNumbersMessage = typeof form.formState.errors.phoneNumbers?.message === 'string'
     ? form.formState.errors.phoneNumbers.message as TranslationKey
@@ -1525,7 +1563,7 @@ function LeadForm({
           name="contactName"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('contactPersonName')}</FormLabel>
+              <FormLabel required>{t('contactPersonName')}</FormLabel>
               <FormControl><Input {...field} placeholder={t('parentNamePlaceholder')} /></FormControl>
               <LocalizedFormMessage />
             </FormItem>
@@ -1534,7 +1572,9 @@ function LeadForm({
         <div className="flex flex-col gap-3">
           {phoneValues.map((_, index) => (
             <FormField
-              key={index}
+              // Stable per-row ids: deleting a middle phone must not shift
+              // input identity (focus/cursor jumps).
+              key={phoneKeys[index] ?? `phone-fallback-${index}`}
               control={form.control}
               name={`phoneNumbers.${index}`}
               render={({ field }) => (
@@ -1556,13 +1596,7 @@ function LeadForm({
                         variant="outline"
                         size="icon"
                         aria-label={t('removePhone')}
-                        onClick={() => {
-                          const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
-                          form.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
-                        }}
+                        onClick={() => removePhoneRow(index)}
                       >
                         <Trash2 />
                       </Button>
@@ -1576,18 +1610,7 @@ function LeadForm({
           {phoneNumbersMessage ? (
             <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-fit"
-            onClick={() => {
-              form.setValue('phoneNumbers', [...phoneValues, ''], {
-                shouldDirty: true,
-                shouldValidate: true,
-              });
-            }}
-          >
+          <Button type="button" variant="outline" size="sm" className="w-fit" onClick={addPhoneRow}>
             <Plus data-icon="inline-start" />
             {t('addPhone')}
           </Button>
@@ -1597,7 +1620,7 @@ function LeadForm({
           name="sourceId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('source')}</FormLabel>
+              <FormLabel required>{t('source')}</FormLabel>
               <Select value={field.value} onValueChange={field.onChange}>
                 <FormControl><SelectTrigger><SelectValue placeholder={t('selectSource')} /></SelectTrigger></FormControl>
                 <SelectContent>
@@ -1654,6 +1677,7 @@ function LeadForm({
                   <SelectGroup>
                     <SelectItem value="ru">{t('russian')}</SelectItem>
                     <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
+                    <SelectItem value="en">{t('english')}</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>

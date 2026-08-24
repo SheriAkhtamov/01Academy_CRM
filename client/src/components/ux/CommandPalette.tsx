@@ -14,6 +14,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import {
+  AlertCircle,
   BookOpen,
   Flame,
   GraduationCap,
@@ -124,11 +125,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // search request per keystroke; the local navigation filter stays instant.
   const queriedSearch = useDeferredValue(normalizedSearch);
 
-  const { data: serverResults = [], isFetching } = useQuery<ServerSearchItem[]>({
+  const { data: serverResults = [], isFetching, isError: searchError } = useQuery<ServerSearchItem[]>({
     queryKey: ['academy-search', queriedSearch],
     queryFn: () => apiRequest('GET', `/api/academy/search?q=${encodeURIComponent(queriedSearch)}&limit=8`),
     enabled: open && queriedSearch.length >= 2,
     staleTime: 30_000,
+    retry: 1,
   });
 
   const iconForEntity = (entityType: string) => {
@@ -193,6 +195,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // issued yet — treat that as "still searching" so "nothing found" cannot flash.
   const searchPending = isFetching || normalizedSearch !== queriedSearch;
   const showSearching = normalizedSearch.length >= 2 && searchPending && !showEntities;
+  // A failed search must not read as "no results" — that makes people believe
+  // the record does not exist when the endpoint simply errored.
+  const showSearchError = normalizedSearch.length >= 2
+    && !searchPending
+    && searchError
+    && !showNavigation;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
@@ -220,8 +228,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             <p className="text-sm text-muted-foreground">{t('loading')}</p>
           </CommandEmpty>
         )}
-        {normalizedSearch.length >= 2 && !searchPending && !showNavigation && !showEntities && (
+        {normalizedSearch.length >= 2 && !searchPending && !showNavigation && !showEntities && !searchError && (
           <CommandEmpty>{t('noSearchResults')}</CommandEmpty>
+        )}
+        {showSearchError && (
+          <CommandEmpty className="py-8 text-center">
+            <AlertCircle className="mx-auto h-6 w-6 text-destructive mb-2" />
+            <p className="text-sm text-destructive">{t('failedToLoadData')}</p>
+          </CommandEmpty>
         )}
         {showNavigation && (
           <CommandGroup heading={t('navigation')}>

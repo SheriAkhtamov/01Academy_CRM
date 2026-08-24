@@ -1,12 +1,28 @@
 import {
   addDays,
   addMinutes,
-  differenceInCalendarDays,
   startOfDay,
   startOfWeek,
 } from 'date-fns';
 import type { AcademyScheduleItem } from '@shared/scheduling';
 import { assignCalendarLanes } from '@/lib/calendarLanes';
+import { academyDateInputValue, academyInstant, academyMinutesOfDay } from '@/lib/localeFormat';
+
+const DAY_MS = 86_400_000;
+
+/** `yyyy-MM-dd` of an instant on the academy clock (not the device clock). */
+const academyDayKeyOf = (instant: Date) => academyDateInputValue(instant);
+
+const dayKeyToUtcMs = (key: string) => Date.parse(`${key}T00:00:00Z`);
+
+/** Whole days between two academy date keys. */
+export const academyDayDiff = (fromKey: string, toKey: string) => (
+  Math.round((dayKeyToUtcMs(fromKey) - dayKeyToUtcMs(toKey)) / DAY_MS)
+);
+
+const shiftDayKey = (key: string, days: number) => (
+  new Date(dayKeyToUtcMs(key) + days * DAY_MS).toISOString().slice(0, 10)
+);
 
 export interface SalesScheduleGroup {
   id: number;
@@ -108,13 +124,17 @@ export function buildSalesDemoScheduleEvents(
   weekStart: Date,
 ): SalesScheduleEvent[] {
   const normalizedWeekStart = startOfDay(weekStart);
-  const weekEnd = addDays(normalizedWeekStart, 7);
+  const weekStartKey = academyDayKeyOf(normalizedWeekStart);
   return demos.flatMap((demo) => {
     if (demo.status === 'cancelled') return [];
     const startsAt = new Date(demo.scheduledAt);
-    if (Number.isNaN(startsAt.getTime()) || startsAt < normalizedWeekStart || startsAt >= weekEnd) return [];
+    if (Number.isNaN(startsAt.getTime())) return [];
+    const dayKey = academyDayKeyOf(startsAt);
+    const offsetDays = academyDayDiff(dayKey, weekStartKey);
+    // The week window is defined on the academy clock, matching the columns.
+    if (offsetDays < 0 || offsetDays >= 7) return [];
     const durationMinutes = Math.max(15, Number(demo.durationMinutes || 60));
-    const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+    const startMinutes = academyMinutesOfDay(startsAt);
     return [{
       id: `demo-${demo.id}`,
       source: 'demo' as const,
@@ -129,7 +149,7 @@ export function buildSalesDemoScheduleEvents(
       demoLessonId: demo.id,
       startsAt,
       endsAt: addMinutes(startsAt, durationMinutes),
-      dayIndex: differenceInCalendarDays(startsAt, normalizedWeekStart),
+      dayIndex: offsetDays,
       startMinutes,
       endMinutes: startMinutes + durationMinutes,
     }];
@@ -141,10 +161,6 @@ export interface PositionedScheduleEvent extends SalesScheduleEvent {
   laneCount: number;
 }
 
-const localDateKey = (date: Date) => (
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-);
-
 const parseTimeToMinutes = (value: unknown): number | null => {
   const match = String(value ?? '').match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
@@ -153,6 +169,8 @@ const parseTimeToMinutes = (value: unknown): number | null => {
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return hours * 60 + minutes;
 };
+
+const dayKeyToColumnDate = (key: string) => new Date(`${key}T12:00:00`);
 
 const isDateInsideGroupRange = (date: Date, group: SalesScheduleGroup) => {
   const value = startOfDay(date).getTime();
@@ -169,7 +187,9 @@ const toEvent = (
   if (Number.isNaN(startsAt.getTime())) return null;
   const durationMinutes = Math.max(15, Number(lesson.durationMinutes || 60));
   const endsAt = addMinutes(startsAt, durationMinutes);
-  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+  // Minutes on the academy clock: the browser-local getter shifts lessons on
+  // devices outside +05 and misaligns them against recurring timetable slots.
+  const startMinutes = academyMinutesOfDay(startsAt);
 
   return {
     id: `lesson-${lesson.id}`,
@@ -203,21 +223,23 @@ export function buildSalesScheduleEvents({
   weekStart: Date;
 }): SalesScheduleEvent[] {
   const normalizedWeekStart = startOfDay(weekStart);
-  const weekEnd = addDays(normalizedWeekStart, 7);
+  const weekStartKey = academyDayKeyOf(normalizedWeekStart);
   const groupById = new Map(groups.map((group) => [group.id, group]));
 
   const actualEvents = lessons.flatMap((lesson) => {
     if (lesson.status === 'cancelled') return [];
     const event = toEvent(lesson, groupById.get(lesson.groupId));
-    if (!event || event.startsAt < normalizedWeekStart || event.startsAt >= weekEnd) return [];
+    if (!event) return [];
+    const offsetDays = academyDayDiff(academyDayKeyOf(event.startsAt), weekStartKey);
+    if (offsetDays < 0 || offsetDays >= 7) return [];
     return [{
       ...event,
-      dayIndex: differenceInCalendarDays(event.startsAt, normalizedWeekStart),
+      dayIndex: offsetDays,
     }];
   });
 
   const actualGroupDays = new Set(
-    actualEvents.map((event) => `${event.groupId}:${localDateKey(event.startsAt)}`),
+    actualEvents.map((event) => `${event.groupId}:${academyDayKeyOf(event.startsAt)}`),
   );
 
   const recurringEvents = groups.flatMap((group) => {
@@ -229,9 +251,11 @@ export function buildSalesScheduleEvents({
       const startMinutes = parseTimeToMinutes(item.startTime ?? item.time);
       if (dayOfWeek < 1 || dayOfWeek > 7 || startMinutes === null) return [];
 
-      const date = addDays(normalizedWeekStart, dayOfWeek - 1);
-      if (!isDateInsideGroupRange(date, group)) return [];
-      if (actualGroupDays.has(`${group.id}:${localDateKey(date)}`)) return [];
+      const columnKey = shiftDayKey(weekStartKey, dayOfWeek - 1);
+      // Noon keeps the range check on the intended calendar day regardless of
+      // the device time zone.
+      if (!isDateInsideGroupRange(dayKeyToColumnDate(columnKey), group)) return [];
+      if (actualGroupDays.has(`${group.id}:${columnKey}`)) return [];
 
       const parsedEnd = parseTimeToMinutes(item.endTime);
       const endMinutes = parsedEnd && parsedEnd > startMinutes
@@ -239,23 +263,21 @@ export function buildSalesScheduleEvents({
         : Math.min(24 * 60, startMinutes + durationMinutes);
       if (endMinutes <= startMinutes) return [];
 
-      const startsAt = new Date(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        Math.floor(startMinutes / 60),
-        startMinutes % 60,
+      // Real academy instants so sorting and downstream formatting agree with
+      // booked lessons; the grid itself positions via dayIndex/startMinutes.
+      const startsAt = academyInstant(
+        columnKey,
+        `${String(Math.floor(startMinutes / 60)).padStart(2, '0')}:${String(startMinutes % 60).padStart(2, '0')}`,
       );
-      const endsAt = new Date(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        Math.floor(endMinutes / 60),
-        endMinutes % 60,
+      const endDayKey = endMinutes >= 24 * 60 ? shiftDayKey(columnKey, 1) : columnKey;
+      const endMinuteOfDay = endMinutes % (24 * 60);
+      const endsAt = academyInstant(
+        endDayKey,
+        `${String(Math.floor(endMinuteOfDay / 60)).padStart(2, '0')}:${String(endMinuteOfDay % 60).padStart(2, '0')}`,
       );
 
       return [{
-        id: `group-${group.id}-${localDateKey(date)}-${scheduleIndex}`,
+        id: `group-${group.id}-${columnKey}-${scheduleIndex}`,
         source: 'recurring' as const,
         groupId: group.id,
         groupName: group.name,
@@ -280,7 +302,7 @@ export function buildSalesScheduleEvents({
   ));
 }
 
-export const salesScheduleDateKey = (event: SalesScheduleEvent) => localDateKey(event.startsAt);
+export const salesScheduleDateKey = (event: SalesScheduleEvent) => academyDayKeyOf(event.startsAt);
 
 /**
  * Recurring lessons are expanded a week at a time because a weekly timetable is
@@ -302,9 +324,11 @@ export function buildSalesScheduleRangeEvents({
   dayCount: number;
 }): SalesScheduleEvent[] {
   const start = startOfDay(rangeStart);
-  const end = addDays(start, Math.max(1, dayCount));
+  const startKey = academyDayKeyOf(start);
+  const endKey = shiftDayKey(startKey, Math.max(1, dayCount));
   const gridStart = startOfWeek(start, { weekStartsOn: 1 });
-  const weeks = Math.max(1, Math.ceil(differenceInCalendarDays(end, gridStart) / 7));
+  const gridStartKey = academyDayKeyOf(gridStart);
+  const weeks = Math.max(1, Math.ceil(academyDayDiff(endKey, gridStartKey) / 7));
 
   const expanded: SalesScheduleEvent[] = [];
   for (let index = 0; index < weeks; index += 1) {
@@ -316,10 +340,11 @@ export function buildSalesScheduleRangeEvents({
   }
 
   return expanded
-    .filter((event) => event.startsAt >= start && event.startsAt < end)
-    .map((event) => ({
+    .map((event) => ({ event, key: academyDayKeyOf(event.startsAt) }))
+    .filter(({ key }) => key >= startKey && key < endKey)
+    .map(({ event, key }) => ({
       ...event,
-      dayIndex: differenceInCalendarDays(event.startsAt, start),
+      dayIndex: academyDayDiff(key, startKey),
     }))
     .sort((left, right) => (
       left.startsAt.getTime() - right.startsAt.getTime()

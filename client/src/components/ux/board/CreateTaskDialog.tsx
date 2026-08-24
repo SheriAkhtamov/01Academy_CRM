@@ -122,7 +122,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-1.5">
-                        <Label htmlFor="create-task-title" className="text-xs text-muted-foreground">{t('taskTitle')}</Label>
+                        <Label htmlFor="create-task-title" className="text-xs text-muted-foreground">{t('taskTitle')} <span aria-hidden="true" className="select-none text-destructive">*</span></Label>
                         <Input
                             id="create-task-title"
                             value={title}

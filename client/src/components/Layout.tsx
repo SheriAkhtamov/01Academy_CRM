@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -7,6 +7,7 @@ import { useLocation } from 'wouter';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { RealtimeStatusBanner } from '@/components/ux/RealtimeStatusBanner';
+import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 import { PageTransition } from '@/components/ux/motion';
 import { SPRING, TRANSITION } from '@/lib/motion';
 import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
@@ -15,11 +16,69 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+const scrollPositionKey = (path: string) => `app-scroll:${path}`;
+
 export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const { t } = useTranslation();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Scroll restoration: push navigations start at the top, Back/Forward
+  // restores where the user was. `<main>` is the permanent document scroller.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const lastLocation = useRef(location);
+  const popNavigation = useRef(false);
+
+  useEffect(() => {
+    const markPop = () => {
+      popNavigation.current = true;
+    };
+    window.addEventListener('popstate', markPop);
+    return () => window.removeEventListener('popstate', markPop);
+  }, []);
+
+  useEffect(() => {
+    if (lastLocation.current === location) return undefined;
+    const isPop = popNavigation.current;
+    popNavigation.current = false;
+    lastLocation.current = location;
+    const el = mainRef.current;
+    if (!el) return undefined;
+    if (!isPop) {
+      el.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+      return undefined;
+    }
+    let saved = 0;
+    try {
+      saved = Number(sessionStorage.getItem(scrollPositionKey(location)) ?? '0');
+    } catch {
+      saved = 0;
+    }
+    const frame = requestAnimationFrame(() => {
+      el.scrollTo({ top: saved, behavior: 'instant' as ScrollBehavior });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location]);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return undefined;
+    let scheduled = false;
+    const saveScroll = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        try {
+          sessionStorage.setItem(scrollPositionKey(location), String(Math.round(el.scrollTop)));
+        } catch {
+          // Storage full/unavailable — losing scroll restore is acceptable.
+        }
+      });
+    };
+    el.addEventListener('scroll', saveScroll, { passive: true });
+    return () => el.removeEventListener('scroll', saveScroll);
+  }, [location]);
 
   // The drawer dims the page and traps the eye like a dialog, so it answers to
   // Escape like one. Bound only while it is open, so it can never swallow an
@@ -62,12 +121,22 @@ export default function Layout({ children }: LayoutProps) {
       {/*
         The drawer transform stays on Tailwind rather than framer: `md:translate-x-0`
         is what keeps the sidebar docked on desktop, and an inline transform from
-        framer would win over that class and strand it off-screen.
+        framer would win over that class and strand it off-screen. While closed
+        the drawer is `invisible`, so its off-screen links leave the tab order
+        and screen-reader tree; the visibility switch is delayed on close until
+        the slide-out finishes.
       */}
-      <div className={`
-        fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] md:relative md:translate-x-0 md:z-auto
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
+      <div
+        className={`
+          fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] md:relative md:translate-x-0 md:visible md:z-auto
+          ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
+        `}
+        style={{
+          transitionProperty: 'transform, visibility',
+          transitionTimingFunction: 'cubic-bezier(0.16,1,0.3,1), linear',
+          transitionDelay: sidebarOpen ? '0ms, 0ms' : '0ms, 300ms',
+        }}
+      >
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       </div>
 
@@ -81,19 +150,25 @@ export default function Layout({ children }: LayoutProps) {
           but the moment a nested height chain collapses, the rows land in a
           scroller instead of behind a clipped edge. Only the reserved gutter is
           conditional: contained pages already reserve one further in.
+
+          The page boundary sits inside the layout so a crash in one page no
+          longer wipes the header, sidebar and telephony widget with it.
         */}
         <main
+          ref={mainRef}
           className={`min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain ${
             containsOwnScrollArea ? '' : '[scrollbar-gutter:stable]'
           }`}
           data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}
         >
-          <PageTransition
-            routeKey={location}
-            className={`min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full' : ''}`}
-          >
-            {children}
-          </PageTransition>
+          <AppErrorBoundary variant="page">
+            <PageTransition
+              routeKey={location}
+              className={`min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full' : ''}`}
+            >
+              {children}
+            </PageTransition>
+          </AppErrorBoundary>
         </main>
       </div>
     </div>

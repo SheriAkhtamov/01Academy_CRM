@@ -739,8 +739,30 @@ export function LeadDetailSheet({
     onError: (error: Error) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
-  const phoneNumbers = leadForm.watch('phoneNumbers') ?? [''];
-  const phoneValues = phoneNumbers.length > 0 ? phoneNumbers : [''];
+  const phoneNumbersRaw = leadForm.watch('phoneNumbers');
+  const phoneValues = useMemo(() => (phoneNumbersRaw && phoneNumbersRaw.length > 0 ? phoneNumbersRaw : ['']), [phoneNumbersRaw]);
+  // Parallel stable ids so deleting a middle phone does not shift input
+  // identity across rows (see matching logic in the new-lead form).
+  const [phoneKeys, setPhoneKeys] = useState<string[]>(() => phoneValues.map((_, i) => `lead-phone-${i}`));
+  useEffect(() => {
+    setPhoneKeys((current) => {
+      if (current.length === phoneValues.length) return current;
+      if (current.length > phoneValues.length) return current.slice(0, phoneValues.length);
+      return [...current, ...phoneValues.slice(current.length).map((_, i) => `lead-phone-new-${current.length + i}`)];
+    });
+  }, [phoneValues]);
+  const addLeadPhoneRow = () => {
+    setPhoneKeys((current) => [...current, `lead-phone-new-${current.length}`]);
+    leadForm.setValue('phoneNumbers', [...phoneValues, ''], { shouldDirty: true, shouldValidate: true });
+  };
+  const removeLeadPhoneRow = (index: number) => {
+    setPhoneKeys((current) => current.filter((_, i) => i !== index));
+    const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+    leadForm.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  };
   const phoneNumbersMessage = typeof leadForm.formState.errors.phoneNumbers?.message === 'string'
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
@@ -1069,7 +1091,7 @@ export function LeadDetailSheet({
                           <div className="flex flex-col gap-3">
                             {phoneValues.map((_, index) => (
                               <FormField
-                                key={index}
+                                key={phoneKeys[index] ?? `lead-phone-fallback-${index}`}
                                 control={leadForm.control}
                                 name={`phoneNumbers.${index}`}
                                 render={({ field }) => (
@@ -1085,13 +1107,7 @@ export function LeadDetailSheet({
                                           variant="outline"
                                           size="icon"
                                           aria-label={t('removePhone')}
-                                          onClick={() => {
-                                            const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
-                                            leadForm.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
-                                              shouldDirty: true,
-                                              shouldValidate: true,
-                                            });
-                                          }}
+                                          onClick={() => removeLeadPhoneRow(index)}
                                         >
                                           <Trash2 />
                                         </Button>
@@ -1110,12 +1126,7 @@ export function LeadDetailSheet({
                               variant="outline"
                               size="sm"
                               className="w-fit"
-                              onClick={() => {
-                                leadForm.setValue('phoneNumbers', [...phoneValues, ''], {
-                                  shouldDirty: true,
-                                  shouldValidate: true,
-                                });
-                              }}
+                              onClick={addLeadPhoneRow}
                             >
                               <Plus data-icon="inline-start" />
                               {t('addPhone')}
@@ -1134,6 +1145,7 @@ export function LeadDetailSheet({
                                   options={[
                                     { value: 'ru', label: t('russian') },
                                     { value: 'uz', label: t('uzbekLang') },
+                                    { value: 'en', label: t('english') },
                                   ]}
                                 />
                                 <LocalizedFormMessage />

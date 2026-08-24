@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -78,7 +78,7 @@ export function StudentDetailSheet({
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [groupMutation, setGroupMutation] = useState<string | null>(null);
   const [confirmRemoveGroupId, setConfirmRemoveGroupId] = useState<number | null>(null);
-  const [confirmExpel, setConfirmExpel] = useState(false);
+  const [confirmStatus, setConfirmStatus] = useState<'paused' | 'completed' | 'expelled' | null>(null);
   // Hold onto the last non-null student so the sheet can animate out on close
   // instead of unmounting the instant the parent clears the selection.
   const [heldStudent, setHeldStudent] = useState(student);
@@ -90,15 +90,30 @@ export function StudentDetailSheet({
     if (open) setActiveTab('info');
     setSelectedGroupId('');
     setConfirmRemoveGroupId(null);
-    setConfirmExpel(false);
+    setConfirmStatus(null);
   }, [open, student?.id]);
 
+  /*
+    Seed the status drafts from server data without wiping an in-progress edit:
+    while the sheet is open, values are adopted only when the server state for
+    this student actually changed (someone else updated it, or a save landed).
+    A plain background refetch keeps its old object identity but the same
+    status, so the draft survives it.
+  */
+  const seededStatusRef = useRef('');
   useEffect(() => {
-    if (student) {
-      setStatusDraft(String(student.status ?? 'studying'));
-      setExitReason(String(student.exitReason ?? ''));
+    const nextKey = `${student?.id ?? ''}:${String(student?.status ?? 'studying')}:${String(student?.exitReason ?? '')}`;
+    if (!open) {
+      setStatusDraft(String(student?.status ?? 'studying'));
+      setExitReason(String(student?.exitReason ?? ''));
+      seededStatusRef.current = nextKey;
+      return;
     }
-  }, [student]);
+    if (seededStatusRef.current === nextKey) return;
+    seededStatusRef.current = nextKey;
+    setStatusDraft(String(student?.status ?? 'studying'));
+    setExitReason(String(student?.exitReason ?? ''));
+  }, [open, student]);
 
   if (!heldStudent) return null;
   const currentStudent = heldStudent;
@@ -311,11 +326,15 @@ export function StudentDetailSheet({
                   size="sm"
                   disabled={savingStatus || (['paused', 'expelled'].includes(statusDraft) && !exitReason)}
                   onClick={() => {
-                    if (statusDraft === 'expelled' && statusDraft !== String(currentStudent.status ?? 'studying')) {
-                      setConfirmExpel(true);
-                    } else {
-                      void handleSaveStatus();
+                    const previous = String(currentStudent.status ?? 'studying');
+                    const changed = statusDraft !== previous;
+                    // Lifecycle statuses stop billing/attendance tracking, so a
+                    // real change asks for confirmation first.
+                    if (changed && ['paused', 'completed', 'expelled'].includes(statusDraft)) {
+                      setConfirmStatus(statusDraft as 'paused' | 'completed' | 'expelled');
+                      return;
                     }
+                    void handleSaveStatus();
                   }}
                 >
                   {savingStatus ? ceoCopy.student.saving : ceoCopy.student.saveStatus}
@@ -504,16 +523,25 @@ export function StudentDetailSheet({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={confirmExpel} onOpenChange={setConfirmExpel}>
+      <AlertDialog open={confirmStatus !== null} onOpenChange={(open) => { if (!open) setConfirmStatus(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('expelStudentTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('expelStudentConfirm')}</AlertDialogDescription>
+            <AlertDialogTitle>
+              {confirmStatus === 'expelled' ? t('expelStudentTitle') : t('studentStatusChangeTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmStatus === 'expelled'
+                ? t('expelStudentConfirm')
+                : (t('studentStatusChangeDescription') || '').replace(
+                  '{status}',
+                  confirmStatus === 'paused' ? ceoCopy.student.paused : ceoCopy.student.completed,
+                )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => { setConfirmExpel(false); void handleSaveStatus(); }}>
-              {t('expelStudentTitle')}
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => { setConfirmStatus(null); void handleSaveStatus(); }}>
+              {confirmStatus === 'expelled' ? t('expelStudentTitle') : ceoCopy.student.saveStatus}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

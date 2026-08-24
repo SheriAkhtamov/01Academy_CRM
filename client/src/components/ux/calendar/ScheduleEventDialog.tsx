@@ -1,4 +1,3 @@
-import { format } from 'date-fns';
 import type { Locale } from 'date-fns';
 import {
   BookOpen,
@@ -21,6 +20,7 @@ import {
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
 import { useTranslation } from '@/hooks/useTranslation';
+import { academyDateTimeFormat } from '@/lib/localeFormat';
 import type { SalesScheduleEvent } from '@/lib/salesSchedule';
 
 interface ScheduleEventDialogProps {
@@ -35,10 +35,9 @@ export function ScheduleEventDialog({
   event,
   open,
   onOpenChange,
-  locale,
   groupIndexById,
 }: ScheduleEventDialogProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   if (!event) return null;
 
   const tone = event.source === 'demo'
@@ -79,7 +78,12 @@ export function ScheduleEventDialog({
           <DialogTitle className="text-lg">{event.groupName}</DialogTitle>
           <DialogDescription className="flex items-center gap-1.5 capitalize">
             <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
-            {format(event.startsAt, 'EEEE, d MMMM yyyy', { locale })}
+            {academyDateTimeFormat(language, {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            }).format(event.startsAt)}
           </DialogDescription>
         </DialogHeader>
 

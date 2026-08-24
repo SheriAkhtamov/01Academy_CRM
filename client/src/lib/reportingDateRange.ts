@@ -2,6 +2,12 @@ import { academyToday } from '@/lib/localeFormat';
 
 export type ReportingDatePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'thisMonth' | 'previousMonth' | 'custom';
 
+const REPORTING_PRESET_KEYS: readonly Exclude<ReportingDatePreset, 'custom'>[] = ['today', 'yesterday', 'last7', 'last30', 'thisMonth', 'previousMonth'];
+
+export const isReportingPresetKey = (value: unknown): value is Exclude<ReportingDatePreset, 'custom'> => (
+  typeof value === 'string' && (REPORTING_PRESET_KEYS as readonly string[]).includes(value)
+);
+
 export type ReportingDateRange = {
   from: string;
   to: string;

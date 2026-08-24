@@ -1,11 +1,24 @@
 import { useMemo, useState } from 'react';
-import { Archive, ArchiveRestore, ArrowLeft, Loader2, Search, Users, UsersRound } from 'lucide-react';
+import { Archive, ArchiveRestore, Loader2, Search, Users, UsersRound } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { EmptyState } from '@/components/ux/EmptyState';
@@ -118,10 +131,10 @@ function GroupArchiveAction({
 }
 
 /**
- * Selecting a group used to swap the list for a detail view without touching
- * the URL, so the browser Back button threw the teacher out of the module
- * entirely. The parent now owns the selection through a query parameter and
- * this component is a pure rendering of it.
+ * Selecting a group opens a Sheet (like every other detail view in the app)
+ * instead of swapping the list for an inline detail card. The parent still
+ * owns the selection through a query parameter, so the browser Back button
+ * simply closes the sheet.
  */
 export function TeacherGroupsSection({
   groups,
@@ -250,103 +263,13 @@ export function TeacherGroupsSection({
     </>
   );
 
-  if (selectedGroup) {
-    const progress = progressById.get(selectedGroup.id);
-    const conducted = progress?.conducted ?? 0;
-    const total = progress?.total ?? 0;
-    const progressLabel = t('lessonsConductedCount')
-      .replace('{conducted}', String(conducted))
-      .replace('{total}', String(total));
-
-    return (
-      <div className="space-y-4">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="min-h-11 rounded-lg"
-          onClick={() => onSelectGroup(null)}
-        >
-          <ArrowLeft className="mr-1.5 size-4" />
-          {t('backToGroups')}
-        </Button>
-
-        <Card className="border-border/70">
-          <CardHeader className="gap-3 pb-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <CardTitle className="text-lg">{selectedGroup.name}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {selectedGroup.courseName || t('noCourse')}
-                </p>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {t('groupTeacherLine').replace('{name}', selectedGroup.teacherName || t('notAssigned'))}
-                </p>
-                {selectedGroup.isArchived && selectedGroup.archivedAt ? (
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {t('groupArchivedOn').replace('{date}', formatArchivedAt(selectedGroup.archivedAt))}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {selectedGroup.isArchived ? (
-                  <Badge variant="outline" className={cn('rounded-lg border', TEACHER_TONE_CLASS.neutral)}>
-                    {t('groupInArchive')}
-                  </Badge>
-                ) : null}
-                <GroupStatusBadge status={selectedGroup.status} />
-                <GroupArchiveAction
-                  group={selectedGroup}
-                  isPending={archivePendingGroupId === selectedGroup.id}
-                  onArchive={setArchiveTarget}
-                  onRestore={setRestoreTarget}
-                />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div>
-              <div className="mb-2 flex justify-between text-sm">
-                <span className="text-muted-foreground">{t('lessonProgress')}</span>
-                <span className="font-medium tabular-nums text-foreground">{progressLabel}</span>
-              </div>
-              <Progress
-                value={teacherPercent(conducted, total)}
-                aria-label={`${t('lessonProgress')} — ${progressLabel}`}
-              />
-            </div>
-
-            {selectedGroup.schedule && selectedGroup.schedule.length > 0 ? (
-              <ScheduleBadges
-                schedule={selectedGroup.schedule}
-                dayNames={dayNamesFull}
-                unknownLabel={t('weekdayNotSpecified')}
-              />
-            ) : null}
-
-            <div className="border-t border-border/70 pt-4">
-              <h4 className="mb-3 text-sm font-semibold">
-                {t('groupStudentsCount').replace('{count}', String(groupStudents.length))}
-              </h4>
-              <DataTable
-                columns={studentColumns}
-                data={groupStudents}
-                keyExtractor={(row) => String(row.id)}
-                emptyState={(
-                  <EmptyState
-                    icon={Users}
-                    title={t('noStudents')}
-                    description={t('noStudentsInGroup')}
-                  />
-                )}
-              />
-            </div>
-          </CardContent>
-        </Card>
-        {archiveDialogs}
-      </div>
-    );
-  }
+  const detailGroup = selectedGroup;
+  const progress = detailGroup ? progressById.get(detailGroup.id) : undefined;
+  const conducted = progress?.conducted ?? 0;
+  const total = progress?.total ?? 0;
+  const progressLabel = t('lessonsConductedCount')
+    .replace('{conducted}', String(conducted))
+    .replace('{total}', String(total));
 
   return (
     <div className="space-y-4">
@@ -519,6 +442,86 @@ export function TeacherGroupsSection({
         </div>
       )}
       {archiveDialogs}
+
+      {/* Group detail as a Sheet: Escape/overlay/X all close it, matching the
+          interaction model of every other detail view in the CRM. */}
+      <Sheet open={detailGroup !== null} onOpenChange={(open) => {
+        if (!open) onSelectGroup(null);
+      }}>
+        <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+          {detailGroup ? (
+            <>
+              <SheetHeader className="gap-1 border-b border-border/70 px-5 py-4">
+                <SheetTitle className="flex flex-wrap items-center gap-2 pr-8 text-lg">
+                  <span className="min-w-0 truncate">{detailGroup.name}</span>
+                  <GroupStatusBadge status={detailGroup.status} />
+                  {detailGroup.isArchived ? (
+                    <Badge variant="outline" className={cn('rounded-lg border', TEACHER_TONE_CLASS.neutral)}>
+                      {t('groupInArchive')}
+                    </Badge>
+                  ) : null}
+                </SheetTitle>
+                <SheetDescription className="flex flex-col gap-0.5">
+                  <span>{detailGroup.courseName || t('noCourse')}</span>
+                  <span>
+                    {t('groupTeacherLine').replace('{name}', detailGroup.teacherName || t('notAssigned'))}
+                    {detailGroup.isArchived && detailGroup.archivedAt
+                      ? ` · ${t('groupArchivedOn').replace('{date}', formatArchivedAt(detailGroup.archivedAt))}`
+                      : ''}
+                  </span>
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-40 flex-1">
+                    <div className="mb-2 flex justify-between text-sm">
+                      <span className="text-muted-foreground">{t('lessonProgress')}</span>
+                      <span className="font-medium tabular-nums text-foreground">{progressLabel}</span>
+                    </div>
+                    <Progress
+                      value={teacherPercent(conducted, total)}
+                      aria-label={`${t('lessonProgress')} — ${progressLabel}`}
+                    />
+                  </div>
+                  <GroupArchiveAction
+                    group={detailGroup}
+                    isPending={archivePendingGroupId === detailGroup.id}
+                    onArchive={setArchiveTarget}
+                    onRestore={setRestoreTarget}
+                  />
+                </div>
+
+                {detailGroup.schedule && detailGroup.schedule.length > 0 ? (
+                  <ScheduleBadges
+                    schedule={detailGroup.schedule}
+                    dayNames={dayNamesFull}
+                    unknownLabel={t('weekdayNotSpecified')}
+                  />
+                ) : null}
+
+                <div className="border-t border-border/70 pt-4">
+                  <h4 className="mb-3 text-sm font-semibold">
+                    {t('groupStudentsCount').replace('{count}', String(groupStudents.length))}
+                  </h4>
+                  <DataTable
+                    columns={studentColumns}
+                    data={groupStudents}
+                    keyExtractor={(row) => String(row.id)}
+                    emptyState={(
+                      <EmptyState
+                        icon={Users}
+                        title={t('noStudents')}
+                        description={t('noStudentsInGroup')}
+                      />
+                    )}
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

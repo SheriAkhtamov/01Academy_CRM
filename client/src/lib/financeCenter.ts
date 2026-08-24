@@ -133,6 +133,8 @@ export const financeCopy = (t: Translate) => ({
   error: t('financeCenterError'),
   cancellationReason: t('financeCenterCancellationReason'),
   confirmCancel: t('financeCenterConfirmCancel'),
+  confirmPayTitle: t('financeCenterConfirmPayTitle'),
+  confirmPay: t('financeCenterConfirmPay'),
   cash: t('paymentMethodCash'),
   transfer: t('paymentMethodTransfer'),
   card: t('paymentMethodCard'),

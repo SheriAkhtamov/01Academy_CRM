@@ -279,6 +279,8 @@ export function AttendanceCalendar({
       timeZone: ACADEMY_TIME_ZONE,
       hour: '2-digit',
       minute: '2-digit',
+      // Hard 24h like every other time surface in the app.
+      hour12: false,
     });
 
     return (
@@ -468,9 +470,9 @@ export function AttendanceCalendar({
           <div className="overflow-x-auto">
             <div className={cn(effectiveView === 'month' ? 'min-w-[760px]' : 'min-w-[640px]')}>
               <div className="grid grid-cols-7 border-b bg-muted/30">
-                {dayNames.map((dayName) => (
+                {dayNames.map((dayName, index) => (
                   <div
-                    key={dayName}
+                    key={`day-header-`}
                     className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                   >
                     {dayName}

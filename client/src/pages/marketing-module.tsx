@@ -2,10 +2,12 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useStickyState } from '@/hooks/useStickyState';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ux/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -28,7 +30,6 @@ import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
-import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   Dialog,
   DialogContent,
@@ -121,20 +122,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function EmptyState({ title, text, icon: Icon = BarChart3 }: { title: string; text: string; icon?: any }) {
-  return (
-    <Card className="border-dashed">
-      <CardContent className="py-14 px-6 text-center">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
-          <Icon className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">{text}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
 function RoasBadge({ value }: { value: number }) {
   if (value >= TARGET_ROAS) {
     return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200">{value}x</Badge>;
@@ -173,8 +160,8 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const queryClient = useQueryClient();
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
-  const [funnelSourceFilter, setFunnelSourceFilter] = useState('all');
-  const [expensePeriodFilter, setExpensePeriodFilter] = useState('');
+  const [funnelSourceFilter, setFunnelSourceFilter] = useStickyState('marketing-funnel-source', 'all');
+  const [expensePeriodFilter, setExpensePeriodFilter] = useStickyState('marketing-expense-period', '');
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
 
   const money = (value: number | string | null | undefined) =>
@@ -517,7 +504,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 columns={sourceColumns}
                 data={bySource}
                 keyExtractor={(row) => String(row.sourceId)}
-                emptyState={<EmptyState title={t('noData')} text={t('adjustSearchCriteria')} />}
+                emptyState={<EmptyState icon={Megaphone} title={t('marketingNoSourcesYet')} description={t('marketingNoSourcesDesc')} />}
               />
             </CardContent>
           </Card>
@@ -689,7 +676,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 columns={referralColumns}
                 data={topReferrers}
                 keyExtractor={(row) => String(row.studentId)}
-                emptyState={<EmptyState title={t('noData')} text={t('noStudentsYetDesc')} icon={HeartHandshake} />}
+                emptyState={<EmptyState title={t('marketingNoReferralsYet')} description={t('marketingNoReferralsDesc')} icon={HeartHandshake} />}
               />
             </CardContent>
           </Card>
@@ -727,7 +714,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 columns={expenseColumns}
                 data={filteredExpenses}
                 keyExtractor={(row, index) => String(row.id ?? index)}
-                emptyState={<EmptyState title={t('noData')} text={t('adjustSearchCriteria')} icon={Wallet} />}
+                emptyState={<EmptyState title={t('marketingNoExpensesYet')} description={t('marketingNoExpensesDesc')} icon={Wallet} />}
               />
             </CardContent>
           </Card>

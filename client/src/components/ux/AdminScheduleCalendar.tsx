@@ -26,8 +26,9 @@ import {
   getCalendarMinutePosition,
   isCalendarMinuteCollapsed,
 } from '@/lib/calendarTimeScale';
-import { academyToday } from '@/lib/localeFormat';
+import { academyMinutesOfDay, academyNowLocalView, academyToday } from '@/lib/localeFormat';
 import { addReportingDays } from '@/lib/reportingDateRange';
+import { useIsCompactViewport } from '@/hooks/useMediaQuery';
 
 interface SchoolOption {
   id: number;
@@ -153,7 +154,9 @@ const buildRoomEvents = (room: ResourceRoom, selectedDate: string): CalendarEven
   const lessons = room.lessons.flatMap((lesson) => {
     const startsAt = new Date(lesson.scheduledAt);
     if (Number.isNaN(startsAt.getTime())) return [];
-    const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+    // Academy clock: the device-local getter shifts bookings on devices
+    // outside +05 relative to the recurring timetable rows.
+    const startMinutes = academyMinutesOfDay(startsAt);
     return [{
       id: `lesson-${lesson.id}`,
       source: 'lesson' as const,
@@ -168,7 +171,7 @@ const buildRoomEvents = (room: ResourceRoom, selectedDate: string): CalendarEven
   const demos = (room.demos ?? []).flatMap((demo) => {
     const startsAt = new Date(demo.scheduledAt);
     if (Number.isNaN(startsAt.getTime())) return [];
-    const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+    const startMinutes = academyMinutesOfDay(startsAt);
     return [{
       id: `demo-${demo.id}`,
       source: 'demo' as const,
@@ -198,15 +201,18 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
   const [schoolId, setSchoolId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState(academyToday);
   const [roomSearch, setRoomSearch] = useState('');
-  const [now, setNow] = useState(() => new Date());
+  // "Now" on the academy clock (display shim keeps local getters correct).
+  const [now, setNow] = useState(() => academyNowLocalView());
   const scopeRef = useRef<HTMLDivElement>(null);
+  const isCompactViewport = useIsCompactViewport();
+  const resourceColumnWidth = isCompactViewport ? 9 * 16 : RESOURCE_COLUMN_WIDTH;
 
   useEffect(() => {
     if (!schoolId && activeSchools[0]) setSchoolId(String(activeSchools[0].id));
   }, [activeSchools, schoolId]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    const timer = window.setInterval(() => setNow(academyNowLocalView()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -375,9 +381,12 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
           <div className="max-h-[34rem] overflow-auto overscroll-contain">
             <div
               className="relative min-w-max"
-              style={{ width: RESOURCE_COLUMN_WIDTH + timeScale.totalSize }}
+              style={{ width: resourceColumnWidth + timeScale.totalSize }}
             >
-              <div className="sticky top-0 z-30 grid grid-cols-[13rem_minmax(0,1fr)] border-b border-border bg-muted/60 backdrop-blur-sm">
+              <div
+                className="sticky top-0 z-30 grid border-b border-border bg-muted/60 backdrop-blur-sm"
+                style={{ gridTemplateColumns: `${resourceColumnWidth}px minmax(0, 1fr)` }}
+              >
                 <div className="sticky left-0 z-10 bg-muted/95 px-4 py-3 text-xs font-medium text-muted-foreground backdrop-blur-sm">
                   {t('scheduleResources')}
                 </div>
@@ -427,8 +436,8 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
                   return (
                     <div
                       key={room.id}
-                      className="grid grid-cols-[13rem_minmax(0,1fr)] border-b border-border last:border-b-0"
-                      style={{ minHeight: rowHeight }}
+                      className="grid border-b border-border last:border-b-0"
+                      style={{ minHeight: rowHeight, gridTemplateColumns: `${resourceColumnWidth}px minmax(0, 1fr)` }}
                     >
                       <div className="sticky left-0 z-20 flex flex-col justify-center gap-1 border-r border-border bg-card px-4 py-3">
                         <span className="flex items-center gap-2 truncate text-sm font-medium text-foreground">
@@ -474,8 +483,7 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
                             <Tooltip key={event.id}>
                               <TooltipTrigger asChild>
                                 <article
-                                  tabIndex={0}
-                                  className="absolute z-10 flex flex-col justify-center overflow-hidden rounded-md border px-2 py-1 text-left shadow-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  className="absolute z-10 flex flex-col justify-center overflow-hidden rounded-md border px-2 py-1 text-left shadow-2xs"
                                   style={{
                                     left: left + 3,
                                     width,
@@ -528,7 +536,7 @@ export function AdminScheduleCalendar({ schools }: { schools: SchoolOption[] }) 
               {showCurrentTime ? (
                 <div
                   className="pointer-events-none absolute inset-y-0 z-[15] w-px bg-destructive"
-                  style={{ left: RESOURCE_COLUMN_WIDTH + getCalendarMinutePosition(timeScale, currentMinutes) }}
+                  style={{ left: resourceColumnWidth + getCalendarMinutePosition(timeScale, currentMinutes) }}
                   aria-hidden="true"
                 >
                   <span className="absolute -left-1 top-0 size-2 rounded-full bg-destructive" />

@@ -37,7 +37,8 @@ import { AlertTriangle } from 'lucide-react';
 import { sortAttendanceLessons } from '@/lib/attendance';
 import { ACADEMY_TIME_ZONE, formatAcademyDate, resolveLocale } from '@/lib/localeFormat';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
-import { isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
+import { isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
+import { useStickyState } from '@/hooks/useStickyState';
 import {
   academyDayKey,
   dateFromDayKey,
@@ -238,7 +239,17 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, []);
   const nowMinute = Math.floor(now / 60_000) * 60_000;
 
-  const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('thisMonth'));
+  // The reporting preset sticks across section switches (see useStickyState).
+  const [storedReportingPreset, setStoredReportingPreset] = useStickyState<string>('teacher-range', 'thisMonth');
+  const [reportingRange, setReportingRange] = useState(() => (
+    isReportingPresetKey(storedReportingPreset)
+      ? reportingRangeForPreset(storedReportingPreset)
+      : reportingRangeForPreset('thisMonth')
+  ));
+  const handleReportingRangeChange = useCallback((next: typeof reportingRange) => {
+    setReportingRange(next);
+    setStoredReportingPreset(next.preset);
+  }, [setStoredReportingPreset]);
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/modules/teacher'],
   });
@@ -876,7 +887,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             onOpenLessonInSchedule={openLessonInSchedule}
             onOpenSchedule={() => setLocation('/teacher-module/schedule')}
           />
-          <ReportingDateRangeFilter value={reportingRange} onChange={setReportingRange} />
+          <ReportingDateRangeFilter value={reportingRange} onChange={handleReportingRangeChange} />
           <TeacherOverviewKpis
             data={{
               groupsCount: activeGroups.length,

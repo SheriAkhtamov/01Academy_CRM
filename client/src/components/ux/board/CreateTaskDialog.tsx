@@ -114,7 +114,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+            <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{t('addTask')}</DialogTitle>
                     <DialogDescription className="sr-only">{t('addTask')}</DialogDescription>

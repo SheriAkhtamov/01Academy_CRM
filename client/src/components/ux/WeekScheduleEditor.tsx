@@ -178,13 +178,19 @@ export function WeekScheduleEditor({
             <div
               key={dayOfWeek}
               className={cn(
-                'grid grid-cols-[minmax(7rem,1fr)_6.5rem_6.5rem] items-center gap-2 border-b border-border px-3 py-2 last:border-b-0',
+                // Day name plus two time fields needs 320px of track before the
+                // gaps and the row padding — about 360px in total, which is
+                // wider than the dialog this editor lives in on a phone, so the
+                // last field was cut off at the edge. Below `sm` the day name
+                // takes its own line and the two times share the row underneath.
+                'grid grid-cols-2 items-center gap-2 border-b border-border px-3 py-2 last:border-b-0',
+                'sm:grid-cols-[minmax(7rem,1fr)_6.5rem_6.5rem]',
                 'md:grid-cols-[minmax(8rem,1fr)_7rem_7rem_5rem_minmax(9rem,1fr)]',
                 enabled ? 'bg-card' : 'bg-muted/25',
                 invalid && 'bg-destructive/5',
               )}
             >
-              <div className="flex items-center gap-2">
+              <div className="col-span-2 flex items-center gap-2 sm:col-span-1">
                 <Checkbox
                   id={`schedule-day-${dayOfWeek}`}
                   checked={enabled}
@@ -221,7 +227,7 @@ export function WeekScheduleEditor({
               />
               <span
                 className={cn(
-                  'col-span-3 flex items-center gap-1 text-xs tabular-nums md:col-span-1',
+                  'col-span-2 flex items-center gap-1 text-xs tabular-nums sm:col-span-3 md:col-span-1',
                   invalid ? 'text-destructive' : 'text-muted-foreground',
                 )}
               >
@@ -242,7 +248,7 @@ export function WeekScheduleEditor({
                     schoolId: nextValue === 'all' ? null : Number(nextValue),
                   })}
                 >
-                  <SelectTrigger className="col-span-3 h-9 md:col-span-1">
+                  <SelectTrigger className="col-span-2 h-9 sm:col-span-3 md:col-span-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

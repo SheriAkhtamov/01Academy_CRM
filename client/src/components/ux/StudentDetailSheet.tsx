@@ -179,7 +179,7 @@ export function StudentDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+      <SheetContent className="w-full overflow-y-auto p-4 sm:max-w-2xl sm:p-6">
         <SheetHeader className="pb-4">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-border">

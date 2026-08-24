@@ -1790,7 +1790,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
-        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingCourse ? t('editCourse') : t('addCourse')}</DialogTitle>
             <DialogDescription>{t('courseFormDescription')}</DialogDescription>
@@ -1848,7 +1848,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
-        <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
             <DialogDescription>{t('groupFormDescription')}</DialogDescription>

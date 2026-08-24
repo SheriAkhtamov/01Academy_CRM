@@ -127,7 +127,9 @@ function TaskColumn({
             role="region"
             aria-label={label}
             className={cn(
-                'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200 ease-out-expo',
+                // Same peek as the lead board: a phone-width column leaves
+                // enough of its neighbour showing to read as a scrollable row.
+                'flex h-full min-h-0 w-[78vw] max-w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200 ease-out-expo sm:w-80',
                 isOver && 'border-primary bg-primary/5 shadow-xl ring-2 ring-primary/50 scale-[1.015]',
                 !canDrop && 'opacity-60',
             )}

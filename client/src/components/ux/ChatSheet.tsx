@@ -299,7 +299,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex h-[calc(100vh-101px)] min-h-0">
+        <div className="flex h-[calc(100dvh-101px)] min-h-0">
           {/* Employee List */}
           <div className="flex w-40 shrink-0 flex-col border-r border-border sm:w-64 lg:w-72">
             <div className="border-b border-border p-3 sm:p-4">

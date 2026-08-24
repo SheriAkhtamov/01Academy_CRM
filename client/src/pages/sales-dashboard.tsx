@@ -1256,7 +1256,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       />
 
       <Dialog open={leadDialogOpen} onOpenChange={leadDialogGuard.handleOpenChange}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+        <DialogContent className="max-h-[90dvh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('newApplication')}</DialogTitle>
             <DialogDescription className="sr-only">{t('formCreation')} {t('newApplication')}</DialogDescription>

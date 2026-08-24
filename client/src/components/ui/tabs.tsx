@@ -21,10 +21,29 @@ type IndicatorBox = { left: number; top: number; width: number; height: number }
  */
 function useActiveTabBox(listRef: React.MutableRefObject<HTMLDivElement | null>) {
   const [box, setBox] = React.useState<IndicatorBox | null>(null)
+  const settledRef = React.useRef(false)
 
   React.useLayoutEffect(() => {
     const list = listRef.current
     if (!list) return
+
+    /**
+     * Only ever moves the strip's own `scrollLeft` — never `scrollIntoView`,
+     * which would drag every scrollable ancestor along with it and jump the
+     * page under the reader. The first pass lands instantly (the strip is
+     * being drawn), later ones glide, because by then the reader is watching.
+     */
+    const revealActive = (active: HTMLElement) => {
+      if (list.scrollWidth <= list.clientWidth) return
+      const overshootLeft = active.offsetLeft - list.scrollLeft
+      const overshootRight =
+        active.offsetLeft + active.offsetWidth - (list.scrollLeft + list.clientWidth)
+      if (overshootLeft >= 0 && overshootRight <= 0) return
+      list.scrollTo({
+        left: overshootLeft < 0 ? active.offsetLeft : list.scrollLeft + overshootRight,
+        behavior: settledRef.current ? "smooth" : "auto",
+      })
+    }
 
     const measure = () => {
       const active = list.querySelector<HTMLElement>('[role="tab"][data-state="active"]')
@@ -38,6 +57,8 @@ function useActiveTabBox(listRef: React.MutableRefObject<HTMLDivElement | null>)
         width: active.offsetWidth,
         height: active.offsetHeight,
       })
+      revealActive(active)
+      settledRef.current = true
     }
 
     measure()
@@ -94,7 +115,13 @@ const TabsList = React.forwardRef<
         else if (forwardedRef) forwardedRef.current = node
       }}
       className={cn(
-        "relative inline-flex h-10 items-center justify-center rounded-lg text-muted-foreground",
+        // A tab strip is the one control that reliably outgrows a phone: five
+        // Russian labels are wider than 375px, and the list used to simply cut
+        // the last of them off with no way to reach it. It scrolls sideways
+        // instead, without a scrollbar — the half-visible tab at the edge is
+        // the affordance — and `useActiveTabBox` keeps the selected tab in
+        // view when the value changes from outside the strip.
+        "relative inline-flex h-10 max-w-full items-center justify-center overflow-x-auto rounded-lg text-muted-foreground no-scrollbar",
         indicator === "pill" && "bg-muted p-1",
         className
       )}
@@ -134,7 +161,11 @@ const TabsTrigger = React.forwardRef<
       // `relative` lifts the label above the sliding pill, which is absolutely
       // positioned behind it. The active background lives on the pill now, so
       // the trigger only animates its own text colour.
-      "relative inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground ring-offset-background transition-colors duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-elevated-foreground",
+      // `shrink-0`: in a strip that scrolls, a trigger that flexes instead
+      // squeezes its own `whitespace-nowrap` label out past its box, which
+      // both clips the text and makes the sliding pill measure the wrong
+      // width. Grid-based lists ignore it.
+      "relative inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground ring-offset-background transition-colors duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-elevated-foreground",
       className
     )}
     {...props}

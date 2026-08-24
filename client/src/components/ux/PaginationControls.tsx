@@ -58,11 +58,18 @@ export function PaginationControls({
         table at once, without hard-coding the widget's size or position.
       */
       className={cn(
-        'flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 border-t border-border/70 bg-muted/10 px-4 py-3 text-xs text-muted-foreground',
+        'flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/70 bg-muted/10 px-4 py-3 text-xs text-muted-foreground sm:gap-x-6',
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {/*
+        Two self-contained rows on a phone, one row on anything wider. Left to
+        `flex-wrap` alone the four controls broke at whatever point they ran out
+        of room, which on a 375px screen stranded the page arrows alone on a
+        third line; giving each group the full width and spreading it puts the
+        arrows against the right edge, where the thumb already is.
+      */}
+      <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 sm:w-auto sm:justify-start">
         <span className="font-medium tabular-nums text-foreground/80">{rangeLabel}</span>
         <div className="flex items-center gap-1.5">
           <span>{t('perPage')}</span>
@@ -83,7 +90,7 @@ export function PaginationControls({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex w-full items-center justify-between gap-1.5 sm:w-auto sm:justify-start">
         <span className="mr-1 tabular-nums text-foreground/70">
           {t('page')} {currentPage} / {totalPages}
         </span>
@@ -91,7 +98,7 @@ export function PaginationControls({
           type="button"
           variant="outline"
           size="icon"
-          className="size-8 bg-background"
+          className="size-10 bg-background sm:size-8"
           aria-label={t('previousPage')}
           disabled={disabled || currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
@@ -102,7 +109,7 @@ export function PaginationControls({
           type="button"
           variant="outline"
           size="icon"
-          className="size-8 bg-background"
+          className="size-10 bg-background sm:size-8"
           aria-label={t('nextPage')}
           disabled={disabled || currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}

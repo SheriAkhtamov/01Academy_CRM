@@ -844,7 +844,7 @@ export function LeadDetailSheet({
         }}
       >
         {leadQuery.isError ? (
-          <div className="flex flex-col gap-5 p-6">
+          <div className="flex flex-col gap-5 p-4 sm:p-6">
             <SheetTitle>{t('lead')}</SheetTitle>
             <SheetDescription>{t('failedToLoadData')}</SheetDescription>
             <Alert variant="destructive">
@@ -859,7 +859,7 @@ export function LeadDetailSheet({
             </Alert>
           </div>
         ) : leadQuery.isLoading || !lead ? (
-          <div className="flex flex-col gap-4 overflow-y-auto p-6">
+          <div className="flex flex-col gap-4 overflow-y-auto p-4 sm:p-6">
             <SheetTitle className="sr-only">{t('lead')}</SheetTitle>
             <SheetDescription className="sr-only">{t('loading')}</SheetDescription>
             <Skeleton className="h-16 w-full" />
@@ -869,7 +869,7 @@ export function LeadDetailSheet({
           </div>
         ) : (
           <>
-            <SheetHeader className="shrink-0 space-y-3 border-b border-border bg-muted/30 px-6 pb-4 pr-14 pt-5 text-left">
+            <SheetHeader className="shrink-0 space-y-3 border-b border-border bg-muted/30 px-4 pb-4 pr-12 pt-5 text-left sm:px-6 sm:pr-14">
               <div className="flex items-start gap-3">
                 <Avatar className="size-11 border border-border bg-background">
                   <AvatarFallback>{getInitials(lead.contactName)}</AvatarFallback>
@@ -996,7 +996,7 @@ export function LeadDetailSheet({
               onValueChange={(value) => setActiveTab(value as LeadSheetTab)}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="shrink-0 border-b border-border bg-background px-6 py-2.5">
+              <div className="shrink-0 border-b border-border bg-background px-4 py-2.5 sm:px-6">
                 <TabsList className="flex h-auto w-full justify-start overflow-x-auto">
                   <TabsTrigger value="deal" className="shrink-0 gap-1.5">
                     <UserRound data-icon="inline-start" />
@@ -1027,7 +1027,7 @@ export function LeadDetailSheet({
                 </TabsList>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
                 <TabsContent value="deal" className="mt-0 space-y-5">
                   <Form {...leadForm}>
                     <form className="flex flex-col gap-5" onSubmit={leadForm.handleSubmit((values) => updateLead.mutate(values))}>

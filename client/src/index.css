@@ -534,6 +534,31 @@
   /* Shadow helpers wired to the premium scale (used by tailwind shadow-* too) */
   .shadow-primary { box-shadow: var(--shadow-primary); }
   .shadow-primary-lg { box-shadow: var(--shadow-primary-lg); }
+
+  /* — Small-screen helpers —
+
+     `no-scrollbar` is for horizontal rails only: tab strips, filter chips,
+     toolbar overflow. On those the content itself is the affordance — half a
+     cut-off chip at the edge says "there is more" better than a bar does — and
+     the 10px scrollbar this app paints would otherwise eat a tenth of a 40px
+     tab strip's height. Never put it on a vertical scroller, where the bar is
+     the only thing telling the reader how much list is left. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  /* Anything docked to the bottom edge of a phone sits where the home
+     indicator is. The viewport is not declared `viewport-fit=cover`, so
+     env() resolves to 0 in a normal browser tab and the 0.75rem fallback is
+     what actually applies today — but the moment the app is installed to a
+     home screen the same rule clears the indicator without a second pass. */
+  .pb-safe { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
 }
 
 /* ============================================================
@@ -740,8 +765,12 @@
     66% { transform: translate3d(-5%, 4%, 0) scale(0.95); }
   }
 
+  /* `dvh`, not `vh`: on a phone `100vh` is the viewport with the browser
+     chrome pretended away, so the card sat a toolbar's height below centre and
+     the page scrolled by exactly that much. The gutter is what keeps the card
+     off the screen edges — without it a `w-full` card runs into both. */
   .login-page {
-    @apply min-h-screen flex items-center justify-center relative overflow-hidden;
+    @apply relative flex min-h-dvh items-center justify-center overflow-hidden p-4;
     background: var(--login-bg);
   }
 
@@ -775,14 +804,14 @@
   }
 
   .login-card {
-    @apply w-full max-w-md mx-auto backdrop-blur-xl rounded-2xl p-8 relative;
+    @apply relative mx-auto w-full max-w-md rounded-2xl p-6 backdrop-blur-xl sm:p-8;
     background: var(--login-card-background);
     box-shadow: var(--shadow-xl);
     border: 1px solid var(--login-card-border);
   }
 
   .login-card__header {
-    @apply text-center mb-8;
+    @apply mb-6 text-center sm:mb-8;
   }
 
   /* The brand name is painted with a gradient that drifts across itself.
@@ -834,6 +863,15 @@
   .sidebar-nav-item {
     @apply relative isolate flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 cursor-pointer;
     @apply transition-[color,background-color,transform] duration-200 ease-out;
+  }
+
+  /* A 36px row is a comfortable mouse target and a poor thumb one. Keyed off
+     the pointer rather than the viewport: a tablet in landscape is wide enough
+     for the docked sidebar and is still driven by a finger. */
+  @media (pointer: coarse) {
+    .sidebar-nav-item {
+      @apply min-h-11 py-2.5;
+    }
   }
 
   .sidebar-nav-item:hover {

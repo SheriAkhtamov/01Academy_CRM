@@ -50,7 +50,9 @@ describe('lead and student UX separation', () => {
   it('keeps telephony interactive above dialogs and notifications above telephony', () => {
     expect(telephonyWidget).toContain('useMovableWidget<HTMLDivElement>');
     expect(telephonyWidget).toContain('data-telephony-widget');
-    expect(telephonyWidget).toContain('{...widgetDragProps}');
+    // Spread through `dockedDragProps`, which is `widgetDragProps` on a
+    // pointer device and nothing on a phone — see telephony-widget-ux.
+    expect(telephonyWidget).toContain('{...dockedDragProps}');
     expect(telephonyWidget).not.toContain('GripHorizontal');
     expect(telephonyWidget).not.toContain('dragHandleProps');
     expect(telephonyWidget).toContain('pointer-events-auto fixed z-[70]');

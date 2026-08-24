@@ -43,9 +43,24 @@ describe('telephony widget call duration', () => {
 describe('telephony widget drag surface', () => {
   it('is still dragged by its whole surface rather than by a grip handle', () => {
     expect(widget).toContain('useMovableWidget<HTMLDivElement>');
-    expect(widget).toContain('{...widgetDragProps}');
+    // The spread is what makes the whole surface the handle. It is applied
+    // through `dockedDragProps` so that a phone can opt out of dragging
+    // entirely, but it must still be a spread of the hook's own props onto
+    // the widget root — never a separate grip element.
+    expect(widget).toContain('{...dockedDragProps}');
+    expect(widget).toContain('isMobile ? {} : widgetDragProps');
     expect(widget).not.toContain('GripHorizontal');
     expect(widget).not.toContain('dragHandleProps');
+  });
+
+  it('docks to a corner instead of dragging on a phone', () => {
+    // Dragging by the whole surface competes with the scroll and swipe
+    // gestures the dialer and the call history need for themselves, and a
+    // phone has nowhere to park the widget anyway.
+    expect(widget).toContain("import { useIsMobileViewport } from '@/hooks/useMediaQuery';");
+    expect(widget).toContain('const dockedStyle = isMobile ?');
+    expect(widget).toContain("!isMobile && 'cursor-move'");
+    expect(widget).toContain("!isMobile && 'touch-none cursor-move'");
   });
 
   it('lets text fields and scroll regions keep the press for themselves', () => {

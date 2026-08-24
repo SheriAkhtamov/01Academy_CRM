@@ -437,7 +437,12 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200 ease-out-expo',
+        // A full 320px column on a 375px phone leaves ~23px of the next one
+        // showing once the gap is taken out, which reads as a rendering edge
+        // rather than as more board. Narrowing it to 78vw leaves a clear
+        // half-column peeking, and the column is back to its fixed width from
+        // `sm` up where the board is scrolled with a mouse.
+        'flex h-full min-h-0 w-[78vw] max-w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/40 transition-all duration-200 ease-out-expo sm:w-80',
         // The hovered column swells slightly and lights its ring, so the drop
         // target is unmistakable even when the cursor is over a gap between
         // cards rather than a card itself.

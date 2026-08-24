@@ -503,7 +503,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         {/* ─── Tab: Sources ─── */}
         <TabsContent value="sources" className="space-y-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
               <CardTitle>{t('marketingBySources')}</CardTitle>
               {canManageExpenses && (
                 <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
@@ -527,7 +527,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         <TabsContent value="funnel" className="space-y-4">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
             <Card className="xl:col-span-2">
-              <CardHeader className="flex flex-row items-center justify-between pb-4">
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
                 <CardTitle>{t('conversionFunnel')}</CardTitle>
                 <Select value={funnelSourceFilter} onValueChange={setFunnelSourceFilter}>
                   <SelectTrigger className="w-52">
@@ -698,14 +698,17 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         {/* ─── Tab: Expenses ─── */}
         <TabsContent value="expenses" className="space-y-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
               <CardTitle>{t('marketingExpenses')}</CardTitle>
-              <div className="flex items-center gap-2">
+              {/* 160px of month picker plus two buttons is wider than a phone
+                  once the card padding is taken out, so the group wraps and the
+                  picker takes the full row on its own. */}
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 <Input
                   type="month"
                   value={expensePeriodFilter}
                   onChange={(e) => setExpensePeriodFilter(e.target.value)}
-                  className="w-40"
+                  className="w-full sm:w-40"
                   placeholder={t('period')}
                 />
                 <Button variant="outline" size="sm" onClick={() => setExpensePeriodFilter('')}>

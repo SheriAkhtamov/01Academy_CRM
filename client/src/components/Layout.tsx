@@ -95,7 +95,7 @@ export default function Layout({ children }: LayoutProps) {
  */
 export function AppSpinner({ label }: { label: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex min-h-dvh items-center justify-center">
       <div className="text-center">
         <div className="relative mx-auto mb-4 h-11 w-11">
           <motion.span

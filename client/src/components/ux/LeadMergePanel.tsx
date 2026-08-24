@@ -292,7 +292,7 @@ export function LeadMergePanel() {
               placeholder={t('searchLeadPlaceholder')}
             />
           </div>
-          <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
+          <div className="flex max-h-[55dvh] flex-col gap-2 overflow-y-auto">
             {search.trim().length < 2 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{t('leadSearchMinCharacters')}</p>
             ) : searchQuery.isLoading ? (

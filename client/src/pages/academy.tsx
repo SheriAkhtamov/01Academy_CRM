@@ -562,7 +562,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               <AlertDescription>{t('onlinePbxRoutingLoadFailedDescription')}</AlertDescription>
             </Alert>
           ) : (
-            <div className="max-h-[68vh] overflow-y-auto overscroll-contain pr-4">
+            <div className="max-h-[68dvh] overflow-y-auto overscroll-contain pr-4">
               <div className="flex flex-col gap-3">
                 <Alert>
                   <Users />

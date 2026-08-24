@@ -57,7 +57,8 @@ describe('app shell scrolling', () => {
   });
 
   it('keeps the task board page from clipping the columns it cannot size', () => {
-    expect(tasks).toContain('className="flex h-full min-h-0 flex-col p-6 lg:p-8"');
+    expect(tasks).toMatch(/className="flex h-full min-h-0 flex-col p-4 [^"]*lg:p-8"/);
+    expect(tasks).not.toContain('flex h-full min-h-0 flex-col overflow-hidden');
     expect(tasks).toContain('className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col"');
   });
 

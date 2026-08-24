@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { Fragment, useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Table,
@@ -8,7 +8,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useIsMobileViewport } from '@/hooks/useMediaQuery';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +34,8 @@ type SortDirection = 'asc' | 'desc' | null;
  */
 const MotionTableRow = motion.create(TableRow);
 
+const MotionListItem = motion.li;
+
 /**
  * Rows cascade in, but the cascade is capped: past ~10 rows the delay stops
  * growing, so a 100-row page still finishes in a third of a second instead of
@@ -40,6 +51,23 @@ interface DataTableColumn<T> {
   sortable?: boolean;
   className?: string;
   cellClassName?: string;
+  /**
+   * On a phone this column becomes the card's headline and loses its label —
+   * the name of the thing does not need to be told it is a name. Falls back to
+   * the first visible column when no column claims it.
+   */
+  mobilePrimary?: boolean;
+  /**
+   * Dropped from the phone card. For columns that only exist because a wide
+   * grid had room: row-hover action buttons, redundant ids, a second date that
+   * repeats the first.
+   */
+  mobileHidden?: boolean;
+  /**
+   * The label to print on the phone card when `header` is an icon, a checkbox
+   * or anything else that only reads as a heading in a table.
+   */
+  mobileLabel?: React.ReactNode;
 }
 
 interface DataTableProps<T> {
@@ -73,6 +101,16 @@ export function DataTable<T extends Record<string, any>>({
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const animateRows = useMotionFeature('entrances');
+  /*
+    A phone cannot show eight columns. The old answer was a horizontal
+    scroller, which meant the reader had to drag every row sideways to read it
+    and lost the header the moment they did. Below `md` each row becomes a
+    card instead: headline on top, the rest as labelled pairs. This is a
+    different tree, not different paint, which is why it is a media *query*
+    and not a `md:` class — and why jsdom, where matchMedia is absent, keeps
+    getting the table the DOM tests are written against.
+  */
+  const isMobile = useIsMobileViewport();
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey || null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
@@ -146,9 +184,178 @@ export function DataTable<T extends Record<string, any>>({
     return <ArrowDown className="ml-1.5 h-3 w-3 text-primary font-bold" />;
   };
 
+  /**
+   * `cellClassName` is written for a table cell, where a fixed width sizes the
+   * whole column. On a card the same class sizes one value inside a list, so
+   * `w-12` on a checkbox column would crush it — the fixed widths are dropped
+   * and everything else, typography included, carries over.
+   */
+  const cardCellClassName = (cellClassName?: string) => cellClassName
+    ?.split(/\s+/)
+    .filter((token) => !/^w-(?!full\b)/.test(token))
+    .join(' ');
+
+  const renderCell = (column: DataTableColumn<T>, row: T, index: number) => (
+    column.render
+      ? column.render(row, index)
+      : column.accessor
+        ? column.accessor(row)
+        : row[column.key]
+  );
+
+  // Card columns, resolved once: everything the phone still shows, split into
+  // the headline and the labelled remainder.
+  const mobileColumns = useMemo(() => {
+    const visible = columns.filter((column) => !column.mobileHidden);
+    const primary = visible.find((column) => column.mobilePrimary) ?? visible[0];
+    return {
+      primary,
+      secondary: visible.filter((column) => column !== primary),
+      sortable: columns.filter((column) => column.sortable),
+    };
+  }, [columns]);
+
+  const sortableLabel = (column: DataTableColumn<T>) => {
+    const label = column.mobileLabel ?? column.header;
+    return typeof label === 'string' ? label : column.key;
+  };
+
+  const renderSortBar = () => {
+    if (mobileColumns.sortable.length === 0) return null;
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-muted/20 px-3 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {t('sortRows')}
+        </span>
+        <Select
+          value={sortKey ?? 'none'}
+          onValueChange={(value) => {
+            if (value === 'none') {
+              setSortKey(null);
+              setSortDirection(null);
+              return;
+            }
+            setSortKey(value);
+            setSortDirection((prev) => prev ?? 'asc');
+          }}
+        >
+          <SelectTrigger className="h-9 min-w-0 flex-1 bg-background text-xs" aria-label={t('sortRows')}>
+            <SelectValue placeholder={t('sortUnsorted')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">{t('sortUnsorted')}</SelectItem>
+            {mobileColumns.sortable.map((column) => (
+              <SelectItem key={column.key} value={column.key}>
+                {sortableLabel(column)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="size-9 shrink-0 bg-background"
+          aria-label={t('toggleSortDirection')}
+          title={sortDirection === 'desc' ? t('sortDescending') : t('sortAscending')}
+          disabled={!sortKey}
+          onClick={() => setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+        >
+          {sortDirection === 'desc' ? <ArrowDown className="size-4" /> : <ArrowUp className="size-4" />}
+        </Button>
+      </div>
+    );
+  };
+
+  const renderCards = () => {
+    if (isLoading) {
+      return (
+        <div className="divide-y divide-border/50">
+          {Array.from({ length: Math.min(pageSize > 0 ? pageSize : 5, 5) }, (_, cardIndex) => (
+            <div key={`skeleton-card-${cardIndex}`} className="space-y-2 p-4">
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-3 w-3/4" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (pagedData.length === 0) {
+      return emptyState || (
+        <div className="py-12 text-center text-sm text-muted-foreground">{t('noData')}</div>
+      );
+    }
+
+    return (
+      <ul className="divide-y divide-border/50">
+        {pagedData.map((row, index) => {
+          const rowKey = keyExtractor(row, index);
+          return (
+            <MotionListItem
+              key={rowKey}
+              className={cn(
+                'px-4 py-3 transition-colors',
+                onRowClick && 'cursor-pointer active:bg-accent/50',
+                rowClassName?.(row),
+              )}
+              /*
+                The whole card is the target — 44px of finger needs more than a
+                link-sized word to land on. It stays a plain listitem with a
+                click handler rather than a <button>, because the cells it wraps
+                already contain their own buttons and menus, and a button may
+                not nest inside a button.
+              */
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              initial={animateRows ? { opacity: 0, y: 6 } : false}
+              animate={animateRows ? { opacity: 1, y: 0 } : undefined}
+              transition={animateRows ? {
+                duration: DURATION.base,
+                ease: EASE.out,
+                delay: rowDelay(index),
+              } : undefined}
+            >
+              {mobileColumns.primary ? (
+                <div className={cn('text-sm font-semibold text-foreground', cardCellClassName(mobileColumns.primary.cellClassName))}>
+                  {renderCell(mobileColumns.primary, row, index)}
+                </div>
+              ) : null}
+              {mobileColumns.secondary.length > 0 ? (
+                <dl className="mt-2 grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5">
+                  {mobileColumns.secondary.map((column) => {
+                    const label = column.mobileLabel ?? column.header;
+                    // A column with no heading — an actions cell, a checkbox —
+                    // has nothing to label, so its content takes the full width
+                    // instead of leaving an empty term beside it.
+                    const hasLabel = typeof label === 'string' ? label.trim().length > 0 : Boolean(label);
+                    return (
+                      <Fragment key={`${rowKey}-${column.key}`}>
+                        {hasLabel ? (
+                          <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {label}
+                          </dt>
+                        ) : null}
+                        <dd className={cn('min-w-0 text-sm text-foreground', hasLabel ? '' : 'col-span-2', cardCellClassName(column.cellClassName))}>
+                          {renderCell(column, row, index)}
+                        </dd>
+                      </Fragment>
+                    );
+                  })}
+                </dl>
+              ) : null}
+            </MotionListItem>
+          );
+        })}
+      </ul>
+    );
+  };
+
   return (
     <div className={cn(rootClassName)} aria-busy={isLoading}>
+      {isMobile ? renderSortBar() : null}
       <div className={cn('overflow-x-auto', className)}>
+        {isMobile ? renderCards() : (
         <Table containerClassName="overflow-visible">
           <TableHeader className="sticky top-0 z-10 bg-muted/70">
             <TableRow className="border-b border-border/70 hover:bg-transparent">
@@ -224,11 +431,7 @@ export function DataTable<T extends Record<string, any>>({
                 >
                   {columns.map((column) => (
                     <TableCell key={`${keyExtractor(row, index)}-${column.key}`} className={cn('p-3 px-4', column.cellClassName)}>
-                      {column.render
-                        ? column.render(row, index)
-                        : column.accessor
-                          ? column.accessor(row)
-                          : row[column.key]}
+                      {renderCell(column, row, index)}
                     </TableCell>
                   ))}
                 </MotionTableRow>
@@ -244,6 +447,7 @@ export function DataTable<T extends Record<string, any>>({
             )}
           </TableBody>
         </Table>
+        )}
       </div>
       {!isLoading ? (
         <PaginationControls

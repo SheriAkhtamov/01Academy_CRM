@@ -16,11 +16,18 @@ export default {
         columns as actually fit, and the minmax floor is what a tile needs to
         stay readable. Pick the step by content: `tile` for a KPI number,
         `card` for a card with a sentence in it, `panel` for a chart.
+
+        The floor is wrapped in `min(_, 100%)` because a bare minmax floor is a
+        *minimum*, not a preference: in a container narrower than the floor —
+        a phone, or a card nested two levels deep inside one — the single
+        remaining track still claims its full 13/17/22rem and pushes the page
+        into horizontal scroll. `min()` lets that last track collapse to the
+        width it actually has, and changes nothing whenever there is room.
       */
       gridTemplateColumns: {
-        tile: "repeat(auto-fit, minmax(13rem, 1fr))",
-        card: "repeat(auto-fit, minmax(17rem, 1fr))",
-        panel: "repeat(auto-fit, minmax(22rem, 1fr))",
+        tile: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))",
+        card: "repeat(auto-fit, minmax(min(17rem, 100%), 1fr))",
+        panel: "repeat(auto-fit, minmax(min(22rem, 100%), 1fr))",
       },
       borderRadius: {
         xl: "calc(var(--radius) + 4px)",

@@ -198,7 +198,52 @@ export default function AuditPage() {
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70 pb-4"><CardTitle>{ceoCopy.audit.history}</CardTitle><CardDescription>{isLoading ? ceoCopy.audit.loading : `${ceoCopy.audit.shown} ${auditPagination.total} ${ceoCopy.audit.lastEvents}`}</CardDescription></CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              {/*
+                A 900px table on a 375px screen is six columns of horizontal
+                drag with the header scrolled out of sight. Below `md` each
+                entry is a card instead — the same six values, stacked, with
+                the whole card opening the change sheet.
+              */}
+              <ul className="divide-y divide-border/60 md:hidden">
+                {(data?.logs ?? []).map((log) => (
+                  <li key={log.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors active:bg-muted/40"
+                      onClick={() => setSelected(log)}
+                      aria-label={ceoCopy.audit.viewChanges}
+                    >
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>
+                            {actionLabel(log.action, ceoCopy.audit)}
+                          </Badge>
+                          <span className="text-sm font-medium">{entityLabel(log.entityType, ceoCopy.audit)}</span>
+                          {log.entityId ? <span className="text-sm text-muted-foreground">#{log.entityId}</span> : null}
+                        </div>
+                        <p className="truncate text-sm">{log.userName ?? ceoCopy.audit.system}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {Object.keys(jsonObject(log.newValues)).slice(0, 3).join(', ') || '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}
+                        </p>
+                      </div>
+                      <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  </li>
+                ))}
+                {isError ? (
+                  <li className="px-4 py-12 text-center">
+                    <span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span>
+                    <Button className="ml-3" variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>{t('retry')}</Button>
+                  </li>
+                ) : null}
+                {!isLoading && !isError && (data?.logs.length ?? 0) === 0 ? (
+                  <li className="px-4 py-12 text-center text-muted-foreground">{ceoCopy.audit.noResults}</li>
+                ) : null}
+              </ul>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.date}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.employee}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.action}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.object}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.changes}</th><th className="w-12 px-3 py-3" /></tr></thead>
                   <tbody>
@@ -227,7 +272,31 @@ export default function AuditPage() {
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{ceoCopy.audit.integrationLogs}</CardTitle><CardDescription>{ceoCopy.audit.integrationDescription}</CardDescription></CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{log.provider}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div>
+              <ul className="divide-y divide-border/60 md:hidden">
+                {(data?.integrationLogs ?? []).map((log) => (
+                  <li key={log.id} className="space-y-1.5 px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{log.provider}</span>
+                      <Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge>
+                    </div>
+                    <p className="break-words text-xs text-muted-foreground">
+                      {log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
+                  </li>
+                ))}
+                {isError ? (
+                  <li className="px-4 py-12 text-center">
+                    <span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span>
+                  </li>
+                ) : null}
+                {!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? (
+                  <li className="px-4 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</li>
+                ) : null}
+              </ul>
+              <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.source}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.status}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.message}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.time}</th></tr></thead><tbody>{(data?.integrationLogs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0"><td className="px-5 py-3 font-medium">{log.provider}</td><td className="px-5 py-3"><Badge variant={log.status === 'failed' ? 'destructive' : log.status === 'connected' || log.status === 'sent' ? 'success' : 'warning'}>{log.status}</Badge></td><td className="max-w-xl px-5 py-3 text-muted-foreground">{log.errorMessage || (log.payload ? JSON.stringify(log.payload) : ceoCopy.audit.noErrors)}</td><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td></tr>)}{isError ? <tr><td colSpan={4} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span></td></tr> : null}{!isLoading && !isError && (data?.integrationLogs.length ?? 0) === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noIntegrationLogs}</td></tr> : null}</tbody></table></div>
               <PaginationControls
                 page={integrationPagination.page}
                 pageSize={integrationPagination.limit}
@@ -248,7 +317,14 @@ export default function AuditPage() {
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
           <SheetHeader><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType, ceoCopy.audit)} #${selected.entityId ?? '—'} · ${new Date(selected.createdAt).toLocaleString('ru-RU')}` : ''}</SheetDescription></SheetHeader>
-          {selected ? <div className="mt-6 overflow-hidden rounded-lg border border-border/70"><div className="grid grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="grid grid-cols-[140px_1fr_1fr] border-b border-border/60 last:border-0 text-sm"><div className="break-words p-3 font-medium">{field}</div><div className="break-words border-l border-border/60 p-3 text-muted-foreground">{presentValue(oldValues[field], ceoCopy.audit)}</div><div className="break-words border-l border-border/60 p-3">{presentValue(newValues[field], ceoCopy.audit)}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div> : null}
+          {/*
+            Field / before / after reads as three columns only when there is
+            room for three. On a phone the header strip is dropped and each
+            field becomes its own block, with the two values labelled in place —
+            140px + two value columns would otherwise leave about 90px each,
+            which is not enough to tell an old value from a new one.
+          */}
+          {selected ? <div className="mt-6 overflow-hidden rounded-lg border border-border/70"><div className="hidden grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground sm:grid"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="border-b border-border/60 text-sm last:border-0 sm:grid sm:grid-cols-[140px_1fr_1fr]"><div className="break-words p-3 font-medium">{field}</div><div className="break-words px-3 pb-2 text-muted-foreground sm:border-l sm:border-border/60 sm:p-3"><span className="mr-1.5 text-xs uppercase tracking-wide text-muted-foreground/70 sm:hidden">{ceoCopy.audit.before}</span>{presentValue(oldValues[field], ceoCopy.audit)}</div><div className="break-words px-3 pb-3 sm:border-l sm:border-border/60 sm:p-3"><span className="mr-1.5 text-xs uppercase tracking-wide text-muted-foreground/70 sm:hidden">{ceoCopy.audit.after}</span>{presentValue(newValues[field], ceoCopy.audit)}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div> : null}
         </SheetContent>
       </Sheet>
     </ModulePage>

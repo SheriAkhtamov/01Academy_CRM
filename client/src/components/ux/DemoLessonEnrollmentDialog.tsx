@@ -161,7 +161,7 @@ export function DemoLessonEnrollmentDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !enroll.isPending && onOpenChange(nextOpen)}>
       {/* DialogContent carries a `grid` class that Tailwind emits after `flex`,
           so declaring rows is what actually bounds the scrollable middle. */}
-      <DialogContent className="grid max-h-[90vh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+      <DialogContent className="grid max-h-[90dvh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-6 pb-5 pt-6 pr-12">
           <DialogTitle>{t('enrollInDemoLesson')}</DialogTitle>
           <DialogDescription>

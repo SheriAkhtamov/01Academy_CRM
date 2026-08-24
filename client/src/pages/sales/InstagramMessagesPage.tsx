@@ -2211,13 +2211,13 @@ export default function MessagesPage() {
                 src={lightbox.url}
                 controls
                 autoPlay
-                className="max-h-[90vh] max-w-[90vw] rounded-lg bg-black"
+                className="max-h-[90dvh] max-w-[90vw] rounded-lg bg-black"
               />
             ) : (
               <img
                 src={lightbox.url}
                 alt={lightbox.title || ''}
-                className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+                className="max-h-[90dvh] max-w-[90vw] rounded-lg object-contain"
               />
             )}
           </div>

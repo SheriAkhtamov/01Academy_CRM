@@ -29,3 +29,19 @@ export function useMediaQuery(query: string) {
  * to the roomy layout rather than to the phone one.
  */
 export const useIsCompactViewport = () => useMediaQuery('(max-width: 1023px)');
+
+/**
+ * Phone-sized: everything below Tailwind's `md`, which is where the app shell
+ * folds the sidebar into a drawer. Layouts that only need to *paint*
+ * differently should use the `md:` prefix instead — this hook is for the cases
+ * where the component has to build something else entirely, such as a table
+ * that becomes a list of cards.
+ */
+export const useIsMobileViewport = () => useMediaQuery('(max-width: 767px)');
+
+/**
+ * A coarse pointer means no hover state to lean on and a ~44px finger instead
+ * of a ~2px cursor: affordances that only appear on hover have to stay visible,
+ * and drag handles have to be big enough to grab.
+ */
+export const useIsTouchPointer = () => useMediaQuery('(pointer: coarse)');

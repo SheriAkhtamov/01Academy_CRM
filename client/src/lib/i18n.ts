@@ -2907,6 +2907,11 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   after: { en: 'After', ru: 'Стало' },
   noAuditDiff: { en: 'This action has no fields to compare.', ru: 'Для этого действия нет полей сравнения.' },
   sortByColumn: { en: 'Sort by {column}', ru: 'Сортировать по столбцу «{column}»' },
+  sortRows: { en: 'Sort', ru: 'Сортировка' },
+  sortUnsorted: { en: 'Default order', ru: 'Исходный порядок' },
+  sortAscending: { en: 'Ascending', ru: 'По возрастанию' },
+  sortDescending: { en: 'Descending', ru: 'По убыванию' },
+  toggleSortDirection: { en: 'Reverse sort order', ru: 'Изменить направление сортировки' },
 } as const;
 
 

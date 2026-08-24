@@ -261,7 +261,7 @@ export function LeadAssignmentContent() {
           onValueChange={(value) => assignLead.mutate({ leadId: lead.id, managerId: Number(value) })}
           disabled={assignLead.isPending}
         >
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-full max-w-56">
             <SelectValue placeholder={t('selectManager')} />
           </SelectTrigger>
           <SelectContent>

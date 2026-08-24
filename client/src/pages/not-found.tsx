@@ -10,7 +10,7 @@ export default function NotFound() {
   const { t } = useTranslation();
 
   return (
-    <div className="min-h-[60vh] w-full flex items-center justify-center">
+    <div className="min-h-[60dvh] w-full flex items-center justify-center">
       <motion.div
         className="w-full max-w-md mx-4"
         variants={staggerContainer(0.07, 0.04)}

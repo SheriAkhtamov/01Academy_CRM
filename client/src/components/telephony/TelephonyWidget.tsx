@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useMovableWidget } from '@/hooks/useMovableWidget';
+import { useIsMobileViewport } from '@/hooks/useMediaQuery';
 import { toast } from '@/hooks/use-toast';
 import { formatCallDuration, isEditableTarget } from '@/lib/telephony';
 import { translations, type TranslationKey } from '@/lib/i18n';
@@ -76,6 +77,17 @@ export function TelephonyWidget() {
     isDragging,
     resetToDefault,
   } = useMovableWidget<HTMLDivElement>(TELEPHONY_WIDGET_POSITION_KEY, 20, isOpen);
+  /*
+    Free dragging is a desktop idea. On a phone the widget already fills most
+    of the screen, there is nowhere to park it, and dragging by the whole
+    surface competes with the scroll and swipe gestures the panel itself needs
+    — so below `md` it simply docks to the bottom-right corner and stops
+    listening for drags. A position dragged out on a desktop is ignored rather
+    than replayed on the phone, where those coordinates mean nothing.
+  */
+  const isMobile = useIsMobileViewport();
+  const dockedStyle = isMobile ? { bottom: '12px', right: '12px' } : widgetStyle;
+  const dockedDragProps = isMobile ? {} : widgetDragProps;
   const { talk: callDuration, elapsed: callElapsed } = useCallDuration(telephony.activeCall);
   const activeCall = telephony.activeCall;
   const activeCallKey = activeCall?.clientCallId ?? null;
@@ -173,12 +185,13 @@ export function TelephonyWidget() {
         // an element.
         <div
           ref={widgetRef}
-          style={widgetStyle}
-          {...widgetDragProps}
+          style={dockedStyle}
+          {...dockedDragProps}
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] isolate flex max-h-[min(660px,calc(100dvh-24px))] w-[min(372px,calc(100vw-24px))] cursor-move flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
+            'pointer-events-auto fixed z-[70] isolate flex max-h-[min(660px,calc(100dvh-24px))] w-[min(372px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-2xl',
+            !isMobile && 'cursor-move',
             'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-3 duration-300 ease-out-expo',
             isDragging && 'cursor-grabbing select-none ring-2 ring-primary/30',
           )}
@@ -188,8 +201,8 @@ export function TelephonyWidget() {
         >
           <header
             className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 py-2 pl-3.5 pr-2"
-            onDoubleClick={resetToDefault}
-            title={t('telephonyDragHint')}
+            onDoubleClick={isMobile ? undefined : resetToDefault}
+            title={isMobile ? undefined : t('telephonyDragHint')}
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -341,12 +354,13 @@ export function TelephonyWidget() {
         // has parked it in a corner and gone back to work.
         <div
           ref={widgetRef}
-          style={widgetStyle}
-          {...widgetDragProps}
+          style={dockedStyle}
+          {...dockedDragProps}
           data-telephony-widget
           data-dragging={isDragging || undefined}
           className={cn(
-            'pointer-events-auto fixed z-[70] flex h-14 touch-none cursor-move items-center overflow-hidden rounded-full pr-1 text-white shadow-xl',
+            'pointer-events-auto fixed z-[70] flex h-14 items-center overflow-hidden rounded-full pr-1 text-white shadow-xl',
+            !isMobile && 'touch-none cursor-move',
             'animate-in fade-in-0 zoom-in-90 duration-300 ease-out-expo',
             isLive
               ? 'bg-emerald-600 ring-4 ring-emerald-500/30'

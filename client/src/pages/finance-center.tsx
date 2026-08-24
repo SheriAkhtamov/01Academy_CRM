@@ -256,26 +256,39 @@ function TransactionTable({
   categoryLabel: (value: string) => string;
   compact?: boolean;
 }) {
+  /*
+    Six columns do not fit a phone, and letting them scroll sideways hides the
+    amount — the one number anybody opens this table for. Below `md` the
+    secondary columns collapse into the operation cell, leaving what the row is
+    and what it cost side by side.
+  */
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>{copy.date}</TableHead>
+          <TableHead className="hidden md:table-cell">{copy.date}</TableHead>
           <TableHead>{copy.operation}</TableHead>
-          <TableHead>{copy.category}</TableHead>
-          {!compact ? <TableHead>{copy.counterparty}</TableHead> : null}
-          <TableHead>{copy.status}</TableHead>
+          <TableHead className="hidden md:table-cell">{copy.category}</TableHead>
+          {!compact ? <TableHead className="hidden lg:table-cell">{copy.counterparty}</TableHead> : null}
+          <TableHead className="hidden sm:table-cell">{copy.status}</TableHead>
           <TableHead className="text-right">{copy.amount}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
           <TableRow key={row.id}>
-            <TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(row.occurredAt)}</TableCell>
-            <TableCell className="max-w-[280px] font-medium"><span className="block truncate">{row.title || '—'}</span></TableCell>
-            <TableCell>{categoryLabel(row.category || row.kind)}</TableCell>
-            {!compact ? <TableCell className="max-w-[240px] text-muted-foreground"><span className="block truncate">{row.counterparty || '—'}</span></TableCell> : null}
-            <TableCell><StatusBadge status={row.status} copy={copy} /></TableCell>
+            <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{dateTime(row.occurredAt)}</TableCell>
+            <TableCell className="max-w-[280px] font-medium">
+              <span className="block truncate">{row.title || '—'}</span>
+              <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground md:hidden">
+                <span>{dateTime(row.occurredAt)}</span>
+                <span>· {categoryLabel(row.category || row.kind)}</span>
+                <span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span>
+              </span>
+            </TableCell>
+            <TableCell className="hidden md:table-cell">{categoryLabel(row.category || row.kind)}</TableCell>
+            {!compact ? <TableCell className="hidden max-w-[240px] text-muted-foreground lg:table-cell"><span className="block truncate">{row.counterparty || '—'}</span></TableCell> : null}
+            <TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell>
             <TableCell className={cn(
               'whitespace-nowrap text-right font-semibold tabular-nums',
               row.direction === 'in' ? 'text-emerald-700' : 'text-destructive',
@@ -616,7 +629,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           />
 
           <Card className="overflow-hidden">
-            <CardHeader className="flex-row items-center justify-between gap-4 border-b border-border/70">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70">
               <CardTitle>{copy.recentTransactions}</CardTitle>
               <Button asChild variant="ghost" size="sm"><Link href={financeRoutes.transactions}>{copy.seeAllTransactions}<ArrowUpRight data-icon="inline-end" /></Link></Button>
             </CardHeader>
@@ -637,9 +650,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.incomeRegistry}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></CardHeader>
             <CardContent className="p-0">
               <Table>
-                <TableHeader><TableRow><TableHead>{copy.date}</TableHead><TableHead>{copy.customer}</TableHead><TableHead>{copy.course}</TableHead><TableHead>{copy.manager}</TableHead><TableHead>{copy.method}</TableHead><TableHead>{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="hidden md:table-cell">{copy.date}</TableHead><TableHead>{copy.customer}</TableHead><TableHead className="hidden lg:table-cell">{copy.course}</TableHead><TableHead className="hidden xl:table-cell">{copy.manager}</TableHead><TableHead className="hidden lg:table-cell">{copy.method}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {income.data.rows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-muted-foreground">{dateTime(row.paidAt || row.createdAt)}</TableCell><TableCell className="font-medium">{row.customerName || '—'}</TableCell><TableCell>{row.courseName || '—'}</TableCell><TableCell>{row.managerName || '—'}</TableCell><TableCell>{methodLabel(row.method)}</TableCell><TableCell><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className={cn('text-right font-semibold tabular-nums', row.status === 'paid' && 'text-emerald-700')}>{money(row.amountUzs)}</TableCell></TableRow>)}
+                  {income.data.rows.map((row) => <TableRow key={row.id}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{dateTime(row.paidAt || row.createdAt)}</TableCell><TableCell className="font-medium">{row.customerName || '—'}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground md:hidden"><span>{dateTime(row.paidAt || row.createdAt)}</span>{row.courseName ? <span>· {row.courseName}</span> : null}<span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell">{row.courseName || '—'}</TableCell><TableCell className="hidden xl:table-cell">{row.managerName || '—'}</TableCell><TableCell className="hidden lg:table-cell">{methodLabel(row.method)}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className={cn('whitespace-nowrap text-right font-semibold tabular-nums', row.status === 'paid' && 'text-emerald-700')}>{money(row.amountUzs)}</TableCell></TableRow>)}
                   {!income.data.rows.length ? <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow> : null}
                 </TableBody>
               </Table>
@@ -660,10 +673,10 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.expenseRegistry}</CardTitle><CardDescription>{copy.methodology}</CardDescription></CardHeader>
             <CardContent className="p-0">
               <Table>
-                <TableHeader><TableRow><TableHead>{copy.date}</TableHead><TableHead>{copy.title}</TableHead><TableHead>{copy.source}</TableHead><TableHead>{copy.category}</TableHead><TableHead>{copy.vendor}</TableHead><TableHead>{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="hidden md:table-cell">{copy.date}</TableHead><TableHead>{copy.title}</TableHead><TableHead className="hidden lg:table-cell">{copy.source}</TableHead><TableHead className="hidden lg:table-cell">{copy.category}</TableHead><TableHead className="hidden xl:table-cell">{copy.vendor}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.amount}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="whitespace-nowrap text-muted-foreground">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}</TableCell><TableCell><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell>{categoryLabel(row.category)}</TableCell><TableCell>{row.vendor || '—'}</TableCell><TableCell><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => payExpense.mutate(row.id)} disabled={payExpense.isPending}>{payExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
-                  {expenses.data.marketing.map((row) => <TableRow key={`marketing-${row.id}`}><TableCell className="whitespace-nowrap text-muted-foreground">{date(row.periodStart)}</TableCell><TableCell className="font-medium">{row.campaignName || row.channel}</TableCell><TableCell><Badge variant="purple">{copy.marketingSource}</Badge></TableCell><TableCell>{copy.marketing}</TableCell><TableCell>{row.sourceName || row.channel}</TableCell><TableCell><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.recognizedAmountUzs || row.amountUzs)}</TableCell><TableCell /></TableRow>)}
+                  {expenses.data.operating.map((row) => <TableRow key={`operating-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.expenseDate)}</TableCell><TableCell className="font-medium">{row.title}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.expenseDate)}</span><span>· {categoryLabel(row.category)}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="outline">{copy.operatingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{categoryLabel(row.category)}</TableCell><TableCell className="hidden xl:table-cell">{row.vendor || '—'}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.amountUzs)}</TableCell><TableCell><div className="flex justify-end gap-1">{row.status === 'planned' ? <><Button size="sm" variant="outline" onClick={() => payExpense.mutate(row.id)} disabled={payExpense.isPending}>{payExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}{copy.pay}</Button><Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button></> : null}</div></TableCell></TableRow>)}
+                  {expenses.data.marketing.map((row) => <TableRow key={`marketing-${row.id}`}><TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{date(row.periodStart)}</TableCell><TableCell className="font-medium">{row.campaignName || row.channel}<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden"><span className="md:hidden">{date(row.periodStart)}</span><span>· {copy.marketing}</span><span className="sm:hidden"><StatusBadge status={row.status} copy={copy} /></span></span></TableCell><TableCell className="hidden lg:table-cell"><Badge variant="purple">{copy.marketingSource}</Badge></TableCell><TableCell className="hidden lg:table-cell">{copy.marketing}</TableCell><TableCell className="hidden xl:table-cell">{row.sourceName || row.channel}</TableCell><TableCell className="hidden sm:table-cell"><StatusBadge status={row.status} copy={copy} /></TableCell><TableCell className="text-right font-semibold tabular-nums">{money(row.recognizedAmountUzs || row.amountUzs)}</TableCell><TableCell /></TableRow>)}
                   {!expenses.data.operating.length && !expenses.data.marketing.length ? <TableRow><TableCell colSpan={8} className="h-40 text-center text-muted-foreground">{copy.noData}</TableCell></TableRow> : null}
                 </TableBody>
               </Table>
@@ -681,12 +694,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           </StaggerGroup>
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <Card className="overflow-hidden">
-              <CardHeader className="flex-row items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
+              <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
               <CardContent className="p-0">
                 <Table>
-                  <TableHeader><TableRow><TableHead>{copy.employee}</TableHead><TableHead>{copy.position}</TableHead><TableHead className="text-right">{copy.salary}</TableHead><TableHead className="text-right">{copy.bonus}</TableHead><TableHead className="text-right">{copy.deduction}</TableHead><TableHead className="text-right">{copy.payoutAmount}</TableHead><TableHead>{copy.status}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>{copy.employee}</TableHead><TableHead className="hidden lg:table-cell">{copy.position}</TableHead><TableHead className="hidden text-right xl:table-cell">{copy.salary}</TableHead><TableHead className="hidden text-right xl:table-cell">{copy.bonus}</TableHead><TableHead className="hidden text-right xl:table-cell">{copy.deduction}</TableHead><TableHead className="text-right">{copy.payoutAmount}</TableHead><TableHead className="hidden sm:table-cell">{copy.status}</TableHead><TableHead className="text-right">{copy.actions}</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {payroll.data.entries.map((entry) => <TableRow key={entry.employeeUserId} data-state={selectedPayrollEntry?.employeeUserId === entry.employeeUserId ? 'selected' : undefined} onClick={() => setSelectedEmployeeId(entry.employeeUserId)} className="cursor-pointer"><TableCell><div className="flex items-center gap-3"><Avatar className="size-9"><AvatarFallback>{initials(entry.employeeName)}</AvatarFallback></Avatar><span className="font-medium">{entry.employeeName}</span></div></TableCell><TableCell className="text-muted-foreground">{entry.position || '—'}</TableCell><TableCell className="text-right tabular-nums">{money(entry.baseSalaryUzs)}</TableCell><TableCell className="text-right tabular-nums">{entry.status === 'paid' ? money(entry.bonusUzs) : '—'}</TableCell><TableCell className="text-right tabular-nums">{entry.status === 'paid' ? money(entry.deductionUzs) : '—'}</TableCell><TableCell className="text-right font-semibold tabular-nums">{money(entry.amountUzs ?? entry.baseSalaryUzs)}</TableCell><TableCell><div className="flex flex-col items-start gap-1"><StatusBadge status={entry.status} copy={copy} />{entry.paidAt ? <span className="text-xs text-muted-foreground">{date(entry.paidAt)}</span> : null}</div></TableCell><TableCell className="text-right" onClick={(event) => event.stopPropagation()}>{entry.status === 'pending' ? <Button size="sm" onClick={() => openPayoutDialog(entry)}>{copy.pay}</Button> : entry.status === 'unconfigured' ? <Button size="sm" variant="outline" onClick={() => openSalaryDialog(entry)}>{copy.configureSalary}</Button> : null}</TableCell></TableRow>)}
+                    {payroll.data.entries.map((entry) => <TableRow key={entry.employeeUserId} data-state={selectedPayrollEntry?.employeeUserId === entry.employeeUserId ? 'selected' : undefined} onClick={() => setSelectedEmployeeId(entry.employeeUserId)} className="cursor-pointer"><TableCell><div className="flex items-center gap-3"><Avatar className="hidden size-9 sm:flex"><AvatarFallback>{initials(entry.employeeName)}</AvatarFallback></Avatar><div className="min-w-0"><span className="font-medium">{entry.employeeName}</span><span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal text-muted-foreground lg:hidden">{entry.position ? <span>{entry.position}</span> : null}<span className="sm:hidden"><StatusBadge status={entry.status} copy={copy} /></span></span></div></div></TableCell><TableCell className="hidden text-muted-foreground lg:table-cell">{entry.position || '—'}</TableCell><TableCell className="hidden text-right tabular-nums xl:table-cell">{money(entry.baseSalaryUzs)}</TableCell><TableCell className="hidden text-right tabular-nums xl:table-cell">{entry.status === 'paid' ? money(entry.bonusUzs) : '—'}</TableCell><TableCell className="hidden text-right tabular-nums xl:table-cell">{entry.status === 'paid' ? money(entry.deductionUzs) : '—'}</TableCell><TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{money(entry.amountUzs ?? entry.baseSalaryUzs)}</TableCell><TableCell className="hidden sm:table-cell"><div className="flex flex-col items-start gap-1"><StatusBadge status={entry.status} copy={copy} />{entry.paidAt ? <span className="text-xs text-muted-foreground">{date(entry.paidAt)}</span> : null}</div></TableCell><TableCell className="text-right" onClick={(event) => event.stopPropagation()}>{entry.status === 'pending' ? <Button size="sm" onClick={() => openPayoutDialog(entry)}>{copy.pay}</Button> : entry.status === 'unconfigured' ? <Button size="sm" variant="outline" onClick={() => openSalaryDialog(entry)}>{copy.configureSalary}</Button> : null}</TableCell></TableRow>)}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -714,7 +727,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'transactions' && transactions.data ? (
         <Card className="overflow-hidden">
-          <CardHeader className="flex-row items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.transactions}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Select value={transactionFilter} onValueChange={setTransactionFilter}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">{copy.all}</SelectItem><SelectItem value="income">{copy.incoming}</SelectItem><SelectItem value="expense">{copy.outgoing}</SelectItem></SelectGroup></SelectContent></Select></CardHeader>
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.transactions}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Select value={transactionFilter} onValueChange={setTransactionFilter}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">{copy.all}</SelectItem><SelectItem value="income">{copy.incoming}</SelectItem><SelectItem value="expense">{copy.outgoing}</SelectItem></SelectGroup></SelectContent></Select></CardHeader>
           <CardContent className="p-0"><TransactionTable rows={filteredTransactions} copy={copy} money={money} dateTime={dateTime} categoryLabel={categoryLabel} /></CardContent>
         </Card>
       ) : null}

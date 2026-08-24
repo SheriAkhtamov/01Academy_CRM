@@ -1098,7 +1098,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           control={userForm.control}
                           name="isActive"
                           render={({ field }) => (
-                            <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
+                            <FormItem className="flex flex-row flex-wrap items-center justify-between gap-4 rounded-lg border p-4">
                               <div className="min-w-0 space-y-0.5">
                                 <FormLabel className="text-base">{t('activeAccount')}</FormLabel>
                                 <div className="text-sm text-muted-foreground">

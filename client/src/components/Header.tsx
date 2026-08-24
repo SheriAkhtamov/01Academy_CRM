@@ -152,8 +152,8 @@ export default function Header({
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 px-4 py-3 backdrop-blur-xl md:px-6">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:px-4 sm:py-3 md:px-6">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3 md:flex-nowrap">
           {onMenuToggle && (
             <button
               onClick={onMenuToggle}
@@ -209,7 +209,7 @@ export default function Header({
                   />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuContent align="end" className="w-[min(20rem,calc(100vw-1.5rem))]">
                 <DropdownMenuLabel className="flex items-center justify-between">
                   <span>{t('notifications')}</span>
                   {unreadNotificationCount > 0 && (
@@ -234,7 +234,7 @@ export default function Header({
                   // Previously only the first six were rendered and the rest were
                   // announced as "+N hidden" with no way to reach them. Scroll the
                   // full list instead.
-                  <div className="max-h-[60vh] overflow-y-auto">
+                  <div className="max-h-[60dvh] overflow-y-auto">
                     {notifications.map((notification: any) => (
                       // A plain wrapper, not a menu item: each actionable control
                       // below is its own DropdownMenuItem, which is what puts it in
@@ -270,12 +270,22 @@ export default function Header({
             </DropdownMenu>
 
             <div className="relative">
+              {/*
+                The label is the first thing to go on a narrow screen: with the
+                menu button, search, theme, notifications and the avatar all
+                competing for a 375px row, a word-and-icon button is what pushed
+                the account menu off the edge. Below `sm` it is a round icon
+                button like its neighbours; the accessible name is unchanged, so
+                nothing is lost but the printed word.
+              */}
               <Button
+                size="icon"
+                className="rounded-full sm:size-auto sm:rounded-md sm:px-4 sm:py-2"
                 onClick={() => setShowChat(true)}
                 aria-label={unreadMessageCount > 0 ? unreadMessagesLabel : t('messages')}
               >
-                <MessageCircle className="h-5 w-5 mr-2" />
-                {t('messages')}
+                <MessageCircle className="h-5 w-5 sm:mr-2" />
+                <span className="hidden sm:inline">{t('messages')}</span>
               </Button>
               <UnreadCountBadge
                 count={unreadMessageCount}
@@ -299,7 +309,7 @@ export default function Header({
                   </div>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuContent align="end" className="w-[min(16rem,calc(100vw-1.5rem))]">
                 {/* Current account */}
                 <div className="px-3 py-2">
                   <p className="text-xs text-muted-foreground">{t('currentAccount')}</p>

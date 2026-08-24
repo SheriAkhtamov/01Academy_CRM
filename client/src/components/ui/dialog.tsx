@@ -45,7 +45,11 @@ const DialogContent = React.forwardRef<
           // edges with no way to scroll, putting its own footer buttons out of
           // reach. Cap the height and scroll instead; dialogs that manage their
           // own internal scrolling override both classes via `className`.
-          "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border border-border/70 bg-popover text-popover-foreground p-6 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[46%] sm:rounded-xl",
+          // `w-full` used to run the dialog into both edges of a phone screen,
+          // where `sm:rounded-xl` then squared its corners off so it read as a
+          // page rather than a dialog. It now keeps a 1rem gutter and its
+          // corners below `sm`; from `sm` up the box is what it always was.
+          "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-xl border border-border/70 bg-popover text-popover-foreground p-6 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[46%] sm:w-full",
           // The dialog rises the last few pixels on an expo curve, which is
           // what separates "appeared" from "arrived".
           "data-[state=open]:duration-300 data-[state=open]:ease-out-expo data-[state=closed]:duration-150 data-[state=closed]:ease-in-expo",
@@ -54,7 +58,7 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground opacity-80 ring-offset-background transition-all hover:bg-accent hover:text-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+        <DialogPrimitive.Close className="absolute right-3 top-3 grid size-9 place-items-center rounded-md text-muted-foreground opacity-80 sm:right-4 sm:top-4 sm:size-auto sm:p-1 ring-offset-background transition-all hover:bg-accent hover:text-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
           <X className="h-4 w-4" />
           <span className="sr-only">{t('close')}</span>
         </DialogPrimitive.Close>

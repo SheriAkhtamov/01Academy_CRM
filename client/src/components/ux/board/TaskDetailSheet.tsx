@@ -304,7 +304,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                     </div>
                 ) : (
                     <>
-                        <SheetHeader className="space-y-0 border-b border-border p-5 pr-14">
+                        <SheetHeader className="space-y-0 border-b border-border p-4 pr-12 sm:p-5 sm:pr-14">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
                                     {editing ? (
@@ -463,8 +463,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                             </div>
 
                             {/* Tabs */}
-                            <Tabs defaultValue="comments" className="p-5">
-                                <TabsList className="grid w-full grid-cols-4">
+                            <Tabs defaultValue="comments" className="p-4 sm:p-5">
+                                <TabsList className="w-full sm:grid sm:grid-cols-4">
                                     <TabsTrigger value="comments">{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
                                     <TabsTrigger value="checklist">{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
                                     <TabsTrigger value="attachments">{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>

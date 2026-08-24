@@ -32,6 +32,14 @@ export const createAcademyDemoTables = (references: {
     status: varchar('status', { length: 30 }).notNull().default('scheduled'),
     notes: text('notes'),
     cancellationReason: text('cancellation_reason'),
+    notConductedReasonCode: varchar('not_conducted_reason_code', { length: 50 }),
+    notConductedReasonNote: text('not_conducted_reason_note'),
+    finalizedAt: timestamp('finalized_at'),
+    finalizedBy: integer('finalized_by').references(() => references.userId, { onDelete: 'set null' }),
+    lastRescheduledFrom: timestamp('last_rescheduled_from'),
+    lastRescheduleReason: text('last_reschedule_reason'),
+    lastRescheduledAt: timestamp('last_rescheduled_at'),
+    lastRescheduledBy: integer('last_rescheduled_by').references(() => references.userId, { onDelete: 'set null' }),
     createdBy: integer('created_by').references(() => references.userId, { onDelete: 'set null' }),
     updatedBy: integer('updated_by').references(() => references.userId, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -43,7 +51,27 @@ export const createAcademyDemoTables = (references: {
     schoolIdx: index('academy_demo_lessons_school_idx').on(table.schoolId, table.scheduledAt),
     durationCheck: check('academy_demo_lessons_duration_check', sql`${table.durationMinutes} BETWEEN 15 AND 480`),
     formatCheck: check('academy_demo_lessons_format_check', sql`${table.format} IN ('offline', 'online')`),
-    statusCheck: check('academy_demo_lessons_status_check', sql`${table.status} IN ('scheduled', 'completed', 'cancelled')`),
+    statusCheck: check('academy_demo_lessons_status_check', sql`${table.status} IN ('scheduled', 'completed', 'not_conducted', 'cancelled')`),
+    notConductedReasonCodeCheck: check(
+      'academy_demo_lessons_not_conducted_reason_code_check',
+      sql`${table.notConductedReasonCode} IS NULL OR ${table.notConductedReasonCode} IN ('teacher_unavailable', 'participants_absent', 'client_requested_change', 'room_unavailable', 'technical_issue', 'organizational_issue', 'emergency', 'other')`,
+    ),
+    notConductedReasonStateCheck: check(
+      'academy_demo_lessons_not_conducted_reason_state_check',
+      sql`(${table.status} = 'not_conducted' AND ${table.notConductedReasonCode} IS NOT NULL) OR (${table.status} <> 'not_conducted' AND ${table.notConductedReasonCode} IS NULL AND ${table.notConductedReasonNote} IS NULL)`,
+    ),
+    notConductedOtherNoteCheck: check(
+      'academy_demo_lessons_not_conducted_other_note_check',
+      sql`${table.notConductedReasonCode} <> 'other' OR NULLIF(BTRIM(${table.notConductedReasonNote}), '') IS NOT NULL`,
+    ),
+    notConductedReasonNoteLengthCheck: check(
+      'academy_demo_lessons_not_conducted_reason_note_length_check',
+      sql`${table.notConductedReasonNote} IS NULL OR char_length(${table.notConductedReasonNote}) <= 500`,
+    ),
+    rescheduleReasonLengthCheck: check(
+      'academy_demo_lessons_reschedule_reason_length_check',
+      sql`${table.lastRescheduleReason} IS NULL OR char_length(${table.lastRescheduleReason}) <= 500`,
+    ),
     roomFormatCheck: check(
       'academy_demo_lessons_room_format_check',
       sql`(${table.format} = 'offline' AND ${table.roomId} IS NOT NULL) OR (${table.format} = 'online' AND ${table.roomId} IS NULL)`,

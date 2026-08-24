@@ -3,6 +3,9 @@ import type {
   DemoLessonEnrollment,
   DemoLessonMutation,
   DemoNoShowReasonCode,
+  DemoNotConductedReasonCode,
+  DemoLessonOutcome,
+  DemoLessonReschedule,
   DemoLessonResourceAvailabilityRequest,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
@@ -32,9 +35,15 @@ export interface DemoLesson {
   scheduledAt: string;
   durationMinutes: number;
   format: 'offline' | 'online';
-  status: 'scheduled' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'completed' | 'not_conducted' | 'cancelled';
   notes?: string | null;
   cancellationReason?: string | null;
+  notConductedReasonCode?: DemoNotConductedReasonCode | null;
+  notConductedReasonNote?: string | null;
+  finalizedAt?: string | null;
+  lastRescheduledFrom?: string | null;
+  lastRescheduleReason?: string | null;
+  lastRescheduledAt?: string | null;
   participants: DemoLessonParticipant[];
   canManage?: boolean;
 }
@@ -130,6 +139,12 @@ export const demoLessonsApi = {
   ),
   cancel: (id: number, reason: string) => (
     apiRequest('POST', `/api/academy/demo-lessons/${id}/cancel`, { reason }) as Promise<DemoLesson>
+  ),
+  outcome: (id: number, payload: DemoLessonOutcome) => (
+    apiRequest('POST', `/api/academy/demo-lessons/${id}/outcome`, payload) as Promise<DemoLesson>
+  ),
+  reschedule: (id: number, payload: DemoLessonReschedule) => (
+    apiRequest('POST', `/api/academy/demo-lessons/${id}/reschedule`, payload) as Promise<DemoLesson>
   ),
   saveAttendance: (id: number, payload: DemoLessonAttendance) => (
     apiRequest('POST', `/api/academy/demo-lessons/${id}/attendance`, payload) as Promise<DemoLesson>

@@ -4,6 +4,8 @@ import {
   demoLessonAttendanceSchema,
   demoLessonEnrollmentSchema,
   demoLessonMutationSchema,
+  demoLessonOutcomeSchema,
+  demoLessonRescheduleSchema,
   demoLessonResourceAvailabilitySchema,
 } from '../shared/contracts/demo-lessons';
 import { buildSalesDemoScheduleEvents } from '../client/src/lib/salesSchedule';
@@ -24,6 +26,10 @@ const capacityMigration = readFileSync(
 );
 const noShowReasonMigration = readFileSync(
   new URL('../migrations/0094_add_demo_no_show_reasons.sql', import.meta.url),
+  'utf8',
+);
+const outcomeMigration = readFileSync(
+  new URL('../migrations/0096_add_demo_outcomes_and_rescheduling.sql', import.meta.url),
   'utf8',
 );
 const schema = readFileSync(
@@ -155,6 +161,40 @@ describe('demo lessons', () => {
     }).error?.issues[0]?.message).toBe('demoNoShowReasonOnlyForAbsence');
   });
 
+  it('stores explicit demo outcomes and rescheduling history with database invariants', () => {
+    expect(outcomeMigration).toContain("'not_conducted'");
+    expect(outcomeMigration).toContain('"not_conducted_reason_code" varchar(50)');
+    expect(outcomeMigration).toContain('academy_demo_lessons_not_conducted_reason_state_check');
+    expect(outcomeMigration).toContain('academy_demo_lessons_not_conducted_other_note_check');
+    expect(outcomeMigration).toContain('"last_rescheduled_from" timestamp');
+    expect(outcomeMigration).toContain('"last_reschedule_reason" text');
+    expect(journal.entries.find((entry) => entry.idx === 96)?.tag)
+      .toBe('0096_add_demo_outcomes_and_rescheduling');
+    expect(schema).toContain("notConductedReasonCode: varchar('not_conducted_reason_code'");
+    expect(schema).toContain("lastRescheduledFrom: timestamp('last_rescheduled_from')");
+  });
+
+  it('validates final outcomes and requires a reason for every move', () => {
+    expect(demoLessonOutcomeSchema.safeParse({ status: 'completed' }).success).toBe(true);
+    expect(demoLessonOutcomeSchema.safeParse({
+      status: 'not_conducted',
+      reasonCode: 'participants_absent',
+    }).success).toBe(true);
+    expect(demoLessonOutcomeSchema.safeParse({
+      status: 'not_conducted',
+      reasonCode: 'other',
+      reasonNote: '  ',
+    }).error?.issues[0]?.message).toBe('demoNoShowOtherNoteRequired');
+    expect(demoLessonRescheduleSchema.safeParse({
+      scheduledAt: '2030-07-15T10:00:00+05:00',
+      reason: '',
+    }).success).toBe(false);
+    expect(demoLessonRescheduleSchema.safeParse({
+      scheduledAt: '2030-07-15T10:00:00+05:00',
+      reason: 'Parent requested another time',
+    }).success).toBe(true);
+  });
+
   it('creates a demo lesson without participants and without a seat limit', () => {
     const { participantIds, ...schedule } = validMutation;
     const empty = demoLessonMutationSchema.safeParse(schedule);
@@ -204,6 +244,8 @@ describe('demo lessons', () => {
     expect(routes).toContain("router.post('/demo-lessons'");
     expect(routes).toContain("router.post('/demo-lessons/resource-availability'");
     expect(routes).toContain("router.post('/demo-lessons/:id/cancel'");
+    expect(routes).toContain("router.post('/demo-lessons/:id/outcome'");
+    expect(routes).toContain("router.post('/demo-lessons/:id/reschedule'");
     expect(routes).toContain("router.post('/demo-lessons/:id/attendance'");
     expect(routes).toContain("router.post('/demo-lessons/:id/participants'");
     expect(routes).toContain('ADD_ACADEMY_DEMO_PARTICIPANTS');
@@ -217,6 +259,10 @@ describe('demo lessons', () => {
     expect(resourceAvailability).toContain("status IN ('open', 'in_progress')");
     expect(resourceAvailability).toContain('busyTeacherIds');
     expect(resourceAvailability).toContain('busyRoomIds');
+    expect(routes).toContain('FINALIZE_ACADEMY_DEMO_LESSON');
+    expect(routes).toContain('RESCHEDULE_ACADEMY_DEMO_LESSON');
+    expect(routes).toContain('assertDemoResources(input, id)');
+    expect(routes).not.toContain("status: Number(pending?.count ?? 0) === 0 ? 'completed'");
   });
 
   it('disables enrollment when the lead is already booked or times overlap, never for a full demo', () => {
@@ -290,6 +336,9 @@ describe('demo lessons', () => {
     expect(detailsDialog).toContain("t('demoNoShowReasonTitle')");
     expect(detailsDialog).toContain('confirmNoShowReason');
     expect(detailsDialog).toContain('noShowReasonCode');
+    expect(detailsDialog).toContain("t('markDemoConductedTitle')");
+    expect(detailsDialog).toContain("t('markDemoNotConductedTitle')");
+    expect(detailsDialog).toContain("t('rescheduleDemoLessonTitle')");
   });
 
   it('keeps legacy lead state aligned without regressing newer sales outcomes', () => {

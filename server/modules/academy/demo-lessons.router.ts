@@ -4,6 +4,8 @@ import {
   demoLessonCancelSchema,
   demoLessonEnrollmentSchema,
   demoLessonMutationSchema,
+  demoLessonOutcomeSchema,
+  demoLessonRescheduleSchema,
   demoLessonResourceAvailabilitySchema,
   type DemoLessonMutation,
 } from '@shared/contracts/demo-lessons';
@@ -518,8 +520,8 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
         const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
         if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-        if (locked.status === 'completed') {
-          throw Object.assign(new Error('completedDemoCannotBeCancelled'), { statusCode: 409 });
+        if (locked.status !== 'scheduled') {
+          throw Object.assign(new Error('demoCannotBeCancelled'), { statusCode: 409 });
         }
         const updated = await updateRow('academy_demo_lessons', id, {
           status: 'cancelled',
@@ -582,6 +584,168 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
     }
   });
 
+  router.post('/demo-lessons/:id/outcome', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const id = Number(req.params.id);
+    const parsed = demoLessonOutcomeSchema.safeParse(req.body);
+    if (!Number.isSafeInteger(id) || id < 1 || !parsed.success) {
+      return res.status(400).json({
+        error: parsed.success ? 'invalidData' : parsed.error.issues[0]?.message || 'invalidData',
+      });
+    }
+    try {
+      const current = await getDemoLesson(id);
+      if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
+      if (!hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
+        return res.status(403).json({ error: 'Lead mutation access required' });
+      }
+
+      const finalized = await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+        const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
+        if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (locked.status !== 'scheduled') {
+          throw Object.assign(new Error('demoOutcomeAlreadyFinal'), { statusCode: 409 });
+        }
+        if (new Date(locked.scheduledAt).getTime() > Date.now()) {
+          throw Object.assign(new Error('demoOutcomeBeforeStart'), { statusCode: 409 });
+        }
+        if (parsed.data.status === 'completed') {
+          const pending = await queryOne<{ count: number }>(
+            `SELECT COUNT(*)::int AS count
+             FROM academy_demo_lesson_participants
+             WHERE demo_lesson_id = $1 AND status IN ('invited', 'confirmed')`,
+            [id],
+          );
+          if (Number(pending?.count ?? 0) > 0) {
+            throw Object.assign(new Error('demoAttendanceIncomplete'), { statusCode: 409 });
+          }
+        }
+        const updated = await updateRow('academy_demo_lessons', id, {
+          status: parsed.data.status,
+          notConductedReasonCode: parsed.data.status === 'not_conducted'
+            ? parsed.data.reasonCode
+            : null,
+          notConductedReasonNote: parsed.data.status === 'not_conducted'
+            ? parsed.data.reasonNote?.trim() || null
+            : null,
+          finalizedAt: new Date(),
+          finalizedBy: req.user!.id,
+          updatedBy: req.user!.id,
+        });
+        if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        await createAudit(
+          req.actor!,
+          'FINALIZE_ACADEMY_DEMO_LESSON',
+          'academy_demo_lesson',
+          id,
+          updated,
+          locked,
+        );
+        return updated;
+      });
+      const responseDemo = await getDemoLesson(id) ?? finalized;
+      res.json(presentDemoLesson(req, responseDemo));
+    } catch (error: any) {
+      logger.error('Failed to finalize demo lesson', { error });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToFinalizeDemoLesson'),
+      });
+    }
+  });
+
+  router.post('/demo-lessons/:id/reschedule', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const id = Number(req.params.id);
+    const parsed = demoLessonRescheduleSchema.safeParse(req.body);
+    if (!Number.isSafeInteger(id) || id < 1 || !parsed.success) {
+      return res.status(400).json({
+        error: parsed.success ? 'invalidData' : parsed.error.issues[0]?.message || 'invalidData',
+      });
+    }
+    try {
+      const current = await getDemoLesson(id);
+      if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      const currentParticipants = Array.isArray(current.participants)
+        ? current.participants as Row[]
+        : [];
+      if (!hasLeadershipAccess(req.user)
+        && currentParticipants.some((item) => !canManageParticipant(req, item))) {
+        return res.status(403).json({ error: 'Lead mutation access required' });
+      }
+
+      const rescheduled = await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+        const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
+        if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (locked.status !== 'scheduled') {
+          throw Object.assign(new Error('demoCannotBeRescheduled'), { statusCode: 409 });
+        }
+        const activeParticipants = await query(
+          `SELECT participant.*, lead.demo_at
+           FROM academy_demo_lesson_participants participant
+           LEFT JOIN academy_leads lead ON lead.id = participant.lead_id
+           WHERE participant.demo_lesson_id = $1 AND participant.status <> 'cancelled'
+           ORDER BY participant.lead_id
+           FOR UPDATE OF participant`,
+          [id],
+        );
+        const participantIds = activeParticipants.map((participant) => Number(participant.leadId));
+        const input: DemoLessonMutation = {
+          courseId: Number(locked.courseId),
+          schoolId: Number(locked.schoolId),
+          roomId: locked.roomId ? Number(locked.roomId) : null,
+          teacherId: Number(locked.teacherId),
+          scheduledAt: parsed.data.scheduledAt,
+          durationMinutes: Number(locked.durationMinutes),
+          format: locked.format === 'online' ? 'online' : 'offline',
+          participantIds,
+          notes: locked.notes ?? null,
+        };
+        const resources = await assertDemoResources(input, id);
+        const rescheduledAt = new Date();
+        const updated = await updateRow('academy_demo_lessons', id, {
+          scheduledAt: resources.startsAt,
+          lastRescheduledFrom: locked.scheduledAt,
+          lastRescheduleReason: parsed.data.reason,
+          lastRescheduledAt: rescheduledAt,
+          lastRescheduledBy: req.user!.id,
+          updatedBy: req.user!.id,
+        });
+        if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+
+        for (const participant of activeParticipants) {
+          const ownsLegacyBooking = Boolean(
+            participant.demoAt
+            && new Date(participant.demoAt).getTime() === new Date(locked.scheduledAt).getTime(),
+          );
+          if (ownsLegacyBooking) {
+            await updateRow('academy_leads', Number(participant.leadId), {
+              demoAt: resources.startsAt,
+            });
+          }
+        }
+        await createAudit(
+          req.actor!,
+          'RESCHEDULE_ACADEMY_DEMO_LESSON',
+          'academy_demo_lesson',
+          id,
+          { demoLesson: updated, reason: parsed.data.reason },
+          locked,
+        );
+        return updated;
+      });
+      const responseDemo = await getDemoLesson(id) ?? rescheduled;
+      res.json(presentDemoLesson(req, responseDemo));
+    } catch (error: any) {
+      logger.error('Failed to reschedule demo lesson', { error });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToRescheduleDemoLesson'),
+      });
+    }
+  });
+
   router.post('/demo-lessons/:id/attendance', async (req, res) => {
     if (!ensureSalesAccess(req, res)) return;
     const id = Number(req.params.id);
@@ -603,8 +767,8 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       const result = await withTransaction(async () => {
         const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
         if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-        if (locked.status === 'cancelled') {
-          throw Object.assign(new Error('cancelledDemoAttendanceNotAllowed'), { statusCode: 409 });
+        if (locked.status === 'cancelled' || locked.status === 'not_conducted') {
+          throw Object.assign(new Error('demoAttendanceNotAllowed'), { statusCode: 409 });
         }
         const lockedParticipants = await query(
           `SELECT *
@@ -688,14 +852,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
             await handleLeadStatusEffects(req.actor!, updatedLead, currentStatus);
           }
         }
-        const pending = await queryOne<{ count: number }>(
-          `SELECT COUNT(*)::int AS count
-           FROM academy_demo_lesson_participants
-           WHERE demo_lesson_id = $1 AND status IN ('invited', 'confirmed')`,
-          [id],
-        );
         const updated = await updateRow('academy_demo_lessons', id, {
-          status: Number(pending?.count ?? 0) === 0 ? 'completed' : locked.status,
           updatedBy: req.user!.id,
         });
         if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });

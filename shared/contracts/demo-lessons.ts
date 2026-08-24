@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const DEMO_LESSON_FORMATS = ['offline', 'online'] as const;
-export const DEMO_LESSON_STATUSES = ['scheduled', 'completed', 'cancelled'] as const;
+export const DEMO_LESSON_STATUSES = ['scheduled', 'completed', 'not_conducted', 'cancelled'] as const;
 export const DEMO_PARTICIPANT_STATUSES = [
   'invited',
   'confirmed',
@@ -17,6 +17,16 @@ export const DEMO_NO_SHOW_REASON_CODES = [
   'could_not_reach_location',
   'technical_issue',
   'not_interested',
+  'other',
+] as const;
+export const DEMO_NOT_CONDUCTED_REASON_CODES = [
+  'teacher_unavailable',
+  'participants_absent',
+  'client_requested_change',
+  'room_unavailable',
+  'technical_issue',
+  'organizational_issue',
+  'emergency',
   'other',
 ] as const;
 
@@ -67,6 +77,32 @@ export const demoLessonCancelSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 
+export const demoLessonOutcomeSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('completed'),
+  }),
+  z.object({
+    status: z.literal('not_conducted'),
+    reasonCode: z.enum(DEMO_NOT_CONDUCTED_REASON_CODES),
+    reasonNote: z.string().trim().max(500).nullable().optional(),
+  }),
+]).superRefine((value, context) => {
+  if (value.status === 'not_conducted'
+    && value.reasonCode === 'other'
+    && !value.reasonNote?.trim()) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reasonNote'],
+      message: 'demoNoShowOtherNoteRequired',
+    });
+  }
+});
+
+export const demoLessonRescheduleSchema = z.object({
+  scheduledAt: z.string().datetime({ offset: true }),
+  reason: z.string().trim().min(1).max(500),
+});
+
 export const demoLessonAttendanceSchema = z.object({
   participants: z.array(z.object({
     leadId: entityId,
@@ -109,5 +145,8 @@ export const demoLessonEnrollmentSchema = z.object({
 export type DemoLessonMutation = z.infer<typeof demoLessonMutationSchema>;
 export type DemoLessonAttendance = z.infer<typeof demoLessonAttendanceSchema>;
 export type DemoLessonEnrollment = z.infer<typeof demoLessonEnrollmentSchema>;
+export type DemoLessonOutcome = z.infer<typeof demoLessonOutcomeSchema>;
+export type DemoLessonReschedule = z.infer<typeof demoLessonRescheduleSchema>;
 export type DemoLessonResourceAvailabilityRequest = z.infer<typeof demoLessonResourceAvailabilitySchema>;
 export type DemoNoShowReasonCode = typeof DEMO_NO_SHOW_REASON_CODES[number];
+export type DemoNotConductedReasonCode = typeof DEMO_NOT_CONDUCTED_REASON_CODES[number];

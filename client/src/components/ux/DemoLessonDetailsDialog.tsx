@@ -4,7 +4,10 @@ import { enUS, ru } from 'date-fns/locale';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, CalendarClock, MapPin, Pencil, UserRoundCheck, UsersRound } from 'lucide-react';
 import {
+  DEMO_NOT_CONDUCTED_REASON_CODES,
   DEMO_NO_SHOW_REASON_CODES,
+  type DemoLessonOutcome,
+  type DemoNotConductedReasonCode,
   type DemoNoShowReasonCode,
 } from '@shared/contracts/demo-lessons';
 import {
@@ -43,6 +46,12 @@ import {
   type DemoLesson,
 } from '@/features/demo-lessons/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
+import {
+  academyDateInputValue,
+  academyInstant,
+  academyTimeOfDay,
+  academyToday,
+} from '@/lib/localeFormat';
 import { submitOnEnter } from '@/lib/submitOnEnter';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -87,6 +96,16 @@ export function DemoLessonDetailsDialog({
     not_interested: t('demoNoShowReasonNotInterested'),
     other: t('demoNoShowReasonOther'),
   };
+  const notConductedReasonLabels: Record<DemoNotConductedReasonCode, string> = {
+    teacher_unavailable: t('demoNotConductedReasonTeacherUnavailable'),
+    participants_absent: t('demoNotConductedReasonParticipantsAbsent'),
+    client_requested_change: t('demoNotConductedReasonClientRequestedChange'),
+    room_unavailable: t('demoNotConductedReasonRoomUnavailable'),
+    technical_issue: t('demoNoShowReasonTechnicalIssue'),
+    organizational_issue: t('demoNotConductedReasonOrganizationalIssue'),
+    emergency: t('demoNotConductedReasonEmergency'),
+    other: t('archiveReasonOther'),
+  };
   const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
   const [noShowReasons, setNoShowReasons] = useState<Record<number, NoShowReasonDraft>>({});
   const [dirtyLeadIds, setDirtyLeadIds] = useState<Set<number>>(new Set());
@@ -95,6 +114,14 @@ export function DemoLessonDetailsDialog({
   const [reasonNote, setReasonNote] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [conductedConfirmOpen, setConductedConfirmOpen] = useState(false);
+  const [notConductedOpen, setNotConductedOpen] = useState(false);
+  const [notConductedReasonCode, setNotConductedReasonCode] = useState<DemoNotConductedReasonCode | ''>('');
+  const [notConductedReasonNote, setNotConductedReasonNote] = useState('');
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
 
   useEffect(() => {
     if (!demo || !open) return;
@@ -118,6 +145,14 @@ export function DemoLessonDetailsDialog({
     setReasonNote('');
     setCancelReason('');
     setCancelOpen(false);
+    setConductedConfirmOpen(false);
+    setNotConductedOpen(false);
+    setNotConductedReasonCode('');
+    setNotConductedReasonNote('');
+    setRescheduleOpen(false);
+    setRescheduleDate(academyDateInputValue(demo.scheduledAt));
+    setRescheduleTime(academyTimeOfDay(demo.scheduledAt));
+    setRescheduleReason('');
   }, [demo, open]);
 
   const invalidate = async (updated: DemoLesson) => {
@@ -145,9 +180,9 @@ export function DemoLessonDetailsDialog({
       }),
     }),
     onSuccess: async (updated) => {
+      setDirtyLeadIds(new Set());
       await invalidate(updated);
       toast({ title: t('demoAttendanceSaved') });
-      onOpenChange(false);
     },
     onError: (error: Error) => toast({
       title: t('demoAttendanceSaveFailed'),
@@ -172,6 +207,44 @@ export function DemoLessonDetailsDialog({
     },
     onError: (error: Error) => toast({
       title: t('demoLessonCancelFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const finalizeDemo = useMutation({
+    mutationFn: (payload: DemoLessonOutcome) => demoLessonsApi.outcome(Number(demo?.id), payload),
+    onSuccess: async (updated) => {
+      await invalidate(updated);
+      toast({
+        title: updated.status === 'completed'
+          ? t('demoMarkedConducted')
+          : t('demoMarkedNotConducted'),
+      });
+      setConductedConfirmOpen(false);
+      setNotConductedOpen(false);
+      onOpenChange(false);
+    },
+    onError: (error: Error) => toast({
+      title: t('demoOutcomeSaveFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const rescheduleDemo = useMutation({
+    mutationFn: () => demoLessonsApi.reschedule(Number(demo?.id), {
+      scheduledAt: academyInstant(rescheduleDate, rescheduleTime).toISOString(),
+      reason: rescheduleReason.trim(),
+    }),
+    onSuccess: async (updated) => {
+      await invalidate(updated);
+      toast({ title: t('demoLessonRescheduled') });
+      setRescheduleOpen(false);
+      onOpenChange(false);
+    },
+    onError: (error: Error) => toast({
+      title: t('demoLessonRescheduleFailed'),
       description: error.message,
       variant: 'destructive',
     }),
@@ -233,16 +306,45 @@ export function DemoLessonDetailsDialog({
 
   if (!demo) return null;
   const scheduledAt = new Date(demo.scheduledAt);
-  const canEditAttendance = demo.canManage !== false && demo.status !== 'cancelled';
-  const canCancel = demo.canManage !== false && demo.status === 'scheduled';
+  const canEditAttendance = demo.canManage !== false
+    && demo.status !== 'cancelled'
+    && demo.status !== 'not_conducted';
+  const canManageScheduledDemo = demo.canManage !== false && demo.status === 'scheduled';
+  const demoHasStarted = scheduledAt.getTime() <= Date.now();
+  const attendanceComplete = demo.participants.every((participant) => (
+    attendance[participant.leadId] === 'attended'
+    || attendance[participant.leadId] === 'no_show'
+  ));
+  const canMarkConducted = canManageScheduledDemo
+    && demoHasStarted
+    && attendanceComplete
+    && dirtyLeadIds.size === 0;
+  const rescheduledAt = rescheduleDate && rescheduleTime
+    ? academyInstant(rescheduleDate, rescheduleTime)
+    : null;
+  const rescheduleIsValid = Boolean(
+    rescheduledAt
+    && !Number.isNaN(rescheduledAt.getTime())
+    && rescheduledAt.getTime() > Date.now()
+    && rescheduleReason.trim(),
+  );
+  const notConductedReasonValid = Boolean(
+    notConductedReasonCode
+    && (notConductedReasonCode !== 'other' || notConductedReasonNote.trim()),
+  );
 
   return (
     <>
       <Dialog open={open} onOpenChange={(nextOpen) => {
         if (!saveAttendance.isPending
           && !cancelDemo.isPending
+          && !finalizeDemo.isPending
+          && !rescheduleDemo.isPending
           && reasonLeadId === null
-          && !cancelOpen) {
+          && !cancelOpen
+          && !conductedConfirmOpen
+          && !notConductedOpen
+          && !rescheduleOpen) {
           onOpenChange(nextOpen);
         }
       }}>
@@ -286,12 +388,16 @@ export function DemoLessonDetailsDialog({
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold">{t('demoAttendance')}</h3>
-              <Badge variant={demo.status === 'cancelled' ? 'destructive' : 'secondary'}>
+              <Badge variant={demo.status === 'cancelled' || demo.status === 'not_conducted'
+                ? 'destructive'
+                : 'secondary'}>
                 {demo.status === 'scheduled'
                   ? t('demoStatusScheduled')
                   : demo.status === 'completed'
                     ? t('demoStatusCompleted')
-                    : t('demoStatusCancelled')}
+                    : demo.status === 'not_conducted'
+                      ? t('demoStatusNotConducted')
+                      : t('demoStatusCancelled')}
               </Badge>
             </div>
             <div className="space-y-2">
@@ -386,14 +492,67 @@ export function DemoLessonDetailsDialog({
             <div className="rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">{demo.notes}</div>
           ) : null}
 
-          <DialogFooter className="sm:justify-between">
-            <div>
-              {canCancel ? (
+          {demo.status === 'not_conducted' && demo.notConductedReasonCode ? (
+            <div className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium">{t('demoNotConductedReason')}</p>
+              <p className="text-muted-foreground">
+                {notConductedReasonLabels[demo.notConductedReasonCode]}
+                {demo.notConductedReasonNote ? ` — ${demo.notConductedReasonNote}` : ''}
+              </p>
+            </div>
+          ) : null}
+
+          {demo.lastRescheduledFrom && demo.lastRescheduleReason ? (
+            <div className="space-y-1 rounded-lg bg-muted/60 p-3 text-sm">
+              <p className="font-medium">{t('demoLastReschedule')}</p>
+              <p className="text-muted-foreground">
+                {format(new Date(demo.lastRescheduledFrom), 'd MMMM yyyy, HH:mm', { locale })}
+                {' · '}
+                {demo.lastRescheduleReason}
+              </p>
+            </div>
+          ) : null}
+
+          {canManageScheduledDemo ? (
+            <div className="space-y-3 rounded-xl border border-border p-4">
+              <div>
+                <p className="text-sm font-semibold">{t('demoLessonActions')}</p>
+                <p className="text-xs text-muted-foreground">{t('demoLessonActionsDescription')}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
+                  {t('rescheduleDemoLesson')}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!canMarkConducted || finalizeDemo.isPending}
+                  onClick={() => setConductedConfirmOpen(true)}
+                >
+                  {t('markDemoConducted')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!demoHasStarted || finalizeDemo.isPending}
+                  onClick={() => setNotConductedOpen(true)}
+                >
+                  {t('markDemoNotConducted')}
+                </Button>
                 <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
                   {t('cancelDemoLesson')}
                 </Button>
+              </div>
+              {!demoHasStarted ? (
+                <p className="text-xs text-muted-foreground">{t('demoOutcomeAvailableAfterStart')}</p>
+              ) : !attendanceComplete ? (
+                <p className="text-xs text-muted-foreground">{t('demoCompleteAttendanceBeforeConducted')}</p>
+              ) : dirtyLeadIds.size > 0 ? (
+                <p className="text-xs text-muted-foreground">{t('demoSaveAttendanceBeforeConducted')}</p>
               ) : null}
             </div>
+          ) : null}
+
+          <DialogFooter>
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 {t('close')}
@@ -481,6 +640,162 @@ export function DemoLessonDetailsDialog({
                 disabled={!reasonCode || (reasonCode === 'other' && !reasonNote.trim())}
               >
                 {t('confirmAction')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={conductedConfirmOpen} onOpenChange={(nextOpen) => {
+        if (!finalizeDemo.isPending) setConductedConfirmOpen(nextOpen);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('markDemoConductedTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('markDemoConductedDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={finalizeDemo.isPending}>{t('back')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!canMarkConducted || finalizeDemo.isPending}
+              onClick={() => finalizeDemo.mutate({ status: 'completed' })}
+            >
+              {finalizeDemo.isPending ? t('saving') : t('markDemoConducted')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={notConductedOpen} onOpenChange={(nextOpen) => {
+        if (!finalizeDemo.isPending) setNotConductedOpen(nextOpen);
+      }}>
+        <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            if (!notConductedReasonCode || !notConductedReasonValid) return;
+            finalizeDemo.mutate({
+              status: 'not_conducted',
+              reasonCode: notConductedReasonCode,
+              reasonNote: notConductedReasonNote.trim() || null,
+            });
+          }} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>{t('markDemoNotConductedTitle')}</DialogTitle>
+              <DialogDescription>{t('markDemoNotConductedDescription')}</DialogDescription>
+            </DialogHeader>
+
+            <fieldset className="space-y-2">
+              <legend className="mb-2 text-sm font-medium">{t('demoNotConductedReason')}</legend>
+              {DEMO_NOT_CONDUCTED_REASON_CODES
+                .filter((code) => demo.format !== 'online' || code !== 'room_unavailable')
+                .map((code) => (
+                  <label
+                    key={code}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors',
+                      notConductedReasonCode === code
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border hover:bg-muted/60',
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="demo-not-conducted-reason"
+                      value={code}
+                      checked={notConductedReasonCode === code}
+                      onChange={() => setNotConductedReasonCode(code)}
+                      className="size-4 accent-primary"
+                    />
+                    <span>{notConductedReasonLabels[code]}</span>
+                  </label>
+                ))}
+            </fieldset>
+
+            <div className="space-y-2">
+              <Label htmlFor="demo-not-conducted-note">
+                {notConductedReasonCode === 'other'
+                  ? t('demoNoShowReasonCommentRequired')
+                  : t('demoNoShowReasonComment')}
+              </Label>
+              <Textarea
+                id="demo-not-conducted-note"
+                value={notConductedReasonNote}
+                onChange={(event) => setNotConductedReasonNote(event.target.value)}
+                placeholder={t('demoNotConductedCommentPlaceholder')}
+                maxLength={500}
+                rows={3}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNotConductedOpen(false)}>
+                {t('back')}
+              </Button>
+              <Button type="submit" disabled={!notConductedReasonValid || finalizeDemo.isPending}>
+                {finalizeDemo.isPending ? t('saving') : t('markDemoNotConducted')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rescheduleOpen} onOpenChange={(nextOpen) => {
+        if (!rescheduleDemo.isPending) setRescheduleOpen(nextOpen);
+      }}>
+        <DialogContent className="max-w-lg">
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            if (rescheduleIsValid) rescheduleDemo.mutate();
+          }} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>{t('rescheduleDemoLessonTitle')}</DialogTitle>
+              <DialogDescription>{t('rescheduleDemoLessonDescription')}</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="demo-reschedule-date">{t('dateColumn')}</Label>
+                <Input
+                  id="demo-reschedule-date"
+                  type="date"
+                  min={academyToday()}
+                  value={rescheduleDate}
+                  onChange={(event) => setRescheduleDate(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="demo-reschedule-time">{t('time')}</Label>
+                <Input
+                  id="demo-reschedule-time"
+                  type="time"
+                  value={rescheduleTime}
+                  onChange={(event) => setRescheduleTime(event.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="demo-reschedule-reason">{t('demoRescheduleReason')}</Label>
+              <Textarea
+                id="demo-reschedule-reason"
+                value={rescheduleReason}
+                onChange={(event) => setRescheduleReason(event.target.value)}
+                placeholder={t('demoRescheduleReasonPlaceholder')}
+                maxLength={500}
+                rows={3}
+                required
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{t('demoRescheduleResourceHint')}</p>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRescheduleOpen(false)}>
+                {t('back')}
+              </Button>
+              <Button type="submit" disabled={!rescheduleIsValid || rescheduleDemo.isPending}>
+                {rescheduleDemo.isPending ? t('saving') : t('rescheduleDemoLesson')}
               </Button>
             </DialogFooter>
           </form>

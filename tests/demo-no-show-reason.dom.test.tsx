@@ -29,6 +29,8 @@ vi.mock('../client/src/features/demo-lessons/api', () => ({
   demoLessonsApi: {
     saveAttendance: apiMocks.saveAttendance,
     cancel: vi.fn(),
+    outcome: vi.fn(),
+    reschedule: vi.fn(),
   },
 }));
 

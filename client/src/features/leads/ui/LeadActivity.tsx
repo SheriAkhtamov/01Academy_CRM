@@ -57,6 +57,9 @@ export type LeadActivityData = {
     talkSeconds: number;
     hangupCause?: string | null;
     userName?: string | null;
+    note?: string | null;
+    noteAuthorName?: string | null;
+    noteUpdatedAt?: string | null;
     hasRecording: boolean;
   }>;
   assignmentHistory?: Array<{
@@ -172,6 +175,9 @@ type ActivityItem = {
   at?: string | null;
   title: string;
   text?: string | null;
+  note?: string | null;
+  noteAuthorName?: string | null;
+  noteUpdatedAt?: string | null;
   callId: number | null;
   hasRecording: boolean;
 };
@@ -278,6 +284,9 @@ export function ActivityTimeline({
         `${t('talkTime')}: ${formatCallDuration(item.talkSeconds)}`,
         item.hangupCause,
       ].filter(Boolean).join(' • '),
+      note: item.note,
+      noteAuthorName: item.noteAuthorName,
+      noteUpdatedAt: item.noteUpdatedAt,
       callId: item.id,
       hasRecording: item.hasRecording,
     })),
@@ -451,6 +460,24 @@ export function ActivityTimeline({
                           </div>
                           {item.text ? (
                             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.text}</p>
+                          ) : null}
+                          {item.note ? (
+                            <div className="mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <p className="text-xs font-medium text-foreground">
+                                  {t('telephonyNote')}
+                                  {item.noteAuthorName ? ` · ${item.noteAuthorName}` : null}
+                                </p>
+                                {item.noteUpdatedAt ? (
+                                  <time className="text-xs text-muted-foreground" dateTime={item.noteUpdatedAt}>
+                                    {dateTime(item.noteUpdatedAt)}
+                                  </time>
+                                ) : null}
+                              </div>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">
+                                {item.note}
+                              </p>
+                            </div>
                           ) : null}
                           {item.callId && item.hasRecording ? (
                             <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />

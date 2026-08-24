@@ -206,6 +206,10 @@ interface LeadDetails {
     hangupCause?: string | null;
     userId?: number | null;
     userName?: string | null;
+    note?: string | null;
+    noteAuthorId?: number | null;
+    noteAuthorName?: string | null;
+    noteUpdatedAt?: string | null;
     hasRecording: boolean;
   }>;
   tasks?: Array<{

@@ -155,10 +155,27 @@ export const createLeadStudentRequestSchema = z.object({
   studentName: z.string().trim().min(1).max(255),
   studentAge: z.coerce.number().int().min(1).max(120).optional().nullable(),
   phone: z.string().trim().max(80).optional().nullable(),
-  groupIds: z.array(positiveIdSchema).min(1),
-  primaryGroupId: positiveIdSchema,
-  enrolledAt: z.coerce.date(),
+  groupIds: z.array(positiveIdSchema).default([]),
+  primaryGroupId: positiveIdSchema.optional().nullable(),
+  enrolledAt: z.coerce.date().optional().nullable(),
+  demoOnly: z.boolean().optional().default(false),
   marketingConsent: z.boolean().optional(),
+}).superRefine((value, context) => {
+  if (value.demoOnly) return;
+  if (value.groupIds.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['groupIds'],
+      message: 'studentGroupRequired',
+    });
+  }
+  if (!value.primaryGroupId || !value.groupIds.includes(value.primaryGroupId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['primaryGroupId'],
+      message: 'studentGroupRequired',
+    });
+  }
 });
 
 // Update remains passthrough during the compatibility phase because the
@@ -206,6 +223,6 @@ export type LeadSocialAccountDeleteRequest = z.infer<typeof leadSocialAccountDel
 export type CreateLeadStudentRequest = Omit<
   z.infer<typeof createLeadStudentRequestSchema>,
   'enrolledAt'
-> & { enrolledAt: string | Date };
+> & { enrolledAt?: string | Date | null };
 export type UpdateAcademyLeadRequest = z.infer<typeof updateAcademyLeadRequestSchema>;
 export type AcademyLeadDto = z.infer<typeof academyLeadDtoSchema>;

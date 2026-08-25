@@ -1915,6 +1915,64 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
+  it('creates a trial student for demo enrollment without a group or lead-stage mutation', async () => {
+    const lead = leadFixture({
+      status_code: 'qualified',
+      phone: '+998901234567',
+      course_id: 3,
+      school_id: 2,
+      is_archived: false,
+    });
+    const student = {
+      id: 78,
+      lead_id: 42,
+      student_name: 'Trial child',
+      student_age: 8,
+      group_id: null,
+      course_id: 3,
+      school_id: 2,
+      status: 'trial',
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [lead] };
+      }
+      if (sql.includes('FROM academy_students student') && sql.includes('WHERE student.id = $1')) {
+        return { rows: [{ ...student, groups: [] }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [lead] };
+      if (sql.includes('SELECT COUNT(*)::int AS count FROM academy_students')) return { rows: [{ count: 0 }] };
+      if (sql.includes('INSERT INTO "academy_students"')) return { rows: [student] };
+      if (sql.includes('INSERT INTO "academy_student_status_history"')) return { rows: [{ id: 90 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/42/students')
+      .send({
+        studentName: 'Trial child',
+        studentAge: 8,
+        demoOnly: true,
+      });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    const studentInsert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO "academy_students"'));
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'status')).toBe('trial');
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'group_id')).toBeNull();
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'next_payment_at')).toBeNull();
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO academy_student_group_enrollments')
+    ))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"') && String(sql).includes('"status_code"')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('rejects invalid payment dates and enums before writing anything', async () => {
     const invalidDate = await request(await createApp())
       .post('/api/academy/payments')

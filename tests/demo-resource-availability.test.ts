@@ -63,7 +63,7 @@ describe('demo resource availability', () => {
       scheduledAt: '2030-07-15T10:00:00+05:00',
       durationMinutes: 60,
       format: 'offline',
-      participantIds: [101, 102],
+      studentIds: [101, 102],
     });
 
     expect(result.teachers.map(({ id, available, reason }) => ({ id, available, reason }))).toEqual([

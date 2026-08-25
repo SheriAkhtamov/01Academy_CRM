@@ -727,10 +727,15 @@ router.post('/students/:id/groups', async (req, res) => {
 
       if (shouldMakePrimary) {
         const previousGroupId = lockedStudent.groupId ? Number(lockedStudent.groupId) : null;
+        const activatesTrialStudent = lockedStudent.status === 'trial';
         const updated = await updateRow('academy_students', studentId, {
           groupId,
           courseId: Number(group.courseId),
           schoolId: Number(group.schoolId),
+          status: activatesTrialStudent ? 'studying' : lockedStudent.status,
+          enrolledAt: activatesTrialStudent ? enrolledAt : lockedStudent.enrolledAt,
+          enrollmentDate: activatesTrialStudent ? enrolledAt : lockedStudent.enrollmentDate,
+          nextPaymentAt: activatesTrialStudent ? addDays(enrolledAt, 30) : lockedStudent.nextPaymentAt,
         });
         if (lockedStudent.leadId) {
           await updateRow('academy_leads', Number(lockedStudent.leadId), {
@@ -746,6 +751,15 @@ router.post('/students/:id/groups', async (req, res) => {
             toGroupId: groupId,
             reason: nullableText(req.body.reason) ?? 'Изменена основная группа',
             createdBy: req.user!.id,
+          });
+        }
+        if (activatesTrialStudent) {
+          await insertRow('academy_student_status_history', {
+            studentId,
+            fromStatus: 'trial',
+            toStatus: 'studying',
+            changedBy: req.user!.id,
+            comment: 'Пробный ученик зачислен в учебную группу',
           });
         }
         await recalculateStudentMetrics(studentId);

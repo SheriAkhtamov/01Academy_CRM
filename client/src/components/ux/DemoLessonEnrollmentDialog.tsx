@@ -14,6 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -24,12 +25,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
 import {
   demoLessonQueryKeys,
   demoLessonsApi,
   type DemoLesson,
 } from '@/features/demo-lessons/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
+import { useLeadDetailsQuery } from '@/features/leads/queries';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
@@ -45,6 +48,18 @@ export interface DemoLessonEnrollmentLead {
   schoolId?: number | null;
 }
 
+interface DemoEnrollmentStudent {
+  id: number;
+  studentName?: string | null;
+  studentAge?: number | null;
+  status: string;
+}
+
+interface DemoEnrollmentLeadDetails {
+  id: number;
+  students?: DemoEnrollmentStudent[];
+}
+
 type EnrollmentState = 'available' | 'already_enrolled' | 'lead_busy' | 'closed';
 
 const isActiveParticipant = (status: string) => ACTIVE_PARTICIPANT_STATUSES.has(status);
@@ -55,21 +70,21 @@ const lessonEndsAt = (demo: DemoLesson) => (
 
 export const getDemoEnrollmentState = (
   demo: DemoLesson,
-  leadId: number,
+  studentIds: readonly number[],
   demos: DemoLesson[],
   now = Date.now(),
 ): EnrollmentState => {
   const startsAt = new Date(demo.scheduledAt).getTime();
   if (demo.status !== 'scheduled' || !Number.isFinite(startsAt) || startsAt <= now) return 'closed';
   if (demo.participants.some((participant) => (
-    Number(participant.leadId) === leadId && isActiveParticipant(participant.status)
+    studentIds.includes(Number(participant.studentId)) && isActiveParticipant(participant.status)
   ))) return 'already_enrolled';
   const endsAt = lessonEndsAt(demo);
   const hasOverlap = demos.some((candidate) => (
     Number(candidate.id) !== Number(demo.id)
     && candidate.status === 'scheduled'
     && candidate.participants.some((participant) => (
-      Number(participant.leadId) === leadId && isActiveParticipant(participant.status)
+      studentIds.includes(Number(participant.studentId)) && isActiveParticipant(participant.status)
     ))
     && new Date(candidate.scheduledAt).getTime() < endsAt
     && lessonEndsAt(candidate) > startsAt
@@ -90,16 +105,28 @@ export function DemoLessonEnrollmentDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lead: DemoLessonEnrollmentLead | null;
-  onCreateNew?: () => void;
+  onCreateNew?: (studentIds: number[]) => void;
 }) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedDemoId, setSelectedDemoId] = useState<number | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [createStudentOpen, setCreateStudentOpen] = useState(false);
   const [search, setSearch] = useState('');
   useEffect(() => {
     setSelectedDemoId(null);
+    setSelectedStudentIds([]);
+    setCreateStudentOpen(false);
     setSearch('');
   }, [lead?.id, open]);
+
+  const leadDetailsQuery = useLeadDetailsQuery<DemoEnrollmentLeadDetails>(lead?.id ?? null, open);
+  const students = useMemo(() => leadDetailsQuery.data?.students ?? [], [leadDetailsQuery.data]);
+
+  useEffect(() => {
+    if (!open || students.length !== 1 || selectedStudentIds.length > 0) return;
+    setSelectedStudentIds([students[0].id]);
+  }, [open, selectedStudentIds.length, students]);
 
   const demoQuery = useQuery({
     queryKey: demoLessonQueryKeys.enrollment,
@@ -109,8 +136,8 @@ export function DemoLessonEnrollmentDialog({
   });
   const demos = useMemo(() => demoQuery.data ?? [], [demoQuery.data]);
   const upcomingDemos = useMemo(() => demos.filter((demo) => (
-    lead && getDemoEnrollmentState(demo, lead.id, demos) !== 'closed'
-  )), [demos, lead]);
+    getDemoEnrollmentState(demo, selectedStudentIds, demos) !== 'closed'
+  )), [demos, selectedStudentIds]);
   const visibleDemos = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase();
     if (!normalized) return upcomingDemos;
@@ -123,7 +150,7 @@ export function DemoLessonEnrollmentDialog({
   }, [search, upcomingDemos]);
 
   const enroll = useMutation({
-    mutationFn: () => demoLessonsApi.enroll(Number(selectedDemoId), { leadIds: [Number(lead?.id)] }),
+    mutationFn: () => demoLessonsApi.enroll(Number(selectedDemoId), { studentIds: selectedStudentIds }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.all }),
@@ -155,9 +182,10 @@ export function DemoLessonEnrollmentDialog({
     hour12: false,
     timeZone: ACADEMY_TIME_ZONE,
   }), [locale]);
-  const leadName = lead?.studentName?.trim() || lead?.contactName || '';
+  const leadName = lead?.contactName || '';
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(nextOpen) => !enroll.isPending && onOpenChange(nextOpen)}>
       {/* DialogContent carries a `grid` class that Tailwind emits after `flex`,
           so declaring rows is what actually bounds the scrollable middle. */}
@@ -165,14 +193,78 @@ export function DemoLessonEnrollmentDialog({
         <DialogHeader className="border-b border-border px-6 pb-5 pt-6 pr-12">
           <DialogTitle>{t('enrollInDemoLesson')}</DialogTitle>
           <DialogDescription>
-            {t('enrollLeadInDemoDescription').replace('{lead}', leadName)}
+            {t('enrollStudentsInDemoDescription').replace('{lead}', leadName)}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-col gap-4 px-6">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/45 px-3 py-2 text-sm">
-            <UserRound className="size-4 shrink-0 text-primary" />
-            <span className="min-w-0 truncate font-medium">{leadName}</span>
+          <div className="space-y-2 rounded-xl border border-border bg-muted/25 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{t('demoStudents')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('selectedStudentsCount').replace('{count}', String(selectedStudentIds.length))}
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => setCreateStudentOpen(true)}>
+                {t('createStudentForDemo')}
+              </Button>
+            </div>
+
+            {leadDetailsQuery.isLoading ? (
+              <div className="flex min-h-16 items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 size-4 animate-spin" /> {t('loading')}
+              </div>
+            ) : leadDetailsQuery.isError ? (
+              <Alert variant="destructive">
+                <AlertTitle>{t('failedToLoadData')}</AlertTitle>
+                <AlertDescription className="mt-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => leadDetailsQuery.refetch()}>
+                    {t('retry')}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : students.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border bg-background px-4 py-3 text-sm">
+                <p className="font-medium">{t('noStudentsForDemo')}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('noStudentsForDemoHint')}</p>
+              </div>
+            ) : (
+              <div className="grid max-h-32 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                {students.map((student) => {
+                  const checked = selectedStudentIds.includes(student.id);
+                  const labelId = `demo-student-${student.id}`;
+                  return (
+                    <label
+                      key={student.id}
+                      id={labelId}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-background px-3 py-2 has-[[data-state=checked]]:border-primary/45 has-[[data-state=checked]]:bg-primary/5"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        aria-labelledby={labelId}
+                        onCheckedChange={(nextChecked) => {
+                          setSelectedStudentIds((current) => nextChecked
+                            ? [...current, student.id]
+                            : current.filter((id) => id !== student.id));
+                          setSelectedDemoId(null);
+                        }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {student.studentName || `${t('student')} #${student.id}`}
+                        </span>
+                        {student.studentAge ? (
+                          <span className="block text-xs text-muted-foreground">
+                            {student.studentAge} {t('years')}
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="relative">
@@ -205,7 +297,7 @@ export function DemoLessonEnrollmentDialog({
             <ScrollArea className="min-h-0 flex-1 pr-3">
               <div role="radiogroup" className="flex flex-col gap-2 pb-1" aria-label={t('enrollInDemoLesson')}>
                 {visibleDemos.map((demo) => {
-                  const state = getDemoEnrollmentState(demo, Number(lead?.id), demos);
+                  const state = getDemoEnrollmentState(demo, selectedStudentIds, demos);
                   const disabled = state !== 'available';
                   const selected = selectedDemoId === demo.id;
                   const startsAt = new Date(demo.scheduledAt);
@@ -279,7 +371,12 @@ export function DemoLessonEnrollmentDialog({
           onCreateNew ? 'sm:justify-between' : 'sm:justify-end',
         )}>
           {onCreateNew ? (
-            <Button type="button" variant="outline" onClick={onCreateNew} disabled={enroll.isPending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onCreateNew(selectedStudentIds)}
+              disabled={selectedStudentIds.length === 0 || enroll.isPending}
+            >
               <CalendarPlus2 data-icon="inline-start" />
               {t('createDemoLesson')}
             </Button>
@@ -291,7 +388,7 @@ export function DemoLessonEnrollmentDialog({
             <Button
               type="button"
               onClick={() => enroll.mutate()}
-              disabled={!selectedDemoId || enroll.isPending}
+              disabled={selectedStudentIds.length === 0 || !selectedDemoId || enroll.isPending}
             >
               {enroll.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
               {enroll.isPending ? t('saving') : t('enrollInDemoLesson')}
@@ -300,5 +397,22 @@ export function DemoLessonEnrollmentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {lead ? (
+      <CreateLeadStudentDialog
+        open={createStudentOpen}
+        onOpenChange={setCreateStudentOpen}
+        leadId={lead.id}
+        contactName={lead.contactName}
+        groups={[]}
+        purpose="demo"
+        onCreated={async (student) => {
+          setSelectedStudentIds((current) => (
+            current.includes(student.id) ? current : [...current, student.id]
+          ));
+          await leadDetailsQuery.refetch();
+        }}
+      />
+    ) : null}
+    </>
   );
 }

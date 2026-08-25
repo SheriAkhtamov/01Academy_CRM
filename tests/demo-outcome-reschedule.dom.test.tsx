@@ -50,7 +50,7 @@ const pastDemo: DemoLesson = {
   format: 'offline',
   status: 'scheduled',
   participants: [
-    { id: 11, leadId: 101, status: 'attended', contactName: 'Родитель', studentName: 'Азиз' },
+    { id: 11, studentId: 71, leadId: 101, status: 'attended', contactName: 'Родитель', studentName: 'Азиз' },
   ],
   canManage: true,
 };

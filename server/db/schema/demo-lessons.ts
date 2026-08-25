@@ -17,7 +17,7 @@ export const createAcademyDemoTables = (references: {
   schoolId: AnyPgColumn;
   roomId: AnyPgColumn;
   teacherId: AnyPgColumn;
-  leadId: AnyPgColumn;
+  studentId: AnyPgColumn;
   userId: AnyPgColumn;
 }) => {
   const academyDemoLessons = pgTable('academy_demo_lessons', {
@@ -82,7 +82,7 @@ export const createAcademyDemoTables = (references: {
     id: serial('id').primaryKey(),
     demoLessonId: integer('demo_lesson_id')
       .references(() => academyDemoLessons.id, { onDelete: 'cascade' }).notNull(),
-    leadId: integer('lead_id').references(() => references.leadId, { onDelete: 'cascade' }).notNull(),
+    studentId: integer('student_id').references(() => references.studentId, { onDelete: 'cascade' }).notNull(),
     status: varchar('status', { length: 30 }).notNull().default('invited'),
     result: text('result'),
     noShowReasonCode: varchar('no_show_reason_code', { length: 40 }),
@@ -91,8 +91,8 @@ export const createAcademyDemoTables = (references: {
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   }, (table) => ({
     participantUnique: uniqueIndex('academy_demo_lesson_participants_unique')
-      .on(table.demoLessonId, table.leadId),
-    leadIdx: index('academy_demo_lesson_participants_lead_idx').on(table.leadId, table.demoLessonId),
+      .on(table.demoLessonId, table.studentId),
+    studentIdx: index('academy_demo_lesson_participants_student_idx').on(table.studentId, table.demoLessonId),
     statusCheck: check(
       'academy_demo_lesson_participants_status_check',
       sql`${table.status} IN ('invited', 'confirmed', 'attended', 'no_show', 'cancelled')`,

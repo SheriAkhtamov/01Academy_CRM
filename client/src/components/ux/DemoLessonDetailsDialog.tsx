@@ -108,8 +108,8 @@ export function DemoLessonDetailsDialog({
   };
   const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
   const [noShowReasons, setNoShowReasons] = useState<Record<number, NoShowReasonDraft>>({});
-  const [dirtyLeadIds, setDirtyLeadIds] = useState<Set<number>>(new Set());
-  const [reasonLeadId, setReasonLeadId] = useState<number | null>(null);
+  const [dirtyParticipantIds, setDirtyParticipantIds] = useState<Set<number>>(new Set());
+  const [reasonParticipantId, setReasonParticipantId] = useState<number | null>(null);
   const [reasonCode, setReasonCode] = useState<DemoNoShowReasonCode | ''>('');
   const [reasonNote, setReasonNote] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -126,21 +126,21 @@ export function DemoLessonDetailsDialog({
   useEffect(() => {
     if (!demo || !open) return;
     setAttendance(Object.fromEntries(demo.participants.map((participant) => [
-      participant.leadId,
+      participant.id,
       participant.status === 'attended' || participant.status === 'no_show'
         ? participant.status
         : '',
     ])));
     setNoShowReasons(Object.fromEntries(demo.participants.flatMap((participant) => (
       participant.noShowReasonCode
-        ? [[participant.leadId, {
+        ? [[participant.id, {
           code: participant.noShowReasonCode,
           note: participant.noShowReasonNote ?? '',
         }]]
         : []
     ))));
-    setDirtyLeadIds(new Set());
-    setReasonLeadId(null);
+    setDirtyParticipantIds(new Set());
+    setReasonParticipantId(null);
     setReasonCode('');
     setReasonNote('');
     setCancelReason('');
@@ -166,12 +166,12 @@ export function DemoLessonDetailsDialog({
 
   const saveAttendance = useMutation({
     mutationFn: () => demoLessonsApi.saveAttendance(Number(demo?.id), {
-      participants: Array.from(dirtyLeadIds).flatMap((leadId) => {
-        const status = attendance[leadId];
+      participants: Array.from(dirtyParticipantIds).flatMap((participantId) => {
+        const status = attendance[participantId];
         if (!status) return [];
-        const reason = noShowReasons[leadId];
+        const reason = noShowReasons[participantId];
         return [{
-          leadId,
+          participantId,
           status,
           result: null,
           noShowReasonCode: status === 'no_show' ? reason?.code ?? null : null,
@@ -180,7 +180,7 @@ export function DemoLessonDetailsDialog({
       }),
     }),
     onSuccess: async (updated) => {
-      setDirtyLeadIds(new Set());
+      setDirtyParticipantIds(new Set());
       await invalidate(updated);
       toast({ title: t('demoAttendanceSaved') });
     },
@@ -251,8 +251,8 @@ export function DemoLessonDetailsDialog({
   });
 
   const reasonParticipant = useMemo(
-    () => demo?.participants.find((participant) => participant.leadId === reasonLeadId) ?? null,
-    [demo, reasonLeadId],
+    () => demo?.participants.find((participant) => participant.id === reasonParticipantId) ?? null,
+    [demo, reasonParticipantId],
   );
 
   const availableReasonCodes = useMemo(() => DEMO_NO_SHOW_REASON_CODES.filter((code) => {
@@ -260,48 +260,48 @@ export function DemoLessonDetailsDialog({
     return code !== 'technical_issue';
   }), [demo?.format]);
 
-  const markDirty = (leadId: number) => {
-    setDirtyLeadIds((current) => new Set(current).add(leadId));
+  const markDirty = (participantId: number) => {
+    setDirtyParticipantIds((current) => new Set(current).add(participantId));
   };
 
-  const openNoShowReason = (leadId: number) => {
-    const current = noShowReasons[leadId];
-    setReasonLeadId(leadId);
+  const openNoShowReason = (participantId: number) => {
+    const current = noShowReasons[participantId];
+    setReasonParticipantId(participantId);
     setReasonCode(current?.code ?? '');
     setReasonNote(current?.note ?? '');
   };
 
   const closeNoShowReason = () => {
-    setReasonLeadId(null);
+    setReasonParticipantId(null);
     setReasonCode('');
     setReasonNote('');
   };
 
   const confirmNoShowReason = () => {
-    if (!reasonLeadId || !reasonCode) return;
+    if (!reasonParticipantId || !reasonCode) return;
     const note = reasonNote.trim();
     if (reasonCode === 'other' && !note) return;
-    setAttendance((current) => ({ ...current, [reasonLeadId]: 'no_show' }));
+    setAttendance((current) => ({ ...current, [reasonParticipantId]: 'no_show' }));
     setNoShowReasons((current) => ({
       ...current,
-      [reasonLeadId]: { code: reasonCode, note },
+      [reasonParticipantId]: { code: reasonCode, note },
     }));
-    markDirty(reasonLeadId);
+    markDirty(reasonParticipantId);
     closeNoShowReason();
   };
 
-  const changeAttendance = (leadId: number, status: 'attended' | 'no_show') => {
+  const changeAttendance = (participantId: number, status: 'attended' | 'no_show') => {
     if (status === 'no_show') {
-      openNoShowReason(leadId);
+      openNoShowReason(participantId);
       return;
     }
-    setAttendance((current) => ({ ...current, [leadId]: 'attended' }));
+    setAttendance((current) => ({ ...current, [participantId]: 'attended' }));
     setNoShowReasons((current) => {
       const next = { ...current };
-      delete next[leadId];
+      delete next[participantId];
       return next;
     });
-    markDirty(leadId);
+    markDirty(participantId);
   };
 
   if (!demo) return null;
@@ -312,13 +312,13 @@ export function DemoLessonDetailsDialog({
   const canManageScheduledDemo = demo.canManage !== false && demo.status === 'scheduled';
   const demoHasStarted = scheduledAt.getTime() <= Date.now();
   const attendanceComplete = demo.participants.every((participant) => (
-    attendance[participant.leadId] === 'attended'
-    || attendance[participant.leadId] === 'no_show'
+    attendance[participant.id] === 'attended'
+    || attendance[participant.id] === 'no_show'
   ));
   const canMarkConducted = canManageScheduledDemo
     && demoHasStarted
     && attendanceComplete
-    && dirtyLeadIds.size === 0;
+    && dirtyParticipantIds.size === 0;
   const rescheduledAt = rescheduleDate && rescheduleTime
     ? academyInstant(rescheduleDate, rescheduleTime)
     : null;
@@ -340,7 +340,7 @@ export function DemoLessonDetailsDialog({
           && !cancelDemo.isPending
           && !finalizeDemo.isPending
           && !rescheduleDemo.isPending
-          && reasonLeadId === null
+          && reasonParticipantId === null
           && !cancelOpen
           && !conductedConfirmOpen
           && !notConductedOpen
@@ -412,10 +412,10 @@ export function DemoLessonDetailsDialog({
 
                 return (
                   <div key={participant.id} className="grid grid-cols-1 items-center gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-                    {onOpenLead && primaryName ? (
+                    {onOpenLead && participant.leadId && primaryName ? (
                       <button
                         type="button"
-                        onClick={() => onOpenLead(participant.leadId)}
+                        onClick={() => onOpenLead(Number(participant.leadId))}
                         aria-label={`${t('openLead')}: ${primaryName}`}
                         className="group -m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
@@ -443,18 +443,18 @@ export function DemoLessonDetailsDialog({
                       </div>
                     )}
                     <div className="space-y-1.5">
-                      <Label className="sr-only" htmlFor={`demo-attendance-${participant.leadId}`}>
+                      <Label className="sr-only" htmlFor={`demo-attendance-${participant.id}`}>
                         {t('demoAttendance')}
                       </Label>
                       <Select
-                        value={attendance[participant.leadId] || ''}
+                        value={attendance[participant.id] || ''}
                         onValueChange={(value) => changeAttendance(
-                          participant.leadId,
+                          participant.id,
                           value as 'attended' | 'no_show',
                         )}
                         disabled={!canEditAttendance}
                       >
-                        <SelectTrigger id={`demo-attendance-${participant.leadId}`}>
+                        <SelectTrigger id={`demo-attendance-${participant.id}`}>
                           <SelectValue placeholder={t('selectAttendanceResult')} />
                         </SelectTrigger>
                         <SelectContent>
@@ -462,18 +462,18 @@ export function DemoLessonDetailsDialog({
                           <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
                         </SelectContent>
                       </Select>
-                      {attendance[participant.leadId] === 'no_show' ? (
+                      {attendance[participant.id] === 'no_show' ? (
                         <div className="flex items-start justify-between gap-2 px-1 text-xs text-muted-foreground">
                           <span className="min-w-0 truncate">
-                            {noShowReasons[participant.leadId]
-                              ? noShowReasonLabels[noShowReasons[participant.leadId].code]
+                            {noShowReasons[participant.id]
+                              ? noShowReasonLabels[noShowReasons[participant.id].code]
                               : t('demoNoShowReasonMissing')}
                           </span>
                           {canEditAttendance ? (
                             <button
                               type="button"
                               className="inline-flex shrink-0 items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => openNoShowReason(participant.leadId)}
+                              onClick={() => openNoShowReason(participant.id)}
                               aria-label={t('editDemoNoShowReason')}
                             >
                               <Pencil aria-hidden="true" className="size-3" />
@@ -547,7 +547,7 @@ export function DemoLessonDetailsDialog({
                 <p className="text-xs text-muted-foreground">{t('demoOutcomeAvailableAfterStart')}</p>
               ) : !attendanceComplete ? (
                 <p className="text-xs text-muted-foreground">{t('demoCompleteAttendanceBeforeConducted')}</p>
-              ) : dirtyLeadIds.size > 0 ? (
+              ) : dirtyParticipantIds.size > 0 ? (
                 <p className="text-xs text-muted-foreground">{t('demoSaveAttendanceBeforeConducted')}</p>
               ) : null}
             </div>
@@ -562,7 +562,7 @@ export function DemoLessonDetailsDialog({
               {canEditAttendance ? (
                 <Button
                   type="button"
-                  disabled={dirtyLeadIds.size === 0 || saveAttendance.isPending}
+                  disabled={dirtyParticipantIds.size === 0 || saveAttendance.isPending}
                   onClick={() => saveAttendance.mutate()}
                 >
                   {saveAttendance.isPending ? t('saving') : t('saveAttendance')}
@@ -573,7 +573,7 @@ export function DemoLessonDetailsDialog({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={reasonLeadId !== null} onOpenChange={(nextOpen) => {
+      <Dialog open={reasonParticipantId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen) closeNoShowReason();
       }}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">

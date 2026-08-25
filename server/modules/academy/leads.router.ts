@@ -1448,6 +1448,7 @@ router.post('/leads/:id/students', async (req, res) => {
     if (initialLead.isArchived) {
       return res.status(409).json({ error: 'archivedLeadMustBeRestoredBeforeStudentCreation' });
     }
+    const demoOnly = req.body.demoOnly === true;
 
     const studentName = nullableText(req.body.studentName);
     if (!studentName) return res.status(400).json({ error: 'studentNameRequired' });
@@ -1470,14 +1471,18 @@ router.post('/leads/:id/students', async (req, res) => {
       .map((value: unknown) => parseId(value))
       .filter((id: number | null): id is number => id !== null);
     const groupIds = Array.from(new Set<number>(parsedGroupIds)).sort((left, right) => left - right);
-    if (groupIds.length === 0) {
+    if (!demoOnly && groupIds.length === 0) {
       return res.status(400).json({ error: 'studentGroupRequired' });
     }
     const requestedPrimaryGroupId = parseId(req.body.primaryGroupId);
-    const primaryGroupId = requestedPrimaryGroupId && groupIds.includes(requestedPrimaryGroupId)
-      ? requestedPrimaryGroupId
-      : groupIds[0];
-    const enrolledAt = parseOptionalDate(req.body.enrolledAt, 'enrolledAt') ?? new Date();
+    const primaryGroupId = demoOnly
+      ? null
+      : requestedPrimaryGroupId && groupIds.includes(requestedPrimaryGroupId)
+        ? requestedPrimaryGroupId
+        : groupIds[0];
+    const enrolledAt = demoOnly
+      ? null
+      : parseOptionalDate(req.body.enrolledAt, 'enrolledAt') ?? new Date();
 
     const student = await withTransaction(async () => {
       const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId]);
@@ -1491,8 +1496,12 @@ router.post('/leads/:id/students', async (req, res) => {
         const group = await validateEnrollmentGroup(groupId);
         if (group) selectedGroups.push(group);
       }
-      const primaryGroup = selectedGroups.find((group) => Number(group.id) === primaryGroupId);
-      if (!primaryGroup) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      const primaryGroup = demoOnly
+        ? null
+        : selectedGroups.find((group) => Number(group.id) === primaryGroupId);
+      if (!demoOnly && !primaryGroup) {
+        throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      }
       const count = await queryOne<{ count: number }>(
         `SELECT COUNT(*)::int AS count FROM academy_students WHERE lead_id = $1`,
         [leadId],
@@ -1504,34 +1513,42 @@ router.post('/leads/:id/students', async (req, res) => {
         messenger: null,
         studentName,
         studentAge,
-        courseId: Number(primaryGroup.courseId),
-        schoolId: Number(primaryGroup.schoolId),
+        courseId: demoOnly
+          ? lead.demoCourseId ?? lead.courseId ?? null
+          : Number(primaryGroup!.courseId),
+        schoolId: demoOnly ? lead.schoolId ?? null : Number(primaryGroup!.schoolId),
         groupId: primaryGroupId,
         managerId: lead.managerId ?? req.user!.id,
-        status: 'studying',
+        status: demoOnly ? 'trial' : 'studying',
         enrolledAt,
         enrollmentDate: enrolledAt,
-        nextPaymentAt: addDays(enrolledAt, 30),
+        nextPaymentAt: enrolledAt ? addDays(enrolledAt, 30) : null,
         referralCode: buildReferralCode(studentName, `${leadId}-${Number(count?.count ?? 0) + 1}`),
         marketingConsent: req.body.marketingConsent === true,
         riskFlags: [],
       });
-      await query(
-        `INSERT INTO academy_student_group_enrollments
-           (student_id, group_id, status, is_primary, enrolled_at, created_by)
-         SELECT $1, selected_group_id, 'active', selected_group_id = $2, $3, $4
-         FROM UNNEST($5::int[]) AS selected_group_id`,
-        [createdStudent.id, primaryGroupId, enrolledAt, req.user!.id, groupIds],
-      );
+      if (!demoOnly) {
+        await query(
+          `INSERT INTO academy_student_group_enrollments
+             (student_id, group_id, status, is_primary, enrolled_at, created_by)
+           SELECT $1, selected_group_id, 'active', selected_group_id = $2, $3, $4
+           FROM UNNEST($5::int[]) AS selected_group_id`,
+          [createdStudent.id, primaryGroupId, enrolledAt, req.user!.id, groupIds],
+        );
+      }
       await insertRow('academy_student_status_history', {
         studentId: createdStudent.id,
         fromStatus: null,
-        toStatus: 'studying',
+        toStatus: demoOnly ? 'trial' : 'studying',
         changedBy: req.user!.id,
-        comment: 'Ученик создан из карточки лида',
+        comment: demoOnly
+          ? 'Пробный ученик создан для демо-урока'
+          : 'Ученик создан из карточки лида',
       });
-      await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
-      if (!['enrolled', 'paid'].includes(String(lead.statusCode))) {
+      if (!demoOnly) {
+        await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
+      }
+      if (!demoOnly && !['enrolled', 'paid'].includes(String(lead.statusCode))) {
         const enrolledStatus = await getActiveLeadStatus('enrolled');
         if (!enrolledStatus) {
           throw Object.assign(new Error('enrolledLeadStatusUnavailable'), { statusCode: 409 });

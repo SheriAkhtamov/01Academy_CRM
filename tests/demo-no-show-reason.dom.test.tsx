@@ -49,7 +49,7 @@ const demo: DemoLesson = {
   format: 'offline',
   status: 'scheduled',
   participants: [
-    { id: 11, leadId: 101, status: 'confirmed', contactName: 'Родитель Азиза', studentName: 'Азиз' },
+    { id: 11, studentId: 71, leadId: 101, status: 'confirmed', contactName: 'Родитель Азиза', studentName: 'Азиз' },
   ],
   canManage: true,
 };
@@ -104,7 +104,7 @@ describe('demo no-show reason dialog', () => {
 
     await waitFor(() => expect(apiMocks.saveAttendance).toHaveBeenCalledWith(5, {
       participants: [{
-        leadId: 101,
+        participantId: 11,
         status: 'no_show',
         result: null,
         noShowReasonCode: 'forgot',

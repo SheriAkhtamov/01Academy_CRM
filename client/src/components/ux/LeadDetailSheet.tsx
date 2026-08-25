@@ -377,6 +377,7 @@ export function LeadDetailSheet({
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
   const [demoEnrollmentOpen, setDemoEnrollmentOpen] = useState(false);
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
+  const [demoCreationStudentIds, setDemoCreationStudentIds] = useState<number[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const [socialAccountsDirty, setSocialAccountsDirty] = useState(false);
@@ -524,6 +525,7 @@ export function LeadDetailSheet({
       setPendingPaymentClaim(null);
       setDuplicateHint(null);
       setCreateStudentOpen(false);
+      setDemoCreationStudentIds([]);
       setTagDropdownOpen(false);
       setSocialAccountsDirty(false);
       setCommentDraft('');
@@ -1823,7 +1825,8 @@ export function LeadDetailSheet({
             courseId: lead.courseId,
             schoolId: lead.schoolId,
           }}
-          onCreateNew={() => {
+          onCreateNew={(studentIds) => {
+            setDemoCreationStudentIds(studentIds);
             setDemoEnrollmentOpen(false);
             setCreateDemoOpen(true);
           }}
@@ -1837,6 +1840,7 @@ export function LeadDetailSheet({
           courses={courses}
           schools={schools}
           initialLeadId={lead.id}
+          initialStudentIds={demoCreationStudentIds}
           initialSchoolId={lead.schoolId}
           onCreated={onChanged}
         />

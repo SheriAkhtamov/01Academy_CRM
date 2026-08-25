@@ -64,6 +64,7 @@ interface DemoLessonDialogProps {
   courses: Array<{ id: number; name: string; lessonDurationMinutes?: number | null }>;
   schools: Array<{ id: number; name: string; isActive?: boolean }>;
   initialLeadId?: number | null;
+  initialStudentIds?: number[];
   initialSchoolId?: number | null;
   /** Booking straight from a calendar slot: `yyyy-MM-dd` and `HH:mm`. */
   initialDate?: string;
@@ -87,6 +88,7 @@ const defaultDemoDateTime = () => {
 const academyDateTime = (date: string, time: string) => (
   date && time ? `${date}T${time}:00+05:00` : ''
 );
+const EMPTY_STUDENT_IDS: number[] = [];
 
 export function DemoLessonDialog({
   open,
@@ -95,6 +97,7 @@ export function DemoLessonDialog({
   courses,
   schools,
   initialLeadId,
+  initialStudentIds = EMPTY_STUDENT_IDS,
   initialSchoolId,
   initialDate,
   initialTime,
@@ -121,18 +124,18 @@ export function DemoLessonDialog({
     () => leads.filter((lead) => !lead.isArchived && lead.statusCode !== 'paid'),
     [leads],
   );
-  // The dialog only books resources: the lead it was opened from is the single
-  // participant, everyone else is enrolled later from the lead card.
+  // The lead provides sensible course/branch defaults, while participants are
+  // always concrete student profiles.
   const initialLead = useMemo(() => (
     initialLeadId
       ? activeLeads.find((lead) => Number(lead.id) === Number(initialLeadId)) ?? null
       : null
   ), [activeLeads, initialLeadId]);
-  const participantIds = useMemo(
-    () => (initialLead ? [Number(initialLead.id)] : []),
-    [initialLead],
+  const studentIds = useMemo(
+    () => [...new Set(initialStudentIds.map(Number))].filter((id) => Number.isSafeInteger(id) && id > 0),
+    [initialStudentIds],
   );
-  const participantKey = participantIds.join(',');
+  const participantKey = studentIds.join(',');
   const scheduledAt = academyDateTime(demoDate, demoTime);
   const duration = Number(durationMinutes);
 
@@ -215,9 +218,9 @@ export function DemoLessonDialog({
       scheduledAt,
       durationMinutes: duration,
       format,
-      participantIds,
+      studentIds,
     };
-  }, [courseId, duration, format, participantIds, scheduledAt, schoolId]);
+  }, [courseId, duration, format, scheduledAt, schoolId, studentIds]);
 
   const resourceAvailability = useQuery<DemoResourceAvailability>({
     queryKey: [
@@ -272,10 +275,10 @@ export function DemoLessonDialog({
       ...availabilityRequest,
       teacherId: Number(teacherId),
       roomId: format === 'offline' ? Number(roomId) : null,
-      participantIds,
+      studentIds,
       notes: notes.trim() || null,
     };
-  }, [availabilityRequest, format, notes, participantIds, roomId, teacherId]);
+  }, [availabilityRequest, format, notes, roomId, studentIds, teacherId]);
 
   const createDemo = useMutation({
     mutationFn: async () => {

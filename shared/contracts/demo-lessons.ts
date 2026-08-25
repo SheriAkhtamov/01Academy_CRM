@@ -31,7 +31,7 @@ export const DEMO_NOT_CONDUCTED_REASON_CODES = [
 ] as const;
 
 const entityId = z.coerce.number().int().positive();
-// A demo lesson takes as many guests as the branch invites, so the only rule
+// A demo lesson takes as many students as the branch invites, so the only rule
 // left on the list is that nobody is enrolled twice.
 const participantIds = (minimum: number) => z.array(entityId)
   .min(minimum)
@@ -45,7 +45,7 @@ export const demoLessonMutationSchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }),
   durationMinutes: z.coerce.number().int().min(15).max(480),
   format: z.enum(DEMO_LESSON_FORMATS).default('offline'),
-  participantIds: participantIds(0).default([]),
+  studentIds: participantIds(0).default([]),
   notes: z.string().trim().max(2_000).nullable().optional(),
 }).superRefine((value, context) => {
   if (value.format === 'offline' && !value.roomId) {
@@ -70,7 +70,7 @@ export const demoLessonResourceAvailabilitySchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }),
   durationMinutes: z.coerce.number().int().min(15).max(480),
   format: z.enum(DEMO_LESSON_FORMATS).default('offline'),
-  participantIds: participantIds(0).default([]),
+  studentIds: participantIds(0).default([]),
 });
 
 export const demoLessonCancelSchema = z.object({
@@ -105,7 +105,7 @@ export const demoLessonRescheduleSchema = z.object({
 
 export const demoLessonAttendanceSchema = z.object({
   participants: z.array(z.object({
-    leadId: entityId,
+    participantId: entityId,
     status: z.enum(['attended', 'no_show']),
     result: z.string().trim().max(2_000).nullable().optional(),
     noShowReasonCode: z.enum(DEMO_NO_SHOW_REASON_CODES).nullable().optional(),
@@ -135,11 +135,11 @@ export const demoLessonAttendanceSchema = z.object({
       });
     }
   })).min(1)
-    .refine((items) => new Set(items.map((item) => item.leadId)).size === items.length, 'duplicateDemoParticipants'),
+    .refine((items) => new Set(items.map((item) => item.participantId)).size === items.length, 'duplicateDemoParticipants'),
 });
 
 export const demoLessonEnrollmentSchema = z.object({
-  leadIds: participantIds(1),
+  studentIds: participantIds(1),
 });
 
 export type DemoLessonMutation = z.infer<typeof demoLessonMutationSchema>;

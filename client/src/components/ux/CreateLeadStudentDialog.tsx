@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -55,9 +55,24 @@ const studentSchema = z.object({
     'invalidStudentAge',
   ),
   phone: z.string().trim().refine((value) => value === '' || value.replace(/\D/g, '').length >= 7, 'invalidStudentPhone'),
-  groupIds: z.array(z.string()).min(1, 'studentGroupRequired'),
-  primaryGroupId: z.string().min(1, 'studentGroupRequired'),
-  enrolledAt: z.string().min(1, 'fillRequiredFields'),
+  groupIds: z.array(z.string()),
+  primaryGroupId: z.string(),
+  enrolledAt: z.string(),
+  demoOnly: z.boolean(),
+}).superRefine((value, context) => {
+  if (value.demoOnly) return;
+  if (value.groupIds.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['groupIds'],
+    });
+  }
+  if (!value.primaryGroupId || !value.groupIds.includes(value.primaryGroupId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['primaryGroupId'],
+    });
+  }
 });
 
 type StudentFormValues = z.infer<typeof studentSchema>;
@@ -71,6 +86,7 @@ const EMPTY_STUDENT: StudentFormValues = {
   groupIds: [],
   primaryGroupId: '',
   enrolledAt: todayInputValue(),
+  demoOnly: false,
 };
 
 interface CreateLeadStudentDialogProps {
@@ -79,6 +95,7 @@ interface CreateLeadStudentDialogProps {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
+  purpose?: 'enrollment' | 'demo';
   onCreated: (student: CreatedLeadStudent) => void | Promise<void>;
 }
 
@@ -88,13 +105,15 @@ export function CreateLeadStudentDialog({
   leadId,
   contactName,
   groups,
+  purpose = 'enrollment',
   onCreated,
 }: CreateLeadStudentDialogProps) {
   const { t } = useTranslation();
   const form = useForm<StudentFormValues>({
     resolver: zodResolver(studentSchema),
-    defaultValues: EMPTY_STUDENT,
+    defaultValues: { ...EMPTY_STUDENT, demoOnly: purpose === 'demo' },
   });
+  const [createdCount, setCreatedCount] = useState(0);
   const selectedGroupIds = form.watch('groupIds');
   const primaryGroupId = form.watch('primaryGroupId');
 
@@ -106,8 +125,15 @@ export function CreateLeadStudentDialog({
   )), [availableGroups, selectedGroupIds]);
 
   useEffect(() => {
-    if (!open) form.reset({ ...EMPTY_STUDENT, enrolledAt: todayInputValue() });
-  }, [form, open]);
+    if (!open) {
+      form.reset({
+        ...EMPTY_STUDENT,
+        enrolledAt: todayInputValue(),
+        demoOnly: purpose === 'demo',
+      });
+      setCreatedCount(0);
+    }
+  }, [form, open, purpose]);
 
   useEffect(() => {
     if (selectedGroupIds.length === 0) {
@@ -120,21 +146,38 @@ export function CreateLeadStudentDialog({
   }, [form, primaryGroupId, selectedGroupIds]);
 
   const createStudent = useMutation({
-    mutationFn: (values: StudentFormValues) => leadsApi.createStudent<CreatedLeadStudent>(
+    mutationFn: ({ values }: { values: StudentFormValues; createAnother: boolean }) => leadsApi.createStudent<CreatedLeadStudent>(
       leadId,
       {
         studentName: values.studentName,
         studentAge: values.studentAge ? Number(values.studentAge) : null,
         phone: values.phone || null,
-        groupIds: values.groupIds.map(Number),
-        primaryGroupId: Number(values.primaryGroupId),
-        enrolledAt: values.enrolledAt,
+        groupIds: values.demoOnly ? [] : values.groupIds.map(Number),
+        primaryGroupId: values.demoOnly ? null : Number(values.primaryGroupId),
+        enrolledAt: values.demoOnly ? null : values.enrolledAt,
+        demoOnly: values.demoOnly,
       },
     ),
-    onSuccess: async (student) => {
+    onSuccess: async (student, variables) => {
       await onCreated(student);
-      toast({ title: t('studentCreated'), description: t('studentCreatedFromLead') });
-      onOpenChange(false);
+      setCreatedCount((count) => count + 1);
+      toast({
+        title: t('studentCreated'),
+        description: purpose === 'demo'
+          ? t('demoStudentCreatedFromLead')
+          : t('studentCreatedFromLead'),
+      });
+      if (!variables.createAnother) {
+        onOpenChange(false);
+        return;
+      }
+      form.reset({
+        ...EMPTY_STUDENT,
+        phone: variables.values.phone,
+        enrolledAt: variables.values.enrolledAt || todayInputValue(),
+        demoOnly: purpose === 'demo',
+      });
+      form.setFocus('studentName');
     },
     onError: (error: Error) => toast({
       title: t('studentCreateFailed'),
@@ -144,9 +187,12 @@ export function CreateLeadStudentDialog({
   });
 
   const groupError = form.formState.errors.groupIds?.message || form.formState.errors.primaryGroupId?.message;
+  const dialogDescription = purpose === 'demo'
+    ? t('createDemoStudentForContact')
+    : t('createStudentForContact');
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => !createStudent.isPending && onOpenChange(nextOpen)}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
@@ -154,12 +200,22 @@ export function CreateLeadStudentDialog({
               <GraduationCap className="size-5" />
             </span>
             {t('createStudent')}
+            {createdCount > 0 ? (
+              <Badge variant="secondary">
+                {t('studentsCreatedCount').replace('{count}', String(createdCount))}
+              </Badge>
+            ) : null}
           </DialogTitle>
-          <DialogDescription>{t('createStudentForContact').replace('{name}', contactName)}</DialogDescription>
+          <DialogDescription>
+            {dialogDescription.replace('{name}', contactName)}
+          </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
-          <form className="flex min-h-0 flex-1 flex-col" onSubmit={form.handleSubmit((values) => createStudent.mutate(values))}>
+          <form
+            className="flex min-h-0 flex-1 flex-col"
+            onSubmit={form.handleSubmit((values) => createStudent.mutate({ values, createAnother: false }))}
+          >
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
             <FormField
               control={form.control}
@@ -197,18 +253,20 @@ export function CreateLeadStudentDialog({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="enrolledAt"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>{t('enrollmentDate')}</FormLabel>
-                  <FormControl><Input {...field} type="date" aria-invalid={fieldState.invalid} /></FormControl>
-                </FormItem>
-              )}
-            />
+            {purpose === 'enrollment' ? (
+              <FormField
+                control={form.control}
+                name="enrolledAt"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>{t('enrollmentDate')}</FormLabel>
+                    <FormControl><Input {...field} type="date" aria-invalid={fieldState.invalid} /></FormControl>
+                  </FormItem>
+                )}
+              />
+            ) : null}
 
-            <div className="md:col-span-2">
+            {purpose === 'enrollment' ? <div className="md:col-span-2">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <FormLabel>{t('chooseGroups')}</FormLabel>
                 <Badge variant="secondary">{t('selectedGroupsCount').replace('{count}', String(selectedGroupIds.length))}</Badge>
@@ -255,9 +313,9 @@ export function CreateLeadStudentDialog({
                 })}
               </div>
               {groupError ? <p className="mt-2 text-sm font-medium text-destructive">{t('studentGroupRequired')}</p> : null}
-            </div>
+            </div> : null}
 
-            {selectedGroups.length > 1 ? (
+            {purpose === 'enrollment' && selectedGroups.length > 1 ? (
               <FormField
                 control={form.control}
                 name="primaryGroupId"
@@ -280,11 +338,20 @@ export function CreateLeadStudentDialog({
             ) : null}
             </div>
 
-            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4 sm:flex-wrap">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createStudent.isPending}>
                 {t('cancel')}
               </Button>
-              <Button type="submit" disabled={createStudent.isPending || availableGroups.length === 0}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={createStudent.isPending || (purpose === 'enrollment' && availableGroups.length === 0)}
+                onClick={() => form.handleSubmit((values) => createStudent.mutate({ values, createAnother: true }))()}
+              >
+                <Plus data-icon="inline-start" />
+                {t('createAndAddAnotherStudent')}
+              </Button>
+              <Button type="submit" disabled={createStudent.isPending || (purpose === 'enrollment' && availableGroups.length === 0)}>
                 {createStudent.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
                 {createStudent.isPending ? t('saving') : t('createStudent')}
               </Button>

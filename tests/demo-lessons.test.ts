@@ -32,6 +32,10 @@ const outcomeMigration = readFileSync(
   new URL('../migrations/0096_add_demo_outcomes_and_rescheduling.sql', import.meta.url),
   'utf8',
 );
+const studentParticipantMigration = readFileSync(
+  new URL('../migrations/0097_demo_participants_are_students.sql', import.meta.url),
+  'utf8',
+);
 const schema = readFileSync(
   new URL('../server/db/schema/demo-lessons.ts', import.meta.url),
   'utf8',
@@ -85,7 +89,7 @@ const validMutation = {
   scheduledAt: '2030-07-15T05:00:00.000Z',
   durationMinutes: 60,
   format: 'offline' as const,
-  participantIds: [10, 11],
+  studentIds: [10, 11],
   notes: null,
 };
 
@@ -133,11 +137,11 @@ describe('demo lessons', () => {
 
   it('requires a classified reason for every newly saved no-show', () => {
     expect(demoLessonAttendanceSchema.safeParse({
-      participants: [{ leadId: 10, status: 'no_show', result: null }],
+      participants: [{ participantId: 10, status: 'no_show', result: null }],
     }).error?.issues[0]?.message).toBe('demoNoShowReasonRequired');
     expect(demoLessonAttendanceSchema.safeParse({
       participants: [{
-        leadId: 10,
+        participantId: 10,
         status: 'no_show',
         result: null,
         noShowReasonCode: 'forgot',
@@ -146,7 +150,7 @@ describe('demo lessons', () => {
     }).success).toBe(true);
     expect(demoLessonAttendanceSchema.safeParse({
       participants: [{
-        leadId: 10,
+        participantId: 10,
         status: 'no_show',
         noShowReasonCode: 'other',
         noShowReasonNote: '   ',
@@ -154,7 +158,7 @@ describe('demo lessons', () => {
     }).error?.issues[0]?.message).toBe('demoNoShowOtherNoteRequired');
     expect(demoLessonAttendanceSchema.safeParse({
       participants: [{
-        leadId: 10,
+        participantId: 10,
         status: 'attended',
         noShowReasonCode: 'forgot',
       }],
@@ -196,11 +200,11 @@ describe('demo lessons', () => {
   });
 
   it('creates a demo lesson without participants and without a seat limit', () => {
-    const { participantIds, ...schedule } = validMutation;
+    const { studentIds, ...schedule } = validMutation;
     const empty = demoLessonMutationSchema.safeParse(schedule);
     expect(empty.success).toBe(true);
-    expect(empty.data?.participantIds).toEqual([]);
-    expect(participantIds).toHaveLength(2);
+    expect(empty.data?.studentIds).toEqual([]);
+    expect(studentIds).toHaveLength(2);
     expect(routes).not.toContain('resolveDemoCapacity');
     expect(routes).not.toContain('capacity');
     expect(createDialog).not.toContain("t('demoParticipants')");
@@ -211,16 +215,16 @@ describe('demo lessons', () => {
     expect(demoLessonMutationSchema.safeParse(validMutation).success).toBe(true);
     const crowded = demoLessonMutationSchema.safeParse({
       ...validMutation,
-      participantIds: Array.from({ length: 250 }, (_, index) => index + 1),
+      studentIds: Array.from({ length: 250 }, (_, index) => index + 1),
     });
     expect(crowded.success).toBe(true);
-    expect(crowded.data?.participantIds).toHaveLength(250);
+    expect(crowded.data?.studentIds).toHaveLength(250);
     const noRoom = demoLessonMutationSchema.safeParse({ ...validMutation, roomId: null });
     expect(noRoom.success).toBe(false);
     expect(noRoom.error?.issues[0]?.message).toBe('demoRoomRequired');
     const duplicate = demoLessonMutationSchema.safeParse({
       ...validMutation,
-      participantIds: [10, 10],
+      studentIds: [10, 10],
     });
     expect(duplicate.success).toBe(false);
     expect(duplicate.error?.issues[0]?.message).toBe('duplicateDemoParticipants');
@@ -230,10 +234,11 @@ describe('demo lessons', () => {
       scheduledAt: validMutation.scheduledAt,
       durationMinutes: 45,
       format: 'offline',
-      participantIds: [],
+      studentIds: [],
     }).success).toBe(true);
-    expect(demoLessonEnrollmentSchema.safeParse({ leadIds: [10] }).success).toBe(true);
-    expect(demoLessonEnrollmentSchema.safeParse({ leadIds: [10, 10] }).success).toBe(false);
+    expect(demoLessonEnrollmentSchema.safeParse({ studentIds: [10] }).success).toBe(true);
+    expect(demoLessonEnrollmentSchema.safeParse({ studentIds: [10, 10] }).success).toBe(false);
+    expect(demoLessonEnrollmentSchema.safeParse({ leadIds: [10] }).success).toBe(false);
   });
 
   it('rechecks all resources under the academy scheduling lock', () => {
@@ -252,8 +257,8 @@ describe('demo lessons', () => {
     expect(routes).toContain('demoParticipantAlreadyEnrolled');
     expect(scheduling).toContain('FROM academy_demo_lessons');
     expect(scheduling).toContain('Number(lesson.roomId) !== roomId');
-    expect(routes).toContain('legacyConflict');
-    expect(scheduling).toContain('participantBusyByLegacyDemo');
+    expect(routes).toContain('academy_student_group_enrollments');
+    expect(routes).toContain('lesson.status <> \'cancelled\'');
     expect(resourceAvailability).toContain('FROM academy_lessons');
     expect(resourceAvailability).toContain('FROM academy_demo_lessons');
     expect(resourceAvailability).toContain("status IN ('open', 'in_progress')");
@@ -265,7 +270,7 @@ describe('demo lessons', () => {
     expect(routes).not.toContain("status: Number(pending?.count ?? 0) === 0 ? 'completed'");
   });
 
-  it('disables enrollment when the lead is already booked or times overlap, never for a full demo', () => {
+  it('disables enrollment when a selected student is already booked or times overlap, never for a full demo', () => {
     const target: DemoLesson = {
       id: 1,
       courseId: 1,
@@ -277,26 +282,27 @@ describe('demo lessons', () => {
       status: 'scheduled',
       participants: [],
     };
-    expect(getDemoEnrollmentState(target, 10, [target], 0)).toBe('available');
+    expect(getDemoEnrollmentState(target, [10], [target], 0)).toBe('available');
     expect(getDemoEnrollmentState({
       ...target,
-      participants: [{ id: 1, leadId: 10, status: 'invited' }],
-    }, 10, [target], 0)).toBe('already_enrolled');
+      participants: [{ id: 1, studentId: 10, leadId: 42, status: 'invited' }],
+    }, [10], [target], 0)).toBe('already_enrolled');
     expect(getDemoEnrollmentState({
       ...target,
       participants: Array.from({ length: 40 }, (_, index) => ({
         id: index + 1,
-        leadId: index + 11,
+        studentId: index + 11,
+        leadId: 42,
         status: 'confirmed' as const,
       })),
-    }, 10, [target], 0)).toBe('available');
+    }, [10], [target], 0)).toBe('available');
     const overlapping: DemoLesson = {
       ...target,
       id: 2,
       scheduledAt: '2030-07-15T05:30:00.000Z',
-      participants: [{ id: 2, leadId: 10, status: 'invited' }],
+      participants: [{ id: 2, studentId: 10, leadId: 42, status: 'invited' }],
     };
-    expect(getDemoEnrollmentState(target, 10, [target, overlapping], 0)).toBe('lead_busy');
+    expect(getDemoEnrollmentState(target, [10], [target, overlapping], 0)).toBe('lead_busy');
   });
 
   it('renders demo events alongside lessons in the weekly calendar', () => {
@@ -310,7 +316,7 @@ describe('demo lessons', () => {
       scheduledAt: '2030-07-15T10:00:00+05:00',
       durationMinutes: 60,
       status: 'scheduled',
-      participants: [{ leadId: 10 }, { leadId: 11 }],
+      participants: [{ studentId: 10 }, { studentId: 11 }],
     }], weekStart);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -342,22 +348,36 @@ describe('demo lessons', () => {
     expect(detailsDialog).toContain("t('rescheduleDemoLessonTitle')");
   });
 
-  it('keeps legacy lead state aligned without regressing newer sales outcomes', () => {
-    expect(routes).toContain('ownsLegacyBooking');
-    expect(routes).toContain("currentStatus === 'demo_attended' ? 'demo_invited' : currentStatus");
-    expect(routes).toContain('canAdvanceToDemoAttended');
+  it('stores attendance against participant rows without mutating lead lifecycle fields', () => {
+    expect(routes).not.toContain('ownsLegacyBooking');
+    expect(routes).not.toContain("currentStatus === 'demo_attended' ? 'demo_invited' : currentStatus");
+    expect(routes).not.toContain('canAdvanceToDemoAttended');
     expect(routes).toContain('no_show_reason_code = $5');
     expect(routes).toContain('{ demoLesson: locked, participants: lockedParticipants }');
   });
 
-  it('enrolls directly from lead cards through an existing-demo dialog without creating a student', () => {
+  it('enrolls only selected students and can create missing student profiles in the modal flow', () => {
     expect(kanbanBoard).toContain("t('enrollInDemoLesson')");
     expect(kanbanBoard).toContain('<DemoLessonEnrollmentDialog');
     expect(enrollmentDialog).toContain('<Dialog');
     expect(enrollmentDialog).toContain('demoLessonsApi.list');
     expect(enrollmentDialog).toContain('demoLessonsApi.enroll');
-    expect(enrollmentDialog).not.toContain('studentsApi');
-    expect(enrollmentDialog).not.toContain('CreateLeadStudentDialog');
+    expect(enrollmentDialog).toContain('{ studentIds: selectedStudentIds }');
+    expect(enrollmentDialog).toContain('CreateLeadStudentDialog');
+    expect(enrollmentDialog).not.toContain('{ leadIds:');
+  });
+
+  it('migrates every historical lead participant to exactly one student', () => {
+    expect(studentParticipantMigration).toContain('ADD COLUMN IF NOT EXISTS "student_id" integer');
+    expect(studentParticipantMigration).toContain("'trial'");
+    expect(studentParticipantMigration).toContain('Ambiguous demo participant');
+    expect(studentParticipantMigration).toContain('ALTER COLUMN "student_id" SET NOT NULL');
+    expect(studentParticipantMigration).toContain('DROP COLUMN IF EXISTS "lead_id"');
+    expect(studentParticipantMigration).toContain('("demo_lesson_id", "student_id")');
+    expect(journal.entries.find((entry) => entry.idx === 97)?.tag)
+      .toBe('0097_demo_participants_are_students');
+    expect(schema).toContain("studentId: integer('student_id')");
+    expect(schema).not.toContain("leadId: integer('lead_id')");
   });
 
   it('offers all upcoming demos before creating a new lesson from lead details', () => {

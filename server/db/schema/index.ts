@@ -559,7 +559,7 @@ export const { academyDemoLessons, academyDemoLessonParticipants } = createAcade
   schoolId: academySchools.id,
   roomId: academyRooms.id,
   teacherId: academyTeachers.id,
-  leadId: academyLeads.id,
+  studentId: academyStudents.id,
   userId: users.id,
 });
 

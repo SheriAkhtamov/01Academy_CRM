@@ -167,6 +167,7 @@ export function StudentDetailSheet({
   const referrals = data?.referrals?.filter((reward: any) => reward.referrerStudentId === currentStudent.id) ?? [];
   const displayName = currentStudent.studentName || currentStudent.contactName;
   const studentStatusLabel = (status: string) => {
+    if (status === 'trial') return t('studentStatusTrial');
     if (status === 'studying') return t('studentStatusStudying');
     if (status === 'paused') return t('studentStatusPaused');
     if (status === 'completed') return t('studentStatusCompleted');
@@ -302,6 +303,7 @@ export function StudentDetailSheet({
                   <label className="space-y-1 text-xs text-muted-foreground">
                     {ceoCopy.student.status}
                     <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" value={statusDraft} onChange={(event) => setStatusDraft(event.target.value)}>
+                      <option value="trial">{t('studentStatusTrial')}</option>
                       <option value="studying">{ceoCopy.student.studying}</option>
                       <option value="paused">{ceoCopy.student.paused}</option>
                       <option value="completed">{ceoCopy.student.completed}</option>

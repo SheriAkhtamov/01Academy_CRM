@@ -15,7 +15,6 @@ import { getPublicErrorMessage } from '../../lib/http-errors';
 import {
   ACADEMY_SCHEDULING_ADVISORY_LOCK,
   Row,
-  canMutateLeadRow,
   createAudit,
   ensureSalesAccess,
   insertRow,
@@ -29,10 +28,6 @@ import {
   assertLessonRoomAvailable,
   assertTeacherCanLeadLesson,
 } from './academy-scheduling';
-import {
-  createStageHistory,
-  handleLeadStatusEffects,
-} from './academy-leads';
 import { getDemoResourceAvailability } from './demo-resource-availability';
 
 const getDemoLesson = async (id: number) => queryOne(
@@ -45,14 +40,15 @@ const getDemoLesson = async (id: number) => queryOne(
         jsonb_agg(
           jsonb_build_object(
             'id', participant.id,
-            'leadId', participant.lead_id,
+            'studentId', participant.student_id,
+            'leadId', student.lead_id,
             'status', participant.status,
             'result', participant.result,
             'noShowReasonCode', participant.no_show_reason_code,
             'noShowReasonNote', participant.no_show_reason_note,
-            'contactName', lead.contact_name,
-            'studentName', lead.student_name,
-            'managerId', lead.manager_id
+            'contactName', COALESCE(student.contact_name, lead.contact_name),
+            'studentName', student.student_name,
+            'managerId', COALESCE(student.manager_id, lead.manager_id)
           ) ORDER BY participant.id
         ) FILTER (WHERE participant.id IS NOT NULL),
         '[]'::jsonb
@@ -63,7 +59,8 @@ const getDemoLesson = async (id: number) => queryOne(
    LEFT JOIN academy_rooms room ON room.id = demo.room_id
    JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
    LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
-   LEFT JOIN academy_leads lead ON lead.id = participant.lead_id
+   LEFT JOIN academy_students student ON student.id = participant.student_id
+   LEFT JOIN academy_leads lead ON lead.id = student.lead_id
    WHERE demo.id = $1
    GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name`,
   [id],
@@ -99,88 +96,78 @@ const parseDateRange = (value: unknown, fallback: Date) => {
   return parsed;
 };
 
-const loadMutableLeads = async (req: any, leadIds: number[], lock = false) => {
-  if (leadIds.length === 0) return [];
-  const leads = await query(
-    `SELECT * FROM academy_leads
-     WHERE id = ANY($1::int[])
-     ORDER BY id
-     ${lock ? 'FOR UPDATE' : ''}`,
-    [leadIds],
+const loadMutableStudents = async (req: any, studentIds: number[], lock = false) => {
+  if (studentIds.length === 0) return [];
+  const students = await query(
+    `SELECT student.*,
+            COALESCE(student.manager_id, lead.manager_id) AS effective_manager_id
+     FROM academy_students student
+     LEFT JOIN academy_leads lead ON lead.id = student.lead_id
+     WHERE student.id = ANY($1::int[])
+     ORDER BY student.id
+     ${lock ? 'FOR UPDATE OF student' : ''}`,
+    [studentIds],
   );
-  if (leads.length !== leadIds.length) {
+  if (students.length !== studentIds.length) {
     throw Object.assign(new Error('demoParticipantNotFound'), { statusCode: 404 });
   }
-  for (const lead of leads) {
-    if (!canMutateLeadRow(req, lead)) {
-      throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
-    }
-    if (lead.isArchived) {
-      throw Object.assign(new Error('demoArchivedLeadNotAllowed'), { statusCode: 409 });
-    }
-    if (lead.statusCode === 'paid') {
-      throw Object.assign(new Error('demoPaidLeadNotAllowed'), { statusCode: 409 });
+  for (const student of students) {
+    if (!hasLeadershipAccess(req.user)
+      && student.effectiveManagerId
+      && Number(student.effectiveManagerId) !== Number(req.user?.id)) {
+      throw Object.assign(new Error('Student mutation access required'), { statusCode: 403 });
     }
   }
-  return leads;
+  return students;
 };
 
 const assertParticipantAvailability = async (
-  leadIds: number[],
+  studentIds: number[],
   startsAt: Date,
   durationMinutes: number,
   excludeDemoLessonId?: number | null,
 ) => {
-  if (leadIds.length === 0) return;
+  if (studentIds.length === 0) return;
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
-  const [eventConflict, legacyConflict] = await Promise.all([
+  const [eventConflict, lessonConflict] = await Promise.all([
     queryOne(
-      `SELECT participant.lead_id
+      `SELECT participant.student_id
        FROM academy_demo_lesson_participants participant
        JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
-       WHERE participant.lead_id = ANY($1::int[])
+       WHERE participant.student_id = ANY($1::int[])
          AND participant.status <> 'cancelled'
          AND demo.status = 'scheduled'
-         AND demo.scheduled_at < $3
-         AND demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $2
+         AND demo.scheduled_at < $2
+         AND demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $3
          AND ($4::int IS NULL OR demo.id <> $4)
        LIMIT 1`,
-      [leadIds, startsAt, endsAt, excludeDemoLessonId ?? null],
+      [studentIds, endsAt, startsAt, excludeDemoLessonId ?? null],
     ),
     queryOne(
-      `SELECT lead.id
-       FROM academy_leads lead
-       LEFT JOIN academy_courses course ON course.id = COALESCE(lead.demo_course_id, lead.course_id)
-       WHERE lead.id = ANY($1::int[])
-         AND lead.demo_at IS NOT NULL
-         AND COALESCE(lead.demo_attended, false) = false
-         AND lead.demo_at < $3
-         AND lead.demo_at
-           + (COALESCE(course.lesson_duration_minutes, $4) * INTERVAL '1 minute') > $2
-         AND NOT EXISTS (
-           SELECT 1
-           FROM academy_demo_lesson_participants participant
-           JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
-           WHERE participant.lead_id = lead.id
-             AND demo.status = 'scheduled'
-             AND demo.scheduled_at = lead.demo_at
-         )
+      `SELECT enrollment.student_id
+       FROM academy_student_group_enrollments enrollment
+       JOIN academy_lessons lesson ON lesson.group_id = enrollment.group_id
+       WHERE enrollment.student_id = ANY($1::int[])
+         AND enrollment.status = 'active'
+         AND lesson.status <> 'cancelled'
+         AND lesson.scheduled_at < $2
+         AND lesson.scheduled_at + (lesson.duration_minutes * INTERVAL '1 minute') > $3
        LIMIT 1`,
-      [leadIds, startsAt, endsAt, durationMinutes],
+      [studentIds, endsAt, startsAt],
     ),
   ]);
-  if (eventConflict || legacyConflict) {
+  if (eventConflict || lessonConflict) {
     throw Object.assign(new Error('demoParticipantBusy'), { statusCode: 409 });
   }
 };
 
 const hasParticipantConflict = async (
-  leadIds: number[],
+  studentIds: number[],
   startsAt: Date,
   durationMinutes: number,
 ) => {
   try {
-    await assertParticipantAvailability(leadIds, startsAt, durationMinutes);
+    await assertParticipantAvailability(studentIds, startsAt, durationMinutes);
     return false;
   } catch (error: any) {
     if (error?.message === 'demoParticipantBusy') return true;
@@ -228,41 +215,12 @@ const assertDemoResources = async (
     });
   }
   await assertParticipantAvailability(
-    input.participantIds,
+    input.studentIds,
     startsAt,
     input.durationMinutes,
     excludeDemoLessonId,
   );
   return { course, school, room, startsAt };
-};
-
-const syncLeadInvitation = async (
-  req: any,
-  lead: Row,
-  demo: Row,
-  location: string,
-) => {
-  const nextStatus = lead.statusCode === 'paid' ? lead.statusCode : 'demo_invited';
-  const updated = await updateRow('academy_leads', Number(lead.id), {
-    demoAt: demo.scheduledAt,
-    demoCourseId: demo.courseId,
-    demoFormat: demo.format,
-    demoLocation: location,
-    demoAttended: false,
-    demoResult: null,
-    statusCode: nextStatus,
-  });
-  if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-  if (lead.statusCode !== nextStatus) {
-    await createStageHistory(
-      Number(lead.id),
-      String(lead.statusCode),
-      nextStatus,
-      Number(req.user.id),
-      'Записан на демо-урок',
-    );
-    await handleLeadStatusEffects(req.actor!, updated, String(lead.statusCode));
-  }
 };
 
 export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router>) => {
@@ -289,14 +247,15 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
               jsonb_agg(
                 jsonb_build_object(
                   'id', participant.id,
-                  'leadId', participant.lead_id,
+                  'studentId', participant.student_id,
+                  'leadId', student.lead_id,
                   'status', participant.status,
                   'result', participant.result,
                   'noShowReasonCode', participant.no_show_reason_code,
                   'noShowReasonNote', participant.no_show_reason_note,
-                  'contactName', lead.contact_name,
-                  'studentName', lead.student_name,
-                  'managerId', lead.manager_id
+                  'contactName', COALESCE(student.contact_name, lead.contact_name),
+                  'studentName', student.student_name,
+                  'managerId', COALESCE(student.manager_id, lead.manager_id)
                 ) ORDER BY participant.id
               ) FILTER (WHERE participant.id IS NOT NULL),
               '[]'::jsonb
@@ -307,7 +266,8 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
          LEFT JOIN academy_rooms room ON room.id = demo.room_id
          JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
          LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
-         LEFT JOIN academy_leads lead ON lead.id = participant.lead_id
+         LEFT JOIN academy_students student ON student.id = participant.student_id
+         LEFT JOIN academy_leads lead ON lead.id = student.lead_id
          WHERE demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $1
            AND ($2::timestamptz IS NULL OR demo.scheduled_at < $2::timestamptz)
            AND ($3::int IS NULL OR demo.school_id = $3)
@@ -332,15 +292,15 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       return res.status(400).json({ error: parsed.error.issues[0]?.message || 'invalidData' });
     }
     try {
-      if (parsed.data.participantIds.length > 0) {
-        await loadMutableLeads(req, parsed.data.participantIds);
+      if (parsed.data.studentIds.length > 0) {
+        await loadMutableStudents(req, parsed.data.studentIds);
       }
       const startsAt = new Date(parsed.data.scheduledAt);
       const [resources, participantConflict] = await Promise.all([
         getDemoResourceAvailability(parsed.data),
-        parsed.data.participantIds.length > 0
+        parsed.data.studentIds.length > 0
           ? hasParticipantConflict(
-            parsed.data.participantIds,
+            parsed.data.studentIds,
             startsAt,
             parsed.data.durationMinutes,
           )
@@ -362,10 +322,10 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       return res.status(400).json({ error: parsed.error.issues[0]?.message || 'invalidData' });
     }
     try {
-      await loadMutableLeads(req, parsed.data.participantIds);
+      await loadMutableStudents(req, parsed.data.studentIds);
       const demo = await withTransaction(async () => {
         await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
-        const leads = await loadMutableLeads(req, parsed.data.participantIds, true);
+        const students = await loadMutableStudents(req, parsed.data.studentIds, true);
         const resources = await assertDemoResources(parsed.data);
         const created = await insertRow('academy_demo_lessons', {
           courseId: parsed.data.courseId,
@@ -380,18 +340,12 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           createdBy: req.user!.id,
           updatedBy: req.user!.id,
         });
-        for (const lead of leads) {
+        for (const student of students) {
           await insertRow('academy_demo_lesson_participants', {
             demoLessonId: created.id,
-            leadId: lead.id,
+            studentId: student.id,
             status: 'invited',
           });
-        }
-        const location = parsed.data.format === 'online'
-          ? 'online'
-          : `${resources.school.name}, ${resources.room?.name ?? ''}`;
-        for (const lead of leads) {
-          await syncLeadInvitation(req, lead, created, location);
         }
         await createAudit(
           req.actor!,
@@ -422,7 +376,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       });
     }
     try {
-      await loadMutableLeads(req, parsed.data.leadIds);
+      await loadMutableStudents(req, parsed.data.studentIds);
       const enrolled = await withTransaction(async () => {
         await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
         const demo = await queryOne(
@@ -439,28 +393,28 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           throw Object.assign(new Error('demoEnrollmentClosed'), { statusCode: 409 });
         }
 
-        const leads = await loadMutableLeads(req, parsed.data.leadIds, true);
+        const students = await loadMutableStudents(req, parsed.data.studentIds, true);
         const existingParticipants = await query(
           `SELECT * FROM academy_demo_lesson_participants
-           WHERE demo_lesson_id = $1 AND lead_id = ANY($2::int[])
-           ORDER BY lead_id
+           WHERE demo_lesson_id = $1 AND student_id = ANY($2::int[])
+           ORDER BY student_id
            FOR UPDATE`,
-          [id, parsed.data.leadIds],
+          [id, parsed.data.studentIds],
         );
         if (existingParticipants.some((participant) => participant.status !== 'cancelled')) {
           throw Object.assign(new Error('demoParticipantAlreadyEnrolled'), { statusCode: 409 });
         }
         await assertParticipantAvailability(
-          parsed.data.leadIds,
+          parsed.data.studentIds,
           new Date(demo.scheduledAt),
           Number(demo.durationMinutes),
           id,
         );
-        const existingByLeadId = new Map(
-          existingParticipants.map((participant) => [Number(participant.leadId), participant]),
+        const existingByStudentId = new Map(
+          existingParticipants.map((participant) => [Number(participant.studentId), participant]),
         );
-        for (const lead of leads) {
-          const existing = existingByLeadId.get(Number(lead.id));
+        for (const student of students) {
+          const existing = existingByStudentId.get(Number(student.id));
           if (existing) {
             await updateRow('academy_demo_lesson_participants', Number(existing.id), {
               status: 'invited',
@@ -471,23 +425,17 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           } else {
             await insertRow('academy_demo_lesson_participants', {
               demoLessonId: id,
-              leadId: lead.id,
+              studentId: student.id,
               status: 'invited',
             });
           }
-        }
-        const location = demo.format === 'online'
-          ? 'online'
-          : `${demo.schoolName}, ${demo.roomName ?? ''}`;
-        for (const lead of leads) {
-          await syncLeadInvitation(req, lead, demo, location);
         }
         await createAudit(
           req.actor!,
           'ADD_ACADEMY_DEMO_PARTICIPANTS',
           'academy_demo_lesson',
           id,
-          { demoLessonId: id, leadIds: parsed.data.leadIds },
+          { demoLessonId: id, studentIds: parsed.data.studentIds },
           demo,
         );
         return demo;
@@ -514,7 +462,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       if (!current) return res.status(404).json({ error: 'resourceNotFound' });
       const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
       if (!hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
-        return res.status(403).json({ error: 'Lead mutation access required' });
+        return res.status(403).json({ error: 'Student mutation access required' });
       }
       const cancelled = await withTransaction(async () => {
         await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
@@ -534,35 +482,6 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
            WHERE demo_lesson_id = $1 AND status NOT IN ('attended', 'no_show')`,
           [id],
         );
-        for (const participant of participants) {
-          const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [participant.leadId]);
-          if (!lead) continue;
-          const ownsLegacyBooking = Boolean(
-            lead.demoAt
-            && new Date(lead.demoAt).getTime() === new Date(locked.scheduledAt).getTime(),
-          );
-          const shouldResetStatus = ownsLegacyBooking && lead.statusCode === 'demo_invited';
-          const leadUpdate = await updateRow('academy_leads', Number(lead.id), {
-            demoAt: ownsLegacyBooking ? null : undefined,
-            demoCourseId: ownsLegacyBooking ? null : undefined,
-            demoFormat: ownsLegacyBooking ? null : undefined,
-            demoLocation: ownsLegacyBooking ? null : undefined,
-            demoAttended: ownsLegacyBooking ? false : undefined,
-            demoResult: ownsLegacyBooking ? parsed.data.reason : undefined,
-            statusCode: shouldResetStatus ? 'qualified' : lead.statusCode,
-          });
-          if (!leadUpdate) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-          if (shouldResetStatus) {
-            await createStageHistory(
-              Number(lead.id),
-              'demo_invited',
-              'qualified',
-              Number(req.user!.id),
-              'Демо-урок отменён',
-            );
-            await handleLeadStatusEffects(req.actor!, leadUpdate, 'demo_invited');
-          }
-        }
         await createAudit(
           req.actor!,
           'CANCEL_ACADEMY_DEMO_LESSON',
@@ -598,7 +517,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       if (!current) return res.status(404).json({ error: 'resourceNotFound' });
       const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
       if (!hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
-        return res.status(403).json({ error: 'Lead mutation access required' });
+        return res.status(403).json({ error: 'Student mutation access required' });
       }
 
       const finalized = await withTransaction(async () => {
@@ -672,7 +591,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         : [];
       if (!hasLeadershipAccess(req.user)
         && currentParticipants.some((item) => !canManageParticipant(req, item))) {
-        return res.status(403).json({ error: 'Lead mutation access required' });
+        return res.status(403).json({ error: 'Student mutation access required' });
       }
 
       const rescheduled = await withTransaction(async () => {
@@ -683,15 +602,14 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           throw Object.assign(new Error('demoCannotBeRescheduled'), { statusCode: 409 });
         }
         const activeParticipants = await query(
-          `SELECT participant.*, lead.demo_at
+          `SELECT participant.*
            FROM academy_demo_lesson_participants participant
-           LEFT JOIN academy_leads lead ON lead.id = participant.lead_id
            WHERE participant.demo_lesson_id = $1 AND participant.status <> 'cancelled'
-           ORDER BY participant.lead_id
+           ORDER BY participant.student_id
            FOR UPDATE OF participant`,
           [id],
         );
-        const participantIds = activeParticipants.map((participant) => Number(participant.leadId));
+        const studentIds = activeParticipants.map((participant) => Number(participant.studentId));
         const input: DemoLessonMutation = {
           courseId: Number(locked.courseId),
           schoolId: Number(locked.schoolId),
@@ -700,7 +618,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           scheduledAt: parsed.data.scheduledAt,
           durationMinutes: Number(locked.durationMinutes),
           format: locked.format === 'online' ? 'online' : 'offline',
-          participantIds,
+          studentIds,
           notes: locked.notes ?? null,
         };
         const resources = await assertDemoResources(input, id);
@@ -714,18 +632,6 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           updatedBy: req.user!.id,
         });
         if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-
-        for (const participant of activeParticipants) {
-          const ownsLegacyBooking = Boolean(
-            participant.demoAt
-            && new Date(participant.demoAt).getTime() === new Date(locked.scheduledAt).getTime(),
-          );
-          if (ownsLegacyBooking) {
-            await updateRow('academy_leads', Number(participant.leadId), {
-              demoAt: resources.startsAt,
-            });
-          }
-        }
         await createAudit(
           req.actor!,
           'RESCHEDULE_ACADEMY_DEMO_LESSON',
@@ -758,10 +664,10 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       if (!current) return res.status(404).json({ error: 'resourceNotFound' });
       const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
       if (!hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
-        return res.status(403).json({ error: 'Lead mutation access required' });
+        return res.status(403).json({ error: 'Student mutation access required' });
       }
-      const participantLeadIds = new Set(participants.map((item) => Number(item.leadId)));
-      if (parsed.data.participants.some((item) => !participantLeadIds.has(item.leadId))) {
+      const participantIds = new Set(participants.map((item) => Number(item.id)));
+      if (parsed.data.participants.some((item) => !participantIds.has(item.participantId))) {
         return res.status(400).json({ error: 'demoParticipantNotFound' });
       }
       const result = await withTransaction(async () => {
@@ -778,11 +684,11 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
            FOR UPDATE`,
           [id],
         );
-        const lockedParticipantByLeadId = new Map(
-          lockedParticipants.map((participant) => [Number(participant.leadId), participant]),
+        const lockedParticipantById = new Map(
+          lockedParticipants.map((participant) => [Number(participant.id), participant]),
         );
         for (const item of parsed.data.participants) {
-          if (!lockedParticipantByLeadId.has(item.leadId)) {
+          if (!lockedParticipantById.has(item.participantId)) {
             throw Object.assign(new Error('demoParticipantNotFound'), { statusCode: 404 });
           }
           const noShowReasonCode = item.status === 'no_show'
@@ -798,59 +704,16 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
                  no_show_reason_code = $5,
                  no_show_reason_note = $6,
                  updated_at = NOW()
-             WHERE demo_lesson_id = $1 AND lead_id = $2`,
+             WHERE demo_lesson_id = $1 AND id = $2`,
             [
               id,
-              item.leadId,
+              item.participantId,
               item.status,
               item.result ?? null,
               noShowReasonCode,
               noShowReasonNote,
             ],
           );
-          const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [item.leadId]);
-          if (!lead) continue;
-
-          // Participant rows are the source of truth. Mirror an attendance
-          // correction to the legacy lead fields only while this is still the
-          // lead's current demo; editing an older attempt must not overwrite a
-          // newer booking or its pipeline stage.
-          const ownsLegacyBooking = Boolean(
-            lead.demoAt
-            && new Date(lead.demoAt).getTime() === new Date(locked.scheduledAt).getTime(),
-          );
-          if (!ownsLegacyBooking) continue;
-
-          const currentStatus = String(lead.statusCode);
-          const canAdvanceToDemoAttended = [
-            'new_request',
-            'first_contact',
-            'qualified',
-            'demo_invited',
-          ].includes(currentStatus);
-          const nextStatus = item.status === 'attended'
-            ? (canAdvanceToDemoAttended ? 'demo_attended' : currentStatus)
-            : (currentStatus === 'demo_attended' ? 'demo_invited' : currentStatus);
-          const updatedLead = await updateRow('academy_leads', item.leadId, {
-            demoAttended: item.status === 'attended',
-            demoResult: item.status === 'attended'
-              ? item.result ?? null
-              : noShowReasonNote ?? noShowReasonCode,
-            statusCode: nextStatus,
-          });
-          if (!updatedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-          if (currentStatus !== nextStatus) {
-            await createStageHistory(
-              item.leadId,
-              currentStatus,
-              nextStatus,
-              Number(req.user!.id),
-              item.status === 'attended'
-                ? 'Посещение демо-урока отмечено'
-                : 'Посещение демо-урока исправлено: лид не пришёл',
-            );
-            await handleLeadStatusEffects(req.actor!, updatedLead, currentStatus);
-          }
         }
         const updated = await updateRow('academy_demo_lessons', id, {
           updatedBy: req.user!.id,

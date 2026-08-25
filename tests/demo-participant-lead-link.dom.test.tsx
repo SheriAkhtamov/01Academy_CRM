@@ -31,10 +31,10 @@ const demo: DemoLesson = {
   format: 'offline',
   status: 'scheduled',
   participants: [
-    { id: 11, leadId: 101, status: 'confirmed', contactName: 'Родитель Азиза', studentName: 'Азиз' },
-    { id: 12, leadId: 102, status: 'invited', contactName: 'Дилноза' },
+    { id: 11, studentId: 71, leadId: 101, status: 'confirmed', contactName: 'Родитель Азиза', studentName: 'Азиз' },
+    { id: 12, studentId: 72, leadId: 102, status: 'invited', contactName: 'Дилноза' },
     // A lead this manager may not open: the server blanks both names.
-    { id: 13, leadId: 103, status: 'invited', contactName: null, studentName: null },
+    { id: 13, studentId: 73, leadId: 103, status: 'invited', contactName: null, studentName: null },
   ],
   canManage: true,
 };

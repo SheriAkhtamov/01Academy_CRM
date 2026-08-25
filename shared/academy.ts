@@ -123,6 +123,7 @@ export const LEAD_ARCHIVE_REASON_CODES = LEAD_ARCHIVE_REASONS.map((reason) => re
 export type LeadArchiveReasonCode = (typeof LEAD_ARCHIVE_REASONS)[number]["code"];
 
 export const STUDENT_STATUSES = [
+  { code: "trial", translationKey: "studentStatusTrial", color: "#7c3aed" },
   { code: "studying", translationKey: "studentStatusStudying", color: "#16a34a" },
   { code: "paused", translationKey: "studentStatusPaused", color: "#f59e0b" },
   { code: "completed", translationKey: "studentStatusCompleted", color: "#2563eb" },

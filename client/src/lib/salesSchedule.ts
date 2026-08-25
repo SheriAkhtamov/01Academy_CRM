@@ -80,7 +80,7 @@ export interface SalesScheduleDemoLesson {
   scheduledAt: string;
   durationMinutes?: number | null;
   status?: string | null;
-  participants?: Array<{ leadId: number }>;
+  participants?: unknown[];
 }
 
 export interface SalesScheduleFilterCourse {

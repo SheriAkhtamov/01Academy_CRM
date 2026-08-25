@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { createLeadStudentRequestSchema } from '../shared/contracts/academy-leads';
 
 const leadSheet = readFileSync(
   new URL('../client/src/components/ux/LeadDetailSheet.tsx', import.meta.url),
@@ -41,10 +42,25 @@ describe('lead and student UX separation', () => {
 
   it('provides an explicit multi-student creation flow with group enrollment', () => {
     expect(leadSheet).toContain('<CreateLeadStudentDialog');
-    expect(studentDialog).toContain('groupIds: z.array(z.string()).min(1');
+    expect(studentDialog).toContain('groupIds: z.array(z.string())');
+    expect(studentDialog).toContain('value.groupIds.length === 0');
     expect(studentDialog).toContain('leadsApi.createStudent<CreatedLeadStudent>');
     expect(leadsApi).toContain('`/api/academy/leads/${leadId}/students`');
-    expect(studentDialog).toContain('primaryGroupId: Number(values.primaryGroupId)');
+    expect(studentDialog).toContain('primaryGroupId: values.demoOnly ? null : Number(values.primaryGroupId)');
+    expect(studentDialog).toContain("t('createAndAddAnotherStudent')");
+    expect(studentDialog).toContain('createAnother: true');
+  });
+
+  it('allows a group-free trial profile only for demo enrollment', () => {
+    expect(createLeadStudentRequestSchema.safeParse({
+      studentName: 'Trial child',
+      demoOnly: true,
+    }).success).toBe(true);
+    expect(createLeadStudentRequestSchema.safeParse({
+      studentName: 'Regular child',
+      groupIds: [],
+      demoOnly: false,
+    }).success).toBe(false);
   });
 
   it('keeps telephony above page content but below dialogs and sheets', () => {

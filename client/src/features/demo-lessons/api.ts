@@ -12,7 +12,8 @@ import { apiRequest } from '@/lib/queryClient';
 
 export interface DemoLessonParticipant {
   id: number;
-  leadId: number;
+  studentId: number;
+  leadId?: number | null;
   status: 'invited' | 'confirmed' | 'attended' | 'no_show' | 'cancelled';
   result?: string | null;
   noShowReasonCode?: DemoNoShowReasonCode | null;

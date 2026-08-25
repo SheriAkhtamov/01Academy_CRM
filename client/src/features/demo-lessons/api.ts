@@ -22,6 +22,7 @@ export interface DemoLessonParticipant {
   contactName?: string | null;
   studentName?: string | null;
   managerId?: number | null;
+  canManage?: boolean;
 }
 
 export interface DemoLesson {
@@ -138,6 +139,9 @@ export const demoLessonsApi = {
   ),
   enroll: (id: number, payload: DemoLessonEnrollment) => (
     apiRequest('POST', `/api/academy/demo-lessons/${id}/participants`, payload) as Promise<DemoLesson>
+  ),
+  removeParticipant: (id: number, participantId: number) => (
+    apiRequest('DELETE', `/api/academy/demo-lessons/${id}/participants/${participantId}`) as Promise<DemoLesson>
   ),
   resourceAvailability: (payload: DemoLessonResourceAvailabilityRequest) => (
     apiRequest('POST', '/api/academy/demo-lessons/resource-availability', payload) as Promise<DemoResourceAvailability>

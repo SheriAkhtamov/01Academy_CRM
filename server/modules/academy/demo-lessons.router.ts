@@ -80,11 +80,12 @@ const presentDemoLesson = (req: any, demo: Row) => {
   return {
     ...demo,
     canManage,
-    participants: participants.map((participant) => (
-      canManageParticipant(req, participant)
-        ? participant
-        : { ...participant, contactName: null, studentName: null }
-    )),
+    participants: participants.map((participant) => {
+      const participantCanManage = canManageParticipant(req, participant);
+      return participantCanManage
+        ? { ...participant, canManage: true }
+        : { ...participant, contactName: null, studentName: null, canManage: false };
+    }),
   };
 };
 
@@ -553,6 +554,80 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       logger.error('Failed to enroll demo lesson participant', { error });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, 'failedToEnrollDemoParticipant'),
+      });
+    }
+  });
+
+  router.delete('/demo-lessons/:id/participants/:participantId', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const id = Number(req.params.id);
+    const participantId = Number(req.params.participantId);
+    if (!Number.isSafeInteger(id) || id < 1
+      || !Number.isSafeInteger(participantId) || participantId < 1) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    try {
+      const current = await getDemoLesson(id);
+      if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      const currentParticipant = (current.participants as Row[] | undefined)
+        ?.find((participant) => Number(participant.id) === participantId);
+      if (!currentParticipant) return res.status(404).json({ error: 'demoParticipantNotFound' });
+      if (!canManageParticipant(req, currentParticipant)) {
+        return res.status(403).json({ error: 'Student mutation access required' });
+      }
+
+      await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+        const lockedDemo = await queryOne(
+          `SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        if (!lockedDemo) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (lockedDemo.status !== 'scheduled') {
+          throw Object.assign(new Error('demoParticipantRemovalClosed'), { statusCode: 409 });
+        }
+        const lockedParticipant = await queryOne(
+          `SELECT participant.*,
+                  COALESCE(student.manager_id, lead.manager_id) AS manager_id
+           FROM academy_demo_lesson_participants participant
+           JOIN academy_students student ON student.id = participant.student_id
+           LEFT JOIN academy_leads lead ON lead.id = student.lead_id
+           WHERE participant.demo_lesson_id = $1 AND participant.id = $2
+           FOR UPDATE OF participant`,
+          [id, participantId],
+        );
+        if (!lockedParticipant) {
+          throw Object.assign(new Error('demoParticipantNotFound'), { statusCode: 404 });
+        }
+        if (!canManageParticipant(req, lockedParticipant)) {
+          throw Object.assign(new Error('Student mutation access required'), { statusCode: 403 });
+        }
+        if (!['invited', 'confirmed'].includes(String(lockedParticipant.status))) {
+          throw Object.assign(new Error('demoParticipantAttendanceRecorded'), { statusCode: 409 });
+        }
+        await query(
+          `DELETE FROM academy_demo_lesson_participants
+           WHERE demo_lesson_id = $1 AND id = $2`,
+          [id, participantId],
+        );
+        const updated = await updateRow('academy_demo_lessons', id, { updatedBy: req.user!.id });
+        await createAudit(
+          req.actor!,
+          'REMOVE_ACADEMY_DEMO_PARTICIPANT',
+          'academy_demo_lesson',
+          id,
+          { demoLesson: updated, removedParticipantId: participantId },
+          { demoLesson: lockedDemo, participant: lockedParticipant },
+        );
+      });
+
+      const responseDemo = await getDemoLesson(id);
+      if (!responseDemo) return res.status(404).json({ error: 'resourceNotFound' });
+      res.json(presentDemoLesson(req, responseDemo));
+    } catch (error: any) {
+      logger.error('Failed to remove demo lesson participant', { error, demoLessonId: id, participantId });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToRemoveDemoParticipant'),
       });
     }
   });

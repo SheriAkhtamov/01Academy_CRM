@@ -258,7 +258,10 @@ describe('demo lessons', () => {
     expect(routes).toContain("router.post('/demo-lessons/:id/teacher'");
     expect(routes).toContain("router.post('/demo-lessons/:id/attendance'");
     expect(routes).toContain("router.post('/demo-lessons/:id/participants'");
+    expect(routes).toContain("router.delete('/demo-lessons/:id/participants/:participantId'");
     expect(routes).toContain('ADD_ACADEMY_DEMO_PARTICIPANTS');
+    expect(routes).toContain('REMOVE_ACADEMY_DEMO_PARTICIPANT');
+    expect(routes).toContain("!['invited', 'confirmed'].includes");
     expect(routes).toContain('demoParticipantAlreadyEnrolled');
     expect(scheduling).toContain('FROM academy_demo_lessons');
     expect(scheduling).toContain('Number(lesson.roomId) !== roomId');
@@ -354,6 +357,8 @@ describe('demo lessons', () => {
     expect(detailsDialog).toContain("t('markDemoConductedTitle')");
     expect(detailsDialog).toContain("t('markDemoNotConductedTitle')");
     expect(detailsDialog).toContain("t('rescheduleDemoLessonTitle')");
+    expect(detailsDialog).toContain("t('removeDemoParticipantTitle')");
+    expect(detailsDialog).toContain('demoLessonsApi.removeParticipant');
   });
 
   it('stores attendance against participant rows without mutating lead lifecycle fields', () => {

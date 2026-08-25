@@ -11,6 +11,7 @@ import {
   Pencil,
   UserRoundCheck,
   UsersRound,
+  X,
 } from 'lucide-react';
 import {
   DEMO_NOT_CONDUCTED_REASON_CODES,
@@ -54,6 +55,7 @@ import {
   demoLessonQueryKeys,
   demoLessonsApi,
   type DemoLesson,
+  type DemoLessonParticipant,
 } from '@/features/demo-lessons/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 import {
@@ -134,6 +136,7 @@ export function DemoLessonDetailsDialog({
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [changeTeacherOpen, setChangeTeacherOpen] = useState(false);
   const [teacherDraftId, setTeacherDraftId] = useState('');
+  const [participantToRemove, setParticipantToRemove] = useState<DemoLessonParticipant | null>(null);
 
   const teacherOptions = useQuery({
     queryKey: [...demoLessonQueryKeys.teacherOptions, demo?.id ?? 0],
@@ -180,6 +183,7 @@ export function DemoLessonDetailsDialog({
     setRescheduleReason('');
     setChangeTeacherOpen(false);
     setTeacherDraftId(String(demo.teacherId));
+    setParticipantToRemove(null);
   }, [demo, open]);
 
   const invalidate = async (updated: DemoLesson) => {
@@ -300,6 +304,23 @@ export function DemoLessonDetailsDialog({
     },
   });
 
+  const removeParticipant = useMutation({
+    mutationFn: (participantId: number) => demoLessonsApi.removeParticipant(
+      Number(demo?.id),
+      participantId,
+    ),
+    onSuccess: async (updated) => {
+      await invalidate(updated);
+      setParticipantToRemove(null);
+      toast({ title: t('demoParticipantRemoved') });
+    },
+    onError: (error: Error) => toast({
+      title: t('demoParticipantRemoveFailed'),
+      description: error.message,
+      variant: 'destructive',
+    }),
+  });
+
   const reasonParticipant = useMemo(
     () => demo?.participants.find((participant) => participant.id === reasonParticipantId) ?? null,
     [demo, reasonParticipantId],
@@ -401,7 +422,9 @@ export function DemoLessonDetailsDialog({
           && !finalizeDemo.isPending
           && !rescheduleDemo.isPending
           && !changeDemoTeacher.isPending
+          && !removeParticipant.isPending
           && reasonParticipantId === null
+          && participantToRemove === null
           && !cancelOpen
           && !conductedConfirmOpen
           && !notConductedOpen
@@ -473,7 +496,7 @@ export function DemoLessonDetailsDialog({
                   : null;
 
                 return (
-                  <div key={participant.id} className="grid grid-cols-1 items-center gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                  <div key={participant.id} className="relative grid grid-cols-1 items-center gap-3 rounded-lg border border-border p-3 pr-12 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:pr-3">
                     {onOpenLead && participant.leadId && primaryName ? (
                       <button
                         type="button"
@@ -545,6 +568,24 @@ export function DemoLessonDetailsDialog({
                         </div>
                       ) : null}
                     </div>
+                    {demo.status === 'scheduled'
+                      && participant.canManage !== false
+                      && ['invited', 'confirmed'].includes(participant.status) ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-2 top-2 size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:static"
+                          disabled={dirtyParticipantIds.size > 0 || removeParticipant.isPending}
+                          onClick={() => setParticipantToRemove(participant)}
+                          aria-label={t('removeDemoParticipantAria').replace(
+                            '{name}',
+                            primaryName || t('restrictedLead'),
+                          )}
+                        >
+                          <X aria-hidden="true" className="size-4" />
+                        </Button>
+                      ) : null}
                   </div>
                 );
               })}
@@ -737,6 +778,36 @@ export function DemoLessonDetailsDialog({
               onClick={() => finalizeDemo.mutate({ status: 'completed' })}
             >
               {finalizeDemo.isPending ? t('saving') : t('markDemoConducted')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={participantToRemove !== null} onOpenChange={(nextOpen) => {
+        if (!nextOpen && !removeParticipant.isPending) setParticipantToRemove(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('removeDemoParticipantTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('removeDemoParticipantDescription').replace(
+                '{name}',
+                participantToRemove?.studentName
+                  || participantToRemove?.contactName
+                  || t('restrictedLead'),
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeParticipant.isPending}>{t('back')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!participantToRemove || removeParticipant.isPending}
+              onClick={() => {
+                if (participantToRemove) removeParticipant.mutate(participantToRemove.id);
+              }}
+            >
+              {removeParticipant.isPending ? t('deleting') : t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

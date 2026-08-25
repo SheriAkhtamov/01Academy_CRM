@@ -40,6 +40,7 @@ export const localizeApiErrorMessage = (message: string, status: number) => {
     failedToCheckDemoAvailability: i18n.t("failedToCheckDemoAvailability"),
     failedToCreateDemoLesson: i18n.t("failedToCreateDemoLesson"),
     failedToEnrollDemoParticipant: i18n.t("failedToEnrollDemoParticipant"),
+    failedToRemoveDemoParticipant: i18n.t("failedToRemoveDemoParticipant"),
     failedToCancelDemoLesson: i18n.t("failedToCancelDemoLesson"),
     failedToFinalizeDemoLesson: i18n.t("failedToFinalizeDemoLesson"),
     failedToRescheduleDemoLesson: i18n.t("failedToRescheduleDemoLesson"),

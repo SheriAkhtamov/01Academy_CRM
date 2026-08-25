@@ -15,6 +15,7 @@ import {
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { logger } from '../../lib/logger';
 import { enqueueMetaConversionForLead } from '../../services/meta-marketing';
+import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
 import {
   ACADEMY_REFERRAL_ADVISORY_LOCK,
   ACADEMY_TIME_ZONE,
@@ -1011,6 +1012,22 @@ export const syncLeadOwnedNotifications = async (managerId: number, leadIds: num
   );
 };
 
+export const updateLeadManagerRows = async (leads: Row[], managerId: number) => {
+  const leadIds = leads.map((lead) => Number(lead.id));
+  const transferredIds = leads
+    .filter((lead) => Number(lead.managerId) > 0)
+    .map((lead) => Number(lead.id));
+  await query(
+    `UPDATE academy_leads
+     SET manager_id = $1,
+         first_viewed_at = CASE WHEN id = ANY($3::int[]) THEN NULL ELSE first_viewed_at END,
+         first_viewed_by = CASE WHEN id = ANY($3::int[]) THEN NULL ELSE first_viewed_by END,
+         updated_at = NOW()
+     WHERE id = ANY($2::int[])`,
+    [managerId, leadIds, transferredIds],
+  );
+};
+
 export const syncLeadManagerRelations = async (
   leadId: number,
   managerId: number,
@@ -1086,7 +1103,10 @@ export const reassignLead = async (
       return { ...lockedLead, managerName: lockedManager.fullName };
     }
 
-    const updated = await updateRow('academy_leads', lead.id, { managerId: lockedManager.id });
+    const updated = await updateRow('academy_leads', lead.id, {
+      managerId: lockedManager.id,
+      ...leadViewStateAfterManagerTransfer(lockedLead.managerId, lockedManager.id),
+    });
     if (!updated) {
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }

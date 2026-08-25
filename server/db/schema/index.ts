@@ -315,7 +315,7 @@ export const academyLeads = pgTable("academy_leads", {
     { onDelete: "set null" },
   ),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
-  firstViewedAt: timestamp("first_viewed_at"), // NULL while the lead is still new for everyone.
+  firstViewedAt: timestamp("first_viewed_at"), // NULL while the lead is new in its current assignment cycle.
   firstViewedBy: integer("first_viewed_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

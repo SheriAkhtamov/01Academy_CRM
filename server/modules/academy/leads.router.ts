@@ -77,7 +77,11 @@ import {
 } from '@shared/scheduling';
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
-import { countUnviewedLeads, markLeadViewed } from '../../services/lead-view-state';
+import {
+  countUnviewedLeads,
+  leadViewStateAfterManagerTransfer,
+  markLeadViewed,
+} from '../../services/lead-view-state';
 
 import {
   DbValue,
@@ -137,6 +141,7 @@ import {
   resolveSourceId,
   syncLeadManagerAssignment,
   syncLeadOwnedNotifications,
+  updateLeadManagerRows,
   validateEnrollmentGroup,
   validateLeadSelectedGroups,
 } from './academy-leads';
@@ -445,12 +450,7 @@ router.post('/leads/bulk-assign', async (req, res) => {
       if (changed.length === 0) return { manager: lockedManager, changedLeads: changed };
 
       const changedIds = changed.map((lead) => Number(lead.id));
-      await query(
-        `UPDATE academy_leads
-         SET manager_id = $1, updated_at = NOW()
-         WHERE id = ANY($2::int[])`,
-        [lockedManager.id, changedIds],
-      );
+      await updateLeadManagerRows(changed, lockedManager.id);
       await query(
         `UPDATE academy_students
          SET manager_id = $1, updated_at = NOW()
@@ -1218,7 +1218,10 @@ router.patch('/leads/:id', async (req, res) => {
           updates.schoolId = Number(lockedGroup.schoolId);
         }
       }
-      const updated = await updateRow('academy_leads', id, updates);
+      const updated = await updateRow('academy_leads', id, {
+        ...updates,
+        ...leadViewStateAfterManagerTransfer(lockedLead.managerId, lockedManager?.id),
+      });
       if (updated) {
         await syncLeadChannelInCurrentTransaction({
           leadId: Number(updated.id),

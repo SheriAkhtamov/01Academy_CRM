@@ -16,9 +16,35 @@ export type LeadViewState = {
   firstViewedBy: number | null;
 };
 
+type LeadViewStateReset = {
+  firstViewedAt?: null;
+  firstViewedBy?: null;
+};
+
 /**
- * A lead card carries the "new" marker for the whole company until somebody
- * opens it, so the read state lives on the lead row instead of per employee.
+ * A viewed lead becomes new again only when it moves between two managers.
+ * Claiming an unassigned lead does not relight the card the same employee may
+ * have just opened in order to claim it.
+ */
+export const leadViewStateAfterManagerTransfer = (
+  previousManagerId: unknown,
+  nextManagerId: unknown,
+): LeadViewStateReset => {
+  const previous = Number(previousManagerId);
+  const next = Number(nextManagerId);
+  return Number.isSafeInteger(previous)
+    && previous > 0
+    && Number.isSafeInteger(next)
+    && next > 0
+    && previous !== next
+    ? { firstViewedAt: null, firstViewedBy: null }
+    : {};
+};
+
+/**
+ * A lead card carries the "new" marker for its current assignment cycle until
+ * somebody with access opens it. A manager-to-manager transfer resets this
+ * state so the receiving manager gets the same familiar marker.
  */
 export const UNVIEWED_LEAD_SQL = `(
   lead.first_viewed_at IS NULL
@@ -55,9 +81,9 @@ export const markLeadViewed = async (
   viewerId: number,
   client: Queryable = pool,
 ): Promise<LeadViewState> => {
-  // The first viewer wins: opening an already seen lead must not rewrite who
-  // cleared the marker, and must not write at all. `updated_at` stays untouched
-  // because viewing a lead is not an edit.
+  // The first viewer in the current assignment cycle wins: opening an already
+  // seen lead must not rewrite who cleared the marker, and must not write at
+  // all. `updated_at` stays untouched because viewing a lead is not an edit.
   const result = await client.query<{
     firstViewedAt: Date | null;
     firstViewedBy: number | null;

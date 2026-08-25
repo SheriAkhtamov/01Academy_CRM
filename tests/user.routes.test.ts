@@ -207,9 +207,12 @@ describe('user route validation', () => {
 
     expect(response.status).toBe(200);
     const transferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_leads'));
+    const transferStatement = statements[transferIndex];
     const accessUpdateIndex = statements.findIndex((statement) => statement.includes('UPDATE users'));
     const commitIndex = statements.findIndex((statement) => statement === 'COMMIT');
     expect(transferIndex).toBeGreaterThan(-1);
+    expect(transferStatement).toContain('first_viewed_at = NULL');
+    expect(transferStatement).toContain('first_viewed_by = NULL');
     expect(accessUpdateIndex).toBeGreaterThan(transferIndex);
     expect(commitIndex).toBeGreaterThan(accessUpdateIndex);
     expect(client.release).toHaveBeenCalledOnce();
@@ -337,10 +340,13 @@ describe('user route validation', () => {
     expect(response.status).toBe(200);
     expect(response.body.transferredResponsibilityCount).toBe(3);
     const transferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_leads'));
+    const transferStatement = statements[transferIndex];
     const archiveIndex = statements.findIndex((statement) => statement.includes('SET is_archived = true'));
     const sessionRevocationIndex = statements.findIndex((statement) => statement.includes('DELETE FROM "session"'));
     const commitIndex = statements.findIndex((statement) => statement === 'COMMIT');
     expect(archiveIndex).toBeGreaterThan(transferIndex);
+    expect(transferStatement).toContain('first_viewed_at = NULL');
+    expect(transferStatement).toContain('first_viewed_by = NULL');
     expect(sessionRevocationIndex).toBeGreaterThan(archiveIndex);
     expect(commitIndex).toBeGreaterThan(sessionRevocationIndex);
     expect(client.release).toHaveBeenCalledOnce();

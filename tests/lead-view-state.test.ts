@@ -7,7 +7,11 @@ vi.mock('../server/db', () => ({
   },
 }));
 
-import { countUnviewedLeads, markLeadViewed } from '../server/services/lead-view-state';
+import {
+  countUnviewedLeads,
+  leadViewStateAfterManagerTransfer,
+  markLeadViewed,
+} from '../server/services/lead-view-state';
 import { countNewLeads, isNewLead } from '../client/src/components/ux/KanbanBoard';
 
 const migration = readFileSync(
@@ -122,6 +126,20 @@ describe('marking a lead as viewed', () => {
       firstViewedAt: null,
       firstViewedBy: null,
     });
+  });
+});
+
+describe('lead view-state after assignment', () => {
+  it('makes a viewed lead new again for a different receiving manager', () => {
+    expect(leadViewStateAfterManagerTransfer(3, 9)).toEqual({
+      firstViewedAt: null,
+      firstViewedBy: null,
+    });
+  });
+
+  it('does not relight a lead when it is claimed or assigned to the same manager', () => {
+    expect(leadViewStateAfterManagerTransfer(null, 9)).toEqual({});
+    expect(leadViewStateAfterManagerTransfer(9, 9)).toEqual({});
   });
 });
 

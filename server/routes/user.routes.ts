@@ -392,7 +392,10 @@ const transferAssignedSalesLeads = async ({
 
     if (leadIds.length > 0) await client.query(
             `UPDATE academy_leads
-             SET manager_id = $1, updated_at = NOW()
+             SET manager_id = $1,
+                 first_viewed_at = NULL,
+                 first_viewed_by = NULL,
+                 updated_at = NOW()
              WHERE id = ANY($2::int[])`,
             [toManagerId, leadIds],
         );

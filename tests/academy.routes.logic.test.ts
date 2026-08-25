@@ -2592,6 +2592,12 @@ describe('academy route logic boundaries', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.updatedCount).toBe(1);
+    const leadAssignment = mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE academy_leads')
+    );
+    expect(String(leadAssignment?.[0])).toContain('first_viewed_at = CASE');
+    expect(String(leadAssignment?.[0])).toContain('first_viewed_by = CASE');
+    expect(leadAssignment?.[1]).toEqual([9, [42], [42]]);
     const notificationSync = mocks.clientQuery.mock.calls.find(([sql]) =>
       String(sql).includes('UPDATE notifications notification')
     );
@@ -2600,6 +2606,68 @@ describe('academy route logic boundaries', () => {
     expect(String(notificationSync?.[0])).toContain("notification.related_entity_type = 'lead'");
     expect(String(notificationSync?.[0])).toContain("notification.related_entity_type = 'academy_task'");
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('marks a viewed lead as new when assigning it to another manager', async () => {
+    const existing = leadFixture({
+      id: 42,
+      manager_id: 3,
+      first_viewed_at: new Date('2026-08-24T10:00:00.000Z'),
+      first_viewed_by: 3,
+    });
+    const manager = { id: 9, full_name: 'New manager' };
+    const transferred = {
+      ...existing,
+      manager_id: 9,
+      manager_name: 'New manager',
+      first_viewed_at: null,
+      first_viewed_by: null,
+    };
+
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [manager] };
+      }
+      if (sql.includes('SELECT id') && sql.includes('FROM users u')) {
+        return { rows: [{ id: manager.id }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [manager] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [transferred] };
+      if (sql.includes('INSERT INTO "academy_lead_assignment_history"')) {
+        return { rows: [{ id: 100 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/42/assign')
+      .send({ managerId: 9 });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toMatchObject({
+      id: 42,
+      managerId: 9,
+      firstViewedAt: null,
+      firstViewedBy: null,
+    });
+    const assignmentUpdate = mocks.clientQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"')
+    ));
+    expect(String(assignmentUpdate?.[0])).toContain('"first_viewed_at" = $3');
+    expect(String(assignmentUpdate?.[0])).toContain('"first_viewed_by" = $4');
+    expect(assignmentUpdate?.[1]).toEqual([42, 9, null, null]);
   });
 
   it.each([
@@ -3146,6 +3214,64 @@ describe('academy route logic boundaries', () => {
     expect(updateSql).not.toContain('"offer_course_id"');
     expect(updateSql).not.toContain('"referrer_student_id"');
     expect(updateSql).not.toContain('"source_id"');
+  });
+
+  it('resets the view marker when a lead manager is changed from the edit flow', async () => {
+    const existing = leadFixture({
+      manager_id: 3,
+      first_viewed_at: new Date('2026-08-24T10:00:00.000Z'),
+      first_viewed_by: 3,
+    });
+    const manager = { id: 9, full_name: 'New manager' };
+    const transferred = {
+      ...existing,
+      manager_id: 9,
+      first_viewed_at: null,
+      first_viewed_by: null,
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [manager] };
+      }
+      if (sql.includes('SELECT id') && sql.includes('FROM users u')) {
+        return { rows: [{ id: manager.id }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT id, full_name') && sql.includes('FROM users u')) {
+        return { rows: [manager] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [transferred] };
+      if (sql.includes('INSERT INTO "academy_lead_assignment_history"')) {
+        return { rows: [{ id: 100 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ managerId: 9 });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    const assignmentUpdate = mocks.clientQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"')
+    ));
+    expect(String(assignmentUpdate?.[0])).toContain('"first_viewed_at"');
+    expect(String(assignmentUpdate?.[0])).toContain('"first_viewed_by"');
+    expect(assignmentUpdate?.[1]).toContain(null);
+    expect(response.body).toMatchObject({
+      managerId: 9,
+      firstViewedAt: null,
+      firstViewedBy: null,
+    });
   });
 
   it('accepts explicit null for an optional offer course but rejects malformed ids', async () => {

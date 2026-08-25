@@ -23,9 +23,13 @@ const resourceState = (inactive: boolean, busy: boolean): {
 
 export const getDemoResourceAvailability = async (
   input: DemoLessonResourceAvailabilityRequest,
+  options: {
+    excludeDemoLessonId?: number | null;
+    allowPast?: boolean;
+  } = {},
 ) => {
   const startsAt = new Date(input.scheduledAt);
-  if (startsAt.getTime() <= Date.now()) {
+  if (!options.allowPast && startsAt.getTime() <= Date.now()) {
     throw Object.assign(new Error('demoTimeMustBeFuture'), { statusCode: 400 });
   }
   const endsAt = addMinutes(startsAt, input.durationMinutes);
@@ -58,8 +62,9 @@ export const getDemoResourceAvailability = async (
        FROM academy_demo_lessons
        WHERE status = 'scheduled'
          AND scheduled_at < $2
-         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $1`,
-      [startsAt, endsAt],
+         AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $1
+         AND ($3::int IS NULL OR id <> $3)`,
+      [startsAt, endsAt, options.excludeDemoLessonId ?? null],
     ),
     query(`SELECT * FROM academy_groups WHERE status IN ('open', 'in_progress')`),
   ]);

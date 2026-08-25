@@ -7,6 +7,7 @@ import {
   demoLessonOutcomeSchema,
   demoLessonRescheduleSchema,
   demoLessonResourceAvailabilitySchema,
+  demoLessonTeacherChangeSchema,
 } from '../shared/contracts/demo-lessons';
 import { buildSalesDemoScheduleEvents } from '../client/src/lib/salesSchedule';
 import { getDemoEnrollmentState } from '../client/src/components/ux/DemoLessonEnrollmentDialog';
@@ -197,6 +198,8 @@ describe('demo lessons', () => {
       scheduledAt: '2030-07-15T10:00:00+05:00',
       reason: 'Parent requested another time',
     }).success).toBe(true);
+    expect(demoLessonTeacherChangeSchema.safeParse({ teacherId: 7 }).success).toBe(true);
+    expect(demoLessonTeacherChangeSchema.safeParse({ teacherId: 0 }).success).toBe(false);
   });
 
   it('creates a demo lesson without participants and without a seat limit', () => {
@@ -251,6 +254,8 @@ describe('demo lessons', () => {
     expect(routes).toContain("router.post('/demo-lessons/:id/cancel'");
     expect(routes).toContain("router.post('/demo-lessons/:id/outcome'");
     expect(routes).toContain("router.post('/demo-lessons/:id/reschedule'");
+    expect(routes).toContain("router.get('/demo-lessons/:id/teacher-options'");
+    expect(routes).toContain("router.post('/demo-lessons/:id/teacher'");
     expect(routes).toContain("router.post('/demo-lessons/:id/attendance'");
     expect(routes).toContain("router.post('/demo-lessons/:id/participants'");
     expect(routes).toContain('ADD_ACADEMY_DEMO_PARTICIPANTS');
@@ -266,7 +271,10 @@ describe('demo lessons', () => {
     expect(resourceAvailability).toContain('busyRoomIds');
     expect(routes).toContain('FINALIZE_ACADEMY_DEMO_LESSON');
     expect(routes).toContain('RESCHEDULE_ACADEMY_DEMO_LESSON');
+    expect(routes).toContain('CHANGE_ACADEMY_DEMO_TEACHER');
     expect(routes).toContain('assertDemoResources(input, id)');
+    expect(routes).toContain('excludeDemoLessonId: id');
+    expect(detailsDialog).toContain("t('changeDemoTeacher')");
     expect(routes).not.toContain("status: Number(pending?.count ?? 0) === 0 ? 'completed'");
   });
 

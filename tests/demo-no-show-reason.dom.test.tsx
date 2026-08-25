@@ -25,12 +25,16 @@ vi.mock('../client/src/features/demo-lessons/api', () => ({
   demoLessonQueryKeys: {
     all: ['/api/academy/demo-lessons'],
     availability: ['/api/academy/availability/slots'],
+    resourceAvailability: ['/api/academy/demo-lessons/resource-availability'],
+    teacherOptions: ['/api/academy/demo-lessons', 'teacher-options'],
   },
   demoLessonsApi: {
     saveAttendance: apiMocks.saveAttendance,
     cancel: vi.fn(),
     outcome: vi.fn(),
     reschedule: vi.fn(),
+    teacherOptions: vi.fn(),
+    changeTeacher: vi.fn(),
   },
 }));
 

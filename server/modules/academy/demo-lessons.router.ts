@@ -7,6 +7,7 @@ import {
   demoLessonOutcomeSchema,
   demoLessonRescheduleSchema,
   demoLessonResourceAvailabilitySchema,
+  demoLessonTeacherChangeSchema,
   type DemoLessonMutation,
 } from '@shared/contracts/demo-lessons';
 import { hasLeadershipAccess } from '@shared/academy';
@@ -85,6 +86,14 @@ const presentDemoLesson = (req: any, demo: Row) => {
         : { ...participant, contactName: null, studentName: null }
     )),
   };
+};
+
+const assertCanManageDemoLesson = (req: any, demo: Row) => {
+  const participants = Array.isArray(demo.participants) ? demo.participants as Row[] : [];
+  if (!hasLeadershipAccess(req.user)
+    && participants.some((participant) => !canManageParticipant(req, participant))) {
+    throw Object.assign(new Error('Student mutation access required'), { statusCode: 403 });
+  }
 };
 
 const parseDateRange = (value: unknown, fallback: Date) => {
@@ -311,6 +320,104 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       logger.error('Failed to check demo resource availability', { error });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, 'failedToCheckDemoAvailability'),
+      });
+    }
+  });
+
+  router.get('/demo-lessons/:id/teacher-options', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    try {
+      const current = await getDemoLesson(id);
+      if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      assertCanManageDemoLesson(req, current);
+      if (current.status !== 'scheduled') {
+        return res.status(409).json({ error: 'demoCannotChangeTeacher' });
+      }
+      const resources = await getDemoResourceAvailability({
+        courseId: Number(current.courseId),
+        schoolId: Number(current.schoolId),
+        scheduledAt: new Date(current.scheduledAt).toISOString(),
+        durationMinutes: Number(current.durationMinutes),
+        format: current.format === 'online' ? 'online' : 'offline',
+        studentIds: [],
+      }, {
+        excludeDemoLessonId: id,
+        allowPast: true,
+      });
+      res.json(resources.teachers);
+    } catch (error: any) {
+      logger.error('Failed to load demo teacher options', { error, demoLessonId: id });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToLoadDemoTeacherOptions'),
+      });
+    }
+  });
+
+  router.post('/demo-lessons/:id/teacher', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    const id = Number(req.params.id);
+    const parsed = demoLessonTeacherChangeSchema.safeParse(req.body);
+    if (!Number.isSafeInteger(id) || id < 1 || !parsed.success) {
+      return res.status(400).json({
+        error: parsed.success ? 'invalidData' : parsed.error.issues[0]?.message || 'invalidData',
+      });
+    }
+    try {
+      const current = await getDemoLesson(id);
+      if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      assertCanManageDemoLesson(req, current);
+
+      const changed = await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+        const locked = await queryOne(
+          `SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`,
+          [id],
+        );
+        if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (locked.status !== 'scheduled') {
+          throw Object.assign(new Error('demoCannotChangeTeacher'), { statusCode: 409 });
+        }
+        const lockedDemo = await getDemoLesson(id);
+        if (!lockedDemo) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        assertCanManageDemoLesson(req, lockedDemo);
+        if (Number(locked.teacherId) === parsed.data.teacherId) return locked;
+
+        await assertTeacherCanLeadLesson({
+          teacherId: parsed.data.teacherId,
+          courseId: Number(locked.courseId),
+          schoolId: Number(locked.schoolId),
+          scheduledAt: new Date(locked.scheduledAt),
+          durationMinutes: Number(locked.durationMinutes),
+          excludeDemoLessonId: id,
+          enforceAssignments: false,
+          enforceAvailability: false,
+          conflictError: 'demoTeacherBusy',
+        });
+        const updated = await updateRow('academy_demo_lessons', id, {
+          teacherId: parsed.data.teacherId,
+          updatedBy: req.user!.id,
+        });
+        if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        await createAudit(
+          req.actor!,
+          'CHANGE_ACADEMY_DEMO_TEACHER',
+          'academy_demo_lesson',
+          id,
+          updated,
+          locked,
+        );
+        return updated;
+      });
+      const responseDemo = await getDemoLesson(id) ?? changed;
+      res.json(presentDemoLesson(req, responseDemo));
+    } catch (error: any) {
+      logger.error('Failed to change demo teacher', { error, demoLessonId: id });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToChangeDemoTeacher'),
       });
     }
   });

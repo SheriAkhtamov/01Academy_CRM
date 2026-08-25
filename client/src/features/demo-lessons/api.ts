@@ -7,6 +7,7 @@ import type {
   DemoLessonOutcome,
   DemoLessonReschedule,
   DemoLessonResourceAvailabilityRequest,
+  DemoLessonTeacherChange,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -87,10 +88,13 @@ export interface DemoResourceAvailability {
   participantConflict: boolean;
 }
 
+export type DemoTeacherOption = DemoResourceAvailability['teachers'][number];
+
 export const demoLessonQueryKeys = {
   all: ['/api/academy/demo-lessons'] as const,
   availability: ['/api/academy/availability/slots'] as const,
   resourceAvailability: ['/api/academy/demo-lessons/resource-availability'] as const,
+  teacherOptions: ['/api/academy/demo-lessons', 'teacher-options'] as const,
   enrollment: ['/api/academy/demo-lessons', 'enrollment'] as const,
 };
 
@@ -137,6 +141,12 @@ export const demoLessonsApi = {
   ),
   resourceAvailability: (payload: DemoLessonResourceAvailabilityRequest) => (
     apiRequest('POST', '/api/academy/demo-lessons/resource-availability', payload) as Promise<DemoResourceAvailability>
+  ),
+  teacherOptions: (id: number) => (
+    apiRequest('GET', `/api/academy/demo-lessons/${id}/teacher-options`) as Promise<DemoTeacherOption[]>
+  ),
+  changeTeacher: (id: number, payload: DemoLessonTeacherChange) => (
+    apiRequest('POST', `/api/academy/demo-lessons/${id}/teacher`, payload) as Promise<DemoLesson>
   ),
   cancel: (id: number, reason: string) => (
     apiRequest('POST', `/api/academy/demo-lessons/${id}/cancel`, { reason }) as Promise<DemoLesson>

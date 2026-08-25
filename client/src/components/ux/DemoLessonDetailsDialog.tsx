@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { enUS, ru } from 'date-fns/locale';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, CalendarClock, MapPin, Pencil, UserRoundCheck, UsersRound } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowUpRight,
+  CalendarClock,
+  CircleAlert,
+  LoaderCircle,
+  MapPin,
+  Pencil,
+  UserRoundCheck,
+  UsersRound,
+} from 'lucide-react';
 import {
   DEMO_NOT_CONDUCTED_REASON_CODES,
   DEMO_NO_SHOW_REASON_CODES,
@@ -20,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -122,6 +132,21 @@ export function DemoLessonDetailsDialog({
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
+  const [changeTeacherOpen, setChangeTeacherOpen] = useState(false);
+  const [teacherDraftId, setTeacherDraftId] = useState('');
+
+  const teacherOptions = useQuery({
+    queryKey: [...demoLessonQueryKeys.teacherOptions, demo?.id ?? 0],
+    queryFn: () => demoLessonsApi.teacherOptions(Number(demo?.id)),
+    enabled: Boolean(
+      open
+      && changeTeacherOpen
+      && demo
+      && demo.status === 'scheduled'
+      && demo.canManage !== false,
+    ),
+    retry: false,
+  });
 
   useEffect(() => {
     if (!demo || !open) return;
@@ -153,6 +178,8 @@ export function DemoLessonDetailsDialog({
     setRescheduleDate(academyDateInputValue(demo.scheduledAt));
     setRescheduleTime(academyTimeOfDay(demo.scheduledAt));
     setRescheduleReason('');
+    setChangeTeacherOpen(false);
+    setTeacherDraftId(String(demo.teacherId));
   }, [demo, open]);
 
   const invalidate = async (updated: DemoLesson) => {
@@ -160,6 +187,8 @@ export function DemoLessonDetailsDialog({
       invalidateSalesLeadData(queryClient),
       queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.all }),
       queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.availability }),
+      queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.resourceAvailability }),
+      queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.teacherOptions }),
     ]);
     onChanged?.(updated);
   };
@@ -250,6 +279,27 @@ export function DemoLessonDetailsDialog({
     }),
   });
 
+  const changeDemoTeacher = useMutation({
+    mutationFn: () => demoLessonsApi.changeTeacher(Number(demo?.id), {
+      teacherId: Number(teacherDraftId),
+    }),
+    onSuccess: async (updated) => {
+      await invalidate(updated);
+      setChangeTeacherOpen(false);
+      toast({ title: t('demoTeacherChanged') });
+    },
+    onError: async (error: Error & { status?: number }) => {
+      if (error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.teacherOptions });
+      }
+      toast({
+        title: t('demoTeacherChangeFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const reasonParticipant = useMemo(
     () => demo?.participants.find((participant) => participant.id === reasonParticipantId) ?? null,
     [demo, reasonParticipantId],
@@ -332,6 +382,16 @@ export function DemoLessonDetailsDialog({
     notConductedReasonCode
     && (notConductedReasonCode !== 'other' || notConductedReasonNote.trim()),
   );
+  const selectedTeacherOption = teacherOptions.data?.find(
+    (teacher) => String(teacher.id) === teacherDraftId,
+  );
+  const teacherSelectionValid = Boolean(
+    selectedTeacherOption?.available
+    && Number(teacherDraftId) !== Number(demo.teacherId),
+  );
+  const unavailableTeacherLabel = (reason: string | null) => (
+    reason === 'inactive' ? t('demoResourceInactive') : t('demoResourceBusyShort')
+  );
 
   return (
     <>
@@ -340,11 +400,13 @@ export function DemoLessonDetailsDialog({
           && !cancelDemo.isPending
           && !finalizeDemo.isPending
           && !rescheduleDemo.isPending
+          && !changeDemoTeacher.isPending
           && reasonParticipantId === null
           && !cancelOpen
           && !conductedConfirmOpen
           && !notConductedOpen
-          && !rescheduleOpen) {
+          && !rescheduleOpen
+          && !changeTeacherOpen) {
           onOpenChange(nextOpen);
         }
       }}>
@@ -521,6 +583,16 @@ export function DemoLessonDetailsDialog({
                 <p className="text-xs text-muted-foreground">{t('demoLessonActionsDescription')}</p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setTeacherDraftId(String(demo.teacherId));
+                    setChangeTeacherOpen(true);
+                  }}
+                >
+                  {t('changeDemoTeacher')}
+                </Button>
                 <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
                   {t('rescheduleDemoLesson')}
                 </Button>
@@ -739,6 +811,124 @@ export function DemoLessonDetailsDialog({
               </Button>
               <Button type="submit" disabled={!notConductedReasonValid || finalizeDemo.isPending}>
                 {finalizeDemo.isPending ? t('saving') : t('markDemoNotConducted')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={changeTeacherOpen} onOpenChange={(nextOpen) => {
+        if (!changeDemoTeacher.isPending) setChangeTeacherOpen(nextOpen);
+      }}>
+        <DialogContent className="max-w-lg">
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            if (teacherSelectionValid) changeDemoTeacher.mutate();
+          }} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>{t('changeDemoTeacher')}</DialogTitle>
+              <DialogDescription>{t('changeDemoTeacherDescription')}</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
+              <div className="flex items-start gap-3">
+                <UserRoundCheck className="mt-0.5 size-4 text-muted-foreground" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{demo.teacherName}</p>
+                  <p className="text-xs text-muted-foreground">{t('teacher')}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {format(scheduledAt, 'd MMMM yyyy, HH:mm', { locale })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {demo.durationMinutes} {t('minuteShort')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="demo-change-teacher">{t('teacher')}</Label>
+              <Select
+                value={teacherDraftId}
+                onValueChange={setTeacherDraftId}
+                disabled={!teacherOptions.data || teacherOptions.isFetching}
+              >
+                <SelectTrigger id="demo-change-teacher">
+                  <SelectValue placeholder={t('selectTeacher')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {teacherOptions.data?.map((teacher) => (
+                    <SelectItem
+                      key={teacher.id}
+                      value={String(teacher.id)}
+                      disabled={!teacher.available}
+                    >
+                      {teacher.fullName}
+                      {teacher.available
+                        ? ''
+                        : ` · ${unavailableTeacherLabel(teacher.reason)}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div aria-live="polite">
+              {teacherOptions.isFetching ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <LoaderCircle className="size-4 animate-spin" />
+                  {t('checkingAvailability')}
+                </p>
+              ) : teacherOptions.isError ? (
+                <Alert variant="destructive">
+                  <CircleAlert />
+                  <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                    <span>{teacherOptions.error.message}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => teacherOptions.refetch()}
+                    >
+                      {t('retry')}
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : selectedTeacherOption && !selectedTeacherOption.available ? (
+                <Alert variant="destructive">
+                  <CircleAlert />
+                  <AlertDescription>
+                    {selectedTeacherOption.reason === 'inactive'
+                      ? t('teacherNotActive')
+                      : t('demoTeacherBusy')}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={changeDemoTeacher.isPending}
+                onClick={() => setChangeTeacherOpen(false)}
+              >
+                {t('back')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  !teacherSelectionValid
+                  || teacherOptions.isFetching
+                  || changeDemoTeacher.isPending
+                }
+              >
+                {changeDemoTeacher.isPending ? t('saving') : t('saveDemoTeacher')}
               </Button>
             </DialogFooter>
           </form>

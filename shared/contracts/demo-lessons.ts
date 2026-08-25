@@ -103,6 +103,10 @@ export const demoLessonRescheduleSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 
+export const demoLessonTeacherChangeSchema = z.object({
+  teacherId: entityId,
+});
+
 export const demoLessonAttendanceSchema = z.object({
   participants: z.array(z.object({
     participantId: entityId,
@@ -147,6 +151,7 @@ export type DemoLessonAttendance = z.infer<typeof demoLessonAttendanceSchema>;
 export type DemoLessonEnrollment = z.infer<typeof demoLessonEnrollmentSchema>;
 export type DemoLessonOutcome = z.infer<typeof demoLessonOutcomeSchema>;
 export type DemoLessonReschedule = z.infer<typeof demoLessonRescheduleSchema>;
+export type DemoLessonTeacherChange = z.infer<typeof demoLessonTeacherChangeSchema>;
 export type DemoLessonResourceAvailabilityRequest = z.infer<typeof demoLessonResourceAvailabilitySchema>;
 export type DemoNoShowReasonCode = typeof DEMO_NO_SHOW_REASON_CODES[number];
 export type DemoNotConductedReasonCode = typeof DEMO_NOT_CONDUCTED_REASON_CODES[number];

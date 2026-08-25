@@ -22,7 +22,7 @@ describe('demo resource availability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.queryOne.mockResolvedValue({ id: 1 });
-    mocks.query.mockImplementation(async (sql: string) => {
+    mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
       if (sql.includes('FROM academy_teachers')) {
         return [
           { id: 1, fullName: 'Lesson teacher', status: 'active' },
@@ -42,7 +42,9 @@ describe('demo resource availability', () => {
         ];
       }
       if (sql.includes('FROM academy_lessons')) return [{ teacherId: 1, roomId: 11 }];
-      if (sql.includes('FROM academy_demo_lessons')) return [{ teacherId: 2, roomId: 12 }];
+      if (sql.includes('FROM academy_demo_lessons')) {
+        return params?.[2] ? [] : [{ teacherId: 2, roomId: 12 }];
+      }
       if (sql.includes('FROM academy_groups')) {
         return [{
           teacherId: 3,
@@ -80,5 +82,23 @@ describe('demo resource availability', () => {
       { id: 14, available: true, reason: null },
       { id: 15, available: true, reason: null },
     ]);
+  });
+
+  it('excludes the demo being edited so its current teacher remains selectable', async () => {
+    const result = await getDemoResourceAvailability({
+      courseId: 1,
+      schoolId: 2,
+      scheduledAt: '2030-07-15T10:00:00+05:00',
+      durationMinutes: 60,
+      format: 'offline',
+      studentIds: [],
+    }, { excludeDemoLessonId: 77 });
+
+    expect(result.teachers.find((teacher) => teacher.id === 2)?.available).toBe(true);
+    expect(result.rooms.find((room) => room.id === 12)?.available).toBe(true);
+    const demoQuery = mocks.query.mock.calls.find(([sql]) => (
+      String(sql).includes('FROM academy_demo_lessons')
+    ));
+    expect(demoQuery?.[1]?.[2]).toBe(77);
   });
 });

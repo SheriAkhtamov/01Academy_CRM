@@ -20,18 +20,24 @@ class ResizeObserverStub {
 const apiMocks = vi.hoisted(() => ({
   outcome: vi.fn(),
   reschedule: vi.fn(),
+  teacherOptions: vi.fn(),
+  changeTeacher: vi.fn(),
 }));
 
 vi.mock('../client/src/features/demo-lessons/api', () => ({
   demoLessonQueryKeys: {
     all: ['/api/academy/demo-lessons'],
     availability: ['/api/academy/availability/slots'],
+    resourceAvailability: ['/api/academy/demo-lessons/resource-availability'],
+    teacherOptions: ['/api/academy/demo-lessons', 'teacher-options'],
   },
   demoLessonsApi: {
     saveAttendance: vi.fn(),
     cancel: vi.fn(),
     outcome: apiMocks.outcome,
     reschedule: apiMocks.reschedule,
+    teacherOptions: apiMocks.teacherOptions,
+    changeTeacher: apiMocks.changeTeacher,
   },
 }));
 
@@ -65,6 +71,8 @@ describe('demo outcome and rescheduling dialogs', () => {
   beforeEach(() => {
     apiMocks.outcome.mockReset();
     apiMocks.reschedule.mockReset();
+    apiMocks.teacherOptions.mockReset();
+    apiMocks.changeTeacher.mockReset();
     apiMocks.outcome.mockImplementation(async (payloadDemoId: number, payload: { status: string }) => ({
       ...pastDemo,
       id: payloadDemoId,
@@ -73,6 +81,16 @@ describe('demo outcome and rescheduling dialogs', () => {
     apiMocks.reschedule.mockResolvedValue({
       ...pastDemo,
       scheduledAt: '2030-07-15T05:00:00.000Z',
+    });
+    apiMocks.teacherOptions.mockResolvedValue([
+      { id: 3, fullName: 'Преподаватель', status: 'active', available: true, reason: null },
+      { id: 7, fullName: 'Новый преподаватель', status: 'active', available: true, reason: null },
+      { id: 8, fullName: 'Занятый преподаватель', status: 'active', available: false, reason: 'busy' },
+    ]);
+    apiMocks.changeTeacher.mockResolvedValue({
+      ...pastDemo,
+      teacherId: 7,
+      teacherName: 'Новый преподаватель',
     });
   });
 
@@ -137,6 +155,32 @@ describe('demo outcome and rescheduling dialogs', () => {
     await waitFor(() => expect(apiMocks.reschedule).toHaveBeenCalledWith(17, {
       scheduledAt: '2030-07-15T05:30:00.000Z',
       reason: 'По просьбе родителя',
+    }));
+  });
+
+  it('changes the teacher from a separate dialog and disables busy teachers', async () => {
+    renderDialog();
+
+    fireEvent.click(screen.getByRole('button', {
+      name: /Сменить преподавателя|Change teacher/i,
+    }));
+    const teacherDialog = await screen.findByRole('dialog', {
+      name: /Сменить преподавателя|Change teacher/i,
+    });
+    await waitFor(() => expect(apiMocks.teacherOptions).toHaveBeenCalledWith(17));
+
+    fireEvent.click(within(teacherDialog).getByRole('combobox'));
+    const busyOption = await screen.findByRole('option', {
+      name: /Занятый преподаватель.*занят|Busy teacher.*busy/i,
+    });
+    expect((busyOption as HTMLElement).getAttribute('data-disabled')).not.toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: 'Новый преподаватель' }));
+    fireEvent.click(within(teacherDialog).getByRole('button', {
+      name: /Сохранить преподавателя|Save teacher/i,
+    }));
+
+    await waitFor(() => expect(apiMocks.changeTeacher).toHaveBeenCalledWith(17, {
+      teacherId: 7,
     }));
   });
 });

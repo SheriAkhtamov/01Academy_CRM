@@ -88,6 +88,7 @@ interface SalesDashboardMetrics extends SalesDashboardCoreMetrics {
 
 type SalesOverviewMetricsProps = {
   reportingRange: Pick<ReportingDateRange, 'from' | 'to'>;
+  managerId: number | null;
   isAdministrationModule: boolean;
   activeLeads: number;
   activeLeadsPrevious: number;
@@ -212,6 +213,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export function SalesOverviewMetrics({
   reportingRange,
+  managerId,
   isAdministrationModule,
   activeLeads,
   activeLeadsPrevious,
@@ -226,10 +228,17 @@ export function SalesOverviewMetrics({
   const { t } = useTranslation();
   const [targetRefusalDialogOpen, setTargetRefusalDialogOpen] = useState(false);
   const reportingQuery = reportingRangeQuery(reportingRange);
+  const metricsQueryString = managerId
+    ? `${reportingQuery}&managerId=${managerId}`
+    : reportingQuery;
   const metricsQuery = useQuery<SalesDashboardMetrics>({
-    queryKey: ['/api/academy/modules/sales/metrics', reportingQuery],
-    queryFn: () => apiRequest('GET', `/api/academy/modules/sales/metrics?${reportingQuery}`),
-    placeholderData: (previousData) => previousData,
+    queryKey: ['/api/academy/modules/sales/metrics', reportingQuery, managerId],
+    queryFn: () => apiRequest('GET', `/api/academy/modules/sales/metrics?${metricsQueryString}`),
+    // A date change may keep the last figures visible, but switching employees
+    // must never briefly label one person's numbers as another person's.
+    placeholderData: (previousData, previousQuery) => (
+      previousQuery?.queryKey[2] === managerId ? previousData : undefined
+    ),
   });
   const archiveReasonName = (code: string) => {
     const key = archiveReasonTranslationKeys[code];

@@ -251,6 +251,44 @@ describe('academy route logic boundaries', () => {
     expect(mocks.getWorkforcePolicy).not.toHaveBeenCalled();
   });
 
+  it('pins sales overview metrics to the signed-in employee', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+
+    const response = await request(await createApp())
+      .get('/api/academy/modules/sales/metrics?from=2030-07-01&to=2030-07-07');
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    const periodMetricCall = mocks.poolQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('target_refusal_reason_counts AS')
+    ));
+    expect(String(periodMetricCall?.[0])).toContain('AND lead.manager_id = $3');
+    expect(periodMetricCall?.[1]?.[2]).toBe(7);
+  });
+
+  it('lets leadership request one sales employee but blocks peers', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const denied = await request(await createApp())
+      .get('/api/academy/modules/sales/metrics?from=2030-07-01&to=2030-07-07&managerId=8');
+    expect(denied.status).toBe(403);
+
+    mocks.actor = {
+      id: 1,
+      module: 'administration',
+      modules: ['administration', 'sales'],
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('FROM users employee') ? { rows: [{ id: 8 }] } : emptyResult()
+    ));
+    const allowed = await request(await createApp())
+      .get('/api/academy/modules/sales/metrics?from=2030-07-01&to=2030-07-07&managerId=8');
+
+    expect(allowed.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    const periodMetricCall = mocks.poolQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('target_refusal_reason_counts AS')
+    ));
+    expect(periodMetricCall?.[1]?.[2]).toBe(8);
+  });
+
   it('denies a sales employee direct access to another manager archived lead', async () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string) => {

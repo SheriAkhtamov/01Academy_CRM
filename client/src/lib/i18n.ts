@@ -339,6 +339,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'Key sales metrics for the selected period',
     ru: 'Ключевые показатели продаж за выбранный период',
   },
+  salesOverviewManager: { en: 'Sales employee', ru: 'Сотрудник отдела продаж' },
   periodMetricsGroup: { en: 'Period metrics', ru: 'Показатели за период' },
   navGroups: { en: 'Groups', ru: 'Группы' },
   navIntegrations: { en: 'Integrations', ru: 'Интеграции' },

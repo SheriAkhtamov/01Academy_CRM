@@ -209,13 +209,43 @@ router.get('/modules/sales/metrics', async (req, res) => {
     if (!reportingRange) {
       return res.status(400).json({ error: 'invalidReportingPeriod' });
     }
+    const hasManagerParameter = req.query.managerId !== undefined;
+    const requestedManagerId = hasManagerParameter ? parseId(req.query.managerId) : null;
+    if (hasManagerParameter && !requestedManagerId) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    const canViewOtherManagers = hasLeadershipAccess(req.user);
+    if (!canViewOtherManagers
+      && requestedManagerId
+      && requestedManagerId !== Number(req.user!.id)) {
+      return res.status(403).json({ error: 'accessDenied' });
+    }
+    if (canViewOtherManagers && requestedManagerId) {
+      const manager = await queryOne(
+        `SELECT employee.id
+         FROM users employee
+         WHERE employee.id = $1
+           AND employee.is_active = true
+           AND (
+             employee.module = 'sales'
+             OR EXISTS (
+               SELECT 1
+               FROM user_modules employee_module
+               WHERE employee_module.user_id = employee.id
+                 AND employee_module.module = 'sales'
+             )
+           )`,
+        [requestedManagerId],
+      );
+      if (!manager) return res.status(404).json({ error: 'resourceNotFound' });
+    }
     const actor: DatasetActor = {
       userId: req.user!.id,
       module: req.user!.module,
       modules: getAssignedModules(req.user),
       scopeModule: 'sales',
     };
-    res.json(await buildSalesDashboardMetrics(actor, reportingRange));
+    res.json(await buildSalesDashboardMetrics(actor, reportingRange, requestedManagerId));
   } catch (error: any) {
     logger.error('Failed to fetch sales dashboard metrics', { error });
     res.status(error.statusCode || 500).json({

@@ -6,23 +6,35 @@ const metrics = read('../server/modules/academy/sales-dashboard-metrics.ts');
 const moduleRoutes = read('../server/modules/academy/module.router.ts');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
+const salesOverviewEmployeeFilter = read('../client/src/components/ux/SalesOverviewEmployeeFilter.tsx');
 
 describe('sales dashboard operational metrics', () => {
   it('loads KPI data for the selected reporting range through a scoped endpoint', () => {
     expect(moduleRoutes).toContain("router.get('/modules/sales/metrics'");
     expect(moduleRoutes).toContain('parseReportingRange(req.query.from, req.query.to)');
-    expect(moduleRoutes).toContain('buildSalesDashboardMetrics(actor, reportingRange)');
+    expect(moduleRoutes).toContain('parseId(req.query.managerId)');
+    expect(moduleRoutes).toContain('buildSalesDashboardMetrics(actor, reportingRange, requestedManagerId)');
     expect(metrics).toContain('AND lead.manager_id = $3');
     expect(metrics).not.toContain('lead.manager_id IS NULL');
     expect(salesDashboard).toContain('<SalesOverviewMetrics');
-    expect(salesOverviewMetrics).toContain('/api/academy/modules/sales/metrics?${reportingQuery}');
+    expect(salesOverviewMetrics).toContain('/api/academy/modules/sales/metrics?${metricsQueryString}');
+    expect(salesOverviewMetrics).toContain("queryKey: ['/api/academy/modules/sales/metrics', reportingQuery, managerId]");
   });
 
-  it('keeps overview statistics scoped to the current sales employee', () => {
+  it('defaults to the current employee and lets leadership select another manager', () => {
+    expect(salesDashboard).toContain("const defaultOverviewManagerId = currentSalesManagerId || 'all';");
+    expect(salesDashboard).toContain("requestedOverviewManagerId === 'all'");
+    expect(salesDashboard).toContain('<SalesOverviewEmployeeFilter');
+    expect(salesOverviewEmployeeFilter).toContain("<SelectItem value=\"all\">{t('allManagers')}</SelectItem>");
+    expect(salesOverviewEmployeeFilter).toContain("t('salesOverviewManager')");
     expect(salesDashboard).toContain('const overviewLeads = useMemo');
-    expect(salesDashboard).toContain('if (isAdministrationModule) return myLeads;');
-    expect(salesDashboard).toContain('Number(lead.managerId) === Number(user.id)');
+    expect(salesDashboard).toContain('const overviewStudents = useMemo');
+    expect(salesDashboard).toContain('const overviewPayments = useMemo');
+    expect(salesDashboard).toContain('Number(lead.managerId) === overviewManagerNumericId');
     expect(salesDashboard).toContain('() => overviewLeads.filter');
+    expect(metrics).toContain('const managerId = hasLeadershipAccess(actor)');
+    expect(metrics).toContain(': actor.userId;');
+    expect(moduleRoutes).toContain("return res.status(403).json({ error: 'accessDenied' });");
   });
 
   it('counts processed leads from persisted lead actions', () => {

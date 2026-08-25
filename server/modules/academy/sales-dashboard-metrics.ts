@@ -1,4 +1,4 @@
-import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
+import { hasLeadershipAccess } from '@shared/academy';
 import {
   type DatasetActor,
   type Row,
@@ -55,19 +55,15 @@ const countValue = (value: unknown) => {
  * - target refusal: archived in the period after ever reaching qualification.
  */
 const buildSalesDashboardPeriodMetrics = async (
-  actor: DatasetActor,
+  managerId: number | null,
   start: Date,
   end: Date,
 ): Promise<SalesDashboardCoreMetrics> => {
-  const isManagerScoped =
-    actor.scopeModule === 'sales'
-    && getAssignedModules(actor).includes('sales')
-    && !hasLeadershipAccess(actor);
-  const managerFilter = isManagerScoped
+  const managerFilter = managerId
     ? 'AND lead.manager_id = $3'
     : '';
-  const values = isManagerScoped
-    ? [start, end, actor.userId]
+  const values = managerId
+    ? [start, end, managerId]
     : [start, end];
 
   const row = await queryOne<Row>(
@@ -241,18 +237,14 @@ const buildSalesDashboardPeriodMetrics = async (
  * (dates follow the academy timezone).
  */
 const buildSalesDashboardDailySeries = async (
-  actor: DatasetActor,
+  managerId: number | null,
   range: ReportingRange,
 ): Promise<SalesDashboardDailyPoint[]> => {
-  const isManagerScoped =
-    actor.scopeModule === 'sales'
-    && getAssignedModules(actor).includes('sales')
-    && !hasLeadershipAccess(actor);
-  const managerFilter = isManagerScoped
+  const managerFilter = managerId
     ? 'AND lead.manager_id = $3'
     : '';
-  const values = isManagerScoped
-    ? [range.start, range.end, actor.userId]
+  const values = managerId
+    ? [range.start, range.end, managerId]
     : [range.start, range.end];
 
   const [newRows, processedRows, reachedRows] = await Promise.all([
@@ -398,15 +390,21 @@ const buildSalesDashboardDailySeries = async (
 export const buildSalesDashboardMetrics = async (
   actor: DatasetActor,
   range: ReportingRange,
+  requestedManagerId: number | null = null,
 ): Promise<SalesDashboardMetrics> => {
+  // A sales employee is always pinned to their own figures. Leadership can
+  // request one employee or leave the filter empty for the company-wide view.
+  const managerId = hasLeadershipAccess(actor)
+    ? requestedManagerId
+    : actor.userId;
   const durationMs = Math.max(1, range.end.getTime() - range.start.getTime());
   const previousEnd = new Date(range.start.getTime());
   const previousStart = new Date(range.start.getTime() - durationMs);
 
   const [current, previous, daily] = await Promise.all([
-    buildSalesDashboardPeriodMetrics(actor, range.start, range.end),
-    buildSalesDashboardPeriodMetrics(actor, previousStart, previousEnd),
-    buildSalesDashboardDailySeries(actor, range),
+    buildSalesDashboardPeriodMetrics(managerId, range.start, range.end),
+    buildSalesDashboardPeriodMetrics(managerId, previousStart, previousEnd),
+    buildSalesDashboardDailySeries(managerId, range),
   ]);
 
   return {

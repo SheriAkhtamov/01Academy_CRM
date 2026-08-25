@@ -64,6 +64,7 @@ import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChar
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
+import { SalesOverviewEmployeeFilter } from '@/components/ux/SalesOverviewEmployeeFilter';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
@@ -509,6 +510,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const routeSearch = useSearch();
   const pagePath = SALES_SECTION_PATHS[section];
   const riskFilter = new URLSearchParams(routeSearch).get('risk');
+  const requestedOverviewManagerId = new URLSearchParams(routeSearch).get('manager');
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
@@ -659,6 +661,25 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (currentUserListed) return salesManagers;
     return [{ id: Number(currentSalesManagerId), fullName: user.fullName }, ...salesManagers];
   }, [currentSalesManagerId, salesManagers, user?.fullName]);
+  const overviewManagerOptions = useMemo(() => {
+    if (isAdministrationModule) return leadManagerOptions;
+    return leadManagerOptions.filter(
+      (manager) => Number(manager.id) === Number(currentSalesManagerId),
+    );
+  }, [currentSalesManagerId, isAdministrationModule, leadManagerOptions]);
+  const defaultOverviewManagerId = currentSalesManagerId || 'all';
+  const requestedManagerIsAvailable = isAdministrationModule && Boolean(
+    requestedOverviewManagerId === 'all'
+    || overviewManagerOptions.some(
+      (manager) => String(manager.id) === requestedOverviewManagerId,
+    ),
+  );
+  const overviewManagerId = requestedManagerIsAvailable
+    ? requestedOverviewManagerId!
+    : defaultOverviewManagerId;
+  const overviewManagerNumericId = overviewManagerId === 'all'
+    ? null
+    : Number(overviewManagerId);
 
   const activePipelineStatuses = useMemo(
     (): PipelineStatus[] => [...(data?.statuses ?? [])]
@@ -684,10 +705,34 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const pipelineBulkActions = useSalesPipelineBulkActions({ leads: filteredPipelineLeads, statuses: activePipelineStatuses });
 
   const overviewLeads = useMemo(() => {
-    if (isAdministrationModule) return myLeads;
-    if (!user?.id) return [];
-    return myLeads.filter((lead) => Number(lead.managerId) === Number(user.id));
-  }, [isAdministrationModule, myLeads, user?.id]);
+    if (overviewManagerNumericId === null) return myLeads;
+    return myLeads.filter(
+      (lead) => Number(lead.managerId) === overviewManagerNumericId,
+    );
+  }, [myLeads, overviewManagerNumericId]);
+
+  const overviewStudents = useMemo(() => {
+    if (overviewManagerNumericId === null) return myStudents;
+    return myStudents.filter(
+      (student) => Number(student.managerId) === overviewManagerNumericId,
+    );
+  }, [myStudents, overviewManagerNumericId]);
+
+  const overviewPayments = useMemo(() => {
+    if (overviewManagerNumericId === null) return myPayments;
+    const managerLeadIds = new Set(
+      [...myLeads, ...archivedLeads]
+        .filter((lead) => Number(lead.managerId) === overviewManagerNumericId)
+        .map((lead) => Number(lead.id)),
+    );
+    const managerStudentIds = new Set(
+      overviewStudents.map((student) => Number(student.id)),
+    );
+    return myPayments.filter((payment) => (
+      managerStudentIds.has(Number(payment.studentId))
+      || managerLeadIds.has(Number(payment.leadId))
+    ));
+  }, [archivedLeads, myLeads, myPayments, overviewManagerNumericId, overviewStudents]);
 
   const periodLeads = useMemo(
     () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
@@ -707,19 +752,19 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     [overviewLeads, previousRange],
   );
   const previousPeriodStudents = useMemo(
-    () => myStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, previousRange)),
-    [myStudents, previousRange],
+    () => overviewStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, previousRange)),
+    [overviewStudents, previousRange],
   );
   const periodStudents = useMemo(
-    () => myStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)),
-    [myStudents, reportingRange],
+    () => overviewStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)),
+    [overviewStudents, reportingRange],
   );
   const periodPayments = useMemo(
-    () => myPayments.filter((payment) => (
+    () => overviewPayments.filter((payment) => (
       payment.status === 'paid'
       && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)
     )),
-    [myPayments, reportingRange],
+    [overviewPayments, reportingRange],
   );
 
   const managerStats = useMemo(() => {
@@ -1133,9 +1178,23 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
       {section === 'overview' ? (
         <div className="space-y-5">
-          <ReportingDateRangeFilter value={reportingRange} onChange={handleReportingRangeChange} />
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
+            <ReportingDateRangeFilter
+              value={reportingRange}
+              onChange={handleReportingRangeChange}
+            />
+            <SalesOverviewEmployeeFilter
+              value={overviewManagerId}
+              managers={overviewManagerOptions}
+              canViewAllManagers={isAdministrationModule}
+              onChange={(managerId) => replaceSalesParams({
+                manager: managerId === defaultOverviewManagerId ? null : managerId,
+              })}
+            />
+          </div>
           <SalesOverviewMetrics
             reportingRange={reportingRange}
+            managerId={overviewManagerNumericId}
             isAdministrationModule={isAdministrationModule}
             activeLeads={managerStats.activeLeads}
             activeLeadsPrevious={managerStats.activeLeadsPrevious}

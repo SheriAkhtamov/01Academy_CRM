@@ -857,8 +857,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     ru: 'к прошлому периоду',
   },
   conversionForPeriod: { en: 'Conversion in period', ru: 'Конверсия за период' },
-  avgPaymentSize: { en: 'Avg. payment', ru: 'Средний чек' },
-  funnelDropOffLabel: { en: 'Drop-off', ru: 'Отток' },
   paidCustomersForPeriod: { en: 'New paid customers', ru: 'Новые оплатившие клиенты' },
   revenueForPeriod: { en: 'Revenue in period', ru: 'Выручка за период' },
   adminVsPreviousPeriod: { en: 'vs previous period', ru: 'к предыдущему периоду' },

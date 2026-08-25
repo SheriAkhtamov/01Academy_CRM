@@ -1203,7 +1203,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             conversionRatePrevious={managerStats.conversionRatePrevious}
             conversionLeadCount={managerStats.newLeadsPeriod}
             conversionRate={managerStats.conversionRate}
-            payments={overviewPayments}
           />
           <SalesOverviewSection
             payments={periodPayments}

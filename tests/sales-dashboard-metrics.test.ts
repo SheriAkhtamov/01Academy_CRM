@@ -7,6 +7,10 @@ const moduleRoutes = read('../server/modules/academy/module.router.ts');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
 const salesOverviewEmployeeFilter = read('../client/src/components/ux/SalesOverviewEmployeeFilter.tsx');
+const salesCharts = read('../client/src/components/ux/DashboardCharts.tsx');
+const overviewHero = read('../client/src/components/ux/sales-overview/SalesOverviewHero.tsx');
+const overviewFunnel = read('../client/src/components/ux/sales-overview/SalesOverviewFunnel.tsx');
+const overviewKpiGrid = read('../client/src/components/ux/sales-overview/SalesOverviewKpiGrid.tsx');
 
 describe('sales dashboard operational metrics', () => {
   it('loads KPI data for the selected reporting range through a scoped endpoint', () => {
@@ -67,5 +71,47 @@ describe('sales dashboard operational metrics', () => {
     expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsTitle')");
     expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsDescription')");
     expect(salesOverviewMetrics).toContain('<Progress value={share}');
+  });
+  // The overview used to draw two funnels as two identical lists of horizontal
+  // bars a few hundred pixels apart: one counting persisted events in the
+  // window, the other counting where deals stand in the pipeline now. They
+  // legitimately disagree, which read as a bug. Both readings survive — as tabs
+  // of one card, so only one is ever on screen to be misread against the other.
+  it('offers both funnel readings as tabs of a single card', () => {
+    expect(overviewFunnel).toContain("t('funnelProcessTab')");
+    expect(overviewFunnel).toContain("t('funnelStageTab')");
+    expect(overviewFunnel).toContain("t('funnelStagesCumulative')");
+    expect(overviewFunnel).toContain("t('funnelDropOffLabel')");
+    expect(salesCharts).not.toContain("t('conversionFunnel')");
+    expect(salesCharts).not.toContain('funnel = []');
+  });
+
+  it('states the money and the window it is compared against', () => {
+    expect(overviewHero).toContain("t('revenueForPeriod')");
+    expect(overviewHero).toContain("t('avgPaymentSize')");
+    expect(overviewHero).toContain("t('salesOverviewComparedWith')");
+    // The comparison window is the server's own, so the money delta covers
+    // exactly the days the counted-event deltas beside it cover.
+    expect(overviewHero).toContain('previousRange');
+    expect(salesOverviewMetrics).toContain('previousRange={metrics?.previousRange}');
+    // One screen, one headline total: the chart footer no longer repeats it.
+    expect(salesCharts).not.toContain('money(totalRevenue)');
+  });
+
+  it('lets a counter hand the operator off to the work behind it', () => {
+    expect(overviewKpiGrid).toContain('onNavigate(tile.target!)');
+    expect(overviewKpiGrid).toContain("t('openInPipeline')");
+    expect(overviewKpiGrid).toContain("t('openInStudents')");
+    expect(salesDashboard).toContain('onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}');
+  });
+
+  it('groups the overview into named bands instead of one flat card wall', () => {
+    expect(salesOverviewMetrics).toContain("t('salesOverviewResultTitle')");
+    expect(salesOverviewMetrics).toContain("t('salesOverviewFlowTitle')");
+    expect(salesOverviewMetrics).toContain("t('salesOverviewBreakdownTitle')");
+    // A zero-filled screen is indistinguishable from a broken one; say so and
+    // offer the way out.
+    expect(salesOverviewMetrics).toContain("t('salesOverviewEmptyTitle')");
+    expect(salesOverviewMetrics).toContain('onExpandPeriod');
   });
 });

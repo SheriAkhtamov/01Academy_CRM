@@ -549,11 +549,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
   // The reporting preset sticks: switching sections and coming back used to
   // silently reset the metrics to "today" mid-comparison.
-  const [storedReportingPreset, setStoredReportingPreset] = useStickyState<string>('sales-overview-range', 'today');
+  const [storedReportingPreset, setStoredReportingPreset] = useStickyState<string>('sales-overview-range', 'last30');
   const [reportingRange, setReportingRange] = useState(() => (
     isReportingPresetKey(storedReportingPreset)
       ? reportingRangeForPreset(storedReportingPreset)
-      : reportingRangeForPreset('today')
+      : reportingRangeForPreset('last30')
   ));
   const handleReportingRangeChange = useCallback((next: typeof reportingRange) => {
     setReportingRange(next);
@@ -1178,39 +1178,46 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
       {section === 'overview' ? (
         <div className="space-y-5">
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
-            <ReportingDateRangeFilter
-              value={reportingRange}
-              onChange={handleReportingRangeChange}
-            />
-            <SalesOverviewEmployeeFilter
-              value={overviewManagerId}
-              managers={overviewManagerOptions}
-              canViewAllManagers={isAdministrationModule}
-              onChange={(managerId) => replaceSalesParams({
-                manager: managerId === defaultOverviewManagerId ? null : managerId,
-              })}
-            />
-          </div>
+          <Card
+            className="sticky top-2 z-20 border-border/60 bg-card/95 shadow-sm backdrop-blur"
+            role="group"
+            aria-label={t('salesOverviewFilters')}
+          >
+            <CardContent className="flex flex-col gap-2 p-2 xl:flex-row xl:items-center">
+              <ReportingDateRangeFilter
+                className="border-0 bg-transparent shadow-none xl:min-w-0 xl:flex-1"
+                value={reportingRange}
+                onChange={handleReportingRangeChange}
+              />
+              <span className="hidden w-px self-stretch bg-border xl:block" aria-hidden="true" />
+              <SalesOverviewEmployeeFilter
+                className="border-0 bg-transparent shadow-none"
+                value={overviewManagerId}
+                managers={overviewManagerOptions}
+                canViewAllManagers={isAdministrationModule}
+                onChange={(managerId) => replaceSalesParams({
+                  manager: managerId === defaultOverviewManagerId ? null : managerId,
+                })}
+              />
+            </CardContent>
+          </Card>
           <SalesOverviewMetrics
             reportingRange={reportingRange}
             managerId={overviewManagerNumericId}
             isAdministrationModule={isAdministrationModule}
-            activeLeads={managerStats.activeLeads}
-            activeLeadsPrevious={managerStats.activeLeadsPrevious}
-            totalStudents={managerStats.totalStudents}
-            totalStudentsPrevious={managerStats.totalStudentsPrevious}
-            conversionRatePrevious={managerStats.conversionRatePrevious}
-            conversionLeadCount={managerStats.newLeadsPeriod}
-            conversionRate={managerStats.conversionRate}
+            stats={managerStats}
+            payments={overviewPayments}
+            funnel={managerFunnel}
+            leadStatusName={leadStatusName}
+            statusColor={leadStatusColor}
+            money={money}
+            onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
+            onExpandPeriod={() => handleReportingRangeChange(reportingRangeForPreset('last30'))}
           />
           <SalesOverviewSection
             payments={periodPayments}
             leads={periodLeads}
-            funnel={managerFunnel}
             reportingRange={reportingRange}
-            leadStatusName={leadStatusName}
-            statusColor={leadStatusColor}
             money={money}
           />
         </div>

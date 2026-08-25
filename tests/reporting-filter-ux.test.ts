@@ -31,9 +31,16 @@ describe('dashboard period filters and simplified actions', () => {
     expect(dateRangeField).toContain("boundaryField('to')");
     expect(filter).toContain('<SelectTrigger');
     expect(filter).not.toContain('aria-pressed={value.preset === preset}');
-    for (const source of [sales, marketing, finance, administration]) {
+    for (const source of [marketing, finance, administration]) {
       expect(source).toContain("reportingRangeForPreset('today')");
     }
+    // Sales opened on "today" by default, and a sales day starts empty: before
+    // the first call of the morning, on a weekend, or on a holiday, every card
+    // on the overview read zero and the screen was indistinguishable from a
+    // broken one. Thirty days is the shortest window that is reliably non-empty
+    // for this module, and the sticky preset still remembers a narrower choice.
+    expect(sales).toContain("reportingRangeForPreset('last30')");
+    expect(sales).not.toContain("reportingRangeForPreset('today')");
     // A teacher's day is often a day off, a morning before the first lesson or
     // a holiday, and "today" then opened the overview on six empty KPI tiles
     // and four empty charts — indistinguishable from a broken screen. The

@@ -33,25 +33,27 @@ import { useChartEntrance } from '@/components/ux/motion';
 
 interface DashboardChartsProps {
   payments?: any[];
-  funnel?: any[];
   leads?: Array<{
     sourceName?: string | null;
     statusCode?: string | null;
   }>;
-  leadStatusName: (code: string) => string;
-  statusColor: (code: string) => string;
   money: (value: number) => string;
   reportingRange?: { from: string; to: string };
 }
 
 const PAYMENT_METHOD_COLORS = ['var(--chart-2)', 'var(--chart-1)', 'var(--chart-4)', 'var(--chart-6)'];
 
+/**
+ * The money-and-source half of the sales overview.
+ *
+ * The pipeline funnel used to live here as a fourth card, directly below a
+ * second, differently-computed funnel in the metrics block above. It is now a
+ * tab of that one card, which is why this file no longer takes `funnel`,
+ * `leadStatusName` or `statusColor`.
+ */
 export function DashboardCharts({
   payments = [],
-  funnel = [],
   leads = [],
-  leadStatusName,
-  statusColor,
   money,
   reportingRange,
 }: DashboardChartsProps) {
@@ -65,16 +67,6 @@ export function DashboardCharts({
       ? buildReportingRevenueData(payments, locale, reportingRange)
       : buildMonthlyRevenueData(payments, locale),
     [locale, payments, reportingRange],
-  );
-
-  const funnelData = useMemo(
-    () =>
-      (funnel || []).map((item) => ({
-        name: leadStatusName(item.code),
-        count: item.count,
-        color: item.color || statusColor(item.code),
-      })),
-    [funnel, leadStatusName, statusColor]
   );
 
   const sourceData = useMemo(() => {
@@ -136,9 +128,6 @@ export function DashboardCharts({
     () => payments.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0),
     [payments],
   );
-  const maxFunnelCount = Math.max(1, ...funnelData.map((item) => Number(item.count || 0)));
-  const funnelFirstStageCount = Number(funnelData[0]?.count || 0);
-  const hasFunnelData = funnelData.some((item) => Number(item.count || 0) > 0);
   const hasSourceData = sourceData.some((item) => Number(item.leads || 0) > 0);
   const hasPaymentRevenue = paymentMethodData.some((item) => Number(item.amount || 0) > 0);
 
@@ -148,16 +137,12 @@ export function DashboardCharts({
         title={t('revenueTrend')}
         description={t('revenueTrendDescription')}
         summary={`${t('revenueTrend')}. ${t('dataForSelectedPeriod')}`}
-        className="xl:col-span-7"
+        className="xl:col-span-12"
         chartClassName="h-[252px]"
+        /* The period total belongs to the result band at the top of the page;
+           repeating it here made the same figure appear twice on one screen. */
         footer={totalRevenue > 0 ? (
-          <AnalyticsChartLegend
-            items={[{
-              label: t('revenueForPeriod'),
-              color: 'var(--primary-500)',
-              value: money(totalRevenue),
-            }]}
-          />
+          <AnalyticsChartLegend items={[{ label: t('revenue'), color: 'var(--primary-500)' }]} />
         ) : undefined}
       >
           {totalRevenue > 0 ? (
@@ -210,56 +195,10 @@ export function DashboardCharts({
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
-        title={t('conversionFunnel')}
-        description={t('conversionFunnelDescription')}
-        summary={`${t('conversionFunnel')}. ${funnelData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
-        className="xl:col-span-5"
-        chartClassName="h-auto min-h-[252px]"
-      >
-          {hasFunnelData ? (
-            <ol className="flex min-h-[252px] flex-col justify-center gap-2.5 py-1" aria-label={t('conversionFunnel')}>
-              {funnelData.map((item) => {
-                const width = Math.max(2, Math.round((Number(item.count || 0) / maxFunnelCount) * 100));
-                return (
-                  <li key={item.name} className="flex items-center gap-3">
-                    <span className="w-28 shrink-0 truncate text-xs font-medium text-muted-foreground sm:w-32" title={item.name}>
-                      {item.name}
-                    </span>
-                    <div
-                      className="h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-muted"
-                      role="progressbar"
-                      aria-valuenow={Number(item.count || 0)}
-                      aria-valuemin={0}
-                      aria-valuemax={maxFunnelCount}
-                      aria-label={`${item.name}: ${item.count}`}
-                    >
-                      <span
-                        className="block h-full rounded-md"
-                        style={{ width: `${width}%`, backgroundColor: item.color }}
-                      />
-                    </div>
-                    <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
-                      {item.count}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <AnalyticsChartEmpty title={t('noFunnelData')} description={t('analyticsEmptyPeriodHint')} />
-          )}
-          {hasFunnelData && funnelFirstStageCount > 0 ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {t('funnelStagesCumulative')}
-            </p>
-          ) : null}
-      </AnalyticsChartCard>
-
-      <AnalyticsChartCard
         title={t('salesSourcePerformance')}
         description={t('salesSourcePerformanceDescription')}
         summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
-        className="xl:col-span-8"
+        className="xl:col-span-7"
         chartClassName="h-[270px]"
         footer={hasSourceData ? (
           <AnalyticsChartLegend items={[
@@ -305,7 +244,7 @@ export function DashboardCharts({
         title={t('paymentMethodsChart')}
         description={t('paymentMethodsChartDescription')}
         summary={`${t('paymentMethodsChart')}. ${paymentMethodData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
-        className="xl:col-span-4"
+        className="xl:col-span-5"
         chartClassName="h-[188px]"
         footer={hasPaymentRevenue ? (
           <div className="grid gap-2">

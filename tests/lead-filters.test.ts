@@ -45,6 +45,21 @@ describe('pipeline lead filters', () => {
     expect(leadMatchesFilters(lead({ sourceId: 7 }), filters)).toBe(false);
   });
 
+  it('filters by any selected manager and can include unassigned leads', () => {
+    const assignedOnly = withFilters({ managerIds: [7, 9] });
+    expect(leadMatchesFilters(lead({ managerId: 9 }), assignedOnly)).toBe(true);
+    expect(leadMatchesFilters(lead({ managerId: 12 }), assignedOnly)).toBe(false);
+    expect(leadMatchesFilters(lead({ managerId: null }), assignedOnly)).toBe(false);
+
+    const assignedOrUnassigned = withFilters({
+      managerIds: [9],
+      includeUnassignedManager: true,
+    });
+    expect(leadMatchesFilters(lead({ managerId: 9 }), assignedOrUnassigned)).toBe(true);
+    expect(leadMatchesFilters(lead({ managerId: null }), assignedOrUnassigned)).toBe(true);
+    expect(leadMatchesFilters(lead({ managerId: 12 }), assignedOrUnassigned)).toBe(false);
+  });
+
   it('filters by communication language regardless of stored casing', () => {
     const filters = withFilters({ languages: ['uz'] });
     expect(leadMatchesFilters(lead({ language: 'UZ' }), filters)).toBe(true);
@@ -135,6 +150,10 @@ describe('pipeline lead filters', () => {
     expect(countActiveLeadFilters(withFilters({ sourceIds: [1, 2, 3] }))).toBe(1);
     expect(countActiveLeadFilters(withFilters({ ageFrom: '8', ageTo: '12' }))).toBe(1);
     expect(countActiveLeadFilters(withFilters({
+      managerIds: [7, 9],
+      includeUnassignedManager: true,
+    }))).toBe(1);
+    expect(countActiveLeadFilters(withFilters({
       sourceIds: [1],
       onlyNew: true,
       hasPhone: 'yes',
@@ -154,6 +173,8 @@ describe('restoring filters from browser storage', () => {
   it('drops values a stale entry should not be able to smuggle in', () => {
     const restored = parseStoredLeadFilters(JSON.stringify({
       sourceIds: [4, '5', -2, 0, 'x', 4],
+      managerIds: [9, '10', -1, 'x', 9],
+      includeUnassignedManager: true,
       languages: ['ru', 'klingon', 'UZ'],
       hasPhone: 'maybe',
       tagIds: [7],
@@ -164,6 +185,8 @@ describe('restoring filters from browser storage', () => {
     }));
 
     expect(restored.sourceIds).toEqual([4, 5]);
+    expect(restored.managerIds).toEqual([9, 10]);
+    expect(restored.includeUnassignedManager).toBe(true);
     expect(restored.languages).toEqual(['ru', 'uz']);
     expect(restored.hasPhone).toBe('any');
     expect(restored.tagIds).toEqual([7]);
@@ -175,7 +198,14 @@ describe('restoring filters from browser storage', () => {
   });
 
   it('round-trips a saved selection', () => {
-    const filters = withFilters({ sourceIds: [2], languages: ['uz'], onlyNew: true, amountTo: '900' });
+    const filters = withFilters({
+      sourceIds: [2],
+      managerIds: [6],
+      includeUnassignedManager: true,
+      languages: ['uz'],
+      onlyNew: true,
+      amountTo: '900',
+    });
     expect(parseStoredLeadFilters(JSON.stringify(filters))).toEqual(filters);
   });
 });

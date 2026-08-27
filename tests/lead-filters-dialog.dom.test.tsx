@@ -21,14 +21,25 @@ const sources = [
 ];
 
 const leads: FilterableLead[] = [
-  { id: 1, sourceId: 1, language: 'ru', phone: 'instagram:1', firstViewedAt: null, tags: [{ id: 7, tagId: 9, name: 'VIP' }] },
-  { id: 2, sourceId: 2, language: 'uz', phone: '+998901234567', firstViewedAt: '2026-08-04T10:00:00.000Z', tags: [{ id: 8, tagId: 9, name: 'VIP' }] },
-  { id: 3, sourceId: 2, language: 'ru', phone: '+998907654321', firstViewedAt: '2026-08-04T10:00:00.000Z' },
+  { id: 1, sourceId: 1, managerId: 11, language: 'ru', phone: 'instagram:1', firstViewedAt: null, tags: [{ id: 7, tagId: 9, name: 'VIP' }] },
+  { id: 2, sourceId: 2, managerId: 12, language: 'uz', phone: '+998901234567', firstViewedAt: '2026-08-04T10:00:00.000Z', tags: [{ id: 8, tagId: 9, name: 'VIP' }] },
+  { id: 3, sourceId: 2, managerId: null, language: 'ru', phone: '+998907654321', firstViewedAt: '2026-08-04T10:00:00.000Z' },
+];
+
+const managers = [
+  { id: 11, fullName: 'Alice Manager' },
+  { id: 12, fullName: 'Bob Manager' },
 ];
 
 const openDialog = (onApply = vi.fn(), filters = EMPTY_LEAD_FILTERS) => {
   const view = render(
-    <LeadFiltersDialog filters={filters} onApply={onApply} sources={sources} leads={leads} />,
+    <LeadFiltersDialog
+      filters={filters}
+      onApply={onApply}
+      sources={sources}
+      managers={managers}
+      leads={leads}
+    />,
   );
   fireEvent.click(screen.getByRole('button', { name: /Lead filters/i }));
   return { ...view, onApply };
@@ -87,6 +98,35 @@ describe('pipeline filter dialog', () => {
     fireEvent.click(chip);
     expect(chip.getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('status').textContent).toBe('Found 3 of 3 leads');
+  });
+
+  it('filters by several responsible managers and unassigned leads', () => {
+    const { onApply } = openDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Alice Manager' }));
+    expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Not assigned' }));
+    expect(screen.getByRole('status').textContent).toBe('Found 2 of 3 leads');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(onApply.mock.calls[0][0]).toMatchObject({
+      managerIds: [11],
+      includeUnassignedManager: true,
+    });
+  });
+
+  it('searches manager options without losing selected managers', () => {
+    openDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Alice Manager' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search employees...' }), {
+      target: { value: 'bob' },
+    });
+
+    expect(screen.queryByRole('button', { name: 'Alice Manager' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Bob Manager' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
   });
 
   it('reports the chosen conditions only when Apply is pressed', () => {

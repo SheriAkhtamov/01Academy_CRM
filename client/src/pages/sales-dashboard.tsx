@@ -1163,6 +1163,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
                 filters={leadFilters}
                 onApply={applyFilters}
                 sources={data.sources ?? []}
+                managers={overviewManagerOptions}
                 leads={pipelineLeads}
               />
             </div>

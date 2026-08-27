@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarRange, Check, Radio, Sparkles, SlidersHorizontal } from 'lucide-react';
+import { CalendarRange, Check, Radio, Search, Sparkles, SlidersHorizontal, UserRound } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,10 +36,16 @@ export interface LeadFilterSource {
   channel?: string | null;
 }
 
+export interface LeadFilterManager {
+  id: number;
+  fullName: string;
+}
+
 interface LeadFiltersDialogProps {
   filters: LeadFilterState;
   onApply: (filters: LeadFilterState) => void;
   sources: LeadFilterSource[];
+  managers: LeadFilterManager[];
   leads: FilterableLead[];
 }
 
@@ -218,10 +224,11 @@ function RangeRow({
   );
 }
 
-export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFiltersDialogProps) {
+export function LeadFiltersDialog({ filters, onApply, sources, managers, leads }: LeadFiltersDialogProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(filters);
+  const [managerSearch, setManagerSearch] = useState('');
 
   // Reopening must start from what is actually applied, not from an abandoned draft.
   useEffect(() => {
@@ -246,6 +253,16 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
       .sort((left, right) => left.label.localeCompare(right.label));
   }, [leads]);
 
+  const managerOptions = useMemo(() => {
+    const normalizedSearch = managerSearch.trim().toLocaleLowerCase();
+    return managers
+      .filter((manager) => (
+        normalizedSearch === ''
+        || manager.fullName.toLocaleLowerCase().includes(normalizedSearch)
+      ))
+      .sort((left, right) => left.fullName.localeCompare(right.fullName));
+  }, [managerSearch, managers]);
+
   const update = <K extends keyof LeadFilterState>(key: K, value: LeadFilterState[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
@@ -257,7 +274,13 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setManagerSearch('');
+      }}
+    >
       <Button
         size="sm"
         variant={activeCount > 0 ? 'default' : 'outline'}
@@ -356,6 +379,71 @@ export function LeadFiltersDialog({ filters, onApply, sources, leads }: LeadFilt
                   onChange={(value) => update('hasComment', value)}
                   {...triStateLabels}
                 />
+              </FilterCard>
+
+              <FilterCard
+                title={t('responsibleManager')}
+                icon={UserRound}
+                className="lg:col-span-2"
+              >
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    value={managerSearch}
+                    onChange={(event) => setManagerSearch(event.target.value)}
+                    placeholder={t('searchEmployees')}
+                    aria-label={t('searchEmployees')}
+                    className="h-9 pl-9"
+                  />
+                </div>
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="group"
+                  aria-label={t('responsibleManager')}
+                >
+                  {managerSearch.trim() === '' ? (
+                    <button
+                      type="button"
+                      aria-pressed={draft.includeUnassignedManager}
+                      onClick={() => update('includeUnassignedManager', !draft.includeUnassignedManager)}
+                      className={cn(
+                        'inline-flex max-w-full items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                        draft.includeUnassignedManager
+                          ? 'border-primary bg-primary text-primary-foreground shadow-2xs'
+                          : 'border-border bg-background text-foreground hover:border-primary/40 hover:bg-accent',
+                      )}
+                    >
+                      {draft.includeUnassignedManager ? <Check className="size-3 shrink-0" aria-hidden="true" /> : null}
+                      <span className="truncate">{t('notAssigned')}</span>
+                    </button>
+                  ) : null}
+                  {managerOptions.map((manager) => {
+                    const isSelected = draft.managerIds.includes(manager.id);
+                    return (
+                      <button
+                        key={manager.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => update('managerIds', toggleFilterValue(draft.managerIds, manager.id))}
+                        className={cn(
+                          'inline-flex max-w-full items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                          isSelected
+                            ? 'border-primary bg-primary text-primary-foreground shadow-2xs'
+                            : 'border-border bg-background text-foreground hover:border-primary/40 hover:bg-accent',
+                        )}
+                      >
+                        {isSelected ? <Check className="size-3 shrink-0" aria-hidden="true" /> : null}
+                        <span className="truncate">{manager.fullName}</span>
+                      </button>
+                    );
+                  })}
+                  {managerOptions.length === 0 && managerSearch.trim() !== '' ? (
+                    <span className="text-sm text-muted-foreground">{t('noSearchResults')}</span>
+                  ) : null}
+                </div>
               </FilterCard>
 
               <FilterCard

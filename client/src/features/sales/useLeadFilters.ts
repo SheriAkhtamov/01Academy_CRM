@@ -74,6 +74,10 @@ export const applyLeadFilterParams = (
   params: URLSearchParams,
 ): LeadFilterState => ({
   sourceIds: params.has('sourceIds') ? readCsvNumbers(params.get('sourceIds')) : base.sourceIds,
+  managerIds: params.has('managerIds') ? readCsvNumbers(params.get('managerIds')) : base.managerIds,
+  includeUnassignedManager: params.has('unassignedManager')
+    ? params.get('unassignedManager') === '1'
+    : base.includeUnassignedManager,
   languages: params.has('languages') ? readCsvLanguages(params.get('languages')) : base.languages,
   hasPhone: params.has('hasPhone') ? readTriStateParam(params.get('hasPhone')) : base.hasPhone,
   hasMessenger: params.has('hasMessenger') ? readTriStateParam(params.get('hasMessenger')) : base.hasMessenger,
@@ -91,6 +95,8 @@ export const applyLeadFilterParams = (
 
 const leadFilterUrlParams = (filters: LeadFilterState): Record<string, string | null> => ({
   sourceIds: filters.sourceIds.length > 0 ? filters.sourceIds.join(',') : null,
+  managerIds: filters.managerIds.length > 0 ? filters.managerIds.join(',') : null,
+  unassignedManager: filters.includeUnassignedManager ? '1' : null,
   languages: filters.languages.length > 0 ? filters.languages.join(',') : null,
   hasPhone: filters.hasPhone !== 'any' ? filters.hasPhone : null,
   hasMessenger: filters.hasMessenger !== 'any' ? filters.hasMessenger : null,

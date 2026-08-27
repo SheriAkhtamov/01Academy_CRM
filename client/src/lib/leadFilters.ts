@@ -9,6 +9,7 @@ export const LEAD_FILTER_LANGUAGES = ['ru', 'uz', 'en'] as const;
 
 export interface FilterableLead extends LeadContactFields {
   sourceId?: number | null;
+  managerId?: number | null;
   language?: string | null;
   tags?: Array<{ id: number; tagId: number; name: string }> | null;
   firstViewedAt?: string | null;
@@ -22,6 +23,8 @@ export interface FilterableLead extends LeadContactFields {
 
 export interface LeadFilterState {
   sourceIds: number[];
+  managerIds: number[];
+  includeUnassignedManager: boolean;
   languages: string[];
   hasPhone: LeadFilterTriState;
   hasMessenger: LeadFilterTriState;
@@ -39,6 +42,8 @@ export interface LeadFilterState {
 
 export const EMPTY_LEAD_FILTERS: LeadFilterState = {
   sourceIds: [],
+  managerIds: [],
+  includeUnassignedManager: false,
   languages: [],
   hasPhone: 'any',
   hasMessenger: 'any',
@@ -58,6 +63,7 @@ export const EMPTY_LEAD_FILTERS: LeadFilterState = {
 export const countActiveLeadFilters = (filters: LeadFilterState) => {
   let count = 0;
   if (filters.sourceIds.length > 0) count += 1;
+  if (filters.managerIds.length > 0 || filters.includeUnassignedManager) count += 1;
   if (filters.languages.length > 0) count += 1;
   if (filters.hasPhone !== 'any') count += 1;
   if (filters.hasMessenger !== 'any') count += 1;
@@ -93,6 +99,14 @@ const matchesRange = (value: number | null, from: string, to: string) => {
 export const leadMatchesFilters = (lead: FilterableLead, filters: LeadFilterState): boolean => {
   if (filters.sourceIds.length > 0 && !filters.sourceIds.includes(Number(lead.sourceId))) {
     return false;
+  }
+  if (filters.managerIds.length > 0 || filters.includeUnassignedManager) {
+    const assignedManagerMatches = lead.managerId !== null
+      && lead.managerId !== undefined
+      && filters.managerIds.includes(Number(lead.managerId));
+    const unassignedMatches = filters.includeUnassignedManager
+      && (lead.managerId === null || lead.managerId === undefined);
+    if (!assignedManagerMatches && !unassignedMatches) return false;
   }
   if (filters.languages.length > 0
     && !filters.languages.includes(String(lead.language ?? '').trim().toLowerCase())) {
@@ -172,6 +186,8 @@ export const parseStoredLeadFilters = (raw: string | null | undefined): LeadFilt
 
   return {
     sourceIds: readNumberArray(stored.sourceIds),
+    managerIds: readNumberArray(stored.managerIds),
+    includeUnassignedManager: stored.includeUnassignedManager === true,
     languages: readStringArray(stored.languages, LEAD_FILTER_LANGUAGES),
     hasPhone: readTriState(stored.hasPhone),
     hasMessenger: readTriState(stored.hasMessenger),

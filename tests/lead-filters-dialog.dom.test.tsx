@@ -26,9 +26,15 @@ const leads: FilterableLead[] = [
   { id: 3, sourceId: 2, managerId: null, language: 'ru', phone: '+998907654321', firstViewedAt: '2026-08-04T10:00:00.000Z' },
 ];
 
+// The manager list only grows a search box once it is longer than a glance,
+// so the fixture carries a team rather than a pair.
 const managers = [
   { id: 11, fullName: 'Alice Manager' },
   { id: 12, fullName: 'Bob Manager' },
+  { id: 13, fullName: 'Carol Manager' },
+  { id: 14, fullName: 'Dave Manager' },
+  { id: 15, fullName: 'Erin Manager' },
+  { id: 16, fullName: 'Frank Manager' },
 ];
 
 const openDialog = (onApply = vi.fn(), filters = EMPTY_LEAD_FILTERS) => {
@@ -43,6 +49,14 @@ const openDialog = (onApply = vi.fn(), filters = EMPTY_LEAD_FILTERS) => {
   );
   fireEvent.click(screen.getByRole('button', { name: /Lead filters/i }));
   return { ...view, onApply };
+};
+
+/** Opens one multi-select, closing whichever one the press landed outside of. */
+const openList = (name: string | RegExp) => {
+  const trigger = screen.getByRole('combobox', { name });
+  fireEvent.pointerDown(trigger);
+  fireEvent.click(trigger);
+  return trigger;
 };
 
 describe('pipeline filter dialog', () => {
@@ -85,28 +99,51 @@ describe('pipeline filter dialog', () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
-  it('toggles a source chip on and off', () => {
+  it('toggles a source on and off from its list', () => {
     openDialog();
+    const trigger = openList(/^Source/);
 
-    const chip = screen.getByRole('button', { name: 'Meta Lead Ads' });
-    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    const option = screen.getByRole('option', { name: 'Meta Lead Ads' });
+    expect(option.getAttribute('aria-selected')).toBe('false');
 
-    fireEvent.click(chip);
-    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(option);
+    expect(option.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('status').textContent).toBe('Found 2 of 3 leads');
+    // The closed control has to say what it holds, not just how much.
+    expect(trigger.textContent).toContain('Meta Lead Ads');
 
-    fireEvent.click(chip);
-    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(option);
+    expect(option.getAttribute('aria-selected')).toBe('false');
     expect(screen.getByRole('status').textContent).toBe('Found 3 of 3 leads');
+  });
+
+  it('sums the selected values on the closed control', () => {
+    openDialog();
+    const trigger = openList(/^Source/);
+
+    fireEvent.click(screen.getByRole('option', { name: 'Instagram' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Meta Lead Ads' }));
+
+    expect(trigger.textContent).toContain('Instagram +1');
+  });
+
+  it('counts the leads behind every option', () => {
+    openDialog();
+    openList(/^Source/);
+
+    // Two of the three leads arrived through Meta Lead Ads.
+    expect(screen.getByRole('option', { name: 'Meta Lead Ads' }).textContent).toContain('2');
+    expect(screen.getByRole('option', { name: 'Instagram' }).textContent).toContain('1');
   });
 
   it('filters by several responsible managers and unassigned leads', () => {
     const { onApply } = openDialog();
+    openList(/^Responsible manager/);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Alice Manager' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Alice Manager' }));
     expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Not assigned' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Not assigned' }));
     expect(screen.getByRole('status').textContent).toBe('Found 2 of 3 leads');
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
@@ -118,14 +155,15 @@ describe('pipeline filter dialog', () => {
 
   it('searches manager options without losing selected managers', () => {
     openDialog();
+    openList(/^Responsible manager/);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Alice Manager' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Alice Manager' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Search employees...' }), {
       target: { value: 'bob' },
     });
 
-    expect(screen.queryByRole('button', { name: 'Alice Manager' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Bob Manager' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'Alice Manager' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'Bob Manager' })).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
   });
 
@@ -142,7 +180,8 @@ describe('pipeline filter dialog', () => {
   it('applies on Enter so the keyboard path does not end at a mouse click', () => {
     const { onApply, container } = openDialog();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+    openList(/^Source/);
+    fireEvent.click(screen.getByRole('option', { name: 'Instagram' }));
     fireEvent.submit(container.ownerDocument.querySelector('form')!);
 
     expect(onApply).toHaveBeenCalledTimes(1);
@@ -184,12 +223,56 @@ describe('pipeline filter dialog', () => {
 
   it('offers each global tag once and filters every lead carrying it', () => {
     openDialog();
+    openList(/^Tags/);
 
-    const vipTags = screen.getAllByRole('button', { name: 'VIP' });
+    const vipTags = screen.getAllByRole('option', { name: 'VIP' });
     expect(vipTags).toHaveLength(1);
     fireEvent.click(vipTags[0]);
     expect(screen.getByRole('status').textContent).toBe('Found 2 of 3 leads');
-    expect(screen.getByRole('button', { name: 'Instagram' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Meta Lead Ads' })).toBeTruthy();
+
+    // Choosing a tag must leave the other groups alone.
+    openList(/^Source/);
+    expect(screen.getByRole('option', { name: 'Instagram' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Meta Lead Ads' })).toBeTruthy();
+  });
+
+  it('spells out every condition instead of only counting them', () => {
+    openDialog();
+
+    openList(/^Source/);
+    fireEvent.click(screen.getByRole('option', { name: 'Instagram' }));
+    fireEvent.click(screen.getByRole('switch', { name: /Only new leads/i }));
+
+    const conditions = screen.getByRole('group', { name: 'Active conditions' });
+    expect(within(conditions).getByText('Source: Instagram')).toBeTruthy();
+    expect(within(conditions).getByText('Only new leads nobody opened')).toBeTruthy();
+  });
+
+  it('lifts a single condition without touching the others', () => {
+    openDialog();
+
+    openList(/^Source/);
+    fireEvent.click(screen.getByRole('option', { name: 'Meta Lead Ads' }));
+    fireEvent.click(screen.getByRole('switch', { name: /Only new leads/i }));
+    // Both Meta leads have been opened already, so together the two conditions
+    // leave nothing.
+    expect(screen.getByRole('status').textContent).toBe('Found 0 of 3 leads');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove condition: Source: Meta Lead Ads' }));
+
+    expect(screen.getByRole('status').textContent).toBe('Found 1 of 3 leads');
+    expect(screen.getByRole('switch', { name: /Only new leads/i }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('fills the created range from a preset and clears it on a second press', () => {
+    openDialog();
+
+    const preset = screen.getByRole('button', { name: 'Today' });
+    fireEvent.click(preset);
+    expect((screen.getByLabelText('Created date: From') as HTMLInputElement).value).not.toBe('');
+    expect(preset.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(preset);
+    expect((screen.getByLabelText('Created date: From') as HTMLInputElement).value).toBe('');
   });
 });

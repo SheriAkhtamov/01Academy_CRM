@@ -3698,6 +3698,65 @@ describe('academy route logic boundaries', () => {
     expect(mocks.runAutomations).toHaveBeenCalledWith(1);
   });
 
+  it('finalizes a future demo when its attendance is already complete', async () => {
+    const participant = {
+      id: 77,
+      studentId: 155,
+      leadId: 2640,
+      status: 'attended',
+      studentName: 'Student',
+      contactName: 'Parent',
+      managerId: 1,
+    };
+    const demo = {
+      id: 23,
+      course_id: 3,
+      school_id: 2,
+      teacher_id: 4,
+      scheduled_at: new Date('2030-08-29T10:00:00.000Z'),
+      duration_minutes: 60,
+      format: 'offline',
+      status: 'scheduled',
+      participants: [participant],
+    };
+    let finalized = false;
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_demo_lessons demo') && sql.includes('WHERE demo.id = $1')) {
+        return { rows: [{ ...demo, status: finalized ? 'completed' : 'scheduled' }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) {
+        return emptyResult();
+      }
+      if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) {
+        return { rows: [demo] };
+      }
+      if (sql.includes('COUNT(*)::int AS count') && sql.includes('academy_demo_lesson_participants')) {
+        return { rows: [{ count: 0 }] };
+      }
+      if (sql.includes('UPDATE "academy_demo_lessons"')) {
+        finalized = true;
+        return { rows: [{ ...demo, status: 'completed' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/demo-lessons/23/outcome')
+      .send({ status: 'completed' });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.status).toBe('completed');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'FINALIZE_ACADEMY_DEMO_LESSON',
+      entityType: 'academy_demo_lesson',
+      entityId: 23,
+    }));
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('removes an invited student from a scheduled demo and keeps an audit trail', async () => {
     const participant = {
       id: 77,

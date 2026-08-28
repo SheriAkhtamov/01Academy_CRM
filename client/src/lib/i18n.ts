@@ -1776,10 +1776,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   demoMarkedConducted: { en: 'Demo marked as conducted', ru: 'Демо отмечено как проведённое' },
   demoMarkedNotConducted: { en: 'Demo marked as not conducted', ru: 'Демо отмечено как не проведённое' },
   demoOutcomeSaveFailed: { en: 'Could not save the demo result', ru: 'Не удалось сохранить результат демо' },
-  demoOutcomeAvailableAfterStart: {
-    en: 'The result can be recorded after the scheduled start time.',
-    ru: 'Результат можно зафиксировать после запланированного времени начала.',
-  },
   demoCompleteAttendanceBeforeConducted: {
     en: 'Record attendance for every participant before marking the demo as conducted.',
     ru: 'Перед отметкой «Проведено» укажите посещение каждого участника.',
@@ -1846,7 +1842,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   demoCannotBeRescheduled: { en: 'Only a scheduled demo can be rescheduled.', ru: 'Перенести можно только запланированное демо.' },
   demoCannotChangeTeacher: { en: 'The teacher can only be changed for a scheduled demo.', ru: 'Сменить преподавателя можно только у запланированного демо.' },
   demoOutcomeAlreadyFinal: { en: 'The result of this demo is already final.', ru: 'Результат этого демо уже зафиксирован.' },
-  demoOutcomeBeforeStart: { en: 'The demo result cannot be recorded before its start time.', ru: 'Нельзя зафиксировать результат демо до времени его начала.' },
   demoAttendanceIncomplete: { en: 'Record attendance for every participant first.', ru: 'Сначала укажите посещение каждого участника.' },
   demoAttendanceNotAllowed: { en: 'Attendance cannot be changed for this demo result.', ru: 'Для демо с таким результатом нельзя изменить посещение.' },
   checkingAvailability: { en: 'Checking room and teacher availability', ru: 'Проверяем кабинет и преподавателей' },

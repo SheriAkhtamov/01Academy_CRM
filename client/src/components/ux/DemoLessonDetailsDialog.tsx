@@ -381,13 +381,11 @@ export function DemoLessonDetailsDialog({
     && demo.status !== 'cancelled'
     && demo.status !== 'not_conducted';
   const canManageScheduledDemo = demo.canManage !== false && demo.status === 'scheduled';
-  const demoHasStarted = scheduledAt.getTime() <= Date.now();
   const attendanceComplete = demo.participants.every((participant) => (
     attendance[participant.id] === 'attended'
     || attendance[participant.id] === 'no_show'
   ));
   const canMarkConducted = canManageScheduledDemo
-    && demoHasStarted
     && attendanceComplete
     && dirtyParticipantIds.size === 0;
   const rescheduledAt = rescheduleDate && rescheduleTime
@@ -647,7 +645,7 @@ export function DemoLessonDetailsDialog({
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={!demoHasStarted || finalizeDemo.isPending}
+                  disabled={finalizeDemo.isPending}
                   onClick={() => setNotConductedOpen(true)}
                 >
                   {t('markDemoNotConducted')}
@@ -656,9 +654,7 @@ export function DemoLessonDetailsDialog({
                   {t('cancelDemoLesson')}
                 </Button>
               </div>
-              {!demoHasStarted ? (
-                <p className="text-xs text-muted-foreground">{t('demoOutcomeAvailableAfterStart')}</p>
-              ) : !attendanceComplete ? (
+              {!attendanceComplete ? (
                 <p className="text-xs text-muted-foreground">{t('demoCompleteAttendanceBeforeConducted')}</p>
               ) : dirtyParticipantIds.size > 0 ? (
                 <p className="text-xs text-muted-foreground">{t('demoSaveAttendanceBeforeConducted')}</p>

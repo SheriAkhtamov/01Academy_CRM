@@ -202,6 +202,13 @@ describe('demo lessons', () => {
     expect(demoLessonTeacherChangeSchema.safeParse({ teacherId: 0 }).success).toBe(false);
   });
 
+  it('allows attendance and final outcomes to be recorded before the scheduled start', () => {
+    expect(detailsDialog).not.toContain('demoHasStarted');
+    expect(routes).not.toContain('demoOutcomeBeforeStart');
+    expect(detailsDialog).toContain("t('demoParticipantAttended')");
+    expect(detailsDialog).toContain("t('demoParticipantNoShow')");
+  });
+
   it('creates a demo lesson without participants and without a seat limit', () => {
     const { studentIds, ...schedule } = validMutation;
     const empty = demoLessonMutationSchema.safeParse(schedule);

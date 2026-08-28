@@ -709,9 +709,6 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (locked.status !== 'scheduled') {
           throw Object.assign(new Error('demoOutcomeAlreadyFinal'), { statusCode: 409 });
         }
-        if (new Date(locked.scheduledAt).getTime() > Date.now()) {
-          throw Object.assign(new Error('demoOutcomeBeforeStart'), { statusCode: 409 });
-        }
         if (parsed.data.status === 'completed') {
           const pending = await queryOne<{ count: number }>(
             `SELECT COUNT(*)::int AS count

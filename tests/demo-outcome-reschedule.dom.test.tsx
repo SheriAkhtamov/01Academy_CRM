@@ -108,6 +108,32 @@ describe('demo outcome and rescheduling dialogs', () => {
     }));
   });
 
+  it('allows a scheduled future demo to be finalized in advance', async () => {
+    renderDialog({
+      ...pastDemo,
+      scheduledAt: '2030-07-14T05:00:00.000Z',
+    });
+
+    const conductedButton = screen.getByRole('button', {
+      name: /Отметить проведённым|Mark as conducted/i,
+    }) as HTMLButtonElement;
+    const notConductedButton = screen.getByRole('button', {
+      name: /Не проведено|Not conducted/i,
+    }) as HTMLButtonElement;
+    expect(conductedButton.disabled).toBe(false);
+    expect(notConductedButton.disabled).toBe(false);
+
+    fireEvent.click(conductedButton);
+    const confirmation = await screen.findByRole('alertdialog');
+    fireEvent.click(within(confirmation).getByRole('button', {
+      name: /Отметить проведённым|Mark as conducted/i,
+    }));
+
+    await waitFor(() => expect(apiMocks.outcome).toHaveBeenCalledWith(17, {
+      status: 'completed',
+    }));
+  });
+
   it('requires and saves a classified not-conducted reason', async () => {
     renderDialog();
 

@@ -3757,6 +3757,108 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
+  it('updates an owned participant in a mixed-manager future demo', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const ownParticipant = {
+      id: 77,
+      studentId: 155,
+      leadId: 2640,
+      status: 'invited',
+      studentName: 'Own student',
+      contactName: 'Own parent',
+      managerId: 7,
+    };
+    const foreignParticipant = {
+      id: 78,
+      studentId: 156,
+      leadId: 2641,
+      status: 'invited',
+      studentName: 'Other student',
+      contactName: 'Other parent',
+      managerId: 18,
+    };
+    const demo = {
+      id: 23,
+      course_id: 3,
+      school_id: 2,
+      teacher_id: 4,
+      scheduled_at: new Date('2030-08-29T10:00:00.000Z'),
+      duration_minutes: 60,
+      format: 'offline',
+      status: 'scheduled',
+      participants: [ownParticipant, foreignParticipant],
+    };
+    let attendanceUpdated = false;
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_demo_lessons demo') && sql.includes('WHERE demo.id = $1')) {
+        return {
+          rows: [{
+            ...demo,
+            participants: [
+              { ...ownParticipant, status: attendanceUpdated ? 'attended' : 'invited' },
+              foreignParticipant,
+            ],
+          }],
+        };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) {
+        return { rows: [demo] };
+      }
+      if (sql.includes('FOR UPDATE OF participant, student')) {
+        return {
+          rows: [
+            { id: 77, demo_lesson_id: 23, student_id: 155, status: 'invited', manager_id: 7 },
+            { id: 78, demo_lesson_id: 23, student_id: 156, status: 'invited', manager_id: 18 },
+          ],
+        };
+      }
+      if (sql.includes('UPDATE academy_demo_lesson_participants')) {
+        expect(values[1]).toBe(77);
+        attendanceUpdated = true;
+        return emptyResult();
+      }
+      if (sql.includes('UPDATE "academy_demo_lessons"')) return { rows: [demo] };
+      if (sql.includes('FROM academy_demo_lesson_participants') && sql.includes('ORDER BY id')) {
+        return {
+          rows: [
+            { id: 77, demo_lesson_id: 23, student_id: 155, status: 'attended' },
+            { id: 78, demo_lesson_id: 23, student_id: 156, status: 'invited' },
+          ],
+        };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/demo-lessons/23/attendance')
+      .send({
+        participants: [{
+          participantId: 77,
+          status: 'attended',
+          result: null,
+          noShowReasonCode: null,
+          noShowReasonNote: null,
+        }],
+      });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.participants).toContainEqual(expect.objectContaining({
+      id: 77,
+      status: 'attended',
+      canManage: true,
+    }));
+    expect(response.body.participants).toContainEqual(expect.objectContaining({
+      id: 78,
+      canManage: false,
+      studentName: null,
+    }));
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('removes an invited student from a scheduled demo and keeps an audit trail', async () => {
     const participant = {
       id: 77,

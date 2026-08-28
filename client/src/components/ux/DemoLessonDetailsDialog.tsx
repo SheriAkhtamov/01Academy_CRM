@@ -377,8 +377,7 @@ export function DemoLessonDetailsDialog({
 
   if (!demo) return null;
   const scheduledAt = new Date(demo.scheduledAt);
-  const canEditAttendance = demo.canManage !== false
-    && demo.status !== 'cancelled'
+  const canEditAttendance = demo.status !== 'cancelled'
     && demo.status !== 'not_conducted';
   const canManageScheduledDemo = demo.canManage !== false && demo.status === 'scheduled';
   const attendanceComplete = demo.participants.every((participant) => (
@@ -492,6 +491,8 @@ export function DemoLessonDetailsDialog({
                 const secondaryName = participant.studentName && participant.contactName
                   ? participant.contactName
                   : null;
+                const canEditParticipantAttendance = canEditAttendance
+                  && participant.canManage !== false;
 
                 return (
                   <div key={participant.id} className="relative grid grid-cols-1 items-center gap-3 rounded-lg border border-border p-3 pr-12 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:pr-3">
@@ -535,7 +536,7 @@ export function DemoLessonDetailsDialog({
                           participant.id,
                           value as 'attended' | 'no_show',
                         )}
-                        disabled={!canEditAttendance}
+                        disabled={!canEditParticipantAttendance}
                       >
                         <SelectTrigger id={`demo-attendance-${participant.id}`}>
                           <SelectValue placeholder={t('selectAttendanceResult')} />
@@ -552,7 +553,7 @@ export function DemoLessonDetailsDialog({
                               ? noShowReasonLabels[noShowReasons[participant.id].code]
                               : t('demoNoShowReasonMissing')}
                           </span>
-                          {canEditAttendance ? (
+                          {canEditParticipantAttendance ? (
                             <button
                               type="button"
                               className="inline-flex shrink-0 items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -668,7 +669,9 @@ export function DemoLessonDetailsDialog({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 {t('close')}
               </Button>
-              {canEditAttendance ? (
+              {canEditAttendance && demo.participants.some((participant) => (
+                participant.canManage !== false
+              )) ? (
                 <Button
                   type="button"
                   disabled={dirtyParticipantIds.size === 0 || saveAttendance.isPending}

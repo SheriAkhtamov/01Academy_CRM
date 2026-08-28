@@ -842,7 +842,12 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       const current = await getDemoLesson(id);
       if (!current) return res.status(404).json({ error: 'resourceNotFound' });
       const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
-      if (!hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
+      const requestedParticipantIds = new Set(
+        parsed.data.participants.map((item) => item.participantId),
+      );
+      if (!hasLeadershipAccess(req.user) && participants.some((item) => (
+        requestedParticipantIds.has(Number(item.id)) && !canManageParticipant(req, item)
+      ))) {
         return res.status(403).json({ error: 'Student mutation access required' });
       }
       const participantIds = new Set(participants.map((item) => Number(item.id)));
@@ -856,19 +861,26 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           throw Object.assign(new Error('demoAttendanceNotAllowed'), { statusCode: 409 });
         }
         const lockedParticipants = await query(
-          `SELECT *
-           FROM academy_demo_lesson_participants
-           WHERE demo_lesson_id = $1
-           ORDER BY id
-           FOR UPDATE`,
+          `SELECT participant.*,
+                  COALESCE(student.manager_id, lead.manager_id) AS manager_id
+           FROM academy_demo_lesson_participants participant
+           JOIN academy_students student ON student.id = participant.student_id
+           LEFT JOIN academy_leads lead ON lead.id = student.lead_id
+           WHERE participant.demo_lesson_id = $1
+           ORDER BY participant.id
+           FOR UPDATE OF participant, student`,
           [id],
         );
         const lockedParticipantById = new Map(
           lockedParticipants.map((participant) => [Number(participant.id), participant]),
         );
         for (const item of parsed.data.participants) {
-          if (!lockedParticipantById.has(item.participantId)) {
+          const lockedParticipant = lockedParticipantById.get(item.participantId);
+          if (!lockedParticipant) {
             throw Object.assign(new Error('demoParticipantNotFound'), { statusCode: 404 });
+          }
+          if (!canManageParticipant(req, lockedParticipant)) {
+            throw Object.assign(new Error('Student mutation access required'), { statusCode: 403 });
           }
           const noShowReasonCode = item.status === 'no_show'
             ? item.noShowReasonCode ?? null

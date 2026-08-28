@@ -58,9 +58,9 @@ const demo: DemoLesson = {
   canManage: true,
 };
 
-const renderDialog = () => render(
+const renderDialog = (value: DemoLesson = demo) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <DemoLessonDetailsDialog demo={demo} open onOpenChange={vi.fn()} />
+    <DemoLessonDetailsDialog demo={value} open onOpenChange={vi.fn()} />
   </QueryClientProvider>,
 );
 
@@ -113,6 +113,47 @@ describe('demo no-show reason dialog', () => {
         result: null,
         noShowReasonCode: 'forgot',
         noShowReasonNote: 'Перезвонили родителю',
+      }],
+    }));
+  });
+
+  it('keeps owned participants editable when a future demo also contains another manager\'s student', async () => {
+    renderDialog({
+      ...demo,
+      scheduledAt: '2030-09-01T10:00:00.000Z',
+      canManage: false,
+      participants: [
+        { ...demo.participants[0], canManage: true },
+        {
+          id: 12,
+          studentId: 72,
+          leadId: 102,
+          status: 'confirmed',
+          contactName: null,
+          studentName: null,
+          canManage: false,
+        },
+      ],
+    });
+
+    const attendanceSelectors = screen.getAllByRole('combobox') as HTMLButtonElement[];
+    expect(attendanceSelectors[0].disabled).toBe(false);
+    expect(attendanceSelectors[1].disabled).toBe(true);
+
+    attendanceSelectors[0].focus();
+    fireEvent.keyDown(attendanceSelectors[0], { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: /Был на демо|Attended/i }));
+    fireEvent.click(screen.getByRole('button', {
+      name: /Сохранить посещение|Save demo attendance/i,
+    }));
+
+    await waitFor(() => expect(apiMocks.saveAttendance).toHaveBeenCalledWith(5, {
+      participants: [{
+        participantId: 11,
+        status: 'attended',
+        result: null,
+        noShowReasonCode: null,
+        noShowReasonNote: null,
       }],
     }));
   });

@@ -16,6 +16,7 @@ import {
   zonedWallClockToInstant,
 } from '../../lib/academy-time';
 import {
+  buildFollowingRecurringLessonSchedule,
   buildRecurringLessonSchedule,
   type CalendarDate,
 } from '../../lib/lesson-schedule';
@@ -81,6 +82,7 @@ import {
 } from '@shared/lead-tags';
 
 import {
+  ACADEMY_TIME_ZONE,
   ACADEMY_SCHEDULING_ADVISORY_LOCK,
   LEAD_MODULES,
   OPERATIONS_MODULES,
@@ -189,7 +191,6 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
       if (nextScheduledAt.getTime() === previousScheduledAt.getTime()) {
         throw Object.assign(new Error('rescheduleDateMustChange'), { statusCode: 400 });
       }
-      const deltaMs = nextScheduledAt.getTime() - previousScheduledAt.getTime();
       const affected = await query(
         `SELECT affected_lesson.*, affected_teacher.user_id AS teacher_user_id
          FROM academy_lessons affected_lesson
@@ -200,24 +201,73 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
              affected_lesson.id = $3
              OR (
                affected_lesson.status = 'scheduled'
-               AND affected_lesson.scheduled_at > $2
+               AND affected_lesson.lesson_number > $2
              )
            )
-         ORDER BY affected_lesson.scheduled_at, affected_lesson.id
+         ORDER BY affected_lesson.lesson_number, affected_lesson.id
          FOR UPDATE OF affected_lesson`,
-        [lesson.groupId, previousScheduledAt, lessonId],
+        [lesson.groupId, lesson.lessonNumber, lessonId],
       );
       if (!affected.some((item) => Number(item.id) === lessonId)) {
         throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
       }
+
+      const group = await queryOne(
+        `SELECT * FROM academy_groups WHERE id = $1 FOR SHARE`,
+        [lesson.groupId],
+      );
+      if (!group) {
+        throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      }
+      const followingLessons = affected.filter((item) => Number(item.id) !== lessonId);
+      // If the selected lesson moves earlier, its vacated regular slot must not
+      // be reused as the very next lesson. Resume after whichever occurrence is
+      // later: the original lesson or its one-off replacement.
+      const followingScheduleAnchor = new Date(Math.max(
+        previousScheduledAt.getTime(),
+        nextScheduledAt.getTime(),
+      ));
+      const followingSlots = buildFollowingRecurringLessonSchedule({
+        after: followingScheduleAnchor,
+        schedule: group.schedule,
+        lessonCount: followingLessons.length,
+        fallbackDurationMinutes: Number(group.lessonDurationMinutes),
+        timeZone: ACADEMY_TIME_ZONE,
+      });
+      if (followingSlots.length !== followingLessons.length) {
+        throw Object.assign(new Error('groupLessonGenerationFailed'), { statusCode: 409 });
+      }
+      const followingSlotByLessonId = new Map(
+        followingLessons.map((item, index) => [Number(item.id), followingSlots[index]]),
+      );
+
+      const plannedChanges = affected.flatMap((affectedLesson) => {
+        const isTarget = Number(affectedLesson.id) === lessonId;
+        const slot = isTarget ? null : followingSlotByLessonId.get(Number(affectedLesson.id));
+        const scheduledAt = isTarget ? nextScheduledAt : slot?.scheduledAt;
+        const durationMinutes = isTarget
+          ? Number(affectedLesson.durationMinutes)
+          : slot?.durationMinutes;
+        if (!scheduledAt || !Number.isFinite(durationMinutes)) return [];
+        const reopensConductedLesson = isTarget && lesson.status === 'conducted';
+        const changed = scheduledAt.getTime() !== new Date(affectedLesson.scheduledAt).getTime()
+          || Number(durationMinutes) !== Number(affectedLesson.durationMinutes)
+          || reopensConductedLesson;
+        return changed ? [{
+          lesson: affectedLesson,
+          scheduledAt,
+          durationMinutes: Number(durationMinutes),
+          reopensConductedLesson,
+        }] : [];
+      });
       if (
         getAssignedModules(req.user).includes('teacher')
         && !hasLeadershipAccess(req.user)
-        && affected.some((item) => Number(item.teacherUserId) !== Number(req.user!.id))
+        && plannedChanges.some(({ lesson: item }) => Number(item.teacherUserId) !== Number(req.user!.id))
       ) {
         throw Object.assign(new Error('teacherOwnLessonRescheduleOnly'), { statusCode: 403 });
       }
-      const affectedLessonIds = affected.map((item) => Number(item.id));
+      const affectedLessonIds = plannedChanges.map(({ lesson: item }) => Number(item.id));
       const lessonWithAttendance = await queryOne(
         `SELECT lesson_id
          FROM academy_attendance
@@ -239,18 +289,18 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         )
         : [];
 
-      const updateOrder = deltaMs > 0 ? [...affected].reverse() : affected;
       const updatedLessons: Row[] = [];
-      for (const affectedLesson of updateOrder) {
+      for (const change of plannedChanges) {
+        const affectedLesson = change.lesson;
         const oldDate = new Date(affectedLesson.scheduledAt);
-        const newDate = new Date(oldDate.getTime() + deltaMs);
+        const newDate = change.scheduledAt;
         if (newDate.getTime() <= Date.now()) {
           throw Object.assign(new Error('rescheduleDateMustBeFuture'), { statusCode: 400 });
         }
-        const reopensConductedLesson = Number(affectedLesson.id) === lessonId && lesson.status === 'conducted';
         const values: Row = {
           scheduledAt: newDate,
-          ...(reopensConductedLesson ? { status: 'scheduled' } : {}),
+          durationMinutes: change.durationMinutes,
+          ...(change.reopensConductedLesson ? { status: 'scheduled' } : {}),
         };
         await prepareLessonMutation({
           values,
@@ -267,7 +317,7 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
           reason,
           changedBy: req.user!.id,
         });
-        if (reopensConductedLesson) {
+        if (change.reopensConductedLesson) {
           await insertRow('academy_lesson_status_history', {
             lessonId,
             fromStatus: 'conducted',

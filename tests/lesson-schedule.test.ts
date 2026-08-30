@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildRecurringLessonSchedule } from '../server/lib/lesson-schedule';
+import {
+  buildFollowingRecurringLessonSchedule,
+  buildRecurringLessonSchedule,
+} from '../server/lib/lesson-schedule';
 
 describe('recurring academy lesson materialization', () => {
   it('turns a Monday/Wednesday/Friday group schedule into dated lessons in Tashkent', () => {
@@ -37,6 +40,28 @@ describe('recurring academy lesson materialization', () => {
 
     expect(lesson.scheduledAt.toISOString()).toBe('2026-07-13T05:00:00.000Z');
     expect(lesson.durationMinutes).toBe(420);
+  });
+
+  it('returns to the group timetable after a one-off lesson move', () => {
+    const lessons = buildFollowingRecurringLessonSchedule({
+      after: new Date('2026-07-14T12:00:00.000Z'), // Tuesday at 17:00 in Tashkent
+      lessonCount: 4,
+      fallbackDurationMinutes: 120,
+      timeZone: 'Asia/Tashkent',
+      schedule: [
+        { dayOfWeek: 1, startTime: '20:00', endTime: '22:00' },
+        { dayOfWeek: 3, startTime: '20:00', endTime: '22:00' },
+        { dayOfWeek: 5, startTime: '20:00', endTime: '22:00' },
+      ],
+    });
+
+    expect(lessons.map((lesson) => lesson.scheduledAt.toISOString())).toEqual([
+      '2026-07-15T15:00:00.000Z',
+      '2026-07-17T15:00:00.000Z',
+      '2026-07-20T15:00:00.000Z',
+      '2026-07-22T15:00:00.000Z',
+    ]);
+    expect(lessons.every((lesson) => lesson.durationMinutes === 120)).toBe(true);
   });
 
   it('returns no lessons for an invalid or empty timetable', () => {

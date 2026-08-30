@@ -1,5 +1,5 @@
 import { normalizeWeeklySchedule } from '@shared/scheduling';
-import { zonedWallClockToInstant } from './academy-time';
+import { getZonedDateTimeParts, zonedWallClockToInstant } from './academy-time';
 
 export type CalendarDate = {
   year: number;
@@ -27,15 +27,21 @@ const mondayBasedDayOfWeek = (date: CalendarDate) => {
   return nativeDay === 0 ? 7 : nativeDay;
 };
 
-export const buildRecurringLessonSchedule = (options: {
+type RecurringLessonScheduleOptions = {
   startDate: CalendarDate;
   schedule: unknown;
   lessonCount: number;
   fallbackDurationMinutes: number;
   timeZone: string;
-}): GeneratedLessonSlot[] => {
+  after?: Date;
+};
+
+const generateRecurringLessonSchedule = (
+  options: RecurringLessonScheduleOptions,
+): GeneratedLessonSlot[] => {
   if (!Number.isSafeInteger(options.lessonCount) || options.lessonCount < 1) return [];
   if (!Number.isFinite(options.fallbackDurationMinutes) || options.fallbackDurationMinutes < 15) return [];
+  if (options.after && Number.isNaN(options.after.getTime())) return [];
 
   const schedule = normalizeWeeklySchedule(options.schedule, options.fallbackDurationMinutes)
     .sort((left, right) => (
@@ -57,17 +63,48 @@ export const buildRecurringLessonSchedule = (options: {
       if (result.length >= options.lessonCount) break;
       const durationMinutes = slot.endMinutes - slot.startMinutes;
       if (durationMinutes < 15) continue;
+      const scheduledAt = zonedWallClockToInstant({
+        ...calendarDate,
+        hour: Math.floor(slot.startMinutes / 60),
+        minute: slot.startMinutes % 60,
+      }, options.timeZone);
+      if (options.after && scheduledAt.getTime() <= options.after.getTime()) continue;
       result.push({
         lessonNumber: result.length + 1,
-        scheduledAt: zonedWallClockToInstant({
-          ...calendarDate,
-          hour: Math.floor(slot.startMinutes / 60),
-          minute: slot.startMinutes % 60,
-        }, options.timeZone),
+        scheduledAt,
         durationMinutes,
       });
     }
   }
 
   return result;
+};
+
+export const buildRecurringLessonSchedule = (
+  options: Omit<RecurringLessonScheduleOptions, 'after'>,
+): GeneratedLessonSlot[] => generateRecurringLessonSchedule(options);
+
+/**
+ * Rebuilds the remaining lesson sequence from the group's recurring timetable.
+ * The one-off rescheduled lesson is an exclusive anchor: it may be on any day
+ * and at any time, while the returned lessons resume at the first regular slot
+ * strictly after it.
+ */
+export const buildFollowingRecurringLessonSchedule = (options: {
+  after: Date;
+  schedule: unknown;
+  lessonCount: number;
+  fallbackDurationMinutes: number;
+  timeZone: string;
+}): GeneratedLessonSlot[] => {
+  if (Number.isNaN(options.after.getTime())) return [];
+  const localAnchor = getZonedDateTimeParts(options.after, options.timeZone);
+  return generateRecurringLessonSchedule({
+    ...options,
+    startDate: {
+      year: localAnchor.year,
+      month: localAnchor.month,
+      day: localAnchor.day,
+    },
+  });
 };

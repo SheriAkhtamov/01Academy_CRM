@@ -1054,12 +1054,11 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('reschedules a lesson chain atomically and preserves the lesson intervals', async () => {
-    const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    originalAt.setHours(10, 0, 17, 321);
-    const followingAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
-    const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
-    nextAt.setSeconds(0, 0);
+  it('reschedules one lesson freely and rebuilds the chain from the group timetable', async () => {
+    const originalAt = new Date('2030-07-15T15:00:00.000Z'); // Monday 20:00
+    const followingAt = new Date('2030-07-17T15:00:00.000Z'); // Wednesday 20:00
+    const thirdAt = new Date('2030-07-19T15:00:00.000Z'); // Friday 20:00
+    const nextAt = new Date('2030-07-20T12:00:00.000Z'); // Saturday 17:00
     const lessonRow = (id: number, scheduledAt: Date) => ({
       id,
       group_id: 20,
@@ -1069,7 +1068,7 @@ describe('academy route logic boundaries', () => {
       teacher_id: 4,
       teacher_user_id: 1,
       lesson_number: id - 9,
-      duration_minutes: 60,
+      duration_minutes: 120,
       status: 'scheduled',
       scheduled_at: scheduledAt,
     });
@@ -1082,18 +1081,18 @@ describe('academy route logic boundaries', () => {
       }
       if (sql.includes('FROM academy_attendance WHERE lesson_id')) return emptyResult();
       if (sql.includes('FROM academy_lessons affected_lesson') && sql.includes('affected_lesson.group_id = $1') && sql.includes('FOR UPDATE')) {
-        return { rows: [lessonRow(10, originalAt), lessonRow(11, followingAt)] };
+        return { rows: [lessonRow(10, originalAt), lessonRow(11, followingAt), lessonRow(12, thirdAt)] };
       }
       if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
         return {
-          rows: [{
-            id: 20,
-            course_id: 1,
-            school_id: 2,
-            room_id: 3,
-            teacher_id: 4,
-            lesson_duration_minutes: 60,
-          }],
+          rows: [groupFixture({
+            lesson_duration_minutes: 120,
+            schedule: [
+              { dayOfWeek: 1, startTime: '20:00', endTime: '22:00', schoolId: 2 },
+              { dayOfWeek: 3, startTime: '20:00', endTime: '22:00', schoolId: 2 },
+              { dayOfWeek: 5, startTime: '20:00', endTime: '22:00', schoolId: 2 },
+            ],
+          })],
         };
       }
       if (sql.includes('FROM academy_rooms room')) {
@@ -1137,24 +1136,25 @@ describe('academy route logic boundaries', () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.shiftedCount).toBe(2);
-    expect(response.body.lessons.map((lesson: any) => new Date(lesson.scheduledAt).getTime())).toEqual([
-      nextAt.getTime(),
-      followingAt.getTime() + (nextAt.getTime() - originalAt.getTime()),
+    expect(response.body.shiftedCount).toBe(3);
+    expect(response.body.lessons.map((lesson: any) => new Date(lesson.scheduledAt).toISOString())).toEqual([
+      '2030-07-20T12:00:00.000Z',
+      '2030-07-22T15:00:00.000Z',
+      '2030-07-24T15:00:00.000Z',
     ]);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
-    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(2);
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(3);
   });
 
-  it('always shifts following lessons even when the client omits the legacy flag', async () => {
-    const originalAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    originalAt.setHours(10, 0, 0, 0);
-    const nextAt = new Date(originalAt.getTime() + 2 * 24 * 60 * 60 * 1000);
-    const lesson = lessonFixture({ scheduled_at: originalAt });
+  it('does not reuse the vacated regular slot when a lesson moves earlier', async () => {
+    const originalAt = new Date('2030-07-15T15:00:00.000Z'); // Monday 20:00
+    const nextAt = new Date('2030-07-15T12:00:00.000Z'); // Monday 17:00
+    const lesson = lessonFixture({ scheduled_at: originalAt, duration_minutes: 120 });
     const following = lessonFixture({
       id: 11,
       lesson_number: 2,
-      scheduled_at: new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000),
+      duration_minutes: 120,
+      scheduled_at: new Date('2030-07-17T15:00:00.000Z'), // Wednesday 20:00
     });
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -1165,7 +1165,14 @@ describe('academy route logic boundaries', () => {
       }
       if (sql.includes('FROM academy_attendance WHERE lesson_id')) return emptyResult();
       if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
-        return { rows: [{ id: 20, course_id: 1, school_id: 2, room_id: 3, teacher_id: 4, lesson_duration_minutes: 60 }] };
+        return { rows: [groupFixture({
+          lesson_duration_minutes: 120,
+          schedule: [
+            { dayOfWeek: 1, startTime: '20:00', endTime: '22:00', schoolId: 2 },
+            { dayOfWeek: 3, startTime: '20:00', endTime: '22:00', schoolId: 2 },
+            { dayOfWeek: 5, startTime: '20:00', endTime: '22:00', schoolId: 2 },
+          ],
+        })] };
       }
       if (sql.includes('FROM academy_rooms room')) return { rows: [{ id: 3, school_id: 2, is_active: true }] };
       if (sql.includes('FROM academy_teachers WHERE id = $1')) {
@@ -1202,7 +1209,9 @@ describe('academy route logic boundaries', () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.shiftedCount).toBe(2);
+    expect(response.body.shiftedCount).toBe(1);
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('UPDATE "academy_lessons"'))).toHaveLength(1);
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(1);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -1270,13 +1279,16 @@ describe('academy route logic boundaries', () => {
     const followingAt = new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000);
     const nextAt = new Date(originalAt.getTime() + 14 * 24 * 60 * 60 * 1000);
     const target = lessonFixture({ scheduled_at: originalAt });
-    const following = lessonFixture({ id: 11, scheduled_at: followingAt });
+    const following = lessonFixture({ id: 11, lesson_number: 2, scheduled_at: followingAt });
 
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
       if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [target] };
       if (sql.includes('FROM academy_lessons affected_lesson') && sql.includes('FOR UPDATE OF affected_lesson')) {
         return { rows: [target, following] };
+      }
+      if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+        return { rows: [groupFixture()] };
       }
       if (sql.includes('FROM academy_attendance') && sql.includes('ANY($1::int[])')) {
         return { rows: [{ lesson_id: 11 }] };
@@ -1306,6 +1318,7 @@ describe('academy route logic boundaries', () => {
     const target = lessonFixture({ scheduled_at: originalAt, teacher_user_id: 7 });
     const anotherTeacherLesson = lessonFixture({
       id: 11,
+      lesson_number: 2,
       scheduled_at: new Date(originalAt.getTime() + 7 * 24 * 60 * 60 * 1000),
       teacher_id: 5,
       teacher_user_id: 8,
@@ -1316,6 +1329,9 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT lesson.*') && sql.includes('FOR UPDATE OF lesson')) return { rows: [target] };
       if (sql.includes('FROM academy_lessons affected_lesson') && sql.includes('FOR UPDATE OF affected_lesson')) {
         return { rows: [target, anotherTeacherLesson] };
+      }
+      if (sql.includes('FROM academy_groups WHERE id = $1 FOR SHARE')) {
+        return { rows: [groupFixture()] };
       }
       return emptyResult();
     });

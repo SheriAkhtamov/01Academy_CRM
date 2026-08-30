@@ -751,12 +751,12 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   answeredCalls: { en: 'Conversations', ru: 'Разговоров' },
   missedCalls: { en: 'Missed', ru: 'Пропущено' },
   newMissedCallCount: {
-    en: '{count} new missed calls',
-    ru: 'Новых пропущенных звонков: {count}',
+    en: '{count} calls need a callback',
+    ru: 'Требуют перезвона: {count}',
   },
   newMissedCall: {
-    en: 'New missed call',
-    ru: 'Новый пропущенный звонок',
+    en: 'Callback required',
+    ru: 'Требуется перезвонить',
   },
   newLeadIndicator: {
     en: 'New lead, not opened yet',
@@ -1031,7 +1031,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   telephonyNoCallsFound: { en: 'Nothing matches this filter', ru: 'Под этот фильтр ничего не подходит' },
   telephonyOpenContact: { en: 'Open contact card', ru: 'Открыть карточку контакта' },
   telephonyOpenJournal: { en: 'Open the call journal', ru: 'Открыть журнал звонков' },
-  telephonyMissedCallsBadge: { en: 'Unanswered calls', ru: 'Неотвеченные звонки' },
+  telephonyMissedCallsBadge: { en: 'Calls needing a callback', ru: 'Звонки, требующие перезвона' },
   telephonyRingtoneOn: { en: 'Ringer is on', ru: 'Звук вызова включён' },
   telephonyRingtoneOff: { en: 'Ringer is off', ru: 'Звук вызова выключен' },
   telephonyRedial: { en: 'Redial the last number', ru: 'Набрать последний номер' },

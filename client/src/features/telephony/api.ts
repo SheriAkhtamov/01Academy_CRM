@@ -3,7 +3,6 @@ import type { TelephonyCallStatus } from '@/lib/telephony';
 
 export type MissedCallUnreadSummary = {
   count: number;
-  lastSeenCallId: number;
 };
 
 export type CallHistoryItem = {
@@ -53,9 +52,6 @@ export const telephonyQueryKeys = {
 export const telephonyApi = {
   getMissedCallUnread: () => (
     apiRequest('GET', '/api/telephony/calls/missed/unread') as Promise<MissedCallUnreadSummary>
-  ),
-  markMissedCallsRead: () => (
-    apiRequest('PUT', '/api/telephony/calls/missed/read') as Promise<MissedCallUnreadSummary>
   ),
   getCalls: (limit = 50) => (
     apiRequest('GET', `/api/telephony/calls?limit=${limit}`) as Promise<CallHistoryItem[]>

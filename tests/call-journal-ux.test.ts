@@ -5,6 +5,14 @@ const callJournal = readFileSync(
   new URL('../client/src/pages/sales/CallJournalPage.tsx', import.meta.url),
   'utf8',
 );
+const telephonyWidget = readFileSync(
+  new URL('../client/src/components/telephony/TelephonyWidget.tsx', import.meta.url),
+  'utf8',
+);
+const telephonyApi = readFileSync(
+  new URL('../client/src/features/telephony/api.ts', import.meta.url),
+  'utf8',
+);
 const telephonyRoutes = readFileSync(
   new URL('../server/routes/telephony.routes.ts', import.meta.url),
   'utf8',
@@ -61,32 +69,27 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('className="flex min-h-[26rem] shrink-0 flex-col overflow-hidden xl:min-h-[32rem] lg:flex-1"');
   });
 
-  it('shows a localized red indicator beside every unread missed call status', () => {
-    expect(callJournal).toContain('isUnread={isUnreadMissedCall(call, lastSeenMissedCallId)}');
+  it('shows a localized red indicator beside every missed call needing a callback', () => {
+    expect(callJournal).toContain('requiresCallback={call.requiresCallback}');
+    expect(telephonyRoutes).toContain("${buildUnresolvedMissedCallSql('call')} AS \"requiresCallback\"");
     expect(callJournal).toContain("title={t('newMissedCall')}");
     expect(callJournal).toContain('rounded-full bg-destructive');
-    expect(callJournal).toContain('<CallStatus call={call} isUnread={isUnread} />');
+    expect(callJournal).toContain('<CallStatus call={call} requiresCallback={requiresCallback} />');
   });
 
-  it('marks missed calls viewed only after their real journal rows are visible', () => {
-    expect(callJournal).toContain('const hasVisibleUnreadMissedCalls = items.some');
-    expect(callJournal).toContain('!journalQuery.isSuccess');
-    expect(callJournal).toContain('journalQuery.isPlaceholderData');
-    expect(callJournal).toContain('pendingMissedCallReadRef.current = true;');
-    expect(callJournal).not.toContain("t('markMissedCallsRead')");
+  it('never clears callback indicators merely by opening call history', () => {
+    expect(callJournal).not.toContain('markMissedCallsRead');
+    expect(callJournal).not.toContain('pendingMissedCallReadRef');
+    expect(telephonyWidget).not.toContain('markMissedCallsRead');
+    expect(telephonyApi).not.toContain('markMissedCallsRead');
+    expect(telephonyRoutes).not.toContain('markMissedCallsSeen');
   });
 
-  it('keeps the red counter lit until the manager leaves the journal', () => {
-    const seenEffect = callJournal.indexOf('pendingMissedCallReadRef.current = true;');
-    const leaveEffect = callJournal.indexOf('useEffect(() => () => {');
-
-    expect(seenEffect).toBeGreaterThan(0);
-    expect(leaveEffect).toBeGreaterThan(seenEffect);
-    // The request belongs to the unmount cleanup, so nothing clears the badge
-    // while the journal is still on screen.
-    expect(callJournal.indexOf('telephonyApi.markMissedCallsRead()')).toBeGreaterThan(leaveEffect);
-    expect(callJournal).toContain('if (!pendingMissedCallReadRef.current) return;');
-    expect(callJournal).toContain('queryClient.setQueryData(telephonyQueryKeys.missedCallUnread, summary);');
+  it('refreshes every manager when a missed call appears or any manager calls back', () => {
+    expect(telephonyRoutes).toContain("call.direction === 'outgoing'");
+    expect(telephonyRoutes).toContain("type: 'TELEPHONY_MISSED_CALLS_UPDATED'");
+    expect(telephonyRoutes).toContain('publishMissedCallFollowupUpdate(req.body);');
+    expect(telephonyRoutes).toContain('publishMissedCallFollowupUpdate({ direction, status, talkSeconds });');
   });
 
   it('offers an employee picker in the header that opens on the reader\'s own calls', () => {

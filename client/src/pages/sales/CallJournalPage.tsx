@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useSearch } from 'wouter';
 import {
   Clock3,
@@ -27,8 +27,6 @@ import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import {
   journalOperatorsQueryOptions,
   missedCallUnreadQueryOptions,
-  telephonyApi,
-  telephonyQueryKeys,
 } from '@/features/telephony/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
@@ -38,7 +36,6 @@ import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 import {
   activeTelephonyStatuses,
   formatCallDuration,
-  isUnreadMissedCall,
   telephonyStatusTranslationKey,
   type TelephonyCallStatus,
 } from '@/lib/telephony';
@@ -67,6 +64,7 @@ type JournalCall = {
   hangupCause: string | null;
   note: string | null;
   hasRecording: boolean;
+  requiresCallback: boolean;
 };
 
 type JournalResponse = {
@@ -95,7 +93,6 @@ export default function CallJournalPage() {
   const { t, language } = useTranslation();
   const { user } = useAuth();
   const onlinePbxCall = useOnlinePbxCall();
-  const queryClient = useQueryClient();
   // Filters live in the URL: a configured view ("missed, last week, Anna")
   // survives navigation, refresh and can be shared as a link.
   const [, setRoute] = useLocation();
@@ -113,7 +110,6 @@ export default function CallJournalPage() {
   const [page, setPage] = useState(() => Math.max(1, Number(initialParams.current.get('page')) || 1));
   const [pageSize, setPageSize] = useState(CALL_JOURNAL_DEFAULT_PAGE_SIZE);
   const journalListRef = useRef<HTMLDivElement | null>(null);
-  const pendingMissedCallReadRef = useRef(false);
   const deferredSearch = useDeferredValue(search.trim());
 
   const operatorsQuery = useQuery(journalOperatorsQueryOptions);
@@ -204,50 +200,8 @@ export default function CallJournalPage() {
   };
   const items = journalQuery.data?.items ?? [];
   const missedCallCount = Number(missedCallUnread?.count) || 0;
-  const lastSeenMissedCallId = missedCallUnread
-    ? Number(missedCallUnread.lastSeenCallId) || 0
-    : null;
-  const hasVisibleUnreadMissedCalls = items.some((call) => (
-    isUnreadMissedCall(call, lastSeenMissedCallId)
-  ));
   const missedCallsLabel = t('newMissedCallCount')
     .replace('{count}', String(missedCallCount));
-
-  // A call counts as viewed only after the journal has rendered a real
-  // (non-placeholder) list containing that unread call. This avoids clearing
-  // the counter merely because navigation started or a stale page was visible.
-  useEffect(() => {
-    if (
-      !journalQuery.isSuccess
-      || journalQuery.isPlaceholderData
-      || missedCallCount <= 0
-      || lastSeenMissedCallId === null
-      || !hasVisibleUnreadMissedCalls
-    ) return;
-
-    pendingMissedCallReadRef.current = true;
-  }, [
-    hasVisibleUnreadMissedCalls,
-    journalQuery.isPlaceholderData,
-    journalQuery.isSuccess,
-    lastSeenMissedCallId,
-    missedCallCount,
-  ]);
-
-  // The badges stay lit for the whole visit: what was seen is reported as read
-  // when the manager leaves the journal, so the red counter disappears on the
-  // way out instead of vanishing under the cursor on the way in.
-  useEffect(() => () => {
-    if (!pendingMissedCallReadRef.current) return;
-    pendingMissedCallReadRef.current = false;
-    telephonyApi.markMissedCallsRead()
-      .then((summary) => {
-        queryClient.setQueryData(telephonyQueryKeys.missedCallUnread, summary);
-      })
-      .catch(() => {
-        queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread });
-      });
-  }, [queryClient]);
 
   return (
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
@@ -402,7 +356,7 @@ export default function CallJournalPage() {
                         key={call.id}
                         call={call}
                         dateTime={dateTime}
-                        isUnread={isUnreadMissedCall(call, lastSeenMissedCallId)}
+                        requiresCallback={call.requiresCallback}
                         onCall={() => onlinePbxCall.startCall(call.phone)}
                       />
                     ))}
@@ -415,7 +369,7 @@ export default function CallJournalPage() {
                     key={call.id}
                     call={call}
                     dateTime={dateTime}
-                    isUnread={isUnreadMissedCall(call, lastSeenMissedCallId)}
+                    requiresCallback={call.requiresCallback}
                     onCall={() => onlinePbxCall.startCall(call.phone)}
                   />
                 ))}
@@ -464,12 +418,12 @@ function SummaryCard({
 function JournalTableRow({
   call,
   dateTime,
-  isUnread,
+  requiresCallback,
   onCall,
 }: {
   call: JournalCall;
   dateTime: (value: string) => string;
-  isUnread: boolean;
+  requiresCallback: boolean;
   onCall: () => void;
 }) {
   const { t } = useTranslation();
@@ -489,7 +443,7 @@ function JournalTableRow({
         <p className="font-medium">{call.userName || t('notAssigned')}</p>
         {call.extension ? <p className="text-xs text-muted-foreground">{t('extensionShort')} {call.extension}</p> : null}
       </td>
-      <td className="px-4 py-3"><CallStatus call={call} isUnread={isUnread} /></td>
+      <td className="px-4 py-3"><CallStatus call={call} requiresCallback={requiresCallback} /></td>
       <td className="px-4 py-3 font-mono tabular-nums">{formatCallDuration(duration)}</td>
       <td className="px-4 py-3"><CallRecordingPlayer callId={call.id} hasRecording={call.hasRecording} /></td>
       <td className="px-4 py-3 text-right">
@@ -502,12 +456,12 @@ function JournalTableRow({
 function JournalMobileCard({
   call,
   dateTime,
-  isUnread,
+  requiresCallback,
   onCall,
 }: {
   call: JournalCall;
   dateTime: (value: string) => string;
-  isUnread: boolean;
+  requiresCallback: boolean;
   onCall: () => void;
 }) {
   const { t } = useTranslation();
@@ -516,7 +470,7 @@ function JournalMobileCard({
     <article className="space-y-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <LeadCell call={call} />
-        <CallStatus call={call} isUnread={isUnread} />
+        <CallStatus call={call} requiresCallback={requiresCallback} />
       </div>
       <CallNote note={call.note} />
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
@@ -533,12 +487,12 @@ function JournalMobileCard({
   );
 }
 
-function CallStatus({ call, isUnread }: { call: JournalCall; isUnread: boolean }) {
+function CallStatus({ call, requiresCallback }: { call: JournalCall; requiresCallback: boolean }) {
   const { t } = useTranslation();
 
   return (
     <div className="inline-flex items-center gap-2">
-      {isUnread ? (
+      {requiresCallback ? (
         <span
           className="inline-flex size-2 shrink-0 rounded-full bg-destructive shadow-[0_0_0_3px_hsl(var(--destructive)/0.12)]"
           title={t('newMissedCall')}

@@ -12,13 +12,31 @@ export type TelephonyNotificationViewer = {
 
 export type MissedCallUnreadSummary = {
   count: number;
-  lastSeenCallId: number;
 };
 
-export const MISSED_INCOMING_CALL_SQL = `(
-  call.direction = 'incoming'
-  AND call.talk_seconds = 0
-  AND call.status IN ('missed', 'failed', 'declined')
+export const buildMissedIncomingCallSql = (callAlias: string) => `(
+  ${callAlias}.direction = 'incoming'
+  AND ${callAlias}.talk_seconds = 0
+  AND ${callAlias}.status IN ('missed', 'failed', 'declined')
+)`;
+
+export const MISSED_INCOMING_CALL_SQL = buildMissedIncomingCallSql('call');
+
+/**
+ * A missed call stays actionable until the team places any later outgoing call
+ * to the same normalized number. Phone values enter this table through
+ * normalizeOnlinePbxPhone, and the existing (phone, started_at) index makes the
+ * callback lookup cheap without a separate mutable read cursor.
+ */
+export const buildUnresolvedMissedCallSql = (callAlias: string) => `(
+  ${buildMissedIncomingCallSql(callAlias)}
+  AND NOT EXISTS (
+    SELECT 1
+    FROM telephony_calls callback
+    WHERE callback.direction = 'outgoing'
+      AND callback.phone = ${callAlias}.phone
+      AND (callback.started_at, callback.id) > (${callAlias}.started_at, ${callAlias}.id)
+  )
 )`;
 
 export const buildTelephonyCallVisibilitySql = (actorParameter: string) => `(
@@ -39,37 +57,17 @@ export const getMissedCallUnreadSummary = async (
 ): Promise<MissedCallUnreadSummary> => {
   const result = await client.query<{
     count: number | string;
-    lastSeenCallId: number | string;
   }>(
-    `WITH inserted_state AS (
-       INSERT INTO telephony_missed_call_states (user_id, last_seen_call_id)
-       SELECT $1, COALESCE(MAX(id), 0)
-       FROM telephony_calls
-       ON CONFLICT (user_id) DO NOTHING
-       RETURNING last_seen_call_id
-     ),
-     current_state AS (
-       SELECT last_seen_call_id FROM inserted_state
-       UNION ALL
-       SELECT last_seen_call_id
-       FROM telephony_missed_call_states
-       WHERE user_id = $1
-       LIMIT 1
-     )
-     SELECT COUNT(*)::int AS count,
-            COALESCE((SELECT last_seen_call_id FROM current_state), 0)::int
-              AS "lastSeenCallId"
+    `SELECT COUNT(*)::int AS count
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
-     WHERE ${MISSED_INCOMING_CALL_SQL}
-       AND call.id > COALESCE((SELECT last_seen_call_id FROM current_state), 0)
+     WHERE ${buildUnresolvedMissedCallSql('call')}
        AND ${visibilityCondition(viewer)}`,
-    [viewer.id],
+    hasLeadershipAccess(viewer as ModuleAccessSource) ? [] : [viewer.id],
   );
 
   return {
     count: Number(result.rows[0]?.count ?? 0),
-    lastSeenCallId: Number(result.rows[0]?.lastSeenCallId ?? 0),
   };
 };
 
@@ -79,35 +77,3 @@ export const getUnreadMissedCallCount = async (
 ): Promise<number> => (
   await getMissedCallUnreadSummary(viewer, client)
 ).count;
-
-export const markMissedCallsSeen = async (
-  viewer: TelephonyNotificationViewer,
-  client: Queryable = pool,
-): Promise<number> => {
-  const result = await client.query<{ lastSeenCallId: number | string }>(
-    `WITH latest_visible_call AS (
-       SELECT COALESCE(MAX(call.id), 0)::int AS last_seen_call_id
-       FROM telephony_calls call
-       LEFT JOIN academy_leads lead ON lead.id = call.lead_id
-       WHERE ${MISSED_INCOMING_CALL_SQL}
-         AND ${visibilityCondition(viewer)}
-     )
-     INSERT INTO telephony_missed_call_states (
-       user_id,
-       last_seen_call_id,
-       updated_at
-     )
-     SELECT $1, latest_visible_call.last_seen_call_id, NOW()
-     FROM latest_visible_call
-     ON CONFLICT (user_id) DO UPDATE
-     SET last_seen_call_id = GREATEST(
-           telephony_missed_call_states.last_seen_call_id,
-           EXCLUDED.last_seen_call_id
-         ),
-         updated_at = NOW()
-     RETURNING last_seen_call_id AS "lastSeenCallId"`,
-    [viewer.id],
-  );
-
-  return Number(result.rows[0]?.lastSeenCallId ?? 0);
-};

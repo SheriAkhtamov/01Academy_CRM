@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
   Bell,
@@ -21,11 +21,7 @@ import { useIsMobileViewport } from '@/hooks/useMediaQuery';
 import { toast } from '@/hooks/use-toast';
 import { formatCallDuration, isEditableTarget } from '@/lib/telephony';
 import { translations, type TranslationKey } from '@/lib/i18n';
-import {
-  missedCallUnreadQueryOptions,
-  telephonyApi,
-  telephonyQueryKeys,
-} from '@/features/telephony/api';
+import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 import { useTelephony, type ActiveTelephonyCall } from '@/contexts/TelephonyContext';
 import { TelephonyActiveCall, isFinishedCall } from '@/components/telephony/TelephonyActiveCall';
 import { TelephonyCallHistory } from '@/components/telephony/TelephonyCallHistory';
@@ -63,7 +59,6 @@ const useCallDuration = (call: ActiveTelephonyCall | null) => {
 export function TelephonyWidget() {
   const { t } = useTranslation();
   const telephony = useTelephony();
-  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<'dialer' | 'history'>('dialer');
   const [dialedNumber, setDialedNumber] = useState('');
@@ -106,13 +101,6 @@ export function TelephonyWidget() {
 
   const missedQuery = useQuery(missedCallUnreadQueryOptions);
   const unreadMissed = missedQuery.data?.count ?? 0;
-  const markMissedRead = useMutation({
-    mutationFn: telephonyApi.markMissedCallsRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread }),
-    // Without this a failed request left the red badge lit forever, with the
-    // manager clicking History repeatedly believing taps were ignored.
-    onError: () => queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread }),
-  });
 
   useEffect(() => {
     if (!activeCallKey) return;
@@ -156,7 +144,6 @@ export function TelephonyWidget() {
 
   const openHistory = () => {
     setTab('history');
-    if (unreadMissed > 0 && !markMissedRead.isPending) markMissedRead.mutate();
   };
 
   const connectionCopy = useMemo(() => {

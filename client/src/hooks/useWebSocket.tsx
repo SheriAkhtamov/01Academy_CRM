@@ -137,8 +137,9 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread });
           queryClient.invalidateQueries({ queryKey: ['/api/academy/leads'] });
           break;
-        case 'TELEPHONY_MISSED_CALLS_READ':
+        case 'TELEPHONY_MISSED_CALLS_UPDATED':
           queryClient.invalidateQueries({ queryKey: telephonyQueryKeys.missedCallUnread });
+          queryClient.invalidateQueries({ queryKey: ['/api/telephony/calls/journal'] });
           break;
         case 'TELEPHONY_ROUTING_UPDATED':
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/routing'] });

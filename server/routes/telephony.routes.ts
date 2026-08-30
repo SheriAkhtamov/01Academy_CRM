@@ -32,8 +32,8 @@ import {
 } from '../services/telephony-routing';
 import {
   buildTelephonyCallVisibilitySql,
+  buildUnresolvedMissedCallSql,
   getMissedCallUnreadSummary,
-  markMissedCallsSeen,
   MISSED_INCOMING_CALL_SQL,
 } from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
@@ -93,6 +93,27 @@ const safeDate = (value: unknown): Date | null => {
 const safeInteger = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+};
+
+const missedCallFollowupChanged = (call: {
+  direction: 'incoming' | 'outgoing';
+  status: CallStatus;
+  talkSeconds?: number;
+}) => (
+  call.direction === 'outgoing'
+  || (
+    call.direction === 'incoming'
+    && safeInteger(call.talkSeconds) === 0
+    && ['missed', 'failed', 'declined'].includes(call.status)
+  )
+);
+
+const publishMissedCallFollowupUpdate = (call: Parameters<typeof missedCallFollowupChanged>[0]) => {
+  if (!missedCallFollowupChanged(call)) return;
+  publishRealtimeEvent({
+    type: 'TELEPHONY_MISSED_CALLS_UPDATED',
+    data: {},
+  });
 };
 
 export const findContactByPhone = async (
@@ -763,6 +784,7 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
       audienceUserIds,
     });
   }
+  publishMissedCallFollowupUpdate({ direction, status, talkSeconds });
   res.json({ ok: true });
 }));
 
@@ -1150,6 +1172,7 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
     data: call,
     audienceUserIds: [req.user!.id],
   });
+  publishMissedCallFollowupUpdate(req.body);
   res.status(202).json(call);
 }));
 
@@ -1185,13 +1208,9 @@ router.put('/calls/missed/read', requireAuth, asyncRoute(async (req, res) => {
   if (!canAccessAcademyModule(req.user, 'sales')) {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
-  const lastSeenCallId = await markMissedCallsSeen(req.user!);
-  publishRealtimeEvent({
-    type: 'TELEPHONY_MISSED_CALLS_READ',
-    data: { lastSeenCallId },
-    audienceUserIds: [req.user!.id],
-  });
-  res.json({ count: 0, lastSeenCallId });
+  // Kept for already-open clients from the previous release. Opening a page no
+  // longer acknowledges anything; the response is the current callback queue.
+  res.json(await getMissedCallUnreadSummary(req.user!));
 }));
 
 /**
@@ -1307,6 +1326,7 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
             call.hangup_cause AS "hangupCause",
             call.note,
             (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording",
+            ${buildUnresolvedMissedCallSql('call')} AS "requiresCallback",
             COUNT(*) OVER()::int AS "totalCount",
             COUNT(*) FILTER (WHERE ${MISSED_INCOMING_CALL_SQL}) OVER()::int AS "missedCount",
             COUNT(*) FILTER (WHERE call.talk_seconds > 0) OVER()::int AS "answeredCount",

@@ -269,6 +269,7 @@ export const findAvailableTeacher = async (options: {
   durationMinutes: number;
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
+  excludeLessonIds?: number[];
   excludeDemoLessonId?: number | null;
 }) => {
   const candidates = await query(
@@ -353,8 +354,9 @@ export const findAvailableTeacher = async (options: {
            AND scheduled_at < $3
            AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
            AND ($4::int IS NULL OR id <> $4)
+           AND NOT (id = ANY($5::int[]))
          LIMIT 1`,
-        [teacher.id, options.scheduledAt, lessonEnd, options.excludeLessonId ?? null],
+        [teacher.id, options.scheduledAt, lessonEnd, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
       ),
       queryOne(
         `SELECT id
@@ -620,6 +622,7 @@ export const assertTeacherCanLeadLesson = async (options: {
   durationMinutes: number;
   excludeGroupId?: number | null;
   excludeLessonId?: number | null;
+  excludeLessonIds?: number[];
   excludeDemoLessonId?: number | null;
   enforceAssignments?: boolean;
   enforceAvailability?: boolean;
@@ -666,8 +669,9 @@ export const assertTeacherCanLeadLesson = async (options: {
          AND scheduled_at < $3
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
          AND ($4::int IS NULL OR id <> $4)
+         AND NOT (id = ANY($5::int[]))
        LIMIT 1`,
-      [options.teacherId, startsAt, endsAt, options.excludeLessonId ?? null],
+      [options.teacherId, startsAt, endsAt, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
     ),
     queryOne(
       `SELECT id
@@ -810,6 +814,7 @@ export const assertLessonRoomAvailable = async (options: {
   scheduledAt: Date;
   durationMinutes: number;
   excludeLessonId?: number | null;
+  excludeLessonIds?: number[];
   excludeGroupId?: number | null;
   excludeDemoLessonId?: number | null;
 }) => {
@@ -829,8 +834,9 @@ export const assertLessonRoomAvailable = async (options: {
          AND scheduled_at < $3
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
          AND ($4::int IS NULL OR id <> $4)
+         AND NOT (id = ANY($5::int[]))
        LIMIT 1`,
-      [options.roomId, startsAt, endsAt, options.excludeLessonId ?? null],
+      [options.roomId, startsAt, endsAt, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
     ),
     queryOne(
       `SELECT id FROM academy_demo_lessons
@@ -851,8 +857,9 @@ export const assertLessonRoomAvailable = async (options: {
            AND scheduled_at < $3
            AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
            AND ($4::int IS NULL OR id <> $4)
+           AND NOT (id = ANY($5::int[]))
          LIMIT 1`,
-        [options.excludeGroupId, startsAt, endsAt, options.excludeLessonId ?? null],
+        [options.excludeGroupId, startsAt, endsAt, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
       )
       : Promise.resolve(null),
     query(

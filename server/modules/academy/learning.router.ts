@@ -222,10 +222,13 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
       const followingLessons = affected.filter((item) => Number(item.id) !== lessonId);
       // If the selected lesson moves earlier, its vacated regular slot must not
       // be reused as the very next lesson. Resume after whichever occurrence is
-      // later: the original lesson or its one-off replacement.
+      // later: the original lesson or the end of its one-off replacement.
+      const rescheduledLessonEndsAt = new Date(
+        nextScheduledAt.getTime() + Number(lesson.durationMinutes) * 60_000,
+      );
       const followingScheduleAnchor = new Date(Math.max(
         previousScheduledAt.getTime(),
-        nextScheduledAt.getTime(),
+        rescheduledLessonEndsAt.getTime(),
       ));
       const followingSlots = buildFollowingRecurringLessonSchedule({
         after: followingScheduleAnchor,
@@ -306,6 +309,7 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
           values,
           oldRow: affectedLesson,
           excludeLessonId: Number(affectedLesson.id),
+          excludeLessonIds: affectedLessonIds,
           forceAutoAssign: false,
         });
         const updated = await updateRow('academy_lessons', Number(affectedLesson.id), values);

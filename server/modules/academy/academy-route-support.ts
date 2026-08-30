@@ -574,6 +574,7 @@ export const prepareLessonMutation = async (options: {
   values: Row;
   oldRow?: Row | null;
   excludeLessonId?: number | null;
+  excludeLessonIds?: number[];
   forceAutoAssign?: boolean;
 }) => {
   await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
@@ -649,6 +650,7 @@ export const prepareLessonMutation = async (options: {
     scheduledAt,
     durationMinutes,
     excludeLessonId: options.excludeLessonId,
+    excludeLessonIds: options.excludeLessonIds,
     excludeGroupId: groupId,
   });
 
@@ -661,6 +663,7 @@ export const prepareLessonMutation = async (options: {
       durationMinutes,
       excludeGroupId: groupId,
       excludeLessonId: options.excludeLessonId,
+      excludeLessonIds: options.excludeLessonIds,
     });
     if (!teacher) throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
     options.values.teacherId = Number(teacher.id);
@@ -673,6 +676,7 @@ export const prepareLessonMutation = async (options: {
       durationMinutes,
       excludeGroupId: groupId,
       excludeLessonId: options.excludeLessonId,
+      excludeLessonIds: options.excludeLessonIds,
     });
     options.values.teacherId = teacherId;
   }

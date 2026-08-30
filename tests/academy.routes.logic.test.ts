@@ -1144,6 +1144,13 @@ describe('academy route logic boundaries', () => {
     ]);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(3);
+    const chainConflictChecks = mocks.clientQuery.mock.calls.filter(([sql]) => (
+      String(sql).includes('NOT (id = ANY($5::int[]))')
+    ));
+    expect(chainConflictChecks.length).toBeGreaterThan(0);
+    expect(chainConflictChecks.every(([, values]) => (
+      JSON.stringify(values[4]) === JSON.stringify([10, 11, 12])
+    ))).toBe(true);
   });
 
   it('does not reuse the vacated regular slot when a lesson moves earlier', async () => {

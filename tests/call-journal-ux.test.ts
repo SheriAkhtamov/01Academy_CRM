@@ -13,6 +13,10 @@ const telephonyApi = readFileSync(
   new URL('../client/src/features/telephony/api.ts', import.meta.url),
   'utf8',
 );
+const sidebar = readFileSync(
+  new URL('../client/src/components/Sidebar.tsx', import.meta.url),
+  'utf8',
+);
 const telephonyRoutes = readFileSync(
   new URL('../server/routes/telephony.routes.ts', import.meta.url),
   'utf8',
@@ -75,6 +79,13 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain("title={t('newMissedCall')}");
     expect(callJournal).toContain('rounded-full bg-destructive');
     expect(callJournal).toContain('<CallStatus call={call} requiresCallback={requiresCallback} />');
+  });
+
+  it('keeps the callback counter in navigation but not beside the page title', () => {
+    expect(callJournal).not.toContain('titleAccessory=');
+    expect(callJournal).not.toContain('missedCallUnreadQueryOptions');
+    expect(sidebar).toContain('missedCallUnreadQueryOptions');
+    expect(sidebar).toContain('badgeCount: missedCallCount');
   });
 
   it('never clears callback indicators merely by opening call history', () => {

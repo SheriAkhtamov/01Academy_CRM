@@ -22,12 +22,8 @@ import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer'
 import { DateRangeField } from '@/components/ux/DateRangeField';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { PaginationControls } from '@/components/ux/PaginationControls';
-import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
-import {
-  journalOperatorsQueryOptions,
-  missedCallUnreadQueryOptions,
-} from '@/features/telephony/api';
+import { journalOperatorsQueryOptions } from '@/features/telephony/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -182,10 +178,6 @@ export default function CallJournalPage() {
     // instead of collapsing the list into a skeleton on every transition.
     placeholderData: keepPreviousData,
   });
-  const { data: missedCallUnread } = useQuery({
-    ...missedCallUnreadQueryOptions,
-  });
-
   const dateTime = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
@@ -199,21 +191,11 @@ export default function CallJournalPage() {
     });
   };
   const items = journalQuery.data?.items ?? [];
-  const missedCallCount = Number(missedCallUnread?.count) || 0;
-  const missedCallsLabel = t('newMissedCallCount')
-    .replace('{count}', String(missedCallCount));
 
   return (
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
       <PageHeader
         title={t('callJournal')}
-        titleAccessory={(
-          <UnreadCountBadge
-            count={missedCallCount}
-            label={missedCallsLabel}
-            announce
-          />
-        )}
         subtitle={t('callJournalDescription')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },

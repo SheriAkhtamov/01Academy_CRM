@@ -23,7 +23,6 @@ export const createUserSchema = (t: Translate) => z.object({
     endTime: z.string(),
     schoolId: z.number().int().positive().nullable().optional(),
   })).default([]),
-  isActive: z.boolean().default(true),
 });
 
 export const createCredentialsSchema = (t: Translate) => z.object({
@@ -77,6 +76,4 @@ export const defaultUserFormValues: UserFormValues = {
   modules: ['sales'],
   teacherSchoolIds: [],
   teacherAvailability: [],
-  isActive: true,
 };
-

@@ -51,7 +51,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import {
   AlertCircle,
   Plus,
@@ -468,10 +467,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     };
 
     if (selectedUser) {
-      const losesSalesEligibility = !data.isActive || !modules.includes('sales');
+      const losesSalesEligibility = !modules.includes('sales');
       if (losesSalesEligibility) {
         try {
-          const leadCount = await getAssignedResponsibilityCount(selectedUser, !data.isActive);
+          const leadCount = await getAssignedResponsibilityCount(selectedUser);
           if (leadCount > 0) {
             openLeadTransferDialog({ user: selectedUser, action: 'update', data: payload, leadCount });
             return;
@@ -530,7 +529,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       teacherAvailability: Array.isArray(user.teacherAvailability)
         ? user.teacherAvailability
         : [],
-      isActive: user.isActive,
     });
     setShowCreateUserModal(true);
   };
@@ -1069,27 +1067,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           </div>
                         ) : null}
 
-                        <FormField
-                          control={userForm.control}
-                          name="isActive"
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row flex-wrap items-center justify-between gap-4 rounded-lg border p-4">
-                              <div className="min-w-0 space-y-0.5">
-                                <FormLabel className="text-base">{t('activeAccount')}</FormLabel>
-                                <div className="text-sm text-muted-foreground">
-                                  {t('canLoginAccess')}
-                                </div>
-                              </div>
-                              <FormControl>
-                                <Switch
-                                  className="shrink-0"
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
                         </div>
                       </div>
 

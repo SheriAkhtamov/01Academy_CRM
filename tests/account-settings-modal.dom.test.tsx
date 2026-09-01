@@ -25,7 +25,6 @@ const user = {
   dateOfBirth: null,
   position: 'Менеджер',
   module: 'sales',
-  hasReportAccess: null,
   isActive: true,
   isOnline: false,
   onlinePbxIncomingEnabled: false,
@@ -113,7 +112,6 @@ describe('hasSettingsChanges', () => {
     email: 'sales@example.com',
     position: 'Менеджер',
     phone: '+998901234567',
-    hasReportAccess: false,
     currentPassword: '',
     newPassword: '',
     confirmNewPassword: '',
@@ -125,10 +123,6 @@ describe('hasSettingsChanges', () => {
 
   it('sees a login change, which is what makes the current password matter', () => {
     expect(hasSettingsChanges({ ...baseline, email: 'other@example.com' }, baseline)).toBe(true);
-  });
-
-  it('sees the reports toggle flip', () => {
-    expect(hasSettingsChanges({ ...baseline, hasReportAccess: true }, baseline)).toBe(true);
   });
 });
 

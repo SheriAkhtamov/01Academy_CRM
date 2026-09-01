@@ -19,7 +19,6 @@ const createApp = () => {
       id: 7,
       module: 'administration',
       modules: ['administration'],
-      hasReportAccess: true,
     } as typeof req.user;
     next();
   });

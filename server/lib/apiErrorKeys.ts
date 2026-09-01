@@ -21,9 +21,6 @@ export const toApiErrorKey = (message: string) => {
     if (lower.includes('sales access required')) {
         return 'salesAccessRequired';
     }
-    if (lower.includes('report access required')) {
-        return 'reportAccessRequired';
-    }
     if (lower.includes('invalid credentials')) {
         return 'invalidCredentialsMessage';
     }

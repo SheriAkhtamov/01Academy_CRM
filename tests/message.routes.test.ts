@@ -36,7 +36,6 @@ const currentUser = {
   module: "sales",
   modules: ["sales"],
   isActive: true,
-  hasReportAccess: false,
 };
 const colleague = { ...currentUser, id: 2, fullName: "Colleague", email: "colleague@example.com" };
 

@@ -87,9 +87,6 @@ export const localizeApiErrorMessage = (message: string, status: number) => {
   if (lower.includes("sales access required")) {
     return i18n.t("salesAccessRequired");
   }
-  if (lower.includes("report access required")) {
-    return i18n.t("reportAccessRequired");
-  }
   if (lower.includes("access denied") || lower.includes("forbidden")) {
     return i18n.t("accessDenied");
   }

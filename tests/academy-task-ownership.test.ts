@@ -32,7 +32,6 @@ const staffUser = {
   module: "sales",
   modules: ["sales"],
   isActive: true,
-  hasReportAccess: false,
 };
 
 const createApp = async () => {

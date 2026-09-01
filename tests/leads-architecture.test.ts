@@ -28,12 +28,10 @@ describe('lead actor context and access policy', () => {
       id: 17,
       module: 'sales',
       modules: ['sales', 'finance'],
-      hasReportAccess: true,
     })).toEqual({
       userId: 17,
       primaryModule: 'sales',
       modules: ['sales', 'finance'],
-      hasReportAccess: true,
       isLeadership: false,
     });
   });

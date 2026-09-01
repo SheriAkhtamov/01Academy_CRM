@@ -1,6 +1,5 @@
 import type { SanitizedUser } from '@shared/auth';
 import {
-  canAccessAcademyModule,
   hasLeadershipAccess,
   type AcademyAccessModule,
 } from '@shared/academy';
@@ -28,10 +27,6 @@ export function formatUserModule(
 ): string {
   const key = moduleTranslationKeys[module as AcademyAccessModule];
   return key ? t(key) : module;
-}
-
-export function canAccessReports(user: SanitizedUser): boolean {
-  return hasLeadershipAccess(user) || canAccessAcademyModule(user, 'marketing') || Boolean(user.hasReportAccess);
 }
 
 export function canManageUsers(user: SanitizedUser): boolean {

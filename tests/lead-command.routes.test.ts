@@ -13,7 +13,6 @@ const actor = {
   fullName: 'Sales Manager',
   module: 'sales',
   modules: ['sales'],
-  hasReportAccess: false,
 };
 
 const createApp = (router: Router) => {

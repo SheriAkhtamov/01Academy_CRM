@@ -11,7 +11,6 @@ const administrationUser = {
   module: 'administration',
   modules: ['administration'],
   isActive: true,
-  hasReportAccess: true,
 };
 
 const mockStorage = {
@@ -139,7 +138,6 @@ describe('user route validation', () => {
       ...administrationUser,
       module: 'teacher',
       modules: ['teacher'],
-      hasReportAccess: false,
     };
     mockStorage.getUser.mockResolvedValue(teacherUser);
     const app = await createApp();
@@ -225,7 +223,6 @@ describe('user route validation', () => {
       fullName: 'Departing Sales User',
       module: 'sales',
       modules: ['sales'],
-      hasReportAccess: false,
     };
     mockStorage.getUser
       .mockResolvedValueOnce(administrationUser)

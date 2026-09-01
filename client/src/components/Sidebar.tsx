@@ -6,7 +6,6 @@ import { useTranslation } from '@/hooks/useTranslation';
 import {
   getInitials,
   formatUserModule,
-  canAccessReports,
 } from '@/lib/auth';
 import {
   canAccessAcademyModule,
@@ -377,9 +376,6 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
                 <p className="text-[10px] text-muted-foreground truncate">
                   {additionalModules.map((item) => formatUserModule(item, t)).join(' · ')}
                 </p>
-              )}
-              {canAccessReports(user) && (
-                <p className="text-[10px] text-emerald-600">{t('reportsAccess')}</p>
               )}
             </div>
           </div>

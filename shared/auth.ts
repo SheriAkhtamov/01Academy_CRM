@@ -9,7 +9,6 @@ export type SanitizedUser = {
   dateOfBirth: Date | string | null;
   position: string | null;
   module: AcademyModule;
-  hasReportAccess: boolean | null;
   isActive: boolean | null;
   isArchived: boolean;
   archivedAt: Date | string | null;

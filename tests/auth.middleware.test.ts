@@ -63,7 +63,6 @@ describe("auth middleware", () => {
       module: "sales",
       isActive: true,
       isArchived: true,
-      hasReportAccess: false,
     });
     const app = await createApp();
     const agent = request.agent(app);
@@ -82,7 +81,6 @@ describe("auth middleware", () => {
       password: "hashed",
       module: "teacher",
       isActive: true,
-      hasReportAccess: false,
     });
 
     const app = await createApp();
@@ -105,7 +103,6 @@ describe("auth middleware", () => {
       module: "administration",
       modules: ["administration", "sales", "teacher", "marketing"],
       isActive: true,
-      hasReportAccess: true,
     });
 
     const app = await createApp();
@@ -128,7 +125,6 @@ describe("auth middleware", () => {
       module: "teacher",
       modules: ["teacher", "administration"],
       isActive: true,
-      hasReportAccess: true,
     });
 
     const app = await createApp();
@@ -151,7 +147,6 @@ describe("auth middleware", () => {
       module: "administration",
       modules: ["administration"],
       isActive: true,
-      hasReportAccess: true,
     });
 
     const app = await createApp();
@@ -174,7 +169,6 @@ describe("auth middleware", () => {
       module: "sales",
       modules: ["sales", "finance"],
       isActive: true,
-      hasReportAccess: false,
     });
 
     const app = await createApp();

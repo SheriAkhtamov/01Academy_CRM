@@ -55,7 +55,6 @@ const staffUser = {
   module: "sales",
   modules: ["sales"],
   isActive: true,
-  hasReportAccess: false,
 };
 
 const adminUser = {
@@ -66,7 +65,6 @@ const adminUser = {
   module: "administration",
   modules: ["administration"],
   isActive: true,
-  hasReportAccess: true,
 };
 
 const assigneeUser = {
@@ -77,7 +75,6 @@ const assigneeUser = {
   module: "teacher",
   modules: ["teacher"],
   isActive: true,
-  hasReportAccess: false,
 };
 
 describe("board routes", () => {

@@ -10,7 +10,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { formatUserModule } from '@/lib/auth';
-import { hasLeadershipAccess } from '@shared/academy';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -33,7 +32,6 @@ import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
-import { Switch } from '@/components/ui/switch';
 import { MotionSettingsPanel } from '@/components/ux/motion';
 import { User, Mail, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
 
@@ -45,7 +43,6 @@ const createSettingsSchema = (
   email: z.string().email(t('validEmailRequired')),
   position: z.string().max(255, t('fieldTooLong')),
   phone: z.string().optional(),
-  hasReportAccess: z.boolean().optional(),
   currentPassword: z.string().optional(),
   newPassword: z.string().optional(),
   confirmNewPassword: z.string().optional(),
@@ -100,7 +97,6 @@ type SettingsFormValues = {
   email: string;
   position: string;
   phone?: string;
-  hasReportAccess?: boolean;
   currentPassword?: string;
   newPassword?: string;
   confirmNewPassword?: string;
@@ -112,7 +108,6 @@ const buildSettingsValues = (user: SanitizedUser | null): SettingsFormValues => 
   email: user?.email || '',
   position: user?.position || '',
   phone: user?.phone || '',
-  hasReportAccess: user?.hasReportAccess || false,
   currentPassword: '',
   newPassword: '',
   confirmNewPassword: '',
@@ -140,10 +135,9 @@ export function hasSettingsChanges(
   const profileChanged = PROFILE_FIELDS.some(
     (field) => (values[field] ?? '').trim() !== (baseline[field] ?? '').trim(),
   );
-  const accessChanged = Boolean(values.hasReportAccess) !== Boolean(baseline.hasReportAccess);
   const passwordChanged = Boolean(values.newPassword || values.confirmNewPassword);
 
-  return profileChanged || accessChanged || passwordChanged;
+  return profileChanged || passwordChanged;
 }
 
 interface SettingsModalProps {
@@ -203,7 +197,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         email: normalizedEmail,
         position: profileData.position.trim(),
         phone: profileData.phone?.trim() || null,
-        hasReportAccess: profileData.hasReportAccess,
         ...(credentialsChanged ? { currentPassword, newPassword, confirmNewPassword } : {}),
       });
 
@@ -392,30 +385,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               </div>
               <p className="mt-3 text-xs text-slate-500">{t('passwordChangeHint')}</p>
             </div>
-
-            {/* Analytics Access - Only for Admins */}
-            {hasLeadershipAccess(user) && (
-              <FormField
-                control={form.control}
-                name="hasReportAccess"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">{t('reportsAccess')}</FormLabel>
-                      <div className="text-sm text-slate-500">
-                        {t('allowReportsAccess')}
-                      </div>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            )}
 
             {/*
               Device-local, so it sits outside the save flow: the switches take

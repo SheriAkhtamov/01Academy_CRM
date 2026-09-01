@@ -30,7 +30,6 @@ export const users = pgTable("users", {
   dateOfBirth: timestamp("date_of_birth"),
   position: varchar("position", { length: 255 }),
   module: varchar("module", { length: 50 }).$type<AcademyModule>().notNull(),
-  hasReportAccess: boolean("has_report_access").default(false),
   isActive: boolean("is_active").default(true),
   isArchived: boolean("is_archived").notNull().default(false),
   archivedAt: timestamp("archived_at"),
@@ -1095,7 +1094,6 @@ export const insertUserSchema = z.object({
   dateOfBirth: z.coerce.date().optional().nullable(),
   position: z.string().optional(),
   module: z.enum(ACADEMY_MODULES),
-  hasReportAccess: z.boolean().default(false),
   isActive: z.boolean().default(true),
   isArchived: z.boolean().default(false),
 });

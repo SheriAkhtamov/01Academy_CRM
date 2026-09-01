@@ -61,7 +61,6 @@ describe("auth session routes", () => {
       password: hashedPassword,
       fullName: "Admin User",
       module: "administration",
-      hasReportAccess: true,
       isActive: true,
     };
     mockStorage.getUserByLoginOrEmail.mockResolvedValue(user);
@@ -99,7 +98,6 @@ describe("auth session routes", () => {
       password: hashedPassword,
       fullName: "Admin User",
       module: "administration",
-      hasReportAccess: true,
       isActive: true,
     });
 
@@ -121,7 +119,6 @@ describe("auth session routes", () => {
       password: hashedPassword,
       fullName: "Admin User",
       module: "administration",
-      hasReportAccess: true,
       isActive: true,
     });
 
@@ -143,7 +140,6 @@ describe("auth session routes", () => {
       password: hashedPassword,
       fullName: "Archived User",
       module: "sales",
-      hasReportAccess: false,
       isActive: true,
       isArchived: true,
     });
@@ -176,7 +172,6 @@ describe("auth session routes", () => {
       password: hashedPassword,
       fullName: "Admin User",
       module: "administration",
-      hasReportAccess: true,
       isActive: true,
     };
     mockStorage.getUserByLoginOrEmail.mockResolvedValue(user);
@@ -205,15 +200,14 @@ describe("auth session routes", () => {
       fullName: "Admin User",
       module: "administration",
       modules: ["administration"],
-      hasReportAccess: true,
       isActive: true,
     };
     const updatedUser = { ...user, email: "owner@example.com", fullName: "Owner" };
     mockStorage.getUserByLoginOrEmail.mockResolvedValue(user);
     mockStorage.getUser.mockResolvedValueOnce(user).mockResolvedValueOnce(updatedUser);
     const clientQuery = vi.fn(async (sql: string) => {
-      if (sql.includes("SELECT password, email, has_report_access")) {
-        return { rows: [{ password: hashedPassword, email: user.email, has_report_access: true }] };
+      if (sql.includes("SELECT password, email")) {
+        return { rows: [{ password: hashedPassword, email: user.email }] };
       }
       return { rows: [] };
     });
@@ -228,7 +222,6 @@ describe("auth session routes", () => {
       email: "owner@example.com",
       position: "CEO",
       phone: "+998901234567",
-      hasReportAccess: true,
       currentPassword: password,
       newPassword: "NewSecret123",
       confirmNewPassword: "NewSecret123",
@@ -252,7 +245,6 @@ describe("auth session routes", () => {
       fullName: "Admin User",
       module: "administration",
       modules: ["administration"],
-      hasReportAccess: true,
       isActive: true,
     };
     mockStorage.getUserByLoginOrEmail.mockResolvedValue(user);
@@ -266,7 +258,6 @@ describe("auth session routes", () => {
       email: "changed@example.com",
       position: "",
       phone: "",
-      hasReportAccess: true,
     });
 
     expect(response.status).toBe(400);

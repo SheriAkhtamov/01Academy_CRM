@@ -11,7 +11,6 @@ import { secureSessionCookies } from '../config';
 import { logger } from '../lib/logger';
 import { getLinkedAccountId } from '@shared/account-switching';
 import { pool } from '../db';
-import { hasLeadershipAccess } from '@shared/academy';
 import { getPasswordPolicyError, isPasswordWithinBcryptLimit } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
@@ -169,10 +168,6 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
         if ((position?.length ?? 0) > 255 || (phone?.length ?? 0) > 50) {
             return res.status(400).json({ error: 'invalidData' });
         }
-        if (req.body.hasReportAccess !== undefined && typeof req.body.hasReportAccess !== 'boolean') {
-            return res.status(400).json({ error: 'invalidData' });
-        }
-
         const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
         const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
         const confirmNewPassword = typeof req.body.confirmNewPassword === 'string'
@@ -203,9 +198,8 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
             const locked = await client.query<{
                 password: string;
                 email: string;
-                has_report_access: boolean;
             }>(
-                `SELECT password, email, has_report_access
+                `SELECT password, email
                  FROM users
                  WHERE id = $1
                  FOR UPDATE`,
@@ -219,17 +213,13 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                 throw Object.assign(new Error('credentialsChangedConcurrently'), { statusCode: 409 });
             }
             oldEmail = lockedUser.email;
-            const hasReportAccess = hasLeadershipAccess(currentUser) && req.body.hasReportAccess !== undefined
-                ? req.body.hasReportAccess
-                : lockedUser.has_report_access;
             await client.query(
                 `UPDATE users
                  SET full_name = $2,
                      email = $3,
                      position = $4,
                      phone = $5,
-                     has_report_access = $6,
-                     password = COALESCE($7, password),
+                     password = COALESCE($6, password),
                      credential_password_ciphertext = NULL,
                      updated_at = NOW()
                  WHERE id = $1`,
@@ -239,7 +229,6 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                     email,
                     position,
                     phone,
-                    hasReportAccess,
                     newPasswordHash,
                 ],
             );
@@ -276,7 +265,6 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                 fullName: updatedUser.fullName,
                 position: updatedUser.position,
                 phone: updatedUser.phone,
-                hasReportAccess: updatedUser.hasReportAccess,
                 passwordChanged,
             }],
         }).catch((error) => logger.error('Failed to audit own settings update', { error, userId: currentUser.id }));

@@ -9,7 +9,6 @@ export type ActorContext = {
   userId: number;
   primaryModule: AcademyAccessModule | null;
   modules: readonly AcademyAccessModule[];
-  hasReportAccess: boolean;
   isLeadership: boolean;
   displayName?: string;
 };
@@ -18,14 +17,12 @@ type ActorIdentitySource = {
   id?: number | null;
   module?: string | null;
   modules?: readonly string[] | null;
-  hasReportAccess?: boolean | null;
 };
 
 export type ActorSource = string | readonly string[] | ActorIdentitySource | {
   user?: ActorIdentitySource | null;
   userId?: number | null;
   primaryModule?: string | null;
-  hasReportAccess?: boolean | null;
 } | null | undefined;
 
 const sourceUser = (source: ActorSource) => (
@@ -60,7 +57,6 @@ export const actorContextFrom = (source: ActorSource): ActorContext => {
       ? primaryCandidate as AcademyAccessModule
       : modules[0] ?? null,
     modules,
-    hasReportAccess: Boolean(userRecord.hasReportAccess ?? sourceRecord.hasReportAccess),
     isLeadership: hasLeadershipAccess(user as ModuleAccessSource),
     ...(typeof userRecord.fullName === 'string' && userRecord.fullName.trim()
       ? { displayName: userRecord.fullName.trim() }

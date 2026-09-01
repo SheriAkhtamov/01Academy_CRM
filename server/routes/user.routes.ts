@@ -452,7 +452,6 @@ type UserUpdateData = {
     email?: string;
     dateOfBirth?: Date | null;
     module?: AcademyModule;
-    hasReportAccess?: boolean;
     isActive?: boolean;
 };
 
@@ -465,7 +464,6 @@ const userUpdateColumns: Record<keyof UserUpdateData, string> = {
     email: 'email',
     dateOfBirth: 'date_of_birth',
     module: 'module',
-    hasReportAccess: 'has_report_access',
     isActive: 'is_active',
 };
 
@@ -571,7 +569,7 @@ router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
 
 router.post('/', requireAdministration, async (req, res) => {
     try {
-        const { phone, position, hasReportAccess, isActive } = req.body;
+        const { phone, position, isActive } = req.body;
         if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim()) {
             return res.status(400).json({ error: 'Full name is required' });
         }
@@ -587,9 +585,6 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(400).json({ error: 'invalidData' });
         }
         if (typeof position === 'string' && position.trim().length > 255) {
-            return res.status(400).json({ error: 'invalidData' });
-        }
-        if (hasReportAccess !== undefined && typeof hasReportAccess !== 'boolean') {
             return res.status(400).json({ error: 'invalidData' });
         }
         if (isActive !== undefined && typeof isActive !== 'boolean') {
@@ -628,14 +623,14 @@ router.post('/', requireAdministration, async (req, res) => {
                 const inserted = await client.query(
                     `INSERT INTO users
                        (email, password, credential_password_ciphertext, full_name, phone,
-                        online_pbx_extension, date_of_birth, position, module, has_report_access, is_active)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                        online_pbx_extension, date_of_birth, position, module, is_active)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
                      RETURNING
                        id, email, password,
                        credential_password_ciphertext AS "credentialPasswordCiphertext",
                        full_name AS "fullName", phone,
                        online_pbx_extension AS "onlinePbxExtension", date_of_birth AS "dateOfBirth",
-                       position, module, has_report_access AS "hasReportAccess",
+                       position, module,
                        is_active AS "isActive", is_online AS "isOnline",
                        last_seen_at AS "lastSeenAt", created_at AS "createdAt",
                        updated_at AS "updatedAt"`,
@@ -649,7 +644,6 @@ router.post('/', requireAdministration, async (req, res) => {
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
                         module,
-                        hasReportAccess ?? false,
                         isActive !== undefined ? isActive : true,
                     ],
                 );
@@ -997,12 +991,6 @@ router.put('/:id', requireAuth, async (req, res) => {
                     req.body.modules,
                     (updateData.module ?? existingUser.module) as AcademyModule,
                 );
-            }
-            if (req.body.hasReportAccess !== undefined) {
-                if (typeof req.body.hasReportAccess !== 'boolean') {
-                    return res.status(400).json({ error: 'invalidData' });
-                }
-                updateData.hasReportAccess = req.body.hasReportAccess;
             }
             if (req.body.isActive !== undefined) {
                 if (typeof req.body.isActive !== 'boolean') {

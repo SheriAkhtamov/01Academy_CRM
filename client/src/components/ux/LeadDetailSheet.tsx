@@ -23,6 +23,7 @@ import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/Dem
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
 import { LeadSocialAccountsEditor } from '@/components/ux/lead/LeadSocialAccountsEditor';
+import { LeadArchiveActions } from '@/components/ux/lead/LeadArchiveActions';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import {
   LeadStageStepper,
@@ -1001,6 +1002,14 @@ export function LeadDetailSheet({
                   <CreditCard data-icon="inline-start" />
                   {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
                 </Button>
+                <LeadArchiveActions
+                  key={`${lead.id}-${Boolean(lead.isArchived)}`}
+                  lead={lead}
+                  statuses={statuses}
+                  canClaimUnassignedLead={canClaimUnassignedLead}
+                  leadStatusName={leadStatusName}
+                  onChanged={onChanged}
+                />
               </div>
             </SheetHeader>
 

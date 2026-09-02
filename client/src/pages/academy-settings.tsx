@@ -82,6 +82,7 @@ import {
   type WeekScheduleItem,
 } from '@/components/ux/WeekScheduleEditor';
 import { validateLeadStatusTransition } from '@shared/academy';
+import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import {
   getGroupScheduleValidationError,
   getMinimumGroupEndDate,
@@ -698,6 +699,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const preparePipelineStatusDelete = useMutation({
     mutationFn: async (status: PipelineStatus) => {
+      if (status.isSystem || isDemoPipelineStage(status.code)) {
+        throw new Error(t('systemPipelineStageCannotBeDeleted'));
+      }
       const usage = await apiRequest('GET', `/api/academy/pipeline-statuses/${status.id}/usage`);
       return {
         status,
@@ -1572,6 +1576,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-foreground">{status.name}</p>
+                    {isDemoPipelineStage(status.code) ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{t('demoPipelineStageProtected')}</p>
+                    ) : status.isSystem ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{t('systemPipelineStageCannotBeDeleted')}</p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={status.isPipeline ? 'default' : 'secondary'}>
@@ -1587,7 +1596,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={preparePipelineStatusDelete.isPending}
+                      disabled={preparePipelineStatusDelete.isPending || status.isSystem || isDemoPipelineStage(status.code)}
                       onClick={() => preparePipelineStatusDelete.mutate(status)}
                     >
                       <Trash2 />
@@ -2054,15 +2063,20 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <FormField control={statusForm.control} name="isPipeline" render={({ field }) => (
                 <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
                   <FormLabel>{t('shownInPipeline')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isDemoPipelineStage(editingStatus?.code)} /></FormControl>
                 </FormItem>
               )} />
               <FormField control={statusForm.control} name="isActive" render={({ field }) => (
                 <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
                   <FormLabel>{t('active')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isDemoPipelineStage(editingStatus?.code)} /></FormControl>
                 </FormItem>
               )} />
+              {isDemoPipelineStage(editingStatus?.code) ? (
+                <Alert className="md:col-span-2">
+                  <AlertDescription>{t('demoPipelineStageProtected')}</AlertDescription>
+                </Alert>
+              ) : null}
               </div>
               <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>

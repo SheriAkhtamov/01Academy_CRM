@@ -221,7 +221,12 @@ export const translations = {
   },
   leadNewDataLabel: { en: 'New details entered', ru: 'Новые введённые данные' },
   leadSources: { en: 'Lead Sources', ru: 'Источники лидов' },
-  leadStatusDemoAttended: { en: 'Demo attended', ru: 'Был на демо' },
+  leadStatusDemoAttended: { en: 'Meeting held', ru: 'Встреча проведена' },
+  leadStatusDemoNoShow: { en: 'Missed meeting', ru: 'Не пришли на встречу' },
+  demoAttendanceThroughStudentsOnly: {
+    en: 'Record student attendance in the demo lesson. The lead stage updates automatically.',
+    ru: 'Отметьте посещаемость учеников в демо-уроке. Этап лида обновится автоматически.',
+  },
   leadStatusDemoInvited: { en: 'Invited to demo', ru: 'Приглашён на демо' },
   leadStatusEnrolled: { en: 'Enrolled', ru: 'Записан на курс' },
   leadStatusFirstContact: { en: 'First contact', ru: 'Первый контакт' },
@@ -1561,6 +1566,14 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   notAssigned: { en: 'Not assigned', ru: 'Не назначен' },
   currentStage: { en: 'Current stage', ru: 'Текущий этап' },
   pipelineStageCreated: { en: 'Pipeline stage created', ru: 'Этап воронки создан' },
+  demoPipelineStageProtected: {
+    en: 'Used by demo attendance automation. This stage cannot be deleted, deactivated or hidden. You can change its name, color and order.',
+    ru: 'Этап используется при отметке посещаемости демо. Его нельзя удалить, отключить или скрыть. Название, цвет и порядок можно менять.',
+  },
+  systemPipelineStageCannotBeDeleted: {
+    en: 'System stages cannot be deleted.',
+    ru: 'Системные этапы нельзя удалять.',
+  },
   pipelineStageDeleted: { en: 'Pipeline stage deleted', ru: 'Этап воронки удалён' },
   pipelineStageDeleteTransferDescription: {
     en: 'Stage “{stage}” still contains leads. Choose where to move them before deletion.',

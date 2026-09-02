@@ -368,11 +368,13 @@ describe('demo lessons', () => {
     expect(detailsDialog).toContain('demoLessonsApi.removeParticipant');
   });
 
-  it('stores attendance against participant rows without mutating lead lifecycle fields', () => {
+  it('stores student attendance and synchronizes only affected parents inside the transaction', () => {
     expect(routes).not.toContain('ownsLegacyBooking');
     expect(routes).not.toContain("currentStatus === 'demo_attended' ? 'demo_invited' : currentStatus");
     expect(routes).not.toContain('canAdvanceToDemoAttended');
     expect(routes).toContain('no_show_reason_code = $5');
+    expect(routes).toContain('syncDemoLeadStatuses(req.actor!, id, leads.filter');
+    expect(routes).toContain('requestedParticipantIds.has(Number(participant.id))');
     expect(routes).toContain('{ demoLesson: locked, participants: lockedParticipants }');
   });
 

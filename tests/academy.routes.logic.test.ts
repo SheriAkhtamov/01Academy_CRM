@@ -2220,6 +2220,55 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
   });
 
+  it.each(['demo_attended', 'ne_prishli_na_vstrechu'])('protects %s from direct or transfer-and-delete requests even without the system flag', async (code) => {
+    const source = { id: 11, code, is_pipeline: true, is_active: true, is_system: false };
+    mocks.poolQuery.mockResolvedValue({ rows: [source] });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('WHERE id = ANY')) return { rows: [source, { id: 12, code: 'custom', is_pipeline: true, is_active: true }] };
+      if (sql.includes('FROM academy_lead_statuses')) return { rows: [source] };
+      return emptyResult();
+    });
+    const app = await createApp();
+    const direct = await request(app).delete('/api/academy/pipeline-statuses/11');
+    const transfer = await request(app).post('/api/academy/pipeline-statuses/11/transfer-leads-and-delete').send({ targetStatusId: 12 });
+    for (const response of [direct, transfer]) {
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe('systemPipelineStageCannotBeDeleted');
+    }
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /UPDATE |DELETE FROM /.test(sql))).toBe(false);
+  });
+
+  it.each([
+    ['demo_attended', { isActive: false }],
+    ['demo_attended', { isPipeline: false }],
+    ['ne_prishli_na_vstrechu', { isActive: 'false' }],
+    ['ne_prishli_na_vstrechu', { isPipeline: '0' }],
+  ])('prevents disabling/hiding %s with %j', async (code, body) => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ id: 11, code, is_active: true, is_pipeline: true }] });
+    mocks.clientQuery.mockResolvedValue({ rows: [{ id: 11, code, is_active: true, is_pipeline: true }] });
+    const response = await request(await createApp()).patch('/api/academy/pipeline-statuses/11').send(body);
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('demoPipelineStageProtected');
+    expect(mocks.poolQuery.mock.calls.some(([sql]) => sql.includes('UPDATE '))).toBe(false);
+  });
+
+  it('keeps the name, color and position editable for protected stages', async () => {
+    const row = { id: 11, code: 'demo_attended', is_active: true, is_pipeline: true };
+    mocks.poolQuery.mockResolvedValue({ rows: [row] });
+    mocks.clientQuery.mockResolvedValue({ rows: [row] });
+    const response = await request(await createApp()).patch('/api/academy/pipeline-statuses/11')
+      .send({ name: 'Meeting completed', color: '#123456', sortOrder: 60 });
+    expect(response.status).toBe(200);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('UPDATE "academy_lead_statuses"'))).toBe(true);
+  });
+
+  it('rejects legacy parent-only attendance writes without modifying any records', async () => {
+    const response = await request(await createApp()).post('/api/academy/leads/42/demo-attendance').send({ attended: true });
+    expect(response.status).toBe(410);
+    expect(response.body.error).toBe('demoAttendanceThroughStudentsOnly');
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
   it('validates an explicitly selected lesson teacher for schedule conflicts', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
@@ -3828,14 +3877,30 @@ describe('academy route logic boundaries', () => {
     });
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT lead.* FROM academy_leads lead')) {
+        return { rows: [
+          leadFixture({ id: 2640, manager_id: 7, status_code: 'demo_invited', demo_attended: false }),
+          leadFixture({ id: 2641, manager_id: 18, status_code: 'demo_invited', demo_attended: false }),
+        ] };
+      }
+      if (sql.includes('array_agg(participant.status')) {
+        expect(values[0]).toBe(2640);
+        expect(attendanceUpdated).toBe(true);
+        return { rows: [{ id: 23, statuses: ['attended'] }] };
+      }
+      if (sql.includes('SELECT code FROM academy_lead_statuses')) return { rows: [{ code: 'demo_attended' }] };
+      if (sql.includes('UPDATE "academy_leads"')) {
+        expect(values).toEqual([2640, 'demo_attended', true]);
+        return { rows: [leadFixture({ id: 2640, status_code: 'demo_attended', demo_attended: true })] };
+      }
       if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) {
         return { rows: [demo] };
       }
       if (sql.includes('FOR UPDATE OF participant, student')) {
         return {
           rows: [
-            { id: 77, demo_lesson_id: 23, student_id: 155, status: 'invited', manager_id: 7 },
-            { id: 78, demo_lesson_id: 23, student_id: 156, status: 'invited', manager_id: 18 },
+            { id: 77, demo_lesson_id: 23, student_id: 155, lead_id: 2640, status: 'invited', manager_id: 7 },
+            { id: 78, demo_lesson_id: 23, student_id: 156, lead_id: 2641, status: 'invited', manager_id: 18 },
           ],
         };
       }
@@ -3879,7 +3944,53 @@ describe('academy route logic boundaries', () => {
       canManage: false,
       studentName: null,
     }));
+    const sqls = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+    expect(sqls.filter((sql) => sql.includes('UPDATE "academy_leads"'))).toHaveLength(1);
+    expect(sqls.some((sql) => sql.includes('INSERT INTO "academy_lead_stage_history"'))).toBe(true);
+    expect(sqls.findIndex((sql) => sql.includes('UPDATE "academy_leads"'))).toBeLessThan(sqls.indexOf('COMMIT'));
+    expect(sqls.findIndex((sql) => sql.includes('FOR UPDATE OF lead'))).toBeLessThan(sqls.findIndex((sql) => sql.includes('FOR UPDATE OF participant, student')));
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it.each(['none', 'stage', 'history'])('saves no-show atomically, including failure in %s', async (failure) => {
+    const demo = { id: 23, status: 'scheduled', participants: [
+      { id: 77, studentId: 155, leadId: 42, status: 'invited', managerId: 1 },
+    ] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_demo_lessons demo')) return { rows: [demo] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT lead.* FROM academy_leads lead')) {
+        return { rows: [leadFixture({ status_code: 'demo_invited', demo_attended: false })] };
+      }
+      if (sql.includes('SELECT * FROM academy_demo_lessons')) return { rows: [demo] };
+      if (sql.includes('FOR UPDATE OF participant, student')) return { rows: [
+        { id: 77, student_id: 155, lead_id: 42, status: 'invited', manager_id: 1 },
+      ] };
+      if (sql.includes('UPDATE "academy_demo_lessons"')) return { rows: [demo] };
+      if (sql.includes('array_agg(participant.status')) return { rows: [{ id: 23, status: 'scheduled', statuses: ['no_show'] }] };
+      if (sql.includes('SELECT code FROM academy_lead_statuses')) {
+        return { rows: failure === 'stage' ? [] : [{ code: 'ne_prishli_na_vstrechu' }] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [leadFixture({ status_code: 'ne_prishli_na_vstrechu' })] };
+      if (sql.includes('INSERT INTO "academy_lead_stage_history"') && failure === 'history') throw new Error('History unavailable');
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post('/api/academy/demo-lessons/23/attendance')
+      .send({ participants: [{ participantId: 77, status: 'no_show', noShowReasonCode: 'forgot' }] });
+    const sqls = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+    expect(sqls.some((sql) => sql.includes('UPDATE academy_demo_lesson_participants'))).toBe(true);
+    if (failure === 'none') {
+      expect(response.status).toBe(200);
+      expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE "academy_leads"'), [42, 'ne_prishli_na_vstrechu', false]);
+      expect(sqls).toContain('COMMIT');
+    } else {
+      expect(response.status).toBe(failure === 'stage' ? 409 : 500);
+      expect(sqls).toContain('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+    }
   });
 
   it('removes an invited student from a scheduled demo and keeps an audit trail', async () => {

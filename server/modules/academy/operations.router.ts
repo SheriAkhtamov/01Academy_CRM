@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -897,7 +898,7 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
       if (source.isPipeline !== true) {
         throw Object.assign(new Error('sourcePipelineStageRequired'), { statusCode: 400 });
       }
-      if (source.isSystem === true) {
+      if (source.isSystem === true || isDemoPipelineStage(source.code)) {
         throw Object.assign(new Error('systemPipelineStageCannotBeDeleted'), { statusCode: 409 });
       }
 

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -171,8 +172,14 @@ registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
     values.code = await createPipelineStatusCode(String(values.name ?? ''));
     values.isSystem = false;
   },
+  beforeUpdate: async ({ values, row }) => {
+    if (isDemoPipelineStage(row.code)
+      && (values.isActive === false || values.isPipeline === false)) {
+      throw Object.assign(new Error('demoPipelineStageProtected'), { statusCode: 409 });
+    }
+  },
   beforeDelete: async ({ row }) => {
-    if (row.isSystem === true) {
+    if (row.isSystem === true || isDemoPipelineStage(row.code)) {
       throw Object.assign(new Error('systemPipelineStageCannotBeDeleted'), {
         statusCode: 409,
       });

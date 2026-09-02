@@ -30,6 +30,7 @@ import {
   assertTeacherCanLeadLesson,
 } from './academy-scheduling';
 import { getDemoResourceAvailability } from './demo-resource-availability';
+import { lockDemoParticipantLeads, syncDemoLeadStatuses } from './demo-lead-status';
 
 const getDemoLesson = async (id: number) => queryOne(
   `SELECT demo.*,
@@ -501,6 +502,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           throw Object.assign(new Error('demoEnrollmentClosed'), { statusCode: 409 });
         }
 
+        const leads = await lockDemoParticipantLeads(id, parsed.data.studentIds);
         const students = await loadMutableStudents(req, parsed.data.studentIds, true);
         const existingParticipants = await query(
           `SELECT * FROM academy_demo_lesson_participants
@@ -538,6 +540,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
             });
           }
         }
+        await syncDemoLeadStatuses(req.actor!, id, leads.filter((lead) => (
+          students.some((student) => Number(student.leadId) === Number(lead.id))
+        )));
         await createAudit(
           req.actor!,
           'ADD_ACADEMY_DEMO_PARTICIPANTS',
@@ -586,8 +591,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (lockedDemo.status !== 'scheduled') {
           throw Object.assign(new Error('demoParticipantRemovalClosed'), { statusCode: 409 });
         }
+        const leads = await lockDemoParticipantLeads(id);
         const lockedParticipant = await queryOne(
-          `SELECT participant.*,
+          `SELECT participant.*, student.lead_id,
                   COALESCE(student.manager_id, lead.manager_id) AS manager_id
            FROM academy_demo_lesson_participants participant
            JOIN academy_students student ON student.id = participant.student_id
@@ -611,6 +617,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           [id, participantId],
         );
         const updated = await updateRow('academy_demo_lessons', id, { updatedBy: req.user!.id });
+        await syncDemoLeadStatuses(req.actor!, id, leads.filter((lead) => (
+          Number(lead.id) === Number(lockedParticipant.leadId)
+        )));
         await createAudit(
           req.actor!,
           'REMOVE_ACADEMY_DEMO_PARTICIPANT',
@@ -653,6 +662,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (locked.status !== 'scheduled') {
           throw Object.assign(new Error('demoCannotBeCancelled'), { statusCode: 409 });
         }
+        const leads = await lockDemoParticipantLeads(id);
         const updated = await updateRow('academy_demo_lessons', id, {
           status: 'cancelled',
           cancellationReason: parsed.data.reason,
@@ -664,6 +674,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
            WHERE demo_lesson_id = $1 AND status NOT IN ('attended', 'no_show')`,
           [id],
         );
+        await syncDemoLeadStatuses(req.actor!, id, leads);
         await createAudit(
           req.actor!,
           'CANCEL_ACADEMY_DEMO_LESSON',
@@ -709,6 +720,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (locked.status !== 'scheduled') {
           throw Object.assign(new Error('demoOutcomeAlreadyFinal'), { statusCode: 409 });
         }
+        const leads = await lockDemoParticipantLeads(id);
         if (parsed.data.status === 'completed') {
           const pending = await queryOne<{ count: number }>(
             `SELECT COUNT(*)::int AS count
@@ -733,6 +745,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           updatedBy: req.user!.id,
         });
         if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        await syncDemoLeadStatuses(req.actor!, id, leads);
         await createAudit(
           req.actor!,
           'FINALIZE_ACADEMY_DEMO_LESSON',
@@ -780,6 +793,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         if (locked.status !== 'scheduled') {
           throw Object.assign(new Error('demoCannotBeRescheduled'), { statusCode: 409 });
         }
+        const leads = await lockDemoParticipantLeads(id);
         const activeParticipants = await query(
           `SELECT participant.*
            FROM academy_demo_lesson_participants participant
@@ -811,6 +825,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           updatedBy: req.user!.id,
         });
         if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        await syncDemoLeadStatuses(req.actor!, id, leads);
         await createAudit(
           req.actor!,
           'RESCHEDULE_ACADEMY_DEMO_LESSON',
@@ -855,13 +870,15 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         return res.status(400).json({ error: 'demoParticipantNotFound' });
       }
       const result = await withTransaction(async () => {
+        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
         const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
         if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
         if (locked.status === 'cancelled' || locked.status === 'not_conducted') {
           throw Object.assign(new Error('demoAttendanceNotAllowed'), { statusCode: 409 });
         }
+        const leads = await lockDemoParticipantLeads(id);
         const lockedParticipants = await query(
-          `SELECT participant.*,
+          `SELECT participant.*, student.lead_id,
                   COALESCE(student.manager_id, lead.manager_id) AS manager_id
            FROM academy_demo_lesson_participants participant
            JOIN academy_students student ON student.id = participant.student_id
@@ -917,6 +934,12 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
            ORDER BY id`,
           [id],
         );
+        await syncDemoLeadStatuses(req.actor!, id, leads.filter((lead) => (
+          lockedParticipants.some((participant) => (
+            requestedParticipantIds.has(Number(participant.id))
+            && Number(participant.leadId) === Number(lead.id)
+          ))
+        )), true);
         await createAudit(
           req.actor!,
           'UPDATE_ACADEMY_DEMO_ATTENDANCE',

@@ -1387,31 +1387,9 @@ router.post('/leads/:id/demo', async (req, res) => {
 
 router.post('/leads/:id/demo-attendance', async (req, res) => {
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
-  try {
-    const id = parseId(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-    const oldLead = await getLead(id);
-    if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
-
-    const attended = req.body.attended !== false;
-    const nextStatus = attended ? 'demo_attended' : oldLead.statusCode;
-    const transitionError = validateLeadStatusTransition(oldLead.statusCode, nextStatus);
-    if (transitionError) return res.status(400).json({ error: transitionError });
-    const lead = await updateRow('academy_leads', id, {
-      demoAttended: attended,
-      demoResult: nullableText(req.body.demoResult) ?? null,
-      statusCode: nextStatus });
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (oldLead.statusCode !== nextStatus) {
-      await createStageHistory(id, oldLead.statusCode, nextStatus, req.user!.id, 'Отмечено посещение демо');
-      await handleLeadStatusEffects(req.actor!, lead, oldLead.statusCode);
-    }
-    res.json(await applyLeadVisibilityForRequest(req, lead));
-  } catch (error) {
-    logger.error('Failed to mark demo attendance', { error });
-    res.status(500).json({ error: 'Failed to mark demo attendance' });
-  }
+  // Attendance belongs to students; a parent-only write cannot identify which
+  // child/demo was marked and would contradict the automatic aggregate stage.
+  res.status(410).json({ error: 'demoAttendanceThroughStudentsOnly' });
 });
 
 router.post('/leads/:id/convert-to-student', async (req, res) => {

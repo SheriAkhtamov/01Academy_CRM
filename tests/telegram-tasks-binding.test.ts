@@ -4,14 +4,14 @@ vi.mock('../server/db', () => ({ pool: { query: mocks.query, connect: async () =
 vi.mock('../server/storage', () => ({ storage: { getUser: mocks.getUser, getUsers: mocks.getUsers } }));
 import { bindTelegramTaskEmployee, getTelegramTaskIdentity, TelegramBindingDenied, telegramTaskAccess } from '../server/services/telegram-tasks';
 import type { TaskToken } from '../server/services/telegram-tasks-crypto';
-const user = { id: 7, fullName: 'Test employee', phone: '+998 90 123-45-67', isActive: true, isArchived: false };
+const user = { id: 7, fullName: 'Test employee', phone: '+998 90 123-45-67', phoneNumbers: ['+998 90 123-45-67', '+998 91 765-43-21'], isActive: true, isArchived: false };
 const original = { bot_id: '12345', telegram_user_id: '654321', user_id: 7, verified_phone: '998901234567', verification_id: 'version-1' };
 let employees: Array<{ id: number; phone: string }>;
 let bindings: typeof original[];
 beforeEach(() => {
   vi.clearAllMocks(); employees = [{ id: 7, phone: user.phone }]; bindings = [{ ...original }]; mocks.getUser.mockResolvedValue({ ...user });
   mocks.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('telegram_task_bindings') ? bindings : employees }));
-  mocks.transaction.mockImplementation(async (sql: string) => ({ rows: sql.includes('SELECT * FROM telegram_task_bindings') ? bindings : sql.includes('SELECT id, phone FROM users') ? employees : [] }));
+  mocks.transaction.mockImplementation(async (sql: string) => ({ rows: sql.includes('SELECT * FROM telegram_task_bindings') ? bindings : sql.includes('JOIN user_phones phone') ? employees : [] }));
 });
 describe('Telegram employee binding', () => {
   it('rechecks the current active employee and canonical phone on every request', async () => {
@@ -19,7 +19,7 @@ describe('Telegram employee binding', () => {
     expect(mocks.getUser).toHaveBeenCalledWith(7);
   });
   it.each([
-    { isArchived: true }, { isActive: false }, { phone: '+998901234568' },
+    { isArchived: true }, { isActive: false }, { phoneNumbers: ['+998901234568'] },
   ])('revokes access after employee changes %s', async (changes) => {
     mocks.getUser.mockResolvedValue({ ...user, ...changes });
     expect(await getTelegramTaskIdentity('12345', '654321')).toBeNull();
@@ -30,6 +30,18 @@ describe('Telegram employee binding', () => {
     expect(await getTelegramTaskIdentity('12345', '654321')).toBeNull();
     bindings = []; expect(await getTelegramTaskIdentity('12345', '654321')).toBeNull();
   });
+  it('keeps access when the verified number is secondary and revokes it when that number is removed', async () => {
+    const secondaryBinding = { ...original, verified_phone: '998917654321' };
+    bindings = [secondaryBinding];
+    employees = [{ id: 7, phone: '+998901234567' }, { id: 7, phone: '91 765 43 21' }];
+    expect((await getTelegramTaskIdentity('12345', '654321'))?.user.id).toBe(7);
+    mocks.getUser.mockResolvedValue({ ...user, phoneNumbers: ['+998901234567'] });
+    expect(await getTelegramTaskIdentity('12345', '654321')).toBeNull();
+  });
+  it('counts matching employees rather than phone rows from one employee', async () => {
+    employees = [{ id: 7, phone: '+998901234567' }, { id: 7, phone: '90 123 45 67' }];
+    expect((await getTelegramTaskIdentity('12345', '654321'))?.user.id).toBe(7);
+  });
   it('rejects tokens issued before rebinding', async () => {
     const token = { userId: 7, verificationId: 'old-version' } as TaskToken;
     expect(await getTelegramTaskIdentity('12345', '654321', token)).toBeNull();
@@ -38,6 +50,7 @@ describe('Telegram employee binding', () => {
   it('serializes contact registration and keeps repeated confirmations idempotent', async () => {
     await bindTelegramTaskEmployee('12345', '654321', '+998901234567');
     expect(mocks.transaction).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', ['telegram-task-registration:12345']);
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.stringContaining('JOIN user_phones phone'));
     expect(mocks.transaction).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO telegram_task_bindings'), ['12345', '654321', 7, '998901234567', 'version-1']);
     expect(mocks.transaction).toHaveBeenCalledWith('COMMIT'); expect(mocks.release).toHaveBeenCalledTimes(1);
   });
@@ -46,6 +59,15 @@ describe('Telegram employee binding', () => {
     await bindTelegramTaskEmployee('12345', '654321', '+998901234567');
     const insert = mocks.transaction.mock.calls.find(([sql]) => sql.startsWith('INSERT'))!;
     expect(insert[1][4]).not.toBe('version-1'); expect(insert[1][4]).toMatch(/^[a-f0-9-]{36}$/);
+  });
+  it('registers by any secondary employee phone, including Uzbek local format', async () => {
+    employees = [{ id: 7, phone: '+998901234567' }, { id: 7, phone: '91 765 43 21' }];
+    bindings = [];
+    await bindTelegramTaskEmployee('12345', '654321', '+998917654321');
+    expect(mocks.transaction).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO telegram_task_bindings'),
+      ['12345', '654321', 7, '998917654321', expect.stringMatching(/^[a-f0-9-]{36}$/)],
+    );
   });
   it.each(['duplicate', 'unknown', 'other-telegram', 'other-employee'])('rolls back %s contacts without overwriting a binding', async (kind) => {
     if (kind === 'duplicate') employees.push({ id: 8, phone: '901234567' });

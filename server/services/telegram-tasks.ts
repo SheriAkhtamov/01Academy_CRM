@@ -27,6 +27,17 @@ export interface TelegramTaskBinding {
 
 export class TelegramBindingDenied extends Error {}
 
+type EmployeePhoneRow = { id: number; phone: string };
+
+const matchingEmployeeIds = (rows: readonly EmployeePhoneRow[], phone: string): number[] => [
+  ...new Set(rows
+    .filter((employee) => normalizeEmployeePhone(employee.phone) === phone)
+    .map((employee) => employee.id)),
+];
+
+const hasVerifiedPhone = (phoneNumbers: readonly string[], verifiedPhone: string) =>
+  phoneNumbers.some((phone) => normalizeEmployeePhone(phone) === verifiedPhone);
+
 export async function getTelegramTaskIdentity(botId: string, telegramUserId: string, token?: TaskToken) {
   const { rows } = await pool.query<TelegramTaskBinding>(
     'SELECT * FROM telegram_task_bindings WHERE bot_id = $1 AND telegram_user_id = $2', [botId, telegramUserId],
@@ -34,12 +45,15 @@ export async function getTelegramTaskIdentity(botId: string, telegramUserId: str
   const binding = rows[0];
   if (!binding || (token && (token.userId !== binding.user_id || token.verificationId !== binding.verification_id))) return null;
   const user = await storage.getUser(binding.user_id);
-  if (!user?.isActive || user.isArchived || normalizeEmployeePhone(user.phone) !== binding.verified_phone) return null;
-  const employees = await pool.query<{ id: number; phone: string }>(
-    'SELECT id, phone FROM users WHERE is_active = true AND is_archived = false',
+  if (!user?.isActive || user.isArchived || !hasVerifiedPhone(user.phoneNumbers, binding.verified_phone)) return null;
+  const employees = await pool.query<EmployeePhoneRow>(
+    `SELECT employee.id, phone.phone
+     FROM users employee
+     JOIN user_phones phone ON phone.user_id = employee.id
+     WHERE employee.is_active = true AND employee.is_archived = false`,
   );
-  const matches = employees.rows.filter((employee) => normalizeEmployeePhone(employee.phone) === binding.verified_phone);
-  if (matches.length !== 1 || matches[0].id !== user.id) return null;
+  const matches = matchingEmployeeIds(employees.rows, binding.verified_phone);
+  if (matches.length !== 1 || matches[0] !== user.id) return null;
   return { user, binding };
 }
 
@@ -50,12 +64,17 @@ export async function bindTelegramTaskEmployee(botId: string, telegramUserId: st
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`telegram-task-registration:${botId}`]);
-    const employees = await client.query<{ id: number; phone: string }>(
-      'SELECT id, phone FROM users WHERE is_active = true AND is_archived = false ORDER BY id FOR UPDATE',
+    const employees = await client.query<EmployeePhoneRow>(
+      `SELECT employee.id, phone.phone
+       FROM users employee
+       JOIN user_phones phone ON phone.user_id = employee.id
+       WHERE employee.is_active = true AND employee.is_archived = false
+       ORDER BY employee.id, phone.sort_order
+       FOR UPDATE OF employee, phone`,
     );
-    const matches = employees.rows.filter((employee) => normalizeEmployeePhone(employee.phone) === phone);
+    const matches = matchingEmployeeIds(employees.rows, phone);
     if (matches.length !== 1) throw new TelegramBindingDenied();
-    const userId = matches[0].id;
+    const userId = matches[0];
     const existing = await client.query<TelegramTaskBinding>(
       'SELECT * FROM telegram_task_bindings WHERE bot_id = $1 AND (telegram_user_id = $2 OR user_id = $3) FOR UPDATE',
       [botId, telegramUserId, userId],

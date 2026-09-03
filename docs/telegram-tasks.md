@@ -32,8 +32,10 @@ refresh button is immediate. Only a task's creator can accept or reopen it.
 - An in-memory bearer token lasts up to 12 hours and is accepted only by
   `/api/miniapp`. It is not a CRM session cookie and cannot open other modules.
 - Every request rechecks the binding, employee activity/archive status,
-  current phone and uniqueness. Phone formatting is normalized; nine-digit
-  Uzbek local numbers get the `998` prefix. No suffix/fuzzy matching is used.
+  current list of primary and additional phones, and uniqueness. Registration
+  works with any number saved for the employee. Phone formatting is normalized;
+  nine-digit Uzbek local numbers get the `998` prefix. No suffix/fuzzy matching
+  is used.
 - Only the sender's own, non-forwarded contact is accepted. Ambiguous numbers
   and attempts to connect a second Telegram account fail closed.
 - Employee choices include only names, IDs, positions and primary modules.

@@ -183,6 +183,10 @@ describe('lead boundary contracts', () => {
   it('validates comments, students and optimistic updates at the shared boundary', () => {
     expect(leadCommentRequestSchema.parse({ body: '  called parent  ' }))
       .toEqual({ body: 'called parent' });
+    const longComment = 'x'.repeat(100_000);
+    expect(leadCommentRequestSchema.parse({ body: longComment }).body)
+      .toHaveLength(longComment.length);
+    expect(leadCommentRequestSchema.safeParse({ body: '   ' }).success).toBe(false);
     expect(createLeadStudentRequestSchema.safeParse({
       studentName: 'Student',
       groupIds: [4],

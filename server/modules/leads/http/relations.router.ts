@@ -65,6 +65,12 @@ export const createLeadRelationsRouter = (service: LeadRelationsService) => {
       return response.status(400).json({ error: 'Invalid lead id' });
     }
     if (!input.success) {
+      logger.warn('Rejected invalid lead comment', {
+        leadId: params.data.id,
+        userId: request.user?.id,
+        bodyLength: typeof request.body?.body === 'string' ? request.body.body.length : null,
+        issueCodes: input.error.issues.map((issue) => issue.code),
+      });
       return response.status(400).json({ error: 'leadCommentRequired' });
     }
     try {

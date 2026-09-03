@@ -123,7 +123,7 @@ export const leadTagRequestSchema = z.union([
 ]);
 
 export const leadCommentRequestSchema = z.object({
-  body: z.string().trim().min(1).max(5_000),
+  body: z.string().trim().min(1),
 });
 
 export const leadSocialAccountRequestSchema = z.object({

@@ -97,6 +97,7 @@ import {
   type UserFormValues,
   type UserUpdatePayload,
 } from '@/features/employees/employeeFormSchema';
+import { EmployeePhoneFields } from '@/features/employees/EmployeePhoneFields';
 
 const formatDateInputValue = (value: unknown) => (
   academyDateInputValue(value as Date | string | number | null | undefined)
@@ -463,6 +464,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     const modules = Array.from(new Set([data.module, ...data.modules]));
     const payload = {
       ...data,
+      phoneNumbers: data.phoneNumbers.map((phone) => phone.trim()).filter(Boolean),
       modules,
     };
 
@@ -518,7 +520,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     userForm.reset({
       email: user.email,
       fullName: user.fullName,
-      phone: user.phone || '',
+      phoneNumbers: Array.isArray(user.phoneNumbers) && user.phoneNumbers.length > 0
+        ? user.phoneNumbers
+        : [user.phone || ''],
       dateOfBirth: formatDateInputValue(user.dateOfBirth),
       position: user.position || '',
       module: user.module,
@@ -823,26 +827,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormField
-                            control={userForm.control}
-                            name="phone"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('phone')}</FormLabel>
-                                <FormControl>
-                                  <PhoneInput
-                                    ref={field.ref}
-                                    name={field.name}
-                                    value={field.value ?? ''}
-                                    onBlur={field.onBlur}
-                                    onValueChange={field.onChange}
-                                    placeholder={t('phonePlaceholder')}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                          <EmployeePhoneFields form={userForm} />
                           <FormField
                             control={userForm.control}
                             name="position"

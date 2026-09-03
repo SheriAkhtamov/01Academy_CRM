@@ -708,6 +708,13 @@
       "when": 1789660800000,
       "tag": "0100_telegram_task_bindings",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1789747200000,
+      "tag": "0101_employee_phone_numbers",
+      "breakpoints": true
     }
   ]
 }

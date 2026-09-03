@@ -1,6 +1,7 @@
 import { db } from '../db';
 import {
     users,
+    userPhones,
     userModules,
     savedAccounts,
     type User,
@@ -10,7 +11,7 @@ import {
 import { ACADEMY_ACCESS_MODULES, type AcademyAccessModule } from '@shared/academy';
 import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
 
-export type UserWithModules = User & { modules: AcademyAccessModule[] };
+export type UserWithModules = User & { modules: AcademyAccessModule[]; phoneNumbers: string[] };
 type SavedAccountWithUser = SavedAccount & { accountUser: UserWithModules };
 
 const moduleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
@@ -27,24 +28,43 @@ const normalizeModuleList = (
 };
 
 class UserStorage {
-    private attachModules(user: User, assignedModules: readonly string[] = []): UserWithModules {
+    private attachModules(
+        user: User,
+        assignedModules: readonly string[] = [],
+        phoneNumbers: readonly string[] = [],
+    ): UserWithModules {
         return {
             ...user,
             modules: normalizeModuleList(user.module, assignedModules),
+            phoneNumbers: phoneNumbers.length > 0
+                ? [...phoneNumbers]
+                : user.phone ? [user.phone] : [],
         };
     }
 
     private async attachModulesToUsers(userRows: User[]): Promise<UserWithModules[]> {
         if (userRows.length === 0) return [];
 
-        const assignments = await db
-            .select({
-                userId: userModules.userId,
-                module: userModules.module,
-            })
-            .from(userModules)
-            .where(inArray(userModules.userId, userRows.map((user) => user.id)))
-            .orderBy(asc(userModules.userId), asc(userModules.module));
+        const userIds = userRows.map((user) => user.id);
+        const [assignments, phoneRows] = await Promise.all([
+            db
+                .select({
+                    userId: userModules.userId,
+                    module: userModules.module,
+                })
+                .from(userModules)
+                .where(inArray(userModules.userId, userIds))
+                .orderBy(asc(userModules.userId), asc(userModules.module)),
+            db
+                .select({
+                    userId: userPhones.userId,
+                    phone: userPhones.phone,
+                    sortOrder: userPhones.sortOrder,
+                })
+                .from(userPhones)
+                .where(inArray(userPhones.userId, userIds))
+                .orderBy(asc(userPhones.userId), asc(userPhones.sortOrder)),
+        ]);
 
         const modulesByUser = new Map<number, string[]>();
         for (const assignment of assignments) {
@@ -53,7 +73,18 @@ class UserStorage {
             modulesByUser.set(assignment.userId, existing);
         }
 
-        return userRows.map((user) => this.attachModules(user, modulesByUser.get(user.id) ?? []));
+        const phonesByUser = new Map<number, string[]>();
+        for (const phoneRow of phoneRows) {
+            const existing = phonesByUser.get(phoneRow.userId) ?? [];
+            existing.push(phoneRow.phone);
+            phonesByUser.set(phoneRow.userId, existing);
+        }
+
+        return userRows.map((user) => this.attachModules(
+            user,
+            modulesByUser.get(user.id) ?? [],
+            phonesByUser.get(user.id) ?? [],
+        ));
     }
 
     async getUser(id: number): Promise<UserWithModules | undefined> {
@@ -86,7 +117,7 @@ class UserStorage {
     async createUser(user: InsertUser): Promise<UserWithModules> {
         const result = await db.insert(users).values(user).returning();
         await this.setUserModules(result[0].id, [result[0].module]);
-        return this.attachModules(result[0], [result[0].module]);
+        return this.attachModules(result[0], [result[0].module], result[0].phone ? [result[0].phone] : []);
     }
 
     async updateUser(id: number, user: Partial<InsertUser>): Promise<UserWithModules> {

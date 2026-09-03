@@ -11,7 +11,21 @@ export const createUserSchema = (t: Translate) => z.object({
     z.string().email(t('invalidEmailAddress')).optional()
   ),
   fullName: z.string().min(1, t('fullNameRequired')),
-  phone: z.string().optional(),
+  phoneNumbers: z.array(z.string()).min(1).max(10).superRefine((phoneNumbers, ctx) => {
+    const seen = new Set<string>();
+    phoneNumbers.forEach((phone, index) => {
+      const normalized = phone.replace(/\D/g, '');
+      if (!normalized) return;
+      if (seen.has(normalized)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index],
+          message: t('duplicatePhoneInForm'),
+        });
+      }
+      seen.add(normalized);
+    });
+  }),
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   module: z.enum(ACADEMY_MODULES),
@@ -69,7 +83,7 @@ export type UserUpdatePayload = Partial<UserFormValues> & { leadTransferManagerI
 export const defaultUserFormValues: UserFormValues = {
   email: '',
   fullName: '',
-  phone: '',
+  phoneNumbers: [''],
   dateOfBirth: '',
   position: '',
   module: 'sales',

@@ -22,6 +22,7 @@ import { revokeUserAuthenticationArtifacts } from '../services/session-security'
 import { sendHttpError } from '../lib/http-errors';
 import { registerUserArchiveRoutes } from './user-archive.routes';
 import { disconnectRealtimeUser } from '../realtime/realtime-hub';
+import { normalizeUserPhoneNumbers, replaceUserPhones } from './user-phone-support';
 
 const router = Router();
 const primaryModuleSet = new Set<string>(ACADEMY_MODULES);
@@ -569,18 +570,13 @@ router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
 
 router.post('/', requireAdministration, async (req, res) => {
     try {
-        const { phone, position, isActive } = req.body;
+        const { position, isActive } = req.body;
         if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim()) {
             return res.status(400).json({ error: 'Full name is required' });
         }
         const fullName = req.body.fullName.trim();
         if (fullName.length > 255) return res.status(400).json({ error: 'invalidData' });
-        if (phone !== undefined && phone !== null && typeof phone !== 'string') {
-            return res.status(400).json({ error: 'invalidData' });
-        }
-        if (typeof phone === 'string' && phone.trim().length > 50) {
-            return res.status(400).json({ error: 'invalidData' });
-        }
+        const phoneNumbers = normalizeUserPhoneNumbers(req.body.phoneNumbers, req.body.phone) ?? [];
         if (position !== undefined && position !== null && typeof position !== 'string') {
             return res.status(400).json({ error: 'invalidData' });
         }
@@ -639,7 +635,7 @@ router.post('/', requireAdministration, async (req, res) => {
                         hashedPassword,
                         null,
                         fullName,
-                        typeof phone === 'string' ? phone.trim() || null : null,
+                        phoneNumbers[0] ?? null,
                         null,
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
@@ -649,9 +645,11 @@ router.post('/', requireAdministration, async (req, res) => {
                 );
                 newUser = inserted.rows[0];
                 await replaceUserModules(client, newUser.id, modules);
+                await replaceUserPhones(client, newUser.id, phoneNumbers);
                 newUser = {
                     ...newUser,
                     modules,
+                    phoneNumbers,
                 };
                 await syncAcademyTeacherForUser(newUser, client, teacherSettings);
                 await client.query(
@@ -951,14 +949,8 @@ router.put('/:id', requireAuth, async (req, res) => {
             if (position.length > 255) return res.status(400).json({ error: 'invalidData' });
             updateData.position = position || null;
         }
-        if (req.body.phone !== undefined) {
-            if (req.body.phone !== null && typeof req.body.phone !== 'string') {
-                return res.status(400).json({ error: 'invalidData' });
-            }
-            const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
-            if (phone.length > 50) return res.status(400).json({ error: 'invalidData' });
-            updateData.phone = phone || null;
-        }
+        const phoneNumbers = normalizeUserPhoneNumbers(req.body.phoneNumbers, req.body.phone);
+        if (phoneNumbers !== undefined) updateData.phone = phoneNumbers[0] ?? null;
 
         if (req.body.email !== undefined) {
             return res.status(400).json({ error: 'loginManagedInCredentials' });
@@ -1108,6 +1100,9 @@ router.put('/:id', requireAuth, async (req, res) => {
             }
 
             await updateUserWithExecutor(client, id, updateData);
+            if (phoneNumbers !== undefined) {
+                await replaceUserPhones(client, id, phoneNumbers);
+            }
             if (requestedModules) {
                 await replaceUserModules(client, id, nextModules);
             } else if (!currentModules.includes(nextPrimaryModule)) {

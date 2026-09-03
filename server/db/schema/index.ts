@@ -11,6 +11,7 @@ import { isOnlinePbxExtension } from "../../../shared/telephony";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
 import { createMetaMarketingTables } from "./meta-marketing";
+import { createUserPhonesTable } from "./user-phones";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
@@ -48,6 +49,8 @@ export const users = pgTable("users", {
   archiveIdx: index("users_archive_idx").on(table.isArchived, table.archivedAt),
   moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
+
+export const userPhones = createUserPhonesTable(users.id);
 
 export const telegramTaskBindings = pgTable("telegram_task_bindings", {
   id: serial("id").primaryKey(),

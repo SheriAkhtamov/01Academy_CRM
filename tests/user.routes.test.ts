@@ -80,6 +80,24 @@ describe('user route validation', () => {
     expect(mockStorage.getUsers).not.toHaveBeenCalled();
   });
 
+  it('rejects duplicate employee phone numbers before opening a transaction', async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+
+    const response = await agent.post('/api/users').send({
+      fullName: 'Sales User',
+      module: 'sales',
+      modules: ['sales'],
+      phoneNumbers: ['+998 90 123 45 67', '998901234567'],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('duplicatePhoneInForm');
+    expect(mockStorage.getUsers).not.toHaveBeenCalled();
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
   it('rejects string booleans instead of treating "false" as true', async () => {
     const app = await createApp();
     const agent = request.agent(app);

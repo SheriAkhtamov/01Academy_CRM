@@ -38,6 +38,11 @@ interface AppConfig {
     };
   };
   integrations?: {
+    telegramTasks?: {
+      botToken?: string;
+      webhookSecret?: string;
+      botUsername?: string;
+    };
     website?: {
       webhookSecret?: string;
       allowedFormOrigins?: string[];
@@ -165,6 +170,16 @@ const readConfigFile = (): AppConfig => {
 };
 
 const validateConfig = (config: AppConfig) => {
+  const telegram = config.integrations?.telegramTasks;
+  if (telegram?.botToken?.trim() || telegram?.webhookSecret?.trim()) {
+    if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(telegram.botToken?.trim() ?? '')
+      || !/^[A-Za-z0-9_-]{32,256}$/.test(telegram.webhookSecret?.trim() ?? '')) {
+      throw new Error('Telegram Tasks requires a valid bot token and a separate webhook secret (32–256 characters)');
+    }
+    if (config.server.environment === 'production' && new URL(config.server.appUrl).protocol !== 'https:') {
+      throw new Error('Telegram Tasks requires an HTTPS application URL');
+    }
+  }
   if (!config.database?.url) {
     throw new Error('config.database.url is required');
   }

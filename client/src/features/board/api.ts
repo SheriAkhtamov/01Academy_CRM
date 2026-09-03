@@ -1,4 +1,4 @@
-import { apiRequest } from '@/lib/queryClient';
+import { boardRequest as apiRequest } from './transport';
 
 export type CreateLeadTaskInput = {
   title: string;
@@ -17,6 +17,7 @@ export const boardQueryKeys = {
 };
 
 export const boardApi = {
+  getTask: <T>(id: number) => apiRequest('GET', `/api/board/tasks/${id}`) as Promise<T>,
   listTasks: <T>(archived = false) => (
     apiRequest('GET', `/api/board/tasks${archived ? '?archived=true' : ''}`) as Promise<T>
   ),

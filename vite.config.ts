@@ -18,6 +18,9 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      input: { crm: path.resolve(__dirname, 'client/index.html'), miniapp: path.resolve(__dirname, 'client/miniapp.html') },
+    },
   },
   server: {
     host: '0.0.0.0', // Allow external access for ngrok

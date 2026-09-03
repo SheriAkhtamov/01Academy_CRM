@@ -35,10 +35,21 @@ const createApp = () => {
   app.all('/api/test', (_req, res) => res.json({ ok: true }));
   app.post('/api/incoming/test', (_req, res) => res.json({ ok: true }));
   app.post('/api/incoming/website-lead', (_req, res) => res.json({ ok: true }));
+  app.get(['/miniapp/tasks', '/sales/pipeline'], (_req, res) => res.send('test document'));
   return app;
 };
 
 describe('HTTP security middleware', () => {
+  it('allows the Telegram SDK and framing only for the isolated Mini App document', async () => {
+    const mini = await request(createApp()).get('/miniapp/tasks');
+    expect(mini.headers['content-security-policy']).toContain('https://telegram.org');
+    expect(mini.headers['content-security-policy']).toContain('frame-ancestors https://web.telegram.org');
+    expect(mini.headers['x-frame-options']).toBeUndefined();
+    const crm = await request(createApp()).get('/sales/pipeline');
+    expect(crm.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(crm.headers['content-security-policy']).not.toContain('https://telegram.org');
+    expect(crm.headers['x-frame-options']).toBe('DENY');
+  });
   it('sets browser hardening headers and allows the configured origin', async () => {
     const response = await request(createApp())
       .get('/api/test')

@@ -85,7 +85,7 @@ export async function setupVite(app: Express, server: Server) {
         __dirname,
         "..",
         "client",
-        "index.html",
+        req.originalUrl.split('?')[0].startsWith('/miniapp/') ? 'miniapp.html' : 'index.html',
       );
 
       // always reload the index.html file from disk incase it changes
@@ -115,7 +115,7 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+  app.use("*", (req, res) => {
+    res.sendFile(path.resolve(distPath, req.originalUrl.split('?')[0].startsWith('/miniapp/') ? 'miniapp.html' : 'index.html'));
   });
 }

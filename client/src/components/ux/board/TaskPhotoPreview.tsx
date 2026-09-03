@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ImageOff, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { TaskAttachmentDownload } from './TaskAttachmentDownload';
 import { useTranslation } from '@/hooks/useTranslation';
 import { attachmentBlob, photoPreviewBlob } from '@/features/board/photo-preview';
 
@@ -50,7 +50,7 @@ export function TaskPhotoPreview({ name, file, attachmentId }: { name: string; f
             : src ? <img src={src} alt={name} className="max-h-[65dvh] max-w-full object-contain" onError={imageFailed} />
               : <Loader2 className="size-8 animate-spin" aria-label={t('attachmentPreviewLoading')} />}
         </div>
-        {attachmentId ? <Button variant="outline" asChild><a href={`/api/board/attachments/${attachmentId}/download`}>{t('download')}</a></Button> : null}
+        {attachmentId ? <TaskAttachmentDownload id={attachmentId} name={name} /> : null}
       </DialogContent>
     </Dialog>
   </>;

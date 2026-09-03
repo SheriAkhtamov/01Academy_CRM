@@ -1,4 +1,5 @@
 import type { TaskAttachment } from '@/lib/boardTypes';
+import { boardUrl, boardHeaders } from './transport';
 
 // Keep the key stable when retrying the same File. The server uses it to avoid
 // duplicates even if it committed an upload but its response was lost.
@@ -10,7 +11,8 @@ export function uploadTaskAttachment(taskId: number, file: File, onProgress: (pe
     const form = new FormData();
     form.append('file', file);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/board/tasks/${taskId}/attachments`);
+    xhr.open('POST', boardUrl(`/api/board/tasks/${taskId}/attachments`));
+    for (const [name, value] of Object.entries(boardHeaders())) xhr.setRequestHeader(name, value);
     xhr.setRequestHeader('X-Upload-Key', key);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.timeout = 10 * 60 * 1000;

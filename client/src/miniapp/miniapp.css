@@ -1,0 +1,21 @@
+.telegram-tasks {
+  --mini-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
+  --mini-top: calc(var(--tg-content-safe-area-inset-top, 0px) + max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px)));
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+.telegram-tasks .mini-shell { max-width: 42rem; margin: auto; padding-top: var(--mini-top); padding-bottom: calc(10rem + var(--mini-bottom)); min-height: var(--tg-viewport-stable-height, 100dvh); }
+.mini-header { display: grid; gap: 1rem; padding: 1.25rem 1rem; }
+.mini-center { display: flex; min-height: 45dvh; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 2rem; text-align: center; }
+.mini-create { position: fixed; bottom: calc(5.5rem + var(--mini-bottom)); right: max(1rem, calc((100vw - 40rem) / 2)); z-index: 20; }
+.mini-navigation { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 42rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: hsl(var(--background)); border-top: 1px solid hsl(var(--border)); padding: .5rem .5rem calc(.5rem + var(--mini-bottom)); z-index: 20; }
+.mini-navigation button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; min-height: 3.5rem; border-radius: .75rem; color: hsl(var(--muted-foreground)); font-size: .75rem; }
+.mini-navigation button[aria-current] { color: hsl(var(--primary)); background: hsl(var(--primary) / .08); font-weight: 600; }
+.telegram-tasks button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.telegram-tasks [role="dialog"], .telegram-tasks [role="alertdialog"] { max-height: calc(var(--tg-viewport-height, 100dvh) - var(--mini-top) - var(--mini-bottom) - 1rem); }
+@media (max-width: 640px) {
+  .telegram-tasks input, .telegram-tasks textarea, .telegram-tasks select { font-size: 16px; }
+  .telegram-tasks button, .telegram-tasks [role="combobox"], .telegram-tasks [role="tab"] { min-height: 44px; }
+  .telegram-tasks button[aria-label], .telegram-tasks [role="checkbox"] { min-width: 44px; }
+  .telegram-tasks [data-mini-task-sheet] { top: var(--mini-top); bottom: var(--mini-bottom); height: calc(var(--tg-viewport-height, 100dvh) - var(--mini-top) - var(--mini-bottom)); }
+}

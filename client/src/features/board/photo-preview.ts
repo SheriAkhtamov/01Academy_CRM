@@ -1,4 +1,5 @@
 import { attachmentExtension, MAX_ATTACHMENT_BYTES } from '@shared/board-attachments';
+import { boardUrl, boardHeaders } from './transport';
 
 const nativeMime: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jpe': 'image/jpeg', '.jfif': 'image/jpeg',
@@ -9,7 +10,7 @@ const nativeMime: Record<string, string> = {
 // or completion so a corrupt photo cannot block React or leak decoder memory.
 let queue: Promise<unknown> = Promise.resolve();
 export async function attachmentBlob(attachmentId: number, signal: AbortSignal): Promise<Blob> {
-  const response = await fetch(`/api/board/attachments/${attachmentId}/download`, { signal, credentials: 'same-origin' });
+  const response = await fetch(boardUrl(`/api/board/attachments/${attachmentId}/download`), { signal, credentials: 'same-origin', headers: boardHeaders() });
   if (!response.ok || Number(response.headers.get('Content-Length')) > MAX_ATTACHMENT_BYTES) throw new Error('Preview unavailable');
   return response.blob();
 }

@@ -1,4 +1,4 @@
-import { Router, type NextFunction, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response, type RequestHandler } from 'express';
 import fs from 'fs';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -18,13 +18,14 @@ import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 
+export function createBoardRouter(authorize: RequestHandler) {
 const router = Router();
 
 // --- Permission helpers -----------------------------------------------------
 
 const isTaskSupervisor = (user?: User) => hasLeadershipAccess(user);
 
-router.use(requireAuth);
+router.use(authorize);
 
 const canReadTask = (user: User, task: BoardTask | { creatorId: number | null; assigneeId: number | null }) =>
     user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor(user);
@@ -817,4 +818,7 @@ router.delete('/attachments/:id', async (req, res) => {
     }
 });
 
-export default router;
+return router;
+}
+
+export default createBoardRouter(requireAuth);

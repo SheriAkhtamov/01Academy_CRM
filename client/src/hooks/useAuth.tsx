@@ -31,12 +31,13 @@ const anonymousSession: AuthSession = { kind: 'anonymous' };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+const defaultAuthApi = { fetchAuthSession, loginUserSession, logoutSession };
+export function AuthProvider({ children, api = defaultAuthApi }: { children: ReactNode; api?: typeof defaultAuthApi }) {
   const queryClient = useQueryClient();
 
   const sessionQuery = useQuery<AuthSession>({
     queryKey: AUTH_SESSION_QUERY_KEY,
-    queryFn: fetchAuthSession,
+    queryFn: api.fetchAuthSession,
     retry: false,
     staleTime: 0,
   });
@@ -44,21 +45,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const syncSession = async () => (
     queryClient.fetchQuery({
       queryKey: AUTH_SESSION_QUERY_KEY,
-      queryFn: fetchAuthSession,
+      queryFn: api.fetchAuthSession,
       staleTime: 0,
     })
   );
 
   const loginMutation = useMutation({
     mutationFn: async ({ login, password }: { login: string; password: string }) => {
-      await loginUserSession(login, password);
+      await api.loginUserSession(login, password);
       return syncSession();
     },
   });
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await logoutSession();
+      await api.logoutSession();
     },
     onSuccess: () => {
       queryClient.clear();

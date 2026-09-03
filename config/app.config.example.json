@@ -37,7 +37,12 @@
   },
 
   "integrations": {
-    "_comment": "Only the four supported CRM integrations are configured here: website, Instagram, Meta Ads/CAPI, and OnlinePBX.",
+    "_comment": "Supported CRM integrations. Never commit real tokens or secrets.",
+    "telegramTasks": {
+      "botToken": "",
+      "webhookSecret": "",
+      "botUsername": ""
+    },
     "website": {
       "webhookSecret": "",
       "allowedFormOrigins": [

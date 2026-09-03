@@ -19,7 +19,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { apiRequest } from '@/lib/queryClient';
+import { boardRequest as apiRequest } from '@/features/board/transport';
 import { boardQueryKeys } from '@/features/board/api';
 import { academyInstant, academyToday } from '@/lib/localeFormat';
 import type { TranslationKey } from '@/lib/i18n';

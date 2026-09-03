@@ -1,6 +1,16 @@
 import { devLog } from '@/lib/debug';
 
 export const translations = {
+  miniTasksTitle: { en: '01 Academy · Tasks', ru: '01 Academy · Задачи' },
+  miniTasksAssigned: { en: 'Assigned by me', ru: 'Порученные' },
+  miniTasksSearch: { en: 'Search tasks', ru: 'Поиск задач' },
+  miniTasksEmpty: { en: 'No tasks here yet', ru: 'Здесь пока нет задач' },
+  miniTasksEmptyHint: { en: 'Create a task or choose another section.', ru: 'Создайте задачу или выберите другой раздел.' },
+  miniTasksOpenTelegram: { en: 'Open this app from the Telegram bot after sharing your phone number.', ru: 'Откройте приложение из Telegram-бота, предварительно поделившись своим номером.' },
+  miniTasksSessionExpired: { en: 'Access expired or is unavailable. Reopen the app from the bot and share your number again if needed.', ru: 'Сеанс истёк или доступ недоступен. Откройте приложение заново из бота; при необходимости повторно поделитесь номером.' },
+  miniTasksUnavailable: { en: 'Unable to connect. Please try again.', ru: 'Не удалось подключиться. Попробуйте снова.' },
+  miniTasksNavigation: { en: 'Task sections', ru: 'Разделы задач' },
+  miniTasksRefresh: { en: 'Refresh tasks', ru: 'Обновить задачи' },
   absent: { en: 'Absent', ru: 'Отсутствовал' },
   accessDenied: { en: 'Access Denied', ru: 'Доступ запрещён' },
   accountSettings: { en: 'Account Settings', ru: 'Настройки аккаунта' },

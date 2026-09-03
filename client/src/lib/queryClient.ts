@@ -167,9 +167,11 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { headers?: Record<string, string>; credentials?: RequestCredentials },
 ): Promise<any> {
   const headers: Record<string, string> = {
     "X-Requested-With": "XMLHttpRequest",
+    ...options?.headers,
   };
   let body: string | FormData | undefined;
 
@@ -187,7 +189,7 @@ export async function apiRequest(
     method,
     headers,
     body,
-    credentials: "include",
+    credentials: options?.credentials ?? "include",
   });
 
   await throwIfResNotOk(res);

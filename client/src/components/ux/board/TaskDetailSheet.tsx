@@ -35,7 +35,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
     CheckCircle2,
-    Download,
     Loader2,
     Lock,
     Paperclip,
@@ -45,13 +44,14 @@ import {
     UserRound,
     X,
 } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
+import { boardRequest as apiRequest } from '@/features/board/transport';
+import { TaskAttachmentDownload } from './TaskAttachmentDownload';
 import {
     attachmentErrorKey,
     validateAttachment,
 } from '@/lib/attachments';
 import { academyDateInputValue, academyInstant, academyTimeOfDay } from '@/lib/localeFormat';
-import { boardQueryKeys } from '@/features/board/api';
+import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { TaskColorPicker } from './TaskColorPicker';
 import { TaskPhotoPreview } from './TaskPhotoPreview';
 import { ALLOWED_ATTACHMENT_EXTENSIONS, isPhotoAttachment } from '@shared/board-attachments';
@@ -77,6 +77,7 @@ import {
 } from '@/lib/boardTypes';
 
 interface TaskDetailSheetProps {
+    tasksOnly?: boolean;
     taskId: number | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -130,7 +131,7 @@ function columnLabel(status: string | null, t: (k: any) => string): string {
     }
 }
 
-export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetailSheetProps) {
+export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly = false }: TaskDetailSheetProps) {
     const { t, language } = useTranslation();
     const { toast } = useToast();
     const { user } = useAuth();
@@ -139,6 +140,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     const queryKey = [`/api/board/tasks/${taskId}`];
     const { data: task, isLoading, isError, refetch } = useQuery<TaskDetail>({
         queryKey,
+        queryFn: () => boardApi.getTask<TaskDetail>(taskId!),
+        refetchInterval: tasksOnly ? 30_000 : false,
         enabled: open && taskId !== null,
     });
 
@@ -313,7 +316,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+            <SheetContent data-mini-task-sheet={tasksOnly || undefined} className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
                 {isError ? (
                     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                         <p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p>
@@ -343,7 +346,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                 {t(priorityMeta.labelKey)}
                                             </Badge>
                                         ) : null}
-                                        {task.lead ? (
+                                        {task.lead && !tasksOnly ? (
                                             <Button asChild variant="outline" size="sm" className="h-6 max-w-full gap-1.5 px-2 text-xs">
                                                 <Link href={`/sales/pipeline?lead=${task.lead.id}`}>
                                                     <UserRound className="size-3.5 shrink-0" />
@@ -592,7 +595,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                                         <p className="truncate text-sm text-foreground">{a.originalName}</p>
                                                         <p className="text-[11px] text-muted-foreground">{formatFileSize(a.size)} · {a.uploadedBy?.fullName ?? '—'}</p>
                                                     </div>
-                                                    <Button asChild size="icon" variant="ghost" className="size-7 text-muted-foreground"><a href={`/api/board/attachments/${a.id}/download`} aria-label={`${t('download')}: ${a.originalName}`}><Download className="size-3.5" /></a></Button>
+                                                    <TaskAttachmentDownload id={a.id} name={a.originalName} compact />
                                                     {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isTaskSupervisor) ? (
                                                         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'attachment', id: a.id })}><Trash2 className="size-3.5" /></Button>
                                                     ) : null}

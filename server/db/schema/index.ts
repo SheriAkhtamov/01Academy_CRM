@@ -49,6 +49,20 @@ export const users = pgTable("users", {
   moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
 
+export const telegramTaskBindings = pgTable("telegram_task_bindings", {
+  id: serial("id").primaryKey(),
+  botId: varchar("bot_id", { length: 32 }).notNull(),
+  telegramUserId: varchar("telegram_user_id", { length: 32 }).notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  verifiedPhone: varchar("verified_phone", { length: 32 }).notNull(),
+  verificationId: varchar("verification_id", { length: 36 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  telegramUnique: uniqueIndex("telegram_task_bindings_telegram_unique").on(table.botId, table.telegramUserId),
+  employeeUnique: uniqueIndex("telegram_task_bindings_employee_unique").on(table.botId, table.userId),
+}));
+
 export const telephonyManagedExtensions = pgTable("telephony_managed_extensions", {
   extension: varchar("extension", { length: 20 }).primaryKey(),
   provider: varchar("provider", { length: 40 }).notNull().default("onlinepbx"),

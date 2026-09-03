@@ -14,6 +14,7 @@ import { assertDatabaseConnection } from '../infrastructure/database-health';
 import { createSessionMiddleware } from '../infrastructure/session';
 import { attachWebSocketGateway } from '../realtime/websocket-gateway';
 import { createHttpApp } from './http-app';
+import { registerTelegramTaskRoutes } from '../routes/telegram-tasks.routes';
 
 export type ApplicationRuntime = {
   server: Server;
@@ -29,12 +30,15 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
   app.set('env', appConfig.server.environment);
   app.set('trust proxy', trustedProxyConfig);
 
+  registerTelegramTaskRoutes(app);
   const sessionMiddleware = createSessionMiddleware();
   app.use(sessionMiddleware);
   registerApiRoutes(app);
 
   const server = createServer(app);
-  server.requestTimeout = 30_000;
+  // 50 MB task uploads need time on mobile connections. Header timeout,
+  // multipart size limits and per-user upload rate limits still apply.
+  server.requestTimeout = 10 * 60_000;
   server.headersTimeout = 15_000;
   server.keepAliveTimeout = 5_000;
   server.maxHeadersCount = 100;

@@ -68,6 +68,8 @@ export const securityHeadersMiddleware = (
   // Photo conversion runs in a same-origin worker. This permits WebAssembly,
   // not JavaScript eval (which remains disabled in production).
   const scriptSources = ["'self'", "'wasm-unsafe-eval'"];
+  const miniAppPage = req.path === '/miniapp/tasks' || req.path === '/miniapp/tasks/' || req.path === '/miniapp.html';
+  if (miniAppPage) scriptSources.push('https://telegram.org');
   if (isDevelopmentEnvironment) {
     // Vite's dev transform injects the React Refresh preamble as an inline
     // script. Without 'unsafe-inline' the CSP blocks it, React never mounts
@@ -79,7 +81,7 @@ export const securityHeadersMiddleware = (
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
-    "frame-ancestors 'none'",
+    miniAppPage ? 'frame-ancestors https://web.telegram.org https://webk.telegram.org https://webz.telegram.org' : "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src ${scriptSources.join(' ')}`,
     "style-src 'self' 'unsafe-inline'",
@@ -97,7 +99,7 @@ export const securityHeadersMiddleware = (
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  if (!miniAppPage) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   res.setHeader(
     'Permissions-Policy',

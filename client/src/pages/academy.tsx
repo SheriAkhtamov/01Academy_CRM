@@ -52,6 +52,7 @@ import {
   Plus,
   Plug,
   RadioTower,
+  Send,
   Settings2,
   Star,
   Trash2,
@@ -72,6 +73,7 @@ interface IntegrationStatus {
   requiresReconnect?: boolean;
   accountId?: number | null;
   accountUsername?: string | null;
+  externalUrl?: string | null;
   details?: MetaIntegrationState | null;
   lastLog?: {
     provider: string;
@@ -159,6 +161,8 @@ const integrationCopy = (provider: string, t: (key: TranslationKey) => string) =
       return { title: t('metaIntegration'), description: t('metaIntegrationDesc') };
     case 'onlinepbx':
       return { title: t('onlinePbxIntegration'), description: t('onlinePbxIntegrationDesc') };
+    case 'telegram_tasks':
+      return { title: t('telegramTasksIntegration'), description: t('telegramTasksIntegrationDesc') };
     default:
       return { title: t('navIntegrations'), description: t('adminIntegrationsDescription') };
   }
@@ -469,6 +473,8 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 ? RadioTower
               : integration.provider === 'onlinepbx'
                 ? PhoneCall
+                : integration.provider === 'telegram_tasks'
+                  ? Send
                 : Plug;
 
           return (
@@ -489,7 +495,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         {statusText}
                       </p>
                       <div className="mt-3 inline-flex rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
-                        {lastLogTime ? (
+                        {integration.provider === 'telegram_tasks' && integration.accountUsername ? (
+                          <span>{t('telegramTasksBotLabel')}: @{integration.accountUsername}</span>
+                        ) : lastLogTime ? (
                           <span>{t('integrationLastEvent')}: {lastLogTime}</span>
                         ) : (
                           <span>{t('integrationNoEvents')}</span>
@@ -539,6 +547,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       <Button variant="outline" onClick={() => setMetaDetailsOpen(true)}>
                         <Settings2 data-icon="inline-start" />
                         {t('metaConnection')}
+                      </Button>
+                    ) : integration.provider === 'telegram_tasks' && integration.externalUrl ? (
+                      <Button asChild variant="outline">
+                        <a href={integration.externalUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink data-icon="inline-start" />
+                          {t('telegramTasksOpenBot')}
+                        </a>
                       </Button>
                     ) : null}
                     <Badge variant={integration.connected ? 'success' : 'warning'}>

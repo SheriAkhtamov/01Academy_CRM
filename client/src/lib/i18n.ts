@@ -2123,6 +2123,13 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   integrationsConnectedSummary: { en: '{connected} of {total} connected', ru: 'Подключено {connected} из {total}' },
   integrationNeedsAttention: { en: 'Needs setup', ru: 'Требует настройки' },
+  telegramTasksIntegration: { en: 'Telegram Tasks', ru: 'Telegram: задачи' },
+  telegramTasksIntegrationDesc: {
+    en: 'Employee bot and mobile Mini App for working with CRM tasks.',
+    ru: 'Бот для сотрудников и мобильное Mini App для работы с задачами CRM.',
+  },
+  telegramTasksBotLabel: { en: 'Bot', ru: 'Бот' },
+  telegramTasksOpenBot: { en: 'Open bot', ru: 'Открыть бота' },
   integrationProviderWebsite: { en: 'Website', ru: 'Сайт' },
   integrationProviderWebsiteDesc: {
     en: 'Lead capture webhook from the Zero One Academy website.',

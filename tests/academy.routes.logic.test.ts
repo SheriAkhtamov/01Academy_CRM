@@ -40,6 +40,11 @@ vi.mock('../server/config', () => ({
   appConfig: {
     server: { appUrl: 'https://crm.test', environment: 'test' },
     integrations: {
+      telegramTasks: {
+        botToken: '12345:test-only-token-that-is-long-enough',
+        webhookSecret: 'test-webhook-secret-that-is-long-enough',
+        botUsername: 'ZeroOneAcademy_Taskbot',
+      },
       metaAds: {
         marketingAccessToken: 'marketing-token',
         capiAccessToken: 'capi-token',
@@ -173,12 +178,21 @@ describe('academy route logic boundaries', () => {
       'website',
       'meta',
       'onlinepbx',
+      'telegram_tasks',
     ]);
     expect(response.body).toContainEqual(expect.objectContaining({
       provider: 'meta',
       connected: true,
       accountUsername: '789',
     }));
+    expect(response.body).toContainEqual(expect.objectContaining({
+      provider: 'telegram_tasks',
+      connected: true,
+      accountUsername: 'ZeroOneAcademy_Taskbot',
+      externalUrl: 'https://t.me/ZeroOneAcademy_Taskbot',
+    }));
+    expect(JSON.stringify(response.body)).not.toContain('test-only-token');
+    expect(JSON.stringify(response.body)).not.toContain('test-webhook-secret');
   });
 
   it('shows full own and unassigned lead cards to sales while excluding other managers', async () => {

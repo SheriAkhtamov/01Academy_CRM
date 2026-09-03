@@ -482,6 +482,10 @@ router.get('/integrations/status', async (req, res) => {
     const instagramAccount = instagramAccounts[0] ?? null;
     const instagramRequiresReconnect = instagramAccount?.lastError === 'instagramReauthorizationRequired';
     const integ = appConfig.integrations ?? {};
+    const telegramBotUsername = integ.telegramTasks?.botUsername?.trim() ?? '';
+    const safeTelegramBotUsername = /^[A-Za-z][A-Za-z0-9_]{1,28}bot$/i.test(telegramBotUsername)
+      ? telegramBotUsername
+      : null;
     const metaMarketing = getMetaMarketingIntegrationConfig();
     const metaLeadAds = getMetaLeadAdsIntegrationConfig();
     // Read live: adding or renaming a stage in the CRM changes what Meta is offered.
@@ -532,6 +536,20 @@ router.get('/integrations/status', async (req, res) => {
         accountUsername: onlinePbxClient.getDomain() || null,
         details: null,
       },
+      {
+        provider: 'telegram_tasks',
+        connected: Boolean(
+          integ.telegramTasks?.botToken?.trim()
+          && integ.telegramTasks?.webhookSecret?.trim()
+        ),
+        requiresReconnect: false,
+        accountId: null,
+        accountUsername: safeTelegramBotUsername,
+        externalUrl: safeTelegramBotUsername
+          ? `https://t.me/${safeTelegramBotUsername}`
+          : null,
+        details: null,
+      },
     ];
     /*
       State, not prose. The message used to be built here by gluing an English
@@ -548,6 +566,7 @@ router.get('/integrations/status', async (req, res) => {
       requiresReconnect: entry.requiresReconnect,
       accountId: entry.accountId,
       accountUsername: entry.accountUsername,
+      externalUrl: 'externalUrl' in entry ? entry.externalUrl : null,
       details: entry.details,
       lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
     })));

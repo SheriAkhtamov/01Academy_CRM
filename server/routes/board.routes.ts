@@ -34,10 +34,9 @@ const canManageTask = (user: User, task: BoardTask) =>
     canReadTask(user, task);
 
 // Accepting (Done -> Accepted) and re-opening (out of Accepted) are reserved
-// for the task creator. The head retains an override so orphaned tasks (whose
-// creator was deactivated) never get stuck.
+// for the task creator, regardless of the assignee's administrative access.
 const canAcceptOrReopen = (user: User, task: BoardTask) =>
-    user.id === task.creatorId || isTaskSupervisor(user);
+    user.id === task.creatorId;
 
 const parseId = (raw: unknown) => {
     const text = String(raw ?? '').trim();
@@ -45,6 +44,9 @@ const parseId = (raw: unknown) => {
     const id = Number(text);
     return Number.isSafeInteger(id) && id > 0 ? id : null;
 };
+
+const validRequestKey = (key: unknown): key is string =>
+    typeof key === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(key);
 
 const parseDateInput = (value: unknown): { date: Date | null; valid: boolean } => {
     if (value === undefined || value === null || value === '') return { date: null, valid: true };
@@ -93,6 +95,8 @@ const authorizeAttachmentUpload = async (
     try {
         const taskId = parseId(req.params.id);
         if (!taskId) return res.status(400).json({ error: 'Invalid task id' });
+        const requestKey = req.header('X-Upload-Key');
+        if (requestKey !== undefined && !validRequestKey(requestKey)) return res.status(400).json({ error: 'Invalid upload key' });
         const task = await storage.board.getTask(taskId);
         if (!task) return res.status(404).json({ error: 'Task not found' });
         if (!canReadTask(req.user!, task)) {
@@ -166,21 +170,14 @@ function validateTransition(
     toStatus: BoardTaskStatus,
     user: User,
 ): { code: number; error: string } | null {
+    if ((toStatus === 'accepted' || task.status === 'accepted') && !canAcceptOrReopen(user, task)) {
+        return { code: 403, error: 'onlyCreatorCanAcceptHint' };
+    }
     if (task.status === toStatus) return null;
 
     if (toStatus === 'accepted') {
         if (task.status !== 'done') {
             return { code: 400, error: 'Task must be in Done before it can be accepted' };
-        }
-        if (!canAcceptOrReopen(user, task)) {
-            return { code: 403, error: 'Only the task creator can accept this task' };
-        }
-    }
-
-    if (task.status === 'accepted') {
-        // Leaving Accepted == re-open.
-        if (!canAcceptOrReopen(user, task)) {
-            return { code: 403, error: 'Only the task creator can re-open this task' };
         }
     }
 
@@ -258,6 +255,10 @@ router.post('/tasks', async (req, res) => {
     try {
         const { title, description, priority, color, status, assigneeId, dueAt, leadId } = req.body;
         let { boardId } = req.body;
+        const requestKey = req.body.requestKey;
+        if (requestKey !== undefined && !validRequestKey(requestKey)) {
+            return res.status(400).json({ error: 'Invalid request key' });
+        }
 
         if (!title || typeof title !== 'string' || !title.trim()) {
             return res.status(400).json({ error: 'Title is required' });
@@ -346,7 +347,7 @@ router.post('/tasks', async (req, res) => {
         };
         const atomicCreate = (storage.board as any).createTaskWithActivity;
         const task = atomicCreate
-            ? await atomicCreate.call(storage.board, taskValues, activityValues)
+            ? await atomicCreate.call(storage.board, taskValues, activityValues, requestKey)
             : await storage.board.createTask(taskValues);
         if (!atomicCreate) {
             await storage.board.createActivity({ taskId: task.id, ...activityValues });
@@ -483,6 +484,7 @@ router.patch('/tasks/:id/status', async (req, res) => {
         if (transitionError) {
             return res.status(transitionError.code).json({ error: transitionError.error });
         }
+        if (task.status === 'accepted' && status === 'accepted') return res.json(task);
 
         const updates: Record<string, unknown> = { status };
         if (position !== undefined) {
@@ -721,43 +723,35 @@ router.post(
     authorizeAttachmentUpload,
     uploadSingleBoardAttachment,
     async (req, res) => {
-    let persistedAttachmentId: number | null = null;
+    let committed = false;
     try {
         const id = parseId(req.params.id)!;
         if (!req.file) return res.status(400).json({ error: 'File is required' });
-        const task = res.locals.boardTask as BoardTask;
+        // Re-check after the upload: the task may have been deleted/reassigned.
+        const task = await storage.board.getTask(id);
+        if (!task || !canReadTask(req.user!, task)) {
+            await removeUploadedFile(req.file.path);
+            return res.status(403).json({ error: 'accessDenied' });
+        }
         await fs.promises.chmod(req.file.path, 0o640);
 
-        const attachment = await storage.board.createAttachment({
+        const values = {
             taskId: id,
             fileName: req.file.filename,
             originalName: sanitizeOriginalAttachmentName(req.file.originalname),
             mimeType: req.file.mimetype,
             size: req.file.size,
             uploadedBy: req.user!.id,
-        });
-        persistedAttachmentId = attachment.id;
-        await storage.board.createActivity({
-            taskId: id,
-            actorId: req.user!.id,
-            type: 'attachment_added',
-            fromValue: null,
-            toValue: attachment.originalName,
-            meta: null,
-        });
+        };
+        const attachment = await storage.board.createAttachmentWithActivity(values, req.header('X-Upload-Key'));
+        committed = true;
+        // A retry may have returned an attachment from an earlier request.
+        if (attachment.fileName !== req.file.filename) await removeUploadedFile(req.file.path);
 
         broadcastTask('BOARD_TASK_UPDATED', task);
         res.json(attachment);
     } catch (error) {
-        if (persistedAttachmentId !== null) {
-            await storage.board.deleteAttachment(persistedAttachmentId).catch((cleanupError) => {
-                logger.error('Failed to roll back attachment metadata', {
-                    cleanupError,
-                    attachmentId: persistedAttachmentId,
-                });
-            });
-        }
-        await removeUploadedFile(req.file?.path);
+        if (!committed) await removeUploadedFile(req.file?.path);
         logger.error('Failed to upload attachment', { error, taskId: req.params.id });
         res.status(500).json({ error: 'Failed to upload attachment' });
     }
@@ -781,6 +775,8 @@ router.get('/attachments/:id/download', async (req, res) => {
         }
 
         res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         res.download(filePath, attachment.originalName);
     } catch (error) {
         logger.error('Failed to download attachment', { error, attachmentId: req.params.id });

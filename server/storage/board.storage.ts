@@ -288,10 +288,23 @@ class BoardStorage {
     async createTaskWithActivity(
         data: InsertBoardTask,
         activity: Omit<InsertBoardTaskActivity, 'taskId'>,
+        requestKey?: string,
     ): Promise<BoardTask> {
         return db.transaction(async (tx) => {
+            // A retry after a lost response returns the original task. The lock
+            // also serializes simultaneous retries across app instances.
+            if (requestKey) {
+                await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`board:create:${data.creatorId}:${requestKey}`}, 0))`);
+                const [existing] = await tx.select({ task: boardTasks }).from(boardTaskActivity)
+                    .innerJoin(boardTasks, eq(boardTaskActivity.taskId, boardTasks.id))
+                    .where(and(eq(boardTaskActivity.actorId, data.creatorId!), eq(boardTaskActivity.type, 'created'),
+                        sql`${boardTaskActivity.meta}->>'requestKey' = ${requestKey}`)).limit(1);
+                if (existing) return existing.task;
+            }
             const [row] = await tx.insert(boardTasks).values(data).returning();
-            await tx.insert(boardTaskActivity).values({ ...activity, taskId: row.id });
+            await tx.insert(boardTaskActivity).values({ ...activity, taskId: row.id,
+                ...(requestKey ? { meta: { requestKey } } : {}),
+            });
             return row;
         });
     }
@@ -396,6 +409,25 @@ class BoardStorage {
     async createAttachment(data: InsertBoardTaskAttachment) {
         const [row] = await db.insert(boardTaskAttachments).values(data).returning();
         return row;
+    }
+
+    async createAttachmentWithActivity(data: InsertBoardTaskAttachment, requestKey?: string) {
+        return db.transaction(async (tx) => {
+            if (requestKey) {
+                await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`board:upload:${data.taskId}:${data.uploadedBy}:${requestKey}`}, 0))`);
+                const [existing] = await tx.select({ attachment: boardTaskAttachments }).from(boardTaskActivity)
+                    .innerJoin(boardTaskAttachments, sql`${boardTaskAttachments.id}::text = ${boardTaskActivity.meta}->>'attachmentId'`)
+                    .where(and(eq(boardTaskActivity.taskId, data.taskId), eq(boardTaskActivity.actorId, data.uploadedBy!),
+                        eq(boardTaskActivity.type, 'attachment_added'), sql`${boardTaskActivity.meta}->>'requestKey' = ${requestKey}`)).limit(1);
+                if (existing) return existing.attachment;
+            }
+            const [row] = await tx.insert(boardTaskAttachments).values(data).returning();
+            await tx.insert(boardTaskActivity).values({ taskId: data.taskId, actorId: data.uploadedBy,
+                type: 'attachment_added', fromValue: null, toValue: data.originalName.slice(0, 120),
+                meta: { attachmentId: row.id, originalName: data.originalName, ...(requestKey ? { requestKey } : {}) },
+            });
+            return row;
+        });
     }
 
     async getAttachment(id: number) {

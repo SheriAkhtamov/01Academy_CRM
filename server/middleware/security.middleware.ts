@@ -65,7 +65,9 @@ export const securityHeadersMiddleware = (
   res: Response,
   next: NextFunction,
 ) => {
-  const scriptSources = ["'self'"];
+  // Photo conversion runs in a same-origin worker. This permits WebAssembly,
+  // not JavaScript eval (which remains disabled in production).
+  const scriptSources = ["'self'", "'wasm-unsafe-eval'"];
   if (isDevelopmentEnvironment) {
     // Vite's dev transform injects the React Refresh preamble as an inline
     // script. Without 'unsafe-inline' the CSP blocks it, React never mounts

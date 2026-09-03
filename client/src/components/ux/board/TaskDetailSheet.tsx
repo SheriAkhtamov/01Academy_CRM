@@ -53,6 +53,9 @@ import {
 import { academyDateInputValue, academyInstant, academyTimeOfDay } from '@/lib/localeFormat';
 import { boardQueryKeys } from '@/features/board/api';
 import { TaskColorPicker } from './TaskColorPicker';
+import { TaskPhotoPreview } from './TaskPhotoPreview';
+import { ALLOWED_ATTACHMENT_EXTENSIONS, isPhotoAttachment } from '@shared/board-attachments';
+import { uploadTaskAttachment } from '@/features/board/attachment-upload';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -184,8 +187,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
 
     const isTaskSupervisor = hasLeadershipAccess(user);
     const canManage = !!task && !!user && (user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor);
-    const canAcceptReopen = !!task && !!user && (user.id === task.creatorId || isTaskSupervisor);
-    const canDelete = canAcceptReopen;
+    const canAcceptReopen = !!task && !!user && user.id === task.creatorId;
+    const canDelete = canAcceptReopen || (!!task && isTaskSupervisor);
 
     const onError = (error: Error) => toast({ title: error.message, variant: 'destructive' });
 
@@ -260,48 +263,15 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
     });
 
     const uploadMutation = useMutation({
-        mutationFn: ({ file, onProgress }: { file: File; onProgress: (percent: number) => void }) => {
-            const form = new FormData();
-            form.append('file', file);
-            // XHR (not fetch) so large uploads can show real progress instead
-            // of a spinner with no feedback for minutes.
-            return new Promise<{ ok?: boolean }>((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', `/api/board/tasks/${taskId}/attachments`);
-                xhr.upload.addEventListener('progress', (event) => {
-                    if (event.lengthComputable) {
-                        onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
-                    }
-                });
-                xhr.addEventListener('load', () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        try {
-                            resolve(JSON.parse(xhr.responseText));
-                        } catch {
-                            resolve({});
-                        }
-                        return;
-                    }
-                    let message = '';
-                    try {
-                        message = String(JSON.parse(xhr.responseText)?.message ?? '');
-                    } catch {
-                        message = '';
-                    }
-                    reject(new Error(message || `HTTP ${xhr.status}`));
-                });
-                xhr.addEventListener('error', () => reject(new Error('Network error')));
-                xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
-                xhr.send(form);
-            });
-        },
+        mutationFn: ({ file, onProgress }: { file: File; onProgress: (percent: number) => void }) =>
+            uploadTaskAttachment(taskId!, file, onProgress),
         onSuccess: () => {
             setUploadPercent(null);
             invalidate();
         },
         onError: (error: Error) => {
             setUploadPercent(null);
-            toast({ title: t(attachmentErrorKey(error.message)), description: error.message, variant: 'destructive' });
+            toast({ title: t(attachmentErrorKey(error.message)), variant: 'destructive' });
         },
     });
 
@@ -593,6 +563,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                     <input
                                         ref={fileInputRef}
                                         type="file"
+                                        accept={ALLOWED_ATTACHMENT_EXTENSIONS.join(',')}
                                         className="hidden"
                                         onChange={(e) => { const f = e.target.files?.[0]; handleAttachmentSelected(f); e.target.value = ''; }}
                                     />
@@ -603,7 +574,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                         <span className="text-xs text-muted-foreground">{t('attachmentSizeHint')}</span>
                                     </div>
                                     {uploadPercent !== null ? (
-                                        <div className="flex items-center gap-2" role="progressbar" aria-valuenow={uploadPercent} aria-valuemin={0} aria-valuemax={100}>
+                                        <div className="flex items-center gap-2" role="progressbar" aria-label={t('attachmentUploading')} aria-valuenow={uploadPercent} aria-valuemin={0} aria-valuemax={100}>
                                             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                                                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadPercent}%` }} />
                                             </div>
@@ -616,14 +587,12 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users }: TaskDetai
                                         <ul className="space-y-2">
                                             {task.attachments.map((a) => (
                                                 <li key={a.id} className="flex items-center gap-2 rounded-lg border border-border bg-card p-2.5">
-                                                    <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                                                    {isPhotoAttachment(a.originalName) ? <TaskPhotoPreview name={a.originalName} attachmentId={a.id} /> : <Paperclip className="size-4 shrink-0 text-muted-foreground" />}
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm text-foreground">{a.originalName}</p>
                                                         <p className="text-[11px] text-muted-foreground">{formatFileSize(a.size)} · {a.uploadedBy?.fullName ?? '—'}</p>
                                                     </div>
-                                                    <a href={`/api/board/attachments/${a.id}/download`} className="inline-flex">
-                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('download')}><Download className="size-3.5" /></Button>
-                                                    </a>
+                                                    <Button asChild size="icon" variant="ghost" className="size-7 text-muted-foreground"><a href={`/api/board/attachments/${a.id}/download`} aria-label={`${t('download')}: ${a.originalName}`}><Download className="size-3.5" /></a></Button>
                                                     {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isTaskSupervisor) ? (
                                                         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'attachment', id: a.id })}><Trash2 className="size-3.5" /></Button>
                                                     ) : null}

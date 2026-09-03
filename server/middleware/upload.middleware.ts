@@ -2,26 +2,11 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import { nanoid } from 'nanoid';
+import { MAX_ATTACHMENT_BYTES, validateAttachmentInfo } from '@shared/board-attachments';
 
 // Board task attachments are stored on local disk under <cwd>/uploads/board.
 // Downloads are served through an authenticated route, never via static hosting.
 export const BOARD_UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'board');
-const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set([
-    '.7z', '.csv', '.doc', '.docx', '.gif', '.jpeg', '.jpg', '.m4a', '.mov',
-    '.mp3', '.mp4', '.odp', '.ods', '.odt', '.pdf', '.png', '.ppt', '.pptx',
-    '.rar', '.rtf', '.txt', '.wav', '.webm', '.webp', '.xls', '.xlsx', '.zip',
-]);
-const BLOCKED_MIME_TYPES = new Set([
-    'application/javascript',
-    'application/x-httpd-php',
-    'application/x-msdownload',
-    'application/x-sh',
-    'image/svg+xml',
-    'text/html',
-    'text/javascript',
-    'text/xml',
-]);
 
 // Best-effort directory creation. This must NEVER throw at import time: if the
 // directory is not writable (e.g. a read-only working dir in a container), the
@@ -58,18 +43,14 @@ const storage = multer.diskStorage({
 export const boardAttachmentUpload = multer({
     storage,
     limits: {
-        fileSize: MAX_ATTACHMENT_BYTES,
+        // Busboy emits LIMIT_FILE_SIZE at equality; allow exactly 50 MiB.
+        fileSize: MAX_ATTACHMENT_BYTES + 1,
         files: 1,
         fields: 5,
         parts: 8,
     },
     fileFilter: (_req, file, cb) => {
-        const extension = path.extname(file.originalname).toLowerCase();
-        const mimeType = file.mimetype.toLowerCase();
-        if (
-            !ALLOWED_EXTENSIONS.has(extension)
-            || BLOCKED_MIME_TYPES.has(mimeType)
-        ) {
+        if (validateAttachmentInfo(file.originalname, file.mimetype, 0)) {
             return cb(new Error('Unsupported attachment type'));
         }
         cb(null, true);

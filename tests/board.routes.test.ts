@@ -27,6 +27,7 @@ const mockStorage = {
     updateChecklistItem: vi.fn(),
     deleteChecklistItem: vi.fn(),
     createAttachment: vi.fn(),
+    createAttachmentWithActivity: vi.fn(),
     getAttachment: vi.fn(),
     deleteAttachment: vi.fn(),
   },
@@ -114,6 +115,7 @@ describe("board routes", () => {
     });
     mockStorage.board.getMaxPosition.mockResolvedValue(0);
     mockStorage.board.createActivity.mockResolvedValue({});
+    mockStorage.board.createAttachmentWithActivity.mockImplementation((data: unknown) => mockStorage.board.createAttachment(data));
     mockStorage.board.createTask.mockImplementation(async (data: any) => ({
       id: 100,
       ...data,
@@ -403,6 +405,73 @@ describe("board routes", () => {
     expect(taskResponse.status).toBe(400);
     expect(boardResponse.status).toBe(400);
     expect(mockStorage.board.getTaskDetail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { actor: 8, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
+    { actor: 1, creator: 7, assignee: 1, from: 'done', to: 'accepted' },
+    { actor: 1, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
+    { actor: 1, creator: null, assignee: 1, from: 'done', to: 'accepted' },
+    { actor: 8, creator: 7, assignee: 8, from: 'accepted', to: 'accepted' },
+    { actor: 1, creator: 7, assignee: 1, from: 'accepted', to: 'todo' },
+  ])('denies accept/reopen by non-creator $actor (including administrators)', async ({ actor, creator, assignee, from, to }) => {
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: creator, assigneeId: assignee, status: from });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actor });
+    const result = await agent.patch('/api/board/tasks/100/status').send({ status: to, creatorId: actor, acceptedBy: actor });
+    expect(result.status).toBe(403);
+    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+    expect(mockStorage.board.createActivity).not.toHaveBeenCalled();
+  });
+
+  it('allows self-assigned tasks only because the actor is also the creator', async () => {
+    const task = { id: 100, boardId: 1, creatorId: 7, assigneeId: 7, status: 'done' };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.updateTask.mockResolvedValue({ ...task, status: 'accepted' });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
+  });
+
+  it('makes repeated acceptance idempotent without overwriting approval history', async () => {
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8, status: 'accepted', acceptedBy: 7 });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
+    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+    expect(mockStorage.board.createActivity).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed upload/create retry keys', async () => {
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    expect((await agent.post('/api/board/tasks').send({ title: 'Test', requestKey: '../bad' })).status).toBe(400);
+    expect((await agent.post('/api/board/tasks/100/attachments').set('X-Upload-Key', '../bad').attach('file', Buffer.from('x'), 'x.pdf')).status).toBe(400);
+    expect(mockStorage.board.createAttachment).not.toHaveBeenCalled();
+  });
+
+  it.each([50 * 1024 * 1024, 50 * 1024 * 1024 + 1])('enforces the upload byte boundary %i and cleans temporary files', async (size) => {
+    const fs = await import('node:fs/promises');
+    const { BOARD_UPLOAD_DIR } = await import('../server/middleware/upload.middleware');
+    const before = new Set(await fs.readdir(BOARD_UPLOAD_DIR));
+    // Intentionally fail persistence so the test leaves no permanent file.
+    mockStorage.board.createAttachment.mockRejectedValueOnce(new Error('test rollback'));
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    const result = await agent.post('/api/board/tasks/100/attachments').attach('file', Buffer.alloc(size), 'boundary.pdf');
+    expect(result.status).toBe(size > 50 * 1024 * 1024 ? 413 : 500);
+    expect(mockStorage.board.createAttachment).toHaveBeenCalledTimes(size > 50 * 1024 * 1024 ? 0 : 1);
+    expect(new Set(await fs.readdir(BOARD_UPLOAD_DIR))).toEqual(before);
+    mockStorage.board.createAttachment.mockReset();
+  });
+
+  it('denies upload/download to an unrelated employee before exposing files', async () => {
+    mockStorage.board.getAttachment.mockResolvedValue({ id: 10, taskId: 100 });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 8 });
+    expect((await agent.post('/api/board/tasks/100/attachments').attach('file', Buffer.from('x'), 'x.pdf')).status).toBe(403);
+    expect((await agent.get('/api/board/attachments/10/download')).status).toBe(403);
+    expect(mockStorage.board.createAttachment).not.toHaveBeenCalled();
   });
 
   it("rejects invalid due dates, board ids, and object-valued text", async () => {

@@ -715,6 +715,13 @@
       "when": 1789747200000,
       "tag": "0101_employee_phone_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1789833600000,
+      "tag": "0102_restore_telegram_lead_source",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ import {
   syncMetaAdInsights,
 } from "./meta-marketing";
 import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
+import { processTelegramTaskReminders } from './telegram-task-reminders';
 
 export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 
@@ -50,6 +51,15 @@ export const startScheduler = () => {
   };
 
   void syncRecentMetaCrmHistory();
+
+  cron.schedule("* * * * *", async () => {
+    try {
+      const sent = await processTelegramTaskReminders(SCHEDULER_TIME_ZONE);
+      if (sent > 0) logger.info('[scheduler] Telegram task reminders sent', { count: sent });
+    } catch {
+      logger.error('[scheduler] Telegram task reminder worker failed');
+    }
+  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   // Meta worker — enriches attribution and delivers queued CAPI events.
   cron.schedule("* * * * *", async () => {

@@ -266,7 +266,9 @@ const collectTranslationReferences = (files, keySet) => {
     const isClientFile = filePath.startsWith(clientSrcDir);
 
     const visit = (node) => {
-      if (isClientFile && ts.isCallExpression(node) && isTranslationCall(node, sourceFile)) {
+      // System notifications also use the backend t() helper. Count shared
+      // dictionary keys used there, while backend-only keys keep their own type check.
+      if (ts.isCallExpression(node) && isTranslationCall(node, sourceFile)) {
         const firstArgument = node.arguments[0];
         if (firstArgument && ts.isStringLiteralLike(firstArgument)) {
           const key = firstArgument.text;
@@ -274,7 +276,7 @@ const collectTranslationReferences = (files, keySet) => {
 
           if (keySet.has(key)) {
             addReference(key, location);
-          } else {
+          } else if (isClientFile) {
             missing.push(`${location} missing translation key '${key}'`);
           }
         }

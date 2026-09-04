@@ -12,6 +12,7 @@ import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
 import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
+import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
@@ -65,6 +66,7 @@ export const telegramTaskBindings = pgTable("telegram_task_bindings", {
   telegramUnique: uniqueIndex("telegram_task_bindings_telegram_unique").on(table.botId, table.telegramUserId),
   employeeUnique: uniqueIndex("telegram_task_bindings_employee_unique").on(table.botId, table.userId),
 }));
+export const telegramTaskReminders = createTelegramTaskRemindersTable(telegramTaskBindings.id);
 
 export const telephonyManagedExtensions = pgTable("telephony_managed_extensions", {
   extension: varchar("extension", { length: 20 }).primaryKey(),

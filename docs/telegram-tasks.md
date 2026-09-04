@@ -44,7 +44,36 @@ refresh button is immediate. Only a task's creator can accept or reopen it.
   a file ticket cannot be used as a session token. Originals stay private.
 - Only the Mini App document allows the official Telegram script and Telegram
   web framing. CRM pages retain their original framing restrictions.
-- No automatic Telegram task notifications or unrelated modules are enabled.
+- Telegram task reminders run only in production (see below); no unrelated modules are exposed.
+
+## Task reminders outside the Mini App
+
+Apply `0103_telegram_task_reminders` with the normal migration runner after an
+approved database backup. The existing bot token/webhook config is reused;
+no new bot, credentials, webhook or paid broadcasts are needed.
+
+- Every minute the production scheduler checks current assignees' unfinished
+  tasks (`backlog`, `todo`, `in_progress`). `done` and `accepted` are excluded.
+- At 09:00 in `ACADEMY_TIME_ZONE` (default Asia/Tashkent), send one daily digest
+  of today's, overdue and undated tasks. Catch-up is allowed until 10:00 only.
+- Within the final hour before the deadline, send a one-time reminder per
+  task/deadline/recipient. Late-created tasks get the remaining-time reminder;
+  a changed deadline uses a new key. No deadline means daily digest only.
+- A plain-text message includes task titles and deadlines, never descriptions,
+  lead cards or attachments; its inline button opens `/miniapp/tasks`.
+- Before each recipient's messages, recheck the same live employee/phone
+  identity as Mini App auth. Unbound, inactive, archived or ambiguous identities
+  receive nothing; reassigned tasks no longer remind the old assignee.
+- Durable unique claims plus a per-bot PostgreSQL lock prevent repeated ticks,
+  restarts and concurrent instances from sending the same reminder twice.
+  Telegram has no sendMessage idempotency key: an ambiguous network timeout or
+  interrupted claimed attempt is not retried, to avoid double notifications.
+  The next daily digest covers unfinished work again.
+- Retry explicit 429 responses only after Telegram's `retry_after`, with a
+  bot-wide cooldown. Blocked/missing chats (400/403) are suppressed for 24 hours.
+  One message per recipient per minute; broadcasts are paced at most 10/sec.
+- Tests mock Telegram; do not send test messages to real employees or run the
+  worker against copied production credentials in a local environment.
 
 ## Employee cannot register
 

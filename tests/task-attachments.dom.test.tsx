@@ -108,3 +108,47 @@ describe('task acceptance UI', () => {
     },
   );
 });
+
+describe('task drafts and pending submissions', () => {
+  const setupTask = () => {
+    const task: TaskDetail = { id: 100, boardId: 1, title: 'Task', description: null, status: 'todo', priority: 'normal', color: null,
+      position: 0, creatorId: 7, assigneeId: 7, creator: employee, assignee: employee, leadId: null, lead: null,
+      dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
+      comments: [], checklist: [], attachments: [], activity: [] };
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    client.setQueryData(['/api/board/tasks/100'], task);
+    const close = vi.fn();
+    mocks.api.mockResolvedValue(task);
+    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={close} users={[employee]} />, client));
+    return { close, task };
+  };
+  it('submits one comment and preserves text typed while that request is pending', async () => {
+    const { task } = setupTask();
+    let resolve!: (value: unknown) => void;
+    mocks.api.mockImplementation((method: string) => method === 'POST' ? new Promise((done) => { resolve = done; }) : Promise.resolve(task));
+    const input = screen.getByPlaceholderText(i18n.t('addCommentPlaceholder')) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'First' } });
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(1));
+    fireEvent.change(input, { target: { value: 'Next draft' } });
+    resolve({ id: 1 });
+    await waitFor(() => expect((screen.getByRole('button', { name: i18n.t('send') }) as HTMLButtonElement).disabled).toBe(false));
+    expect(input.value).toBe('Next draft');
+    expect(mocks.api.mock.calls.filter(([method]) => method === 'POST')).toHaveLength(1);
+  });
+  it('confirms closing and cancelling an edited task, and names the title input', async () => {
+    const { close } = setupTask(); const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
+    const title = screen.getByRole('textbox', { name: i18n.t('taskTitle') });
+    fireEvent.change(title, { target: { value: 'Edited task' } });
+    await user.keyboard('{Escape}');
+    await screen.findByRole('alertdialog');
+    expect(close).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: i18n.t('keepEditing') }));
+    expect((title as HTMLInputElement).value).toBe('Edited task');
+    await user.click(screen.getByRole('button', { name: i18n.t('cancel') }));
+    await screen.findByRole('alertdialog');
+    expect(close).not.toHaveBeenCalled();
+  });
+});

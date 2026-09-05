@@ -24,7 +24,7 @@ export function LeadNextAction({
     const timestamp = value ? new Date(value).getTime() : NaN;
     return Number.isFinite(timestamp) ? timestamp : Infinity;
   };
-  const nextTask = tasks.filter((task) => task.status !== 'done')
+  const nextTask = tasks.filter((task) => task.status !== 'done' && task.status !== 'accepted')
     .sort((a, b) => deadline(a.dueAt) - deadline(b.dueAt))[0];
   const overdue = nextTask && deadline(nextTask.dueAt) < Date.now();
   const Icon = nextTask ? ClipboardList : !hasContact ? UserRound : !hasStudents ? Users : CalendarClock;

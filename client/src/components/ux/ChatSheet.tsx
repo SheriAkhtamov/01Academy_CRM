@@ -1,3 +1,4 @@
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -44,7 +45,8 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [draftsByEmployee, setDraftsByEmployee] = useState<Record<number, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const readAttemptedFor = useRef<number | null>(null);
+  const readAttemptedFor = useRef<string | null>(null);
+  const [readErrorFor, setReadErrorFor] = useState<number | null>(null);
   const newMessage = selectedEmployeeId ? draftsByEmployee[selectedEmployeeId] ?? '' : '';
   const setNewMessage = (value: string) => {
     if (!selectedEmployeeId) return;
@@ -58,13 +60,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   };
 
   // Fetch all employees only when searching
-  const { data: employees = [] } = useQuery<ConversationUserDto[]>({
+  const { data: employees = [], isError: employeesError, refetch: refetchEmployees } = useQuery<ConversationUserDto[]>({
     queryKey: ['/api/users'],
     enabled: open && !!searchQuery.trim(),
   });
 
   // Fetch employees with whom user has conversations
-  const { data: conversationEmployees = [], isLoading: conversationsLoading } = useQuery<ConversationUserDto[]>({
+  const { data: conversationEmployees = [], isLoading: conversationsLoading, isError: conversationsError, refetch: refetchConversations } = useQuery<ConversationUserDto[]>({
     ...conversationQueryOptions,
     enabled: open,
   });
@@ -78,7 +80,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   });
 
   // Fetch messages for selected employee
-  const { data: messagesData, isLoading: messagesLoading } = useQuery<MessageDto[]>({
+  const { data: messagesData, isLoading: messagesLoading, isError: messagesError, refetch: refetchMessages } = useQuery<MessageDto[]>({
     queryKey: messageQueryKeys.thread(selectedEmployeeId ?? 0),
     queryFn: () => messagesApi.getThread(selectedEmployeeId!),
     enabled: open && !!selectedEmployeeId,
@@ -142,7 +144,8 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
       );
       return { employeeId, previousThread, previousConversations };
     },
-    onError: (_error, _employeeId, context) => {
+    onError: (_error, employeeId, context) => {
+      setReadErrorFor(employeeId);
       if (context) {
         queryClient.setQueryData(
           messageQueryKeys.thread(context.employeeId),
@@ -154,29 +157,31 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
         );
       }
     },
-    onSettled: (_result, _error, employeeId) => {
-      if (readAttemptedFor.current === employeeId) {
-        readAttemptedFor.current = null;
-      }
+    onSuccess: (_result, employeeId) => {
+      setReadErrorFor((current) => current === employeeId ? null : current);
       queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(employeeId) });
       queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
     },
   });
 
+  const { mutate: markRead, isPending: readPending } = markConversationRead;
+
   useEffect(() => {
     readAttemptedFor.current = null;
+    setReadErrorFor(null);
   }, [open, selectedEmployeeId]);
 
   useEffect(() => {
     if (!open || !selectedEmployeeId || !Array.isArray(messagesData)) return;
-    const hasUnreadInbound = messagesData.some(
+    const unreadIds = messagesData.filter(
       (message: MessageDto) => message.receiverId === user?.id && !message.isRead,
-    );
-    if (hasUnreadInbound && readAttemptedFor.current !== selectedEmployeeId) {
-      readAttemptedFor.current = selectedEmployeeId;
-      markConversationRead.mutate(selectedEmployeeId);
+    ).map((message) => message.id).sort((a, b) => a - b).join(',');
+    const attemptKey = `${selectedEmployeeId}:${unreadIds}`;
+    if (unreadIds && !readPending && readErrorFor !== selectedEmployeeId && readAttemptedFor.current !== attemptKey) {
+      readAttemptedFor.current = attemptKey;
+      markRead(selectedEmployeeId);
     }
-  }, [messagesData, open, selectedEmployeeId, user?.id]);
+  }, [messagesData, open, selectedEmployeeId, user?.id, readErrorFor, readPending, markRead]);
 
   // Filter employees based on search query or show conversation history
   const filteredEmployees = useMemo(() => {
@@ -368,7 +373,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     <p className="text-sm">{t('loading')}</p>
                   </div>
                 )}
-                {filteredEmployees.length === 0 && !conversationsLoading && (
+                {(searchQuery.trim() ? employeesError : conversationsError) ? <Alert variant="destructive"><AlertDescription>
+                  {t('failedToLoadData')} <Button variant="outline" size="sm" onClick={() => void (searchQuery.trim() ? refetchEmployees() : refetchConversations())}>{t('retry')}</Button>
+                </AlertDescription></Alert> : null}
+                {filteredEmployees.length === 0 && !conversationsLoading && !(searchQuery.trim() ? employeesError : conversationsError) && (
                   <div className="py-8 text-center text-muted-foreground">
                     <User className="mx-auto mb-2 size-8 opacity-40" />
                     <p className="text-sm">
@@ -412,6 +420,12 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 {/* Messages */}
                 <ScrollArea className="flex-1 p-4">
                   <div className="flex flex-col gap-4">
+                    {readErrorFor === selectedEmployeeId ? <Alert variant="destructive"><AlertDescription>
+                      {t('messageReadFailed')} <Button variant="outline" size="sm" disabled={markConversationRead.isPending} onClick={() => markConversationRead.mutate(selectedEmployeeId!)}>{t('retryMarkRead')}</Button>
+                    </AlertDescription></Alert> : null}
+                    {messagesError ? <Alert variant="destructive"><AlertDescription>
+                      {t('failedToLoadData')} <Button variant="outline" size="sm" onClick={() => void refetchMessages()}>{t('retry')}</Button>
+                    </AlertDescription></Alert> : null}
                     {messagesLoading ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <p className="text-sm">{t('loadingMessages')}</p>
@@ -456,13 +470,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                           </div>
                         );
                       })
-                    ) : (
+                    ) : !messagesError ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
                         <p className="text-sm">{t('noMessagesYet')}</p>
                         <p className="text-xs text-muted-foreground mt-1">{t('startConversation')}</p>
                       </div>
-                    )}
+                    ) : null}
                     <div ref={messagesEndRef} aria-hidden="true" />
                   </div>
                 </ScrollArea>

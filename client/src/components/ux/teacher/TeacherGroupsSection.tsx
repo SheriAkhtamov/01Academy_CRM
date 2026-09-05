@@ -52,6 +52,7 @@ const GROUP_SORT_LABEL_KEYS = {
 const GROUP_SORT_KEYS: GroupSortKey[] = ['name', 'progress', 'students'];
 
 interface TeacherGroupsSectionProps {
+  initialQuery?: string;
   groups: TeacherGroup[];
   view: TeacherGroupView;
   selectedGroup: TeacherGroup | null;
@@ -137,6 +138,7 @@ function GroupArchiveAction({
  * simply closes the sheet.
  */
 export function TeacherGroupsSection({
+  initialQuery = '',
   groups,
   view,
   selectedGroup,
@@ -153,7 +155,7 @@ export function TeacherGroupsSection({
   formatArchivedAt,
 }: TeacherGroupsSectionProps) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [sortKey, setSortKey] = useState<GroupSortKey>('name');
   const [archiveTarget, setArchiveTarget] = useState<TeacherGroup | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<TeacherGroup | null>(null);

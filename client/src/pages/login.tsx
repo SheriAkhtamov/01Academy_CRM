@@ -24,11 +24,14 @@ export default function Login() {
   const { login, isLoading } = useAuth();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   // The URL the user originally asked for (deep link or the page open when the
   // session expired): returning there instead of a blind redirect to `/`
   // keeps shared links and mid-session expiry painless.
-  const returnTo = location && location !== '/' ? location : '/';
+  const [returnTo] = useState(() => {
+    const href = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    return href.startsWith('/') && !href.startsWith('//') ? href : '/';
+  });
   const loginSchema = z.object({
     login: z.string().min(1, t('loginOrEmailRequired')),
     password: z.string().min(1, t('passwordRequired')),

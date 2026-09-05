@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConfirmDialog from '../client/src/components/ConfirmDialog';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
 }));
+
+beforeEach(() => { HTMLElement.prototype.scrollIntoView = vi.fn(); });
 
 afterEach(() => {
   vi.restoreAllMocks();

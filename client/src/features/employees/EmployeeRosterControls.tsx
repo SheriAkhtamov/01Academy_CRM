@@ -190,7 +190,7 @@ export function EmployeeRosterControls({
               />
             </div>
             <Select value={moduleFilter} onValueChange={onModuleFilterChange}>
-              <SelectTrigger className="w-full sm:w-52">
+              <SelectTrigger aria-label={t('employeeModuleFilter')} className="w-full sm:w-52">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

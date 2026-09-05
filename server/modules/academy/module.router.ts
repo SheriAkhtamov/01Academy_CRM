@@ -717,6 +717,7 @@ router.get('/search', async (req, res) => {
     const remaining = () => Math.max(limit - results.length, 0);
 
     const pushLeads = async (whereSql: string, params: DbValue[], href: string) => {
+      if (!assignedModules.includes('sales')) return;
       if (remaining() <= 0) return;
       const cleanDigits = term.replace(/\D/g, '');
       const hasDigits = cleanDigits.length >= 3;
@@ -790,6 +791,7 @@ router.get('/search', async (req, res) => {
     };
 
     const pushStudents = async (whereSql: string, params: DbValue[], href: string) => {
+      if (!assignedModules.includes(href.startsWith('/sales') ? 'sales' : 'teacher')) return;
       if (remaining() <= 0) return;
       const cleanDigits = term.replace(/\D/g, '');
       const hasDigits = cleanDigits.length >= 3;
@@ -815,6 +817,11 @@ router.get('/search', async (req, res) => {
 
       const rows = await query(
         `SELECT st.id, st.student_name, st.contact_name, st.phone, g.name AS group_name,
+            (SELECT membership.group_id FROM academy_student_group_enrollments membership
+             JOIN academy_groups membership_group ON membership_group.id = membership.group_id
+             WHERE membership.student_id = st.id AND membership.status = 'active'
+               ${href.startsWith('/teacher') && !isLeadershipActor ? 'AND membership_group.teacher_id = $1' : ''}
+             ORDER BY membership.is_primary DESC, membership.group_id LIMIT 1) AS search_group_id,
             COALESCE(
               (
                 SELECT array_agg(membership_group.name ORDER BY membership.is_primary DESC, membership_group.name)
@@ -833,7 +840,9 @@ router.get('/search', async (req, res) => {
         queryParams,
       );
       results.push(...rows.map((student) => {
-        const finalHref = `${href}${href.includes('?') ? '&' : '?'}student=${student.id}`;
+        const finalHref = href.startsWith('/teacher')
+          ? `${href}?group=${student.searchGroupId}`
+          : `${href}${href.includes('?') ? '&' : '?'}student=${student.id}`;
         return {
           id: `student-${student.id}`,
           entityType: 'student',
@@ -851,6 +860,7 @@ router.get('/search', async (req, res) => {
     };
 
     const pushGroups = async (whereSql: string, params: DbValue[], href: string) => {
+      if (!assignedModules.includes('teacher')) return;
       if (remaining() <= 0) return;
       const rows = await query(
         `SELECT g.id, g.name, c.name AS course_name, t.full_name AS teacher_name
@@ -872,11 +882,12 @@ router.get('/search', async (req, res) => {
         entityType: 'group',
         title: group.name,
         subtitle: [group.courseName, group.teacherName].filter(Boolean).join(' • '),
-        href,
+        href: `${href}?group=${group.id}`,
       })));
     };
 
     const pushCourses = async (href: string) => {
+      if (!assignedModules.includes('teacher')) return;
       if (remaining() <= 0) return;
       const rows = await query(
         `SELECT id, name, age_category
@@ -891,7 +902,7 @@ router.get('/search', async (req, res) => {
         entityType: 'course',
         title: course.name,
         subtitle: course.ageCategory,
-        href,
+        href: `${href}?q=${encodeURIComponent(course.name)}`,
       })));
     };
 
@@ -900,7 +911,7 @@ router.get('/search', async (req, res) => {
       await pushStudents(`TRUE`, [], '/sales/clients');
       await pushGroups(`TRUE`, [], '/teacher-module/groups');
       await pushCourses('/teacher-module/groups');
-      if (remaining() > 0) {
+      if (remaining() > 0 && assignedModules.includes('marketing')) {
         const sources = await query(
           `SELECT id, name, channel, campaign_name
            FROM academy_lead_sources
@@ -974,7 +985,6 @@ router.get('/search', async (req, res) => {
             href: '/marketing-module/sources',
           })));
         }
-        await pushLeads(`TRUE`, [], '/marketing-module/funnel');
       }
     }
 

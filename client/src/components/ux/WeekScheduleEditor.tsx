@@ -264,7 +264,7 @@ export function WeekScheduleEditor({
                     schoolId: nextValue === 'all' ? null : Number(nextValue),
                   })}
                 >
-                  <SelectTrigger className="col-span-2 h-9 sm:col-span-3 md:col-span-1">
+                  <SelectTrigger aria-label={`${t('school')}: ${dayNames[dayOfWeek - 1] ?? dayOfWeek}`} className="col-span-2 h-9 sm:col-span-3 md:col-span-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

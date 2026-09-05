@@ -7,8 +7,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-export function LeadSaveBar({ dirty, pending, onDiscard }: {
-  dirty: boolean; pending: boolean; onDiscard: () => void;
+export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }: {
+  dirty: boolean; pending: boolean; saveDisabled?: boolean; onDiscard: () => void;
 }) {
   const { t } = useTranslation();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -19,7 +19,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard }: {
           {dirty ? <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" /> : <CheckCircle2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground sm:text-sm">{dirty ? t('leadWorkspaceDraft') : t('leadWorkspaceSaved')}</p>
-            <p className="hidden text-xs text-muted-foreground/70 sm:block">{t('leadWorkspaceSaveShortcut')}</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">{t('leadWorkspaceSaveShortcut')}</p>
           </div>
         </div>
         {dirty ? (
@@ -28,7 +28,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard }: {
             <span className="sr-only sm:not-sr-only">{t('undoChanges')}</span>
           </Button>
         ) : null}
-        <Button type="submit" form="lead-details-form" size="sm" disabled={!dirty || pending} title={t('leadWorkspaceSaveShortcut')}>
+        <Button type="submit" form="lead-details-form" size="sm" disabled={!dirty || pending || saveDisabled} title={t('leadWorkspaceSaveShortcut')}>
           {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
           {pending ? t('saving') : t('saveChanges')}
         </Button>

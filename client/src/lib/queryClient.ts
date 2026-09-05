@@ -134,7 +134,7 @@ export const localizeApiErrorMessage = (message: string, status: number) => {
   return i18n.t("apiErrorGeneric");
 };
 
-async function throwIfResNotOk(res: Response) {
+export async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const rawText = (await res.text()) || res.statusText;
     let message = rawText;
@@ -227,6 +227,16 @@ const getQueryFn: <T>(options: {
 
 const anonymousSession: AuthSession = { kind: "anonymous" };
 
+/** Keep the observed session query alive so mounted auth consumers see sign-out. */
+export function endAuthenticatedSession(client: QueryClient) {
+  void client.cancelQueries();
+  client.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, anonymousSession);
+  client.removeQueries({
+    predicate: (query) => query.queryKey[0] !== AUTH_SESSION_QUERY_KEY[0],
+  });
+  client.getMutationCache().clear();
+}
+
 /**
  * An expired server session used to leave the app stranded: nothing refetched
  * the session query, so the router kept rendering the authenticated shell while
@@ -238,7 +248,7 @@ const anonymousSession: AuthSession = { kind: "anonymous" };
  */
 let signOutScheduled = false;
 
-const handleUnauthorized = (error: unknown) => {
+export const handleUnauthorized = (error: unknown) => {
   const status = (error as { status?: number } | null)?.status;
   if (status !== 401 || signOutScheduled) return;
 
@@ -252,8 +262,7 @@ const handleUnauthorized = (error: unknown) => {
   // callback would remove the query that is still settling. A page load fires
   // several requests at once, so the flag keeps the burst down to one toast.
   queueMicrotask(() => {
-    queryClient.clear();
-    queryClient.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, anonymousSession);
+    endAuthenticatedSession(queryClient);
     signOutScheduled = false;
     toast({
       title: i18n.t("sessionExpiredTitle"),

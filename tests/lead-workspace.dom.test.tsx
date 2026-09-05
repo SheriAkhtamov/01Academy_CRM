@@ -172,3 +172,56 @@ describe('lead workspace navigation and drafts', () => {
     expect(requests[0].body.phoneNumbers).toEqual(['+998901234567']);
   });
 });
+
+describe('lead version recovery and completed work', () => {
+  it('keeps accepted tasks out of the next action even if their due date is past', async () => {
+    lead.tasks = [{ id: 9, title: 'Already accepted', status: 'accepted', dueAt: '2000-01-01T00:00:00Z' }];
+    const { user } = renderSheet();
+    await screen.findByText(i18n.t('leadWorkspaceNoTask'));
+    expect(screen.queryByText('Already accepted')).toBeNull();
+    await user.click(screen.getByRole('tab', { name: /Задачи/ }));
+    await screen.findByText('Already accepted');
+    expect(screen.queryByRole('button', { name: i18n.t('completeTask') })).toBeNull();
+    expect(screen.queryByText(i18n.t('taskOverdue'))).toBeNull();
+  });
+  it('retains the draft on a server change and saves only after reviewing the new version', async () => {
+    const { user } = renderSheet();
+    const name = await screen.findByLabelText(i18n.t('contactPersonName'));
+    fireEvent.change(name, { target: { value: 'My edit' } });
+    lead = { ...lead, contactName: 'Another employee', updatedAt: '2026-09-05T12:00:00Z', expectedPaymentUzs: 200_000 };
+    await queryClient.invalidateQueries({ queryKey: ['/api/academy/leads', 15] });
+    await screen.findByText(i18n.t('leadVersionReviewTitle'));
+    expect((name as HTMLInputElement).value).toBe('My edit');
+    expect((screen.getByRole('button', { name: i18n.t('saveChanges') }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole('button', { name: i18n.t('leadRefreshKeepingDraft') }));
+    await waitFor(() => expect(screen.queryByText(i18n.t('leadVersionReviewTitle'))).toBeNull());
+    expect((name as HTMLInputElement).value).toBe('My edit');
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({ contactName: 'My edit', expectedUpdatedAt: '2026-09-05T12:00:00Z', expectedPaymentUzs: 200_000 });
+  });
+  it('recovers from a real 409 response without retrying a stale version', async () => {
+    const { user } = renderSheet();
+    const name = await screen.findByLabelText(i18n.t('contactPersonName'));
+    fireEvent.change(name, { target: { value: 'My conflicting edit' } });
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    let first = true;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (init?.method === 'PATCH' && first) {
+        first = false;
+        lead = { ...lead, contactName: 'Concurrent employee', updatedAt: '2026-09-05T13:00:00Z' };
+        return new Response(JSON.stringify({ error: 'leadChangedConcurrently' }), { status: 409, headers: { 'content-type': 'application/json' } });
+      }
+      return normalFetch(input, init);
+    });
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await screen.findByText(i18n.t('leadVersionReviewTitle'));
+    expect((name as HTMLInputElement).value).toBe('My conflicting edit');
+    await user.click(screen.getByRole('button', { name: i18n.t('leadRefreshKeepingDraft') }));
+    await waitFor(() => expect(screen.queryByText(i18n.t('leadVersionReviewTitle'))).toBeNull());
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({ contactName: 'My conflicting edit', expectedUpdatedAt: '2026-09-05T13:00:00Z' });
+  });
+
+});

@@ -4,7 +4,6 @@ import type { WebSocketEvent } from '@shared/websocket';
 import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
 import { useAuth } from './useAuth';
 import { devLog } from '@/lib/debug';
-import { leadQueryKeys } from '@/features/leads/api';
 import { messageQueryKeys } from '@/features/messages/api';
 import { telephonyQueryKeys } from '@/features/telephony/api';
 import { boardQueryKeys } from '@/features/board/api';
@@ -83,12 +82,13 @@ export function useWebSocket() {
         case 'ACADEMY_STUDENT_UPDATED':
         case 'ACADEMY_PAYMENT_CREATED':
         case 'ACADEMY_ATTENDANCE_UPDATED':
-          // An incoming lead has to raise the new-lead badge right away instead
-          // of waiting for the next poll.
-          queryClient.invalidateQueries({ queryKey: leadQueryKeys.unviewedCount });
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/teacher'] });
-          queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] });
+          // Event payloads do not consistently include every related entity ID.
+          // Refresh active academy views and invalidate the inactive ones too,
+          // including open lead details, metrics, administration and finance.
+          queryClient.invalidateQueries({ predicate: (query) => (
+            typeof query.queryKey[0] === 'string'
+            && (query.queryKey[0].startsWith('/api/academy/') || query.queryKey[0] === 'finance')
+          ) });
           break;
         case 'NEW_MESSAGE':
           if (message.data?.senderId && message.data?.receiverId) {

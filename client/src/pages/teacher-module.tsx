@@ -995,6 +995,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     if (section === 'groups') {
       return (
         <TeacherGroupsSection
+          key={searchParams.get('q') ?? ''}
+          initialQuery={searchParams.get('q') ?? ''}
           groups={groups}
           view={groupView}
           selectedGroup={selectedGroup}

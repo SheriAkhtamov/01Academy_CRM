@@ -641,7 +641,7 @@ export default function AdminDashboardPage() {
                 {item.value}%
               </span>
             </div>
-            <Progress className="mt-3 h-1.5" value={item.value} />
+            <Progress aria-label={item.title} className="mt-3 h-1.5" value={item.value} />
             <p className="mt-1.5 text-xs text-muted-foreground">{ceoCopy.dashboard.plan} {item.plan}</p>
           </button>
         ))}

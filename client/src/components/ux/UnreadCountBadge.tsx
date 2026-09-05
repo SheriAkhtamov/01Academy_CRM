@@ -16,7 +16,7 @@ export const formatUnreadCount = (count: number): string => {
   return normalizedCount > 99 ? '99+' : String(normalizedCount);
 };
 
-const badgeClassName = 'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold leading-none tabular-nums text-destructive-foreground shadow-sm ring-2 ring-background';
+const badgeClassName = 'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-none tabular-nums text-white shadow-sm ring-2 ring-background';
 
 /**
  * The bubble springs in when work arrives and shrinks away when the queue is

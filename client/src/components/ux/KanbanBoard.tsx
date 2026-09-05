@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent, type ReactNode } from 'react';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import {
   closestCorners,
@@ -23,6 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowRight,
+  GripVertical,
   MoreHorizontal,
   Phone,
   Send,
@@ -34,6 +35,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -123,6 +127,10 @@ const reconcileKanbanLeads = (
 );
 
 interface LeadCardContentProps {
+  onLeadClick?: KanbanBoardProps['onLeadClick'];
+  dragHandle?: ReactNode;
+  statuses?: readonly KanbanStatus[];
+  onMove?: (leadId: number, statusCode: string) => void;
   lead: KanbanLead;
   currentStatus: KanbanStatus;
   onQuickAction?: KanbanBoardProps['onQuickAction'];
@@ -138,6 +146,7 @@ interface LeadCardContentProps {
 }
 
 function LeadCardContent({
+  onLeadClick, dragHandle, statuses, onMove,
   lead,
   currentStatus,
   onQuickAction,
@@ -175,7 +184,7 @@ function LeadCardContent({
           />
         ) : null}
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
+          <button type="button" onClick={() => onLeadClick?.(lead)} aria-label={`${isNewLead(lead) ? `${t('newLeadIndicator')}. ` : ''}${lead.contactName}. ${t('openLead')}`} className="block max-w-full truncate text-left text-sm font-medium text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring">
             {isNewLead(lead) ? (
               <span
                 aria-hidden="true"
@@ -183,7 +192,7 @@ function LeadCardContent({
               />
             ) : null}
             {lead.contactName}
-          </p>
+          </button>
           {visiblePhone ? (
             <a
               href={`tel:${String(visiblePhone).replace(/[^\d+]/g, '')}`}
@@ -198,6 +207,7 @@ function LeadCardContent({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
+          {dragHandle}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -229,6 +239,12 @@ function LeadCardContent({
                   <Send /> {t('write')}
                 </DropdownMenuItem>
               </DropdownMenuGroup>
+              {onMove && statuses ? <DropdownMenuSub>
+                <DropdownMenuSubTrigger disabled={isPending}>{t('moveLeadToStage')}</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {statuses.map((stage) => <DropdownMenuItem key={stage.code} disabled={isPending || stage.code === currentStatus.code} onSelect={() => onMove(lead.id, stage.code)}>{stage.name}</DropdownMenuItem>)}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub> : null}
               {onArchiveLead && canArchive ? (
                 <>
                   <DropdownMenuSeparator />
@@ -309,7 +325,6 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     lead,
     currentStatus,
     isPending,
-    onLeadClick,
     selected,
     selectionMode,
     dragDisabled,
@@ -324,6 +339,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     isDragging,
   } = useDraggable({
     id: `lead-${lead.id}`,
@@ -347,21 +363,14 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       exit={reflow ? 'exit' : undefined}
       transition={reflow ? SPRING.layout : undefined}
       className={cn(
-        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'group rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         selectionMode && 'cursor-default active:cursor-default',
         selected && 'border-primary/60 bg-primary/5 shadow-sm',
         isDragging && 'opacity-25',
       )}
-      aria-label={`${isNewLead(lead) ? `${t('newLeadIndicator')}. ` : ''}${lead.contactName}. ${t('openLead')}`}
-      {...attributes}
-      {...listeners}
-      onClick={() => onLeadClick?.(lead)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') onLeadClick?.(lead);
-        listeners?.onKeyDown?.(event);
-      }}
+
     >
-      <LeadCardContent {...props} />
+      <LeadCardContent {...props} dragHandle={<Button ref={setActivatorNodeRef} variant="ghost" size="icon" className="size-7 touch-none cursor-grab" {...attributes} {...listeners} disabled={isPending || selectionMode || dragDisabled} aria-label={t('dragLead').replace('{name}', lead.contactName)}><GripVertical className="size-4" /></Button>} />
     </motion.div>
   );
 
@@ -382,6 +391,8 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
 }
 
 interface KanbanColumnProps {
+  statuses: readonly KanbanStatus[];
+  onMove: (leadId: number, statusCode: string) => void;
   /** Board-global: any active selection stops dragging in every stage. */
   dragDisabled?: boolean;
   status: KanbanStatus;
@@ -401,6 +412,7 @@ interface KanbanColumnProps {
 }
 
 function KanbanColumn({
+  statuses, onMove,
   status,
   leads,
   dragDisabled = false,
@@ -522,6 +534,8 @@ function KanbanColumn({
               key={lead.id}
               lead={lead}
               currentStatus={status}
+              statuses={statuses}
+              onMove={onMove}
               onQuickAction={onQuickAction}
               onArchiveLead={onArchiveLead}
               onEnrollDemo={onEnrollDemo}
@@ -692,6 +706,8 @@ export function KanbanBoard({
               <KanbanColumn
                 key={status.code}
                 status={status}
+                statuses={statuses}
+                onMove={moveLead}
                 leads={boardLeads.filter((lead) => lead.statusCode === status.code)}
                 onQuickAction={onQuickAction}
                 onArchiveLead={onArchiveLead}

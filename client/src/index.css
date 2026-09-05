@@ -6,7 +6,7 @@
   --background: hsl(0, 0%, 100%);
   --foreground: hsl(222, 47%, 11%);
   --muted: hsl(220, 14.3%, 96.3%);
-  --muted-foreground: hsl(220, 9%, 46%);
+  --muted-foreground: hsl(220, 9%, 42%);
   --popover: hsl(0, 0%, 100%);
   --popover-foreground: hsl(222, 47%, 11%);
   --card: hsl(0, 0%, 100%);
@@ -39,11 +39,11 @@
   
   --emerald-100: hsl(149, 80%, 90%);
   --emerald-500: hsl(160, 84%, 39%);
-  --emerald-600: hsl(158, 64%, 52%);
+  --emerald-600: hsl(161, 94%, 25%);
   
   --amber-100: hsl(48, 100%, 88%);
   --amber-500: hsl(43, 96%, 56%);
-  --amber-600: hsl(38, 92%, 50%);
+  --amber-600: hsl(32, 95%, 32%);
   
   --purple-100: hsl(270, 100%, 98%);
   --purple-500: hsl(271, 91%, 65%);
@@ -80,7 +80,7 @@
   --slate-200: hsl(214, 32%, 91%);
   --slate-300: hsl(213, 27%, 84%);
   --slate-400: hsl(215, 20%, 65%);
-  --slate-500: hsl(215, 16%, 47%);
+  --slate-500: hsl(215, 16%, 41%);
   --slate-600: hsl(215, 19%, 35%);
   --slate-700: hsl(215, 25%, 27%);
   --slate-900: hsl(222, 84%, 5%);
@@ -573,6 +573,8 @@
    white text and already read correctly on dark.
    ============================================================ */
 @layer utilities {
+  /* Text accents need a lighter tone than the solid primary button fill. */
+  .dark .text-primary { color: var(--primary-600); }
   /* — emerald / green — */
   .dark .bg-emerald-50 { background-color: hsl(158, 46%, 11%); }
   .dark .bg-emerald-100 { background-color: hsl(158, 45%, 14.5%); }

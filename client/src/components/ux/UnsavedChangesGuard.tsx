@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { allowNavigation, registerNavigationGuard } from '@/lib/navigationGuard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useTranslation } from '@/hooks/useTranslation';
 
@@ -14,27 +15,43 @@ export function useUnsavedChangesGuard({
   onOpenChange,
 }: UseUnsavedChangesGuardOptions) {
   const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const pendingAction = useRef<(() => void) | null>(null);
+
+  const requestAction = useCallback((action: () => void) => {
+    if (open && isDirty) {
+      pendingAction.current = action;
+      setConfirmationOpen(true);
+    } else allowNavigation(action);
+  }, [open, isDirty]);
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     // Only a dialog the user is actually looking at can have changes worth
     // keeping; a dirty flag left behind by a previous session must not block it.
     if (!nextOpen && open && isDirty) {
+      pendingAction.current = () => onOpenChange(false);
       setConfirmationOpen(true);
       return;
     }
 
-    onOpenChange(nextOpen);
+    allowNavigation(() => onOpenChange(nextOpen));
   }, [isDirty, onOpenChange, open]);
 
   const discardChanges = useCallback(() => {
     setConfirmationOpen(false);
-    onOpenChange(false);
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    allowNavigation(() => action ? action() : onOpenChange(false));
   }, [onOpenChange]);
 
   // The confirmation must never outlive the dialog it guards.
   useEffect(() => {
     if (!open) setConfirmationOpen(false);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !isDirty) return;
+    return registerNavigationGuard(requestAction);
+  }, [open, isDirty, requestAction]);
 
   useEffect(() => {
     if (!open || !isDirty) return;
@@ -53,6 +70,7 @@ export function useUnsavedChangesGuard({
     setConfirmationOpen,
     handleOpenChange,
     discardChanges,
+    requestAction,
   };
 }
 

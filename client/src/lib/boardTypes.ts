@@ -127,7 +127,7 @@ export const BOARD_COLUMNS: { status: BoardStatus; labelKey: TranslationKey }[] 
 // Declared with `satisfies` so the i18n audit recognises the dynamically-used
 // label keys (they are looked up via PRIORITY_META[p].labelKey, not literal t()).
 export const PRIORITY_META = {
-    urgent: { labelKey: 'priorityUrgent', dot: 'bg-red-500', badge: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400' },
+    urgent: { labelKey: 'priorityUrgent', dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400' },
     normal: { labelKey: 'priorityNormal', dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400' },
     low: { labelKey: 'priorityLow', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' },
 } satisfies Record<BoardPriority, { labelKey: TranslationKey; dot: string; badge: string }>;

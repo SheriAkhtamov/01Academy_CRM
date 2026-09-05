@@ -524,7 +524,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
                 <CardTitle>{t('conversionFunnel')}</CardTitle>
                 <Select value={funnelSourceFilter} onValueChange={setFunnelSourceFilter}>
-                  <SelectTrigger className="w-52">
+                  <SelectTrigger aria-label={t('source')} className="w-52">
                     <SelectValue placeholder={t('allSources')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -745,7 +745,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label={t('source')}>
                 <Select value={expenseForm.sourceId} onValueChange={(sourceId) => setExpenseForm({ ...expenseForm, sourceId })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={t('source')}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {sources.map((source: any) => (
                       <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
@@ -755,6 +755,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               </Field>
               <Field label={t('channel')}>
                 <Input
+                  aria-label={t('channel')}
                   value={expenseForm.channel}
                   onChange={(e) => setExpenseForm({ ...expenseForm, channel: e.target.value })}
                   onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !expenseFormValid || createExpense.isPending })}
@@ -762,13 +763,14 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               </Field>
               <Field label={t('campaign')}>
                 <Input
+                  aria-label={t('campaign')}
                   value={expenseForm.campaignName}
                   onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })}
                   onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !expenseFormValid || createExpense.isPending })}
                 />
               </Field>
               <Field label={t('amount')}>
-                <CurrencyInput value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
+                <CurrencyInput aria-label={t('amount')} value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
               </Field>
               <DateRangeField
                 idPrefix="marketing-expense-period"

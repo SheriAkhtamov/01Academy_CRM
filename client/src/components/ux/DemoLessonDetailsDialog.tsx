@@ -1,6 +1,5 @@
+import { useUnsavedChangesGuard, UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
 import { useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
-import { enUS, ru } from 'date-fns/locale';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpRight,
@@ -63,6 +62,7 @@ import {
   academyInstant,
   academyTimeOfDay,
   academyToday,
+  formatAcademyDate,
 } from '@/lib/localeFormat';
 import { submitOnEnter } from '@/lib/submitOnEnter';
 import { cn } from '@/lib/utils';
@@ -96,7 +96,6 @@ export function DemoLessonDetailsDialog({
   onOpenLead,
 }: DemoLessonDetailsDialogProps) {
   const { t, language } = useTranslation();
-  const locale = language === 'ru' ? ru : enUS;
   const queryClient = useQueryClient();
   const noShowReasonLabels: Record<DemoNoShowReasonCode, string> = {
     no_contact: t('demoNoShowReasonNoContact'),
@@ -121,6 +120,7 @@ export function DemoLessonDetailsDialog({
   const [attendance, setAttendance] = useState<Record<number, AttendanceStatus>>({});
   const [noShowReasons, setNoShowReasons] = useState<Record<number, NoShowReasonDraft>>({});
   const [dirtyParticipantIds, setDirtyParticipantIds] = useState<Set<number>>(new Set());
+  const unsavedGuard = useUnsavedChangesGuard({ open, isDirty: dirtyParticipantIds.size > 0, onOpenChange });
   const [reasonParticipantId, setReasonParticipantId] = useState<number | null>(null);
   const [reasonCode, setReasonCode] = useState<DemoNoShowReasonCode | ''>('');
   const [reasonNote, setReasonNote] = useState('');
@@ -427,7 +427,7 @@ export function DemoLessonDetailsDialog({
           && !notConductedOpen
           && !rescheduleOpen
           && !changeTeacherOpen) {
-          onOpenChange(nextOpen);
+          unsavedGuard.handleOpenChange(nextOpen);
         }
       }}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
@@ -441,8 +441,8 @@ export function DemoLessonDetailsDialog({
             <div className="flex items-start gap-3">
               <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium">{format(scheduledAt, 'd MMMM yyyy, HH:mm', { locale })}</p>
-                <p className="text-xs text-muted-foreground">{demo.durationMinutes} {t('minuteShort')}</p>
+                <p className="text-sm font-medium">{formatAcademyDate(scheduledAt, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                <p className="text-xs text-muted-foreground">{demo.durationMinutes} {t('minuteShort')} · {t('academyTimeZoneLabel')}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
@@ -609,7 +609,7 @@ export function DemoLessonDetailsDialog({
             <div className="space-y-1 rounded-lg bg-muted/60 p-3 text-sm">
               <p className="font-medium">{t('demoLastReschedule')}</p>
               <p className="text-muted-foreground">
-                {format(new Date(demo.lastRescheduledFrom), 'd MMMM yyyy, HH:mm', { locale })}
+                {formatAcademyDate(demo.lastRescheduledFrom, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 {' · '}
                 {demo.lastRescheduleReason}
               </p>
@@ -666,7 +666,7 @@ export function DemoLessonDetailsDialog({
 
           <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" disabled={saveAttendance.isPending} onClick={() => unsavedGuard.handleOpenChange(false)}>
                 {t('close')}
               </Button>
               {canEditAttendance && demo.participants.some((participant) => (
@@ -912,10 +912,10 @@ export function DemoLessonDetailsDialog({
                 <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">
-                    {format(scheduledAt, 'd MMMM yyyy, HH:mm', { locale })}
+                    {formatAcademyDate(scheduledAt, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {demo.durationMinutes} {t('minuteShort')}
+                    {demo.durationMinutes} {t('minuteShort')} · {t('academyTimeZoneLabel')}
                   </p>
                 </div>
               </div>
@@ -1101,6 +1101,7 @@ export function DemoLessonDetailsDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <UnsavedChangesDialog open={unsavedGuard.confirmationOpen} onOpenChange={unsavedGuard.setConfirmationOpen} onDiscard={unsavedGuard.discardChanges} />
     </>
   );
 }

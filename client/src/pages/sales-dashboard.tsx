@@ -1,3 +1,4 @@
+import { allowNavigation, requestNavigation } from '@/lib/navigationGuard';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -72,10 +73,7 @@ import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { addReportingDays, isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import { useStickyState } from '@/hooks/useStickyState';
-import {
-  UnsavedChangesDialog,
-  useUnsavedChangesGuard,
-} from '@/components/ux/UnsavedChangesGuard';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import {
   getAssignedModules,
   hasLeadershipAccess,
@@ -831,7 +829,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       setDuplicateHint(null);
       setLeadDialogOpen(false);
       invalidate();
-      openLead(retainedLead.id);
+      allowNavigation(() => openLead(retainedLead.id));
     },
     onError: (error: any) => toast({
       title: t('leadMergeFailed'),
@@ -951,14 +949,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     }),
   });
 
-  // The red "new lead" dot stays until its card is actually opened.
   useLeadViewTracking({ leadId: selectedLeadId, open: leadSheetOpen, leads: myLeads });
 
   const openLead = useCallback((leadId: number, tab: LeadSheetTab = "deal") => {
-    setSelectedLeadId(leadId);
-    setLeadSheetTab(tab);
-    setLeadSheetOpen(true);
-    replaceSalesParams({ lead: String(leadId), student: null }, { push: true });
+    requestNavigation(() => {
+      setSelectedLeadId(leadId);
+      setLeadSheetTab(tab);
+      setLeadSheetOpen(true);
+      replaceSalesParams({ lead: String(leadId), student: null }, { push: true });
+    });
   }, [replaceSalesParams]);
 
   const handleLeadSheetState = useCallback((open: boolean) => {
@@ -970,9 +969,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   }, [replaceSalesParams]);
 
   const openStudent = useCallback((student: Student) => {
-    setSelectedStudent(student);
-    setStudentSheetOpen(true);
-    replaceSalesParams({ student: String(student.id), lead: null }, { push: true });
+    requestNavigation(() => {
+      setSelectedStudent(student);
+      setStudentSheetOpen(true);
+      replaceSalesParams({ student: String(student.id), lead: null }, { push: true });
+    });
   }, [replaceSalesParams]);
 
   const handleStudentSheetState = useCallback((open: boolean) => {
@@ -988,6 +989,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     const params = new URLSearchParams(routeSearch);
     const leadId = Number(params.get('lead'));
     const studentId = Number(params.get('student'));
+    if (!leadId) { setLeadSheetOpen(false); setSelectedLeadId(null); }
+    if (!studentId) { setStudentSheetOpen(false); setSelectedStudent(null); }
 
     if (Number.isFinite(leadId) && leadId > 0 && leadId !== selectedLeadId) {
       setSelectedLeadId(leadId);
@@ -1421,11 +1424,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         dateTime={dateTime}
         money={money}
         onChanged={invalidate}
-        onMerged={(retainedLeadId) => {
+        onMerged={(retainedLeadId) => allowNavigation(() => {
           setSelectedLeadId(retainedLeadId);
           setLeadSheetOpen(true);
           replaceSalesParams({ lead: String(retainedLeadId) });
-        }}
+        })}
       />
     </ModulePage>
   );
@@ -1513,7 +1516,7 @@ function StudentsTab({
           <div className="flex justify-between text-xs mb-1">
             <span className="tabular-nums text-muted-foreground">{student.attendancePercent}%</span>
           </div>
-          <Progress value={student.attendancePercent} />
+          <Progress aria-label={t('attendanceLabel')} value={student.attendancePercent} />
         </div>
       ),
     },
@@ -1527,7 +1530,7 @@ function StudentsTab({
           <div className="flex justify-between text-xs mb-1">
             <span className="tabular-nums text-muted-foreground">{student.progressPercent}%</span>
           </div>
-          <Progress value={student.progressPercent} />
+          <Progress aria-label={t('progressLabel')} value={student.progressPercent} />
         </div>
       ),
     },

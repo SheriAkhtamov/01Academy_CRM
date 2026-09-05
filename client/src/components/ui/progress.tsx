@@ -10,12 +10,16 @@ import { cn } from "@/lib/utils"
 const Progress = React.forwardRef<
   React.ElementRef<typeof ProgressPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root>
->(({ className, value, ...props }, ref) => {
-  const percent = Math.min(100, Math.max(0, value || 0))
+>(({ className, value, max = 100, ...props }, ref) => {
+  const maximum = Number.isFinite(max) && max > 0 ? max : 100
+  const current = typeof value === "number" && Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : null
+  const percent = current == null ? 0 : current / maximum * 100
 
   return (
     <ProgressPrimitive.Root
       ref={ref}
+      value={current}
+      max={maximum}
       className={cn(
         "relative h-2 w-full overflow-hidden rounded-full bg-muted",
         className

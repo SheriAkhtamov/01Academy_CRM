@@ -1,6 +1,22 @@
 import { devLog } from '@/lib/debug';
 
 export const translations = {
+  leadVersionServerValues: { en: 'Latest server values', ru: 'Актуальные данные на сервере' },
+  employeeModuleFilter: { en: 'Filter by module', ru: 'Фильтр по модулю' },
+  sessionCheckFailedTitle: { en: 'Unable to check your session', ru: 'Не удалось проверить сессию' },
+  sessionCheckFailedDescription: { en: 'Check your connection and try again. You do not need to enter your password while the session check is unavailable.', ru: 'Проверьте соединение и повторите запрос. Пока проверка сессии недоступна, вводить пароль заново не нужно.' },
+  leadChangedConcurrently: { en: 'Another employee changed this lead. Review the latest version before saving.', ru: 'Другой сотрудник изменил этого лида. Проверьте актуальную версию перед сохранением.' },
+  leadVersionReviewTitle: { en: 'The lead has changed', ru: 'Карточка лида изменилась' },
+  leadVersionReviewDescription: { en: 'Load the latest version while keeping your edited fields. Review them before saving again, or discard your edits and use the server version.', ru: 'Загрузите актуальную версию, сохранив изменённые вами поля. Проверьте их перед повторным сохранением или откажитесь от своих правок и используйте версию сервера.' },
+  leadRefreshKeepingDraft: { en: 'Refresh and keep my edits', ru: 'Обновить, сохранив мои правки' },
+  leadUseServerVersion: { en: 'Discard my edits and refresh', ru: 'Отменить мои правки и обновить' },
+  leadVersionUpdated: { en: 'Latest version loaded. Review the fields before saving.', ru: 'Актуальная версия загружена. Проверьте поля перед сохранением.' },
+  academyTimeZoneLabel: { en: 'Academy time (UTC+5)', ru: 'Время академии (UTC+5)' },
+  attachmentDownloadFailed: { en: 'Unable to download the file. Try again.', ru: 'Не удалось скачать файл. Попробуйте снова.' },
+  messageReadFailed: { en: 'Unable to mark the conversation as read.', ru: 'Не удалось отметить переписку прочитанной.' },
+  retryMarkRead: { en: 'Retry marking as read', ru: 'Повторить отметку прочтения' },
+  dragLead: { en: 'Move lead: {name}', ru: 'Переместить лида: {name}' },
+  moveLeadToStage: { en: 'Move to stage', ru: 'Переместить на этап' },
   telegramReminderTitle: { en: '🔔 Your tasks', ru: '🔔 Ваши задачи' },
   telegramReminderCounts: { en: 'Today: {today}. Overdue: {overdue}. No deadline: {undated}.', ru: 'На сегодня: {today}. Просрочено: {overdue}. Без срока: {undated}.' },
   telegramReminderUndated: { en: 'no deadline', ru: 'без срока' },

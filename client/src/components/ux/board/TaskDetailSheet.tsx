@@ -1,3 +1,5 @@
+import { getPendingAttachment, retainPendingAttachment, clearPendingAttachment } from '@/features/board/pending-attachments';
+import { useUnsavedChangesGuard, UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
@@ -162,6 +164,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
         | null
     >(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const submittingComment = useRef(false);
+    const submittingChecklist = useRef(false);
+    const [failedUpload, setFailedUpload] = useState<File | null>(null);
+    const [activeTab, setActiveTab] = useState('comments');
+    const userId = user?.id;
     const [uploadPercent, setUploadPercent] = useState<number | null>(null);
 
     useEffect(() => {
@@ -170,7 +177,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
         setChecklistText('');
         setConfirmDelete(false);
         setPendingDelete(null);
-    }, [taskId, open]);
+        const pending = userId && taskId ? getPendingAttachment(userId, taskId) : null;
+        setFailedUpload(pending);
+        setActiveTab(pending ? 'attachments' : 'comments');
+    }, [taskId, open, userId]);
 
     useEffect(() => {
         if (task && !editing) {
@@ -219,10 +229,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
             invalidate();
             if (status === 'accepted') {
                 toast({ title: t('taskAcceptedAndArchived') });
-                onOpenChange(false);
+                unsavedGuard.handleOpenChange(false);
             } else if (task?.status === 'accepted') {
                 toast({ title: t('taskReopened') });
-                onOpenChange(false);
+                unsavedGuard.handleOpenChange(false);
             }
         },
         onError,
@@ -235,9 +245,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     });
 
     const commentMutation = useMutation({
-        mutationFn: () => apiRequest('POST', `/api/board/tasks/${taskId}/comments`, { body: commentText.trim() }),
-        onSuccess: () => { setCommentText(''); invalidate(); },
+        mutationFn: (draft: string) => apiRequest('POST', `/api/board/tasks/${taskId}/comments`, { body: draft.trim() }),
+        onSuccess: (_result, draft) => { setCommentText((current) => current === draft ? '' : current); invalidate(); },
         onError,
+        onSettled: () => { submittingComment.current = false; },
     });
 
     const deleteCommentMutation = useMutation({
@@ -247,10 +258,22 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     });
 
     const addChecklistMutation = useMutation({
-        mutationFn: () => apiRequest('POST', `/api/board/tasks/${taskId}/checklist`, { content: checklistText.trim() }),
-        onSuccess: () => { setChecklistText(''); invalidate(); },
+        mutationFn: (draft: string) => apiRequest('POST', `/api/board/tasks/${taskId}/checklist`, { content: draft.trim() }),
+        onSuccess: (_result, draft) => { setChecklistText((current) => current === draft ? '' : current); invalidate(); },
         onError,
+        onSettled: () => { submittingChecklist.current = false; },
     });
+
+    const sendComment = () => {
+        if (!commentText.trim() || submittingComment.current) return;
+        submittingComment.current = true;
+        commentMutation.mutate(commentText);
+    };
+    const addChecklistItem = () => {
+        if (!checklistText.trim() || submittingChecklist.current) return;
+        submittingChecklist.current = true;
+        addChecklistMutation.mutate(checklistText);
+    };
 
     const toggleChecklistMutation = useMutation({
         mutationFn: ({ id, isDone }: { id: number; isDone: boolean }) =>
@@ -268,23 +291,27 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     const uploadMutation = useMutation({
         mutationFn: ({ file, onProgress }: { file: File; onProgress: (percent: number) => void }) =>
             uploadTaskAttachment(taskId!, file, onProgress),
-        onSuccess: () => {
+        onSuccess: (_result, { file }) => {
+            if (userId && taskId) clearPendingAttachment(userId, taskId, file);
             setUploadPercent(null);
+            setFailedUpload(null);
             invalidate();
         },
-        onError: (error: Error) => {
+        onError: (error: Error, { file }) => {
+            setFailedUpload(file);
             setUploadPercent(null);
             toast({ title: t(attachmentErrorKey(error.message)), variant: 'destructive' });
         },
     });
 
     const handleAttachmentSelected = (file: File | undefined) => {
-        if (!file) return;
+        if (!file || uploadMutation.isPending) return;
         const validationError = validateAttachment(file);
         if (validationError) {
             toast({ title: t(validationError), variant: 'destructive' });
             return;
         }
+        if (userId && taskId) retainPendingAttachment(userId, taskId, file);
         setUploadPercent(0);
         uploadMutation.mutate({ file, onProgress: setUploadPercent });
     };
@@ -311,11 +338,25 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                 : { title: t('deleteAttachmentTitle'), description: t('deleteAttachmentConfirm') }
         : null;
 
+    const editDirty = editing && !!task && (
+        draftTitle !== task.title || draftDescription !== (task.description ?? '')
+        || draftPriority !== task.priority || draftColor !== task.color
+        || draftAssignee !== (task.assigneeId ? String(task.assigneeId) : UNASSIGNED)
+        || draftDue !== (task.dueAt ? toLocalInput(task.dueAt) : '')
+    );
+    const unsavedGuard = useUnsavedChangesGuard({
+        open, onOpenChange: (nextOpen) => {
+            if (!nextOpen && userId && taskId) clearPendingAttachment(userId, taskId);
+            onOpenChange(nextOpen);
+        },
+        isDirty: editDirty || !!commentText.trim() || !!checklistText.trim() || !!failedUpload || uploadMutation.isPending,
+    });
+
     const priorityMeta = task ? PRIORITY_META[task.priority] : null;
     const checklistDone = task?.checklist.filter((c) => c.isDone).length ?? 0;
 
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
+        <Sheet open={open} onOpenChange={unsavedGuard.handleOpenChange}>
             <SheetContent data-mini-task-sheet={tasksOnly || undefined} className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
                 {isError ? (
                     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -334,7 +375,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
                                     {editing ? (
-                                        <Input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} className="text-base font-semibold" />
+                                        <><SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle><Input disabled={saveMutation.isPending} aria-label={t('taskTitle')} value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} className="text-base font-semibold" /></>
                                     ) : (
                                         <SheetTitle className="text-base leading-snug">{task.title}</SheetTitle>
                                     )}
@@ -362,7 +403,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         editing ? (
                                             <>
                                                 <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{saveMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('saveChanges')}</Button>
-                                                <Button size="icon" variant="ghost" className="size-8" aria-label={t('cancel')} onClick={() => setEditing(false)}><X className="size-4" /></Button>
+                                                <Button size="icon" variant="ghost" className="size-8" aria-label={t('cancel')} onClick={() => unsavedGuard.requestAction(() => setEditing(false))}><X className="size-4" /></Button>
                                             </>
                                         ) : (
                                             <Button size="icon" variant="ghost" className="size-8" aria-label={t('edit')} onClick={() => setEditing(true)}><Pencil className="size-4" /></Button>
@@ -380,7 +421,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     onValueChange={(v) => statusMutation.mutate(v as BoardStatus)}
                                     disabled={task.status === 'accepted' || statusMutation.isPending}
                                 >
-                                    <SelectTrigger className="h-9 w-44"><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
+                                    <SelectTrigger aria-label={t('status')} className="h-9 w-44"><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
                                     <SelectContent>
                                         {WORKING_STATUSES.map((s) => (
                                             <SelectItem key={s} value={s}>{columnLabel(s, t)}</SelectItem>
@@ -424,13 +465,13 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     <>
                                         <div className="space-y-1.5">
                                             <Label htmlFor="task-detail-description" className="text-xs text-muted-foreground">{t('description')}</Label>
-                                            <Textarea id="task-detail-description" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
+                                            <Textarea disabled={saveMutation.isPending} id="task-detail-description" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
                                         </div>
                                         <TaskColorPicker value={draftColor} onChange={setDraftColor} disabled={saveMutation.isPending} />
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                                             <div className="space-y-1.5">
                                                 <Label htmlFor="task-detail-priority" className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
-                                                <Select value={draftPriority} onValueChange={(v) => setDraftPriority(v as BoardPriority)}>
+                                                <Select disabled={saveMutation.isPending} value={draftPriority} onValueChange={(v) => setDraftPriority(v as BoardPriority)}>
                                                     <SelectTrigger id="task-detail-priority"><SelectValue /></SelectTrigger>
                                                     <SelectContent>
                                                         {PRIORITY_ORDER.map((p) => (
@@ -442,7 +483,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             <div className="space-y-1.5">
                                                 <Label htmlFor="task-detail-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
                                                 {isTaskSupervisor ? (
-                                                    <Select value={draftAssignee} onValueChange={setDraftAssignee}>
+                                                    <Select disabled={saveMutation.isPending} value={draftAssignee} onValueChange={setDraftAssignee}>
                                                         <SelectTrigger id="task-detail-assignee"><SelectValue /></SelectTrigger>
                                                         <SelectContent>
                                                             <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
@@ -456,7 +497,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         </div>
                                         <div className="space-y-1.5">
                                             <Label htmlFor="task-detail-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
-                                            <Input id="task-detail-due" type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} />
+                                            <Input disabled={saveMutation.isPending} id="task-detail-due" type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} />
                                         </div>
                                     </>
                                 ) : (
@@ -489,7 +530,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             </div>
 
                             {/* Tabs */}
-                            <Tabs defaultValue="comments" className="p-4 sm:p-5">
+                            <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
                                 <TabsList className="w-full sm:grid sm:grid-cols-4">
                                     <TabsTrigger value="comments">{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
                                     <TabsTrigger value="checklist">{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
@@ -506,9 +547,9 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             placeholder={t('addCommentPlaceholder')}
                                             rows={2}
                                             className="resize-none"
-                                            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && commentText.trim()) commentMutation.mutate(); }}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendComment(); } }}
                                         />
-                                        <Button size="sm" className="self-end" disabled={!commentText.trim() || commentMutation.isPending} onClick={() => commentMutation.mutate()}>{commentMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('send')}</Button>
+                                        <Button size="sm" className="self-end" disabled={!commentText.trim() || commentMutation.isPending} onClick={sendComment}>{commentMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('send')}</Button>
                                     </div>
                                     {task.comments.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noCommentsYet')}</p>
@@ -542,9 +583,9 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             value={checklistText}
                                             onChange={(e) => setChecklistText(e.target.value)}
                                             placeholder={t('addChecklistPlaceholder')}
-                                            onKeyDown={(e) => { if (e.key === 'Enter' && checklistText.trim()) addChecklistMutation.mutate(); }}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
                                         />
-                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={() => addChecklistMutation.mutate()}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
+                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={addChecklistItem}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
                                     </div>
                                     {task.checklist.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noChecklistYet')}</p>
@@ -552,7 +593,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         <ul className="space-y-1.5">
                                             {task.checklist.map((item) => (
                                                 <li key={item.id} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60">
-                                                    <Checkbox checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
+                                                    <Checkbox aria-label={item.content} checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
                                                     <span className={cn('flex-1 text-sm', item.isDone && 'text-muted-foreground line-through')}>{item.content}</span>
                                                     <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-0 group-hover:opacity-100" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'checklist', id: item.id })}><Trash2 className="size-3.5" /></Button>
                                                 </li>
@@ -563,6 +604,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                                 {/* Attachments */}
                                 <TabsContent value="attachments" className="mt-4 space-y-3">
+                                    {failedUpload ? <div role="alert" className="flex items-center gap-2 text-sm text-destructive"><span className="min-w-0 break-all">{t('attachmentUploadFailed')}: {failedUpload.name}</span><Button variant="outline" disabled={uploadMutation.isPending} onClick={() => handleAttachmentSelected(failedUpload)}>{t('retry')}</Button></div> : null}
                                     <input
                                         ref={fileInputRef}
                                         type="file"
@@ -663,6 +705,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            <UnsavedChangesDialog open={unsavedGuard.confirmationOpen} onOpenChange={unsavedGuard.setConfirmationOpen} onDiscard={unsavedGuard.discardChanges} />
         </Sheet>
     );
 }

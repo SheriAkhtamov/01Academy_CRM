@@ -77,7 +77,7 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                         variant="outline"
                         className={cn(
                             'h-5 gap-1 px-1.5 text-[10px] font-medium',
-                            overdue && 'border-red-300 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400',
+                            overdue && 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400',
                         )}
                     >
                         <CalendarClock className="size-3" />
@@ -112,7 +112,7 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Avatar className="size-6 border border-border">
-                                <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
+                                <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary-700">
                                     {getInitials(task.assignee.fullName)}
                                 </AvatarFallback>
                             </Avatar>

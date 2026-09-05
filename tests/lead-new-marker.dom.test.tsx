@@ -32,8 +32,8 @@ describe('new lead marker on the sales pipeline', () => {
     ]);
 
     const cards = container.querySelectorAll('[aria-label*="lead"]');
-    const newCard = screen.getByLabelText(/Fresh Instagram lead/);
-    const seenCard = screen.getByLabelText(/Already opened lead/);
+    const newCard = screen.getByRole('button', { name: /Fresh Instagram lead.*Open lead/ });
+    const seenCard = screen.getByRole('button', { name: /Already opened lead.*Open lead/ });
 
     expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(newCard.querySelector('.bg-destructive')).toBeTruthy();

@@ -401,6 +401,7 @@ export function SalesScheduleCalendar({
                   variant={filtersOpen ? 'secondary' : 'outline'}
                   size="sm"
                   className="h-8 gap-1.5 px-2.5"
+                  aria-label={t('scheduleFilters')}
                   aria-pressed={filtersOpen}
                   onClick={() => setFilterState(filtersOpen ? 'closed' : 'open')}
                 >
@@ -416,6 +417,7 @@ export function SalesScheduleCalendar({
                   type="button"
                   size="sm"
                   className="h-8 gap-1.5 px-2.5"
+                  aria-label={t('createDemoLesson')}
                   onClick={() => openDemoCreation()}
                 >
                   <Plus />

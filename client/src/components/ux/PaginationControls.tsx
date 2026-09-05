@@ -83,7 +83,7 @@ export function PaginationControls({
             onValueChange={(value) => onPageSizeChange(Number(value))}
             disabled={disabled}
           >
-            <SelectTrigger className="h-8 w-[72px] bg-background text-xs tabular-nums">
+            <SelectTrigger aria-label={t('perPage')} className="h-8 w-[72px] bg-background text-xs tabular-nums">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

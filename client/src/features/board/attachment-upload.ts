@@ -1,5 +1,5 @@
 import type { TaskAttachment } from '@/lib/boardTypes';
-import { boardUrl, boardHeaders } from './transport';
+import { boardUrl, boardHeaders, handleBoardUnauthorized } from './transport';
 
 // Keep the key stable when retrying the same File. The server uses it to avoid
 // duplicates even if it committed an upload but its response was lost.
@@ -25,7 +25,12 @@ export function uploadTaskAttachment(taskId: number, file: File, onProgress: (pe
       if (xhr.status >= 200 && xhr.status < 300 && typeof body.id === 'number') {
         onProgress(100);
         resolve(body as unknown as TaskAttachment);
-      } else reject(new Error(String(body.error ?? body.message ?? `HTTP ${xhr.status}`)));
+      } else {
+        const message = String(body.error ?? body.message ?? `HTTP ${xhr.status}`);
+        const error = Object.assign(new Error(message), { status: xhr.status, rawMessage: message, data: body });
+        handleBoardUnauthorized(error);
+        reject(error);
+      }
     };
     xhr.onerror = xhr.onabort = xhr.ontimeout = () => reject(new Error('attachmentUploadFailed'));
     xhr.send(form);

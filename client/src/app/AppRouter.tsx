@@ -6,6 +6,8 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { canAccessAcademyModule, hasFinanceAccess, hasLeadershipAccess, type AcademyModule } from '@shared/academy';
 import Layout, { AppSpinner } from '@/components/Layout';
 import { SPRING, scaleIn } from '@/lib/motion';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 
 const NotFound = lazy(() => import('@/pages/not-found'));
 const Login = lazy(() => import('@/pages/login'));
@@ -105,7 +107,24 @@ function RouteLoading() {
 }
 
 export function AppRouter() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isSessionError, isRefetchingSession, refetchSession } = useAuth();
+  const { t } = useTranslation();
+
+  if (isSessionError) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background p-4">
+        <Alert variant="destructive" className="max-w-lg">
+          <AlertTitle>{t('sessionCheckFailedTitle')}</AlertTitle>
+          <AlertDescription>
+            <p>{t('sessionCheckFailedDescription')}</p>
+            <Button className="mt-4" variant="outline" disabled={isRefetchingSession} onClick={() => void refetchSession().catch(() => undefined)}>
+              {isRefetchingSession ? t('loading') : t('retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </main>
+    );
+  }
 
   if (isLoading) {
     return <RouteLoading />;

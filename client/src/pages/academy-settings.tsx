@@ -2048,7 +2048,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormLabel required>{t('color')}</FormLabel>
                   <div className="flex gap-2">
                     <FormControl><Input type="color" className="w-16 p-1" {...field} /></FormControl>
-                    <Input value={field.value} onChange={field.onChange} />
+                    <Input aria-label={t('color')} value={field.value} onChange={field.onChange} />
                   </div>
                   <LocalizedFormMessage />
                 </FormItem>

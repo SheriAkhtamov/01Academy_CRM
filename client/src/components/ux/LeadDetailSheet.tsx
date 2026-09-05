@@ -1,3 +1,5 @@
+import { useLeadVersionReview } from '@/features/leads/useLeadVersionReview';
+import { LeadVersionNotice } from '@/components/ux/lead/LeadVersionNotice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -36,10 +38,7 @@ import {
   LeadMergeConflictDialog,
   type LeadMergeDialogLead,
 } from '@/components/ux/LeadMergeConflictDialog';
-import {
-  UnsavedChangesDialog,
-  useUnsavedChangesGuard,
-} from '@/components/ux/UnsavedChangesGuard';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -55,13 +54,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-} from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -451,10 +444,8 @@ export function LeadDetailSheet({
     setRemovePhoneIndex(null);
   }, [leadId, taskForm]);
 
-  // Track which lead snapshot we last hydrated the forms from. Background refetches
-  // (e.g. after recording a contact) must NOT wipe what the user is typing in other tabs,
-  // so we only reseed when the lead identity changes or when the deal data itself changed
-  // AND the user hasn't started editing the affected form.
+  const [versionConflict, setVersionConflict] = useState(false);
+  const editVersion = useRef<LeadDetails['updatedAt']>();
   const hydratedLeadKey = useRef<string | null>(null);
   const hydratedLeadId = useRef<number | null>(null);
   const hydratedTransientKey = useRef<string | null>(null);
@@ -488,14 +479,15 @@ export function LeadDetailSheet({
     const lead = leadQuery.data;
     if (!open || !lead || !leadSnapshotKey) return;
 
-    // A draft belongs to the lead it was typed on. When the sheet swaps records
-    // while staying open, every form is reseeded even mid-edit: keeping the old
-    // draft would show another lead's data and mark an untouched lead dirty.
     const changedLead = hydratedLeadId.current !== lead.id;
+    if (changedLead || !leadForm.formState.isDirty) {
+      editVersion.current = lead.updatedAt;
+      setVersionConflict(false);
+    } else if (editVersion.current !== lead.updatedAt) {
+      setVersionConflict(true);
+    }
 
-    // Reseed the deal form only when the lead itself changes, or when the
-    // server data changed AND the user is not mid-edit in the deal tab.
-    if (hydratedLeadKey.current !== leadSnapshotKey) {
+    if (hydratedLeadKey.current !== leadSnapshotKey && (changedLead || !leadForm.formState.isDirty)) {
       leadForm.reset(
         leadToFormValues(lead),
         changedLead ? undefined : { keepDirtyValues: true },
@@ -528,6 +520,8 @@ export function LeadDetailSheet({
     if (!open) {
       hydratedLeadKey.current = null;
       hydratedLeadId.current = null;
+      editVersion.current = undefined;
+      setVersionConflict(false);
       hydratedTransientKey.current = null;
       setPendingManagerId(null);
       setFocusTarget(null);
@@ -541,9 +535,6 @@ export function LeadDetailSheet({
       setSocialAccountsDirty(false);
       setCommentDraft('');
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
-      // Drop unsaved edits so the dirty flag clears; reopening reseeds the
-      // forms from the (possibly cached) lead data because the hydration
-      // effect above re-runs on `open` with the tracking keys nulled here.
       leadForm.reset();
       paymentForm.reset();
     }
@@ -572,13 +563,15 @@ export function LeadDetailSheet({
 
       return leadsApi.update<LeadDetails>(leadId!, {
         ...rest,
-        expectedUpdatedAt: currentLead?.updatedAt,
+        expectedUpdatedAt: editVersion.current ?? currentLead?.updatedAt,
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
         sourceId: Number(values.sourceId),
         expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
       });
     },
     onSuccess: async (updatedLead: LeadDetails) => {
+      editVersion.current = updatedLead.updatedAt;
+      setVersionConflict(false);
       leadForm.reset(leadToFormValues(updatedLead));
       hydratedLeadKey.current = null;
       hydratedLeadId.current = updatedLead.id;
@@ -594,8 +587,20 @@ export function LeadDetailSheet({
         });
         return;
       }
+      if (error?.status === 409 && (error?.rawMessage === 'leadChangedConcurrently' || error?.data?.error === 'leadChangedConcurrently')) {
+        setVersionConflict(true);
+        void leadQuery.refetch();
+        return;
+      }
       toast({ title: t('leadSaveFailed'), description: error.message, variant: 'destructive' });
     },
+  });
+
+  const { reviewingVersion, reviewLatestVersion } = useLeadVersionReview(leadQuery.refetch, (latest, keepDraft) => {
+    editVersion.current = latest.updatedAt;
+    leadForm.reset(leadToFormValues(latest), keepDraft ? { keepDirtyValues: true } : undefined);
+    hydratedLeadKey.current = null;
+    setVersionConflict(false);
   });
 
   const mergeLeads = useMutation({
@@ -825,7 +830,7 @@ export function LeadDetailSheet({
     navigateTo('deal', field === 'sourceId' || field === 'expectedPaymentUzs' ? 'details' : 'contacts');
   };
   const saveDeal = leadForm.handleSubmit((values) => {
-    if (!updateLead.isPending) updateLead.mutate(values);
+    if (!updateLead.isPending && !versionConflict && !reviewingVersion) updateLead.mutate(values);
   }, showDealErrors);
 
   const dealFormDirty = leadForm.formState.isDirty;
@@ -838,7 +843,7 @@ export function LeadDetailSheet({
       + (lead.payments?.length ?? 0)
     : 0;
   const paymentsCount = lead?.payments?.length ?? 0;
-  const openTasks = (lead?.tasks ?? []).filter((task) => task.status !== 'done');
+  const openTasks = (lead?.tasks ?? []).filter((task) => task.status !== 'done' && task.status !== 'accepted');
   const hasOverdueTask = openTasks.some((task) => (
     Boolean(task.dueAt) && new Date(task.dueAt!).getTime() < Date.now()
   ));
@@ -971,6 +976,16 @@ export function LeadDetailSheet({
               </div>
 
               <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/20 p-4 sm:p-6">
+            {versionConflict ? <LeadVersionNotice pending={reviewingVersion}
+              onKeepDraft={() => void reviewLatestVersion(true)}
+              onUseServer={() => unsavedGuard.requestAction(() => void reviewLatestVersion(false))}
+              values={[
+                { label: t('contactPersonName'), value: lead.contactName },
+                { label: t('phone'), value: visibleLeadPhones(lead).join(', ') },
+                { label: t('source'), value: sources.find((source) => source.id === lead.sourceId)?.name ?? '' },
+                { label: t('communicationLanguage'), value: lead.language === 'uz' ? t('uzbekLang') : lead.language === 'en' ? t('english') : t('russian') },
+                { label: t('amount'), value: money(lead.expectedPaymentUzs) },
+              ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   {!lead.isArchived ? (
                     <LeadNextAction
@@ -1663,9 +1678,9 @@ export function LeadDetailSheet({
                         {(lead.tasks ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
                         ) : (
-                          [...(lead.tasks ?? [])].sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done')
+                          [...(lead.tasks ?? [])].sort((a, b) => Number(['done', 'accepted'].includes(a.status)) - Number(['done', 'accepted'].includes(b.status))
                             || (a.dueAt ? new Date(a.dueAt).getTime() : Infinity) - (b.dueAt ? new Date(b.dueAt).getTime() : Infinity)).map((task) => {
-                            const isDone = task.status === 'done';
+                            const isDone = (task.status === 'done' || task.status === 'accepted');
                             const isOverdue = !isDone
                               && Boolean(task.dueAt)
                               && new Date(task.dueAt!).getTime() < Date.now();
@@ -1706,7 +1721,7 @@ export function LeadDetailSheet({
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                                   <Badge variant={isDone ? 'success' : isOverdue ? 'destructive' : 'outline'}>
-                                    {isDone ? t('taskDone') : isOverdue ? t('taskOverdue') : t('taskInProgress')}
+                                    {task.status === 'accepted' ? t('colAccepted') : isDone ? t('taskDone') : isOverdue ? t('taskOverdue') : t('taskInProgress')}
                                   </Badge>
                                   {!isDone ? (
                                     <Button
@@ -1736,6 +1751,7 @@ export function LeadDetailSheet({
               key={lead.id}
               dirty={dealFormDirty}
               pending={updateLead.isPending}
+              saveDisabled={versionConflict || reviewingVersion}
               onDiscard={() => leadForm.reset(leadToFormValues(lead))}
             />
           </>

@@ -15,11 +15,14 @@ import {
 } from '@/lib/session';
 import { toast } from '@/hooks/use-toast';
 import { i18n } from '@/lib/i18n';
+import { endAuthenticatedSession } from '@/lib/queryClient';
 
 interface AuthContextType {
   session: AuthSession;
   user: SanitizedUser | null;
   isLoading: boolean;
+  isSessionError: boolean;
+  isRefetchingSession: boolean;
   isAuthenticated: boolean;
   login: (login: string, password: string) => Promise<AuthSession>;
   logout: () => Promise<void>;
@@ -62,8 +65,7 @@ export function AuthProvider({ children, api = defaultAuthApi }: { children: Rea
       await api.logoutSession();
     },
     onSuccess: () => {
-      queryClient.clear();
-      queryClient.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, anonymousSession);
+      endAuthenticatedSession(queryClient);
     },
     // Without this a failed request left the button doing nothing at all: the
     // cache was only cleared on success, so the user stayed signed in with no
@@ -114,10 +116,9 @@ export function AuthProvider({ children, api = defaultAuthApi }: { children: Rea
       value={{
         session,
         user,
-        isLoading:
-          sessionQuery.isLoading ||
-          loginMutation.isPending ||
-          logoutMutation.isPending,
+        isLoading: sessionQuery.isLoading,
+        isSessionError: sessionQuery.isError && !sessionQuery.data,
+        isRefetchingSession: sessionQuery.isFetching,
         isAuthenticated: !isAnonymousSession(session),
         login,
         logout,

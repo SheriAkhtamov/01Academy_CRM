@@ -128,7 +128,7 @@ export function SalesOverviewKpiGrid({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-muted-foreground">{tile.title}</p>
                   {tile.hint ? (
-                    <p className="mt-0.5 hidden truncate text-[11px] leading-4 text-muted-foreground/70 md:block">
+                    <p className="mt-0.5 hidden truncate text-[11px] leading-4 text-muted-foreground md:block">
                       {tile.hint}
                     </p>
                   ) : null}

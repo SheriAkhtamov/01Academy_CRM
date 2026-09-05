@@ -285,7 +285,7 @@ export function LeadAssignmentContent() {
           onValueChange={(value) => setReassignTarget({ lead, managerId: Number(value) })}
           disabled={assignLead.isPending}
         >
-          <SelectTrigger className="w-full max-w-56">
+          <SelectTrigger aria-label={`${t('responsibleManager')}: ${lead.contactName}`} className="w-full max-w-56">
             <SelectValue placeholder={t('selectManager')} />
           </SelectTrigger>
           <SelectContent>
@@ -377,7 +377,7 @@ export function LeadAssignmentContent() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Select value={managerFilter} onValueChange={setManagerFilter}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('responsibleManager')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -394,7 +394,7 @@ export function LeadAssignmentContent() {
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('status')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -417,7 +417,7 @@ export function LeadAssignmentContent() {
                 <p className="text-sm text-muted-foreground">{t('bulkAssignmentHint')}</p>
               </div>
               <Select value={bulkManagerId} onValueChange={setBulkManagerId}>
-                <SelectTrigger className="w-full md:w-64">
+                <SelectTrigger aria-label={t('selectManager')} className="w-full md:w-64">
                   <SelectValue placeholder={t('selectManager')} />
                 </SelectTrigger>
                 <SelectContent>

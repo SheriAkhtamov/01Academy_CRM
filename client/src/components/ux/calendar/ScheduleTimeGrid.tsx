@@ -129,7 +129,6 @@ export function ScheduleTimeGrid({
           <div className="border-r border-border" />
           {days.map((day) => {
             const today = isSameDay(day, now);
-            const weekend = day.getDay() === 0 || day.getDay() === 6;
             return (
               <div
                 key={day.toISOString()}
@@ -140,7 +139,7 @@ export function ScheduleTimeGrid({
               >
                 <span className={cn(
                   'text-[10px] font-semibold uppercase tracking-wide',
-                  today ? 'text-primary' : weekend ? 'text-muted-foreground/70' : 'text-muted-foreground',
+                  today ? 'text-primary' : 'text-muted-foreground',
                 )}>
                   {format(day, 'EEE', { locale })}
                 </span>

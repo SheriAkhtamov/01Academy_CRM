@@ -265,14 +265,14 @@ export function StudentDetailSheet({
                 <span className="text-muted-foreground">{t('attendanceLabel')}</span>
                 <span className="font-medium text-foreground">{currentStudent.attendancePercent}%</span>
               </div>
-              <Progress value={currentStudent.attendancePercent} />
+              <Progress aria-label={t('attendanceLabel')} value={currentStudent.attendancePercent} />
             </div>
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">{t('progressLabel')}</span>
                 <span className="font-medium text-foreground">{currentStudent.progressPercent}%</span>
               </div>
-              <Progress value={currentStudent.progressPercent} />
+              <Progress aria-label={t('progressLabel')} value={currentStudent.progressPercent} />
             </div>
           </div>
         </SheetHeader>

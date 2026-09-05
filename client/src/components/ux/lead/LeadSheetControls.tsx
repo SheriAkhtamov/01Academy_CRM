@@ -43,7 +43,7 @@ export function SegmentedControl({
       aria-label={ariaLabel}
       className={cn('flex w-full gap-0.5 rounded-lg border border-border bg-muted/60 p-0.5', className)}
     >
-      {options.map((option) => {
+      {options.map((option, index) => {
         const isActive = option.value === value;
         return (
           <button
@@ -51,6 +51,7 @@ export function SegmentedControl({
             type="button"
             role="radio"
             aria-checked={isActive}
+            tabIndex={isActive || (!options.some((item) => item.value === value) && index === 0) ? 0 : -1}
             disabled={disabled}
             className={cn(
               'min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
@@ -59,6 +60,16 @@ export function SegmentedControl({
                 : 'text-muted-foreground hover:text-foreground',
             )}
             onClick={() => onChange(option.value)}
+            onKeyDown={(event) => {
+              const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
+                : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+              if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+              event.preventDefault();
+              const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+                : (index + direction + options.length) % options.length;
+              onChange(options[nextIndex].value);
+              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]?.focus();
+            }}
           >
             {option.label}
           </button>

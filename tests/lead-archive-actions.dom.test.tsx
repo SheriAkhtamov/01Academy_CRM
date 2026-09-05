@@ -117,10 +117,10 @@ const choose = async (dialog: HTMLElement, field: 'archiveReason' | 'restoreToSt
 };
 
 describe('lead sheet archive quick actions', () => {
-  it('shows Archive directly after Payment for an active lead, never Restore', async () => {
+  it('offers Archive for an active lead without archiving on open', async () => {
     renderSheet();
     const button = await screen.findByRole('button', { name: i18n.t('archiveLeadShort') });
-    expect(button.previousElementSibling?.textContent).toBe(i18n.t('payment'));
+    expect((button as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole('button', { name: i18n.t('restoreLead') })).toBeNull();
     expect(requests).toHaveLength(0);
   });

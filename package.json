@@ -125,6 +125,9 @@
   "overrides": {
     "@esbuild-kit/core-utils": {
       "esbuild": "^0.25.12"
-    }
+    },
+    "browserslist": "4.28.9",
+    "postcss-selector-parser": "6.1.4",
+    "qs": "6.16.0"
   }
 }

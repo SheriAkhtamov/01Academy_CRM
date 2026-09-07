@@ -15,7 +15,6 @@ export const translations = {
   attachmentDownloadFailed: { en: 'Unable to download the file. Try again.', ru: 'Не удалось скачать файл. Попробуйте снова.' },
   messageReadFailed: { en: 'Unable to mark the conversation as read.', ru: 'Не удалось отметить переписку прочитанной.' },
   retryMarkRead: { en: 'Retry marking as read', ru: 'Повторить отметку прочтения' },
-  dragLead: { en: 'Move lead: {name}', ru: 'Переместить лида: {name}' },
   moveLeadToStage: { en: 'Move to stage', ru: 'Переместить на этап' },
   telegramReminderTitle: { en: '🔔 Your tasks', ru: '🔔 Ваши задачи' },
   telegramReminderCounts: { en: 'Today: {today}. Overdue: {overdue}. No deadline: {undated}.', ru: 'На сегодня: {today}. Просрочено: {overdue}. Без срока: {undated}.' },

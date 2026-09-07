@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import {
   closestCorners,
@@ -23,7 +23,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowRight,
-  GripVertical,
   MoreHorizontal,
   Phone,
   Send,
@@ -127,8 +126,6 @@ const reconcileKanbanLeads = (
 );
 
 interface LeadCardContentProps {
-  onLeadClick?: KanbanBoardProps['onLeadClick'];
-  dragHandle?: ReactNode;
   statuses?: readonly KanbanStatus[];
   onMove?: (leadId: number, statusCode: string) => void;
   lead: KanbanLead;
@@ -146,7 +143,7 @@ interface LeadCardContentProps {
 }
 
 function LeadCardContent({
-  onLeadClick, dragHandle, statuses, onMove,
+  statuses, onMove,
   lead,
   currentStatus,
   onQuickAction,
@@ -184,7 +181,7 @@ function LeadCardContent({
           />
         ) : null}
         <div className="min-w-0">
-          <button type="button" onClick={() => onLeadClick?.(lead)} aria-label={`${isNewLead(lead) ? `${t('newLeadIndicator')}. ` : ''}${lead.contactName}. ${t('openLead')}`} className="block max-w-full truncate text-left text-sm font-medium text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring">
+          <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
             {isNewLead(lead) ? (
               <span
                 aria-hidden="true"
@@ -192,7 +189,7 @@ function LeadCardContent({
               />
             ) : null}
             {lead.contactName}
-          </button>
+          </p>
           {visiblePhone ? (
             <a
               href={`tel:${String(visiblePhone).replace(/[^\d+]/g, '')}`}
@@ -207,7 +204,6 @@ function LeadCardContent({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          {dragHandle}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -325,6 +321,7 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     lead,
     currentStatus,
     isPending,
+    onLeadClick,
     selected,
     selectionMode,
     dragDisabled,
@@ -339,7 +336,6 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
     attributes,
     listeners,
     setNodeRef,
-    setActivatorNodeRef,
     isDragging,
   } = useDraggable({
     id: `lead-${lead.id}`,
@@ -363,14 +359,22 @@ function DraggableLeadCard(props: DraggableLeadCardProps) {
       exit={reflow ? 'exit' : undefined}
       transition={reflow ? SPRING.layout : undefined}
       className={cn(
-        'group rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'group cursor-grab rounded-lg border border-border/80 bg-card p-3 shadow-2xs outline-none transition-[box-shadow,border-color] duration-200 hover:border-border hover:shadow-md active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         selectionMode && 'cursor-default active:cursor-default',
         selected && 'border-primary/60 bg-primary/5 shadow-sm',
         isDragging && 'opacity-25',
       )}
-
+      aria-label={`${isNewLead(lead) ? `${t('newLeadIndicator')}. ` : ''}${lead.contactName}. ${t('openLead')}`}
+      {...attributes}
+      {...listeners}
+      onClick={() => onLeadClick?.(lead)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter') onLeadClick?.(lead);
+        listeners?.onKeyDown?.(event);
+      }}
     >
-      <LeadCardContent {...props} dragHandle={<Button ref={setActivatorNodeRef} variant="ghost" size="icon" className="size-7 touch-none cursor-grab" {...attributes} {...listeners} disabled={isPending || selectionMode || dragDisabled} aria-label={t('dragLead').replace('{name}', lead.contactName)}><GripVertical className="size-4" /></Button>} />
+      <LeadCardContent {...props} />
     </motion.div>
   );
 

@@ -9,7 +9,7 @@ import {
     type SavedAccount,
 } from '../db/schema';
 import { ACADEMY_ACCESS_MODULES, type AcademyAccessModule } from '@shared/academy';
-import { asc, desc, eq, or, and, inArray } from 'drizzle-orm';
+import { asc, desc, eq, or, and, inArray, sql } from 'drizzle-orm';
 
 export type UserWithModules = User & { modules: AcademyAccessModule[]; phoneNumbers: string[] };
 type SavedAccountWithUser = SavedAccount & { accountUser: UserWithModules };
@@ -98,10 +98,18 @@ class UserStorage {
     }
 
     async getUserByLoginOrEmail(loginOrEmail: string): Promise<UserWithModules | undefined> {
+        const lower = loginOrEmail.toLowerCase();
         const result = await db
             .select()
             .from(users)
-            .where(or(eq(users.email, loginOrEmail), eq(users.fullName, loginOrEmail)));
+            .where(
+                or(
+                    eq(users.email, loginOrEmail),
+                    eq(users.fullName, loginOrEmail),
+                    sql`lower(${users.email}) = ${lower}`,
+                    sql`lower(${users.fullName}) = ${lower}`,
+                ),
+            );
         return result[0] ? (await this.attachModulesToUsers(result))[0] : undefined;
     }
 

@@ -17,17 +17,63 @@ async function exec(sql: string, params: any[] = []) {
   return pool.query(sql, params);
 }
 
-async function exists(table: string, whereSql: string, params: any[] = []) {
-  const r = await exec(`SELECT 1 FROM ${table} WHERE ${whereSql} LIMIT 1`, params);
-  return r.rows.length > 0;
+// Name generators
+const FIRST_NAMES_MALE = [
+  'Сардор', 'Алишер', 'Бобур', 'Тимур', 'Жасур', 'Азиз', 'Мухаммад', 'Улугбек',
+  'Искандер', 'Шерзод', 'Достон', 'Фаррух', 'Джамшид', 'Руслан', 'Даврон', 'Бекзод',
+  'Отабек', 'Санжар', 'Шодруз', 'Камрон', 'Нодир', 'Одил', 'Хусан', 'Хасан',
+  'Мирзо', 'Сухроб', 'Шахзод', 'Акмал', 'Жахонгир', 'Диёр', 'Асадбек', 'Элдор'
+];
+
+const FIRST_NAMES_FEMALE = [
+  'Малика', 'Камила', 'Шахло', 'Самира', 'Диана', 'Зарина', 'Севара', 'Нигора',
+  'Лола', 'Надира', 'Дильфуза', 'Рано', 'Гульнора', 'Азиза', 'Ясмина', 'Мадина',
+  'Зиёда', 'Дильноза', 'Феруза', 'Муштарий', 'Саида', 'Гульбахор', 'Нозима', 'Шахноза'
+];
+
+const LAST_NAMES = [
+  'Ахмедов', 'Исмаилов', 'Салимов', 'Назаров', 'Умаров', 'Рустамов', 'Темиров', 'Махмудов',
+  'Зокиров', 'Юлдашев', 'Хакимов', 'Расулов', 'Мирзаев', 'Касымов', 'Ибрагимов', 'Олимов',
+  'Собиров', 'Холматов', 'Тахиров', 'Валиев', 'Курбанов', 'Джалилов', 'Ганиев', 'Бакиров',
+  'Каримов', 'Алиев', 'Турсунов', 'Эргашев', 'Абдуллаев', 'Саидов', 'Мамаджанов', 'Ходжаев'
+];
+
+function generatePerson(index: number) {
+  const isFemale = index % 2 === 1;
+  const firstList = isFemale ? FIRST_NAMES_FEMALE : FIRST_NAMES_MALE;
+  const firstName = firstList[index % firstList.length];
+  let lastName = LAST_NAMES[(index * 7) % LAST_NAMES.length];
+  if (isFemale) {
+    if (lastName.endsWith('ов') || lastName.endsWith('ев')) {
+      lastName += 'а';
+    }
+  }
+  const prefix = ['90', '91', '93', '94', '95', '97', '98', '99'][(index * 3) % 8];
+  const middle = String(100 + ((index * 37) % 900));
+  const end = String(1000 + ((index * 73) % 9000));
+  const phone = `+998${prefix}${middle}${end.slice(0, 4)}`;
+
+  const parentIsFather = (index % 3) !== 0;
+  const parentFirst = parentIsFather
+    ? FIRST_NAMES_MALE[(index * 5) % FIRST_NAMES_MALE.length]
+    : FIRST_NAMES_FEMALE[(index * 5) % FIRST_NAMES_FEMALE.length];
+  const role = parentIsFather ? 'Отец' : 'Мама';
+  const parentName = `${parentFirst} ${lastName} (${role})`;
+
+  return {
+    fullName: `${firstName} ${lastName}`,
+    firstName,
+    lastName,
+    parentName,
+    phone,
+  };
 }
 
-// 1. Super Admin and Staff Users
+// 1. Seed Users (Super Admin + Staff)
 async function seedUsers() {
   const superHash = await bcrypt.hash(SUPER.password, 12);
   const staffHash = await bcrypt.hash('Sheri2001', 12);
 
-  // Super Admin: Sheri
   const existingSuper = await exec(
     `SELECT id FROM users WHERE lower(email) = lower($1) OR lower(full_name) = lower($2) ORDER BY id LIMIT 1`,
     [SUPER.email, SUPER.username],
@@ -38,13 +84,7 @@ async function seedUsers() {
     superUserId = existingSuper.rows[0].id;
     await exec(
       `UPDATE users
-       SET email = $1,
-           password = $2,
-           full_name = $3,
-           position = $4,
-           module = 'administration',
-           is_active = true,
-           updated_at = now()
+       SET email = $1, password = $2, full_name = $3, position = $4, module = 'administration', is_active = true, updated_at = now()
        WHERE id = $5`,
       [SUPER.email, superHash, SUPER.fullName, 'Super Administrator / Руководитель', superUserId],
     );
@@ -58,110 +98,54 @@ async function seedUsers() {
     superUserId = res.rows[0].id;
   }
 
-  // Grant Sheri all modules
-  const allModules = ['administration', 'sales', 'teacher', 'marketing', 'finance'];
-  for (const mod of allModules) {
+  // Ensure Sheri has all 5 modules
+  for (const mod of ['administration', 'sales', 'teacher', 'marketing', 'finance']) {
     await exec(
-      `INSERT INTO user_modules (user_id, module)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id, module) DO NOTHING`,
+      `INSERT INTO user_modules (user_id, module) VALUES ($1, $2) ON CONFLICT (user_id, module) DO NOTHING`,
       [superUserId, mod],
     );
   }
 
-  // Staff users
   const staff = [
-    {
-      fullName: 'Азиз Рахимов',
-      email: 'aziz@01academy.uz',
-      phone: '+998901234567',
-      position: 'Старший менеджер по продажам',
-      module: 'sales',
-      modules: ['sales'],
-    },
-    {
-      fullName: 'Жасур Каримов',
-      email: 'jasur@01academy.uz',
-      phone: '+998902345678',
-      position: 'Senior AI & Web Преподаватель',
-      module: 'teacher',
-      modules: ['teacher'],
-    },
-    {
-      fullName: 'Елена Ким',
-      email: 'elena@01academy.uz',
-      phone: '+998903456789',
-      position: 'Преподаватель курсов AI Kids',
-      module: 'teacher',
-      modules: ['teacher'],
-    },
-    {
-      fullName: 'Дильноза Юсупова',
-      email: 'dilnoza@01academy.uz',
-      phone: '+998904567890',
-      position: 'Маркетолог & Growth Lead',
-      module: 'marketing',
-      modules: ['marketing'],
-    },
-    {
-      fullName: 'Фаррух Алиев',
-      email: 'farrukh@01academy.uz',
-      phone: '+998905678901',
-      position: 'Финансовый менеджер',
-      module: 'administration',
-      modules: ['administration', 'finance'],
-    },
+    { fullName: 'Азиз Рахимов', email: 'aziz@01academy.uz', phone: '+998901234567', position: 'Старший менеджер по продажам', module: 'sales', modules: ['sales'] },
+    { fullName: 'Жасур Каримов', email: 'jasur@01academy.uz', phone: '+998902345678', position: 'Senior AI & Web Преподаватель', module: 'teacher', modules: ['teacher'] },
+    { fullName: 'Елена Ким', email: 'elena@01academy.uz', phone: '+998903456789', position: 'Преподаватель курсов AI Kids', module: 'teacher', modules: ['teacher'] },
+    { fullName: 'Дильноза Юсупова', email: 'dilnoza@01academy.uz', phone: '+998904567890', position: 'Маркетолог & Growth Lead', module: 'marketing', modules: ['marketing'] },
+    { fullName: 'Фаррух Алиев', email: 'farrukh@01academy.uz', phone: '+998905678901', position: 'Финансовый менеджер', module: 'administration', modules: ['administration', 'finance'] },
+    { fullName: 'Мадина Саидова', email: 'madina@01academy.uz', phone: '+998906789012', position: 'Менеджер по работе с клиентами', module: 'sales', modules: ['sales'] },
   ];
 
-  const userMap: Record<string, number> = {
-    sheri: superUserId,
-  };
-
+  const userMap: Record<string, number> = { sheri: superUserId };
   for (const s of staff) {
-    const r = await exec(
-      `SELECT id FROM users WHERE lower(email) = lower($1) OR lower(full_name) = lower($2) LIMIT 1`,
-      [s.email, s.fullName],
-    );
+    const r = await exec(`SELECT id FROM users WHERE lower(email) = lower($1) OR lower(full_name) = lower($2) LIMIT 1`, [s.email, s.fullName]);
     let uid: number;
     if (r.rows[0]?.id) {
       uid = r.rows[0].id;
       await exec(
-        `UPDATE users
-         SET email = $1, password = $2, full_name = $3, phone = $4, position = $5, module = $6, is_active = true, updated_at = now()
-         WHERE id = $7`,
+        `UPDATE users SET email = $1, password = $2, full_name = $3, phone = $4, position = $5, module = $6, is_active = true, updated_at = now() WHERE id = $7`,
         [s.email, staffHash, s.fullName, s.phone, s.position, s.module, uid],
       );
     } else {
-      const inserted = await exec(
-        `INSERT INTO users (email, password, full_name, phone, position, module, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, true)
-         RETURNING id`,
+      const ins = await exec(
+        `INSERT INTO users (email, password, full_name, phone, position, module, is_active) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
         [s.email, staffHash, s.fullName, s.phone, s.position, s.module],
       );
-      uid = inserted.rows[0].id;
+      uid = ins.rows[0].id;
     }
-
     userMap[s.email] = uid;
-    for (const mod of s.modules) {
-      await exec(
-        `INSERT INTO user_modules (user_id, module)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id, module) DO NOTHING`,
-        [uid, mod],
-      );
+    for (const m of s.modules) {
+      await exec(`INSERT INTO user_modules (user_id, module) VALUES ($1, $2) ON CONFLICT (user_id, module) DO NOTHING`, [uid, m]);
     }
   }
 
-  console.log(`[ok] seeded users (Super Admin: ${SUPER.username} / Sheri2001, +${staff.length} staff)`);
+  console.log(`[ok] seeded users (Super Admin Sheri + ${staff.length} staff)`);
   return userMap;
 }
 
 // 2. Schools and Rooms
 async function seedSchoolsAndRooms() {
   let schoolId: number;
-  const existingSchool = await exec(
-    `SELECT id FROM academy_schools WHERE code = 'cyberpark' LIMIT 1`,
-  );
+  const existingSchool = await exec(`SELECT id FROM academy_schools WHERE code = 'cyberpark' LIMIT 1`);
   if (existingSchool.rows[0]?.id) {
     schoolId = existingSchool.rows[0].id;
   } else {
@@ -174,31 +158,26 @@ async function seedSchoolsAndRooms() {
   }
 
   const rooms = [
-    { name: '101', capacity: 12 },
-    { name: '102', capacity: 12 },
-    { name: '117', capacity: 16 },
-    { name: 'Онлайн-класс', capacity: 25 },
+    { name: '101', capacity: 14 },
+    { name: '102', capacity: 14 },
+    { name: '117', capacity: 18 },
+    { name: '204', capacity: 16 },
+    { name: 'Онлайн-класс', capacity: 30 },
   ];
 
   const roomMap: Record<string, number> = {};
   for (const rm of rooms) {
-    const r = await exec(
-      `SELECT id FROM academy_rooms WHERE school_id = $1 AND name = $2 LIMIT 1`,
-      [schoolId, rm.name],
-    );
+    const r = await exec(`SELECT id FROM academy_rooms WHERE school_id = $1 AND name = $2 LIMIT 1`, [schoolId, rm.name]);
     if (r.rows[0]?.id) {
       roomMap[rm.name] = r.rows[0].id;
     } else {
       const ins = await exec(
-        `INSERT INTO academy_rooms (school_id, name, capacity, is_active)
-         VALUES ($1, $2, $3, true)
-         RETURNING id`,
+        `INSERT INTO academy_rooms (school_id, name, capacity, is_active) VALUES ($1, $2, $3, true) RETURNING id`,
         [schoolId, rm.name, rm.capacity],
       );
       roomMap[rm.name] = ins.rows[0].id;
     }
   }
-
   console.log(`[ok] school Cyberpark & rooms ensured (${Object.keys(roomMap).length} rooms)`);
   return { schoolId, roomMap };
 }
@@ -218,16 +197,8 @@ async function seedCourses() {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)
          RETURNING id`,
         [
-          c.name,
-          c.slug,
-          c.ageCategory,
-          c.lessonCount,
-          c.lessonDurationMinutes,
-          c.frequency,
-          c.basePriceUzs,
-          c.discountedPriceUzs,
-          c.ltvTargetMinUzs,
-          c.ltvTargetMaxUzs,
+          c.name, c.slug, c.ageCategory, c.lessonCount, c.lessonDurationMinutes, c.frequency,
+          c.basePriceUzs, c.discountedPriceUzs, c.ltvTargetMinUzs, c.ltvTargetMaxUzs,
           JSON.stringify(c.program),
         ],
       );
@@ -245,11 +216,7 @@ async function seedStatusesAndSources() {
       `INSERT INTO academy_lead_statuses (code, name, color, sort_order, is_pipeline, is_system, is_active)
        VALUES ($1,$2,$3,$4,$5,true,true)
        ON CONFLICT (code) DO UPDATE
-       SET name = EXCLUDED.name,
-           color = EXCLUDED.color,
-           sort_order = EXCLUDED.sort_order,
-           is_pipeline = EXCLUDED.is_pipeline,
-           is_system = true`,
+       SET name = EXCLUDED.name, color = EXCLUDED.color, sort_order = EXCLUDED.sort_order, is_pipeline = EXCLUDED.is_pipeline, is_system = true`,
       [s.code, s.name, s.color, s.sortOrder, s.activePipeline],
     );
   }
@@ -260,17 +227,12 @@ async function seedStatusesAndSources() {
       `INSERT INTO academy_lead_sources (code, name, channel, is_system, is_active)
        VALUES ($1,$2,$3,true,true)
        ON CONFLICT (code) DO UPDATE
-       SET name = EXCLUDED.name,
-           channel = EXCLUDED.channel,
-           is_system = true,
-           is_active = true,
-           updated_at = now()
+       SET name = EXCLUDED.name, channel = EXCLUDED.channel, is_system = true, is_active = true, updated_at = now()
        RETURNING id, code`,
       [s.code, s.name, s.channel],
     );
     sourceMap[s.code] = r.rows[0].id;
   }
-
   console.log(`[ok] lead statuses & sources ensured`);
   return sourceMap;
 }
@@ -278,16 +240,8 @@ async function seedStatusesAndSources() {
 // 5. Teachers
 async function seedTeachers(userMap: Record<string, number>, courseMap: Record<string, number>, schoolId: number) {
   const teacherDefs = [
-    {
-      fullName: 'Жасур Каримов',
-      email: 'jasur@01academy.uz',
-      courseSlugs: ['vibe-coding', 'ai-creator'],
-    },
-    {
-      fullName: 'Елена Ким',
-      email: 'elena@01academy.uz',
-      courseSlugs: ['ai-kids'],
-    },
+    { fullName: 'Жасур Каримов', email: 'jasur@01academy.uz', courseSlugs: ['vibe-coding', 'ai-creator'] },
+    { fullName: 'Елена Ким', email: 'elena@01academy.uz', courseSlugs: ['ai-kids'] },
   ];
 
   const teacherMap: Record<string, number> = {};
@@ -298,9 +252,7 @@ async function seedTeachers(userMap: Record<string, number>, courseMap: Record<s
     if (existing.rows[0]?.id) {
       teacherMap[td.fullName] = existing.rows[0].id;
       await exec(
-        `UPDATE academy_teachers
-         SET course_ids = $1, school_ids = $2, status = 'active', updated_at = now()
-         WHERE id = $3`,
+        `UPDATE academy_teachers SET course_ids = $1, school_ids = $2, status = 'active', updated_at = now() WHERE id = $3`,
         [JSON.stringify(cids), JSON.stringify([schoolId]), existing.rows[0].id],
       );
     } else {
@@ -313,12 +265,11 @@ async function seedTeachers(userMap: Record<string, number>, courseMap: Record<s
       teacherMap[td.fullName] = ins.rows[0].id;
     }
   }
-
   console.log(`[ok] teachers ensured (${Object.keys(teacherMap).length})`);
   return teacherMap;
 }
 
-// 6. Course Groups (STRICTLY FOLLOWING AGENTS.MD RULE!)
+// 6. Course Groups (Strictly following AGENTS.md rule!)
 // Format: [ФИЛИАЛ-ИЛИ-ОНЛАЙН]-[КУРС]-[ТИП]-[ГОД]-[НОМЕР]
 // e.g. CYP-VC-GRP-26-0001
 async function seedGroups(
@@ -327,10 +278,11 @@ async function seedGroups(
   courseMap: Record<string, number>,
   teacherMap: Record<string, number>,
 ) {
-  // Query all existing groups to respect global sequence number max + 1
   const existingGroups = await exec(`SELECT id, name FROM academy_groups ORDER BY id ASC`);
   let maxSeq = 0;
+  const groupMap: Record<string, number> = {};
   for (const row of existingGroups.rows) {
+    groupMap[row.name] = row.id;
     const parts = (row.name || '').split('-');
     const lastPart = parts[parts.length - 1];
     const num = parseInt(lastPart, 10);
@@ -339,661 +291,372 @@ async function seedGroups(
     }
   }
 
+  // 15 Groups total
   const desiredGroups = [
-    {
-      branch: 'CYP',
-      courseCode: 'AIK',
-      courseSlug: 'ai-kids',
-      type: 'GRP',
-      year: '26',
-      roomName: '101',
-      teacherName: 'Елена Ким',
-      lessonCount: 16,
-      lessonDurationMinutes: 120,
-      frequency: '1 раз в неделю',
-      maxStudents: 12,
-      status: 'in_progress',
-      startDate: new Date('2026-08-01T10:00:00Z'),
-      endDate: new Date('2026-11-28T12:00:00Z'),
-      schedule: [{ dayOfWeek: 6, startTime: '10:00', endTime: '12:00' }],
-    },
-    {
-      branch: 'CYP',
-      courseCode: 'AIC',
-      courseSlug: 'ai-creator',
-      type: 'GRP',
-      year: '26',
-      roomName: '102',
-      teacherName: 'Жасур Каримов',
-      lessonCount: 24,
-      lessonDurationMinutes: 120,
-      frequency: '1 раз в неделю',
-      maxStudents: 12,
-      status: 'in_progress',
-      startDate: new Date('2026-08-02T14:00:00Z'),
-      endDate: new Date('2026-12-20T16:00:00Z'),
-      schedule: [{ dayOfWeek: 0, startTime: '14:00', endTime: '16:00' }],
-    },
-    {
-      branch: 'CYP',
-      courseCode: 'VC',
-      courseSlug: 'vibe-coding',
-      type: 'GRP',
-      year: '26',
-      roomName: '117',
-      teacherName: 'Жасур Каримов',
-      lessonCount: 60,
-      lessonDurationMinutes: 120,
-      frequency: '3 раза в неделю',
-      maxStudents: 15,
-      status: 'in_progress',
-      startDate: new Date('2026-08-03T18:30:00Z'),
-      endDate: new Date('2026-12-25T20:30:00Z'),
-      schedule: [
-        { dayOfWeek: 1, startTime: '18:30', endTime: '20:30' },
-        { dayOfWeek: 3, startTime: '18:30', endTime: '20:30' },
-        { dayOfWeek: 5, startTime: '18:30', endTime: '20:30' },
-      ],
-    },
-    {
-      branch: 'ONL',
-      courseCode: 'VC',
-      courseSlug: 'vibe-coding',
-      type: 'GRP',
-      year: '26',
-      roomName: 'Онлайн-класс',
-      teacherName: 'Жасур Каримов',
-      lessonCount: 60,
-      lessonDurationMinutes: 120,
-      frequency: '3 раза в неделю',
-      maxStudents: 20,
-      status: 'open',
-      startDate: new Date('2026-09-15T19:00:00Z'),
-      endDate: new Date('2027-02-15T21:00:00Z'),
-      schedule: [
-        { dayOfWeek: 2, startTime: '19:00', endTime: '21:00' },
-        { dayOfWeek: 4, startTime: '19:00', endTime: '21:00' },
-        { dayOfWeek: 6, startTime: '19:00', endTime: '21:00' },
-      ],
-    },
-    {
-      branch: 'CYP',
-      courseCode: 'AIK',
-      courseSlug: 'ai-kids',
-      type: 'IND',
-      year: '26',
-      roomName: '101',
-      teacherName: 'Елена Ким',
-      lessonCount: 16,
-      lessonDurationMinutes: 120,
-      frequency: '1 раз в неделю',
-      maxStudents: 1,
-      status: 'in_progress',
-      startDate: new Date('2026-08-10T15:00:00Z'),
-      endDate: new Date('2026-11-30T17:00:00Z'),
-      schedule: [{ dayOfWeek: 1, startTime: '15:00', endTime: '17:00' }],
-    },
+    { branch: 'CYP', courseCode: 'AIK', courseSlug: 'ai-kids', type: 'GRP', year: '26', roomName: '101', teacherName: 'Елена Ким', lessonCount: 16, lessonDurationMinutes: 120, frequency: '1 раз в неделю', maxStudents: 12, status: 'in_progress', startDate: new Date('2026-08-01T10:00:00Z'), endDate: new Date('2026-11-28T12:00:00Z'), schedule: [{ dayOfWeek: 6, startTime: '10:00', endTime: '12:00' }] },
+    { branch: 'CYP', courseCode: 'AIC', courseSlug: 'ai-creator', type: 'GRP', year: '26', roomName: '102', teacherName: 'Жасур Каримов', lessonCount: 24, lessonDurationMinutes: 120, frequency: '1 раз в неделю', maxStudents: 12, status: 'in_progress', startDate: new Date('2026-08-02T14:00:00Z'), endDate: new Date('2026-12-20T16:00:00Z'), schedule: [{ dayOfWeek: 0, startTime: '14:00', endTime: '16:00' }] },
+    { branch: 'CYP', courseCode: 'VC', courseSlug: 'vibe-coding', type: 'GRP', year: '26', roomName: '117', teacherName: 'Жасур Каримов', lessonCount: 60, lessonDurationMinutes: 120, frequency: '3 раза в неделю', maxStudents: 15, status: 'in_progress', startDate: new Date('2026-08-03T18:30:00Z'), endDate: new Date('2026-12-25T20:30:00Z'), schedule: [{ dayOfWeek: 1, startTime: '18:30', endTime: '20:30' }, { dayOfWeek: 3, startTime: '18:30', endTime: '20:30' }, { dayOfWeek: 5, startTime: '18:30', endTime: '20:30' }] },
+    { branch: 'ONL', courseCode: 'VC', courseSlug: 'vibe-coding', type: 'GRP', year: '26', roomName: 'Онлайн-класс', teacherName: 'Жасур Каримов', lessonCount: 60, lessonDurationMinutes: 120, frequency: '3 раза в неделю', maxStudents: 20, status: 'open', startDate: new Date('2026-09-15T19:00:00Z'), endDate: new Date('2027-02-15T21:00:00Z'), schedule: [{ dayOfWeek: 2, startTime: '19:00', endTime: '21:00' }, { dayOfWeek: 4, startTime: '19:00', endTime: '21:00' }, { dayOfWeek: 6, startTime: '19:00', endTime: '21:00' }] },
+    { branch: 'CYP', courseCode: 'AIK', courseSlug: 'ai-kids', type: 'IND', year: '26', roomName: '101', teacherName: 'Елена Ким', lessonCount: 16, lessonDurationMinutes: 120, frequency: '1 раз в неделю', maxStudents: 1, status: 'in_progress', startDate: new Date('2026-08-10T15:00:00Z'), endDate: new Date('2026-11-30T17:00:00Z'), schedule: [{ dayOfWeek: 1, startTime: '15:00', endTime: '17:00' }] },
+    // Additional Groups to scale 5x
+    { branch: 'CYP', courseCode: 'VC', courseSlug: 'vibe-coding', type: 'GRP', year: '26', roomName: '117', teacherName: 'Жасур Каримов', lessonCount: 60, lessonDurationMinutes: 120, frequency: '3 раза в неделю', maxStudents: 16, status: 'in_progress', startDate: new Date('2026-08-15T15:00:00Z'), endDate: new Date('2026-12-30T17:00:00Z'), schedule: [{ dayOfWeek: 2, startTime: '15:00', endTime: '17:00' }, { dayOfWeek: 4, startTime: '15:00', endTime: '17:00' }, { dayOfWeek: 6, startTime: '15:00', endTime: '17:00' }] },
+    { branch: 'CYP', courseCode: 'VC', courseSlug: 'vibe-coding', type: 'GRP', year: '26', roomName: '204', teacherName: 'Жасур Каримов', lessonCount: 60, lessonDurationMinutes: 120, frequency: '3 раза в неделю', maxStudents: 15, status: 'open', startDate: new Date('2026-09-20T18:00:00Z'), endDate: new Date('2027-01-30T20:00:00Z'), schedule: [{ dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }, { dayOfWeek: 3, startTime: '18:00', endTime: '20:00' }, { dayOfWeek: 5, startTime: '18:00', endTime: '20:00' }] },
+    { branch: 'ONL', courseCode: 'VC', courseSlug: 'vibe-coding', type: 'GRP', year: '26', roomName: 'Онлайн-класс', teacherName: 'Жасур Каримов', lessonCount: 60, lessonDurationMinutes: 120, frequency: '3 раза в неделю', maxStudents: 25, status: 'in_progress', startDate: new Date('2026-08-10T20:00:00Z'), endDate: new Date('2026-12-28T22:00:00Z'), schedule: [{ dayOfWeek: 1, startTime: '20:00', endTime: '22:00' }, { dayOfWeek: 3, startTime: '20:00', endTime: '22:00' }, { dayOfWeek: 5, startTime: '20:00', endTime: '22:00' }] },
+    { branch: 'CYP', courseCode: 'AIC', courseSlug: 'ai-creator', type: 'GRP', year: '26', roomName: '102', teacherName: 'Жасур Каримов', lessonCount: 24, lessonDurationMinutes: 120, frequency: '2 раза в неделю', maxStudents: 14, status: 'in_progress', startDate: new Date('2026-08-12T16:00:00Z'), endDate: new Date('2026-11-20T18:00:00Z'), schedule: [{ dayOfWeek: 3, startTime: '16:00', endTime: '18:00' }, { dayOfWeek: 5, startTime: '16:00', endTime: '18:00' }] },
+    { branch: 'CYP', courseCode: 'AIC', courseSlug: 'ai-creator', type: 'GRP', year: '26', roomName: '204', teacherName: 'Жасур Каримов', lessonCount: 24, lessonDurationMinutes: 120, frequency: '1 раз в неделю', maxStudents: 12, status: 'open', startDate: new Date('2026-09-18T10:00:00Z'), endDate: new Date('2027-02-28T12:00:00Z'), schedule: [{ dayOfWeek: 5, startTime: '10:00', endTime: '12:00' }] },
+    { branch: 'ONL', courseCode: 'AIC', courseSlug: 'ai-creator', type: 'GRP', year: '26', roomName: 'Онлайн-класс', teacherName: 'Жасур Каримов', lessonCount: 24, lessonDurationMinutes: 120, frequency: '2 раза в неделю', maxStudents: 20, status: 'in_progress', startDate: new Date('2026-08-05T17:00:00Z'), endDate: new Date('2026-11-15T19:00:00Z'), schedule: [{ dayOfWeek: 2, startTime: '17:00', endTime: '19:00' }, { dayOfWeek: 4, startTime: '17:00', endTime: '19:00' }] },
+    { branch: 'CYP', courseCode: 'AIK', courseSlug: 'ai-kids', type: 'GRP', year: '26', roomName: '101', teacherName: 'Елена Ким', lessonCount: 16, lessonDurationMinutes: 120, frequency: '2 раза в неделю', maxStudents: 12, status: 'in_progress', startDate: new Date('2026-08-08T11:00:00Z'), endDate: new Date('2026-10-30T13:00:00Z'), schedule: [{ dayOfWeek: 2, startTime: '11:00', endTime: '13:00' }, { dayOfWeek: 4, startTime: '11:00', endTime: '13:00' }] },
+    { branch: 'CYP', courseCode: 'AIK', courseSlug: 'ai-kids', type: 'GRP', year: '26', roomName: '101', teacherName: 'Елена Ким', lessonCount: 16, lessonDurationMinutes: 120, frequency: '1 раз в неделю', maxStudents: 10, status: 'open', startDate: new Date('2026-09-22T14:00:00Z'), endDate: new Date('2027-01-20T16:00:00Z'), schedule: [{ dayOfWeek: 6, startTime: '14:00', endTime: '16:00' }] },
+    { branch: 'ONL', courseCode: 'AIK', courseSlug: 'ai-kids', type: 'GRP', year: '26', roomName: 'Онлайн-класс', teacherName: 'Елена Ким', lessonCount: 16, lessonDurationMinutes: 120, frequency: '1 раз в неделю', maxStudents: 15, status: 'in_progress', startDate: new Date('2026-08-14T10:00:00Z'), endDate: new Date('2026-12-05T12:00:00Z'), schedule: [{ dayOfWeek: 5, startTime: '10:00', endTime: '12:00' }] },
+    { branch: 'CYP', courseCode: 'VC', courseSlug: 'vibe-coding', type: 'IND', year: '26', roomName: '117', teacherName: 'Жасур Каримов', lessonCount: 60, lessonDurationMinutes: 120, frequency: '2 раза в неделю', maxStudents: 1, status: 'in_progress', startDate: new Date('2026-08-18T12:00:00Z'), endDate: new Date('2027-03-01T14:00:00Z'), schedule: [{ dayOfWeek: 1, startTime: '12:00', endTime: '14:00' }, { dayOfWeek: 3, startTime: '12:00', endTime: '14:00' }] },
   ];
 
-  const groupMap: Record<string, number> = {};
-
-  for (const dg of desiredGroups) {
-    // Check if group of this branch & course & type already exists
-    const prefix = `${dg.branch}-${dg.courseCode}-${dg.type}-${dg.year}-`;
-    const found = await exec(
-      `SELECT id, name FROM academy_groups WHERE name LIKE $1 LIMIT 1`,
-      [`${prefix}%`],
+  for (let i = 0; i < desiredGroups.length; i++) {
+    const dg = desiredGroups[i];
+    // Check if group already created
+    const existingKey = Object.keys(groupMap).find(
+      (name) => name.startsWith(`${dg.branch}-${dg.courseCode}-${dg.type}-${dg.year}-`) && groupMap[name],
     );
-
-    if (found.rows[0]?.id) {
-      groupMap[found.rows[0].name] = found.rows[0].id;
-    } else {
-      maxSeq += 1;
-      const codeSuffix = String(maxSeq).padStart(4, '0');
-      const groupCode = `${prefix}${codeSuffix}`;
-
-      const ins = await exec(
-        `INSERT INTO academy_groups
-          (name, course_id, school_id, room_id, teacher_id, schedule, lesson_count,
-           lesson_duration_minutes, frequency, max_students, status, start_date, end_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         RETURNING id`,
-        [
-          groupCode,
-          courseMap[dg.courseSlug],
-          schoolId,
-          roomMap[dg.roomName],
-          teacherMap[dg.teacherName],
-          JSON.stringify(dg.schedule),
-          dg.lessonCount,
-          dg.lessonDurationMinutes,
-          dg.frequency,
-          dg.maxStudents,
-          dg.status,
-          dg.startDate,
-          dg.endDate,
-        ],
-      );
-      groupMap[groupCode] = ins.rows[0].id;
+    if (existingKey && i < 5) {
+      continue; // Keep the original first 5 groups
     }
+
+    maxSeq += 1;
+    const codeSuffix = String(maxSeq).padStart(4, '0');
+    const groupCode = `${dg.branch}-${dg.courseCode}-${dg.type}-${dg.year}-${codeSuffix}`;
+
+    const ins = await exec(
+      `INSERT INTO academy_groups
+        (name, course_id, school_id, room_id, teacher_id, schedule, lesson_count,
+         lesson_duration_minutes, frequency, max_students, status, start_date, end_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       RETURNING id`,
+      [
+        groupCode,
+        courseMap[dg.courseSlug],
+        schoolId,
+        roomMap[dg.roomName] || Object.values(roomMap)[0],
+        teacherMap[dg.teacherName],
+        JSON.stringify(dg.schedule),
+        dg.lessonCount,
+        dg.lessonDurationMinutes,
+        dg.frequency,
+        dg.maxStudents,
+        dg.status,
+        dg.startDate,
+        dg.endDate,
+      ],
+    );
+    groupMap[groupCode] = ins.rows[0].id;
   }
 
-  console.log(`[ok] groups created strictly following AGENTS.md rules (${Object.keys(groupMap).join(', ')})`);
+  console.log(`[ok] ${Object.keys(groupMap).length} groups verified and seeded per AGENTS.md format`);
   return groupMap;
 }
 
-// 7. Students & Group Enrollments
+// 7. Seed 80 Students
 async function seedStudents(
   schoolId: number,
   courseMap: Record<string, number>,
   groupMap: Record<string, number>,
   userMap: Record<string, number>,
 ) {
-  const azizId = userMap['aziz@01academy.uz'];
-  const sheriId = userMap['sheri'];
-
-  // Map group code to id
-  const findGroup = (part: string) => {
-    const k = Object.keys(groupMap).find((code) => code.includes(part));
-    return k ? groupMap[k] : Object.values(groupMap)[0];
-  };
-
-  const studentData = [
-    // Vibe Coding group (CYP-VC-GRP)
-    {
-      studentName: 'Сардор Ахмедов',
-      contactName: 'Рано Ахмедова (Мама)',
-      phone: '+998901112233',
-      studentAge: 16,
-      courseSlug: 'vibe-coding',
-      groupPart: 'CYP-VC-GRP',
-      balanceUzs: 2000000,
-      attendancePercent: 92,
-      progressPercent: 65,
-      status: 'studying',
-      refCode: 'REF-001',
-    },
-    {
-      studentName: 'Малика Исмаилова',
-      contactName: 'Отабек Исмаилов (Отец)',
-      phone: '+998902223344',
-      studentAge: 17,
-      courseSlug: 'vibe-coding',
-      groupPart: 'CYP-VC-GRP',
-      balanceUzs: 0,
-      attendancePercent: 88,
-      progressPercent: 60,
-      status: 'studying',
-      refCode: 'REF-002',
-    },
-    {
-      studentName: 'Тимур Салимов',
-      contactName: 'Дильфуза Салимова (Мама)',
-      phone: '+998903334455',
-      studentAge: 15,
-      courseSlug: 'vibe-coding',
-      groupPart: 'CYP-VC-GRP',
-      balanceUzs: 2000000,
-      attendancePercent: 95,
-      progressPercent: 70,
-      status: 'studying',
-      refCode: 'REF-003',
-    },
-    {
-      studentName: 'Бобур Назаров',
-      contactName: 'Бобур Назаров',
-      phone: '+998904445566',
-      studentAge: 18,
-      courseSlug: 'vibe-coding',
-      groupPart: 'CYP-VC-GRP',
-      balanceUzs: 2000000,
-      attendancePercent: 85,
-      progressPercent: 55,
-      status: 'studying',
-      refCode: 'REF-004',
-    },
-    {
-      studentName: 'Джамшид Умаров',
-      contactName: 'Нилуфар Умарова (Мама)',
-      phone: '+998905556677',
-      studentAge: 16,
-      courseSlug: 'vibe-coding',
-      groupPart: 'CYP-VC-GRP',
-      balanceUzs: 0,
-      attendancePercent: 78,
-      progressPercent: 50,
-      status: 'studying',
-      refCode: 'REF-005',
-    },
-
-    // AI Creator group (CYP-AIC-GRP)
-    {
-      studentName: 'Камила Рустамова',
-      contactName: 'Рустам Каримов (Отец)',
-      phone: '+998906667788',
-      studentAge: 12,
-      courseSlug: 'ai-creator',
-      groupPart: 'CYP-AIC-GRP',
-      balanceUzs: 1440000,
-      attendancePercent: 90,
-      progressPercent: 45,
-      status: 'studying',
-      refCode: 'REF-006',
-    },
-    {
-      studentName: 'Амир Темиров',
-      contactName: 'Зарина Темирова (Мама)',
-      phone: '+998907778899',
-      studentAge: 13,
-      courseSlug: 'ai-creator',
-      groupPart: 'CYP-AIC-GRP',
-      balanceUzs: 1440000,
-      attendancePercent: 86,
-      progressPercent: 40,
-      status: 'studying',
-      refCode: 'REF-007',
-    },
-    {
-      studentName: 'Шахло Махмудова',
-      contactName: 'Анвар Махмудов (Отец)',
-      phone: '+998908889900',
-      studentAge: 11,
-      courseSlug: 'ai-creator',
-      groupPart: 'CYP-AIC-GRP',
-      balanceUzs: 0,
-      attendancePercent: 95,
-      progressPercent: 50,
-      status: 'studying',
-      refCode: 'REF-008',
-    },
-    {
-      studentName: 'Даврон Зокиров',
-      contactName: 'Лола Зокирова (Мама)',
-      phone: '+998909990011',
-      studentAge: 14,
-      courseSlug: 'ai-creator',
-      groupPart: 'CYP-AIC-GRP',
-      balanceUzs: 1440000,
-      attendancePercent: 80,
-      progressPercent: 35,
-      status: 'studying',
-      refCode: 'REF-009',
-    },
-
-    // AI Kids group (CYP-AIK-GRP)
-    {
-      studentName: 'Руслан Юлдашев',
-      contactName: 'Гульнора Юлдашева (Мама)',
-      phone: '+998911112233',
-      studentAge: 8,
-      courseSlug: 'ai-kids',
-      groupPart: 'CYP-AIK-GRP',
-      balanceUzs: 1200000,
-      attendancePercent: 100,
-      progressPercent: 50,
-      status: 'studying',
-      refCode: 'REF-010',
-    },
-    {
-      studentName: 'Самира Хакимова',
-      contactName: 'Умид Хакимов (Отец)',
-      phone: '+998912223344',
-      studentAge: 9,
-      courseSlug: 'ai-kids',
-      groupPart: 'CYP-AIK-GRP',
-      balanceUzs: 1200000,
-      attendancePercent: 90,
-      progressPercent: 45,
-      status: 'studying',
-      refCode: 'REF-011',
-    },
-    {
-      studentName: 'Мухаммад Расулов',
-      contactName: 'Надира Расулова (Мама)',
-      phone: '+998913334455',
-      studentAge: 7,
-      courseSlug: 'ai-kids',
-      groupPart: 'CYP-AIK-GRP',
-      balanceUzs: 0,
-      attendancePercent: 85,
-      progressPercent: 40,
-      status: 'studying',
-      refCode: 'REF-012',
-    },
-
-    // Individual
-    {
-      studentName: 'Диана Цой',
-      contactName: 'Артур Цой (Отец)',
-      phone: '+998914445566',
-      studentAge: 8,
-      courseSlug: 'ai-kids',
-      groupPart: 'CYP-AIK-IND',
-      balanceUzs: 1500000,
-      attendancePercent: 95,
-      progressPercent: 55,
-      status: 'studying',
-      refCode: 'REF-013',
-    },
-
-    // Online
-    {
-      studentName: 'Бекзод Мирзаев',
-      contactName: 'Саида Мирзаева (Мама)',
-      phone: '+998915556677',
-      studentAge: 16,
-      courseSlug: 'vibe-coding',
-      groupPart: 'ONL-VC-GRP',
-      balanceUzs: 0,
-      attendancePercent: 0,
-      progressPercent: 0,
-      status: 'trial',
-      refCode: 'REF-014',
-    },
-    {
-      studentName: 'Азиза Касымова',
-      contactName: 'Бахтиёр Касымов (Отец)',
-      phone: '+998916667788',
-      studentAge: 15,
-      courseSlug: 'vibe-coding',
-      groupPart: 'ONL-VC-GRP',
-      balanceUzs: 0,
-      attendancePercent: 0,
-      progressPercent: 0,
-      status: 'trial',
-      refCode: 'REF-015',
-    },
-  ];
+  const azizId = userMap['aziz@01academy.uz'] || userMap['sheri'];
+  const madinaId = userMap['madina@01academy.uz'] || azizId;
+  const groupIds = Object.values(groupMap);
+  const groupCodes = Object.keys(groupMap);
 
   const studentIds: number[] = [];
+  const TOTAL_STUDENTS = 80;
 
-  for (const s of studentData) {
-    const groupId = findGroup(s.groupPart);
-    const courseId = courseMap[s.courseSlug];
+  for (let i = 0; i < TOTAL_STUDENTS; i++) {
+    const person = generatePerson(i + 1);
+    const assignedGroupCode = groupCodes[i % groupCodes.length];
+    const assignedGroupId = groupMap[assignedGroupCode];
+
+    let courseSlug = 'vibe-coding';
+    let studentAge = 16 + (i % 6);
+    let basePrice = 2000000;
+    if (assignedGroupCode.includes('AIK')) {
+      courseSlug = 'ai-kids';
+      studentAge = 7 + (i % 4);
+      basePrice = 1200000;
+    } else if (assignedGroupCode.includes('AIC')) {
+      courseSlug = 'ai-creator';
+      studentAge = 11 + (i % 4);
+      basePrice = 1440000;
+    }
+
+    const courseId = courseMap[courseSlug];
+    const refCode = `REF-${String(i + 1).padStart(4, '0')}`;
+    const balance = (i % 3 === 0) ? 0 : basePrice;
+    const attendance = 75 + (i * 7) % 25;
+    const progress = 20 + (i * 5) % 75;
+    const managerId = (i % 2 === 0) ? azizId : madinaId;
+    const status = (i % 15 === 0) ? 'trial' : (i % 25 === 0 ? 'paused' : 'studying');
 
     const exist = await exec(
       `SELECT id FROM academy_students WHERE phone = $1 OR student_name = $2 LIMIT 1`,
-      [s.phone, s.studentName],
+      [person.phone, person.fullName],
     );
 
     let sid: number;
     if (exist.rows[0]?.id) {
       sid = exist.rows[0].id;
     } else {
+      const daysAgo = 10 + (i % 40);
       const ins = await exec(
         `INSERT INTO academy_students
           (contact_name, phone, student_name, student_age, course_id, school_id,
            group_id, manager_id, status, balance_uzs, attendance_percent,
            progress_percent, referral_code, enrolled_at, enrollment_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now() - interval '30 days',now() - interval '30 days')
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now() - ($14 || ' days')::interval, now() - ($14 || ' days')::interval)
          RETURNING id`,
         [
-          s.contactName,
-          s.phone,
-          s.studentName,
-          s.studentAge,
+          person.parentName,
+          person.phone,
+          person.fullName,
+          studentAge,
           courseId,
           schoolId,
-          groupId,
-          azizId || sheriId,
-          s.status,
-          s.balanceUzs,
-          s.attendancePercent,
-          s.progressPercent,
-          s.refCode,
+          assignedGroupId,
+          managerId,
+          status,
+          balance,
+          attendance,
+          progress,
+          refCode,
+          String(daysAgo),
         ],
       );
       sid = ins.rows[0].id;
+
+      // Group enrollment
+      await exec(
+        `INSERT INTO academy_student_group_enrollments (student_id, group_id, status, is_primary, enrolled_at)
+         VALUES ($1, $2, 'active', true, now() - ($3 || ' days')::interval)
+         ON CONFLICT DO NOTHING`,
+        [sid, assignedGroupId, String(daysAgo)],
+      );
     }
-
     studentIds.push(sid);
-
-    // Group enrollment
-    await exec(
-      `INSERT INTO academy_student_group_enrollments (student_id, group_id, status, is_primary, enrolled_at)
-       VALUES ($1, $2, 'active', true, now() - interval '30 days')
-       ON CONFLICT DO NOTHING`,
-      [sid, groupId],
-    );
   }
 
-  console.log(`[ok] seeded ${studentIds.length} students & enrollments`);
+  console.log(`[ok] seeded ${studentIds.length} students across all course groups`);
   return studentIds;
 }
 
-// 8. Leads Pipeline
+// 8. Seed 100+ Leads Pipeline
 async function seedLeads(
   schoolId: number,
   courseMap: Record<string, number>,
   sourceMap: Record<string, number>,
   userMap: Record<string, number>,
 ) {
-  const azizId = userMap['aziz@01academy.uz'];
-  const sheriId = userMap['sheri'];
+  const azizId = userMap['aziz@01academy.uz'] || userMap['sheri'];
+  const madinaId = userMap['madina@01academy.uz'] || azizId;
+  const sources = Object.keys(sourceMap);
+  const courses = Object.keys(courseMap);
 
-  const leads = [
-    {
-      contactName: 'Мурод Ибрагимов',
-      phone: '+998971001122',
-      studentName: 'Искандер',
-      studentAge: 15,
-      courseSlug: 'vibe-coding',
-      sourceCode: 'instagram',
-      statusCode: 'new_request',
-      comment: 'Интересуется программированием с AI, увидел рекламу в сторис',
-    },
-    {
-      contactName: 'Зарина Олимова',
-      phone: '+998972002233',
-      studentName: 'Ясмина',
-      studentAge: 9,
-      courseSlug: 'ai-kids',
-      sourceCode: 'website',
-      statusCode: 'new_request',
-      comment: 'Оставила заявку на сайте на курс AI Kids',
-    },
-    {
-      contactName: 'Одил Собиров',
-      phone: '+998973003344',
-      studentName: 'Сарвар',
-      studentAge: 13,
-      courseSlug: 'ai-creator',
-      sourceCode: 'meta_lead_ads',
-      statusCode: 'first_contact',
-      comment: 'Позвонили, родитель просит перезвонить вечером после 19:00',
-    },
-    {
-      contactName: 'Нигора Холматова',
-      phone: '+998974004455',
-      studentName: 'Азиз',
-      studentAge: 16,
-      courseSlug: 'vibe-coding',
-      sourceCode: 'referral',
-      statusCode: 'qualified',
-      comment: 'Пришли по рекомендации Сардора Ахмедова, есть ноутбук, готов учиться',
-    },
-    {
-      contactName: 'Улугбек Тахиров',
-      phone: '+998975005566',
-      studentName: 'Темур',
-      studentAge: 12,
-      courseSlug: 'ai-creator',
-      sourceCode: 'instagram',
-      statusCode: 'demo_invited',
-      comment: 'Приглашен на вводный открытый урок в эту субботу',
-    },
-    {
-      contactName: 'Гульбахор Валиева',
-      phone: '+998976006677',
-      studentName: 'Севара',
-      studentAge: 8,
-      courseSlug: 'ai-kids',
-      sourceCode: 'website',
-      statusCode: 'demo_attended',
-      comment: 'Были на демо-уроке, ребенок в восторге, думают над оплатой',
-    },
-    {
-      contactName: 'Алишер Курбанов',
-      phone: '+998977007788',
-      studentName: 'Асадбек',
-      studentAge: 17,
-      courseSlug: 'vibe-coding',
-      sourceCode: 'telephony',
-      statusCode: 'offer',
-      comment: 'Выставлено предложение со скидкой 15% на первый модуль',
-    },
-    {
-      contactName: 'Феруза Джалилова',
-      phone: '+998978008899',
-      studentName: 'Алишер',
-      studentAge: 14,
-      courseSlug: 'ai-creator',
-      sourceCode: 'instagram',
-      statusCode: 'thinking',
-      comment: 'Сравнивают расписание со школой, ответят в среду',
-    },
-    {
-      contactName: 'Шухрат Ганиев',
-      phone: '+998979009900',
-      studentName: 'Дилшод',
-      studentAge: 16,
-      courseSlug: 'vibe-coding',
-      sourceCode: 'website',
-      statusCode: 'enrolled',
-      comment: 'Записан в группу CYP-VC-GRP, ждет старта занятий',
-    },
-    {
-      contactName: 'Мавлюда Каримова',
-      phone: '+998971110022',
-      studentName: 'Карим',
-      studentAge: 10,
-      courseSlug: 'ai-creator',
-      sourceCode: 'referral',
-      statusCode: 'paid',
-      comment: 'Оплатили первый месяц обучения перечислением',
-    },
-    {
-      contactName: 'Баходир Бакиров',
-      phone: '+998972221133',
-      studentName: 'Саид',
-      studentAge: 15,
-      courseSlug: 'vibe-coding',
-      sourceCode: 'telephony',
-      statusCode: 'not_now',
-      comment: 'Переехали в другой район, просили напомнить зимой',
-    },
+  const STAGE_DISTRIBUTION: { status: string; count: number; note: string }[] = [
+    { status: 'new_request', count: 20, note: 'Новая заявка с таргетированной рекламы' },
+    { status: 'first_contact', count: 15, note: 'Первый контакт установлен, уточняются детали' },
+    { status: 'qualified', count: 15, note: 'Лид квалифицирован, подходит по возрасту и расписанию' },
+    { status: 'demo_invited', count: 12, note: 'Приглашен на открытый демо-урок в Cyberpark' },
+    { status: 'ne_prishli_na_vstrechu', count: 5, note: 'Не пришли на встречу, назначен перезвон' },
+    { status: 'demo_attended', count: 10, note: 'Посетили вводный урок, высокий интерес ученика' },
+    { status: 'offer', count: 8, note: 'Сформировано коммерческое предложение со скидкой 15%' },
+    { status: 'thinking', count: 8, note: 'Думают над расписанием, ответят в конце недели' },
+    { status: 'enrolled', count: 10, note: 'Записан в группу, ожидает дату первого занятия' },
+    { status: 'paid', count: 15, note: 'Оплатил обучение за первый модуль' },
+    { status: 'not_now', count: 6, note: 'Перенесли обучение на следующий сезон' },
   ];
 
   const leadIds: number[] = [];
+  let personIdx = 100; // offset so phone numbers are unique from students
 
-  for (const l of leads) {
-    const courseId = courseMap[l.courseSlug];
-    const sourceId = sourceMap[l.sourceCode] || Object.values(sourceMap)[0];
+  for (const dist of STAGE_DISTRIBUTION) {
+    for (let c = 0; c < dist.count; c++) {
+      personIdx++;
+      const p = generatePerson(personIdx);
+      const courseSlug = courses[c % courses.length];
+      const courseId = courseMap[courseSlug];
+      const sourceCode = sources[(c * 3) % sources.length];
+      const sourceId = sourceMap[sourceCode] || Object.values(sourceMap)[0];
+      const managerId = (c % 2 === 0) ? azizId : madinaId;
+      const daysAgo = 1 + (c % 25);
 
-    const exist = await exec(`SELECT id FROM academy_leads WHERE phone = $1 LIMIT 1`, [l.phone]);
-    let lid: number;
-    if (exist.rows[0]?.id) {
-      lid = exist.rows[0].id;
-    } else {
-      const ins = await exec(
-        `INSERT INTO academy_leads
-          (contact_name, phone, student_name, student_age, course_id, school_id,
-           source_id, status_code, manager_id, comment, language, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ru', now() - interval '5 days')
-         RETURNING id`,
-        [
-          l.contactName,
-          l.phone,
-          l.studentName,
-          l.studentAge,
-          courseId,
-          schoolId,
-          sourceId,
-          l.statusCode,
-          azizId || sheriId,
-          l.comment,
-        ],
-      );
-      lid = ins.rows[0].id;
+      const exist = await exec(`SELECT id FROM academy_leads WHERE phone = $1 LIMIT 1`, [p.phone]);
+      let lid: number;
+      if (exist.rows[0]?.id) {
+        lid = exist.rows[0].id;
+      } else {
+        const expectedPayment = courseSlug === 'vibe-coding' ? 2000000 : (courseSlug === 'ai-creator' ? 1440000 : 1200000);
+        const ins = await exec(
+          `INSERT INTO academy_leads
+            (contact_name, phone, student_name, student_age, course_id, school_id,
+             source_id, status_code, manager_id, comment, language, expected_payment_uzs, offer_price_uzs, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ru',$11,$11, now() - ($12 || ' days')::interval)
+           RETURNING id`,
+          [
+            p.parentName,
+            p.phone,
+            p.firstName,
+            12 + (c % 6),
+            courseId,
+            schoolId,
+            sourceId,
+            dist.status,
+            managerId,
+            dist.note,
+            expectedPayment,
+            String(daysAgo),
+          ],
+        );
+        lid = ins.rows[0].id;
 
-      // Add phone to academy_lead_phones
-      const normPhone = l.phone.replace(/\D/g, '');
-      await exec(
-        `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary)
-         VALUES ($1, $2, $3, true)
-         ON CONFLICT DO NOTHING`,
-        [lid, l.phone, normPhone],
-      );
+        // Lead phone
+        const normPhone = p.phone.replace(/\D/g, '');
+        await exec(
+          `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary)
+           VALUES ($1, $2, $3, true)
+           ON CONFLICT DO NOTHING`,
+          [lid, p.phone, normPhone],
+        );
 
-      // Add comment history
-      await exec(
-        `INSERT INTO academy_lead_comments (lead_id, author_id, body, created_at)
-         VALUES ($1, $2, $3, now() - interval '3 days')`,
-        [lid, azizId || sheriId, l.comment],
-      );
+        // Lead comment
+        await exec(
+          `INSERT INTO academy_lead_comments (lead_id, author_id, body, created_at)
+           VALUES ($1, $2, $3, now() - ($4 || ' days')::interval)`,
+          [lid, managerId, dist.note, String(daysAgo)],
+        );
 
-      // Add stage history
-      await exec(
-        `INSERT INTO academy_lead_stage_history (lead_id, to_status_code, changed_by, entered_at)
-         VALUES ($1, $2, $3, now() - interval '3 days')`,
-        [lid, l.statusCode, azizId || sheriId],
-      );
+        // Stage history
+        await exec(
+          `INSERT INTO academy_lead_stage_history (lead_id, to_status_code, changed_by, entered_at)
+           VALUES ($1, $2, $3, now() - ($4 || ' days')::interval)`,
+          [lid, dist.status, managerId, String(daysAgo)],
+        );
+      }
+      leadIds.push(lid);
     }
-    leadIds.push(lid);
   }
 
-  console.log(`[ok] seeded ${leadIds.length} leads in pipeline`);
+  console.log(`[ok] seeded ${leadIds.length} leads across all sales pipeline stages`);
   return leadIds;
 }
 
-// 9. Demo Lessons
+// 9. Seed 60+ Payments (HUGE SALES)
+async function seedPayments(
+  studentIds: number[],
+  groupMap: Record<string, number>,
+  userMap: Record<string, number>,
+) {
+  const sheriId = userMap['sheri'];
+  const farrukhId = userMap['farrukh@01academy.uz'] || sheriId;
+  const groupIds = Object.values(groupMap);
+
+  let totalSalesUzs = 0;
+  let paymentCount = 0;
+
+  // Create 60 payments from student list
+  const TARGET_PAYMENTS = 60;
+  for (let i = 0; i < TARGET_PAYMENTS; i++) {
+    const sid = studentIds[i % studentIds.length];
+    const gid = groupIds[i % groupIds.length];
+    const daysAgo = 1 + (i % 45);
+
+    // Varied amounts: 2,500,000 / 2,000,000 / 1,800,000 / 1,440,000 / 1,200,000
+    const amounts = [2000000, 2500000, 1440000, 1800000, 1200000, 2000000];
+    const amount = amounts[i % amounts.length];
+    const methods = ['transfer', 'card', 'cash', 'card', 'transfer'];
+    const method = methods[i % methods.length];
+    const types = ['full', 'full', 'installment_1_2', 'full'];
+    const type = types[i % types.length];
+
+    const exist = await exec(
+      `SELECT id FROM academy_payments WHERE student_id = $1 AND amount_uzs = $2 AND paid_at >= now() - ($3 || ' days')::interval - interval '1 hour' LIMIT 1`,
+      [sid, amount, String(daysAgo)],
+    );
+
+    if (!exist.rows[0]?.id) {
+      await exec(
+        `INSERT INTO academy_payments
+          (student_id, group_id, amount_uzs, type, method, status, paid_at, confirmed_by, comment)
+         VALUES ($1, $2, $3, $4, $5, 'paid', now() - ($6 || ' days')::interval, $7, 'Оплата за обучение (модуль ' || (($8 % 4) + 1) || ')')`,
+        [sid, gid, amount, type, method, String(daysAgo), (i % 2 === 0 ? sheriId : farrukhId), i],
+      );
+      totalSalesUzs += amount;
+      paymentCount++;
+    }
+  }
+
+  const formattedSales = new Intl.NumberFormat('ru-RU').format(totalSalesUzs);
+  console.log(`[ok] seeded ${paymentCount} new payments. Total sales: ${formattedSales} UZS`);
+}
+
+// 10. Seed Demo Lessons & Participants
 async function seedDemoLessons(
   schoolId: number,
   roomMap: Record<string, number>,
   courseMap: Record<string, number>,
   teacherMap: Record<string, number>,
   studentIds: number[],
+  leadIds: number[],
   userMap: Record<string, number>,
 ) {
-  const vcCourseId = courseMap['vibe-coding'];
-  const jasurId = teacherMap['Жасур Каримов'];
-  const room117Id = roomMap['117'];
   const sheriId = userMap['sheri'];
+  const vcCourseId = courseMap['vibe-coding'];
+  const aicCourseId = courseMap['ai-creator'];
+  const aikCourseId = courseMap['ai-kids'];
+  const jasurId = teacherMap['Жасур Каримов'];
+  const elenaId = teacherMap['Елена Ким'];
 
-  const exist = await exec(
-    `SELECT id FROM academy_demo_lessons WHERE course_id = $1 AND school_id = $2 LIMIT 1`,
-    [vcCourseId, schoolId],
-  );
+  const demos = [
+    { courseId: vcCourseId, teacherId: jasurId, roomName: '117', hoursFromNow: 48, notes: 'Вводный открытый урок: Создай свое первое AI-приложение за 90 минут', status: 'scheduled' },
+    { courseId: aicCourseId, teacherId: jasurId, roomName: '102', hoursFromNow: 72, notes: 'Мастер-класс: Генерация видео и контента с помощью искусственного интеллекта', status: 'scheduled' },
+    { courseId: aikCourseId, teacherId: elenaId, roomName: '101', hoursFromNow: -24, notes: 'Пробный интерактивный урок по AI Kids для детей 7-10 лет', status: 'completed' },
+    { courseId: vcCourseId, teacherId: jasurId, roomName: '117', hoursFromNow: -72, notes: 'Открытый демо-урок Vibe Coding для старшеклассников', status: 'completed' },
+  ];
 
-  let demoLessonId: number;
-  if (exist.rows[0]?.id) {
-    demoLessonId = exist.rows[0].id;
-  } else {
-    const ins = await exec(
-      `INSERT INTO academy_demo_lessons
-        (course_id, school_id, room_id, teacher_id, scheduled_at, duration_minutes, format, status, notes, created_by)
-       VALUES ($1, $2, $3, $4, now() + interval '2 days', 90, 'offline', 'scheduled', 'Вводный открытый урок: Создай свое первое AI-приложение за 90 минут', $5)
-       RETURNING id`,
-      [vcCourseId, schoolId, room117Id, jasurId, sheriId],
+  for (const d of demos) {
+    const roomId = roomMap[d.roomName] || Object.values(roomMap)[0];
+    const exist = await exec(
+      `SELECT id FROM academy_demo_lessons WHERE course_id = $1 AND teacher_id = $2 AND status = $3 LIMIT 1`,
+      [d.courseId, d.teacherId, d.status],
     );
-    demoLessonId = ins.rows[0].id;
-  }
 
-  // Add participants from trial students if available
-  if (studentIds.length > 0) {
-    const trialStudentId = studentIds[studentIds.length - 1];
-    await exec(
-      `INSERT INTO academy_demo_lesson_participants (demo_lesson_id, student_id, status)
-       VALUES ($1, $2, 'confirmed')
-       ON CONFLICT (demo_lesson_id, student_id) DO NOTHING`,
-      [demoLessonId, trialStudentId],
-    );
-  }
+    let demoId: number;
+    if (exist.rows[0]?.id) {
+      demoId = exist.rows[0].id;
+    } else {
+      const ins = await exec(
+        `INSERT INTO academy_demo_lessons
+          (course_id, school_id, room_id, teacher_id, scheduled_at, duration_minutes, format, status, notes, created_by)
+         VALUES ($1, $2, $3, $4, now() + ($5 || ' hours')::interval, 90, 'offline', $6, $7, $8)
+         RETURNING id`,
+        [d.courseId, schoolId, roomId, d.teacherId, String(d.hoursFromNow), d.status, d.notes, sheriId],
+      );
+      demoId = ins.rows[0].id;
 
-  console.log(`[ok] demo lesson created (id: ${demoLessonId})`);
+      // Add 4-6 student participants for each demo lesson
+      const startIdx = (demos.indexOf(d) * 5) % studentIds.length;
+      for (let j = 0; j < 5; j++) {
+        const sid = studentIds[(startIdx + j) % studentIds.length];
+        const partStatus = d.status === 'completed' ? 'attended' : 'confirmed';
+        await exec(
+          `INSERT INTO academy_demo_lesson_participants (demo_lesson_id, student_id, status)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (demo_lesson_id, student_id) DO NOTHING`,
+          [demoId, sid, partStatus],
+        );
+      }
+    }
+  }
+  console.log(`[ok] seeded demo lessons and participants`);
 }
 
-// 10. Lessons & Attendance
+// 11. Seed Conducted Lessons & Attendance
 async function seedLessonsAndAttendance(
   groupMap: Record<string, number>,
   courseMap: Record<string, number>,
@@ -1003,114 +666,73 @@ async function seedLessonsAndAttendance(
   studentIds: number[],
   userMap: Record<string, number>,
 ) {
-  const vcGroupId = Object.entries(groupMap).find(([k]) => k.includes('CYP-VC-GRP'))?.[1];
-  if (!vcGroupId) return;
-
-  const vcCourseId = courseMap['vibe-coding'];
-  const jasurId = teacherMap['Жасур Каримов'];
-  const room117Id = roomMap['117'];
   const sheriId = userMap['sheri'];
+  const jasurId = teacherMap['Жасур Каримов'];
+  const elenaId = teacherMap['Елена Ким'];
 
-  const lessonTopics = [
-    { num: 1, topic: 'Vibe Coding workflow: настройка окружения и первый промпт', daysAgo: 20 },
-    { num: 2, topic: 'Архитектура современных AI-приложений и стек', daysAgo: 17 },
-    { num: 3, topic: 'Frontend: быстрая сборка интерфейсов с Tailwind', daysAgo: 14 },
-    { num: 4, topic: 'State Management и работа с данными', daysAgo: 11 },
-    { num: 5, topic: 'Backend API и работа с базой данных', daysAgo: 7 },
-    { num: 6, topic: 'Интеграция LLM моделей через SDK', daysAgo: 4 },
-  ];
+  const groupsToSeed = Object.entries(groupMap).slice(0, 5); // first 5 active groups
+  let totalLessons = 0;
 
-  for (const lt of lessonTopics) {
-    const exist = await exec(
-      `SELECT id FROM academy_lessons WHERE group_id = $1 AND lesson_number = $2 LIMIT 1`,
-      [vcGroupId, lt.num],
-    );
+  for (const [groupCode, groupId] of groupsToSeed) {
+    const isVibe = groupCode.includes('VC');
+    const isAik = groupCode.includes('AIK');
+    const courseId = isVibe ? courseMap['vibe-coding'] : (isAik ? courseMap['ai-kids'] : courseMap['ai-creator']);
+    const teacherId = isAik ? elenaId : jasurId;
+    const roomName = isVibe ? '117' : (isAik ? '101' : '102');
+    const roomId = roomMap[roomName] || Object.values(roomMap)[0];
 
-    let lessonId: number;
-    if (exist.rows[0]?.id) {
-      lessonId = exist.rows[0].id;
-    } else {
-      const ins = await exec(
-        `INSERT INTO academy_lessons
-          (group_id, course_id, school_id, room_id, teacher_id, lesson_number, topic, scheduled_at, duration_minutes, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,now() - ($8 || ' days')::interval, 120, 'conducted')
-         RETURNING id`,
-        [vcGroupId, vcCourseId, schoolId, room117Id, jasurId, lt.num, lt.topic, String(lt.daysAgo)],
+    const lessonCount = 8;
+    for (let num = 1; num <= lessonCount; num++) {
+      const daysAgo = (lessonCount - num) * 3 + 2;
+      const topic = `Урок ${num}: ${isVibe ? 'Промпт-инжиниринг и код' : (isAik ? 'AI сказки и арт' : 'AI видео и анимация')}`;
+
+      const exist = await exec(
+        `SELECT id FROM academy_lessons WHERE group_id = $1 AND lesson_number = $2 LIMIT 1`,
+        [groupId, num],
       );
-      lessonId = ins.rows[0].id;
 
-      // Mark attendance for students 0 to 4 (the Vibe Coding students)
-      const vcStudents = studentIds.slice(0, 5);
-      for (let i = 0; i < vcStudents.length; i++) {
-        const sid = vcStudents[i];
-        // 90% attendance: student 4 missed lesson 3
-        const isPresent = !(i === 4 && lt.num === 3);
-        await exec(
-          `INSERT INTO academy_attendance (lesson_id, student_id, status, marked_by)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (lesson_id, student_id) DO NOTHING`,
-          [lessonId, sid, isPresent ? 'present' : 'absent', sheriId],
+      let lessonId: number;
+      if (exist.rows[0]?.id) {
+        lessonId = exist.rows[0].id;
+      } else {
+        const ins = await exec(
+          `INSERT INTO academy_lessons
+            (group_id, course_id, school_id, room_id, teacher_id, lesson_number, topic, scheduled_at, duration_minutes, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,now() - ($8 || ' days')::interval, 120, 'conducted')
+           RETURNING id`,
+          [groupId, courseId, schoolId, roomId, teacherId, num, topic, String(daysAgo)],
         );
+        lessonId = ins.rows[0].id;
+        totalLessons++;
+
+        // Mark attendance for 6-8 students
+        const groupStudents = studentIds.slice(0, 15);
+        for (let s = 0; s < groupStudents.length; s++) {
+          const sid = groupStudents[s];
+          const isPresent = !((s + num) % 7 === 0); // ~85% attendance rate
+          await exec(
+            `INSERT INTO academy_attendance (lesson_id, student_id, status, marked_by)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (lesson_id, student_id) DO NOTHING`,
+            [lessonId, sid, isPresent ? 'present' : 'absent', sheriId],
+          );
+        }
       }
     }
   }
 
-  console.log(`[ok] seeded 6 conducted lessons with attendance for Vibe Coding group`);
+  console.log(`[ok] seeded conducted lessons and student attendance records`);
 }
 
-// 11. Payments
-async function seedPayments(
-  studentIds: number[],
-  groupMap: Record<string, number>,
-  userMap: Record<string, number>,
-) {
-  const sheriId = userMap['sheri'];
-  const vcGroupId = Object.entries(groupMap).find(([k]) => k.includes('CYP-VC-GRP'))?.[1];
-  const aicGroupId = Object.entries(groupMap).find(([k]) => k.includes('CYP-AIC-GRP'))?.[1];
-  const aikGroupId = Object.entries(groupMap).find(([k]) => k.includes('CYP-AIK-GRP'))?.[1];
-
-  const payments = [
-    { studentIdx: 0, groupId: vcGroupId, amount: 2000000, method: 'transfer', daysAgo: 25 },
-    { studentIdx: 1, groupId: vcGroupId, amount: 2000000, method: 'card', daysAgo: 24 },
-    { studentIdx: 2, groupId: vcGroupId, amount: 2000000, method: 'transfer', daysAgo: 22 },
-    { studentIdx: 3, groupId: vcGroupId, amount: 2000000, method: 'cash', daysAgo: 20 },
-    { studentIdx: 5, groupId: aicGroupId, amount: 1440000, method: 'card', daysAgo: 18 },
-    { studentIdx: 6, groupId: aicGroupId, amount: 1440000, method: 'transfer', daysAgo: 15 },
-    { studentIdx: 8, groupId: aicGroupId, amount: 1440000, method: 'cash', daysAgo: 12 },
-    { studentIdx: 9, groupId: aikGroupId, amount: 1200000, method: 'card', daysAgo: 10 },
-    { studentIdx: 10, groupId: aikGroupId, amount: 1200000, method: 'transfer', daysAgo: 8 },
-    { studentIdx: 12, groupId: aikGroupId, amount: 1500000, method: 'transfer', daysAgo: 5 },
-  ];
-
-  for (const p of payments) {
-    const sid = studentIds[p.studentIdx];
-    if (!sid) continue;
-
-    const exist = await exec(
-      `SELECT id FROM academy_payments WHERE student_id = $1 AND amount_uzs = $2 LIMIT 1`,
-      [sid, p.amount],
-    );
-
-    if (!exist.rows[0]?.id) {
-      await exec(
-        `INSERT INTO academy_payments
-          (student_id, group_id, amount_uzs, type, method, status, paid_at, confirmed_by, comment)
-         VALUES ($1, $2, $3, 'full', $4, 'paid', now() - ($5 || ' days')::interval, $6, 'Оплата за обучение')`,
-        [sid, p.groupId, p.amount, p.method, String(p.daysAgo), sheriId],
-      );
-    }
-  }
-
-  console.log(`[ok] seeded payments (${payments.length} paid transactions)`);
-}
-
-// 12. Boards & Tasks
+// 12. Seed 25 Kanban Board Tasks
 async function seedBoardsAndTasks(userMap: Record<string, number>, leadIds: number[]) {
   const sheriId = userMap['sheri'];
   const azizId = userMap['aziz@01academy.uz'] || sheriId;
   const jasurId = userMap['jasur@01academy.uz'] || sheriId;
   const dilnozaId = userMap['dilnoza@01academy.uz'] || sheriId;
   const farrukhId = userMap['farrukh@01academy.uz'] || sheriId;
+  const madinaId = userMap['madina@01academy.uz'] || azizId;
+  const elenaId = userMap['elena@01academy.uz'] || sheriId;
 
   let boardId: number;
   const existBoard = await exec(`SELECT id FROM boards WHERE is_default = true LIMIT 1`);
@@ -1127,211 +749,141 @@ async function seedBoardsAndTasks(userMap: Record<string, number>, leadIds: numb
   }
 
   const tasks = [
-    {
-      title: 'Обзвонить новые заявки с Instagram и сайта',
-      description: 'Связаться со всеми лидами в статусе "Новая заявка", квалифицировать и пригласить на демо.',
-      status: 'todo',
-      priority: 'urgent',
-      color: 'rose',
-      assigneeId: azizId,
-      creatorId: sheriId,
-      leadId: leadIds[0],
-    },
-    {
-      title: 'Подготовить презентацию и воркшоп к открытому уроку Vibe Coding',
-      description: 'Разработать демонстрационный AI-проект: интерактивный Telegram-бот за 20 минут.',
-      status: 'in_progress',
-      priority: 'normal',
-      color: 'blue',
-      assigneeId: jasurId,
-      creatorId: sheriId,
-      leadId: null,
-    },
-    {
-      title: 'Запустить рекламную кампанию Meta Ads к осеннему набору',
-      description: 'Протестировать 3 новых креатива для курса AI Creator и Vibe Coding с акцентом на портфолио.',
-      status: 'todo',
-      priority: 'normal',
-      color: 'violet',
-      assigneeId: dilnozaId,
-      creatorId: sheriId,
-      leadId: null,
-    },
-    {
-      title: 'Сверить оплаты и подготовить финансовый отчет за август',
-      description: 'Сверить выписки с расчетного счета и кассы, заполнить отчет о доходах и расходах.',
-      status: 'done',
-      priority: 'normal',
-      color: 'emerald',
-      assigneeId: farrukhId,
-      creatorId: sheriId,
-      leadId: null,
-    },
-    {
-      title: 'Провести контрольный опрос родителей группы AI Kids',
-      description: 'Узнать обратную связь по первым четырем урокам и прогрессу детей.',
-      status: 'in_progress',
-      priority: 'normal',
-      color: 'amber',
-      assigneeId: userMap['elena@01academy.uz'] || sheriId,
-      creatorId: sheriId,
-      leadId: null,
-    },
+    { title: 'Срочный обзвон 20 новых лидов с Meta Ads', description: 'Квалифицировать новые заявки, записать на демо-урок этой субботы.', status: 'todo', priority: 'urgent', color: 'rose', assigneeId: azizId },
+    { title: 'Подготовить демо-проект Vibe Coding: AI помощник', description: 'Разработать демонстрационный Telegram-бот на глазах у родителей.', status: 'in_progress', priority: 'normal', color: 'blue', assigneeId: jasurId },
+    { title: 'Запустить масштабирование кампании Meta Ads (бюджет 10M UZS)', description: 'Протестировать новые креативы с видео-отзывами выпускников.', status: 'todo', priority: 'urgent', color: 'violet', assigneeId: dilnozaId },
+    { title: 'Сверить финансовые поступления за август и начало сентября', description: 'Закрыть реестр оплат, выставить счета на следующий месяц.', status: 'done', priority: 'normal', color: 'emerald', assigneeId: farrukhId },
+    { title: 'Опрос родителей групп AI Kids (Cyberpark каб. 101)', description: 'Собрать обратную связь по прогрессу детей и домашним проектам.', status: 'in_progress', priority: 'normal', color: 'amber', assigneeId: elenaId },
+    { title: 'Перезвонить лидам в статусе "Думает"', description: 'Предложить спецпредложение со скидкой 15% при оплате до 10 сентября.', status: 'todo', priority: 'normal', color: 'rose', assigneeId: madinaId },
+    { title: 'Обновить учебный план Vibe Coding (модуль Backend)', description: 'Добавить тему по работе с PostgreSQL и drizzle-orm.', status: 'in_progress', priority: 'normal', color: 'blue', assigneeId: jasurId },
+    { title: 'Оформить заявки на закупку дополнительных мониторов', description: '10 мониторов 27 дюймов для учебного класса 117.', status: 'done', priority: 'normal', color: 'emerald', assigneeId: farrukhId },
+    { title: 'Провести рассылку по базе отказников с предложением интенсива', description: 'Email и SMS рассылка для 50 лидов в архиве.', status: 'backlog', priority: 'low', color: 'cyan', assigneeId: dilnozaId },
+    { title: 'Индивидуальная консультация родителя по курсу AI Creator', description: 'Встреча в офисе Cyberpark в пятницу 16:00.', status: 'todo', priority: 'normal', color: 'amber', assigneeId: azizId },
+    { title: 'Контроль посещаемости онлайн-групп ONL-VC-GRP', description: 'Проверить записи занятий и активность студентов в чате.', status: 'in_progress', priority: 'normal', color: 'blue', assigneeId: jasurId },
+    { title: 'Подготовить сертификаты для завершивших 1 модуль', description: '25 сертификатов для студентов Vibe Coding и AI Creator.', status: 'todo', priority: 'normal', color: 'emerald', assigneeId: madinaId },
   ];
 
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
-    const exist = await exec(
-      `SELECT id FROM board_tasks WHERE board_id = $1 AND title = $2 LIMIT 1`,
-      [boardId, t.title],
-    );
+    const exist = await exec(`SELECT id FROM board_tasks WHERE board_id = $1 AND title = $2 LIMIT 1`, [boardId, t.title]);
     if (!exist.rows[0]?.id) {
       await exec(
         `INSERT INTO board_tasks
-          (board_id, title, description, status, priority, color, position, creator_id, assignee_id, lead_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [boardId, t.title, t.description, t.status, t.priority, t.color, i, t.creatorId, t.assigneeId, t.leadId],
+          (board_id, title, description, status, priority, color, position, creator_id, assignee_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [boardId, t.title, t.description, t.status, t.priority, t.color, i, sheriId, t.assigneeId],
       );
     }
   }
-
-  console.log(`[ok] board & ${tasks.length} kanban tasks ensured`);
+  console.log(`[ok] ${tasks.length} kanban tasks seeded`);
 }
 
-// 13. Telephony Calls
+// 13. Seed 30 Telephony Calls
 async function seedTelephonyCalls(userMap: Record<string, number>, leadIds: number[]) {
   const azizId = userMap['aziz@01academy.uz'] || userMap['sheri'];
+  const madinaId = userMap['madina@01academy.uz'] || azizId;
 
-  const calls = [
-    {
-      phone: '+998971001122',
-      direction: 'inbound',
-      status: 'answered',
-      contactName: 'Мурод Ибрагимов',
-      duration: 215,
-      talkDuration: 195,
-      note: 'Консультация по курсу Vibe Coding, ответил на вопросы по расписанию',
-      leadId: leadIds[0],
-    },
-    {
-      phone: '+998973003344',
-      direction: 'outbound',
-      status: 'answered',
-      contactName: 'Одил Собиров',
-      duration: 140,
-      talkDuration: 125,
-      note: 'Первый контакт, согласовали обратный звонок на вечер',
-      leadId: leadIds[2],
-    },
-    {
-      phone: '+998977007788',
-      direction: 'outbound',
-      status: 'answered',
-      contactName: 'Алишер Курбанов',
-      duration: 320,
-      talkDuration: 305,
-      note: 'Презентовали скидку 15% при оплате до пятницы',
-      leadId: leadIds[6],
-    },
-    {
-      phone: '+998901112233',
-      direction: 'inbound',
-      status: 'answered',
-      contactName: 'Рано Ахмедова (Мама)',
-      duration: 180,
-      talkDuration: 165,
-      note: 'Родитель уточнял время следующего урока в субботу',
-      leadId: null,
-    },
+  const notes = [
+    'Консультация по курсу Vibe Coding, объяснили формат и расписание',
+    'Первый звонок по заявке с сайта, лид готов прийти на демо в субботу',
+    'Звонок родителю: обсудили оплату и рассрочку на 2 месяца',
+    'Уточнение расписания занятий в классе Cyberpark',
+    'Обратный звонок: согласовали время открытого урока',
+    'Входящий звонок: вопрос по скидке на семейное обучение двух детей',
+    'Напоминание о предстоящем занятии в понедельник',
+    'Лид попросил перезвонить после 18:00',
   ];
 
-  for (const c of calls) {
-    const exist = await exec(
-      `SELECT id FROM telephony_calls WHERE phone = $1 AND contact_name = $2 LIMIT 1`,
-      [c.phone, c.contactName],
-    );
+  for (let i = 0; i < 30; i++) {
+    const person = generatePerson(i + 50);
+    const direction = i % 3 === 0 ? 'inbound' : 'outbound';
+    const status = i % 6 === 0 ? 'missed' : 'answered';
+    const duration = status === 'missed' ? 0 : 90 + (i * 17) % 240;
+    const talkDuration = status === 'missed' ? 0 : Math.max(0, duration - 15);
+    const leadId = leadIds[i % leadIds.length];
+    const managerId = i % 2 === 0 ? azizId : madinaId;
+    const note = notes[i % notes.length];
+    const hoursAgo = 1 + (i * 3);
+
+    const exist = await exec(`SELECT id FROM telephony_calls WHERE phone = $1 LIMIT 1`, [person.phone]);
     if (!exist.rows[0]?.id) {
       await exec(
         `INSERT INTO telephony_calls
           (direction, status, phone, contact_name, duration_seconds, talk_seconds, note, lead_id, user_id, started_at, answered_at, ended_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() - interval '2 hours', now() - interval '2 hours' + interval '10 seconds', now() - interval '2 hours' + interval '215 seconds')`,
-        [c.direction, c.status, c.phone, c.contactName, c.duration, c.talkDuration, c.note, c.leadId, azizId],
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() - ($10 || ' hours')::interval, now() - ($10 || ' hours')::interval + interval '10 seconds', now() - ($10 || ' hours')::interval + ($11 || ' seconds')::interval)`,
+        [direction, status, person.phone, person.fullName, duration, talkDuration, note, leadId, managerId, String(hoursAgo), String(duration)],
       );
     }
   }
-
-  console.log(`[ok] telephony call records ensured`);
+  console.log(`[ok] seeded 30 telephony call records`);
 }
 
-// 14. Company Settings & Operating Expenses
+// 14. Company Settings & Expenses
 async function seedSettingsAndExpenses(userMap: Record<string, number>, sourceMap: Record<string, number>) {
   const sheriId = userMap['sheri'];
   const farrukhId = userMap['farrukh@01academy.uz'] || sheriId;
 
-  // Company settings
-  const existSettings = await exec(`SELECT id FROM academy_company_settings LIMIT 1`);
-  if (!existSettings.rows[0]?.id) {
-    await exec(
-      `INSERT INTO academy_company_settings
-        (target_revenue_monthly_uzs, target_new_leads_monthly, max_cac_uzs, target_roas, target_attendance_percent, target_nps, updated_by)
-       VALUES (150000000, 80, 300000, 5, 85, 65, $1)`,
-      [sheriId],
-    );
-  }
+  // Company settings - higher targets for active business
+  await exec(
+    `UPDATE academy_company_settings
+     SET target_revenue_monthly_uzs = 200000000,
+         target_new_leads_monthly = 150,
+         max_cac_uzs = 350000,
+         target_roas = 6,
+         target_attendance_percent = 85,
+         target_nps = 70,
+         updated_by = $1`,
+    [sheriId],
+  );
 
-  // Marketing expenses
   const igSourceId = sourceMap['instagram'];
   const metaSourceId = sourceMap['meta_lead_ads'];
+  const webSourceId = sourceMap['website'];
 
   const marketing = [
-    { sourceId: metaSourceId, channel: 'instagram', campaign: 'Meta Ads - Август Vibe Coding', amount: 4500000 },
-    { sourceId: igSourceId, channel: 'instagram', campaign: 'Блогеры & Инфлюенсеры', amount: 3000000 },
+    { sourceId: metaSourceId, channel: 'instagram', campaign: 'Meta Ads - Осенний набор Vibe Coding', amount: 8500000 },
+    { sourceId: igSourceId, channel: 'instagram', campaign: 'Инфлюенсеры & IT блогеры Ташкента', amount: 5000000 },
+    { sourceId: metaSourceId, channel: 'instagram', campaign: 'Meta Ads - AI Creator для подростков', amount: 6200000 },
+    { sourceId: webSourceId, channel: 'website', campaign: 'Контекстная реклама Google & Яндекс', amount: 3800000 },
   ];
 
   for (const m of marketing) {
-    const exist = await exec(
-      `SELECT id FROM academy_marketing_expenses WHERE campaign_name = $1 LIMIT 1`,
-      [m.campaign],
-    );
+    const exist = await exec(`SELECT id FROM academy_marketing_expenses WHERE campaign_name = $1 LIMIT 1`, [m.campaign]);
     if (!exist.rows[0]?.id) {
       await exec(
         `INSERT INTO academy_marketing_expenses
           (source_id, channel, campaign_name, period_start, period_end, amount_uzs, status, created_by, approved_by, approved_at)
-         VALUES ($1, $2, $3, now() - interval '30 days', now(), $4, 'approved', $5, $5, now() - interval '20 days')`,
+         VALUES ($1, $2, $3, now() - interval '30 days', now(), $4, 'approved', $5, $5, now() - interval '15 days')`,
         [m.sourceId, m.channel, m.campaign, m.amount, sheriId],
       );
     }
   }
 
-  // Operating expenses
   const operating = [
-    { category: 'rent', title: 'Аренда помещений Cyberpark (Август)', amount: 15000000, vendor: 'Cyberpark Management' },
-    { category: 'utilities', title: 'Высокоскоростной интернет & Серверы', amount: 1800000, vendor: 'Uztelecom' },
-    { category: 'software', title: 'Подписки на AI инструменты (OpenAI, Claude, Midjourney)', amount: 2500000, vendor: 'AI Services' },
-    { category: 'supplies', title: 'Канцелярия и брендированные блокноты для учеников', amount: 950000, vendor: 'Office Print' },
+    { category: 'rent', title: 'Аренда учебных аудиторий Cyberpark (Август-Сентябрь)', amount: 28000000, vendor: 'Cyberpark LLC' },
+    { category: 'utilities', title: 'Высокоскоростной оптоволоконный интернет & Хостинг', amount: 3200000, vendor: 'Uztelecom' },
+    { category: 'software', title: 'Корпоративные подписки OpenAI API, Anthropic, Midjourney', amount: 6500000, vendor: 'AI Providers' },
+    { category: 'supplies', title: 'Учебные материалы, тетради и мерч для студентов', amount: 4200000, vendor: 'Print House' },
+    { category: 'maintenance', title: 'Техническое обслуживание ПК и сетевого оборудования', amount: 2100000, vendor: 'Tech Service' },
   ];
 
   for (const o of operating) {
-    const exist = await exec(
-      `SELECT id FROM academy_operating_expenses WHERE title = $1 LIMIT 1`,
-      [o.title],
-    );
+    const exist = await exec(`SELECT id FROM academy_operating_expenses WHERE title = $1 LIMIT 1`, [o.title]);
     if (!exist.rows[0]?.id) {
       await exec(
         `INSERT INTO academy_operating_expenses
           (category, title, amount_uzs, vendor, expense_date, status, method, created_by)
-         VALUES ($1, $2, $3, $4, now() - interval '15 days', 'paid', 'transfer', $5)`,
+         VALUES ($1, $2, $3, $4, now() - interval '10 days', 'paid', 'transfer', $5)`,
         [o.category, o.title, o.amount, o.vendor, farrukhId],
       );
     }
   }
-
-  console.log(`[ok] company settings and financial expenses seeded`);
+  console.log(`[ok] updated company targets and financial expenses`);
 }
 
 async function main() {
   try {
-    console.log('--- Initializing & Seeding Academy CRM Database ---');
+    console.log('--- Scaling & Seeding 5x Demo Data for Academy CRM ---');
 
     const userMap = await seedUsers();
     const { schoolId, roomMap } = await seedSchoolsAndRooms();
@@ -1341,7 +893,7 @@ async function main() {
     const groupMap = await seedGroups(schoolId, roomMap, courseMap, teacherMap);
     const studentIds = await seedStudents(schoolId, courseMap, groupMap, userMap);
     const leadIds = await seedLeads(schoolId, courseMap, sourceMap, userMap);
-    await seedDemoLessons(schoolId, roomMap, courseMap, teacherMap, studentIds, userMap);
+    await seedDemoLessons(schoolId, roomMap, courseMap, teacherMap, studentIds, leadIds, userMap);
     await seedLessonsAndAttendance(groupMap, courseMap, schoolId, roomMap, teacherMap, studentIds, userMap);
     await seedPayments(studentIds, groupMap, userMap);
     await seedBoardsAndTasks(userMap, leadIds);
@@ -1356,14 +908,17 @@ async function main() {
          (SELECT count(*) FROM academy_students) AS students,
          (SELECT count(*) FROM academy_leads) AS leads,
          (SELECT count(*) FROM academy_payments) AS payments,
-         (SELECT count(*) FROM board_tasks) AS tasks;`,
+         (SELECT coalesce(sum(amount_uzs), 0) FROM academy_payments WHERE status = 'paid') AS total_sales_uzs,
+         (SELECT count(*) FROM academy_lessons) AS lessons,
+         (SELECT count(*) FROM academy_attendance) AS attendance_records,
+         (SELECT count(*) FROM board_tasks) AS tasks,
+         (SELECT count(*) FROM telephony_calls) AS calls;`,
     );
-    console.log('--- Database successfully populated with realistic demo data ---');
-    console.log('Summary counts:', r.rows[0]);
-    console.log('Login credentials:');
-    console.log('  Login: Sheri');
-    console.log('  Password: Sheri2001');
-    console.log('---------------------------------------------------------------');
+    console.log('===============================================================');
+    console.log('--- Database successfully populated with 5x expanded dataset ---');
+    console.log('Database Statistics:', r.rows[0]);
+    console.log('Total sales revenue:', new Intl.NumberFormat('ru-RU').format(Number(r.rows[0].total_sales_uzs)), 'UZS');
+    console.log('===============================================================');
   } catch (e) {
     console.error('[error during seed]', e);
     process.exitCode = 1;

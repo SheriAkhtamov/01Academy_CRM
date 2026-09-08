@@ -25,6 +25,7 @@ import type {
   SalesOverviewFunnelStage,
   SalesOverviewNavTarget,
   SalesOverviewStats,
+  SalesOverviewStudent,
 } from '@/components/ux/sales-overview/types';
 
 type PaymentRecord = {
@@ -42,6 +43,7 @@ type SalesOverviewMetricsProps = {
   stats: SalesOverviewStats;
   /** Every payment in scope; the hero windows them itself. */
   payments: PaymentRecord[];
+  students: SalesOverviewStudent[];
   funnel: SalesOverviewFunnelStage[];
   leadStatusName: (code: string) => string;
   statusColor: (code: string) => string;
@@ -60,6 +62,7 @@ export function SalesOverviewMetrics({
   managerId,
   stats,
   payments,
+  students,
   funnel,
   leadStatusName,
   statusColor,
@@ -126,7 +129,7 @@ export function SalesOverviewMetrics({
           </section>
         ) : null}
 
-        <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
+        <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} students={students} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
         <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} />
         <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
         <SalesOverviewTrends metrics={metrics} isLoading={isLoading} payments={payments} reportingRange={reportingRange} money={money} />

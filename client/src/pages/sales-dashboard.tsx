@@ -1192,6 +1192,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             managerId={overviewManagerNumericId}
             stats={managerStats}
             payments={overviewPayments}
+            students={overviewStudents}
             funnel={managerFunnel}
             leadStatusName={leadStatusName}
             statusColor={leadStatusColor}

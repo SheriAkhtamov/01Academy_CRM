@@ -54,6 +54,11 @@ export interface SalesOverviewPayment {
   method?: string | null;
 }
 
+export interface SalesOverviewStudent {
+  enrolledAt?: string | null;
+  createdAt?: string | null;
+}
+
 export interface SalesOverviewFunnelStage {
   code: string;
   count: number;

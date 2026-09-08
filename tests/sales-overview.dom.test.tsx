@@ -40,6 +40,11 @@ const payments = [
   { amountUzs: 90000, status: 'paid', paidAt: '2026-08-31T19:00:00Z' },
   { amountUzs: 80000, status: 'refunded', paidAt: '2026-08-10T00:00:00Z' },
 ];
+const students = [
+  { enrolledAt: '2026-07-31T19:00:00Z', createdAt: '2026-07-12T10:00:00Z' },
+  { createdAt: '2026-08-31T18:59:59Z' },
+  { enrolledAt: '2026-08-31T19:00:00Z' },
+];
 const clients: QueryClient[] = [];
 function Harness() {
   const [month, setMonth] = useState('2026-08');
@@ -49,7 +54,7 @@ function Harness() {
     <SalesOverviewEmployeeFilter value={manager} managers={[{ id: 1, fullName: 'Alice' }, { id: 2, fullName: 'Bob' }]} canViewAllManagers onChange={setManager} />
     <SalesOverviewMetrics key={`${month}-${manager}`} month={month} reportingRange={salesMonthRange(month, '2026-09-08')} managerId={manager === 'all' ? null : Number(manager)}
       stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadsPrevious: 6, totalStudents: 2, totalStudentsPrevious: 1 }}
-      payments={payments} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setMonth('2026-09')} />
+      payments={payments} students={students} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setMonth('2026-09')} />
   </>;
 }
 function mount(children: ReactNode = <Harness />) {
@@ -99,6 +104,37 @@ describe('unified sales overview', () => {
     expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('150000')).toBeTruthy();
     expect(within(screen.getByRole('button', { name: translations.openInStudents.en })).getByText('2')).toBeTruthy();
     expect(screen.queryByText(translations.paidCustomersForPeriod.en)).toBeNull();
+  });
+
+  it('lets keyboard users inspect actual daily revenue and enrolments inside the headline cards', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    const revenue = within(screen.getByRole('region', { name: translations.revenue.en })).getByRole('slider');
+    act(() => revenue.focus());
+    await user.keyboard('{Home}');
+    expect(revenue.getAttribute('aria-valuetext')).toBe('Aug 1: 100000');
+    await user.keyboard('{ArrowRight}');
+    expect(revenue.getAttribute('aria-valuetext')).toBe('Aug 2: 0');
+    await user.keyboard('{End}');
+    expect(revenue.getAttribute('aria-valuetext')).toBe('Aug 31: 50000');
+    const enrolled = within(screen.getByRole('region', { name: translations.adminNewStudents.en })).getByRole('slider');
+    act(() => enrolled.focus());
+    await user.keyboard('{Home}');
+    expect(enrolled.getAttribute('aria-valuetext')).toBe('Aug 1: 1');
+    await user.keyboard('{End}');
+    expect(enrolled.getAttribute('aria-valuetext')).toBe('Aug 31: 1');
+  });
+
+  it('shows the measured percentage on a rate ring and target completion separately on a count chart', async () => {
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    const response = within(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiResponseMetric.en}` }));
+    expect(response.getByRole('img').getAttribute('aria-label')).toContain('90%; Target: 90%');
+    expect(response.getByText('90%')).toBeTruthy();
+    const bookings = within(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` }));
+    expect(bookings.getByRole('img').getAttribute('aria-label')).toContain('20; Target: 30');
+    expect(bookings.getByText('66.7% of target')).toBeTruthy();
   });
 
   it('keeps full results and underlying records in nested modals and restores page scrolling on close', async () => {

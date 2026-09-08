@@ -1,3 +1,5 @@
+// Development-only data: this script updates existing users and reference data.
+// Production deployments must never run it.
 import bcrypt from 'bcrypt';
 import { pool } from '../server/db';
 import {
@@ -10,8 +12,12 @@ const SUPER = {
   username: process.env.SUPER_USERNAME || 'Sheri',
   fullName: process.env.SUPER_FULLNAME || process.env.SUPER_USERNAME || 'Sheri',
   email: (process.env.SUPER_EMAIL || 'sheri@01academy.uz').trim().toLowerCase(),
-  password: (process.env.SUPER_PASSWORD || 'Sheri2001').trim(),
+  password: process.env.SUPER_PASSWORD?.trim() ?? '',
 };
+
+if (SUPER.password.length < 12 || Buffer.byteLength(SUPER.password, 'utf8') > 72) {
+  throw new Error('SUPER_PASSWORD must contain 12-72 UTF-8 bytes; no default password is provided');
+}
 
 async function exec(sql: string, params: any[] = []) {
   return pool.query(sql, params);
@@ -72,7 +78,7 @@ function generatePerson(index: number) {
 // 1. Seed Users (Super Admin + Staff)
 async function seedUsers() {
   const superHash = await bcrypt.hash(SUPER.password, 12);
-  const staffHash = await bcrypt.hash('Sheri2001', 12);
+  const staffHash = await bcrypt.hash(SUPER.password, 12);
 
   const existingSuper = await exec(
     `SELECT id FROM users WHERE lower(email) = lower($1) OR lower(full_name) = lower($2) ORDER BY id LIMIT 1`,

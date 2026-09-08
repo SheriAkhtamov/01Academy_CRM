@@ -1,164 +1,48 @@
-import { useMemo } from 'react';
-import { ArrowLeftRight, Percent } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { AnimatedNumber } from '@/components/ux/motion';
+import { useMemo, type ReactNode } from 'react';
+import { ArrowLeftRight, Banknote, CreditCard, Percent } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { isInReportingRange, type ReportingDateRange } from '@/lib/reportingDateRange';
-import { ConversionRing, PreviousValue, TrendBadge } from './parts';
+import { TrendBadge } from './parts';
+import { overviewPanel } from './OverviewDialog';
 import type { MoneyFormatter, SalesOverviewPayment } from './types';
 
-type PaymentRecord = SalesOverviewPayment & {
-  status?: string | null;
-  paidAt?: string | null;
-  createdAt?: string | null;
-};
+type PaymentRecord = SalesOverviewPayment & { status?: string | null; paidAt?: string | null; createdAt?: string | null };
 
-const sumAmount = (payments: PaymentRecord[]) => (
-  payments.reduce((total, payment) => total + Number(payment.amountUzs || 0), 0)
-);
-
-/** Relative change, because an absolute delta in UZS is unreadable at a glance. */
-const percentDelta = (current: number, previous: number | null) => {
-  if (previous === null || previous === 0) return null;
-  return Math.round(((current - previous) / previous) * 100);
-};
-
-function HeroStat({
-  title,
-  value,
-  delta,
-  suffix,
-  previous,
-}: {
-  title: string;
-  value: React.ReactNode;
-  delta: number | null;
-  suffix?: string;
-  previous: string | null;
-}) {
-  return (
-    <div className="min-w-0">
-      <p className="truncate text-xs font-medium text-muted-foreground" title={title}>{title}</p>
-      <p className="mt-1.5 truncate text-[26px] font-bold leading-none tracking-tight tabular-nums text-foreground">
-        {value}
-      </p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <TrendBadge delta={delta} suffix={suffix} />
-        {previous === null ? null : <PreviousValue value={previous} />}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The band that answers "how did the period go" before any chart is read.
- *
- * Money used to live only in a legend footnote under the revenue chart, which
- * is a strange place for the number a sales module is judged on. It sits here
- * now, and the chart's footer no longer repeats it.
- *
- * The previous window comes from the metrics endpoint (`previousRange`) rather
- * than being recomputed here, so the money comparison covers exactly the same
- * days as every other trend badge on the screen.
- */
-export function SalesOverviewHero({
-  conversionRate,
-  conversionRatePrevious,
-  showValue,
-  payments,
-  reportingRange,
-  previousRange,
-  money,
-}: {
-  conversionRate: number;
-  conversionRatePrevious: number;
-  showValue: boolean;
-  payments: PaymentRecord[];
-  reportingRange: Pick<ReportingDateRange, 'from' | 'to'>;
-  previousRange: { from: string; to: string } | undefined;
-  money: MoneyFormatter;
+export function SalesOverviewHero({ conversionRate, conversionRatePrevious, showValue, payments, reportingRange, previousRange, money, compensation }: {
+  conversionRate: number; conversionRatePrevious: number; showValue: boolean; payments: PaymentRecord[];
+  reportingRange: Pick<ReportingDateRange, 'from' | 'to'>; previousRange: { from: string; to: string } | undefined;
+  money: MoneyFormatter; compensation: ReactNode;
 }) {
   const { t, language } = useTranslation();
-  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
-
-  /* The window every trend badge on this band is measured against, spelled
-     out. It is the server's own `previousRange`, so the money comparison and
-     the counted-event comparisons cover exactly the same days. */
-  const comparedWith = useMemo(() => {
-    if (!previousRange) return null;
-    const format = new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', timeZone: 'UTC' });
-    const at = (value: string) => format.format(new Date(`${value}T00:00:00Z`));
-    return `${at(previousRange.from)} — ${at(previousRange.to)}`;
-  }, [locale, previousRange]);
-
   const { current, previous } = useMemo(() => {
     const paid = payments.filter((payment) => payment.status === 'paid');
-    const inWindow = (range: { from: string; to: string }) => paid.filter(
-      (payment) => isInReportingRange(payment.paidAt || payment.createdAt, range),
-    );
-    const currentPaid = inWindow(reportingRange);
-    const previousPaid = previousRange ? inWindow(previousRange) : null;
-    const totals = (items: PaymentRecord[] | null) => (items === null ? null : {
-      count: items.length,
-      revenue: sumAmount(items),
-      average: items.length > 0 ? Math.round(sumAmount(items) / items.length) : 0,
-    });
-    return { current: totals(currentPaid)!, previous: totals(previousPaid) };
+    const totals = (range: { from: string; to: string }) => {
+      const items = paid.filter((payment) => isInReportingRange(payment.paidAt || payment.createdAt, range));
+      const revenue = items.reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
+      return { count: items.length, revenue, average: items.length ? Math.round(revenue / items.length) : 0 };
+    };
+    return { current: totals(reportingRange), previous: previousRange ? totals(previousRange) : null };
   }, [payments, previousRange, reportingRange]);
-
-  return (
-    <Card className="overflow-hidden border-border/60 bg-gradient-to-br from-[var(--primary-500)]/[0.07] via-card to-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-12">
-      <CardContent className="p-5">
-        {comparedWith ? (
-          <p className="mb-3.5 flex items-center justify-end gap-1.5 text-[11px] leading-4 text-muted-foreground">
-            <ArrowLeftRight className="size-3 shrink-0" aria-hidden="true" />
-            {t('salesOverviewComparedWith')} {comparedWith}
-          </p>
-        ) : null}
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-7">
-        <div className="flex shrink-0 items-center gap-4">
-          <ConversionRing percent={conversionRate} showValue={showValue} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-500)]/10 text-[var(--primary-500)]">
-                <Percent className="size-4" aria-hidden="true" />
-              </span>
-              <p className="text-sm font-semibold text-foreground">{t('conversionForPeriod')}</p>
-            </div>
-            <p className="mt-1.5 text-xs leading-4 text-muted-foreground">{t('paidOverAllLeads')}</p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <TrendBadge delta={conversionRate - conversionRatePrevious} suffix="%" />
-              <PreviousValue value={`${conversionRatePrevious}%`} />
-            </div>
-          </div>
+  const formatDate = (value: string) => new Intl.DateTimeFormat(language, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
+  const revenueDelta = previous && previous.revenue > 0 ? Math.round((current.revenue - previous.revenue) / previous.revenue * 100) : null;
+  const items = [
+    { title: t('revenueForPeriod'), value: money(current.revenue), icon: Banknote, hint: `${t('avgPaymentSize')}: ${money(current.average)}`, delta: revenueDelta, suffix: '%', before: previous ? money(previous.revenue) : null },
+    { title: t('salesPaymentsCount'), value: String(current.count), icon: CreditCard, hint: t('salesPaymentsHint'), delta: previous ? current.count - previous.count : null, suffix: undefined, before: previous ? String(previous.count) : null },
+    { title: t('salesPrimaryConversion'), value: showValue ? `${conversionRate}%` : '—', icon: Percent, hint: t('paidOverAllLeads'), delta: showValue && previousRange ? conversionRate - conversionRatePrevious : null, suffix: t('percentagePointsShort'), before: showValue && previousRange ? `${conversionRatePrevious}%` : null },
+  ];
+  return <div className="space-y-3 xl:col-span-12">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item, index) => <section key={item.title} className={`${overviewPanel} flex flex-col p-5 sm:p-6 ${index === 0 ? 'border-primary/25 bg-primary/[0.035]' : ''}`} aria-label={item.title}>
+        <div className="flex items-center justify-between gap-2 text-sm font-medium text-muted-foreground"><h2>{item.title}</h2><item.icon className="size-4 shrink-0" aria-hidden="true" /></div>
+        <p className="mt-3 break-words text-[clamp(1.25rem,1.8vw,1.875rem)] font-semibold tracking-tight tabular-nums">{item.value}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{item.hint}</p>
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+          {item.delta !== null ? <TrendBadge delta={item.delta} suffix={item.suffix} /> : null}
+          {item.before !== null ? <span className="text-xs tabular-nums text-muted-foreground">{t('before')} {item.before}</span> : null}
         </div>
-
-        <span className="hidden w-px self-stretch bg-border lg:block" aria-hidden="true" />
-
-        <div className="grid min-w-0 flex-1 gap-5 sm:grid-cols-3">
-          <HeroStat
-            title={t('paidCustomersForPeriod')}
-            value={<AnimatedNumber value={current.count} />}
-            delta={previous === null ? null : current.count - previous.count}
-            previous={previous === null ? null : String(previous.count)}
-          />
-          <HeroStat
-            title={t('revenueForPeriod')}
-            value={<AnimatedNumber value={current.revenue} format={money} />}
-            delta={percentDelta(current.revenue, previous === null ? null : previous.revenue)}
-            suffix="%"
-            previous={previous === null ? null : money(previous.revenue)}
-          />
-          <HeroStat
-            title={t('avgPaymentSize')}
-            value={<AnimatedNumber value={current.average} format={money} />}
-            delta={percentDelta(current.average, previous === null ? null : previous.average)}
-            suffix="%"
-            previous={previous === null ? null : money(previous.average)}
-          />
-        </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+      </section>)}
+      {compensation}
+    </div>
+    {previousRange ? <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ArrowLeftRight className="size-3" aria-hidden="true" />{t('salesOverviewComparedWith')} {formatDate(previousRange.from)} — {formatDate(previousRange.to)}</p> : null}
+  </div>;
 }

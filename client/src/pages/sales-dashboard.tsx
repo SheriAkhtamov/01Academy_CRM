@@ -59,21 +59,22 @@ import { submitOnEnter } from '@/lib/submitOnEnter';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
+import { SalesOverviewMonthFilter, salesMonthRange } from '@/components/ux/sales-overview/SalesOverviewMonthFilter';
+import { kpiMonth } from '@shared/sales-kpi-time';
+import { kpiMonthSchema } from '@shared/sales-kpi';
+import { useStickyState } from '@/hooks/useStickyState';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
-import { SalesKpiOverview } from '@/features/sales-kpi/ui/SalesKpiOverview';
 import { SalesOverviewEmployeeFilter } from '@/components/ux/SalesOverviewEmployeeFilter';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
-import { addReportingDays, isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
-import { useStickyState } from '@/hooks/useStickyState';
+import { addReportingDays, isInReportingRange, reportingToday } from '@/lib/reportingDateRange';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import {
   getAssignedModules,
@@ -546,18 +547,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveCustomReason, setArchiveCustomReason] = useState('');
   const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
   const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
-  // The reporting preset sticks: switching sections and coming back used to
-  // silently reset the metrics to "today" mid-comparison.
-  const [storedReportingPreset, setStoredReportingPreset] = useStickyState<string>('sales-overview-range', 'last30');
-  const [reportingRange, setReportingRange] = useState(() => (
-    isReportingPresetKey(storedReportingPreset)
-      ? reportingRangeForPreset(storedReportingPreset)
-      : reportingRangeForPreset('last30')
-  ));
-  const handleReportingRangeChange = useCallback((next: typeof reportingRange) => {
-    setReportingRange(next);
-    setStoredReportingPreset(next.preset);
-  }, [setStoredReportingPreset]);
+  const [storedOverviewMonth, setOverviewMonth] = useStickyState('sales-overview-month', kpiMonth());
+  const overviewMonth = kpiMonthSchema.safeParse(storedOverviewMonth).success && storedOverviewMonth <= kpiMonth() ? storedOverviewMonth : kpiMonth();
+  const overviewToday = reportingToday();
+  const reportingRange = useMemo(() => salesMonthRange(overviewMonth, overviewToday), [overviewMonth, overviewToday]);
 
   const replaceSalesParams = useCallback((changes: Record<string, string | null>, options?: { push?: boolean }) => {
     const params = new URLSearchParams(routeSearch);
@@ -1181,32 +1174,21 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       >
       {section === 'overview' ? (
         <div className="space-y-5">
-          <Card
-            className="sticky top-2 z-20 border-border/60 bg-card/95 shadow-sm backdrop-blur"
-            role="group"
-            aria-label={t('salesOverviewFilters')}
-          >
-            <CardContent className="flex flex-col gap-2 p-2 xl:flex-row xl:items-center">
+          <div className="space-y-3" role="group" aria-label={t('salesOverviewFilters')}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <SalesOverviewMonthFilter month={overviewMonth} onChange={setOverviewMonth} />
               <SalesOverviewEmployeeFilter
-                className="border-0 bg-transparent shadow-none"
                 value={overviewManagerId}
                 managers={overviewManagerOptions}
                 canViewAllManagers={isAdministrationModule}
-                onChange={(managerId) => replaceSalesParams({
-                  manager: managerId === defaultOverviewManagerId ? null : managerId,
-                })}
+                onChange={(managerId) => replaceSalesParams({ manager: managerId === defaultOverviewManagerId ? null : managerId })}
               />
-            </CardContent>
-          </Card>
-          <SalesKpiOverview managerId={overviewManagerNumericId} isAdministration={isAdministrationModule} />
-          <details className="group space-y-4 rounded-xl border bg-card p-4">
-            <summary className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('kpiOperationalOverview')}</summary>
-              <ReportingDateRangeFilter
-                className="border-0 bg-transparent shadow-none xl:min-w-0 xl:flex-1"
-                value={reportingRange}
-                onChange={handleReportingRangeChange}
-              />
+            </div>
+            <p className="text-xs text-muted-foreground">{t('salesMonthHint')}</p>
+          </div>
           <SalesOverviewMetrics
+            key={`${overviewMonth}-${overviewManagerNumericId}`}
+            month={overviewMonth}
             reportingRange={reportingRange}
             managerId={overviewManagerNumericId}
             isAdministrationModule={isAdministrationModule}
@@ -1217,7 +1199,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             statusColor={leadStatusColor}
             money={money}
             onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
-            onExpandPeriod={() => handleReportingRangeChange(reportingRangeForPreset('last30'))}
+            onExpandPeriod={() => setOverviewMonth(kpiMonth())}
           />
           <SalesOverviewSection
             payments={periodPayments}
@@ -1225,7 +1207,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             reportingRange={reportingRange}
             money={money}
           />
-          </details></div>
+        </div>
       ) : null}
 
       {section === 'pipeline' ? (

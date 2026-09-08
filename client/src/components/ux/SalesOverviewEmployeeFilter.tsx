@@ -1,13 +1,4 @@
-import { UserCheck } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { ChevronDown, UserRound } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 
@@ -19,45 +10,16 @@ interface SalesOverviewEmployeeFilterProps {
   className?: string;
 }
 
-export function SalesOverviewEmployeeFilter({
-  value,
-  managers,
-  canViewAllManagers,
-  onChange,
-  className,
-}: SalesOverviewEmployeeFilterProps) {
+export function SalesOverviewEmployeeFilter({ value, managers, canViewAllManagers, onChange, className }: SalesOverviewEmployeeFilterProps) {
   const { t } = useTranslation();
-
-  return (
-    <Card className={cn('border-border/60 bg-card shadow-sm', className)}>
-      <CardContent className="flex h-full flex-col gap-2.5 p-3 sm:flex-row sm:items-center">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <UserCheck className="size-4" aria-hidden="true" />
-          </span>
-          <p className="text-xs font-semibold">{t('salesOverviewManager')}</p>
-        </div>
-        <Select value={value} disabled={!canViewAllManagers} onValueChange={onChange}>
-          <SelectTrigger
-            className="h-11 w-full sm:w-[220px]"
-            aria-label={t('salesOverviewManager')}
-          >
-            <SelectValue placeholder={t('selectEmployee')} />
-          </SelectTrigger>
-          <SelectContent>
-            {canViewAllManagers ? (
-              <SelectItem value="all">{t('allManagers')}</SelectItem>
-            ) : null}
-            <SelectGroup>
-              {managers.map((manager) => (
-                <SelectItem key={manager.id} value={String(manager.id)}>
-                  {manager.fullName}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </CardContent>
-    </Card>
-  );
+  return <label className={cn('relative flex min-w-0 items-center gap-2 rounded-xl border bg-background px-3', className)}>
+    <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    <span className="sr-only">{t('salesOverviewManager')}</span>
+    <select value={value} disabled={!canViewAllManagers} onChange={(event) => onChange(event.target.value)}
+      className="h-12 w-full min-w-0 appearance-none rounded-lg bg-transparent pr-7 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-100 sm:max-w-64">
+      {canViewAllManagers ? <option value="all">{t('allManagers')}</option> : null}
+      {managers.map((manager) => <option key={manager.id} value={String(manager.id)} className="bg-background text-foreground">{manager.fullName}</option>)}
+    </select>
+    {canViewAllManagers ? <ChevronDown className="pointer-events-none absolute right-3 size-4 text-muted-foreground" aria-hidden="true" /> : null}
+  </label>;
 }

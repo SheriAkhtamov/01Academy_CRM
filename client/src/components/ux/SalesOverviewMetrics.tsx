@@ -1,18 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, CalendarRange } from 'lucide-react';
+import { kpiMonth } from '@shared/sales-kpi-time';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Progress } from '@/components/ui/progress';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiRequest } from '@/lib/queryClient';
 import type { TranslationKey } from '@/lib/i18n';
@@ -21,13 +11,14 @@ import {
   reportingRangeQuery,
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
-import { SectionHeading } from '@/components/ux/sales-overview/parts';
+import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
+import { SalesKpiOverview, SalesCompensation } from '@/features/sales-kpi/ui/SalesKpiOverview';
+import { useKpiOverview } from '@/features/sales-kpi/hooks';
 import { SalesOverviewDynamics } from '@/components/ux/sales-overview/SalesOverviewDynamics';
 import { SalesOverviewFunnel } from '@/components/ux/sales-overview/SalesOverviewFunnel';
 import { SalesOverviewHero } from '@/components/ux/sales-overview/SalesOverviewHero';
 import { SalesOverviewKpiGrid } from '@/components/ux/sales-overview/SalesOverviewKpiGrid';
 import { SalesOverviewRefusals } from '@/components/ux/sales-overview/SalesOverviewRefusals';
-import { SalesOverviewStructure } from '@/components/ux/sales-overview/SalesOverviewStructure';
 import type {
   MoneyFormatter,
   SalesDashboardMetrics,
@@ -45,6 +36,7 @@ type PaymentRecord = {
 };
 
 type SalesOverviewMetricsProps = {
+  month: string;
   reportingRange: Pick<ReportingDateRange, 'from' | 'to'>;
   managerId: number | null;
   isAdministrationModule: boolean;
@@ -63,16 +55,8 @@ const archiveReasonTranslationKeys = Object.fromEntries(
   LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
 ) as Record<string, TranslationKey>;
 
-/**
- * The sales overview, arranged as three named bands rather than a wall of
- * equally weighted cards: what the period produced, how leads flowed through
- * it, and the breakdown behind those two.
- *
- * This component stays the orchestrator — it owns the single metrics request
- * and the refusal dialog — while each band is its own file under
- * `sales-overview/`.
- */
 export function SalesOverviewMetrics({
+  month,
   reportingRange,
   managerId,
   isAdministrationModule,
@@ -94,25 +78,19 @@ export function SalesOverviewMetrics({
   const metricsQuery = useQuery<SalesDashboardMetrics>({
     queryKey: ['/api/academy/modules/sales/metrics', reportingQuery, managerId],
     queryFn: () => apiRequest('GET', `/api/academy/modules/sales/metrics?${metricsQueryString}`),
-    // A date change may keep the last figures visible, but switching employees
-    // must never briefly label one person's numbers as another person's.
-    placeholderData: (previousData, previousQuery) => (
-      previousQuery?.queryKey[2] === managerId ? previousData : undefined
-    ),
   });
   const archiveReasonName = (code: string) => {
     const key = archiveReasonTranslationKeys[code];
     return key ? t(key) : code;
   };
 
+  const kpiQuery = useKpiOverview(month, managerId);
+  const employees = kpiQuery.data?.employees ?? [];
   const metrics = metricsQuery.data;
   const isLoading = metricsQuery.isPending;
   const targetRefusals = metrics?.targetRefusals ?? 0;
   const conversionLeadCount = stats.newLeadsPeriod;
 
-  // "Today" on a quiet morning used to render every card as a zero, which is
-  // indistinguishable from a broken screen. Say so plainly instead, and offer
-  // the way out in one click.
   const hasPeriodPayments = payments.some((payment) => (
     payment.status === 'paid' && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)
   ));
@@ -126,28 +104,15 @@ export function SalesOverviewMetrics({
 
   return (
     <>
-      {metricsQuery.isError ? (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-          <AlertDescription>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={() => metricsQuery.refetch()}
-            >
-              {t('retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      {metricsQuery.isError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-destructive/30 p-4 text-sm">
+        <span className="flex items-center gap-2"><AlertCircle className="size-4" aria-hidden="true" />{t('failedToLoadData')}</span>
+        <button type="button" className={overviewButton} onClick={() => metricsQuery.refetch()}>{t('retry')}</button>
+      </div> : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12" aria-busy={metricsQuery.isPending}>
         {isEmptyPeriod ? (
-          <Card className="border-dashed border-border bg-muted/30 shadow-none xl:col-span-12">
-            <CardContent className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <section className={`${overviewPanel} border-dashed bg-muted/20 xl:col-span-12`}>
+            <div className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <CalendarRange className="size-4" aria-hidden="true" />
@@ -159,14 +124,13 @@ export function SalesOverviewMetrics({
                   </p>
                 </div>
               </div>
-              <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={onExpandPeriod}>
+              {month !== kpiMonth() ? <button type="button" className={`${overviewButton} shrink-0 border`} onClick={onExpandPeriod}>
                 {t('salesOverviewExpandPeriod')}
-              </Button>
-            </CardContent>
-          </Card>
+              </button> : null}
+            </div>
+          </section>
         ) : null}
 
-        <SectionHeading title={t('salesOverviewResultTitle')} />
         <SalesOverviewHero
           conversionRate={stats.conversionRate}
           conversionRatePrevious={stats.conversionRatePrevious}
@@ -175,8 +139,11 @@ export function SalesOverviewMetrics({
           reportingRange={reportingRange}
           previousRange={metrics?.previousRange}
           money={money}
+          compensation={<SalesCompensation employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} isTeam={isAdministrationModule && managerId === null} />}
         />
-        <SalesOverviewKpiGrid
+        <div className="grid min-w-0 grid-cols-1 gap-4 xl:col-span-12 xl:grid-cols-2">
+          <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} isAdministration={isAdministrationModule} />
+          <SalesOverviewKpiGrid
           metrics={metrics}
           stats={stats}
           isAdministrationModule={isAdministrationModule}
@@ -184,7 +151,7 @@ export function SalesOverviewMetrics({
           onNavigate={onNavigate}
         />
 
-        <SectionHeading title={t('salesOverviewFlowTitle')} />
+        </div>
         <SalesOverviewFunnel
           metrics={metrics}
           isLoading={isLoading}
@@ -194,12 +161,6 @@ export function SalesOverviewMetrics({
         />
         <SalesOverviewDynamics metrics={metrics} isLoading={isLoading} />
 
-        <SectionHeading title={t('salesOverviewBreakdownTitle')} />
-        <SalesOverviewStructure
-          metrics={metrics}
-          totalStudents={stats.totalStudents}
-          isLoading={isLoading}
-        />
         <SalesOverviewRefusals
           metrics={metrics}
           isLoading={isLoading}
@@ -208,12 +169,7 @@ export function SalesOverviewMetrics({
         />
       </div>
 
-      <Dialog open={targetRefusalDialogOpen} onOpenChange={setTargetRefusalDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('targetRefusalReasonsTitle')}</DialogTitle>
-            <DialogDescription>{t('targetRefusalReasonsDescription')}</DialogDescription>
-          </DialogHeader>
+      {targetRefusalDialogOpen ? <OverviewDialog title={t('targetRefusalReasonsTitle')} description={t('targetRefusalReasonsDescription')} onClose={() => setTargetRefusalDialogOpen(false)}>
           {metrics?.targetRefusalReasons.length ? (
             <div className="space-y-4">
               {metrics.targetRefusalReasons.map((item) => {
@@ -228,7 +184,7 @@ export function SalesOverviewMetrics({
                         {item.count} · {share}%
                       </span>
                     </div>
-                    <Progress value={share} aria-label={archiveReasonName(item.reason)} />
+                    <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} /></div>
                   </div>
                 );
               })}
@@ -238,8 +194,7 @@ export function SalesOverviewMetrics({
               {t('targetRefusalReasonsEmpty')}
             </p>
           )}
-        </DialogContent>
-      </Dialog>
+      </OverviewDialog> : null}
     </>
   );
 }

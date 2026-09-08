@@ -1,14 +1,12 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { OverviewSkeleton as Skeleton } from './OverviewChartCard';
+import { overviewButton, overviewPanel } from './OverviewDialog';
 import { AnimatedNumber } from '@/components/ux/motion';
 import { AnalyticsChartEmpty } from '@/components/ux/analytics/AnalyticsChartCard';
 import { useTranslation } from '@/hooks/useTranslation';
 import { DURATION, EASE } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-import { CardEyebrow } from './parts';
 import type { SalesDashboardMetrics, SalesOverviewFunnelStage } from './types';
 
 interface Stage {
@@ -72,7 +70,7 @@ function FunnelRows({ stages }: { stages: Stage[] }) {
                 role="progressbar"
                 aria-valuenow={stage.value}
                 aria-valuemin={0}
-                aria-valuemax={Math.max(1, base)}
+                aria-valuemax={Math.max(1, base, stage.value)}
                 aria-label={`${stage.label}: ${stage.value}`}
               >
                 {/*
@@ -166,22 +164,20 @@ export function SalesOverviewFunnel({
   const hasPipelineData = pipelineStages.some((stage) => stage.value > 0);
 
   return (
-    <Card className="border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-md xl:col-span-7">
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 px-5 pb-3 pt-4">
+    <section className={`${overviewPanel} xl:col-span-7`}>
+      <header className="flex flex-row flex-wrap items-start justify-between gap-3 px-5 pb-3 pt-4">
         <div className="min-w-0">
-          <CardEyebrow>{isProcess ? t('metricFlowTitle') : t('conversionFunnel')}</CardEyebrow>
-          <CardDescription className="mt-0.5">
+          <h2 className="text-base font-semibold tracking-tight">{isProcess ? t('metricFlowTitle') : t('conversionFunnel')}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {isProcess ? t('metricFlowDescription') : t('conversionFunnelDescription')}
-          </CardDescription>
+          </p>
         </div>
-        <Tabs value={tab} onValueChange={setTab} className="shrink-0">
-          <TabsList>
-            <TabsTrigger value="process">{t('funnelProcessTab')}</TabsTrigger>
-            <TabsTrigger value="stages">{t('funnelStageTab')}</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </CardHeader>
-      <CardContent className="px-5 pb-5 pt-0">
+        <div className="flex shrink-0 rounded-lg bg-muted/70 p-1" role="group" aria-label={t('conversionFunnel')}>
+          <button type="button" aria-pressed={isProcess} className={cn(overviewButton, 'min-h-8 px-2.5 text-xs', isProcess && 'bg-background shadow-sm')} onClick={() => setTab('process')}>{t('funnelProcessTab')}</button>
+          <button type="button" aria-pressed={!isProcess} className={cn(overviewButton, 'min-h-8 px-2.5 text-xs', !isProcess && 'bg-background shadow-sm')} onClick={() => setTab('stages')}>{t('funnelStageTab')}</button>
+        </div>
+      </header>
+      <div className="px-5 pb-5 pt-0">
         {isLoading && isProcess ? (
           <div className="space-y-2.5">
             {Array.from({ length: 5 }, (_, index) => (
@@ -200,7 +196,7 @@ export function SalesOverviewFunnel({
             <AnalyticsChartEmpty title={t('noFunnelData')} description={t('analyticsEmptyPeriodHint')} />
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

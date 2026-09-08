@@ -29,7 +29,7 @@ describe('sales dashboard operational metrics', () => {
     expect(salesDashboard).toContain("const defaultOverviewManagerId = currentSalesManagerId || 'all';");
     expect(salesDashboard).toContain("requestedOverviewManagerId === 'all'");
     expect(salesDashboard).toContain('<SalesOverviewEmployeeFilter');
-    expect(salesOverviewEmployeeFilter).toContain("<SelectItem value=\"all\">{t('allManagers')}</SelectItem>");
+    expect(salesOverviewEmployeeFilter).toContain("<option value=\"all\">{t('allManagers')}</option>");
     expect(salesOverviewEmployeeFilter).toContain("t('salesOverviewManager')");
     expect(salesDashboard).toContain('const overviewLeads = useMemo');
     expect(salesDashboard).toContain('const overviewStudents = useMemo');
@@ -67,10 +67,9 @@ describe('sales dashboard operational metrics', () => {
   it('shows refusal reasons in a modal instead of flattening them into the dashboard', () => {
     expect(metrics).toContain('target_refusal_reason_counts AS');
     expect(metrics).toContain('history.entered_at <= lead.archived_at');
-    expect(salesOverviewMetrics).toContain('open={targetRefusalDialogOpen}');
+    expect(salesOverviewMetrics).toContain('targetRefusalDialogOpen ? <OverviewDialog');
     expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsTitle')");
     expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsDescription')");
-    expect(salesOverviewMetrics).toContain('<Progress value={share}');
   });
   // The overview used to draw two funnels as two identical lists of horizontal
   // bars a few hundred pixels apart: one counting persisted events in the
@@ -105,13 +104,5 @@ describe('sales dashboard operational metrics', () => {
     expect(salesDashboard).toContain('onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}');
   });
 
-  it('groups the overview into named bands instead of one flat card wall', () => {
-    expect(salesOverviewMetrics).toContain("t('salesOverviewResultTitle')");
-    expect(salesOverviewMetrics).toContain("t('salesOverviewFlowTitle')");
-    expect(salesOverviewMetrics).toContain("t('salesOverviewBreakdownTitle')");
-    // A zero-filled screen is indistinguishable from a broken one; say so and
-    // offer the way out.
-    expect(salesOverviewMetrics).toContain("t('salesOverviewEmptyTitle')");
-    expect(salesOverviewMetrics).toContain('onExpandPeriod');
-  });
+
 });

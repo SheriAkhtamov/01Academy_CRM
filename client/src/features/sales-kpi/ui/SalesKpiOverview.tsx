@@ -1,96 +1,99 @@
 import { useState } from 'react';
+import { ArrowUpRight, CheckCircle2, CircleDashed, Target, TriangleAlert, Wallet } from 'lucide-react';
 import type { TranslationKey } from '@/lib/i18n';
-import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDashed, ReceiptText, Target, TriangleAlert } from 'lucide-react';
-import { kpiMonth, kpiMonthBounds } from '@shared/sales-kpi-time';
-import { kpiMonthSchema, type KpiMetricId, type KpiOverviewEmployee } from '@shared/sales-kpi';
+import type { KpiMetric, KpiOverviewEmployee } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useKpiOverview } from '../hooks';
-import { kpiMoney, metricHelp, roleKeys } from '../copy';
-import { KpiMetricsGrid } from './KpiMetricsGrid';
+import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
+import { kpiMoney, metricHelp, metricKeys, roleKeys } from '../copy';
+import { KpiMetricsGrid, KpiMetricRow } from './KpiMetricsGrid';
 import { KpiMetricDetails } from './KpiMetricDetails';
 import { KpiPayTable } from './KpiPayTable';
 import { KpiSaleReviewDialog } from './KpiSaleReviewDialog';
 
-function EmployeeOverview({ employee, month }: { employee: KpiOverviewEmployee; month: string }) {
+export function SalesCompensation({ employees, loading, failed, isTeam }: {
+  employees: KpiOverviewEmployee[]; loading: boolean; failed: boolean; isTeam: boolean;
+}) {
   const { t, language } = useTranslation();
-  const [metricId, setMetricId] = useState<KpiMetricId | null>(null);
-  const [payOpen, setPayOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const total = employees.reduce((sum, employee) => sum + employee.calculation.totalUzs, 0);
+  const base = employees.reduce((sum, employee) => sum + employee.calculation.payLines.filter((line) => line.key === 'base').reduce((amount, line) => amount + line.amountUzs, 0), 0);
+  return <>
+    <button type="button" className={`${overviewPanel} group flex h-full flex-col p-5 text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-6`}
+      onClick={() => setOpen(true)} disabled={loading || failed || !employees.length} aria-haspopup="dialog" aria-label={t('salesRewardDetails')}>
+      <span className="flex w-full items-center justify-between gap-2 text-sm font-medium text-muted-foreground"><span>{isTeam ? t('salesRewardTeam') : t('salesReward')}</span><Wallet className="size-4" aria-hidden="true" /></span>
+      {loading ? <span className="mt-4 h-9 w-3/4 animate-pulse rounded bg-muted" /> : <span className="mt-3 break-words text-[clamp(1.25rem,1.8vw,1.875rem)] font-semibold tracking-tight tabular-nums">{failed || !employees.length ? '—' : kpiMoney(total, language)}</span>}
+      <span className="mt-3 text-xs leading-relaxed text-muted-foreground">{t('salesSalaryAndBonus')}</span>
+      <span className="mt-auto flex items-center gap-1 pt-4 text-xs font-medium text-primary">{!loading && !failed && !employees.length ? t('kpiNotAssigned') : t('kpiPayBreakdown')}<ArrowUpRight className="size-3.5" aria-hidden="true" /></span>
+    </button>
+    {open ? <OverviewDialog title={t('salesRewardDetails')} description={t('kpiPayBreakdownHint')} onClose={() => setOpen(false)}>
+      <p className="text-3xl font-semibold tracking-tight tabular-nums">{kpiMoney(total, language)}</p>
+      <p className="text-sm text-muted-foreground">{t('salesRewardSummary').replace('{base}', kpiMoney(base, language)).replace('{bonus}', kpiMoney(total - base, language))}</p>
+      <p className="text-sm text-muted-foreground">{t('kpiPreviewHint')}</p>
+      {employees.map((employee) => <section key={employee.id} className="space-y-3"><h3 className="font-medium">{employee.name} <span className="ml-2 text-xs text-muted-foreground">{t(roleKeys[employee.role])}</span></h3><KpiPayTable lines={employee.calculation.payLines} /></section>)}
+    </OverviewDialog> : null}
+  </>;
+}
+
+function EmployeeDetails({ employee, onClose }: { employee: KpiOverviewEmployee; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [metric, setMetric] = useState<KpiMetric | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const { calculation, version } = employee;
-  const selectedMetric = calculation.metrics.find((metric) => metric.id === metricId);
-  const monthLabel = new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent' }).format(kpiMonthBounds(month).start);
   const conditions = [
     { translationKey: 'kpiBaseVolumeCondition', value: calculation.baseConditions.volume },
     { translationKey: 'kpiBaseCrmCondition', value: calculation.baseConditions.crm },
     { translationKey: 'kpiBaseTimingCondition', value: calculation.baseConditions.timing },
   ] satisfies { translationKey: TranslationKey; value: boolean | null }[];
-  return <section className="space-y-4" aria-label={`${employee.name} · ${t(roleKeys[employee.role])}`}>
-    <Card className="overflow-hidden border-border/80 shadow-sm">
-      <CardContent className="p-0">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr]">
-          <div className="space-y-4 p-5 sm:p-6">
-            <div className="flex flex-wrap items-center gap-2"><Badge className="font-medium" variant="secondary">{t(roleKeys[employee.role])}</Badge><span className="text-xs capitalize text-muted-foreground">{monthLabel}</span></div>
-            <h3 className="text-2xl font-semibold tracking-tight">{employee.name}</h3>
-            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">{(employee.role === 'hunter' ? t('kpiHunterDescription') : t('kpiCloserDescription'))}</p>
-            <p className="text-xs text-muted-foreground">{t('kpiVersion').replace('{version}', String(version.id)).replace('{month}', version.effectiveMonth)}</p>
-          </div>
-          <div className="flex flex-col justify-center border-t bg-muted/25 p-5 sm:p-6 lg:border-l lg:border-t-0">
-            <p className="text-xs font-medium text-muted-foreground">{t('kpiPreviewTotal')}</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">{kpiMoney(calculation.totalUzs, language)}</p>
-            <p className="mt-2 max-w-lg text-xs leading-relaxed text-muted-foreground">{t('kpiPreviewHint')}</p>
-            <Button variant="outline" className="mt-4 w-fit gap-2 bg-background" onClick={() => setPayOpen(true)}><ReceiptText className="size-4" />{t('kpiPayBreakdown')}<ArrowUpRight className="size-4" /></Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-    <KpiMetricsGrid metrics={calculation.metrics} onSelect={(metric) => setMetricId(metric.id)} />
-    <div className="rounded-xl border bg-muted/10 p-4">
-      <p className="text-sm font-medium">{t('kpiBaseConditions')}</p>
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">{conditions.map(({ translationKey, value }) => <span key={translationKey} className="flex items-center gap-2 text-xs text-muted-foreground">
-        {value === true ? <CheckCircle2 className="size-4 text-emerald-600" aria-label={t('kpiEarned')} /> : value === false ? <TriangleAlert className="size-4 text-amber-600" aria-label={t('kpiNotMet')} /> : <CircleDashed className="size-4" aria-label={t('kpiPending')} />}{t(translationKey)}
-      </span>)}</div>
-      <p className="mt-3 text-xs text-muted-foreground">{(version.config.baseSalaryMode === 'guaranteed' ? t('kpiGuaranteed') : t('kpiConditional'))}</p>
-    </div>
-    {calculation.unclassifiedSales.length ? <Alert className="border-amber-500/30 bg-amber-500/5"><TriangleAlert className="size-4 text-amber-600" /><AlertTitle>{t('kpiUnclassifiedTitle').replace('{count}', String(calculation.unclassifiedSales.length))}</AlertTitle><AlertDescription>
-      <p>{t('kpiUnclassifiedDescription')}</p><Button variant="outline" size="sm" className="mt-3" onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</Button>
-    </AlertDescription></Alert> : calculation.reviewableSales.length ? <Button variant="outline" size="sm" onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</Button> : null}
-    {selectedMetric ? <KpiMetricDetails key={selectedMetric.id} metric={selectedMetric} help={metricHelp(selectedMetric.id, version.config, t)} onClose={() => setMetricId(null)} /> : null}
-    <Dialog open={payOpen} onOpenChange={setPayOpen}><DialogContent className="max-w-3xl">
-      <DialogHeader><DialogTitle>{t('kpiPayBreakdown')} · {employee.name}</DialogTitle><DialogDescription>{t('kpiPayBreakdownHint')}</DialogDescription></DialogHeader>
-      <p className="text-3xl font-semibold tabular-nums">{kpiMoney(calculation.totalUzs, language)}</p>
-      <KpiPayTable lines={calculation.payLines} />
-    </DialogContent></Dialog>
-    {reviewOpen ? <KpiSaleReviewDialog sales={calculation.reviewableSales} onClose={() => setReviewOpen(false)} /> : null}
-  </section>;
+  // Return to the employee details when payment review closes.
+  if (reviewOpen) return <KpiSaleReviewDialog sales={calculation.reviewableSales} onClose={() => setReviewOpen(false)} />;
+  return <>
+    <OverviewDialog title={t('salesEmployeeResult').replace('{name}', employee.name)} description={t(roleKeys[employee.role])} onClose={onClose}>
+      <KpiMetricsGrid metrics={calculation.metrics} onSelect={setMetric} />
+      {calculation.reviewableSales.length ? <button type="button" className={`${overviewButton} border`} onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}{calculation.unclassifiedSales.length ? <span className="rounded bg-amber-500/10 px-2 text-amber-700 dark:text-amber-400">{calculation.unclassifiedSales.length}</span> : null}</button> : null}
+      <section className="space-y-3 border-t pt-5"><h3 className="text-sm font-semibold">{t('kpiBaseConditions')}</h3>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map(({ translationKey, value }) => <span key={translationKey} className="flex items-center gap-2 text-xs text-muted-foreground">
+          {value === true ? <CheckCircle2 className="size-4 text-emerald-600" aria-label={t('kpiEarned')} /> : value === false ? <TriangleAlert className="size-4 text-amber-600" aria-label={t('kpiNotMet')} /> : <CircleDashed className="size-4" aria-label={t('kpiPending')} />}{t(translationKey)}
+        </span>)}</div>
+        <p className="text-xs text-muted-foreground">{version.config.baseSalaryMode === 'guaranteed' ? t('kpiGuaranteed') : t('kpiConditional')}</p>
+        <p className="text-xs text-muted-foreground">{t('kpiVersion').replace('{version}', String(version.id)).replace('{month}', version.effectiveMonth)}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{t('kpiTrackingHint')}</p>
+      </section>
+    </OverviewDialog>
+    {metric ? <KpiMetricDetails metric={metric} help={metricHelp(metric.id, version.config, t)} onClose={() => setMetric(null)} /> : null}
+  </>;
 }
 
-export function SalesKpiOverview({ managerId, isAdministration }: { managerId: number | null; isAdministration: boolean }) {
-  const { t } = useTranslation();
-  const [month, setMonth] = useState(() => kpiMonth());
-  const query = useKpiOverview(month, managerId);
-  return <section className="space-y-4" aria-label={t('kpiTitle')}>
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div><h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight"><Target className="size-5 text-primary" />{(managerId === null && isAdministration ? t('kpiTeamOverview') : t('kpiOverviewTitle'))}</h2>
-        <p className="mt-1 text-xs text-muted-foreground">{t('kpiTimezone')}</p></div>
-      <div className="flex items-center gap-2"><CalendarDays className="size-4 text-muted-foreground" aria-hidden="true" /><Label htmlFor="kpi-month" className="shrink-0 text-xs">{t('kpiMonth')}</Label>
-        <Input id="kpi-month" className="w-44" type="month" value={month} max={kpiMonth()} onChange={(event) => {
-          if (kpiMonthSchema.safeParse(event.target.value).success && event.target.value <= kpiMonth()) setMonth(event.target.value);
-        }} /></div>
-    </div>
-    {query.isPending ? <div className="space-y-3" aria-busy="true"><Skeleton className="h-52 w-full" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-3">{[0, 1, 2].map((id) => <Skeleton key={id} className="h-36 w-full" />)}</div></div>
-      : query.isError ? <Alert variant="destructive"><AlertTitle>{t('failedToLoadData')}</AlertTitle><AlertDescription><Button variant="outline" onClick={() => query.refetch()}>{t('retry')}</Button></AlertDescription></Alert>
-        : query.data.employees.length ? <div className="space-y-8">{query.data.employees.map((employee) => <EmployeeOverview key={`${month}-${employee.id}`} employee={employee} month={month} />)}</div>
-          : <Card className="border-dashed bg-muted/15 shadow-none"><CardContent className="flex flex-col items-start gap-3 p-6"><Target className="size-7 text-muted-foreground" /><h3 className="font-semibold">{t('kpiNoSystemTitle')}</h3>
-            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{(isAdministration ? t('kpiNoSystemDescription') : t('kpiNoSystemSelf'))}</p>
-          </CardContent></Card>}
-    <p className="text-xs leading-relaxed text-muted-foreground">{t('kpiTrackingHint')}</p>
+export function SalesKpiOverview({ employees, loading, failed, onRetry, isAdministration }: {
+  employees: KpiOverviewEmployee[]; loading: boolean; failed: boolean; onRetry: () => void; isAdministration: boolean;
+}) {
+  const { t, language } = useTranslation();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [metric, setMetric] = useState<KpiMetric | null>(null);
+  const employee = employees.length === 1 ? employees[0] : null;
+  const selected = employees.find((item) => item.id === selectedId);
+  const primaryIds = employee?.role === 'hunter' ? ['bookings', 'attendance', 'response'] : ['newStudents', 'trialConversion', 'renewalConversion'];
+  const primary = employee?.calculation.metrics.filter((item) => primaryIds.includes(item.id)) ?? [];
+  return <section className={`${overviewPanel} p-3 sm:p-4`} aria-label={t('salesResultsPlan')}>
+    <header className="flex items-center justify-between gap-3 px-2 pb-2 pt-1">
+      <h2 className="text-base font-semibold tracking-tight">{t('salesResultsPlan')}</h2>
+      {employee ? <button type="button" className={`${overviewButton} text-primary`} onClick={() => setSelectedId(employee.id)}>{t('salesAllMetrics')}<ArrowUpRight className="size-4" aria-hidden="true" /></button> : null}
+    </header>
+    {loading ? <div className="space-y-4 p-3" aria-busy="true">{[0, 1, 2].map((id) => <div key={id} className="h-16 animate-pulse rounded-lg bg-muted" />)}</div>
+      : failed ? <div className="space-y-3 p-3" role="alert"><p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p><button type="button" className={`${overviewButton} border`} onClick={onRetry}>{t('retry')}</button></div>
+        : employee ? <>
+          <p className="px-3 pb-2 text-xs text-muted-foreground">{employee.name} · {t(roleKeys[employee.role])}</p>
+          <div className="divide-y divide-border/60">{primary.map((item) => <KpiMetricRow key={item.id} metric={item} onSelect={setMetric} />)}</div>
+          {employee.calculation.unclassifiedSales.length ? <button type="button" className={`${overviewButton} mt-2 w-full justify-start text-amber-700 dark:text-amber-400`} onClick={() => setSelectedId(employee.id)}><TriangleAlert className="size-4 shrink-0" aria-hidden="true" />{t('salesBonusReview').replace('{count}', String(employee.calculation.unclassifiedSales.length))}</button> : null}
+        </> : employees.length ? <div className="max-h-96 overflow-auto" aria-label={t('salesTeamResults')}>
+          {employees.map((item) => {
+            const result = item.calculation.metrics.find((entry) => entry.id === (item.role === 'hunter' ? 'bookings' : 'newStudents'));
+            return <button type="button" key={item.id} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border-b border-border/50 p-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setSelectedId(item.id)} aria-haspopup="dialog">
+              <span className="min-w-0"><span className="block text-sm font-medium">{item.name}</span><span className="mt-1 block text-xs text-muted-foreground">{t(roleKeys[item.role])}{result ? ` · ${t(metricKeys[result.id])}: ${result.value ?? '—'} / ${result.target ?? '—'}` : ''}</span></span>
+              <span className="flex items-center gap-2 text-sm font-semibold tabular-nums">{kpiMoney(item.calculation.totalUzs, language)}<ArrowUpRight className="size-4 text-muted-foreground" aria-hidden="true" /></span>
+            </button>;
+          })}
+        </div> : <div className="flex min-h-56 flex-col items-start justify-center gap-3 px-3 py-6"><Target className="size-6 text-muted-foreground" aria-hidden="true" /><h3 className="text-sm font-medium">{t('kpiNoSystemTitle')}</h3><p className="max-w-md text-sm leading-relaxed text-muted-foreground">{t('salesNoAssignmentHint')}</p><p className="text-xs text-muted-foreground">{isAdministration ? t('kpiNoSystemDescription') : t('kpiNoSystemSelf')}</p></div>}
+    {selected ? <EmployeeDetails employee={selected} onClose={() => setSelectedId(null)} /> : null}
+    {metric && employee ? <KpiMetricDetails metric={metric} help={metricHelp(metric.id, employee.version.config, t)} onClose={() => setMetric(null)} /> : null}
   </section>;
 }

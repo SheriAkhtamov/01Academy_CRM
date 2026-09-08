@@ -8,13 +8,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Skeleton } from '@/components/ui/skeleton';
+import { OverviewSkeleton as Skeleton } from './OverviewChartCard';
 import {
   AnalyticsChartCard,
   AnalyticsChartLegend,
   analyticsAxisTick,
   analyticsTooltipStyle,
-} from '@/components/ux/analytics/AnalyticsChartCard';
+} from '@/components/ux/sales-overview/OverviewChartCard';
 import { useChartEntrance } from '@/components/ux/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { SalesDashboardDailyPoint, SalesDashboardMetrics } from './types';

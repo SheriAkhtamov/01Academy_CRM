@@ -28,7 +28,7 @@ import {
   AnalyticsChartLegend,
   analyticsAxisTick,
   analyticsTooltipStyle,
-} from '@/components/ux/analytics/AnalyticsChartCard';
+} from '@/components/ux/sales-overview/OverviewChartCard';
 import { useChartEntrance } from '@/components/ux/motion';
 
 interface DashboardChartsProps {

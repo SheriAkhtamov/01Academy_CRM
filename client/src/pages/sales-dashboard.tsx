@@ -761,9 +761,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const managerStats = useMemo(() => {
     const newLeadsPeriod = periodLeads.length;
-    const activeLeads = periodLeads.filter(
+    const activePeriodLeads = periodLeads.filter(
       (lead) => !lead.isArchived && lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
-    ).length;
+    );
+    const activeLeads = activePeriodLeads.length;
+    const activeLeadStages = Array.from(activePipelineCodes).filter((code) => code !== 'paid')
+      .map((code) => ({ code, count: activePeriodLeads.filter((lead) => lead.statusCode === code).length }));
     const totalStudents = periodStudents.length;
 
     const paidLeads = periodLeads.filter((lead) => lead.statusCode === 'paid').length;
@@ -782,6 +785,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return {
       newLeadsPeriod,
       activeLeads,
+      activeLeadStages,
       totalStudents,
       conversionRate,
       activeLeadsPrevious: previousActiveLeads,

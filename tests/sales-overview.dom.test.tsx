@@ -15,10 +15,11 @@ vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.f
 import { KpiSaleReviewDialog } from '../client/src/features/sales-kpi/ui/KpiSaleReviewDialog';
 import { SalesOverviewMetrics } from '../client/src/components/ux/SalesOverviewMetrics';
 import { SalesOverviewEmployeeFilter } from '../client/src/components/ux/SalesOverviewEmployeeFilter';
+import { SalesActiveLeadsChart, SalesRepeatCallsChart } from '../client/src/components/ux/sales-overview/SalesOperationalCharts';
 import { SalesOverviewMonthFilter, salesMonthRange } from '../client/src/components/ux/sales-overview/SalesOverviewMonthFilter';
 
-const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, qualifiedLeads: 4, demoBookings: 2, repeatCallLeads: 3, targetRefusals: 0, targetRefusalReasons: [] };
-const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [] };
+const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, qualifiedLeads: 4, demoBookings: 2, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }], targetRefusals: 0, targetRefusalReasons: [] };
+const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [{ date: '2026-08-01', newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2 }] };
 const employee = (id = 1): KpiOverviewEmployee => ({
   id, name: id === 1 ? 'Alice' : 'Bob', role: 'hunter', assignedAt: '2026-08-01T00:00:00Z',
   version: { id: 1, role: 'hunter', config: defaultKpiConfig('hunter'), effectiveMonth: '2026-08', createdAt: '2026-08-01T00:00:00Z', createdBy: 1 },
@@ -53,7 +54,7 @@ function Harness() {
     <SalesOverviewMonthFilter month={month} onChange={setMonth} />
     <SalesOverviewEmployeeFilter value={manager} managers={[{ id: 1, fullName: 'Alice' }, { id: 2, fullName: 'Bob' }]} canViewAllManagers onChange={setManager} />
     <SalesOverviewMetrics key={`${month}-${manager}`} month={month} reportingRange={salesMonthRange(month, '2026-09-08')} managerId={manager === 'all' ? null : Number(manager)}
-      stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadsPrevious: 6, totalStudents: 2, totalStudentsPrevious: 1 }}
+      stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadStages: [{ code: 'new', count: 5 }, { code: 'qualified', count: 3 }], activeLeadsPrevious: 6, totalStudents: 2, totalStudentsPrevious: 1 }}
       payments={payments} students={students} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setMonth('2026-09')} />
   </>;
 }
@@ -135,6 +136,36 @@ describe('unified sales overview', () => {
     const bookings = within(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` }));
     expect(bookings.getByRole('img').getAttribute('aria-label')).toContain('20; Target: 30');
     expect(bookings.getByText('66.7% of target')).toBeTruthy();
+  });
+
+  it('visualizes all four operational counters with actual stage, daily and call-attempt data', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    const active = within(screen.getByRole('region', { name: translations.taskInProgress.en }));
+    expect(active.getByRole('img').getAttribute('aria-label')).toBe('Active leads by stage: new: 5; qualified: 3');
+    const trials = within(screen.getByRole('region', { name: translations.salesBookedTrials.en })).getByRole('slider');
+    act(() => trials.focus());
+    await user.keyboard('{Home}');
+    expect(trials.getAttribute('aria-valuetext')).toBe('Aug 1: 2');
+    await user.keyboard('{ArrowRight}');
+    expect(trials.getAttribute('aria-valuetext')).toBe('Aug 2: 0');
+    const paid = within(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).getByRole('slider');
+    act(() => paid.focus());
+    await user.keyboard('{Home}');
+    expect(paid.getAttribute('aria-valuetext')).toBe('Aug 1: 1');
+    await user.keyboard('{End}');
+    expect(paid.getAttribute('aria-valuetext')).toBe('Aug 31: 1');
+    const repeat = within(screen.getByRole('region', { name: translations.repeatCallLeads.en })).getByRole('img');
+    expect(repeat.getAttribute('aria-label')).toBe('Leads by number of call attempts: 2 attempts: 2; 3 attempts: 0; 4 attempts: 0; 5 attempts: 1');
+  });
+
+  it('keeps an empty work queue and a single repeatedly-called lead visually distinct', () => {
+    mount(<><SalesActiveLeadsChart stages={[]} leadStatusName={(value) => value} statusColor={() => ''} /><SalesRepeatCallsChart distribution={[{ attempts: 2, count: 1 }]} /></>);
+    expect(screen.getByText(translations.salesNoActiveLeads.en)).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Active leads by stage: No active leads' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Leads by number of call attempts: 2 attempts: 1; 3 attempts: 0; 4 attempts: 0; 5 attempts: 0' })).toBeTruthy();
+    expect(screen.queryByText(translations.salesPlanReached.en)).toBeNull();
   });
 
   it('keeps full results and underlying records in nested modals and restores page scrolling on close', async () => {

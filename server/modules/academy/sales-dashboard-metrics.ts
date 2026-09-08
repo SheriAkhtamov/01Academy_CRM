@@ -21,6 +21,7 @@ export type SalesDashboardCoreMetrics = {
   qualifiedLeads: number;
   demoBookings: number;
   repeatCallLeads: number;
+  repeatCallDistribution: Array<{ attempts: number; count: number }>;
   targetRefusals: number;
   targetRefusalReasons: SalesDashboardMetricReason[];
 };
@@ -30,6 +31,7 @@ export type SalesDashboardDailyPoint = {
   newLeads: number;
   processedLeads: number;
   reachedLeads: number;
+  demoBookings: number;
 };
 
 export type SalesDashboardMetrics = SalesDashboardCoreMetrics & {
@@ -197,6 +199,11 @@ const buildSalesDashboardPeriodMetrics = async (
          FROM period_calls calls
          WHERE calls.attempts BETWEEN 2 AND 5
        ) AS repeat_call_leads,
+       COALESCE((
+         SELECT JSON_AGG(JSON_BUILD_OBJECT('attempts', buckets.attempts, 'count', buckets.count) ORDER BY buckets.attempts)
+         FROM (SELECT calls.attempts, COUNT(*)::int AS count FROM period_calls calls
+               WHERE calls.attempts BETWEEN 2 AND 5 GROUP BY calls.attempts) buckets
+       ), '[]'::json) AS repeat_call_distribution,
        (SELECT COUNT(*)::int FROM target_refusal_leads) AS target_refusals,
        COALESCE(
          (
@@ -227,6 +234,10 @@ const buildSalesDashboardPeriodMetrics = async (
     qualifiedLeads: countValue(row?.qualifiedLeads),
     demoBookings: countValue(row?.demoBookings),
     repeatCallLeads: countValue(row?.repeatCallLeads),
+    repeatCallDistribution: Array.isArray(row?.repeatCallDistribution) ? row.repeatCallDistribution.flatMap((item: Row) => {
+      const attempts = countValue(item?.attempts);
+      return attempts >= 2 && attempts <= 5 ? [{ attempts, count: countValue(item.count) }] : [];
+    }) : [],
     targetRefusals: countValue(row?.targetRefusals),
     targetRefusalReasons,
   };
@@ -247,7 +258,7 @@ const buildSalesDashboardDailySeries = async (
     ? [range.start, range.end, managerId]
     : [range.start, range.end];
 
-  const [newRows, processedRows, reachedRows] = await Promise.all([
+  const [newRows, processedRows, reachedRows, bookingRows] = await Promise.all([
     query<Row>(
       `SELECT lead.created_at AS happened_at
        FROM academy_leads lead
@@ -337,6 +348,16 @@ const buildSalesDashboardDailySeries = async (
          ${managerFilter}`,
       values,
     ),
+    query<Row>(
+      `SELECT MIN(history.entered_at) AS happened_at
+       FROM academy_lead_stage_history history
+       JOIN academy_leads lead ON lead.id = history.lead_id
+       WHERE history.entered_at >= $1 AND history.entered_at < $2
+         AND history.to_status_code = 'demo_invited'
+         ${managerFilter}
+       GROUP BY history.lead_id`,
+      values,
+    ),
   ]);
 
   const totalDays = Math.max(
@@ -350,6 +371,7 @@ const buildSalesDashboardDailySeries = async (
 
   const newCounts = new Map<string, number>();
   const processedCounts = new Map<string, number>();
+  const bookingCounts = new Map<string, number>();
   const reachedKeysByDay = new Map<string, Set<string>>();
   const bump = (map: Map<string, number>, key: string) => {
     map.set(key, (map.get(key) ?? 0) + 1);
@@ -358,6 +380,11 @@ const buildSalesDashboardDailySeries = async (
   for (const eventRow of newRows) {
     if (!eventRow.happenedAt) continue;
     bump(newCounts, academyDateOnlyKey(new Date(eventRow.happenedAt as string)));
+  }
+  // A lead contributes once, on its first booking in this period, matching the headline.
+  for (const eventRow of bookingRows) {
+    if (!eventRow.happenedAt) continue;
+    bump(bookingCounts, academyDateOnlyKey(new Date(eventRow.happenedAt as string)));
   }
   for (const eventRow of processedRows) {
     if (!eventRow.happenedAt) continue;
@@ -379,6 +406,7 @@ const buildSalesDashboardDailySeries = async (
     newLeads: newCounts.get(date) ?? 0,
     processedLeads: processedCounts.get(date) ?? 0,
     reachedLeads: reachedKeysByDay.get(date)?.size ?? 0,
+    demoBookings: bookingCounts.get(date) ?? 0,
   }));
 };
 

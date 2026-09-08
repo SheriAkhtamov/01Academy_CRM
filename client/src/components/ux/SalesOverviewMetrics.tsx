@@ -130,7 +130,7 @@ export function SalesOverviewMetrics({
         ) : null}
 
         <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} students={students} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
-        <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} />
+        <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} leadStatusName={leadStatusName} statusColor={statusColor} />
         <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
         <SalesOverviewTrends metrics={metrics} isLoading={isLoading} payments={payments} reportingRange={reportingRange} money={money} />
         <SalesOverviewFunnel

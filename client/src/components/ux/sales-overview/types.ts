@@ -15,6 +15,7 @@ export interface SalesDashboardCoreMetrics {
   qualifiedLeads: number;
   demoBookings: number;
   repeatCallLeads: number;
+  repeatCallDistribution: Array<{ attempts: number; count: number }>;
   targetRefusals: number;
   targetRefusalReasons: Array<{
     reason: string;
@@ -27,6 +28,7 @@ export interface SalesDashboardDailyPoint {
   newLeads: number;
   processedLeads: number;
   reachedLeads: number;
+  demoBookings: number;
 }
 
 export interface SalesDashboardMetrics extends SalesDashboardCoreMetrics {
@@ -39,6 +41,7 @@ export interface SalesDashboardMetrics extends SalesDashboardCoreMetrics {
 export interface SalesOverviewStats {
   newLeadsPeriod: number;
   activeLeads: number;
+  activeLeadStages: Array<{ code: string; count: number }>;
   totalStudents: number;
   conversionRate: number;
   activeLeadsPrevious: number;

@@ -1,24 +1,40 @@
+import { useMemo } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { isInReportingRange } from '@/lib/reportingDateRange';
+import { buildSalesDailySeries } from '@/lib/salesMetricCharts';
+import { overviewPanel } from './OverviewDialog';
+import { SalesDailySparkChart } from './SalesDailySparkChart';
+import { SalesActiveLeadsChart, SalesRepeatCallsChart } from './SalesOperationalCharts';
 import type { SalesDashboardMetrics, SalesOverviewNavTarget, SalesOverviewStats } from './types';
 
-export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange, onNavigate }: {
+export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange, onNavigate, leadStatusName, statusColor }: {
   metrics: SalesDashboardMetrics | undefined; stats: SalesOverviewStats;
   payments: { status?: string | null; paidAt?: string | null; createdAt?: string | null }[];
   reportingRange: { from: string; to: string }; onNavigate: (target: SalesOverviewNavTarget) => void;
+  leadStatusName: (code: string) => string; statusColor: (code: string) => string;
 }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const number = new Intl.NumberFormat(language);
+  const paidDaily = useMemo(() => buildSalesDailySeries(payments.filter((payment) => payment.status === 'paid')
+    .map((payment) => ({ date: payment.paidAt || payment.createdAt, value: 1 })), reportingRange), [payments, reportingRange]);
+  const bookedDaily = useMemo(() => metrics ? buildSalesDailySeries(metrics.daily.map((point) => ({ date: point.date, value: point.demoBookings })), reportingRange) : undefined, [metrics, reportingRange]);
   const tiles = [
-    { title: t('taskInProgress'), value: stats.activeLeads, target: 'pipeline' as const },
-    { title: t('salesBookedTrials'), value: metrics?.demoBookings, target: 'pipeline' as const },
-    { title: t('salesPaymentsCount'), value: payments.filter((payment) => payment.status === 'paid' && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)).length, target: 'students' as const },
-    { title: t('repeatCallLeads'), value: metrics?.repeatCallLeads, target: null },
+    { title: t('taskInProgress'), value: stats.activeLeads, target: 'pipeline' as const,
+      chart: <SalesActiveLeadsChart stages={stats.activeLeadStages} leadStatusName={leadStatusName} statusColor={statusColor} /> },
+    { title: t('salesBookedTrials'), value: metrics?.demoBookings, target: 'pipeline' as const,
+      chart: <SalesDailySparkChart points={bookedDaily} title={t('salesBookedTrials')} formatValue={(value) => number.format(value)} kind="bars" compact className="text-cyan-600 dark:text-cyan-400" /> },
+    { title: t('salesPaymentsCount'), value: paidDaily.reduce((sum, point) => sum + point.value, 0), target: 'students' as const,
+      chart: <SalesDailySparkChart points={paidDaily} title={t('salesPaymentsCount')} formatValue={(value) => number.format(value)} kind="bars" compact className="text-emerald-600 dark:text-emerald-400" /> },
+    { title: t('repeatCallLeads'), value: metrics?.repeatCallLeads, target: null,
+      chart: <SalesRepeatCallsChart distribution={metrics?.repeatCallDistribution} /> },
   ];
-  return <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-1 py-1 xl:col-span-12 xl:grid-cols-4">
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:col-span-12 xl:grid-cols-4">
     {tiles.map((tile) => {
-      const body = <><span className="text-xs text-muted-foreground sm:text-sm">{tile.title}</span><span className="text-lg font-semibold tabular-nums">{tile.value ?? '—'}</span></>;
-      return tile.target ? <button type="button" key={tile.title} className="flex min-w-0 items-center justify-between gap-3 rounded px-1 py-2 text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNavigate(tile.target!)} aria-label={tile.target === 'students' ? t('openInStudents') : t('openInPipeline')}>{body}</button>
-        : <div key={tile.title} className="flex min-w-0 items-center justify-between gap-3 px-1 py-2">{body}</div>;
+      const body = <><span className="flex items-start justify-between gap-2 text-xs font-medium text-muted-foreground">{tile.title}{tile.target ? <ArrowUpRight className="size-3.5 shrink-0 opacity-50 group-hover:opacity-100" aria-hidden="true" /> : null}</span><span className="mt-3 block text-2xl font-semibold tracking-tight tabular-nums">{tile.value === undefined ? '—' : number.format(tile.value)}</span></>;
+      return <section key={tile.title} className={`${overviewPanel} flex flex-col p-5`} aria-label={tile.title}>
+        {tile.target ? <button type="button" className="group w-full rounded text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNavigate(tile.target!)} aria-label={tile.target === 'students' ? t('openInStudents') : t('openInPipeline')}>{body}</button> : <div>{body}</div>}
+        <div className="mt-auto">{tile.chart}</div>
+      </section>;
     })}
   </div>;
 }

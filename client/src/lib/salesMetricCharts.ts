@@ -1,5 +1,6 @@
 import { academyDateInputValue } from '@/lib/localeFormat';
 import { addReportingDays } from '@/lib/reportingDateRange';
+import { salesRangeError } from '@/lib/salesReportingRange';
 
 export type SalesSeriesPoint = { date: string; value: number };
 export type SalesDatedValue = { date: string | null | undefined; value: number };
@@ -7,7 +8,7 @@ export type SalesDatedValue = { date: string | null | undefined; value: number }
 /** Dense daily buckets use the same academy calendar as the headline totals. */
 export function buildSalesDailySeries(events: readonly SalesDatedValue[], range: { from: string; to: string }): SalesSeriesPoint[] {
   const days = (Date.parse(range.to) - Date.parse(range.from)) / 86400000;
-  if (!Number.isInteger(days) || days < 0 || days > 366) return [];
+  if (salesRangeError(range)) return [];
   const totals = new Map<string, number>();
   for (let offset = 0; offset <= days; offset++) totals.set(addReportingDays(range.from, offset), 0);
   for (const event of events) {

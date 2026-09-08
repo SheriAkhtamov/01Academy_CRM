@@ -24,7 +24,8 @@ export function SalesDailySparkChart({ points, title, formatValue, kind = 'area'
   const plotted = points.map((point, index) => ({ ...point, x: PADDING + step * (index + 0.5), y: y(point.value) }));
   const index = Math.min(points.length - 1, selected ?? points.length - 1);
   const active = plotted[index];
-  const day = (date: string) => formatAcademyDate(date, language, { day: 'numeric', month: 'short' });
+  const spansYears = points[0].date.slice(0, 4) !== points.at(-1)!.date.slice(0, 4);
+  const day = (date: string) => formatAcademyDate(date, language, { day: 'numeric', month: 'short', ...(spansYears ? { year: 'numeric' as const } : {}) });
   const line = plotted.map((point, i) => `${i ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
   const pick = (event: PointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();

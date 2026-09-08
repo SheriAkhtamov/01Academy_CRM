@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, CalendarRange } from 'lucide-react';
-import { kpiMonth } from '@shared/sales-kpi-time';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiRequest } from '@/lib/queryClient';
@@ -9,6 +8,7 @@ import type { TranslationKey } from '@/lib/i18n';
 import {
   isInReportingRange,
   reportingRangeQuery,
+  reportingRangeForPreset,
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
 import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
@@ -89,6 +89,7 @@ export function SalesOverviewMetrics({
   const metrics = metricsQuery.data;
   const isLoading = metricsQuery.isPending;
   const targetRefusals = metrics?.targetRefusals ?? 0;
+  const thisMonth = reportingRangeForPreset('thisMonth');
 
   const hasPeriodPayments = payments.some((payment) => (
     payment.status === 'paid' && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)
@@ -121,7 +122,7 @@ export function SalesOverviewMetrics({
 
                 </div>
               </div>
-              {month !== kpiMonth() ? <button type="button" className={`${overviewButton} shrink-0 border`} onClick={onExpandPeriod}>
+              {reportingRange.from !== thisMonth.from || reportingRange.to !== thisMonth.to ? <button type="button" className={`${overviewButton} shrink-0 border`} onClick={onExpandPeriod}>
                 {t('salesOverviewExpandPeriod')}
               </button> : null}
             </div>
@@ -130,7 +131,7 @@ export function SalesOverviewMetrics({
 
         <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} students={students} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
         <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} leadStatusName={leadStatusName} statusColor={statusColor} />
-        <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
+        <SalesKpiOverview month={month} employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
         <SalesOverviewFunnel
           metrics={metrics}
           isLoading={isLoading}

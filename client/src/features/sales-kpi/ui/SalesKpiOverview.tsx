@@ -9,13 +9,13 @@ import { KpiMetricsGrid, KpiMetricRow } from './KpiMetricsGrid';
 import { KpiMetricDetails } from './KpiMetricDetails';
 import { KpiSaleReviewDialog } from './KpiSaleReviewDialog';
 
-function EmployeeDetails({ employee, onClose }: { employee: KpiOverviewEmployee; onClose: () => void }) {
+function EmployeeDetails({ employee, periodLabel, onClose }: { employee: KpiOverviewEmployee; periodLabel: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [metric, setMetric] = useState<KpiMetric | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   if (reviewOpen) return <KpiSaleReviewDialog sales={employee.calculation.reviewableSales} onClose={() => setReviewOpen(false)} />;
   return <>
-    <OverviewDialog title={t('salesEmployeeResult').replace('{name}', employee.name)} onClose={onClose}>
+    <OverviewDialog title={t('salesEmployeeResult').replace('{name}', employee.name)} description={periodLabel} onClose={onClose}>
       <KpiMetricsGrid metrics={employee.calculation.metrics} onSelect={setMetric} />
       {employee.calculation.reviewableSales.length ? <button type="button" className={`${overviewButton} border`} onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</button> : null}
     </OverviewDialog>
@@ -23,10 +23,12 @@ function EmployeeDetails({ employee, onClose }: { employee: KpiOverviewEmployee;
   </>;
 }
 
-export function SalesKpiOverview({ employees, loading, failed, onRetry }: {
-  employees: KpiOverviewEmployee[]; loading: boolean; failed: boolean; onRetry: () => void;
+export function SalesKpiOverview({ month, employees, loading, failed, onRetry }: {
+  month: string; employees: KpiOverviewEmployee[]; loading: boolean; failed: boolean; onRetry: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const monthLabel = new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
+  const periodLabel = t('salesMonthPlanPeriod').replace('{month}', monthLabel);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [metric, setMetric] = useState<KpiMetric | null>(null);
   const employee = employees.length === 1 ? employees[0] : null;
@@ -35,8 +37,8 @@ export function SalesKpiOverview({ employees, loading, failed, onRetry }: {
   const primary = primaryIds.flatMap((id) => employee?.calculation.metrics.find((item) => item.id === id) ?? []);
   if (!loading && !failed && !employees.length) return null;
   return <section className="min-w-0 border-b border-border/60 py-7 xl:col-span-12" aria-label={t('salesMonthPlan')}>
-    <header className="mb-4 flex items-center justify-between gap-3">
-      <h2 className="text-sm font-semibold">{t('salesMonthPlan')}</h2>
+    <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div><h2 className="text-sm font-semibold">{t('salesMonthPlan')}</h2><p className="mt-1 text-xs text-muted-foreground">{periodLabel}</p></div>
       {employee ? <button type="button" className={`${overviewButton} text-xs text-muted-foreground`} onClick={() => setSelectedId(employee.id)}>{t('salesAllMetrics')}<ArrowUpRight className="size-3.5" aria-hidden="true" /></button> : null}
     </header>
     {loading ? <div className="my-3 h-14 animate-pulse rounded bg-muted" aria-busy="true" />
@@ -49,7 +51,7 @@ export function SalesKpiOverview({ employees, loading, failed, onRetry }: {
               {result ? <span className="w-full max-w-sm text-xs text-muted-foreground"><span className="flex items-center justify-between gap-3">{t(metricKeys[result.id])}<span className="text-sm font-semibold tabular-nums text-foreground">{result.value ?? '—'} / {result.target ?? '—'}</span><ArrowUpRight className="size-3.5" aria-hidden="true" /></span>{result.target !== null ? <SalesTargetBullet value={result.value} target={result.target} label={`${t('kpiPlanFact')}: ${result.value ?? '—'} / ${result.target}`} className="mt-1 text-blue-500 dark:text-blue-400" /> : null}</span> : null}
             </button>;
           })}</div>}
-    {selected ? <EmployeeDetails employee={selected} onClose={() => setSelectedId(null)} /> : null}
+    {selected ? <EmployeeDetails employee={selected} periodLabel={periodLabel} onClose={() => setSelectedId(null)} /> : null}
     {metric && employee ? <KpiMetricDetails metric={metric} help={metricHelp(metric.id, employee.version.config, t)} onClose={() => setMetric(null)} /> : null}
   </section>;
 }

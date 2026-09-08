@@ -16,7 +16,10 @@ import { KpiSaleReviewDialog } from '../client/src/features/sales-kpi/ui/KpiSale
 import { SalesOverviewMetrics } from '../client/src/components/ux/SalesOverviewMetrics';
 import { SalesOverviewEmployeeFilter } from '../client/src/components/ux/SalesOverviewEmployeeFilter';
 import { SalesActiveLeadsChart, SalesRepeatCallsChart } from '../client/src/components/ux/sales-overview/SalesOperationalCharts';
-import { SalesOverviewMonthFilter, salesMonthRange } from '../client/src/components/ux/sales-overview/SalesOverviewMonthFilter';
+import { SalesOverviewPeriodFilter } from '../client/src/components/ux/sales-overview/SalesOverviewPeriodFilter';
+import { useSalesReportingRange } from '../client/src/features/sales/useSalesReportingRange';
+import { salesMonthRange, salesPlanMonth } from '../client/src/lib/salesReportingRange';
+import { reportingRangeForPreset, isInReportingRange } from '../client/src/lib/reportingDateRange';
 
 const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, qualifiedLeads: 4, demoBookings: 2, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }], targetRefusals: 0, targetRefusalReasons: [] };
 const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [{ date: '2026-08-01', newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2 }] };
@@ -48,14 +51,15 @@ const students = [
 ];
 const clients: QueryClient[] = [];
 function Harness() {
-  const [month, setMonth] = useState('2026-08');
+  const [reportingRange, setReportingRange] = useSalesReportingRange();
+  const month = salesPlanMonth(reportingRange);
   const [manager, setManager] = useState('1');
   return <>
-    <SalesOverviewMonthFilter month={month} onChange={setMonth} />
+    <SalesOverviewPeriodFilter value={reportingRange} onChange={setReportingRange} />
     <SalesOverviewEmployeeFilter value={manager} managers={[{ id: 1, fullName: 'Alice' }, { id: 2, fullName: 'Bob' }]} canViewAllManagers onChange={setManager} />
-    <SalesOverviewMetrics key={`${month}-${manager}`} month={month} reportingRange={salesMonthRange(month, '2026-09-08')} managerId={manager === 'all' ? null : Number(manager)}
-      stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadStages: [{ code: 'new', count: 5 }, { code: 'qualified', count: 3 }], activeLeadsPrevious: 6, totalStudents: 2, totalStudentsPrevious: 1 }}
-      payments={payments} students={students} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setMonth('2026-09')} />
+    <SalesOverviewMetrics key={`${reportingRange.from}-${reportingRange.to}-${manager}`} month={month} reportingRange={reportingRange} managerId={manager === 'all' ? null : Number(manager)}
+      stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadStages: [{ code: 'new', count: 5 }, { code: 'qualified', count: 3 }], activeLeadsPrevious: 6, totalStudents: students.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)).length, totalStudentsPrevious: 1 }}
+      payments={payments} students={students} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))} />
   </>;
 }
 function mount(children: ReactNode = <Harness />) {
@@ -65,24 +69,79 @@ function mount(children: ReactNode = <Harness />) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-09-08T10:00:00Z'));
+  localStorage.clear();
+  localStorage.setItem('academy-ui:sales-overview-month', JSON.stringify('2026-08'));
   request.mockReset();
   request.mockImplementation(async (_method, path: string) => path.includes('/sales/metrics') ? metrics : { month: '2026-08', asOf: '2026-09-08T00:00:00Z', employees: [employee()] });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute('open', ''); } });
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.removeAttribute('open'); } });
 });
-afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); localStorage.clear(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('unified sales overview', () => {
-  it('uses the same calendar month and employee for results and compensation', async () => {
-    const user = userEvent.setup();
+  it('updates arbitrary report dates across months and explicitly labels the monthly plan', async () => {
     mount();
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
     expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-01&to=2026-08-31&managerId=1');
     expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-08&managerId=1');
-    await user.click(screen.getByRole('button', { name: translations.previousMonth.en }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-07&managerId=1'));
-    expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-07-01&to=2026-07-31&managerId=1');
-    expect(screen.getAllByLabelText(translations.calendarViewMonth.en)).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-08-15' } });
+    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-09-02' } });
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-15&to=2026-09-02&managerId=1'));
+    expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-09&managerId=1');
+    expect(await screen.findByText('Target and actuals for September 2026')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('140000')).toBeTruthy();
+    expect((screen.getByLabelText(translations.dateFrom.en) as HTMLInputElement).value).toBe('2026-08-15');
+    expect((screen.getByLabelText(translations.dateTo.en) as HTMLInputElement).value).toBe('2026-09-02');
+  });
+
+  it('preserves explicit dates when returning to the overview and keeps daily chart boundaries exact', async () => {
+    const user = userEvent.setup();
+    const view = mount();
+    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-07-15' } });
+    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-09-01' } });
+    view.unmount();
+    request.mockClear();
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-07-15&to=2026-09-01&managerId=1');
+    const revenue = within(screen.getByRole('region', { name: translations.revenue.en }));
+    expect(revenue.getByText('240000')).toBeTruthy();
+    const chart = revenue.getByRole('slider');
+    act(() => chart.focus());
+    await user.keyboard('{Home}');
+    expect(chart.getAttribute('aria-valuetext')).toBe('Jul 15: 0');
+    await user.keyboard('{End}');
+    expect(chart.getAttribute('aria-valuetext')).toBe('Sep 1: 90000');
+  });
+
+  it('switches quick periods and permits either boundary to move past the other', async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.selectOptions(screen.getByRole('combobox', { name: translations.reportingQuickPeriods.en }), 'last7');
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-09-02&to=2026-09-08&managerId=1'));
+    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-08-01' } });
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-01&to=2026-08-01&managerId=1'));
+    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('100000')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-09-01' } });
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-09-01&to=2026-09-01&managerId=1'));
+    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('90000')).toBeTruthy();
+  });
+
+  it('keeps invalid or oversized drafts out of requests and accepts a corrected interval', async () => {
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    request.mockClear();
+    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '' } });
+    expect(screen.getByRole('alert').textContent).toBe(translations.salesPeriodInvalid.en);
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2020-01-01' } });
+    expect(screen.getByRole('alert').textContent).toBe('Choose a period of up to 731 days.');
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2020-01-31' } });
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2020-01-01&to=2020-01-31&managerId=1'));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('does not retain another employee’s targets while their replacement is loading', async () => {

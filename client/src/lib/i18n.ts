@@ -1,6 +1,9 @@
 import { devLog } from '@/lib/debug';
 
 export const translations = {
+  salesMonthPlanPeriod: { en: 'Target and actuals for {month}', ru: 'План и факт за {month}' },
+  salesPeriodInvalid: { en: 'Enter both dates to update the report.', ru: 'Укажите обе даты для обновления отчёта.' },
+  salesPeriodTooLong: { en: 'Choose a period of up to {days} days.', ru: 'Выберите период не более {days} дней.' },
   salesMonthPlan: { en: 'Monthly target', ru: 'План месяца' },
   salesBookedTrials: { en: 'Trial bookings', ru: 'Записи на пробное' },
   percentagePointsShort: { en: ' pp', ru: ' п.п.' },

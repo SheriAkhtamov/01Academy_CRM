@@ -35,4 +35,19 @@ describe('sales indicator data', () => {
     expect(salesTargetCompletion(0, 30)).toBe(0);
     expect(salesTargetCompletion(10, 0)).toBeNull();
   });
+
+  it('retains revenue across years for the full supported 731-day interval', () => {
+    const range = { from: '2024-01-01', to: '2025-12-31' };
+    const points = buildSalesDailySeries([
+      { date: '2023-12-31T19:00:00Z', value: 100 },
+      { date: '2024-02-29', value: 50 },
+      { date: '2025-12-31T18:59:59Z', value: 25 },
+      { date: '2025-12-31T19:00:00Z', value: 700 },
+    ], range);
+    expect(points).toHaveLength(731);
+    expect(points.reduce((total, point) => total + point.value, 0)).toBe(175);
+    expect(points.at(-1)).toEqual({ date: '2025-12-31', value: 25 });
+    expect(buildSalesDailySeries([], { ...range, to: '2026-01-01' })).toEqual([]);
+    expect(buildSalesDailySeries([], { from: '2025-02-29', to: '2025-03-01' })).toEqual([]);
+  });
 });

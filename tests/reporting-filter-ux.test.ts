@@ -35,8 +35,7 @@ describe('dashboard period filters and simplified actions', () => {
     for (const source of [marketing, finance, administration]) {
       expect(source).toContain("reportingRangeForPreset('today')");
     }
-    expect(sales).toContain("useStickyState('sales-overview-month', kpiMonth())");
-    expect(sales).toContain('salesMonthRange(overviewMonth, overviewToday)');
+    expect(sales).toContain('useSalesReportingRange()');
     // A teacher's day is often a day off, a morning before the first lesson or
     // a holiday, and "today" then opened the overview on six empty KPI tiles
     // and four empty charts — indistinguishable from a broken screen. The
@@ -45,9 +44,9 @@ describe('dashboard period filters and simplified actions', () => {
     expect(teacher).toContain("reportingRangeForPreset('thisMonth')");
   });
 
-  it('uses explicit ranges, with one calendar-month filter for the unified sales overview', () => {
-    expect(sales).toContain('<SalesOverviewMonthFilter');
-    expect(sales).not.toContain('<ReportingDateRangeFilter');
+  it('keeps arbitrary report ranges available in every overview', () => {
+    expect(sales).toContain('<SalesOverviewPeriodFilter');
+    expect(sales).toContain('reportingRange={reportingRange}');
     for (const source of [teacher, marketing, finance, administration]) {
       expect(source).toContain('<ReportingDateRangeFilter');
     }

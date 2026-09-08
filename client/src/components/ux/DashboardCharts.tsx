@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -15,7 +13,6 @@ import {
   YAxis,
 } from 'recharts';
 import { useTranslation } from '@/hooks/useTranslation';
-import { buildMonthlyRevenueData, buildReportingRevenueData } from '@/lib/dashboardCharts';
 import {
   compactRankedSeries,
   percentage,
@@ -55,19 +52,10 @@ export function DashboardCharts({
   payments = [],
   leads = [],
   money,
-  reportingRange,
 }: DashboardChartsProps) {
   // Draws once on mount; later refetches update the geometry silently.
   const chartEntrance = useChartEntrance();
-  const { t, language } = useTranslation();
-  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
-
-  const revenueData = useMemo(
-    () => reportingRange
-      ? buildReportingRevenueData(payments, locale, reportingRange)
-      : buildMonthlyRevenueData(payments, locale),
-    [locale, payments, reportingRange],
-  );
+  const { t } = useTranslation();
 
   const sourceData = useMemo(() => {
     const sources = new Map<string, { name: string; leads: number; paid: number; conversion: number }>();
@@ -134,69 +122,7 @@ export function DashboardCharts({
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <AnalyticsChartCard
-        title={t('revenueTrend')}
-        description={t('revenueTrendDescription')}
-        summary={`${t('revenueTrend')}. ${t('dataForSelectedPeriod')}`}
-        className="xl:col-span-12"
-        chartClassName="h-[252px]"
-        /* The period total belongs to the result band at the top of the page;
-           repeating it here made the same figure appear twice on one screen. */
-        footer={totalRevenue > 0 ? (
-          <AnalyticsChartLegend items={[{ label: t('revenue'), color: 'var(--primary-500)' }]} />
-        ) : undefined}
-      >
-          {totalRevenue > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData} margin={{ top: 8, right: 12, left: -4, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="salesRevenueFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--primary-500)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="var(--primary-500)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 4" vertical={false} stroke="var(--border)" />
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={24}
-                  interval="preserveStartEnd"
-                  tick={analyticsAxisTick}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={analyticsAxisTick}
-                  width={58}
-                  tickFormatter={(value) => new Intl.NumberFormat(locale, {
-                    notation: 'compact',
-                    maximumFractionDigits: 1,
-                  }).format(Number(value))}
-                />
-                <Tooltip
-                  formatter={(value: number) => [money(value), t('revenue')]}
-                  contentStyle={analyticsTooltipStyle}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="amount"
-                  isAnimationActive={chartEntrance}
-                  stroke="var(--primary-500)"
-                  strokeWidth={2.5}
-                  fillOpacity={1}
-                  fill="url(#salesRevenueFill)"
-                  activeDot={{ r: 5 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <AnalyticsChartEmpty title={t('noPaymentData')} description={t('analyticsEmptyPeriodHint')} />
-          )}
-      </AnalyticsChartCard>
-
-      <AnalyticsChartCard
         title={t('salesSourcePerformance')}
-        description={t('salesSourcePerformanceDescription')}
         summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
         className="xl:col-span-7"
         chartClassName="h-[270px]"
@@ -236,13 +162,12 @@ export function DashboardCharts({
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noData')} />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('paymentMethodsChart')}
-        description={t('paymentMethodsChartDescription')}
         summary={`${t('paymentMethodsChart')}. ${paymentMethodData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
         className="xl:col-span-5"
         chartClassName="h-[188px]"
@@ -293,7 +218,7 @@ export function DashboardCharts({
             </div>
           </div>
         ) : (
-          <AnalyticsChartEmpty title={t('noPaymentData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noPaymentData')} />
         )}
       </AnalyticsChartCard>
     </div>

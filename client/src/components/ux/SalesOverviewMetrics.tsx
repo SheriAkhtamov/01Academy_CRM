@@ -12,9 +12,9 @@ import {
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
 import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
-import { SalesKpiOverview, SalesCompensation } from '@/features/sales-kpi/ui/SalesKpiOverview';
+import { SalesKpiOverview } from '@/features/sales-kpi/ui/SalesKpiOverview';
 import { useKpiOverview } from '@/features/sales-kpi/hooks';
-import { SalesOverviewDynamics } from '@/components/ux/sales-overview/SalesOverviewDynamics';
+import { SalesOverviewTrends } from '@/components/ux/sales-overview/SalesOverviewTrends';
 import { SalesOverviewFunnel } from '@/components/ux/sales-overview/SalesOverviewFunnel';
 import { SalesOverviewHero } from '@/components/ux/sales-overview/SalesOverviewHero';
 import { SalesOverviewKpiGrid } from '@/components/ux/sales-overview/SalesOverviewKpiGrid';
@@ -39,7 +39,6 @@ type SalesOverviewMetricsProps = {
   month: string;
   reportingRange: Pick<ReportingDateRange, 'from' | 'to'>;
   managerId: number | null;
-  isAdministrationModule: boolean;
   stats: SalesOverviewStats;
   /** Every payment in scope; the hero windows them itself. */
   payments: PaymentRecord[];
@@ -59,7 +58,6 @@ export function SalesOverviewMetrics({
   month,
   reportingRange,
   managerId,
-  isAdministrationModule,
   stats,
   payments,
   funnel,
@@ -89,7 +87,6 @@ export function SalesOverviewMetrics({
   const metrics = metricsQuery.data;
   const isLoading = metricsQuery.isPending;
   const targetRefusals = metrics?.targetRefusals ?? 0;
-  const conversionLeadCount = stats.newLeadsPeriod;
 
   const hasPeriodPayments = payments.some((payment) => (
     payment.status === 'paid' && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)
@@ -98,7 +95,7 @@ export function SalesOverviewMetrics({
     && metrics !== undefined
     && metrics.newLeads === 0
     && metrics.processedLeads === 0
-    && conversionLeadCount === 0
+    && stats.newLeadsPeriod === 0
     && stats.totalStudents === 0
     && !hasPeriodPayments;
 
@@ -119,9 +116,7 @@ export function SalesOverviewMetrics({
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">{t('salesOverviewEmptyTitle')}</p>
-                  <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
-                    {t('salesOverviewEmptyDescription')}
-                  </p>
+
                 </div>
               </div>
               {month !== kpiMonth() ? <button type="button" className={`${overviewButton} shrink-0 border`} onClick={onExpandPeriod}>
@@ -131,27 +126,10 @@ export function SalesOverviewMetrics({
           </section>
         ) : null}
 
-        <SalesOverviewHero
-          conversionRate={stats.conversionRate}
-          conversionRatePrevious={stats.conversionRatePrevious}
-          showValue={conversionLeadCount > 0}
-          payments={payments}
-          reportingRange={reportingRange}
-          previousRange={metrics?.previousRange}
-          money={money}
-          compensation={<SalesCompensation employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} isTeam={isAdministrationModule && managerId === null} />}
-        />
-        <div className="grid min-w-0 grid-cols-1 gap-4 xl:col-span-12 xl:grid-cols-2">
-          <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} isAdministration={isAdministrationModule} />
-          <SalesOverviewKpiGrid
-          metrics={metrics}
-          stats={stats}
-          isAdministrationModule={isAdministrationModule}
-          isLoading={isLoading}
-          onNavigate={onNavigate}
-        />
-
-        </div>
+        <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
+        <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} />
+        <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
+        <SalesOverviewTrends metrics={metrics} isLoading={isLoading} payments={payments} reportingRange={reportingRange} money={money} />
         <SalesOverviewFunnel
           metrics={metrics}
           isLoading={isLoading}
@@ -159,7 +137,6 @@ export function SalesOverviewMetrics({
           leadStatusName={leadStatusName}
           statusColor={statusColor}
         />
-        <SalesOverviewDynamics metrics={metrics} isLoading={isLoading} />
 
         <SalesOverviewRefusals
           metrics={metrics}

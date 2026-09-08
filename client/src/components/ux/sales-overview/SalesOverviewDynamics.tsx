@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import {
   Area,
   AreaChart,
@@ -29,9 +29,11 @@ import type { SalesDashboardDailyPoint, SalesDashboardMetrics } from './types';
 export function SalesOverviewDynamics({
   metrics,
   isLoading,
+  action,
 }: {
   metrics: SalesDashboardMetrics | undefined;
   isLoading: boolean;
+  action?: ReactNode;
 }) {
   const chartEntrance = useChartEntrance();
   const { t } = useTranslation();
@@ -50,10 +52,10 @@ export function SalesOverviewDynamics({
   return (
     <AnalyticsChartCard
       title={t('metricsDynamicsTitle')}
-      description={t('metricsDynamicsDescription')}
+      action={action}
       summary={`${t('metricsDynamicsTitle')}. ${legendItems.map((item) => item.label).join(', ')}`}
-      className="xl:col-span-5"
-      chartClassName="h-[236px]"
+      className="xl:col-span-7"
+      chartClassName="h-[260px]"
       footer={<AnalyticsChartLegend items={legendItems} />}
     >
       {isLoading ? (

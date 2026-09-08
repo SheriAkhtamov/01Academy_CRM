@@ -79,16 +79,15 @@ describe('sales dashboard operational metrics', () => {
   it('offers both funnel readings as tabs of a single card', () => {
     expect(overviewFunnel).toContain("t('funnelProcessTab')");
     expect(overviewFunnel).toContain("t('funnelStageTab')");
-    expect(overviewFunnel).toContain("t('funnelStagesCumulative')");
-    expect(overviewFunnel).toContain("t('funnelDropOffLabel')");
+    expect(overviewFunnel).toContain('aria-pressed={!stages}');
+    expect(overviewFunnel).toContain('aria-pressed={stages}');
     expect(salesCharts).not.toContain("t('conversionFunnel')");
     expect(salesCharts).not.toContain('funnel = []');
   });
 
-  it('states the money and the window it is compared against', () => {
-    expect(overviewHero).toContain("t('revenueForPeriod')");
-    expect(overviewHero).toContain("t('avgPaymentSize')");
-    expect(overviewHero).toContain("t('salesOverviewComparedWith')");
+  it('compares sales revenue against the same server-supplied period', () => {
+    expect(overviewHero).toContain("t('revenue')");
+    expect(overviewHero).not.toContain('compensation');
     // The comparison window is the server's own, so the money delta covers
     // exactly the days the counted-event deltas beside it cover.
     expect(overviewHero).toContain('previousRange');

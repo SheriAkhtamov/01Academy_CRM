@@ -9,7 +9,7 @@ import { translations, type TranslationKey } from '../client/src/lib/i18n';
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: request }));
 vi.mock('../client/src/hooks/useTranslation', () => ({ useTranslation: () => ({ t: (key: TranslationKey) => translations[key].en, language: 'en' }) }));
-vi.mock('../client/src/components/ux/sales-overview/SalesOverviewDynamics', () => ({ SalesOverviewDynamics: () => null }));
+vi.mock('../client/src/components/ux/sales-overview/SalesOverviewTrends', () => ({ SalesOverviewTrends: () => null }));
 vi.mock('../client/src/components/ux/sales-overview/SalesOverviewFunnel', () => ({ SalesOverviewFunnel: () => null }));
 vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 import { KpiSaleReviewDialog } from '../client/src/features/sales-kpi/ui/KpiSaleReviewDialog';
@@ -47,7 +47,7 @@ function Harness() {
   return <>
     <SalesOverviewMonthFilter month={month} onChange={setMonth} />
     <SalesOverviewEmployeeFilter value={manager} managers={[{ id: 1, fullName: 'Alice' }, { id: 2, fullName: 'Bob' }]} canViewAllManagers onChange={setManager} />
-    <SalesOverviewMetrics key={`${month}-${manager}`} month={month} reportingRange={salesMonthRange(month, '2026-09-08')} managerId={manager === 'all' ? null : Number(manager)} isAdministrationModule
+    <SalesOverviewMetrics key={`${month}-${manager}`} month={month} reportingRange={salesMonthRange(month, '2026-09-08')} managerId={manager === 'all' ? null : Number(manager)}
       stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadsPrevious: 6, totalStudents: 2, totalStudentsPrevious: 1 }}
       payments={payments} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setMonth('2026-09')} />
   </>;
@@ -79,27 +79,25 @@ describe('unified sales overview', () => {
     expect(screen.getAllByLabelText(translations.calendarViewMonth.en)).toHaveLength(1);
   });
 
-  it('does not retain another employee’s pay while their replacement is loading', async () => {
+  it('does not retain another employee’s targets while their replacement is loading', async () => {
     const user = userEvent.setup();
     mount();
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    const pay = () => screen.getByRole('button', { name: translations.salesRewardDetails.en });
-    expect(pay().textContent).toContain('3,000,000');
+    expect(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` })).toBeTruthy();
     let finish!: (value: unknown) => void;
     request.mockImplementation((_method, path: string) => path.includes('/sales/metrics') ? Promise.resolve(metrics) : new Promise((resolve) => { finish = resolve; }));
     await user.selectOptions(screen.getByRole('combobox', { name: translations.salesOverviewManager.en }), '2');
-    expect(pay().textContent).not.toContain('3,000,000');
-    expect(pay().hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` })).toBeNull();
     await act(async () => { finish({ month: '2026-08', asOf: '2026-09-08', employees: [employee(2)] }); });
-    await waitFor(() => expect(pay().textContent).toContain('6,000,000'));
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
     expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-08&managerId=2');
   });
 
   it('labels payments correctly and excludes refunds and the next Tashkent month', async () => {
     mount();
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(within(screen.getByRole('region', { name: translations.revenueForPeriod.en })).getByText('150000')).toBeTruthy();
-    expect(within(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).getByText('2')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('150000')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: translations.openInStudents.en })).getByText('2')).toBeTruthy();
     expect(screen.queryByText(translations.paidCustomersForPeriod.en)).toBeNull();
   });
 
@@ -119,8 +117,7 @@ describe('unified sales overview', () => {
     await user.click(within(details).getByRole('button', { name: translations.close.en }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.body.style.overflow).toBe('');
-    await user.click(screen.getByRole('button', { name: translations.salesRewardDetails.en }));
-    expect(within(screen.getByRole('dialog')).getByText(translations.kpiPayBase.en)).toBeTruthy();
+    expect(screen.queryByText('3,000,000')).toBeNull();
   });
 
   it('shows an unmeasured attendance rate as pending rather than zero performance', async () => {
@@ -128,8 +125,25 @@ describe('unified sales overview', () => {
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
     const attendance = screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiAttendanceMetric.en}` });
     expect(within(attendance).getByText(translations.kpiNoData.en)).toBeTruthy();
-    expect(within(attendance).getByText(translations.kpiPending.en)).toBeTruthy();
+    expect(within(attendance).queryByText(translations.kpiNotMet.en)).toBeNull();
     expect(within(attendance).queryByText('0%')).toBeNull();
+  });
+
+  it('does not display payroll amounts or setup instructions in the overview or its details', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    expect(screen.queryByText(/3,000,000|Salary|compensation|\bversion\b|\btracking\b/i)).toBeNull();
+    await user.click(screen.getByRole('button', { name: translations.salesAllMetrics.en }));
+    expect(within(screen.getByRole('dialog')).queryByText(/3,000,000|Salary|compensation|\bversion\b|\btracking\b/i)).toBeNull();
+  });
+
+  it('omits unconfigured targets instead of displaying setup instructions', async () => {
+    request.mockImplementation(async (_method, path: string) => path.includes('/sales/metrics') ? metrics : { month: '2026-08', asOf: '2026-09-08', employees: [] });
+    mount();
+    await waitFor(() => expect(screen.queryByRole('region', { name: translations.salesMonthPlan.en })).toBeNull());
+    expect(screen.queryByText(/KPI system|administrator|assigned/i)).toBeNull();
+    expect(screen.getByRole('region', { name: translations.revenue.en })).toBeTruthy();
   });
 
   const sale = (): KpiSaleFact => ({ id: 17, leadId: 2, studentId: 2, groupId: 1, name: 'Student', closerId: 1, paidAt: new Date().toISOString(), paidUntil: null, amountUzs: 100000, status: 'paid', kind: 'unclassified', cycleKey: null, referralInitiated: false });

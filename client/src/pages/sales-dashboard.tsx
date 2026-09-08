@@ -1131,7 +1131,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     students: isAdministrationModule ? t('allClients') : t('myStudents'),
   };
   const sectionSubtitle = section === 'overview'
-    ? t('salesOverviewSubtitle')
+    ? undefined
     : section === 'schedule'
       ? t('salesScheduleSubtitle')
       : section === 'archive'
@@ -1184,14 +1184,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
                 onChange={(managerId) => replaceSalesParams({ manager: managerId === defaultOverviewManagerId ? null : managerId })}
               />
             </div>
-            <p className="text-xs text-muted-foreground">{t('salesMonthHint')}</p>
           </div>
           <SalesOverviewMetrics
             key={`${overviewMonth}-${overviewManagerNumericId}`}
             month={overviewMonth}
             reportingRange={reportingRange}
             managerId={overviewManagerNumericId}
-            isAdministrationModule={isAdministrationModule}
             stats={managerStats}
             payments={overviewPayments}
             funnel={managerFunnel}

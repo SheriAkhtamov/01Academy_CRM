@@ -6,7 +6,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const filter = read('../client/src/components/ux/ReportingDateRangeFilter.tsx');
 const dateRangeField = read('../client/src/components/ux/DateRangeField.tsx');
 const sales = read('../client/src/pages/sales-dashboard.tsx');
-const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
+const salesRevenueChart = read('../client/src/components/ux/sales-overview/SalesRevenueChart.tsx');
+const salesOverviewHero = read('../client/src/components/ux/sales-overview/SalesOverviewHero.tsx');
 const teacher = read('../client/src/pages/teacher-module.tsx');
 const marketing = read('../client/src/pages/marketing-module.tsx');
 const finance = read('../client/src/pages/finance-center.tsx');
@@ -77,7 +78,7 @@ describe('dashboard period filters and simplified actions', () => {
     expect(finance).toContain('<FinanceAnalyticsCharts');
     expect(administration).toContain('<AdminOperationalHealthChart');
 
-    expect(salesCharts).toContain('<AreaChart');
+    expect(salesRevenueChart).toContain('<AreaChart');
     expect(salesCharts).toContain('<PieChart');
     expect(teacherCharts).toContain('<ComposedChart');
     expect(teacherCharts).toContain('<PieChart');
@@ -112,11 +113,11 @@ describe('dashboard period filters and simplified actions', () => {
   it('does not present absent or zero datasets as measured performance', () => {
     expect(teacher).toContain('attendance: markedAttendance > 0 ? percentage(present, markedAttendance) : null');
     expect(teacherCharts).toContain('const hasTimelineData');
-    expect(salesCharts).toContain('totalRevenue > 0');
+    expect(salesRevenueChart).toContain('paid.length ?');
     expect(salesCharts).toContain('hasPaymentRevenue ? (');
     expect(marketingCharts).toContain('hasConversionCohort ? (');
     expect(financeCharts).toContain('hasContributionData ? (');
-    expect(salesOverviewMetrics).toContain('showValue={conversionLeadCount > 0}');
+    expect(salesOverviewHero).toContain('stats.newLeadsPeriod > 0');
     expect(teacherOverview).toContain("data.avgAttendance == null ? t('noData')");
     expect(marketing).toContain("overviewFunnel.find((stage) => stage.code === 'demo_invited')");
     expect(marketing).toContain("overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')");

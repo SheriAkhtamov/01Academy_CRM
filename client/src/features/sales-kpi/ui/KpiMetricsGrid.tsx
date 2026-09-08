@@ -4,7 +4,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { metricKeys } from '../copy';
 
-export function KpiMetricRow({ metric, onSelect }: { metric: KpiMetric; onSelect: (metric: KpiMetric) => void }) {
+export function KpiMetricRow({ metric, onSelect, compact = false }: { metric: KpiMetric; onSelect: (metric: KpiMetric) => void; compact?: boolean }) {
   const { t, language } = useTranslation();
   const number = new Intl.NumberFormat(language, { maximumFractionDigits: 1 });
   const suffix = metric.unit === 'percent' ? '%' : '';
@@ -16,22 +16,22 @@ export function KpiMetricRow({ metric, onSelect }: { metric: KpiMetric; onSelect
     aria-label={`${t('kpiDetailsTitle')}: ${t(metricKeys[metric.id])}`}>
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm font-medium">{t(metricKeys[metric.id])}</span>
-      <ArrowUpRight className="size-4 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" aria-hidden="true" />
+      {!compact ? <ArrowUpRight className="size-4 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" aria-hidden="true" /> : null}
     </div>
     <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <span className={cn('text-2xl font-semibold tabular-nums tracking-tight', metric.value === null && 'text-lg text-muted-foreground')}>
         {metric.value === null ? t('kpiNoData') : `${number.format(metric.value)}${suffix}`}
         {metric.target !== null ? <span className="ml-2 text-sm font-normal text-muted-foreground">{t('salesPlanLabel').replace('{value}', `${number.format(metric.target)}${suffix}`)}</span> : null}
       </span>
-      <span className={cn('flex items-center gap-1 text-xs', met ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
+      {!compact ? <span className={cn('flex items-center gap-1 text-xs', met ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
         {met ? <><Check className="size-3.5" aria-hidden="true" />{t('salesPlanReached')}</> : metric.value === null ? t('kpiPending') : remaining !== null && metric.unit === 'count'
           ? t('salesPlanRemaining').replace('{count}', number.format(remaining)) : metric.target !== null ? t('salesPlanProgress') : t('kpiNoTarget')}
-      </span>
+      </span> : null}
     </div>
     {metric.target !== null && metric.unit !== 'score' ? <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={t('kpiPlanFact')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
       <div className={cn('h-full rounded-full', met ? 'bg-emerald-500' : 'bg-primary')} style={{ width: `${progress}%` }} />
     </div> : null}
-    {metric.denominator !== undefined ? <p className="mt-2 text-xs text-muted-foreground">{t('salesMetricFraction').replace('{done}', String(metric.numerator ?? 0)).replace('{total}', String(metric.denominator))}</p> : null}
+    {!compact && metric.denominator !== undefined ? <p className="mt-2 text-xs text-muted-foreground">{t('salesMetricFraction').replace('{done}', String(metric.numerator ?? 0)).replace('{total}', String(metric.denominator))}</p> : null}
   </button>;
 }
 

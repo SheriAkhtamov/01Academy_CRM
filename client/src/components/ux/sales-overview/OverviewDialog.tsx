@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 
 export const overviewButton = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40';
-export const overviewPanel = 'min-w-0 rounded-2xl border border-border/70 bg-card text-card-foreground';
+export const overviewPanel = 'min-w-0 rounded-xl border border-border/60 bg-card text-card-foreground';
 
 const activeDialogs = new Set<HTMLDialogElement>();
 let originalBodyOverflow = '';

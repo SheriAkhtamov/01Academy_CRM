@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import type { KpiMetric, KpiMetricId, KpiOverviewEmployee } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
+import { OverviewDialog, overviewButton } from '@/components/ux/sales-overview/OverviewDialog';
 import { SalesTargetBullet } from '@/components/ux/sales-overview/SalesMetricGauge';
 import { metricHelp, metricKeys } from '../copy';
 import { KpiMetricsGrid, KpiMetricRow } from './KpiMetricsGrid';
@@ -34,15 +34,15 @@ export function SalesKpiOverview({ employees, loading, failed, onRetry }: {
   const primaryIds: KpiMetricId[] = employee?.role === 'hunter' ? ['bookings', 'attendance', 'response'] : ['newStudents', 'trialConversion', 'renewalConversion'];
   const primary = primaryIds.flatMap((id) => employee?.calculation.metrics.find((item) => item.id === id) ?? []);
   if (!loading && !failed && !employees.length) return null;
-  return <section className="min-w-0 xl:col-span-12" aria-label={t('salesMonthPlan')}>
-    <header className="mb-2 flex items-center justify-between gap-3 px-1">
+  return <section className="min-w-0 border-b border-border/60 py-7 xl:col-span-12" aria-label={t('salesMonthPlan')}>
+    <header className="mb-4 flex items-center justify-between gap-3">
       <h2 className="text-sm font-semibold">{t('salesMonthPlan')}</h2>
       {employee ? <button type="button" className={`${overviewButton} text-xs text-muted-foreground`} onClick={() => setSelectedId(employee.id)}>{t('salesAllMetrics')}<ArrowUpRight className="size-3.5" aria-hidden="true" /></button> : null}
     </header>
     {loading ? <div className="my-3 h-14 animate-pulse rounded bg-muted" aria-busy="true" />
       : failed ? <div className="flex items-center justify-between gap-3 py-2" role="alert"><p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p><button type="button" className={overviewButton} onClick={onRetry}>{t('retry')}</button></div>
-        : employee ? <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">{primary.map((item) => <KpiMetricRow key={item.id} metric={item} onSelect={setMetric} compact />)}</div>
-          : <div className={`${overviewPanel} divide-y divide-border/60 px-5`}>{employees.map((item) => {
+        : employee ? <div className="grid grid-cols-1 gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">{primary.map((item) => <KpiMetricRow key={item.id} metric={item} onSelect={setMetric} compact />)}</div>
+          : <div className="divide-y divide-border/60">{employees.map((item) => {
             const result = item.calculation.metrics.find((entry) => entry.id === (item.role === 'hunter' ? 'bookings' : 'newStudents'));
             return <button type="button" key={item.id} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-lg py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setSelectedId(item.id)} aria-haspopup="dialog">
               <span className="text-sm font-medium">{item.name}</span>

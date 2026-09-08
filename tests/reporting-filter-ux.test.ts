@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const filter = read('../client/src/components/ux/ReportingDateRangeFilter.tsx');
 const dateRangeField = read('../client/src/components/ux/DateRangeField.tsx');
 const sales = read('../client/src/pages/sales-dashboard.tsx');
-const salesRevenueChart = read('../client/src/components/ux/sales-overview/SalesRevenueChart.tsx');
+const salesRevenueChart = read('../client/src/components/ux/sales-overview/SalesDailySparkChart.tsx');
 const salesOverviewHero = read('../client/src/components/ux/sales-overview/SalesOverviewHero.tsx');
 const teacher = read('../client/src/pages/teacher-module.tsx');
 const marketing = read('../client/src/pages/marketing-module.tsx');
@@ -78,7 +78,7 @@ describe('dashboard period filters and simplified actions', () => {
     expect(finance).toContain('<FinanceAnalyticsCharts');
     expect(administration).toContain('<AdminOperationalHealthChart');
 
-    expect(salesRevenueChart).toContain('<AreaChart');
+    expect(salesRevenueChart).toContain('<svg');
     expect(salesCharts).toContain('<PieChart');
     expect(teacherCharts).toContain('<ComposedChart');
     expect(teacherCharts).toContain('<PieChart');
@@ -113,7 +113,7 @@ describe('dashboard period filters and simplified actions', () => {
   it('does not present absent or zero datasets as measured performance', () => {
     expect(teacher).toContain('attendance: markedAttendance > 0 ? percentage(present, markedAttendance) : null');
     expect(teacherCharts).toContain('const hasTimelineData');
-    expect(salesRevenueChart).toContain('paid.length ?');
+    expect(salesOverviewHero).toContain("payment.status === 'paid'");
     expect(salesCharts).toContain('hasPaymentRevenue ? (');
     expect(marketingCharts).toContain('hasConversionCohort ? (');
     expect(financeCharts).toContain('hasContributionData ? (');

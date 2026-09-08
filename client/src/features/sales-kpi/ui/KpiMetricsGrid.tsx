@@ -19,19 +19,19 @@ export function KpiMetricRow({ metric, onSelect, compact = false }: { metric: Kp
     ? t('salesPlanRemaining').replace('{count}', number.format(remaining)) : metric.target !== null ? t('salesPlanProgress') : t('kpiNoTarget');
   const color = metric.unit === 'count' ? 'text-blue-500 dark:text-blue-400' : metric.id === 'response' || metric.id === 'renewalConversion' ? 'text-violet-500 dark:text-violet-400' : 'text-emerald-500 dark:text-emerald-400';
   return <button type="button" onClick={() => onSelect(metric)} aria-haspopup="dialog"
-    className="group flex h-full w-full flex-col rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-primary/30 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    className={cn('group flex h-full w-full flex-col text-left transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', compact ? 'rounded-lg px-1 py-3' : 'rounded-xl border border-border/60 bg-card p-4 hover:border-primary/30')}
     aria-label={`${t('kpiDetailsTitle')}: ${t(metricKeys[metric.id])}`}>
     <div className="mb-4 flex w-full items-start justify-between gap-3">
       <span className="text-xs font-medium leading-5 text-muted-foreground">{t(metricKeys[metric.id])}</span>
       <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground opacity-50 group-hover:opacity-100" aria-hidden="true" />
     </div>
     {metric.unit === 'count' ? <div className="my-auto w-full">
-      <div className="flex flex-wrap items-baseline justify-between gap-2"><span className={cn('text-3xl font-semibold tabular-nums tracking-tight', metric.value === null && 'text-lg text-muted-foreground')}>{value}</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-2"><span className={cn('font-semibold tabular-nums tracking-tight', compact ? 'text-5xl' : 'text-3xl', metric.value === null && 'text-lg text-muted-foreground')}>{value}</span>
         {target ? <span className="text-xs text-muted-foreground">{target}</span> : null}</div>
       {metric.target !== null ? <SalesTargetBullet value={metric.value} target={metric.target} label={`${t('kpiPlanFact')}: ${value}; ${target}`} className={`mt-3 ${color}`} /> : null}
       {completion !== null ? <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">{t('salesPlanCompletion').replace('{value}', number.format(completion))}</p> : null}
-    </div> : <div className="my-auto flex w-full items-center gap-4">
-      <div className={`w-[102px] shrink-0 ${color}`}>
+    </div> : <div className="my-auto flex w-full flex-wrap items-center gap-4">
+      <div className={cn('shrink-0', compact ? 'w-[132px]' : 'w-[102px]', color)}>
         <SalesMetricGauge value={metric.value} target={metric.target} min={metric.unit === 'score' ? -100 : 0} semicircle={metric.unit === 'score'} label={`${t(metricKeys[metric.id])}: ${value}; ${target ?? t('kpiNoTarget')}`}>
           <span className={cn('text-2xl font-semibold tracking-tight tabular-nums', metric.value === null && 'text-base text-muted-foreground')}>{metric.value === null ? '—' : value}</span>
         </SalesMetricGauge>

@@ -8,9 +8,9 @@ const HEIGHT = 90;
 const PADDING = 5;
 
 /** One keyboard stop per chart, with the same point inspection on touch and mouse. */
-export function SalesDailySparkChart({ points, title, formatValue, kind = 'area', compact = false, className = '' }: {
+export function SalesDailySparkChart({ points, title, formatValue, kind = 'area', compact = false, expanded = false, className = '' }: {
   points: SalesSeriesPoint[] | undefined; title: string; formatValue: (value: number) => string;
-  kind?: 'bars' | 'area' | 'stems'; compact?: boolean; className?: string;
+  kind?: 'bars' | 'area' | 'stems'; compact?: boolean; expanded?: boolean; className?: string;
 }) {
   const { t, language } = useTranslation();
   const gradientId = useId().replace(/:/g, '');
@@ -32,13 +32,13 @@ export function SalesDailySparkChart({ points, title, formatValue, kind = 'area'
     const x = (event.clientX - bounds.left) / bounds.width * WIDTH;
     setSelected(Math.max(0, Math.min(points.length - 1, Math.floor((x - PADDING) / step))));
   };
-  return <div className={`mt-4 ${className}`}>
+  return <div className={`${compact ? 'mt-0' : 'mt-4'} ${className}`}>
     <div className="mb-2 flex min-h-4 items-center justify-between gap-2 text-[10px] font-medium tabular-nums sm:text-[11px]">
       <span className="text-muted-foreground">{selected === null ? t('salesDailyTrend') : day(active.date)}</span>
       {selected !== null ? <span>{formatValue(active.value)}</span> : null}
     </div>
     <span id={helpId} className="sr-only">{t('salesChartKeyboard')}</span>
-    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" className={`${compact ? 'h-16' : 'h-[90px]'} w-full overflow-visible rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" className={`${expanded ? 'h-52' : compact ? 'h-16' : 'h-[90px]'} w-full overflow-visible rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring`}
       role="slider" tabIndex={0} aria-label={t('salesDailyChart').replace('{metric}', title)} aria-describedby={helpId}
       aria-orientation="horizontal" aria-valuemin={0} aria-valuemax={points.length - 1} aria-valuenow={index} aria-valuetext={`${day(active.date)}: ${formatValue(active.value)}`}
       onPointerDown={pick} onPointerMove={pick} onPointerLeave={(event) => { if (event.currentTarget.ownerDocument.activeElement !== event.currentTarget) setSelected(null); }} onFocus={() => setSelected(index)} onBlur={() => setSelected(null)}

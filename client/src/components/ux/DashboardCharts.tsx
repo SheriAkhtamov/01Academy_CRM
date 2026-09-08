@@ -120,11 +120,11 @@ export function DashboardCharts({
   const hasPaymentRevenue = paymentMethodData.some((item) => Number(item.amount || 0) > 0);
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 mx-5 border-t border-border/60 pb-4 sm:mx-8 xl:mx-10">
       <AnalyticsChartCard
         title={t('salesSourcePerformance')}
         summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
-        className="xl:col-span-7"
+        className="px-0 sm:px-0 xl:col-span-8 xl:pr-8"
         chartClassName="h-[270px]"
         footer={hasSourceData ? (
           <AnalyticsChartLegend items={[
@@ -169,7 +169,7 @@ export function DashboardCharts({
       <AnalyticsChartCard
         title={t('paymentMethodsChart')}
         summary={`${t('paymentMethodsChart')}. ${paymentMethodData.map((item) => `${item.name}: ${item.count}`).join(', ')}`}
-        className="xl:col-span-5"
+        className="px-0 sm:px-0 xl:col-span-4 xl:border-l xl:border-border/50 xl:pl-8"
         chartClassName="h-[188px]"
         footer={hasPaymentRevenue ? (
           <div className="grid gap-2">

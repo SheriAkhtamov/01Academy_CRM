@@ -863,7 +863,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   commandPaletteHint: { en: 'Type to search across the CRM', ru: 'Начните вводить для поиска по CRM' },
   navigation: { en: 'Navigation', ru: 'Навигация' },
   searchResults: { en: 'Search results', ru: 'Результаты поиска' },
-  revenueTrend: { en: 'Revenue Trend', ru: 'Динамика выручки' },
   conversionFunnel: { en: 'Conversion Funnel', ru: 'Воронка конверсии' },
   conversionFunnelDescription: {
     en: 'Leads that reached each sales stage',

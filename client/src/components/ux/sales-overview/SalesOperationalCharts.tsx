@@ -19,8 +19,8 @@ export function SalesActiveLeadsChart({ stages, leadStatusName, statusColor }: {
     offset += share;
     return segment;
   });
-  return <div className="mt-5 flex min-h-28 items-center gap-3">
-    <div className="relative w-[86px] shrink-0">
+  return <div className="flex min-h-28 flex-wrap items-center gap-3">
+    <div className="relative w-[96px] shrink-0 sm:w-[112px]">
       <svg viewBox="0 0 100 100" className="w-full" role="img" aria-label={`${t('salesActiveStageDistribution')}: ${ranked.length ? ranked.map((stage) => `${stage.label}: ${stage.count}`).join('; ') : t('salesNoActiveLeads')}`}>
         <circle cx={50} cy={50} r={38} fill="none" stroke="var(--muted)" strokeWidth={12} />
         <g transform="rotate(-90 50 50)">{segments.map((segment) => <circle key={segment.code} cx={50} cy={50} r={38} fill="none" stroke={segment.color} strokeWidth={12} pathLength={100}
@@ -28,10 +28,10 @@ export function SalesActiveLeadsChart({ stages, leadStatusName, statusColor }: {
       </svg>
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground/60"><Layers className="size-5" aria-hidden="true" /></span>
     </div>
-    {rows.length ? <ul className="min-w-0 flex-1 space-y-2.5">{rows.map((row) => <li key={row.code} className="flex items-center gap-1.5 text-[10px] sm:text-[11px]">
+    {rows.length ? <ul className="min-w-[80px] flex-1 space-y-2.5">{rows.map((row) => <li key={row.code} className="flex items-center gap-1.5 text-[10px] sm:text-[11px]">
       <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate text-muted-foreground" title={row.label}>{row.label}</span><span className="tabular-nums">{number.format(row.count)}</span>
-    </li>)}</ul> : <p className="text-xs leading-relaxed text-muted-foreground">{t('salesNoActiveLeads')}</p>}
+    </li>)}</ul> : <p className="min-w-[80px] flex-1 text-xs leading-relaxed text-muted-foreground">{t('salesNoActiveLeads')}</p>}
   </div>;
 }
 
@@ -41,15 +41,15 @@ export function SalesRepeatCallsChart({ distribution }: { distribution: Array<{ 
   const buckets = [2, 3, 4, 5].map((attempts) => ({ attempts, count: distribution?.find((item) => item.attempts === attempts)?.count ?? 0 }));
   const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
   const label = (attempts: number) => t('salesCallAttempts').replace('{count}', number.format(attempts));
-  if (!distribution) return <div className="mt-5 h-28 rounded-lg bg-muted/30" aria-busy="true" />;
-  return <div className="mt-5 text-amber-600 dark:text-amber-400">
-    <div className="flex h-24 items-end gap-3 border-b border-border/60 px-2" role="img" aria-label={`${t('salesAttemptDistribution')}: ${buckets.map((bucket) => `${label(bucket.attempts)}: ${bucket.count}`).join('; ')}`}>
-      {buckets.map((bucket) => <div key={bucket.attempts} className="flex h-full min-w-0 flex-1 flex-col justify-end" title={`${label(bucket.attempts)}: ${number.format(bucket.count)}`}>
-        <span className="mb-1 text-center text-[11px] font-medium tabular-nums text-muted-foreground">{number.format(bucket.count)}</span>
-        <div className="min-h-0 w-full rounded-t bg-current opacity-80" style={{ height: `${bucket.count / max * 72}px` }} />
+  if (!distribution) return <div className="h-28 rounded-lg bg-muted/30" aria-busy="true" />;
+  return <div className="text-amber-600 dark:text-amber-400">
+    <div className="space-y-3" role="img" aria-label={`${t('salesAttemptDistribution')}: ${buckets.map((bucket) => `${label(bucket.attempts)}: ${bucket.count}`).join('; ')}`}>
+      {buckets.map((bucket) => <div key={bucket.attempts} className="grid grid-cols-[12px_minmax(0,1fr)_20px] items-center gap-3" title={`${label(bucket.attempts)}: ${number.format(bucket.count)}`}>
+        <span className="text-[11px] tabular-nums text-muted-foreground">{number.format(bucket.attempts)}</span>
+        <div className="h-2.5 rounded-full bg-muted/70"><div className="h-full rounded-full bg-current opacity-80" style={{ width: `${bucket.count / max * 100}%` }} /></div>
+        <span className="text-right text-[11px] font-medium tabular-nums text-muted-foreground">{number.format(bucket.count)}</span>
       </div>)}
     </div>
-    <div className="mt-1.5 flex gap-3 px-2 text-center text-[10px] tabular-nums text-muted-foreground" aria-hidden="true">{buckets.map((bucket) => <span className="flex-1" key={bucket.attempts}>{number.format(bucket.attempts)}</span>)}</div>
-    <p className="mt-2 text-center text-[10px] text-muted-foreground">{t('salesAttemptsAxis')}</p>
+    <p className="mt-3 text-[10px] text-muted-foreground">{t('salesAttemptsAxis')}</p>
   </div>;
 }

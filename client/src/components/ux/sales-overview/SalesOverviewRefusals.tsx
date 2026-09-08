@@ -1,6 +1,5 @@
 import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { overviewPanel } from './OverviewDialog';
 import { TrendBadge } from './parts';
 import type { SalesDashboardMetrics } from './types';
 
@@ -10,7 +9,7 @@ export function SalesOverviewRefusals({ metrics, isLoading, archiveReasonName, o
   const { t } = useTranslation();
   const count = metrics?.targetRefusals;
   const top = metrics?.targetRefusalReasons[0];
-  return <button type="button" className={`${overviewPanel} flex flex-wrap items-center justify-between gap-4 p-5 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:col-span-12`}
+  return <button type="button" className="flex flex-wrap items-center justify-between gap-4 border-t border-border/60 py-5 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:col-span-12"
     onClick={onOpen} aria-label={t('targetRefusalReasonsTitle')} aria-haspopup="dialog">
     <span><span className="block text-sm font-medium">{t('targetRefusals')}</span></span>
     <span className="flex items-center gap-3"><span className="text-2xl font-semibold tabular-nums">{isLoading || count === undefined ? '—' : count}</span>{metrics ? <TrendBadge delta={metrics.targetRefusals - metrics.previous.targetRefusals} invert /> : null}</span>

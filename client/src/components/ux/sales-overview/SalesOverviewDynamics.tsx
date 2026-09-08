@@ -54,8 +54,8 @@ export function SalesOverviewDynamics({
       title={t('metricsDynamicsTitle')}
       action={action}
       summary={`${t('metricsDynamicsTitle')}. ${legendItems.map((item) => item.label).join(', ')}`}
-      className="xl:col-span-7"
-      chartClassName="h-[260px]"
+      className="px-0 pb-0 pt-4 sm:px-0 sm:pb-0 sm:pt-4"
+      chartClassName="h-52"
       footer={<AnalyticsChartLegend items={legendItems} />}
     >
       {isLoading ? (

@@ -1189,27 +1189,29 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               />
             </div>
           </div>
-          <SalesOverviewMetrics
-            key={`${overviewMonth}-${overviewManagerNumericId}`}
-            month={overviewMonth}
-            reportingRange={reportingRange}
-            managerId={overviewManagerNumericId}
-            stats={managerStats}
-            payments={overviewPayments}
-            students={overviewStudents}
-            funnel={managerFunnel}
-            leadStatusName={leadStatusName}
-            statusColor={leadStatusColor}
-            money={money}
-            onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
-            onExpandPeriod={() => setOverviewMonth(kpiMonth())}
-          />
-          <SalesOverviewSection
-            payments={periodPayments}
-            leads={periodLeads}
-            reportingRange={reportingRange}
-            money={money}
-          />
+          <div className="rounded-2xl bg-card text-card-foreground">
+            <SalesOverviewMetrics
+              key={`${overviewMonth}-${overviewManagerNumericId}`}
+              month={overviewMonth}
+              reportingRange={reportingRange}
+              managerId={overviewManagerNumericId}
+              stats={managerStats}
+              payments={overviewPayments}
+              students={overviewStudents}
+              funnel={managerFunnel}
+              leadStatusName={leadStatusName}
+              statusColor={leadStatusColor}
+              money={money}
+              onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
+              onExpandPeriod={() => setOverviewMonth(kpiMonth())}
+            />
+            <SalesOverviewSection
+              payments={periodPayments}
+              leads={periodLeads}
+              reportingRange={reportingRange}
+              money={money}
+            />
+          </div>
         </div>
       ) : null}
 

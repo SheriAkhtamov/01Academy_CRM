@@ -1,12 +1,11 @@
-import { useState, type ComponentProps } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
-import { SalesRevenueChart } from './SalesRevenueChart';
 import { SalesOverviewDynamics } from './SalesOverviewDynamics';
 import type { SalesDashboardMetrics } from './types';
 
-export function SalesOverviewTrends({ metrics, isLoading, ...revenue }: Omit<ComponentProps<typeof SalesRevenueChart>, 'action'> & {
-  metrics: SalesDashboardMetrics | undefined; isLoading: boolean;
+export function SalesOverviewTrends({ metrics, isLoading, children }: {
+  metrics: SalesDashboardMetrics | undefined; isLoading: boolean; children: ReactNode;
 }) {
   const { t } = useTranslation();
   const [activity, setActivity] = useState(false);
@@ -15,5 +14,8 @@ export function SalesOverviewTrends({ metrics, isLoading, ...revenue }: Omit<Com
     <button type="button" aria-pressed={!activity} className={cn(buttonClass, !activity ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')} onClick={() => setActivity(false)}>{t('revenue')}</button>
     <button type="button" aria-pressed={activity} className={cn(buttonClass, activity ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')} onClick={() => setActivity(true)}>{t('activityTab')}</button>
   </div>;
-  return activity ? <SalesOverviewDynamics metrics={metrics} isLoading={isLoading} action={action} /> : <SalesRevenueChart {...revenue} action={action} />;
+  return <div className="mt-4 min-w-0">
+    <div className="flex justify-end">{action}</div>
+    {activity ? <SalesOverviewDynamics metrics={metrics} isLoading={isLoading} /> : children}
+  </div>;
 }

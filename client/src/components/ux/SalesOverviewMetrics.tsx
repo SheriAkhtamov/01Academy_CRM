@@ -14,7 +14,6 @@ import {
 import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
 import { SalesKpiOverview } from '@/features/sales-kpi/ui/SalesKpiOverview';
 import { useKpiOverview } from '@/features/sales-kpi/hooks';
-import { SalesOverviewTrends } from '@/components/ux/sales-overview/SalesOverviewTrends';
 import { SalesOverviewFunnel } from '@/components/ux/sales-overview/SalesOverviewFunnel';
 import { SalesOverviewHero } from '@/components/ux/sales-overview/SalesOverviewHero';
 import { SalesOverviewKpiGrid } from '@/components/ux/sales-overview/SalesOverviewKpiGrid';
@@ -109,7 +108,7 @@ export function SalesOverviewMetrics({
         <button type="button" className={overviewButton} onClick={() => metricsQuery.refetch()}>{t('retry')}</button>
       </div> : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12" aria-busy={metricsQuery.isPending}>
+      <div className="grid grid-cols-1 rounded-2xl bg-card px-5 py-7 text-card-foreground sm:px-8 xl:grid-cols-12 xl:px-10" aria-busy={metricsQuery.isPending}>
         {isEmptyPeriod ? (
           <section className={`${overviewPanel} border-dashed bg-muted/20 xl:col-span-12`}>
             <div className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -132,7 +131,6 @@ export function SalesOverviewMetrics({
         <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} students={students} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
         <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} leadStatusName={leadStatusName} statusColor={statusColor} />
         <SalesKpiOverview employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
-        <SalesOverviewTrends metrics={metrics} isLoading={isLoading} payments={payments} reportingRange={reportingRange} money={money} />
         <SalesOverviewFunnel
           metrics={metrics}
           isLoading={isLoading}

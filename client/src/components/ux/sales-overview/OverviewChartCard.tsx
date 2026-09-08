@@ -1,6 +1,5 @@
 import { useId, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { overviewPanel } from './OverviewDialog';
 
 export { AnalyticsChartEmpty, AnalyticsChartLegend, analyticsAxisTick, analyticsTooltipStyle } from '@/components/ux/analytics/AnalyticsChartCard';
 
@@ -10,7 +9,7 @@ export function AnalyticsChartCard({ title, description, summary, action, childr
 }) {
   const titleId = useId();
   const summaryId = useId();
-  return <section className={cn(overviewPanel, 'p-5 sm:p-6', className)}>
+  return <section className={cn('min-w-0 p-5 text-card-foreground sm:p-6', className)}>
     <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0"><h2 id={titleId} className="text-sm font-semibold">{title}</h2>{description ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p> : null}</div>
       {action}

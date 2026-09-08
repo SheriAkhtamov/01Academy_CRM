@@ -9,7 +9,7 @@ import { translations, type TranslationKey } from '../client/src/lib/i18n';
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: request }));
 vi.mock('../client/src/hooks/useTranslation', () => ({ useTranslation: () => ({ t: (key: TranslationKey) => translations[key].en, language: 'en' }) }));
-vi.mock('../client/src/components/ux/sales-overview/SalesOverviewTrends', () => ({ SalesOverviewTrends: () => null }));
+vi.mock('../client/src/components/ux/sales-overview/SalesOverviewDynamics', () => ({ SalesOverviewDynamics: () => null }));
 vi.mock('../client/src/components/ux/sales-overview/SalesOverviewFunnel', () => ({ SalesOverviewFunnel: () => null }));
 vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 import { KpiSaleReviewDialog } from '../client/src/features/sales-kpi/ui/KpiSaleReviewDialog';
@@ -105,6 +105,22 @@ describe('unified sales overview', () => {
     expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('150000')).toBeTruthy();
     expect(within(screen.getByRole('button', { name: translations.openInStudents.en })).getByText('2')).toBeTruthy();
     expect(screen.queryByText(translations.paidCustomersForPeriod.en)).toBeNull();
+  });
+
+  it('switches the main wide plot between revenue and activity without hiding the overview results', async () => {
+    const user = userEvent.setup();
+    mount();
+    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
+    const revenue = within(screen.getByRole('region', { name: translations.revenue.en }));
+    expect(revenue.getByRole('slider')).toBeTruthy();
+    await user.click(revenue.getByRole('button', { name: translations.activityTab.en }));
+    expect(revenue.queryByRole('slider')).toBeNull();
+    expect(revenue.getByText('150000')).toBeTruthy();
+    expect(screen.getByRole('region', { name: translations.salesPrimaryConversion.en })).toBeTruthy();
+    expect(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).toBeTruthy();
+    await user.click(revenue.getByRole('button', { name: translations.revenue.en }));
+    expect(revenue.getByRole('slider')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: translations.activityTab.en })).toHaveLength(1);
   });
 
   it('lets keyboard users inspect actual daily revenue and enrolments inside the headline cards', async () => {

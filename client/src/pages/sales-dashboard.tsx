@@ -65,6 +65,7 @@ import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChar
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
+import { SalesKpiOverview } from '@/features/sales-kpi/ui/SalesKpiOverview';
 import { SalesOverviewEmployeeFilter } from '@/components/ux/SalesOverviewEmployeeFilter';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
@@ -1174,12 +1175,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         }
       />
 
-      <ModulePageBody
-        contained={contained}
+      <ModulePageBody contained={contained}
         scroll={ownsContentScroll ? 'hidden' : 'auto'}
         ariaLabel={sectionTitle[section]}
       >
-
       {section === 'overview' ? (
         <div className="space-y-5">
           <Card
@@ -1188,12 +1187,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             aria-label={t('salesOverviewFilters')}
           >
             <CardContent className="flex flex-col gap-2 p-2 xl:flex-row xl:items-center">
-              <ReportingDateRangeFilter
-                className="border-0 bg-transparent shadow-none xl:min-w-0 xl:flex-1"
-                value={reportingRange}
-                onChange={handleReportingRangeChange}
-              />
-              <span className="hidden w-px self-stretch bg-border xl:block" aria-hidden="true" />
               <SalesOverviewEmployeeFilter
                 className="border-0 bg-transparent shadow-none"
                 value={overviewManagerId}
@@ -1205,6 +1198,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               />
             </CardContent>
           </Card>
+          <SalesKpiOverview managerId={overviewManagerNumericId} isAdministration={isAdministrationModule} />
+          <details className="group space-y-4 rounded-xl border bg-card p-4">
+            <summary className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('kpiOperationalOverview')}</summary>
+              <ReportingDateRangeFilter
+                className="border-0 bg-transparent shadow-none xl:min-w-0 xl:flex-1"
+                value={reportingRange}
+                onChange={handleReportingRangeChange}
+              />
           <SalesOverviewMetrics
             reportingRange={reportingRange}
             managerId={overviewManagerNumericId}
@@ -1224,7 +1225,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             reportingRange={reportingRange}
             money={money}
           />
-        </div>
+          </details></div>
       ) : null}
 
       {section === 'pipeline' ? (

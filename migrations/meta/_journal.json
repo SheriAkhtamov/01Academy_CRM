@@ -729,6 +729,13 @@
       "when": 1789920000000,
       "tag": "0103_telegram_task_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1789920000001,
+      "tag": "0104_sales_kpi",
+      "breakpoints": true
     }
   ]
 }

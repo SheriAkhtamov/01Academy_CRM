@@ -30,6 +30,7 @@ export const createUserSchema = (t: Translate) => z.object({
   position: z.string().optional(),
   module: z.enum(ACADEMY_MODULES),
   modules: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneModule')),
+  salesKpiRole: z.enum(['hunter', 'closer']).nullable().default(null),
   teacherSchoolIds: z.array(z.number().int().positive()).default([]),
   teacherAvailability: z.array(z.object({
     dayOfWeek: z.number().int().min(1).max(7),
@@ -88,6 +89,7 @@ export const defaultUserFormValues: UserFormValues = {
   position: '',
   module: 'sales',
   modules: ['sales'],
+  salesKpiRole: null,
   teacherSchoolIds: [],
   teacherAvailability: [],
 };

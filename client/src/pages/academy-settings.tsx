@@ -68,14 +68,8 @@ import { FutureGroupStartDialog, futureGroupStatusNeedsConfirmation } from '@/co
 import { GroupStatusField } from '@/components/ux/GroupStatusField';
 import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
-import {
-  DEFAULT_COMPANY_SETTINGS,
-  KPI_FIELD_BOUNDS,
-  KpiSettingsCard,
-  createKpiFieldSchema,
-  type CompanySettings,
-  type KpiNumberSetting,
-} from '@/components/ux/academy/KpiSettingsCard';
+import { KpiSettingsPanel } from '@/features/sales-kpi/ui/KpiSettingsPanel';
+import { CompanyTargetsDialog } from '@/features/sales-kpi/ui/CompanyTargetsDialog';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   WeekScheduleEditor,
@@ -293,24 +287,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const configuration = useQuery<ConfigurationData>({
     queryKey: ['/api/academy/configuration'],
   });
-  const companySettings = useQuery<CompanySettings>({
-    queryKey: ['/api/academy/company-settings'],
-  });
-  const [kpiDraft, setKpiDraft] = useState<CompanySettings>(DEFAULT_COMPANY_SETTINGS);
-  const [kpiText, setKpiText] = useState<Partial<Record<KpiNumberSetting, string>>>({});
-  const [kpiErrors, setKpiErrors] = useState<Partial<Record<KpiNumberSetting, string>>>({});
-
-  useEffect(() => {
-    if (!companySettings.data) return;
-    const merged = { ...DEFAULT_COMPANY_SETTINGS, ...companySettings.data };
-    setKpiDraft(merged);
-    const text: Partial<Record<KpiNumberSetting, string>> = {};
-    for (const key of Object.keys(KPI_FIELD_BOUNDS) as KpiNumberSetting[]) {
-      text[key] = String(merged[key]);
-    }
-    setKpiText(text);
-    setKpiErrors({});
-  }, [companySettings.data]);
+  const [companyTargetsOpen, setCompanyTargetsOpen] = useState(false);
 
   useEffect(() => {
     setActiveTab(requestedTabValue);
@@ -633,39 +610,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       variant: 'destructive',
     }),
   });
-
-  const saveCompanySettings = useMutation({
-    mutationFn: (payload: CompanySettings) => apiRequest('PATCH', '/api/academy/company-settings', payload),
-    onSuccess: () => {
-      toast({ title: ceoCopy.settings.saved });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/company-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/administration'] });
-    },
-    onError: (error: Error) => toast({
-      title: ceoCopy.settings.failed,
-      description: error.message,
-      variant: 'destructive',
-    }),
-  });
-
-  const handleSaveCompanySettings = () => {
-    const nextErrors: Partial<Record<KpiNumberSetting, string>> = {};
-    const nextValues = {} as Record<KpiNumberSetting, number>;
-    for (const key of Object.keys(KPI_FIELD_BOUNDS) as KpiNumberSetting[]) {
-      const result = createKpiFieldSchema(t, KPI_FIELD_BOUNDS[key]).safeParse(kpiText[key] ?? '');
-      if (!result.success) {
-        nextErrors[key] = result.error.issues[0]?.message ?? t('fieldRequired');
-        continue;
-      }
-      nextValues[key] = Number(result.data);
-    }
-    if (Object.values(nextErrors).some(Boolean)) {
-      setKpiErrors(nextErrors);
-      return;
-    }
-    setKpiErrors({});
-    saveCompanySettings.mutate({ ...kpiDraft, ...nextValues } as CompanySettings);
-  };
 
   const deleteResource = useMutation({
     mutationFn: ({ resource, id }: NonNullable<typeof deleteTarget>) =>
@@ -1617,22 +1561,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="kpi" className="mt-0">
-          <KpiSettingsCard
-            values={kpiText}
-            errors={kpiErrors}
-            onNumberChange={(key, value) => {
-              setKpiText((current) => ({ ...current, [key]: value }));
-              setKpiErrors((current) => ({ ...current, [key]: undefined }));
-            }}
-            phoneVisibility={kpiDraft.salesPhoneVisibility}
-            onPhoneVisibilityChange={(value) => setKpiDraft((current) => ({ ...current, salesPhoneVisibility: value }))}
-            isPending={saveCompanySettings.isPending}
-            onSave={handleSaveCompanySettings}
-          />
+          <KpiSettingsPanel />
+          <div className="mt-6 border-t pt-4"><Button variant="outline" onClick={() => setCompanyTargetsOpen(true)}>{t('kpiCompanySettings')}</Button></div>
         </TabsContent>
 
       </Tabs>
       </ModulePageBody>
+
+      {companyTargetsOpen ? <CompanyTargetsDialog onClose={() => setCompanyTargetsOpen(false)} /> : null}
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">

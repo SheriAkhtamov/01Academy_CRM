@@ -65,6 +65,7 @@ import {
   PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
+import { EmployeeKpiField } from '@/features/sales-kpi/ui/EmployeeKpiField';
 import { useStickyState } from '@/hooks/useStickyState';
 import { academyDateInputValue, formatAcademyDate } from '@/lib/localeFormat';
 import { devLog } from '@/lib/debug';
@@ -464,6 +465,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     const modules = Array.from(new Set([data.module, ...data.modules]));
     const payload = {
       ...data,
+      salesKpiRole: modules.includes('sales') ? data.salesKpiRole : null,
       phoneNumbers: data.phoneNumbers.map((phone) => phone.trim()).filter(Boolean),
       modules,
     };
@@ -527,6 +529,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       position: user.position || '',
       module: user.module,
       modules: getAssignedModules(user),
+      salesKpiRole: (user.salesKpi?.scheduled ?? user.salesKpi?.current)?.role ?? null,
       teacherSchoolIds: Array.isArray(user.teacherSchoolIds)
         ? user.teacherSchoolIds.map(Number).filter(Number.isSafeInteger)
         : [],
@@ -963,6 +966,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             </FormItem>
                           )}
                         />
+
+                        {assignedModuleValues.includes('sales') ? <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} /> : null}
 
                         {teacherModuleEnabled ? (
                           <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4">

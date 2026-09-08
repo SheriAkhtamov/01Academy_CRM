@@ -2,18 +2,14 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import {
-  ACADEMY_MODULES,
-  type AcademyAccessModule,
-  type AcademyModule,
-} from "../../../shared/academy";
+import { ACADEMY_MODULES, type AcademyAccessModule, type AcademyModule } from "../../../shared/academy";
 import { isOnlinePbxExtension } from "../../../shared/telephony";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
 import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
-
+import { createSalesKpiTables } from "./sales-kpi";
 export interface AcademyCourseProgramLesson {
   lessonNumber: number;
   topic: string;
@@ -715,6 +711,10 @@ export const academyParentSurveys = pgTable("academy_parent_surveys", {
   studentPeriodUnique: uniqueIndex("academy_parent_surveys_student_period_unique").on(table.studentId, table.period),
 }));
 
+export const { academySalesKpiMeta, academySalesKpiPlans, academySalesKpiAssignments, academySalesKpiLeads,
+  academySalesKpiActivity, academySalesKpiTrials, academySalesKpiSales, academySalesKpiSurveys } = createSalesKpiTables({
+  user: users.id, lead: academyLeads.id, participant: academyDemoLessonParticipants.id, payment: academyPayments.id, survey: academyParentSurveys.id,
+});
 export const academyPortfolioProjects = pgTable("academy_portfolio_projects", {
   id: serial("id").primaryKey(),
   studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),

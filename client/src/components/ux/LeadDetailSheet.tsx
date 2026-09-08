@@ -105,6 +105,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
+import { KpiLeadOwnershipCard } from '@/features/sales-kpi/ui/KpiLeadOwnershipCard';
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
 import type { TelephonyCallStatus } from '@/lib/telephony';
@@ -987,6 +988,7 @@ export function LeadDetailSheet({
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
+                  <KpiLeadOwnershipCard leadId={lead.id} beforeHandoff={unsavedGuard.requestAction} onHandedOff={() => onOpenChange(false)} />
                   {!lead.isArchived ? (
                     <LeadNextAction
                       tasks={lead.tasks ?? []}

@@ -190,5 +190,5 @@ it('registers a non-destructive delivery-history migration after source restorat
   expect(migration).toContain('REFERENCES telegram_task_bindings(id) ON DELETE CASCADE');
   expect(migration).not.toMatch(/(?:^|;)\s*(?:DROP|DELETE|UPDATE)\b/m);
   const journal = JSON.parse(readFileSync(new URL('../migrations/meta/_journal.json', import.meta.url), 'utf8'));
-  expect(journal.entries.at(-1)).toMatchObject({ idx: 103, tag: '0103_telegram_task_reminders' });
+  expect(journal.entries).toContainEqual(expect.objectContaining({ idx: 103, tag: '0103_telegram_task_reminders' }));
 });

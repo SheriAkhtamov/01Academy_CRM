@@ -23,6 +23,7 @@ import { sendHttpError } from '../lib/http-errors';
 import { registerUserArchiveRoutes } from './user-archive.routes';
 import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 import { normalizeUserPhoneNumbers, replaceUserPhones } from './user-phone-support';
+import { parseEmployeeKpiRole, readEmployeeKpiAssignments, setEmployeeKpiAssignment } from '../infrastructure/sales-kpi/employee-assignments';
 
 const router = Router();
 const primaryModuleSet = new Set<string>(ACADEMY_MODULES);
@@ -526,12 +527,15 @@ router.get('/', requireAuth, async (req, res) => {
         const teacherSettingsByUserId = new Map(
             teacherRows.rows.map((teacher) => [Number(teacher.userId), teacher]),
         );
+        const kpiAssignments = await readEmployeeKpiAssignments(pool, visibleUsers.map((user) => user.id));
+        const kpiByUser = new Map(kpiAssignments.map((assignment) => [assignment.userId, assignment]));
         res.json(sanitizedUsers.map((user) => {
             const teacher = teacherSettingsByUserId.get(Number(user.id));
             return {
                 ...user,
                 teacherSchoolIds: teacher?.schoolIds ?? [],
                 teacherAvailability: teacher?.availability ?? [],
+                salesKpi: kpiByUser.get(user.id) ?? null,
             };
         }));
     } catch (error) {
@@ -592,6 +596,7 @@ router.post('/', requireAdministration, async (req, res) => {
         }
         const module = req.body.module as AcademyModule;
         const modules = normalizeRequestedModules(req.body.modules, module);
+        const salesKpiRole = parseEmployeeKpiRole(req.body.salesKpiRole);
         const teacherSettings = readTeacherSettings(req.body);
         const dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
 
@@ -646,6 +651,7 @@ router.post('/', requireAdministration, async (req, res) => {
                 newUser = inserted.rows[0];
                 await replaceUserModules(client, newUser.id, modules);
                 await replaceUserPhones(client, newUser.id, phoneNumbers);
+                await setEmployeeKpiAssignment(client, newUser.id, salesKpiRole, modules, req.user!.id);
                 newUser = {
                     ...newUser,
                     modules,
@@ -961,6 +967,10 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         let requestedModules: AcademyAccessModule[] | null = null;
+        const salesKpiRole = parseEmployeeKpiRole(req.body.salesKpiRole);
+        if (salesKpiRole !== undefined && !hasLeadershipAccess(currentUser)) {
+            return res.status(403).json({ error: 'adminAccessRequired' });
+        }
         const teacherSettings = readTeacherSettings(req.body);
         const teacherSettingsRequested = teacherSettings.schoolIds !== undefined
             || teacherSettings.availability !== undefined;
@@ -996,6 +1006,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             Object.values(updateData).every((value) => value === undefined)
             && requestedModules === null
             && !teacherSettingsRequested
+            && salesKpiRole === undefined
         ) {
             return res.status(400).json({ error: 'invalidData' });
         }
@@ -1121,6 +1132,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                 modules: nextModules,
                 isActive: nextIsActive,
             }, client, teacherSettings);
+            await setEmployeeKpiAssignment(client, id, salesKpiRole, nextModules, req.user!.id);
             if (!nextIsActive) await revokeUserAuthenticationArtifacts(id, { executor: client });
             await client.query('COMMIT');
         } catch (error) {

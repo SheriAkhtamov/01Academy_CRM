@@ -133,7 +133,10 @@ import {
   getMetaAttributionLeads,
   getMetaConversionEventDataset,
 } from './meta-marketing-analytics';
-import { buildSalesDashboardMetrics } from './sales-dashboard-metrics';
+import {
+  buildSalesDashboardMetrics,
+  buildSalesDemoStudents,
+} from './sales-dashboard-metrics';
 
 export const registerAcademyModuleRoutes = (router: ReturnType<typeof Router>) => {
 router.get('/modules/administration', async (req, res) => {
@@ -250,6 +253,40 @@ router.get('/modules/sales/metrics', async (req, res) => {
     logger.error('Failed to fetch sales dashboard metrics', { error });
     res.status(error.statusCode || 500).json({
       error: getPublicErrorMessage(error, 'Failed to fetch sales dashboard metrics'),
+    });
+  }
+});
+
+router.get('/modules/sales/demo-students', async (req, res) => {
+  if (!ensureSalesModuleAccess(req, res)) return;
+  try {
+    const reportingRange = parseReportingRange(req.query.from, req.query.to);
+    if (!reportingRange) {
+      return res.status(400).json({ error: 'invalidReportingPeriod' });
+    }
+    const hasManagerParameter = req.query.managerId !== undefined;
+    const requestedManagerId = hasManagerParameter ? parseId(req.query.managerId) : null;
+    if (hasManagerParameter && !requestedManagerId) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
+    const canViewOtherManagers = hasLeadershipAccess(req.user);
+    if (!canViewOtherManagers
+      && requestedManagerId
+      && requestedManagerId !== Number(req.user!.id)) {
+      return res.status(403).json({ error: 'accessDenied' });
+    }
+    const actor: DatasetActor = {
+      userId: req.user!.id,
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
+      scopeModule: 'sales',
+    };
+    const demoStudents = await buildSalesDemoStudents(actor, reportingRange, requestedManagerId);
+    res.json(demoStudents);
+  } catch (error: any) {
+    logger.error('Failed to fetch sales demo students', { error });
+    res.status(error.statusCode || 500).json({
+      error: getPublicErrorMessage(error, 'Failed to fetch sales demo students'),
     });
   }
 });

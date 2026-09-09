@@ -103,5 +103,11 @@ describe('sales dashboard operational metrics', () => {
     expect(salesDashboard).toContain('onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}');
   });
 
-
+  it('opens demo students dialog instead of navigating away when clicking trial bookings', () => {
+    expect(moduleRoutes).toContain("router.get('/modules/sales/demo-students'");
+    expect(metrics).toContain('buildSalesDemoStudents');
+    expect(salesOverviewMetrics).toContain('DemoStudentsDialog');
+    expect(salesOverviewMetrics).toContain('onOpenDemoStudents={() => setDemoStudentsDialogOpen(true)}');
+    expect(overviewKpiGrid).toContain('onOpenDemoStudents');
+  });
 });

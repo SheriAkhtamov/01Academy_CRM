@@ -12,6 +12,7 @@ import {
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
 import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
+import { DemoStudentsDialog } from '@/components/ux/sales-overview/DemoStudentsDialog';
 import { SalesKpiOverview } from '@/features/sales-kpi/ui/SalesKpiOverview';
 import { useKpiOverview } from '@/features/sales-kpi/hooks';
 import { SalesOverviewFunnel } from '@/components/ux/sales-overview/SalesOverviewFunnel';
@@ -49,6 +50,7 @@ type SalesOverviewMetricsProps = {
   money: MoneyFormatter;
   onNavigate: (target: SalesOverviewNavTarget) => void;
   onExpandPeriod: () => void;
+  onOpenLead?: (leadId: number) => void;
 };
 
 const archiveReasonTranslationKeys = Object.fromEntries(
@@ -68,9 +70,11 @@ export function SalesOverviewMetrics({
   money,
   onNavigate,
   onExpandPeriod,
+  onOpenLead,
 }: SalesOverviewMetricsProps) {
   const { t } = useTranslation();
   const [targetRefusalDialogOpen, setTargetRefusalDialogOpen] = useState(false);
+  const [demoStudentsDialogOpen, setDemoStudentsDialogOpen] = useState(false);
   const reportingQuery = reportingRangeQuery(reportingRange);
   const metricsQueryString = managerId
     ? `${reportingQuery}&managerId=${managerId}`
@@ -130,7 +134,16 @@ export function SalesOverviewMetrics({
         ) : null}
 
         <SalesOverviewHero stats={stats} metrics={metrics} payments={payments} students={students} reportingRange={reportingRange} previousRange={metrics?.previousRange} money={money} />
-        <SalesOverviewKpiGrid metrics={metrics} stats={stats} payments={payments} reportingRange={reportingRange} onNavigate={onNavigate} leadStatusName={leadStatusName} statusColor={statusColor} />
+        <SalesOverviewKpiGrid
+          metrics={metrics}
+          stats={stats}
+          payments={payments}
+          reportingRange={reportingRange}
+          onNavigate={onNavigate}
+          onOpenDemoStudents={() => setDemoStudentsDialogOpen(true)}
+          leadStatusName={leadStatusName}
+          statusColor={statusColor}
+        />
         <SalesKpiOverview month={month} employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
         <SalesOverviewFunnel
           metrics={metrics}
@@ -174,6 +187,15 @@ export function SalesOverviewMetrics({
             </p>
           )}
       </OverviewDialog> : null}
+
+      {demoStudentsDialogOpen ? (
+        <DemoStudentsDialog
+          reportingRange={reportingRange}
+          managerId={managerId}
+          onClose={() => setDemoStudentsDialogOpen(false)}
+          onOpenLead={onOpenLead}
+        />
+      ) : null}
     </>
   );
 }

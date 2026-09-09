@@ -1201,6 +1201,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               money={money}
               onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
               onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))}
+              onOpenLead={openLead}
             />
             <SalesOverviewSection
               payments={periodPayments}

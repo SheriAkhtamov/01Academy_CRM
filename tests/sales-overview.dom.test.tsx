@@ -324,4 +324,39 @@ describe('unified sales overview', () => {
     expect(salesMonthRange('2025-12', '2026-01-01')).toMatchObject({ from: '2025-12-01', to: '2025-12-31' });
     expect(salesMonthRange('2026-09', '2026-09-08')).toMatchObject({ from: '2026-09-01', to: '2026-09-08' });
   });
+
+  it('opens demo students dialog when clicking trial bookings card', async () => {
+    const user = userEvent.setup();
+    request.mockImplementation(async (_method, path: string) => {
+      if (path.includes('/demo-students')) {
+        return [
+          {
+            id: 'participant-1',
+            participantId: 1,
+            studentId: 10,
+            leadId: 20,
+            studentName: 'Temur Aliyev',
+            contactName: 'Temur Aliyev',
+            phone: '+998901234567',
+            courseName: 'AI Kids',
+            schoolName: 'Cyberpark',
+            roomName: '101',
+            teacherName: 'Elena Kim',
+            scheduledAt: '2026-08-10T10:00:00Z',
+            durationMinutes: 60,
+            format: 'offline',
+            participantStatus: 'attended',
+          },
+        ];
+      }
+      if (path.includes('/sales/metrics')) return metrics;
+      return { month: '2026-08', asOf: '2026-09-08T00:00:00Z', employees: [employee()] };
+    });
+    mount();
+    const trialBookingButton = await screen.findByRole('button', { name: translations.demoStudentsModalTitle.en });
+    await user.click(trialBookingButton);
+    expect(await screen.findByRole('dialog', { name: translations.demoStudentsModalTitle.en })).toBeTruthy();
+    expect(await screen.findByText('Temur Aliyev')).toBeTruthy();
+    expect(screen.getByText('AI Kids')).toBeTruthy();
+  });
 });

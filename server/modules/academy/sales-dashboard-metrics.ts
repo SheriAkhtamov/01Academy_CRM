@@ -445,3 +445,145 @@ export const buildSalesDashboardMetrics = async (
     daily,
   };
 };
+
+export type SalesDemoStudent = {
+  id: string;
+  participantId: number | null;
+  studentId: number | null;
+  leadId: number | null;
+  studentName: string | null;
+  contactName: string | null;
+  phone: string | null;
+  courseName: string | null;
+  schoolName: string | null;
+  roomName: string | null;
+  teacherName: string | null;
+  scheduledAt: string | null;
+  durationMinutes: number | null;
+  format: 'offline' | 'online' | null;
+  participantStatus: 'attended' | 'no_show' | 'invited' | 'confirmed' | 'cancelled';
+  noShowReasonCode: string | null;
+  noShowReasonNote: string | null;
+  result: string | null;
+  managerId: number | null;
+  managerName: string | null;
+};
+
+export const buildSalesDemoStudents = async (
+  actor: DatasetActor,
+  range: ReportingRange,
+  requestedManagerId: number | null = null,
+): Promise<SalesDemoStudent[]> => {
+  const managerId = hasLeadershipAccess(actor)
+    ? requestedManagerId
+    : actor.userId;
+
+  const managerFilter = managerId ? 'AND COALESCE(student.manager_id, lead.manager_id) = $3' : '';
+  const values = managerId ? [range.start, range.end, managerId] : [range.start, range.end];
+
+  const rows = await query<Row>(
+    `SELECT
+      participant.id AS participant_id,
+      participant.status AS participant_status,
+      participant.result AS result,
+      participant.no_show_reason_code,
+      participant.no_show_reason_note,
+      demo.id AS demo_id,
+      demo.scheduled_at,
+      demo.duration_minutes,
+      demo.format,
+      demo.status AS demo_status,
+      course.name AS course_name,
+      school.name AS school_name,
+      room.name AS room_name,
+      teacher.full_name AS teacher_name,
+      student.id AS student_id,
+      COALESCE(student.student_name, lead.student_name) AS student_name,
+      COALESCE(student.contact_name, lead.contact_name) AS contact_name,
+      COALESCE(student.phone, lead.phone) AS phone,
+      lead.id AS lead_id,
+      lead.status_code AS lead_status_code,
+      COALESCE(student.manager_id, lead.manager_id) AS manager_id,
+      manager.full_name AS manager_name
+    FROM academy_demo_lesson_participants participant
+    JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
+    JOIN academy_students student ON student.id = participant.student_id
+    LEFT JOIN academy_leads lead ON lead.id = student.lead_id
+    LEFT JOIN academy_courses course ON course.id = demo.course_id
+    LEFT JOIN academy_schools school ON school.id = demo.school_id
+    LEFT JOIN academy_rooms room ON room.id = demo.room_id
+    LEFT JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
+    LEFT JOIN users manager ON manager.id = COALESCE(student.manager_id, lead.manager_id)
+    WHERE demo.scheduled_at >= $1 AND demo.scheduled_at < $2
+      ${managerFilter}
+
+    UNION ALL
+
+    SELECT
+      NULL AS participant_id,
+      CASE WHEN lead.status_code = 'demo_attended' OR COALESCE(lead.demo_attended, false) THEN 'attended' ELSE 'invited' END AS participant_status,
+      NULL AS result,
+      NULL AS no_show_reason_code,
+      NULL AS no_show_reason_note,
+      NULL AS demo_id,
+      history.entered_at AS scheduled_at,
+      NULL AS duration_minutes,
+      NULL AS format,
+      NULL AS demo_status,
+      course.name AS course_name,
+      school.name AS school_name,
+      NULL AS room_name,
+      NULL AS teacher_name,
+      student.id AS student_id,
+      COALESCE(student.student_name, lead.student_name) AS student_name,
+      COALESCE(student.contact_name, lead.contact_name) AS contact_name,
+      COALESCE(student.phone, lead.phone) AS phone,
+      lead.id AS lead_id,
+      lead.status_code AS lead_status_code,
+      COALESCE(student.manager_id, lead.manager_id) AS manager_id,
+      manager.full_name AS manager_name
+    FROM academy_lead_stage_history history
+    JOIN academy_leads lead ON lead.id = history.lead_id
+    LEFT JOIN academy_students student ON student.lead_id = lead.id
+    LEFT JOIN academy_courses course ON course.id = lead.course_id
+    LEFT JOIN academy_schools school ON school.id = lead.school_id
+    LEFT JOIN users manager ON manager.id = COALESCE(student.manager_id, lead.manager_id)
+    WHERE history.entered_at >= $1 AND history.entered_at < $2
+      AND history.to_status_code IN ('demo_invited', 'demo_attended')
+      ${managerFilter}
+      AND NOT EXISTS (
+        SELECT 1 FROM academy_demo_lesson_participants p2
+        JOIN academy_demo_lessons d2 ON d2.id = p2.demo_lesson_id
+        JOIN academy_students s2 ON s2.id = p2.student_id
+        WHERE s2.lead_id = lead.id
+          AND d2.scheduled_at >= $1 AND d2.scheduled_at < $2
+      )
+    ORDER BY scheduled_at DESC, participant_id DESC NULLS LAST`,
+    values,
+  );
+
+  return rows.map((row) => ({
+    id: row.participant_id
+      ? `participant-${row.participant_id}`
+      : `lead-stage-${row.lead_id}-${new Date(row.scheduled_at).getTime()}`,
+    participantId: row.participant_id ? Number(row.participant_id) : null,
+    studentId: row.student_id ? Number(row.student_id) : null,
+    leadId: row.lead_id ? Number(row.lead_id) : null,
+    studentName: row.student_name ? String(row.student_name) : null,
+    contactName: row.contact_name ? String(row.contact_name) : null,
+    phone: row.phone ? String(row.phone) : null,
+    courseName: row.course_name ? String(row.course_name) : null,
+    schoolName: row.school_name ? String(row.school_name) : null,
+    roomName: row.room_name ? String(row.room_name) : null,
+    teacherName: row.teacher_name ? String(row.teacher_name) : null,
+    scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).toISOString() : null,
+    durationMinutes: row.duration_minutes ? Number(row.duration_minutes) : null,
+    format: row.format === 'online' ? 'online' : row.format === 'offline' ? 'offline' : null,
+    participantStatus: (row.participant_status as any) || 'invited',
+    noShowReasonCode: row.no_show_reason_code ? String(row.no_show_reason_code) : null,
+    noShowReasonNote: row.no_show_reason_note ? String(row.no_show_reason_note) : null,
+    result: row.result ? String(row.result) : null,
+    managerId: row.manager_id ? Number(row.manager_id) : null,
+    managerName: row.manager_name ? String(row.manager_name) : null,
+  }));
+};

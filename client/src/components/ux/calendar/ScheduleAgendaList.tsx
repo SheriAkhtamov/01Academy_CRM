@@ -4,7 +4,7 @@ import type { Locale } from 'date-fns';
 import { UserRoundCheck } from 'lucide-react';
 import {
   calendarToneAt,
-  DEMO_TONE,
+  demoToneForStatus,
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
 import {
@@ -78,7 +78,7 @@ export function ScheduleAgendaList({
             <ul className="divide-y divide-border/60">
               {dayEvents.map((event) => {
                 const tone = event.source === 'demo'
-                  ? DEMO_TONE
+                  ? demoToneForStatus(event.demoStatus)
                   : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
                 const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
                 const demoStatusKey = getDemoCalendarStatusKey(event);
@@ -94,7 +94,7 @@ export function ScheduleAgendaList({
                       type="button"
                       className={cn(
                         'flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                        isInactiveDemoCalendarEvent(event) && 'opacity-70 saturate-50 hover:opacity-100',
+                        isInactiveDemoCalendarEvent(event) && 'opacity-80 hover:opacity-100',
                       )}
                       aria-label={`${timeRange}, ${eventName}${demoStatus ? `, ${demoStatus}` : ''}`}
                       onClick={() => onSelectEvent(event)}

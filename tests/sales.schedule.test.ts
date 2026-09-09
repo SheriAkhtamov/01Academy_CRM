@@ -4,6 +4,7 @@ import {
   getCalendarMinutePosition,
   isCalendarMinuteCollapsed,
 } from '../client/src/lib/calendarTimeScale';
+import { demoToneForStatus } from '../client/src/components/ux/calendar/calendarTones';
 import {
   buildSalesDemoScheduleEvents,
   buildSalesScheduleFilterTree,
@@ -248,5 +249,12 @@ describe('sales schedule calendar', () => {
       { demoLessonId: 3, demoStatus: 'not_conducted' },
       { demoLessonId: 4, demoStatus: 'cancelled' },
     ]);
+  });
+
+  it('uses a distinct semantic colour for every demo lesson status', () => {
+    expect(demoToneForStatus('scheduled').solid).toBe('var(--calendar-violet-solid)');
+    expect(demoToneForStatus('completed').solid).toBe('var(--calendar-emerald-solid)');
+    expect(demoToneForStatus('not_conducted').solid).toBe('var(--calendar-amber-solid)');
+    expect(demoToneForStatus('cancelled').solid).toBe('var(--calendar-rose-solid)');
   });
 });

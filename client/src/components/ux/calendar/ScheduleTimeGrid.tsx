@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   calendarToneAt,
-  DEMO_TONE,
+  demoToneForStatus,
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
 import {
@@ -238,7 +238,7 @@ export function ScheduleTimeGrid({
           <TooltipProvider delayDuration={250}>
             {events.map((event) => {
               const tone = event.source === 'demo'
-                ? DEMO_TONE
+                ? demoToneForStatus(event.demoStatus)
                 : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
               const style = eventPositionStyle(event, timeScale, dayCount);
               const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
@@ -259,7 +259,7 @@ export function ScheduleTimeGrid({
                         // Raising z-index alongside the scale keeps a hovered
                         // lesson on top of the ones it overlaps in the grid.
                         'transition-[box-shadow,transform] duration-150 ease-out hover:z-20 hover:scale-[1.015] hover:shadow-lg active:scale-100 focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                        inactiveDemo && 'opacity-70 saturate-50 hover:opacity-100',
+                        inactiveDemo && 'opacity-80 hover:opacity-100',
                       )}
                       style={{
                         ...style,

@@ -1,3 +1,5 @@
+import type { SalesScheduleDemoStatus } from '@/lib/salesSchedule';
+
 export interface CalendarTone {
   background: string;
   border: string;
@@ -27,6 +29,17 @@ export const CALENDAR_TONES = [
 ] as const;
 
 export const DEMO_TONE = CALENDAR_TONES[3];
+
+const DEMO_STATUS_TONES: Record<SalesScheduleDemoStatus, CalendarTone> = {
+  scheduled: DEMO_TONE,
+  completed: CALENDAR_TONES[1],
+  not_conducted: CALENDAR_TONES[2],
+  cancelled: CALENDAR_TONES[4],
+};
+
+export const demoToneForStatus = (status?: SalesScheduleDemoStatus | null) => (
+  status ? DEMO_STATUS_TONES[status] : DEMO_TONE
+);
 
 export const calendarToneAt = (index: number) => (
   CALENDAR_TONES[((index % CALENDAR_TONES.length) + CALENDAR_TONES.length) % CALENDAR_TONES.length]

@@ -2,7 +2,7 @@ import { format, isSameDay, isSameMonth } from 'date-fns';
 import type { Locale } from 'date-fns';
 import {
   calendarToneAt,
-  DEMO_TONE,
+  demoToneForStatus,
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
 import {
@@ -99,7 +99,7 @@ export function ScheduleMonthGrid({
                 <div className="flex flex-col gap-0.5">
                   {dayEvents.slice(0, VISIBLE_PER_DAY).map((event) => {
                     const tone = event.source === 'demo'
-                      ? DEMO_TONE
+                      ? demoToneForStatus(event.demoStatus)
                       : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
                     const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
                     const demoStatusKey = getDemoCalendarStatusKey(event);
@@ -110,7 +110,7 @@ export function ScheduleMonthGrid({
                         type="button"
                         className={cn(
                           'flex min-w-0 items-center gap-1 rounded border-l-2 px-1 py-0.5 text-left text-[10px] font-medium hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          isInactiveDemoCalendarEvent(event) && 'opacity-70 saturate-50 hover:opacity-100',
+                          isInactiveDemoCalendarEvent(event) && 'opacity-80 hover:opacity-100',
                         )}
                         style={{
                           backgroundColor: tone.background,

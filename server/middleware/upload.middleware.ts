@@ -43,8 +43,7 @@ const storage = multer.diskStorage({
 export const boardAttachmentUpload = multer({
     storage,
     limits: {
-        // Busboy emits LIMIT_FILE_SIZE at equality; allow exactly 50 MiB.
-        fileSize: MAX_ATTACHMENT_BYTES + 1,
+        fileSize: MAX_ATTACHMENT_BYTES,
         files: 1,
         fields: 5,
         parts: 8,

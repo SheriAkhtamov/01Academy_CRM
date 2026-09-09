@@ -4,6 +4,7 @@ import {
   isLeadIntegrationProvider,
   resolveLeadFunnelId,
 } from '../server/services/lead-funnels';
+import { parseFunnelIntegrations } from '../server/modules/academy/funnels.router';
 
 describe('sales funnel lead routing', () => {
   it('uses the active funnel assigned to the integration', async () => {
@@ -51,11 +52,21 @@ describe('sales funnel lead routing', () => {
       'utf8',
     );
 
+    expect(funnelsPanel).toContain('<Dialog open={dialogOpen}');
     expect(funnelsPanel).toContain('LEAD_SOURCE_PROVIDERS.map');
-    expect(funnelsPanel).toContain('salesFunnelsApi.assignIntegration');
+    expect(funnelsPanel).toContain('sales-funnel-source-${provider}');
     expect(funnelsPanel).toContain("t('leadSourceDistributionDescription')");
+    expect(funnelsPanel).not.toContain('salesFunnelsApi.assignIntegration');
+    expect(funnelsPanel).not.toContain('lead-source-funnel-${provider}');
     expect(integrationsPage).not.toContain('salesFunnelsApi.assignIntegration');
     expect(integrationsPage).not.toContain('integration-funnel-');
+  });
+
+  it('accepts only a unique list of lead-producing sources in funnel forms', () => {
+    expect(parseFunnelIntegrations(undefined)).toBeUndefined();
+    expect(parseFunnelIntegrations(['website', 'website', 'meta'])).toEqual(['website', 'meta']);
+    expect(() => parseFunnelIntegrations(['telegram_tasks'])).toThrow('invalidData');
+    expect(() => parseFunnelIntegrations('website')).toThrow('invalidData');
   });
 });
 

@@ -42,20 +42,32 @@ import {
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { EmptyState } from '@/components/ux/EmptyState';
 
-type FunnelDraft = {
-  name: string;
-  isActive: boolean;
-  isDefault: boolean;
-};
-
-const EMPTY_DRAFT: FunnelDraft = { name: '', isActive: true, isDefault: false };
-
 const LEAD_SOURCE_PROVIDERS = [
   { provider: 'website', Icon: Globe2 },
   { provider: 'instagram', Icon: Camera },
   { provider: 'meta', Icon: RadioTower },
   { provider: 'onlinepbx', Icon: PhoneCall },
 ] as const;
+
+type LeadSourceProvider = typeof LEAD_SOURCE_PROVIDERS[number]['provider'];
+
+type FunnelDraft = {
+  name: string;
+  isActive: boolean;
+  isDefault: boolean;
+  integrations: LeadSourceProvider[];
+};
+
+const emptyDraft = (): FunnelDraft => ({
+  name: '',
+  isActive: true,
+  isDefault: false,
+  integrations: [],
+});
+
+const isLeadSourceProvider = (provider: string): provider is LeadSourceProvider => (
+  LEAD_SOURCE_PROVIDERS.some((entry) => entry.provider === provider)
+);
 
 const integrationKey = (provider: string) => {
   switch (provider) {
@@ -72,7 +84,7 @@ export function SalesFunnelsPanel() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<SalesFunnel | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [draft, setDraft] = useState<FunnelDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<FunnelDraft>(() => emptyDraft());
   const [deleteTarget, setDeleteTarget] = useState<SalesFunnel | null>(null);
   const [transferTargetId, setTransferTargetId] = useState('');
 
@@ -81,13 +93,6 @@ export function SalesFunnelsPanel() {
     () => (funnels.data ?? []).filter((funnel) => funnel.isActive),
     [funnels.data],
   );
-  const funnelByProvider = useMemo(() => {
-    const assignments = new Map<string, SalesFunnel>();
-    for (const funnel of funnels.data ?? []) {
-      for (const provider of funnel.integrations) assignments.set(provider, funnel);
-    }
-    return assignments;
-  }, [funnels.data]);
   const activeTransferTargets = useMemo(
     () => activeFunnels.filter((funnel) => funnel.id !== deleteTarget?.id),
     [activeFunnels, deleteTarget?.id],
@@ -107,14 +112,19 @@ export function SalesFunnelsPanel() {
   const closeEditor = () => {
     setDialogOpen(false);
     setEditing(null);
-    setDraft(EMPTY_DRAFT);
+    setDraft(emptyDraft());
   };
 
   const openEditor = (funnel?: SalesFunnel) => {
     setEditing(funnel ?? null);
     setDraft(funnel
-      ? { name: funnel.name, isActive: funnel.isActive, isDefault: funnel.isDefault }
-      : EMPTY_DRAFT);
+      ? {
+        name: funnel.name,
+        isActive: funnel.isActive,
+        isDefault: funnel.isDefault,
+        integrations: funnel.integrations.filter(isLeadSourceProvider),
+      }
+      : emptyDraft());
     setDialogOpen(true);
   };
 
@@ -167,22 +177,6 @@ export function SalesFunnelsPanel() {
           ? t('salesFunnelTransferTargetRequired')
           : error.message;
       toast({ title: t('error'), description, variant: 'destructive' });
-    },
-  });
-
-  const updateIntegrationFunnel = useMutation({
-    mutationFn: ({ provider, funnelId }: { provider: string; funnelId: number }) =>
-      salesFunnelsApi.assignIntegration(provider, funnelId),
-    onSuccess: async () => {
-      await invalidate();
-      toast({ title: t('integrationFunnelUpdated') });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: t('integrationFunnelUpdateFailed'),
-        description: error.message,
-        variant: 'destructive',
-      });
     },
   });
 
@@ -308,57 +302,13 @@ export function SalesFunnelsPanel() {
         </CardContent>
       </Card>
 
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>{t('funnelIntegrations')}</CardTitle>
-          <CardDescription>{t('leadSourceDistributionDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {LEAD_SOURCE_PROVIDERS.map(({ provider, Icon }) => {
-            const assignedFunnel = funnelByProvider.get(provider);
-
-            return (
-              <div key={provider} className="space-y-2 rounded-xl border border-border p-4">
-                <div className="flex items-center gap-2">
-                  <Icon className="size-4 text-muted-foreground" />
-                  <Label htmlFor={`lead-source-funnel-${provider}`}>{t(integrationKey(provider))}</Label>
-                </div>
-                <Select
-                  value={assignedFunnel ? String(assignedFunnel.id) : ''}
-                  onValueChange={(value) => updateIntegrationFunnel.mutate({
-                    provider,
-                    funnelId: Number(value),
-                  })}
-                  disabled={
-                    funnels.isLoading
-                    || updateIntegrationFunnel.isPending
-                    || activeFunnels.length === 0
-                  }
-                >
-                  <SelectTrigger id={`lead-source-funnel-${provider}`}>
-                    <SelectValue placeholder={t('selectSalesFunnel')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeFunnels.map((funnel) => (
-                      <SelectItem key={funnel.id} value={String(funnel.id)}>
-                        {funnel.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeEditor())}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>{editing ? t('editSalesFunnel') : t('addSalesFunnel')}</DialogTitle>
             <DialogDescription>{t('salesFunnelFormDescription')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="sales-funnel-name">{t('salesFunnelName')}</Label>
               <Input
@@ -378,7 +328,7 @@ export function SalesFunnelsPanel() {
               <Switch
                 id="sales-funnel-active"
                 checked={draft.isActive}
-                disabled={editing?.isDefault === true}
+                disabled={editing?.isDefault === true || draft.integrations.length > 0}
                 onCheckedChange={(isActive) => setDraft((current) => ({ ...current, isActive }))}
               />
             </div>
@@ -395,11 +345,60 @@ export function SalesFunnelsPanel() {
                   ...current,
                   isDefault,
                   isActive: isDefault ? true : current.isActive,
+                  integrations: isDefault && editing
+                    ? [...new Set([
+                      ...current.integrations,
+                      ...editing.integrations.filter(isLeadSourceProvider),
+                    ])]
+                    : current.integrations,
                 }))}
               />
             </div>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('funnelIntegrations')}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('leadSourceDistributionDescription')}
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {LEAD_SOURCE_PROVIDERS.map(({ provider, Icon }) => {
+                  const isSelected = draft.integrations.includes(provider);
+                  const isLockedToDefault = Boolean(
+                    draft.isDefault && editing?.integrations.includes(provider),
+                  );
+
+                  return (
+                    <div
+                      key={provider}
+                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                    >
+                      <Label
+                        htmlFor={`sales-funnel-source-${provider}`}
+                        className="flex min-w-0 items-center gap-2"
+                      >
+                        <Icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{t(integrationKey(provider))}</span>
+                      </Label>
+                      <Switch
+                        id={`sales-funnel-source-${provider}`}
+                        checked={isSelected}
+                        disabled={isLockedToDefault}
+                        onCheckedChange={(checked) => setDraft((current) => ({
+                          ...current,
+                          isActive: checked ? true : current.isActive,
+                          integrations: checked
+                            ? [...new Set([...current.integrations, provider])]
+                            : current.integrations.filter((entry) => entry !== provider),
+                        }))}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t px-6 py-4">
             <Button type="button" variant="outline" onClick={closeEditor} disabled={saveFunnel.isPending}>
               {t('cancel')}
             </Button>

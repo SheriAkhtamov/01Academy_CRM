@@ -14,6 +14,7 @@ export type SalesFunnelInput = {
   name: string;
   isActive: boolean;
   isDefault: boolean;
+  integrations: string[];
 };
 
 export const salesFunnelsApi = {
@@ -24,8 +25,5 @@ export const salesFunnelsApi = {
   delete: (funnelId: number) => apiRequest('DELETE', `/api/academy/sales-funnels/${funnelId}`),
   transferAndDelete: (funnelId: number, targetFunnelId: number) => (
     apiRequest('POST', `/api/academy/sales-funnels/${funnelId}/transfer-and-delete`, { targetFunnelId })
-  ),
-  assignIntegration: (provider: string, funnelId: number) => (
-    apiRequest('PUT', `/api/academy/integrations/${provider}/funnel`, { funnelId })
   ),
 };

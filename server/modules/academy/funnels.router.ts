@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
-import { isLeadIntegrationProvider } from '../../services/lead-funnels';
+import {
+  isLeadIntegrationProvider,
+  type LeadIntegrationProvider,
+} from '../../services/lead-funnels';
 import {
   createAudit,
   ensureAdministrationModuleAccess,
@@ -35,6 +38,75 @@ const validateFunnelName = (value: unknown) => {
   return name;
 };
 
+export const parseFunnelIntegrations = (value: unknown): LeadIntegrationProvider[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  const integrations = [...new Set(value.map(String))];
+  if (integrations.some((provider) => !isLeadIntegrationProvider(provider))) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  return integrations as LeadIntegrationProvider[];
+};
+
+const syncFunnelIntegrations = async (
+  funnelId: number,
+  integrations: LeadIntegrationProvider[] | undefined,
+  updatedBy: number,
+  fallbackFunnelId?: number,
+) => {
+  if (integrations === undefined) return;
+
+  const current = await query<{ provider: LeadIntegrationProvider }>(
+    `SELECT provider
+     FROM academy_integration_funnel_settings
+     WHERE funnel_id = $1
+     ORDER BY provider
+     FOR UPDATE`,
+    [funnelId],
+  );
+  const desired = new Set(integrations);
+  const removed = current
+    .map((setting) => setting.provider)
+    .filter((provider) => !desired.has(provider));
+
+  if (removed.length > 0) {
+    if (!fallbackFunnelId || fallbackFunnelId === funnelId) {
+      throw Object.assign(new Error('salesFunnelTransferTargetRequired'), { statusCode: 409 });
+    }
+    await query(
+      `UPDATE academy_integration_funnel_settings
+       SET funnel_id = $2, updated_by = $3, updated_at = NOW()
+       WHERE funnel_id = $1 AND provider = ANY($4::text[])`,
+      [funnelId, fallbackFunnelId, updatedBy, removed],
+    );
+  }
+
+  if (integrations.length > 0) {
+    await query(
+      `INSERT INTO academy_integration_funnel_settings (provider, funnel_id, updated_by)
+       SELECT provider, $1, $2
+       FROM unnest($3::text[]) AS requested(provider)
+       ON CONFLICT (provider) DO UPDATE
+       SET funnel_id = EXCLUDED.funnel_id,
+           updated_by = EXCLUDED.updated_by,
+           updated_at = NOW()`,
+      [funnelId, updatedBy, integrations],
+    );
+  }
+};
+
+const getFunnelIntegrations = async (funnelId: number) => (
+  await query<{ provider: LeadIntegrationProvider }>(
+    `SELECT provider
+     FROM academy_integration_funnel_settings
+     WHERE funnel_id = $1
+     ORDER BY provider`,
+    [funnelId],
+  )
+).map((setting) => setting.provider);
+
 const mapUniqueViolation = (error: any) => {
   if (error?.code === '23505') {
     return Object.assign(new Error('salesFunnelNameExists'), { statusCode: 409 });
@@ -57,20 +129,33 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
     if (!ensureAdministrationModuleAccess(req, res)) return;
     try {
       const name = validateFunnelName(req.body.name);
+      const integrations = parseFunnelIntegrations(req.body.integrations);
       const funnel = await withTransaction(async () => {
         await query(`SELECT pg_advisory_xact_lock(hashtext('academy-sales-funnels'))`);
         const current = await query(`SELECT id FROM academy_sales_funnels ORDER BY id FOR UPDATE`);
         const isDefault = current.length === 0 || req.body.isDefault === true;
         const isActive = isDefault || req.body.isActive !== false;
+        if (!isActive && integrations && integrations.length > 0) {
+          throw Object.assign(new Error('salesFunnelInUseMustRemainActive'), { statusCode: 409 });
+        }
         if (isDefault) {
           await query(`UPDATE academy_sales_funnels SET is_default = false, updated_at = NOW() WHERE is_default = true`);
         }
-        return queryOne(
+        const created = await queryOne<{ id: number } & Record<string, unknown>>(
           `INSERT INTO academy_sales_funnels (name, is_active, is_default)
            VALUES ($1, $2, $3)
            RETURNING *`,
           [name, isActive, isDefault],
         );
+        if (!created) return undefined;
+        await syncFunnelIntegrations(Number(created.id), integrations, req.user!.id);
+        const savedIntegrations = await getFunnelIntegrations(Number(created.id));
+        return {
+          ...created,
+          leadCount: 0,
+          integrationCount: savedIntegrations.length,
+          integrations: savedIntegrations,
+        };
       });
       if (!funnel) throw new Error('Failed to create sales funnel');
       await createAudit(req, 'CREATE_ACADEMY_SALES_FUNNEL', 'academy_sales_funnel', Number(funnel.id), funnel);
@@ -89,6 +174,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: 'invalidData' });
+      const integrations = parseFunnelIntegrations(req.body.integrations);
       const funnel = await withTransaction(async () => {
         await query(`SELECT pg_advisory_xact_lock(hashtext('academy-sales-funnels'))`);
         const current = await queryOne(
@@ -109,9 +195,21 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         if (current.isDefault === true && !isActive) {
           throw Object.assign(new Error('salesFunnelDefaultMustRemainActive'), { statusCode: 409 });
         }
-        if (!isActive && (Number(current.leadCount) > 0 || Number(current.integrationCount) > 0)) {
+        const integrationCountAfterSave = integrations === undefined
+          ? Number(current.integrationCount)
+          : integrations.length;
+        if (!isActive && (Number(current.leadCount) > 0 || integrationCountAfterSave > 0)) {
           throw Object.assign(new Error('salesFunnelInUseMustRemainActive'), { statusCode: 409 });
         }
+        const fallback = integrations === undefined
+          ? undefined
+          : await queryOne<{ id: number }>(
+            `SELECT id
+             FROM academy_sales_funnels
+             WHERE is_default = true AND is_active = true AND id <> $1
+             FOR SHARE`,
+            [id],
+          );
         if (makeDefault) {
           await query(
             `UPDATE academy_sales_funnels
@@ -120,7 +218,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
             [id],
           );
         }
-        return queryOne(
+        const updated = await queryOne<{ id: number } & Record<string, unknown>>(
           `UPDATE academy_sales_funnels
            SET name = $2,
                is_active = $3,
@@ -130,6 +228,15 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
            RETURNING *`,
           [id, name, isActive, makeDefault],
         );
+        if (!updated) return undefined;
+        await syncFunnelIntegrations(id, integrations, req.user!.id, Number(fallback?.id) || undefined);
+        const savedIntegrations = await getFunnelIntegrations(id);
+        return {
+          ...updated,
+          leadCount: Number(current.leadCount),
+          integrationCount: savedIntegrations.length,
+          integrations: savedIntegrations,
+        };
       });
       if (!funnel) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
       await createAudit(req, 'UPDATE_ACADEMY_SALES_FUNNEL', 'academy_sales_funnel', id, funnel);

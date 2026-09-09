@@ -40,7 +40,6 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage } from '@/components/ux/ModulePage';
 import { MetaIntegrationDialog } from '@/components/marketing/MetaIntegrationDialog';
 import type { MetaIntegrationState } from '@/features/marketing/meta-api';
-import { salesFunnelsApi, type SalesFunnel } from '@/features/sales-funnels/api';
 import {
   AlertCircle,
   Camera,
@@ -76,9 +75,6 @@ interface IntegrationStatus {
   accountUsername?: string | null;
   externalUrl?: string | null;
   details?: MetaIntegrationState | null;
-  acceptsLeads: boolean;
-  funnelId: number | null;
-  funnelName: string | null;
   lastLog?: {
     provider: string;
     direction?: string;
@@ -199,9 +195,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   const integrations = useQuery<IntegrationStatus[]>({
     queryKey: ['/api/academy/integrations/status'],
   });
-  const salesFunnels = useQuery<SalesFunnel[]>({
-    queryKey: ['/api/academy/sales-funnels'],
-  });
   const totalCount = integrations.data?.length ?? 0;
   const connectedCount = (integrations.data ?? []).filter((entry) => entry.connected).length;
   /*
@@ -291,25 +284,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     onError: (error: Error) => {
       toast({
         title: t('instagramDisconnectFailed'),
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const updateIntegrationFunnel = useMutation({
-    mutationFn: ({ provider, funnelId }: { provider: string; funnelId: number }) =>
-      salesFunnelsApi.assignIntegration(provider, funnelId),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] }),
-      ]);
-      toast({ title: t('integrationFunnelUpdated') });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: t('integrationFunnelUpdateFailed'),
         description: error.message,
         variant: 'destructive',
       });
@@ -529,38 +503,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           <span>{t('integrationNoEvents')}</span>
                         )}
                       </div>
-                      {integration.acceptsLeads ? (
-                        <div className="mt-4 max-w-xs space-y-2">
-                          <Label htmlFor={`integration-funnel-${integration.provider}`}>
-                            {t('funnelForNewLeads')}
-                          </Label>
-                          <Select
-                            value={integration.funnelId ? String(integration.funnelId) : ''}
-                            onValueChange={(value) => updateIntegrationFunnel.mutate({
-                              provider: integration.provider,
-                              funnelId: Number(value),
-                            })}
-                            disabled={
-                              updateIntegrationFunnel.isPending
-                              || salesFunnels.isLoading
-                              || !(salesFunnels.data ?? []).some((funnel) => funnel.isActive)
-                            }
-                          >
-                            <SelectTrigger id={`integration-funnel-${integration.provider}`}>
-                              <SelectValue placeholder={t('selectSalesFunnel')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(salesFunnels.data ?? [])
-                                .filter((funnel) => funnel.isActive)
-                                .map((funnel) => (
-                                  <SelectItem key={funnel.id} value={String(funnel.id)}>
-                                    {funnel.name}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">

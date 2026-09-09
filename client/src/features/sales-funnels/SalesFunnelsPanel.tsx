@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Edit3, GitBranch, Loader2, Plus, Trash2 } from 'lucide-react';
+import {
+  Camera,
+  Edit3,
+  GitBranch,
+  Globe2,
+  Loader2,
+  PhoneCall,
+  Plus,
+  RadioTower,
+  Trash2,
+} from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { salesFunnelsApi, type SalesFunnel } from './api';
 import { toast } from '@/hooks/use-toast';
@@ -40,6 +50,13 @@ type FunnelDraft = {
 
 const EMPTY_DRAFT: FunnelDraft = { name: '', isActive: true, isDefault: false };
 
+const LEAD_SOURCE_PROVIDERS = [
+  { provider: 'website', Icon: Globe2 },
+  { provider: 'instagram', Icon: Camera },
+  { provider: 'meta', Icon: RadioTower },
+  { provider: 'onlinepbx', Icon: PhoneCall },
+] as const;
+
 const integrationKey = (provider: string) => {
   switch (provider) {
     case 'website': return 'integrationProviderWebsite' as const;
@@ -60,9 +77,20 @@ export function SalesFunnelsPanel() {
   const [transferTargetId, setTransferTargetId] = useState('');
 
   const funnels = useQuery<SalesFunnel[]>({ queryKey: ['/api/academy/sales-funnels'] });
+  const activeFunnels = useMemo(
+    () => (funnels.data ?? []).filter((funnel) => funnel.isActive),
+    [funnels.data],
+  );
+  const funnelByProvider = useMemo(() => {
+    const assignments = new Map<string, SalesFunnel>();
+    for (const funnel of funnels.data ?? []) {
+      for (const provider of funnel.integrations) assignments.set(provider, funnel);
+    }
+    return assignments;
+  }, [funnels.data]);
   const activeTransferTargets = useMemo(
-    () => (funnels.data ?? []).filter((funnel) => funnel.isActive && funnel.id !== deleteTarget?.id),
-    [deleteTarget?.id, funnels.data],
+    () => activeFunnels.filter((funnel) => funnel.id !== deleteTarget?.id),
+    [activeFunnels, deleteTarget?.id],
   );
   const deleteNeedsTransfer = Boolean(
     deleteTarget
@@ -139,6 +167,22 @@ export function SalesFunnelsPanel() {
           ? t('salesFunnelTransferTargetRequired')
           : error.message;
       toast({ title: t('error'), description, variant: 'destructive' });
+    },
+  });
+
+  const updateIntegrationFunnel = useMutation({
+    mutationFn: ({ provider, funnelId }: { provider: string; funnelId: number }) =>
+      salesFunnelsApi.assignIntegration(provider, funnelId),
+    onSuccess: async () => {
+      await invalidate();
+      toast({ title: t('integrationFunnelUpdated') });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('integrationFunnelUpdateFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -261,6 +305,50 @@ export function SalesFunnelsPanel() {
               )}
             />
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>{t('funnelIntegrations')}</CardTitle>
+          <CardDescription>{t('leadSourceDistributionDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          {LEAD_SOURCE_PROVIDERS.map(({ provider, Icon }) => {
+            const assignedFunnel = funnelByProvider.get(provider);
+
+            return (
+              <div key={provider} className="space-y-2 rounded-xl border border-border p-4">
+                <div className="flex items-center gap-2">
+                  <Icon className="size-4 text-muted-foreground" />
+                  <Label htmlFor={`lead-source-funnel-${provider}`}>{t(integrationKey(provider))}</Label>
+                </div>
+                <Select
+                  value={assignedFunnel ? String(assignedFunnel.id) : ''}
+                  onValueChange={(value) => updateIntegrationFunnel.mutate({
+                    provider,
+                    funnelId: Number(value),
+                  })}
+                  disabled={
+                    funnels.isLoading
+                    || updateIntegrationFunnel.isPending
+                    || activeFunnels.length === 0
+                  }
+                >
+                  <SelectTrigger id={`lead-source-funnel-${provider}`}>
+                    <SelectValue placeholder={t('selectSalesFunnel')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeFunnels.map((funnel) => (
+                      <SelectItem key={funnel.id} value={String(funnel.id)}>
+                        {funnel.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 

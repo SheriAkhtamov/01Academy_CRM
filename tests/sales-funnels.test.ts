@@ -40,6 +40,23 @@ describe('sales funnel lead routing', () => {
     expect(isLeadIntegrationProvider('onlinepbx')).toBe(true);
     expect(isLeadIntegrationProvider('telegram_tasks')).toBe(false);
   });
+
+  it('keeps lead-source routing in Academy Structure sales funnels', () => {
+    const funnelsPanel = readFileSync(
+      new URL('../client/src/features/sales-funnels/SalesFunnelsPanel.tsx', import.meta.url),
+      'utf8',
+    );
+    const integrationsPage = readFileSync(
+      new URL('../client/src/pages/academy.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(funnelsPanel).toContain('LEAD_SOURCE_PROVIDERS.map');
+    expect(funnelsPanel).toContain('salesFunnelsApi.assignIntegration');
+    expect(funnelsPanel).toContain("t('leadSourceDistributionDescription')");
+    expect(integrationsPage).not.toContain('salesFunnelsApi.assignIntegration');
+    expect(integrationsPage).not.toContain('integration-funnel-');
+  });
 });
 
 describe('0105 sales funnel migration', () => {

@@ -1692,6 +1692,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     ru: 'Создайте первую воронку для распределения входящих заявок.',
   },
   funnelIntegrations: { en: 'Lead sources', ru: 'Источники лидов' },
+  leadSourceDistributionDescription: {
+    en: 'Choose which funnel should receive new leads from each source.',
+    ru: 'Выберите, в какую воронку направлять новые заявки из каждого источника.',
+  },
   noFunnelIntegrations: { en: 'No sources assigned', ru: 'Источники не назначены' },
   salesFunnelDeleteTitle: { en: 'Delete sales funnel?', ru: 'Удалить воронку продаж?' },
   salesFunnelDeleteDescription: {
@@ -1709,7 +1713,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   transferAndDeleteSalesFunnel: { en: 'Move and delete', ru: 'Перенести и удалить' },
   selectSalesFunnel: { en: 'Select a funnel', ru: 'Выберите воронку' },
-  funnelForNewLeads: { en: 'Funnel for new leads', ru: 'Воронка для новых лидов' },
   integrationFunnelUpdated: { en: 'Lead funnel updated', ru: 'Воронка для лидов обновлена' },
   integrationFunnelUpdateFailed: { en: 'Could not update the lead funnel', ru: 'Не удалось изменить воронку для лидов' },
   salesFunnelRequired: { en: 'Select a sales funnel', ru: 'Выберите воронку продаж' },

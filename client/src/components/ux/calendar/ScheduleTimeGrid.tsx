@@ -13,6 +13,10 @@ import {
   DEMO_TONE,
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
+import {
+  getDemoCalendarStatusKey,
+  isInactiveDemoCalendarEvent,
+} from '@/components/ux/calendar/demoCalendarStatus';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   getCalendarMinuteAtPosition,
@@ -238,6 +242,9 @@ export function ScheduleTimeGrid({
                 : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
               const style = eventPositionStyle(event, timeScale, dayCount);
               const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
+              const demoStatusKey = getDemoCalendarStatusKey(event);
+              const demoStatus = demoStatusKey ? t(demoStatusKey) : null;
+              const inactiveDemo = isInactiveDemoCalendarEvent(event);
               const timeRange = `${formatCalendarMinutes(event.startMinutes)}–${formatCalendarMinutes(event.endMinutes)}`;
               const roomy = style.height >= 56;
               const spacious = style.height >= 78;
@@ -252,6 +259,7 @@ export function ScheduleTimeGrid({
                         // Raising z-index alongside the scale keeps a hovered
                         // lesson on top of the ones it overlaps in the grid.
                         'transition-[box-shadow,transform] duration-150 ease-out hover:z-20 hover:scale-[1.015] hover:shadow-lg active:scale-100 focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                        inactiveDemo && 'opacity-70 saturate-50 hover:opacity-100',
                       )}
                       style={{
                         ...style,
@@ -261,14 +269,18 @@ export function ScheduleTimeGrid({
                         borderLeftWidth: 3,
                         borderLeftColor: tone.solid,
                       }}
-                      aria-label={`${timeRange}, ${eventName}`}
+                      aria-label={`${timeRange}, ${eventName}${demoStatus ? `, ${demoStatus}` : ''}`}
                       onClick={() => onSelectEvent(event)}
                     >
                       <span className="truncate text-xs font-semibold leading-tight">{eventName}</span>
                       <span className="truncate text-[10px] font-medium tabular-nums opacity-80">
                         {timeRange}
                       </span>
-                      {roomy ? (
+                      {demoStatus ? (
+                        <span className="truncate text-[10px] font-semibold opacity-85">
+                          {demoStatus}
+                        </span>
+                      ) : roomy ? (
                         <span className="truncate text-[10px] opacity-75">
                           {event.teacherName || t('teacherWillBeAssigned')}
                         </span>
@@ -285,6 +297,9 @@ export function ScheduleTimeGrid({
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-64">
                     <p className="font-semibold">{eventName}</p>
+                    {demoStatus ? (
+                      <p className="text-xs font-semibold">{demoStatus}</p>
+                    ) : null}
                     <p className="text-xs opacity-80">
                       {timeRange} · {event.topic || event.courseName || t('lessonColumn')}
                     </p>

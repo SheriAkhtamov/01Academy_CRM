@@ -229,4 +229,24 @@ describe('sales schedule calendar', () => {
     expect(filterSalesScheduleEventsByTeachers(demoEvents, new Set([10])))
       .toEqual([]);
   });
+
+  it('keeps finalized and cancelled demo lessons visible in the calendar', () => {
+    const demoEvents = buildSalesDemoScheduleEvents([
+      {
+        id: 3,
+        scheduledAt: '2026-06-15T09:00:00+05:00',
+        status: 'not_conducted',
+      },
+      {
+        id: 4,
+        scheduledAt: '2026-06-15T11:00:00+05:00',
+        status: 'cancelled',
+      },
+    ], weekStart);
+
+    expect(demoEvents).toMatchObject([
+      { demoLessonId: 3, demoStatus: 'not_conducted' },
+      { demoLessonId: 4, demoStatus: 'cancelled' },
+    ]);
+  });
 });

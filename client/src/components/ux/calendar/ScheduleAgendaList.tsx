@@ -7,6 +7,10 @@ import {
   DEMO_TONE,
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
+import {
+  getDemoCalendarStatusKey,
+  isInactiveDemoCalendarEvent,
+} from '@/components/ux/calendar/demoCalendarStatus';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { SalesScheduleEvent } from '@/lib/salesSchedule';
 import { cn } from '@/lib/utils';
@@ -77,6 +81,8 @@ export function ScheduleAgendaList({
                   ? DEMO_TONE
                   : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
                 const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
+                const demoStatusKey = getDemoCalendarStatusKey(event);
+                const demoStatus = demoStatusKey ? t(demoStatusKey) : null;
                 const timeRange = `${formatCalendarMinutes(event.startMinutes)}–${formatCalendarMinutes(event.endMinutes)}`;
                 const running = today
                   && now.getHours() * 60 + now.getMinutes() >= event.startMinutes
@@ -86,8 +92,11 @@ export function ScheduleAgendaList({
                   <li key={event.id}>
                     <button
                       type="button"
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                      aria-label={`${timeRange}, ${eventName}`}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                        isInactiveDemoCalendarEvent(event) && 'opacity-70 saturate-50 hover:opacity-100',
+                      )}
+                      aria-label={`${timeRange}, ${eventName}${demoStatus ? `, ${demoStatus}` : ''}`}
                       onClick={() => onSelectEvent(event)}
                     >
                       <span className="w-24 shrink-0 text-xs font-semibold tabular-nums text-foreground">
@@ -106,6 +115,16 @@ export function ScheduleAgendaList({
                           {running ? (
                             <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-destructive">
                               {t('now')}
+                            </span>
+                          ) : null}
+                          {demoStatus ? (
+                            <span className={cn(
+                              'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                              isInactiveDemoCalendarEvent(event)
+                                ? 'bg-destructive/10 text-destructive'
+                                : 'bg-primary/10 text-primary',
+                            )}>
+                              {demoStatus}
                             </span>
                           ) : null}
                         </span>

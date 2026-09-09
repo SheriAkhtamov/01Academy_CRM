@@ -5,6 +5,10 @@ import {
   DEMO_TONE,
   formatCalendarMinutes,
 } from '@/components/ux/calendar/calendarTones';
+import {
+  getDemoCalendarStatusKey,
+  isInactiveDemoCalendarEvent,
+} from '@/components/ux/calendar/demoCalendarStatus';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { SalesScheduleEvent } from '@/lib/salesSchedule';
 import { cn } from '@/lib/utils';
@@ -98,23 +102,28 @@ export function ScheduleMonthGrid({
                       ? DEMO_TONE
                       : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
                     const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
+                    const demoStatusKey = getDemoCalendarStatusKey(event);
+                    const displayName = demoStatusKey ? t(demoStatusKey) : eventName;
                     return (
                       <button
                         key={event.id}
                         type="button"
-                        className="flex min-w-0 items-center gap-1 rounded border-l-2 px-1 py-0.5 text-left text-[10px] font-medium hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className={cn(
+                          'flex min-w-0 items-center gap-1 rounded border-l-2 px-1 py-0.5 text-left text-[10px] font-medium hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isInactiveDemoCalendarEvent(event) && 'opacity-70 saturate-50 hover:opacity-100',
+                        )}
                         style={{
                           backgroundColor: tone.background,
                           borderLeftColor: tone.solid,
                           color: tone.foreground,
                         }}
-                        aria-label={`${formatCalendarMinutes(event.startMinutes)}, ${eventName}`}
+                        aria-label={`${formatCalendarMinutes(event.startMinutes)}, ${displayName}`}
                         onClick={() => onSelectEvent(event)}
                       >
                         <span className="shrink-0 tabular-nums opacity-80">
                           {formatCalendarMinutes(event.startMinutes)}
                         </span>
-                        <span className="min-w-0 truncate">{eventName}</span>
+                        <span className="min-w-0 truncate">{displayName}</span>
                       </button>
                     );
                   })}

@@ -79,9 +79,11 @@ export interface SalesScheduleDemoLesson {
   teacherName?: string | null;
   scheduledAt: string;
   durationMinutes?: number | null;
-  status?: string | null;
+  status?: SalesScheduleDemoStatus | null;
   participants?: unknown[];
 }
+
+export type SalesScheduleDemoStatus = 'scheduled' | 'completed' | 'not_conducted' | 'cancelled';
 
 export interface SalesScheduleFilterCourse {
   key: string;
@@ -110,6 +112,7 @@ export interface SalesScheduleEvent {
   availableSeats?: number | null;
   maxStudents?: number | null;
   demoLessonId?: number | null;
+  demoStatus?: SalesScheduleDemoStatus | null;
   roomName?: string | null;
   participantCount?: number | null;
   startsAt: Date;
@@ -126,7 +129,6 @@ export function buildSalesDemoScheduleEvents(
   const normalizedWeekStart = startOfDay(weekStart);
   const weekStartKey = academyDayKeyOf(normalizedWeekStart);
   return demos.flatMap((demo) => {
-    if (demo.status === 'cancelled') return [];
     const startsAt = new Date(demo.scheduledAt);
     if (Number.isNaN(startsAt.getTime())) return [];
     const dayKey = academyDayKeyOf(startsAt);
@@ -147,6 +149,7 @@ export function buildSalesDemoScheduleEvents(
       roomName: demo.roomName,
       participantCount: demo.participants?.length ?? 0,
       demoLessonId: demo.id,
+      demoStatus: demo.status ?? null,
       startsAt,
       endsAt: addMinutes(startsAt, durationMinutes),
       dayIndex: offsetDays,

@@ -69,7 +69,6 @@ import { GroupStatusField } from '@/components/ux/GroupStatusField';
 import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { KpiSettingsPanel } from '@/features/sales-kpi/ui/KpiSettingsPanel';
-import { CompanyTargetsDialog } from '@/features/sales-kpi/ui/CompanyTargetsDialog';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   WeekScheduleEditor,
@@ -287,7 +286,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const configuration = useQuery<ConfigurationData>({
     queryKey: ['/api/academy/configuration'],
   });
-  const [companyTargetsOpen, setCompanyTargetsOpen] = useState(false);
 
   useEffect(() => {
     setActiveTab(requestedTabValue);
@@ -1289,7 +1287,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     <ModulePage contained>
       <PageHeader
         title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
-        subtitle={isSalesSettingsMode ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
+        subtitle={isSalesSettingsMode ? undefined : t('academyConfigurationDescription')}
         breadcrumbs={[
           { label: t('administration'), href: '/admin' },
           { label: isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration') },
@@ -1562,13 +1560,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
         <TabsContent value="kpi" className="mt-0">
           <KpiSettingsPanel />
-          <div className="mt-6 border-t pt-4"><Button variant="outline" onClick={() => setCompanyTargetsOpen(true)}>{t('kpiCompanySettings')}</Button></div>
         </TabsContent>
 
       </Tabs>
       </ModulePageBody>
 
-      {companyTargetsOpen ? <CompanyTargetsDialog onClose={() => setCompanyTargetsOpen(false)} /> : null}
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">

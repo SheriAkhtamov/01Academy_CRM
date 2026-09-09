@@ -1,18 +1,8 @@
 import { z } from 'zod';
 import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useCeoCopy } from '@/hooks/useCeoCopy';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 export interface CompanySettings {
   targetRevenueMonthlyUzs: number;
@@ -63,85 +53,52 @@ export const createKpiFieldSchema = (
     t('valueMustBeAtMost').replace('{max}', String(bounds.max)),
   );
 
-interface KpiSettingsCardProps {
+const groups = [
+  { titleKey: 'kpiPlanTargets', fields: [
+    { key: 'targetRevenueMonthlyUzs', translationKey: 'targetMonthlyRevenue', unitKey: 'currencyUzs' },
+    { key: 'targetNewLeadsMonthly', translationKey: 'targetMonthlyNewLeads', unitKey: 'leadCountMany' },
+  ] },
+  { titleKey: 'kpiMarketingTargets', fields: [
+    { key: 'maxCacUzs', translationKey: 'kpiCacLabel', unitKey: 'currencyUzs' },
+    { key: 'maxCplUzs', translationKey: 'kpiCplLabel', unitKey: 'currencyUzs' },
+    { key: 'targetRoas', translationKey: 'kpiRoasLabel', suffix: '×' },
+  ] },
+  { titleKey: 'kpiServiceTargets', fields: [
+    { key: 'targetAttendancePercent', translationKey: 'targetAttendance', suffix: '%' },
+    { key: 'targetNps', translationKey: 'targetNps' },
+  ] },
+] satisfies { titleKey: TranslationKey; fields: { key: KpiNumberSetting; translationKey: TranslationKey; unitKey?: TranslationKey; suffix?: string }[] }[];
+
+export function KpiSettingsCard({ values, errors, onNumberChange, phoneVisibility, onPhoneVisibilityChange }: {
   values: Partial<Record<KpiNumberSetting, string>>;
   errors: Partial<Record<KpiNumberSetting, string>>;
   onNumberChange: (key: KpiNumberSetting, value: string) => void;
   phoneVisibility: CompanySettings['salesPhoneVisibility'];
   onPhoneVisibilityChange: (value: CompanySettings['salesPhoneVisibility']) => void;
-  isPending: boolean;
-  onSave: () => void;
-}
-
-export function KpiSettingsCard({
-  values,
-  errors,
-  onNumberChange,
-  phoneVisibility,
-  onPhoneVisibilityChange,
-  isPending,
-  onSave,
-}: KpiSettingsCardProps) {
+}) {
   const { t } = useTranslation();
-  const ceoCopy = useCeoCopy();
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{ceoCopy.settings.title}</CardTitle>
-        <CardDescription>{ceoCopy.settings.description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[
-            ['targetRevenueMonthlyUzs', ceoCopy.settings.revenue, ceoCopy.settings.sum],
-            ['targetNewLeadsMonthly', ceoCopy.settings.newLeads, ceoCopy.settings.leads],
-            ['maxCacUzs', ceoCopy.settings.maxCac, ceoCopy.settings.sum],
-            ['maxCplUzs', ceoCopy.settings.maxCpl, ceoCopy.settings.sum],
-            ['targetRoas', ceoCopy.settings.roas, 'x'],
-            ['targetAttendancePercent', ceoCopy.settings.attendance, '%'],
-            ['targetNps', ceoCopy.settings.nps, ''],
-          ].map(([key, label, suffix]) => {
-            const numericKey = key as KpiNumberSetting;
-            const bounds = KPI_FIELD_BOUNDS[numericKey];
-            return <div key={numericKey} className="space-y-2 rounded-lg border border-border/70 p-4">
-              <Label htmlFor={`kpi-${key}`}>{label}</Label>
-              <div className="relative">
-                <Input
-                  id={`kpi-${key}`}
-                  type="number"
-                  min={bounds.min}
-                  max={bounds.max}
-                  aria-invalid={Boolean(errors[numericKey])}
-                  value={values[numericKey] ?? ''}
-                  onChange={(event) => onNumberChange(numericKey, event.target.value)}
-                  className="pr-12"
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{suffix}</span>
-              </div>
-              {errors[numericKey] ? (
-                <p className="text-xs text-destructive" role="alert">{errors[numericKey]}</p>
-              ) : null}
-            </div>;
-          })}
-        </div>
-        <div className="mt-5 grid grid-cols-1 gap-4 border-t border-border/70 pt-5 md:grid-cols-2 xl:grid-cols-3">
-          <div className="space-y-2 rounded-lg border border-border/70 p-4">
-            <Label htmlFor="settings-phone-visibility">{ceoCopy.settings.phoneVisibility}</Label>
-            <Select value={phoneVisibility} onValueChange={(value: CompanySettings['salesPhoneVisibility']) => onPhoneVisibilityChange(value)}>
-              <SelectTrigger id="settings-phone-visibility"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="own_leads">{ceoCopy.settings.ownLeadsOnly}</SelectItem>
-                <SelectItem value="mask_until_assigned">{ceoCopy.settings.maskUntilAssigned}</SelectItem>
-              </SelectContent>
-            </Select>
+  return <div className="space-y-6">
+    {groups.map((group) => <fieldset key={group.titleKey} className="space-y-3">
+      <legend className="mb-3 text-sm font-semibold">{t(group.titleKey)}</legend>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{group.fields.map((field) => {
+        const bounds = KPI_FIELD_BOUNDS[field.key];
+        return <div key={field.key} className="space-y-2">
+          <Label htmlFor={`kpi-${field.key}`}>{t(field.translationKey)}</Label>
+          <div className="relative"><Input id={`kpi-${field.key}`} type="number" min={bounds.min} max={bounds.max}
+            step={['targetRoas', 'targetAttendancePercent', 'targetNps'].includes(field.key) ? '0.1' : '1'}
+            aria-invalid={Boolean(errors[field.key])} aria-describedby={errors[field.key] ? `error-${field.key}` : undefined}
+            value={values[field.key] ?? ''} onChange={(event) => onNumberChange(field.key, event.target.value)} className="pr-14" />
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{'unitKey' in field && field.unitKey ? t(field.unitKey) : 'suffix' in field ? field.suffix : null}</span>
           </div>
-        </div>
-        <div className="mt-6 flex justify-end">
-          <Button onClick={onSave} disabled={isPending}>
-            {isPending ? t('saving') : ceoCopy.settings.save}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
+          {errors[field.key] ? <p id={`error-${field.key}`} className="text-xs text-destructive" role="alert">{errors[field.key]}</p> : null}
+        </div>;
+      })}</div>
+    </fieldset>)}
+    <div className="space-y-2 border-t pt-5">
+      <Label htmlFor="settings-phone-visibility">{t('salesLeadVisibility')}</Label>
+      <select id="settings-phone-visibility" className="h-11 w-full rounded-lg border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={phoneVisibility} onChange={(event) => onPhoneVisibilityChange(event.target.value as CompanySettings['salesPhoneVisibility'])}>
+        <option value="own_leads">{t('ownAndUnassignedLeads')}</option><option value="mask_until_assigned">{t('maskLeadsUntilAssigned')}</option>
+      </select>
+    </div>
+  </div>;
 }

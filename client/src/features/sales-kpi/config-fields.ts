@@ -3,6 +3,7 @@ import type { TranslationKey } from '@/lib/i18n';
 
 export type KpiNumberField = { [K in keyof KpiConfig]: KpiConfig[K] extends number ? K : never }[keyof KpiConfig];
 type Field = { name: KpiNumberField; translationKey: TranslationKey; min?: number; max?: number; role?: KpiRole };
+export type KpiPlanSection = 'targets' | 'pay' | 'work' | 'display';
 export const kpiPayFields: Field[] = [
   { name: 'baseSalaryUzs', translationKey: 'kpiBaseSalary' }, { name: 'variableSalaryUzs', translationKey: 'kpiVariableSalary' },
   { name: 'qualityBonusUzs', translationKey: 'kpiQualityBonus', role: 'hunter' },
@@ -29,3 +30,32 @@ export const kpiScheduleFields: Field[] = [
   { name: 'workdayStartHour', translationKey: 'kpiWorkdayStart', max: 23 }, { name: 'workdayEndHour', translationKey: 'kpiWorkdayEnd', min: 1, max: 24 },
 ];
 export const kpiDayKeys = ['mondayShort', 'tuesdayShort', 'wednesdayShort', 'thursdayShort', 'fridayShort', 'saturdayShort', 'sundayShort'] satisfies TranslationKey[];
+
+const workFields: KpiNumberField[] = ['responseTargetMinutes', 'responseBaseMinutes', 'reactivationDays', 'offerNextDayHour', 'conversionWindowDays'];
+export const kpiPlanFieldGroups = {
+  targets: kpiTargetFields.filter((field) => field.name !== 'minimumVolume' && !workFields.includes(field.name)),
+  pay: [...kpiPayFields, ...kpiTargetFields.filter((field) => field.name === 'minimumVolume')],
+  work: [...kpiScheduleFields, ...kpiTargetFields.filter((field) => workFields.includes(field.name))],
+};
+export const kpiPlanSectionKeys = { targets: 'kpiPlanTargets', pay: 'kpiPaySettings', work: 'kpiServiceStandards', display: 'kpiDashboardDisplay' } as const satisfies Record<KpiPlanSection, TranslationKey>;
+export function kpiSectionForField(name: string): KpiPlanSection {
+  if (name === 'enabledMetrics') return 'display';
+  if (name === 'workdays' || kpiPlanFieldGroups.work.some((field) => field.name === name)) return 'work';
+  if (['tiers', 'baseSalaryMode', 'qualityThresholdInclusive'].includes(name) || kpiPlanFieldGroups.pay.some((field) => field.name === name)) return 'pay';
+  return 'targets';
+}
+export function kpiFieldLabel(field: Field, role: KpiRole): TranslationKey {
+  if (field.name === 'minimumVolume') {
+    if (role === 'hunter') return 'kpiMinimumBookings';
+    return 'kpiMinimumStudents';
+  }
+  if (field.name === 'volumeTarget') {
+    if (role === 'hunter') return 'kpiMonthlyBookings';
+    return 'kpiMonthlyStudents';
+  }
+  if (field.name === 'conversionTargetPercent') {
+    if (role === 'hunter') return 'kpiTrialAttendanceTarget';
+    return 'kpiTrialPaymentTarget';
+  }
+  return field.translationKey;
+}

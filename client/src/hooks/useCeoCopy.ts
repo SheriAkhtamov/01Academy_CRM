@@ -34,7 +34,6 @@ export function useCeoCopy() {
       title: t('ceoGoalsTitle'),
       noGroupsWithoutTeacher: t('noGroupsWithoutTeacher'),
       allGroupsStaffed: t('allActiveGroupsStaffed'),
-      description: t('ceoGoalsDescription'),
       save: t('saveGoals'),
       revenue: t('targetMonthlyRevenue'),
       newLeads: t('targetMonthlyNewLeads'),

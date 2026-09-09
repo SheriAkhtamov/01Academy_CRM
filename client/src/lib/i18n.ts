@@ -1416,8 +1416,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   noModuleAssigned: { en: 'No module assigned', ru: 'Модуль не назначен' },
   salesSettings: { en: 'Sales Management', ru: 'Управление продажами' },
   salesSettingsDescription: {
-    en: 'Manage lead distribution, pipeline stages, and sales goals.',
-    ru: 'Управляйте распределением лидов, этапами воронки и целями продаж.',
+    en: 'Manage lead distribution, sales funnels, pipeline stages, and sales goals.',
+    ru: 'Управляйте распределением лидов, воронками, этапами и целями продаж.',
   },
   primaryModule: { en: 'Primary module', ru: 'Основной модуль' },
   primaryModuleShort: { en: 'Primary', ru: 'Основной' },
@@ -1656,7 +1656,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
 
   // UX improvements — academy configuration, schools, courses and scheduling
   academyConfiguration: { en: 'Academy Structure', ru: 'Структура академии' },
-  academyConfigurationDescription: { en: 'Manage schools, courses, study groups and sales funnels.', ru: 'Управляйте школами, курсами, учебными группами и воронками продаж.' },
+  academyConfigurationDescription: { en: 'Manage schools, rooms, courses, and study groups.', ru: 'Управляйте школами, кабинетами, курсами и учебными группами.' },
   salesFunnels: { en: 'Sales funnels', ru: 'Воронки продаж' },
   salesFunnelsDescription: {
     en: 'Create sales directions and distribute incoming leads between them.',

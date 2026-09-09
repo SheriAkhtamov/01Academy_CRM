@@ -225,8 +225,8 @@ function EmptyTableState({ title, description }: { title: string; description: s
   );
 }
 
-const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'funnels'];
-const salesSettingsTabs = ['lead-assignment', 'pipeline', 'lead-merge', 'kpi'];
+const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups'];
+const salesSettingsTabs = ['lead-assignment', 'pipeline', 'funnels', 'lead-merge', 'kpi'];
 
 interface AcademySettingsProps {
   mode?: 'academy' | 'sales';
@@ -288,8 +288,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   });
 
   useEffect(() => {
+    if (!isSalesSettingsMode && requestedTab === 'funnels') {
+      navigate('/admin/sales-settings?tab=funnels', { replace: true });
+      return;
+    }
     setActiveTab(requestedTabValue);
-  }, [requestedTabValue]);
+  }, [isSalesSettingsMode, navigate, requestedTab, requestedTabValue]);
 
   useEffect(() => {
     const tabsList = tabsListRef.current;
@@ -1287,7 +1291,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     <ModulePage contained>
       <PageHeader
         title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
-        subtitle={isSalesSettingsMode ? undefined : t('academyConfigurationDescription')}
+        subtitle={isSalesSettingsMode ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
         breadcrumbs={[
           { label: t('administration'), href: '/admin' },
           { label: isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration') },
@@ -1309,6 +1313,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <TabsTrigger value="pipeline" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <GitBranch />{t('pipelineStages')}
               </TabsTrigger>
+              <TabsTrigger value="funnels" className="gap-2 pb-2.5 data-[state=active]:text-primary">
+                <GitBranch />{t('salesFunnels')}
+              </TabsTrigger>
               <TabsTrigger value="lead-merge" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <ArrowRightLeft />{t('leadMergeTab')}
               </TabsTrigger>
@@ -1329,9 +1336,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </TabsTrigger>
               <TabsTrigger value="groups" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UsersRound />{t('navGroups')}
-              </TabsTrigger>
-              <TabsTrigger value="funnels" className="gap-2 pb-2.5 data-[state=active]:text-primary">
-                <GitBranch />{t('salesFunnels')}
               </TabsTrigger>
             </>
           )}

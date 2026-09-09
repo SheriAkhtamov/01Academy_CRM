@@ -62,6 +62,21 @@ describe('sales funnel lead routing', () => {
     expect(integrationsPage).not.toContain('integration-funnel-');
   });
 
+  it('places sales funnels in Sales Management and preserves the former link', () => {
+    const settingsPage = readFileSync(
+      new URL('../client/src/pages/academy-settings.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(settingsPage).toContain(
+      "const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups'];",
+    );
+    expect(settingsPage).toContain(
+      "const salesSettingsTabs = ['lead-assignment', 'pipeline', 'funnels', 'lead-merge', 'kpi'];",
+    );
+    expect(settingsPage).toContain("navigate('/admin/sales-settings?tab=funnels', { replace: true })");
+  });
+
   it('accepts only a unique list of lead-producing sources in funnel forms', () => {
     expect(parseFunnelIntegrations(undefined)).toBeUndefined();
     expect(parseFunnelIntegrations(['website', 'website', 'meta'])).toEqual(['website', 'meta']);

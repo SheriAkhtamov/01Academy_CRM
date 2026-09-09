@@ -91,12 +91,14 @@ describe('sales KPI settings dialogs', () => {
     expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByText(/version|tracking|retroactive|timezone|API|database/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /calculate salary|calculator/i })).toBeNull();
   });
 
   it('preserves edits across tabs and saves only after the explicit save action', async () => {
     const user = userEvent.setup();
     render(<KpiSettingsPanel />);
     await user.click(screen.getByRole('button', { name: translations.kpiEditPlan.en }));
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: /calculate salary|calculator/i })).toBeNull();
     const volume = screen.getByLabelText(translations.kpiMonthlyBookings.en);
     fireEvent.change(volume, { target: { value: '45' } });
     await user.click(screen.getByRole('tab', { name: translations.kpiPaySettings.en }));
@@ -134,22 +136,6 @@ describe('sales KPI settings dialogs', () => {
     await waitFor(() => expect(hooks.saveCompany).toHaveBeenCalledWith({ ...DEFAULT_COMPANY_SETTINGS, targetRevenueMonthlyUzs: 60000000, targetNewLeadsMonthly: 400 }));
     expect(hooks.save).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('opens a calculator on request and applies the selected salary conditions', async () => {
-    const user = userEvent.setup();
-    const data = settings();
-    data.versions[0].config.baseSalaryMode = 'conditional';
-    hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
-    render(<KpiSettingsPanel />);
-    await user.click(screen.getByRole('button', { name: translations.kpiCalculateSalary.en }));
-    const dialog = screen.getByRole('dialog', { name: `${translations.kpiSalaryCalculator.en} · ${translations.kpiHunter.en}` });
-    const baseRow = () => within(dialog).getByRole('row', { name: new RegExp(translations.kpiPayBase.en) });
-    expect(within(baseRow()).getByText(translations.kpiEarned.en)).toBeTruthy();
-    await user.click(within(dialog).getByRole('checkbox', { name: translations.kpiCrmConditionMet.en }));
-    expect(within(baseRow()).getByText(translations.kpiNotMet.en)).toBeTruthy();
-    expect(hooks.save).not.toHaveBeenCalled();
-    expect(within(dialog).queryByText(/assumed|draft rates|tracking|version/i)).toBeNull();
   });
 
   it('keeps the active plan visible when another plan is scheduled and opens its details by date', async () => {

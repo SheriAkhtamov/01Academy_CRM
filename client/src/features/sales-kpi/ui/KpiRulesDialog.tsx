@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Calculator, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { ROLE_METRICS, kpiConfigSchema, kpiMonthSchema, type KpiConfig, type KpiPlanVersion } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useToast } from '@/hooks/use-toast';
@@ -17,7 +17,6 @@ import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/Un
 import { useSaveKpiRules } from '../hooks';
 import { metricKeys, roleKeys } from '../copy';
 import { kpiDayKeys, kpiFieldLabel, kpiPlanFieldGroups, kpiPlanSectionKeys, kpiSectionForField, type KpiPlanSection } from '../config-fields';
-import { KpiSimulation } from './KpiSimulation';
 import { kpiMonthLabel } from './KpiPlanSummary';
 
 export function KpiRulesDialog({ version, minimumMonth, expectedVersionId, onClose }: {
@@ -32,7 +31,6 @@ export function KpiRulesDialog({ version, minimumMonth, expectedVersionId, onClo
   const [month, setMonth] = useState(initialMonth);
   const [monthError, setMonthError] = useState(false);
   const [section, setSection] = useState<KpiPlanSection>('targets');
-  const [simulationOpen, setSimulationOpen] = useState(false);
   const [removeIndex, setRemoveIndex] = useState<number | null>(null);
   const values = form.watch();
   const guard = useUnsavedChangesGuard({ open: true, isDirty: form.formState.isDirty || month !== initialMonth,
@@ -121,14 +119,12 @@ export function KpiRulesDialog({ version, minimumMonth, expectedVersionId, onClo
             </div>
           </Tabs>
           {mutation.isError ? <p role="alert" className="shrink-0 px-5 pb-3 text-sm text-destructive">{mutation.error.message === t('kpiVersionConflict') ? t('kpiVersionConflict') : t('kpiRequestFailed')}</p> : null}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t bg-background px-5 py-4">
-            <Button type="button" variant="ghost" onClick={() => setSimulationOpen(true)}><Calculator className="mr-2 size-4" />{t('kpiCalculateSalary')}</Button>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-background px-5 py-4">
             <div className="flex gap-2"><Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => guard.handleOpenChange(false)}>{t('cancel')}</Button><Button type="submit" disabled={mutation.isPending}>{t(mutation.isPending ? 'saving' : 'save')}</Button></div>
           </div>
         </form>
       </DialogContent>
     </Dialog>
-    <Dialog open={simulationOpen} onOpenChange={setSimulationOpen}><DialogContent className="max-w-3xl" aria-describedby={undefined}><DialogHeader><DialogTitle>{t('kpiSalaryCalculator')} · {t(roleKeys[version.role])}</DialogTitle></DialogHeader><KpiSimulation role={version.role} config={values} /></DialogContent></Dialog>
     <ConfirmDialog open={removeIndex !== null} onOpenChange={(open) => { if (!open) setRemoveIndex(null); }} title={t('kpiRemoveTier')} description={t('kpiRemoveTierConfirm')} confirmLabel={t('delete')} cancelLabel={t('cancel')} variant="destructive"
       onConfirm={() => { if (removeIndex !== null) tiers.remove(removeIndex); setRemoveIndex(null); }} />
     <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />

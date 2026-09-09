@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calculator, History, Settings2 } from 'lucide-react';
+import { History, Settings2 } from 'lucide-react';
 import { KPI_ROLES, type KpiPlanVersion, type KpiRole } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -7,7 +7,6 @@ import { overviewButton, overviewPanel } from '@/components/ux/sales-overview/Ov
 import { useKpiPlans } from '../hooks';
 import { roleKeys } from '../copy';
 import { KpiRulesDialog } from './KpiRulesDialog';
-import { KpiSimulation } from './KpiSimulation';
 import { KpiPlanSummary, kpiMonthLabel } from './KpiPlanSummary';
 import { CompanyGoalsSummary } from './CompanyGoalsSummary';
 import { CompanyTargetsDialog } from './CompanyTargetsDialog';
@@ -17,7 +16,6 @@ export function KpiSettingsPanel() {
   const query = useKpiPlans();
   const [companyOpen, setCompanyOpen] = useState(false);
   const [editing, setEditing] = useState<KpiPlanVersion | null>(null);
-  const [simulation, setSimulation] = useState<KpiPlanVersion | null>(null);
   const [historyRole, setHistoryRole] = useState<KpiRole | null>(null);
   const [historyVersion, setHistoryVersion] = useState<number | null>(null);
   const versions = [...(query.data?.versions ?? [])].sort((a, b) => b.effectiveMonth.localeCompare(a.effectiveMonth) || b.id - a.id);
@@ -43,8 +41,7 @@ export function KpiSettingsPanel() {
               {current ? <><div className="flex-1 space-y-4 p-5"><KpiPlanSummary config={current.config} role={role} />
                 <p className="text-xs text-muted-foreground">{period(current)}</p>
                 {scheduled && scheduled.id !== current.id ? <button type="button" className={`${overviewButton} w-full justify-start bg-primary/5 text-primary`} onClick={() => { setHistoryRole(role); setHistoryVersion(scheduled.id); }}>{period(scheduled)}</button> : null}
-              </div><footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-3 py-3">
-                <button type="button" className={overviewButton} onClick={() => setSimulation(current)}><Calculator className="size-4" aria-hidden="true" />{t('kpiCalculateSalary')}</button>
+              </div><footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border/60 px-3 py-3">
                 <button type="button" className={`${overviewButton} text-muted-foreground`} onClick={() => { setHistoryRole(role); setHistoryVersion(current.id); }}><History className="size-4" aria-hidden="true" />{t('kpiHistory')}</button>
               </footer></> : <p className="p-5 text-sm text-muted-foreground">{t('kpiNoData')}</p>}
             </article>;
@@ -52,10 +49,6 @@ export function KpiSettingsPanel() {
     </section>
     {companyOpen ? <CompanyTargetsDialog onClose={() => setCompanyOpen(false)} /> : null}
     {editing && query.data ? <KpiRulesDialog version={editing} minimumMonth={query.data.minimumEffectiveMonth[editing.role]} expectedVersionId={editing.id} onClose={() => setEditing(null)} /> : null}
-    <Dialog open={Boolean(simulation)} onOpenChange={(open) => { if (!open) setSimulation(null); }}><DialogContent className="max-w-3xl" aria-describedby={undefined}>
-      <DialogHeader><DialogTitle>{t('kpiSalaryCalculator')} · {simulation ? t(roleKeys[simulation.role]) : null}</DialogTitle></DialogHeader>
-      {simulation ? <KpiSimulation key={simulation.id} role={simulation.role} config={simulation.config} /> : null}
-    </DialogContent></Dialog>
     <Dialog open={Boolean(historyRole)} onOpenChange={(open) => { if (!open) setHistoryRole(null); }}><DialogContent className="max-w-3xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{t('kpiHistory')} · {historyRole ? t(roleKeys[historyRole]) : null}</DialogTitle></DialogHeader>
       <label className="space-y-2 text-sm font-medium">{t('kpiEffectiveMonth')}

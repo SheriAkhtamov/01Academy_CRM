@@ -1,4 +1,4 @@
-import type { KpiConfig, KpiMetricId, KpiPayLine, KpiRole, KpiSaleKind } from '@shared/sales-kpi';
+import type { KpiConfig, KpiMetricId, KpiRole, KpiSaleKind } from '@shared/sales-kpi';
 import type { TranslationKey } from '@/lib/i18n';
 
 export const roleKeys = { hunter: 'kpiHunter', closer: 'kpiCloser' } satisfies Record<KpiRole, TranslationKey>;
@@ -21,13 +21,6 @@ export function metricHelp(id: KpiMetricId, config: KpiConfig, t: (key: Translat
     .replace('{days}', String(id === 'reactivation' ? config.reactivationDays : config.conversionWindowDays))
     .replace('{hour}', String(config.offerNextDayHour));
 }
-export const payKeys = {
-  base: 'kpiPayBase', variable: 'kpiPayVariable', tier: 'kpiPayTier', quality: 'kpiPayQuality',
-  reactivation: 'kpiPayReactivation', renewal: 'kpiPayRenewal', upsell: 'kpiPayUpsell', referral: 'kpiPayReferral',
-} satisfies Record<KpiPayLine['key'], TranslationKey>;
-export const statusKeys = {
-  earned: 'kpiEarned', not_met: 'kpiNotMet', pending: 'kpiPending',
-} satisfies Record<KpiPayLine['status'], TranslationKey>;
 export const saleKindKeys = {
   new: 'kpiSaleNew', renewal: 'kpiSaleRenewal', upsell: 'kpiSaleUpsell', installment: 'kpiSaleInstallment', unclassified: 'kpiSaleUnclassified',
 } satisfies Record<KpiSaleKind, TranslationKey>;

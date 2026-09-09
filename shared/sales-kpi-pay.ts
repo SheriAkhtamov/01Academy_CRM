@@ -16,7 +16,7 @@ export type KpiPayInput = {
   baseConditions: KpiCalculation['baseConditions'];
 };
 
-/** Shared by the server calculation and the administrator's draft simulator. */
+/** Calculates salary and bonuses for the server KPI report. */
 export function calculateKpiPay(role: KpiRole, config: KpiConfig, input: KpiPayInput): KpiPayLine[] {
   const conditions = Object.values(input.baseConditions);
   const baseStatus = config.baseSalaryMode === 'guaranteed' || conditions.every((value) => value === true)

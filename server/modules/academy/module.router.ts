@@ -1,3 +1,4 @@
+import { buildSalesDemoStudents } from './sales-demo-students';
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -135,7 +136,6 @@ import {
 } from './meta-marketing-analytics';
 import {
   buildSalesDashboardMetrics,
-  buildSalesDemoStudents,
 } from './sales-dashboard-metrics';
 
 export const registerAcademyModuleRoutes = (router: ReturnType<typeof Router>) => {
@@ -274,6 +274,25 @@ router.get('/modules/sales/demo-students', async (req, res) => {
       && requestedManagerId
       && requestedManagerId !== Number(req.user!.id)) {
       return res.status(403).json({ error: 'accessDenied' });
+    }
+    if (canViewOtherManagers && requestedManagerId) {
+      const manager = await queryOne(
+        `SELECT employee.id
+         FROM users employee
+         WHERE employee.id = $1
+           AND employee.is_active = true
+           AND (
+             employee.module = 'sales'
+             OR EXISTS (
+               SELECT 1
+               FROM user_modules employee_module
+               WHERE employee_module.user_id = employee.id
+                 AND employee_module.module = 'sales'
+             )
+           )`,
+        [requestedManagerId],
+      );
+      if (!manager) return res.status(404).json({ error: 'resourceNotFound' });
     }
     const actor: DatasetActor = {
       userId: req.user!.id,

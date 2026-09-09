@@ -14,6 +14,7 @@ export interface SalesDashboardCoreMetrics {
   reachedLeads: number;
   qualifiedLeads: number;
   demoBookings: number;
+  demoAttendees: number;
   repeatCallLeads: number;
   repeatCallDistribution: Array<{ attempts: number; count: number }>;
   targetRefusals: number;
@@ -29,6 +30,7 @@ export interface SalesDashboardDailyPoint {
   processedLeads: number;
   reachedLeads: number;
   demoBookings: number;
+  demoAttendees: number;
 }
 
 export interface SalesDashboardMetrics extends SalesDashboardCoreMetrics {
@@ -69,26 +71,3 @@ export interface SalesOverviewFunnelStage {
 }
 
 export type MoneyFormatter = (value: number | string | null | undefined) => string;
-
-export interface SalesDemoStudent {
-  id: string;
-  participantId: number | null;
-  studentId: number | null;
-  leadId: number | null;
-  studentName: string | null;
-  contactName: string | null;
-  phone: string | null;
-  courseName: string | null;
-  schoolName: string | null;
-  roomName: string | null;
-  teacherName: string | null;
-  scheduledAt: string | null;
-  durationMinutes: number | null;
-  format: 'offline' | 'online' | null;
-  participantStatus: 'attended' | 'no_show' | 'invited' | 'confirmed' | 'cancelled';
-  noShowReasonCode: string | null;
-  noShowReasonNote: string | null;
-  result: string | null;
-  managerId: number | null;
-  managerName: string | null;
-}

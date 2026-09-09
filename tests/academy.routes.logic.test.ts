@@ -152,6 +152,62 @@ describe('academy route logic boundaries', () => {
     mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'own_leads' });
   });
 
+  it('returns unique demo attendees with real names and all visits through the SQL-to-JSON boundary', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[]) => {
+      if (!sql.includes('WITH attended_demos')) return emptyResult();
+      expect(values).toEqual([new Date('2026-07-31T19:00:00Z'), new Date('2026-08-31T19:00:00Z'), 7]);
+      expect(sql).toContain("participant.status = 'attended'");
+      expect(sql).toContain("demo.status IN ('scheduled', 'completed')");
+      expect(sql).toContain("demo.scheduled_at <= timezone('UTC', now())");
+      expect(sql).toContain('demo.scheduled_at >= $1 AND demo.scheduled_at < $2');
+      expect(sql).toContain('CASE WHEN lead.id IS NOT NULL THEN lead.manager_id ELSE student.manager_id END = $3');
+      expect(sql).not.toContain('academy_lead_stage_history');
+      const row = { student_id: 10, lead_id: 20, student_name: 'Temur', contact_name: 'Parent', phone: '+998901234567',
+        manager_id: 7, manager_name: 'Alice', course_name: 'Coding', school_name: 'Cyberpark', room_name: '101',
+        teacher_name: 'Teacher', duration_minutes: 60, format: 'offline' };
+      return { rows: [{ ...row, participant_id: 2, demo_id: 5, scheduled_at: new Date('2026-08-31T18:59:59Z') },
+        { ...row, participant_id: 1, demo_id: 4, scheduled_at: new Date('2026-07-31T19:00:00Z') }] };
+    });
+    const app = await createApp();
+    const response = await request(app).get('/api/academy/modules/sales/demo-students?from=2026-08-01&to=2026-08-31');
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]).toMatchObject({ studentId: 10, leadId: 20, studentName: 'Temur', contactName: 'Parent',
+      phone: '+998901234567', managerId: 7, managerName: 'Alice' });
+    expect(response.body[0].visits).toEqual([
+      { participantId: 2, demoId: 5, scheduledAt: '2026-08-31T18:59:59.000Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '101', teacherName: 'Teacher' },
+      { participantId: 1, demoId: 4, scheduledAt: '2026-07-31T19:00:00.000Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '101', teacherName: 'Teacher' },
+    ]);
+  });
+
+  it('denies another manager’s demo attendees and rejects invalid report dates before reading data', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const app = await createApp();
+    const forbidden = await request(app).get('/api/academy/modules/sales/demo-students?from=2026-08-01&to=2026-08-31&managerId=8');
+    expect(forbidden.status).toBe(403);
+    const invalid = await request(app).get('/api/academy/modules/sales/demo-students?from=2026-08-31&to=2026-08-01');
+    expect(invalid.status).toBe(400);
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
+  it('lets leadership select a demo manager or all managers and rejects unknown employees', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[]) => {
+      if (sql.includes('SELECT employee.id')) return { rows: values[0] === 8 ? [{ id: 8 }] : [] };
+      return emptyResult();
+    });
+    const app = await createApp();
+    const path = '/api/academy/modules/sales/demo-students?from=2026-08-01&to=2026-08-31';
+    expect((await request(app).get(path)).status).toBe(200);
+    expect(mocks.poolQuery.mock.calls.find(([sql]) => sql.includes('WITH attended_demos'))?.[1][2]).toBeNull();
+    mocks.poolQuery.mockClear();
+    expect((await request(app).get(`${path}&managerId=8`)).status).toBe(200);
+    expect(mocks.poolQuery.mock.calls.find(([sql]) => sql.includes('WITH attended_demos'))?.[1][2]).toBe(8);
+    mocks.poolQuery.mockClear();
+    expect((await request(app).get(`${path}&managerId=999`)).status).toBe(404);
+    expect(mocks.poolQuery.mock.calls.some(([sql]) => sql.includes('WITH attended_demos'))).toBe(false);
+  });
+
   it('returns the connected Instagram account identity needed by the disconnect action', async () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_integration_logs')) return emptyResult();

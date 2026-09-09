@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const metrics = read('../server/modules/academy/sales-dashboard-metrics.ts');
+const demoStudents = read('../server/modules/academy/sales-demo-students.ts');
 const moduleRoutes = read('../server/modules/academy/module.router.ts');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
@@ -105,7 +106,7 @@ describe('sales dashboard operational metrics', () => {
 
   it('opens demo students dialog instead of navigating away when clicking trial bookings', () => {
     expect(moduleRoutes).toContain("router.get('/modules/sales/demo-students'");
-    expect(metrics).toContain('buildSalesDemoStudents');
+    expect(demoStudents).toContain('buildSalesDemoStudents');
     expect(salesOverviewMetrics).toContain('DemoStudentsDialog');
     expect(salesOverviewMetrics).toContain('onOpenDemoStudents={() => setDemoStudentsDialogOpen(true)}');
     expect(overviewKpiGrid).toContain('onOpenDemoStudents');

@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/queryClient';
-import type { SalesDemoStudent } from '@/components/ux/sales-overview/types';
+import type { SalesDemoStudent } from '@shared/contracts/sales-demo-students';
 
 export const getSalesDemoStudents = (
   queryString: string,

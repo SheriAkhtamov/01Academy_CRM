@@ -102,6 +102,7 @@ export function SalesOverviewMetrics({
     && metrics !== undefined
     && metrics.newLeads === 0
     && metrics.processedLeads === 0
+    && metrics.demoAttendees === 0
     && stats.newLeadsPeriod === 0
     && stats.totalStudents === 0
     && !hasPeriodPayments;
@@ -189,7 +190,7 @@ export function SalesOverviewMetrics({
       </OverviewDialog> : null}
 
       {demoStudentsDialogOpen ? (
-        <DemoStudentsDialog
+        <DemoStudentsDialog key={`${reportingQuery}-${managerId}`}
           reportingRange={reportingRange}
           managerId={managerId}
           onClose={() => setDemoStudentsDialogOpen(false)}

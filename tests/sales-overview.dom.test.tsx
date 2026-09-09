@@ -21,8 +21,8 @@ import { useSalesReportingRange } from '../client/src/features/sales/useSalesRep
 import { salesMonthRange, salesPlanMonth } from '../client/src/lib/salesReportingRange';
 import { reportingRangeForPreset, isInReportingRange } from '../client/src/lib/reportingDateRange';
 
-const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, qualifiedLeads: 4, demoBookings: 2, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }], targetRefusals: 0, targetRefusalReasons: [] };
-const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [{ date: '2026-08-01', newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2 }] };
+const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, qualifiedLeads: 4, demoBookings: 2, demoAttendees: 1, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }], targetRefusals: 0, targetRefusalReasons: [] };
+const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [{ date: '2026-08-01', newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2, demoAttendees: 1 }] };
 const employee = (id = 1): KpiOverviewEmployee => ({
   id, name: id === 1 ? 'Alice' : 'Bob', role: 'hunter', assignedAt: '2026-08-01T00:00:00Z',
   version: { id: 1, role: 'hunter', config: defaultKpiConfig('hunter'), effectiveMonth: '2026-08', createdAt: '2026-08-01T00:00:00Z', createdBy: 1 },
@@ -219,10 +219,10 @@ describe('unified sales overview', () => {
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
     const active = within(screen.getByRole('region', { name: translations.taskInProgress.en }));
     expect(active.getByRole('img').getAttribute('aria-label')).toBe('Active leads by stage: new: 5; qualified: 3');
-    const trials = within(screen.getByRole('region', { name: translations.salesBookedTrials.en })).getByRole('slider');
+    const trials = within(screen.getByRole('region', { name: translations.demoStudentsModalTitle.en })).getByRole('slider');
     act(() => trials.focus());
     await user.keyboard('{Home}');
-    expect(trials.getAttribute('aria-valuetext')).toBe('Aug 1: 2');
+    expect(trials.getAttribute('aria-valuetext')).toBe('Aug 1: 1');
     await user.keyboard('{ArrowRight}');
     expect(trials.getAttribute('aria-valuetext')).toBe('Aug 2: 0');
     const paid = within(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).getByRole('slider');
@@ -325,27 +325,15 @@ describe('unified sales overview', () => {
     expect(salesMonthRange('2026-09', '2026-09-08')).toMatchObject({ from: '2026-09-01', to: '2026-09-08' });
   });
 
-  it('opens demo students dialog when clicking trial bookings card', async () => {
+  it('opens actual demo attendees instead of navigating away from the overview', async () => {
     const user = userEvent.setup();
     request.mockImplementation(async (_method, path: string) => {
       if (path.includes('/demo-students')) {
         return [
           {
-            id: 'participant-1',
-            participantId: 1,
-            studentId: 10,
-            leadId: 20,
-            studentName: 'Temur Aliyev',
-            contactName: 'Temur Aliyev',
-            phone: '+998901234567',
-            courseName: 'AI Kids',
-            schoolName: 'Cyberpark',
-            roomName: '101',
-            teacherName: 'Elena Kim',
-            scheduledAt: '2026-08-10T10:00:00Z',
-            durationMinutes: 60,
-            format: 'offline',
-            participantStatus: 'attended',
+            studentId: 10, leadId: 20, studentName: 'Temur Aliyev', contactName: 'Temur Aliyev', phone: '+998901234567',
+            managerId: 1, managerName: 'Alice', visits: [{ participantId: 1, demoId: 1, courseName: 'AI Kids', schoolName: 'Cyberpark',
+              roomName: '101', teacherName: 'Elena Kim', scheduledAt: '2026-08-10T10:00:00Z', durationMinutes: 60, format: 'offline' }],
           },
         ];
       }

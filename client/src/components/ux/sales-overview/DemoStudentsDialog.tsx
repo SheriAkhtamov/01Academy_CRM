@@ -38,7 +38,7 @@ export function DemoStudentsDialog({
   onOpenLead,
 }: DemoStudentsDialogProps) {
   const { t, language } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabFilter>('all');
+  const [activeTab, setActiveTab] = useState<TabFilter>('attended');
   const [searchQuery, setSearchQuery] = useState('');
 
   const reportingQuery = reportingRangeQuery(reportingRange);
@@ -103,8 +103,8 @@ export function DemoStudentsDialog({
   }, [activeTab, demoStudents, searchQuery]);
 
   const tabs: Array<{ key: TabFilter; label: string; count: number }> = [
-    { key: 'all', label: t('demoStudentsTabAll'), count: counts.all },
     { key: 'attended', label: t('demoStudentsTabAttended'), count: counts.attended },
+    { key: 'all', label: t('demoStudentsTabAll'), count: counts.all },
     { key: 'no_show', label: t('demoStudentsTabNoShow'), count: counts.no_show },
     { key: 'upcoming', label: t('demoStudentsTabUpcoming'), count: counts.upcoming },
   ];

@@ -63,12 +63,12 @@ import {
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
-import { AdminScheduleCalendar } from '@/components/ux/AdminScheduleCalendar';
 import { FutureGroupStartDialog, futureGroupStatusNeedsConfirmation } from '@/components/ux/FutureGroupStartDialog';
 import { GroupStatusField } from '@/components/ux/GroupStatusField';
 import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { KpiSettingsPanel } from '@/features/sales-kpi/ui/KpiSettingsPanel';
+import { SalesFunnelsPanel } from '@/features/sales-funnels/SalesFunnelsPanel';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   WeekScheduleEditor,
@@ -225,7 +225,7 @@ function EmptyTableState({ title, description }: { title: string; description: s
   );
 }
 
-const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'schedule'];
+const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'funnels'];
 const salesSettingsTabs = ['lead-assignment', 'pipeline', 'lead-merge', 'kpi'];
 
 interface AcademySettingsProps {
@@ -1330,8 +1330,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <TabsTrigger value="groups" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UsersRound />{t('navGroups')}
               </TabsTrigger>
-              <TabsTrigger value="schedule" className="gap-2 pb-2.5 data-[state=active]:text-primary">
-                <Building2 />{t('resourceCalendar')}
+              <TabsTrigger value="funnels" className="gap-2 pb-2.5 data-[state=active]:text-primary">
+                <GitBranch />{t('salesFunnels')}
               </TabsTrigger>
             </>
           )}
@@ -1477,8 +1477,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           </Card>
         </TabsContent>
 
-        <TabsContent value="schedule" className="mt-0">
-          <AdminScheduleCalendar schools={schools} />
+        <TabsContent value="funnels" className="mt-0">
+          <SalesFunnelsPanel />
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-0">

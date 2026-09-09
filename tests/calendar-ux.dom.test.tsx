@@ -5,7 +5,6 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SalesScheduleCalendar } from '../client/src/components/ux/SalesScheduleCalendar';
-import { AdminScheduleCalendar } from '../client/src/components/ux/AdminScheduleCalendar';
 import { AttendanceCalendar } from '../client/src/components/ux/AttendanceCalendar';
 import { TeacherScheduleSection } from '../client/src/components/ux/teacher/TeacherScheduleSection';
 import {
@@ -14,9 +13,6 @@ import {
 } from '../client/src/components/ux/WeekScheduleEditor';
 import { i18n } from '../client/src/lib/i18n';
 
-const { apiRequestMock } = vi.hoisted(() => ({ apiRequestMock: vi.fn() }));
-
-vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: apiRequestMock }));
 vi.mock('../client/src/features/demo-lessons/api', () => ({
   demoLessonQueryKeys: { all: ['/api/academy/demo-lessons'] },
   demoLessonsApi: { list: vi.fn().mockResolvedValue([]) },
@@ -145,44 +141,6 @@ describe('sales schedule calendar views', () => {
 
     await user.click(filtersToggle);
     expect(screen.queryByRole('textbox', { name: 'Find a group' })).toBeNull();
-  });
-});
-
-describe('admin resource calendar navigation', () => {
-  beforeEach(() => {
-    i18n.setLanguage('en');
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(2026, 5, 15, 9, 0));
-    apiRequestMock.mockResolvedValue({ date: '2026-06-15', rooms: [], onlineDemos: [] });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    apiRequestMock.mockReset();
-  });
-
-  const renderResourceCalendar = () => render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <AdminScheduleCalendar schools={[{ id: 1, name: 'Cyberpark', isActive: true }]} />
-    </QueryClientProvider>,
-  );
-
-  it('steps between days without opening the date picker', async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    renderResourceCalendar();
-
-    expect(await screen.findByText('Monday, 15 June 2026')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Today' }).hasAttribute('disabled')).toBe(true);
-
-    await user.click(screen.getByRole('button', { name: 'Next day' }));
-    expect(screen.getByText('Tuesday, 16 June 2026')).toBeTruthy();
-    expect(apiRequestMock).toHaveBeenCalledWith(
-      'GET',
-      expect.stringContaining('date=2026-06-16'),
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Today' }));
-    expect(screen.getByText('Monday, 15 June 2026')).toBeTruthy();
   });
 });
 

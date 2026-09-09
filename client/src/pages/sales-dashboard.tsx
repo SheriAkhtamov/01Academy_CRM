@@ -4,10 +4,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { useLocation, useSearch } from 'wouter';
-import { z } from 'zod';
-import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import { leadsApi } from '@/features/leads/api';
+import {
+  compactPhoneNumbers,
+  createLeadPayload,
+  createLeadSchema,
+  EMPTY_LEAD_FORM,
+  type CreateLeadFormValues,
+} from '@/features/leads/create-lead-form';
 import { invalidateSalesLeadData, salesQueryKeys } from '@/features/sales/queries';
+import type { SalesFunnel } from '@/features/sales-funnels/api';
 import { useLeadFilters } from '@/features/sales/useLeadFilters';
 import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
@@ -16,7 +22,7 @@ import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
-import { translations, type TranslationKey } from '@/lib/i18n';
+import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { toast } from '@/hooks/use-toast';
@@ -32,8 +38,8 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  useFormField,
 } from '@/components/ui/form';
+import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -97,6 +103,7 @@ type QuickAction = 'payment' | 'call' | 'message';
 
 interface Lead {
   id: number;
+  funnelId: number;
   contactName: string;
   studentName?: string | null;
   studentAge?: number;
@@ -200,8 +207,6 @@ const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
   overdue: 'paymentStatusOverdue',
 };
 
-const formValidationTranslationKeys = ['duplicatePhoneInForm'] as const satisfies readonly TranslationKey[];
-
 const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   overview: '/sales',
   pipeline: '/sales/pipeline',
@@ -209,73 +214,6 @@ const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   schedule: '/sales/schedule',
   students: '/sales/clients',
 };
-
-const optionalPhoneString = z.string().trim().refine(
-  (value) => value === '' || value.length >= 7,
-  'invalidData',
-);
-
-const phoneKey = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '');
-const compactPhoneNumbers = (values: string[]) => {
-  const seen = new Set<string>();
-  return values.flatMap((value) => {
-    const trimmed = value.trim();
-    const key = phoneKey(trimmed);
-    if (!trimmed || !key || seen.has(key)) return [];
-    seen.add(key);
-    return [trimmed];
-  });
-};
-
-const createLeadPayload = (values: CreateLeadFormValues): CreateAcademyLeadRequest => ({
-  ...values,
-  phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
-  sourceId: Number(values.sourceId),
-  managerId: values.managerId ? Number(values.managerId) : undefined,
-});
-const uniquePhoneNumbers = (values: string[]) => {
-  const keys = values.map(phoneKey).filter(Boolean);
-  return new Set(keys).size === keys.length;
-};
-
-const createLeadSchema = z.object({
-  contactName: z.string().trim().min(1, 'fillRequiredFields'),
-  phoneNumbers: z.array(optionalPhoneString).min(1).refine(
-    uniquePhoneNumbers,
-    formValidationTranslationKeys[0],
-  ),
-  sourceId: z.string().min(1, 'fillRequiredFields'),
-  managerId: z.string().min(1, 'fillRequiredFields'),
-  comment: z.string(),
-  language: z.enum(['ru', 'uz', 'en']),
-});
-
-type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
-
-const EMPTY_LEAD_FORM: CreateLeadFormValues = {
-  contactName: '',
-  phoneNumbers: [''],
-  sourceId: '',
-  managerId: '',
-  comment: '',
-  language: 'ru',
-};
-
-function LocalizedFormMessage() {
-  const { t } = useTranslation();
-  const { error, formMessageId } = useFormField();
-  if (!error?.message) return null;
-  const message = String(error.message);
-  const key = Object.prototype.hasOwnProperty.call(translations, message)
-    ? message as TranslationKey
-    : 'invalidData';
-
-  return (
-    <p id={formMessageId} className="text-sm font-medium text-destructive">
-      {t(key)}
-    </p>
-  );
-}
 
 function ArchiveLeadDialog({
   lead,
@@ -510,6 +448,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const pagePath = SALES_SECTION_PATHS[section];
   const riskFilter = new URLSearchParams(routeSearch).get('risk');
   const requestedOverviewManagerId = new URLSearchParams(routeSearch).get('manager');
+  const requestedSalesFunnelId = new URLSearchParams(routeSearch).get('funnel');
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
@@ -567,6 +506,19 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ['/api/users'],
   });
+  const { data: salesFunnels = [] } = useQuery<SalesFunnel[]>({
+    queryKey: ['/api/academy/sales-funnels'],
+  });
+  const activeSalesFunnels = useMemo(
+    () => salesFunnels.filter((funnel) => funnel.isActive),
+    [salesFunnels],
+  );
+  const selectedSalesFunnel = useMemo(() => (
+    activeSalesFunnels.find((funnel) => String(funnel.id) === requestedSalesFunnelId)
+    ?? activeSalesFunnels.find((funnel) => funnel.isDefault)
+    ?? activeSalesFunnels[0]
+    ?? null
+  ), [activeSalesFunnels, requestedSalesFunnelId]);
 
   const leadStatusName = (code: string) => {
     return data?.statuses?.find((status: any) => status.code === code)?.name ?? code;
@@ -585,8 +537,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const currentSalesManagerId = hasSalesModule && user?.id ? String(user.id) : '';
   const leadFormDefaults = useMemo<CreateLeadFormValues>(() => ({
     ...EMPTY_LEAD_FORM,
+    funnelId: selectedSalesFunnel ? String(selectedSalesFunnel.id) : '',
     managerId: currentSalesManagerId,
-  }), [currentSalesManagerId]);
+  }), [currentSalesManagerId, selectedSalesFunnel]);
 
   const leadForm = useForm<CreateLeadFormValues>({
     resolver: zodResolver(createLeadSchema),
@@ -683,8 +636,12 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   );
 
   const pipelineLeads = useMemo(
-    () => myLeads.filter((lead) => !lead.isArchived && activePipelineCodes.has(lead.statusCode)),
-    [activePipelineCodes, myLeads],
+    () => myLeads.filter((lead) => (
+      !lead.isArchived
+      && activePipelineCodes.has(lead.statusCode)
+      && Number(lead.funnelId) === selectedSalesFunnel?.id
+    )),
+    [activePipelineCodes, myLeads, selectedSalesFunnel?.id],
   );
   const { filters: leadFilters, applyFilters } = useLeadFilters({ urlSync: section === 'pipeline' });
   const filteredPipelineLeads = useMemo(
@@ -1153,6 +1110,25 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         actions={
           section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">
+              <Select
+                value={selectedSalesFunnel ? String(selectedSalesFunnel.id) : ''}
+                onValueChange={(funnelId) => {
+                  pipelineBulkActions.setSelectedLeadIds(new Set());
+                  replaceSalesParams({ funnel: funnelId });
+                }}
+                disabled={activeSalesFunnels.length === 0}
+              >
+                <SelectTrigger className="w-[min(18rem,72vw)]" aria-label={t('salesFunnel')}>
+                  <SelectValue placeholder={t('selectSalesFunnel')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeSalesFunnels.map((funnel) => (
+                    <SelectItem key={funnel.id} value={String(funnel.id)}>
+                      {funnel.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <SalesBulkActionsButton selectedCount={pipelineBulkActions.selectedLeadIds.size} onClick={() => pipelineBulkActions.setDialogOpen(true)} />
               <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
@@ -1350,6 +1326,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             form={leadForm}
             createLead={createLead}
             data={data}
+            funnels={activeSalesFunnels}
             managers={leadManagerOptions}
             managerSelectDisabled={hasSalesModule && !isAdministrationModule}
           />
@@ -1586,6 +1563,7 @@ function LeadForm({
   form,
   createLead,
   data,
+  funnels,
   managers,
   managerSelectDisabled,
 }: {
@@ -1593,6 +1571,7 @@ function LeadForm({
   form: UseFormReturn<CreateLeadFormValues>;
   createLead: any;
   data: any;
+  funnels: SalesFunnel[];
   managers: Array<{ id: number; fullName: string }>;
   managerSelectDisabled: boolean;
 }) {
@@ -1704,6 +1683,28 @@ function LeadForm({
                   <SelectGroup>
                     {activeSources.map((source: any) => (
                       <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <LocalizedFormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="funnelId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel required>{t('salesFunnel')}</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange} disabled={createLead.isPending}>
+                <FormControl>
+                  <SelectTrigger><SelectValue placeholder={t('selectSalesFunnel')} /></SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectGroup>
+                    {funnels.map((funnel) => (
+                      <SelectItem key={funnel.id} value={String(funnel.id)}>{funnel.name}</SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>

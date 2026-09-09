@@ -22,6 +22,7 @@ export const createAcademyLeadRequestSchema = z.object({
   messenger: z.string().trim().max(255).optional().nullable(),
   sourceId: optionalPositiveIdInput,
   sourceCode: z.string().trim().max(80).optional().nullable(),
+  funnelId: optionalPositiveIdInput,
   managerId: optionalPositiveIdInput,
   courseId: optionalPositiveIdInput,
   enrolledGroupId: optionalPositiveIdInput,

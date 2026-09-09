@@ -37,6 +37,9 @@ describe('lead import normalization', () => {
       if (sql.includes('RETURNING id') && sql.includes('academy_lead_sources')) {
         return { rows: [{ id: 1 }], rowCount: 1 };
       }
+      if (sql.includes('FROM academy_integration_funnel_settings')) {
+        return { rows: [{ id: 3 }], rowCount: 1 };
+      }
       if (sql.includes('SELECT id, lead_id, outcome FROM academy_lead_import_records')) {
         return {
           rows: [{ id: 7, lead_id: 42, outcome: 'merged_archived' }],

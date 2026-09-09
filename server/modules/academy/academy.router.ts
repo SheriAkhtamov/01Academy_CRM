@@ -23,6 +23,7 @@ import { registerAcademyResourceRoutes } from './resources.router';
 import { registerAcademyDemoLessonRoutes } from './demo-lessons.router';
 import { registerAcademyBulkLeadActionRoutes } from './bulk-lead-actions.router';
 import { registerAcademyLeadSocialAccountRoutes } from './lead-social-accounts.router';
+import { registerAcademyFunnelRoutes } from './funnels.router';
 import { createSalesKpiRouter } from '../sales-kpi/http/kpi-router';
 
 const router = Router();
@@ -55,6 +56,7 @@ router.use(createLeadLifecycleRouter(
 
 registerAcademyBulkLeadActionRoutes(router);
 registerAcademyLeadSocialAccountRoutes(router);
+registerAcademyFunnelRoutes(router);
 registerAcademyModuleRoutes(router);
 registerAcademyLeadRoutes(router);
 registerAcademyLearningRoutes(router);

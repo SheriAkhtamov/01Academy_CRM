@@ -37,6 +37,7 @@ import {
   MISSED_INCOMING_CALL_SQL,
 } from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { resolveLeadFunnelId } from '../services/lead-funnels';
 
 const router = Router();
 
@@ -237,17 +238,19 @@ const ensureContactByPhone = async (
       : { rows: [] as Array<{ id: number }> };
     const directionLabel = context.direction === 'incoming' ? 'входящего' : 'исходящего';
     const contactName = `Новый контакт ${normalized}`;
+    const funnelId = await resolveLeadFunnelId(client, 'onlinepbx');
     const leadResult = await client.query<{ id: number; contactName: string }>(
       `INSERT INTO academy_leads (
-         contact_name, phone, source_id, status_code, manager_id, language,
+         contact_name, phone, source_id, funnel_id, status_code, manager_id, language,
          comment, first_contact_channel, created_by
        )
-       VALUES ($1,$2,$3,'new_request',$4,'ru',$5,'call',$6)
+       VALUES ($1,$2,$3,$4,'new_request',$5,'ru',$6,'call',$7)
        RETURNING id, contact_name AS "contactName"`,
       [
         contactName,
         normalized,
         sourceResult.rows[0].id,
+        funnelId,
         managerResult.rows[0]?.id ?? null,
         `Создан автоматически из ${directionLabel} звонка.`,
         actorId,

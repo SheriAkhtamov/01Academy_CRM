@@ -311,6 +311,19 @@ router.post('/leads', async (req, res) => {
       if (!sourceId) {
         throw Object.assign(new Error('sourceRequired'), { statusCode: 400 });
       }
+      const requestedFunnelId = parseId(input.funnelId);
+      const funnel = await queryOne(
+        `SELECT id
+         FROM academy_sales_funnels
+         WHERE is_active = true
+           AND ${requestedFunnelId ? 'id = $1' : 'is_default = true'}
+         LIMIT 1
+         FOR SHARE`,
+        requestedFunnelId ? [requestedFunnelId] : [],
+      );
+      if (!funnel) {
+        throw Object.assign(new Error('salesFunnelRequired'), { statusCode: 400 });
+      }
       const studentAge = toIntegerOrNull(input.studentAge) as number | null | undefined;
       let courseId = parseId(input.courseId);
       if (!courseId && studentAge) {
@@ -355,6 +368,7 @@ router.post('/leads', async (req, res) => {
         courseId: courseId ?? null,
         schoolId,
         sourceId,
+        funnelId: Number(funnel.id),
         advertisingCampaign: nullableText(input.advertisingCampaign) ?? nullableText(source?.campaignName) ?? null,
         acquisitionCostUzs: normalizeMoney(input.acquisitionCostUzs ?? source?.costPerLeadUzs),
         statusCode,

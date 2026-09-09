@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { resolveLeadFunnelId } from './lead-funnels';
 
 export type LeadImportRecord = {
   externalId: string;
@@ -239,6 +240,7 @@ export const importLeadRecords = async (
       [options.sourceCode ?? 'meta_lead_ads', options.sourceName ?? 'Meta Lead Ads'],
     );
     const sourceId = source.rows[0].id;
+    const funnelId = await resolveLeadFunnelId(client, 'meta');
 
     for (const record of records) {
       const externalId = text(record.externalId) || `${text(record.sheet) || 'sheet'}:${record.row ?? 'unknown'}`;
@@ -295,12 +297,12 @@ export const importLeadRecords = async (
           || (phone ? `Новый контакт ${phone}` : `Новый лид Meta #${externalId}`);
         const created = await client.query<{ id: number }>(
           `INSERT INTO academy_leads (
-             contact_name, phone, source_id, advertising_campaign, status_code,
+             contact_name, phone, source_id, funnel_id, advertising_campaign, status_code,
              language, comment, first_contact_channel, created_at, updated_at
           )
-           VALUES ($1, $2, $3, $4, 'new_request', 'ru', $5, 'instagram', $6, NOW())
+           VALUES ($1, $2, $3, $4, $5, 'new_request', 'ru', $6, 'instagram', $7, NOW())
            RETURNING id`,
-          [contactName, phone, sourceId, text(record.campaignName) || null, comment, commentCreatedAt],
+          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment, commentCreatedAt],
         );
         matchedLead = { id: created.rows[0].id, isArchived: false };
         await client.query(

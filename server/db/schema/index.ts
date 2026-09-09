@@ -10,12 +10,8 @@ import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 import { createSalesKpiTables } from "./sales-kpi";
-export interface AcademyCourseProgramLesson {
-  lessonNumber: number;
-  topic: string;
-  description?: string | null;
-  materials?: string | null;
-}
+import { createSalesFunnelTables } from "./sales-funnels";
+export interface AcademyCourseProgramLesson { lessonNumber: number; topic: string; description?: string | null; materials?: string | null; }
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -46,6 +42,8 @@ export const users = pgTable("users", {
   archiveIdx: index("users_archive_idx").on(table.isArchived, table.archivedAt),
   moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
+
+export const { academySalesFunnels, academyIntegrationFunnelSettings } = createSalesFunnelTables(users.id);
 
 export const userPhones = createUserPhonesTable(users.id);
 
@@ -294,6 +292,7 @@ export const academyLeads = pgTable("academy_leads", {
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
   sourceId: integer("source_id").references(() => academyLeadSources.id, { onDelete: "restrict" }).notNull(),
+  funnelId: integer("funnel_id").references(() => academySalesFunnels.id, { onDelete: "restrict" }).notNull(),
   advertisingCampaign: varchar("advertising_campaign", { length: 255 }),
   acquisitionCostUzs: integer("acquisition_cost_uzs").notNull().default(0),
   statusCode: varchar("status_code", { length: 80 }).notNull().default("new_request"),
@@ -341,6 +340,7 @@ export const academyLeads = pgTable("academy_leads", {
   managerIdx: index("academy_leads_manager_idx").on(table.managerId),
   schoolIdx: index("academy_leads_school_idx").on(table.schoolId),
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
+  funnelIdx: index("academy_leads_funnel_idx").on(table.funnelId),
   referrerIdx: index("academy_leads_referrer_idx").on(table.referrerStudentId),
   archiveIdx: index("academy_leads_archive_idx").on(table.isArchived, table.archivedAt),
 }));

@@ -44,7 +44,6 @@ const compositionBudgets = new Map(Object.entries({
 const clientTransportRatchet = new Map(Object.entries({
   'client/src/components/Header.tsx': 3,
   'client/src/components/modals/SettingsModal.tsx': 1,
-  'client/src/components/ux/AdminScheduleCalendar.tsx': 1,
   'client/src/components/ux/AvailabilityCalendar.tsx': 1,
   'client/src/components/ux/CommandPalette.tsx': 1,
   'client/src/components/ux/SalesOverviewMetrics.tsx': 1,

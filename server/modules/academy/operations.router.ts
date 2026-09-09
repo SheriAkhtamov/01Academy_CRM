@@ -25,6 +25,7 @@ import { getMetaLeadAdsIntegrationConfig } from '../../services/meta-lead-ads';
 import { getMetaMarketingIntegrationConfig } from '../../services/meta-marketing';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
+import { isLeadIntegrationProvider } from '../../services/lead-funnels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -488,6 +489,21 @@ router.get('/integrations/status', async (req, res) => {
       : null;
     const metaMarketing = getMetaMarketingIntegrationConfig();
     const metaLeadAds = getMetaLeadAdsIntegrationConfig();
+    const [funnelSettings, fallbackFunnel] = await Promise.all([
+      query(
+        `SELECT setting.provider, funnel.id AS funnel_id, funnel.name AS funnel_name
+         FROM academy_integration_funnel_settings setting
+         JOIN academy_sales_funnels funnel ON funnel.id = setting.funnel_id
+         WHERE funnel.is_active = true`,
+      ),
+      queryOne(
+        `SELECT id, name
+         FROM academy_sales_funnels
+         WHERE is_active = true
+         ORDER BY is_default DESC, id
+         LIMIT 1`,
+      ),
+    ]);
     // Read live: adding or renaming a stage in the CRM changes what Meta is offered.
     const conversionStages = await query<{ code: string; name: string }>(
       `SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, code`,
@@ -559,17 +575,26 @@ router.get('/integrations/status', async (req, res) => {
       client owns the wording now and renders it from `connected` and
       `requiresReconnect`.
     */
-    res.json(providers.map((entry) => ({
-      provider: entry.provider,
-      mode: entry.connected ? 'live' : 'stub',
-      connected: entry.connected,
-      requiresReconnect: entry.requiresReconnect,
-      accountId: entry.accountId,
-      accountUsername: entry.accountUsername,
-      externalUrl: 'externalUrl' in entry ? entry.externalUrl : null,
-      details: entry.details,
-      lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
-    })));
+    res.json(providers.map((entry) => {
+      const configuredFunnel = funnelSettings.find((setting) => setting.provider === entry.provider);
+      const assignedFunnel = isLeadIntegrationProvider(entry.provider)
+        ? configuredFunnel ?? fallbackFunnel
+        : null;
+      return {
+        provider: entry.provider,
+        mode: entry.connected ? 'live' : 'stub',
+        connected: entry.connected,
+        requiresReconnect: entry.requiresReconnect,
+        accountId: entry.accountId,
+        accountUsername: entry.accountUsername,
+        externalUrl: 'externalUrl' in entry ? entry.externalUrl : null,
+        details: entry.details,
+        funnelId: assignedFunnel ? Number(assignedFunnel.funnelId ?? assignedFunnel.id) : null,
+        funnelName: assignedFunnel?.funnelName ?? assignedFunnel?.name ?? null,
+        acceptsLeads: isLeadIntegrationProvider(entry.provider),
+        lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
+      };
+    }));
   } catch (error) {
     logger.error('Failed to fetch integrations status', { error });
     res.status(500).json({ error: 'Failed to fetch integrations status' });

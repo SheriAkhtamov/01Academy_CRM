@@ -19,6 +19,7 @@ import {
   linkMetaAttributionToLead,
 } from './meta-marketing';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { resolveLeadFunnelId } from './lead-funnels';
 
 type InstagramUser = {
   id: number;
@@ -1410,16 +1411,18 @@ const ensureLeadForConversation = async (
   }
 
   const systemUserId = await getSystemUserId(client);
+  const funnelId = await resolveLeadFunnelId(client, 'instagram');
 
   const inserted = await client.query(
     `INSERT INTO academy_leads
-      (contact_name, phone, messenger, source_id, status_code, manager_id, language, comment, created_by)
-     VALUES ($1,NULL,$2,$3,'new_request',NULL,'ru',$4,$5)
+      (contact_name, phone, messenger, source_id, funnel_id, status_code, manager_id, language, comment, created_by)
+     VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'ru',$5,$6)
      RETURNING id, manager_id, contact_name, messenger, true AS created_lead`,
     [
       contactName,
       messenger,
       account.source_id,
+      funnelId,
       options.leadComment ?? 'Создан автоматически из нового диалога Instagram.',
       systemUserId,
     ],

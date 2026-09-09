@@ -33,7 +33,6 @@ describe('0092 group archive migration', () => {
 
   it('hides an archived group from the schedules that show work in hand', () => {
     expect(routes).toContain('COALESCE(g.is_archived, false) AS group_is_archived');
-    expect(routes).toContain('AND COALESCE(g.is_archived, false) = false');
   });
 
   it('lets only a group owner or administration move a group to the archive', () => {

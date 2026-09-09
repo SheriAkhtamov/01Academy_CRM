@@ -53,6 +53,7 @@ describe('external lead ownership', () => {
       if (sql.includes('SELECT u.id FROM users')) return { rows: [{ id: 1 }] };
       if (sql.includes("SELECT 'lead' AS entity_type")) return { rows: [] };
       if (sql.includes('INSERT INTO academy_lead_sources')) return { rows: [{ id: 5 }] };
+      if (sql.includes('FROM academy_integration_funnel_settings')) return { rows: [{ id: 3 }] };
       if (sql.includes('INSERT INTO academy_leads')) {
         return {
           rows: [{
@@ -133,6 +134,7 @@ describe('external lead ownership', () => {
       null,
       '@acme_client',
       5,
+      3,
       '01academy.pro',
       'ru',
       [
@@ -181,7 +183,7 @@ describe('external lead ownership', () => {
 
     expect(incomingSource).not.toContain('getLeadAssigneeId');
     expect(instagramSource).not.toContain('getLeadAssigneeId');
-    expect(instagramSource).toContain("VALUES ($1,NULL,$2,$3,'new_request',NULL,'ru',$4,$5)");
+    expect(instagramSource).toContain("VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'ru',$5,$6)");
     expect(instagramSource).toMatch(
       /INSERT INTO academy_tasks[\s\S]+?'Ответить на новый диалог Instagram[^`]+?NULL/,
     );

@@ -16,6 +16,7 @@ import {
   verifyMetaLeadWebhookChallenge,
   verifyMetaLeadWebhookSignature,
 } from '../services/meta-lead-ads';
+import { resolveLeadFunnelId } from '../services/lead-funnels';
 
 const router = Router();
 
@@ -387,12 +388,13 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
         name: 'Сайт',
         channel: 'website',
       });
+      const funnelId = await resolveLeadFunnelId(client, 'website');
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
-          (contact_name, phone, messenger, source_id, advertising_campaign, status_code, manager_id, language, comment, created_by)
-         VALUES ($1,$2,$3,$4,$5,'new_request',NULL,$6,$7,$8) RETURNING *`,
-        [contactName, storedPhone, messenger, sourceId, campaign, language, comment, systemUserId],
+          (contact_name, phone, messenger, source_id, funnel_id, advertising_campaign, status_code, manager_id, language, comment, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'new_request',NULL,$7,$8,$9) RETURNING *`,
+        [contactName, storedPhone, messenger, sourceId, funnelId, campaign, language, comment, systemUserId],
       );
       const lead = camelize(inserted[0]);
       if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);

@@ -3771,6 +3771,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('INSERT INTO academy_lead_sources')) {
         return { rows: [{ id: 12, code: 'event_robotics', is_active: true }] };
       }
+      if (sql.includes('FROM academy_sales_funnels')) return { rows: [{ id: 3 }] };
       return emptyResult();
     });
 

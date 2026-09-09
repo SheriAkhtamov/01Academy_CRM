@@ -463,6 +463,13 @@ async function seedLeads(
   const madinaId = userMap['madina@01academy.uz'] || azizId;
   const sources = Object.keys(sourceMap);
   const courses = Object.keys(courseMap);
+  const funnelResult = await exec(
+    `SELECT id FROM academy_sales_funnels WHERE is_active = true ORDER BY is_default DESC, id LIMIT 1`,
+  );
+  const funnelId = Number(funnelResult.rows[0]?.id);
+  if (!Number.isSafeInteger(funnelId) || funnelId <= 0) {
+    throw new Error('Active sales funnel is required before seeding leads');
+  }
 
   const STAGE_DISTRIBUTION: { status: string; count: number; note: string }[] = [
     { status: 'new_request', count: 20, note: 'Новая заявка с таргетированной рекламы' },
@@ -501,8 +508,8 @@ async function seedLeads(
         const ins = await exec(
           `INSERT INTO academy_leads
             (contact_name, phone, student_name, student_age, course_id, school_id,
-             source_id, status_code, manager_id, comment, language, expected_payment_uzs, offer_price_uzs, created_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ru',$11,$11, now() - ($12 || ' days')::interval)
+             source_id, funnel_id, status_code, manager_id, comment, language, expected_payment_uzs, offer_price_uzs, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ru',$12,$12, now() - ($13 || ' days')::interval)
            RETURNING id`,
           [
             p.parentName,
@@ -512,6 +519,7 @@ async function seedLeads(
             courseId,
             schoolId,
             sourceId,
+            funnelId,
             dist.status,
             managerId,
             dist.note,

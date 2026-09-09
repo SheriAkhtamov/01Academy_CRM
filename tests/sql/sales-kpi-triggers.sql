@@ -8,7 +8,7 @@ DECLARE
   payment_key integer; second_payment integer; renewal_payment integer;
   survey_key integer; call_key integer; conversation_key integer; message_key integer;
   course_key integer; school_key integer; teacher_key integer; lead_source_key integer; account_key integer;
-  legacy_key integer;
+  legacy_key integer; funnel_key integer;
   month_key text := to_char(now() AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM');
 BEGIN
   IF current_database() NOT LIKE 'crm_kpi_verify_%' THEN
@@ -18,8 +18,9 @@ BEGIN
   SELECT min(id) INTO school_key FROM academy_schools;
   SELECT min(id) INTO teacher_key FROM academy_teachers;
   SELECT min(id) INTO lead_source_key FROM academy_lead_sources;
+  SELECT id INTO funnel_key FROM academy_sales_funnels WHERE is_default = true LIMIT 1;
   SELECT min(id) INTO account_key FROM instagram_accounts;
-  ASSERT course_key IS NOT NULL AND school_key IS NOT NULL AND teacher_key IS NOT NULL AND lead_source_key IS NOT NULL,
+  ASSERT course_key IS NOT NULL AND school_key IS NOT NULL AND teacher_key IS NOT NULL AND lead_source_key IS NOT NULL AND funnel_key IS NOT NULL,
     'The restored database needs reference records';
 
   INSERT INTO users (email, password, full_name, module) VALUES
@@ -32,8 +33,8 @@ BEGIN
     VALUES (hunter, month_key, 'hunter'), (closer, month_key, 'closer'), (another_closer, month_key, 'closer');
   ASSERT academy_kpi_employee_role(hunter) = 'hunter', 'Current hunter assignment';
 
-  INSERT INTO academy_leads (contact_name, phone, student_name, student_age, source_id, course_id, manager_id)
-    VALUES ('KPI verification', 'test-' || hunter, 'KPI verification student', 12, lead_source_key, course_key, hunter) RETURNING id INTO lead_key;
+  INSERT INTO academy_leads (contact_name, phone, student_name, student_age, source_id, funnel_id, course_id, manager_id)
+    VALUES ('KPI verification', 'test-' || hunter, 'KPI verification student', 12, lead_source_key, funnel_key, course_key, hunter) RETURNING id INTO lead_key;
   ASSERT (SELECT hunter_id = hunter AND closer_id IS NULL AND qualified_at IS NOT NULL AND crm_completed_at IS NOT NULL
     FROM academy_sales_kpi_leads WHERE lead_id = lead_key), 'Lead qualification and hunter attribution';
   INSERT INTO academy_communications (lead_id, channel, result, created_by)

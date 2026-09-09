@@ -79,7 +79,6 @@ import {
   getMinimumGroupEndDate,
   normalizeWeeklySchedule,
   parseScheduleTimeToMinutes,
-  scheduleIntervalsOverlap,
   weeklySchedulesOverlap,
   type NormalizedWeeklyScheduleItem,
 } from '@shared/scheduling';
@@ -561,78 +560,6 @@ router.post('/dashboard/alerts/:key/task', async (req, res) => {
   } catch (error) {
     logger.error('Failed to create dashboard task', { error });
     res.status(500).json({ error: 'Failed to create dashboard task' });
-  }
-});
-
-router.get('/schedule/resource', async (req, res) => {
-  if (!ensureAdministrationModuleAccess(req, res)) return;
-  try {
-    const schoolId = parseId(req.query.schoolId);
-    if (!schoolId) return res.status(400).json({ error: 'schoolRequired' });
-    const selectedDate = parseDateOnly(req.query.date) ?? startOfAcademyDay(new Date());
-    const nextDate = getZonedDayRange(selectedDate, ACADEMY_TIME_ZONE, 1).start;
-
-    const [school, rooms, groups, lessons, demos] = await Promise.all([
-      queryOne(`SELECT id, name FROM academy_schools WHERE id = $1`, [schoolId]),
-      query(`SELECT * FROM academy_rooms WHERE school_id = $1 AND is_active = true ORDER BY name`, [schoolId]),
-      query(
-        `SELECT g.*, c.name AS course_name, g.lesson_duration_minutes AS duration_minutes,
-                t.full_name AS teacher_name
-         FROM academy_groups g
-         LEFT JOIN academy_courses c ON c.id = g.course_id
-         LEFT JOIN academy_teachers t ON t.id = g.teacher_id
-         WHERE g.school_id = $1 AND g.status IN ('open', 'in_progress')
-           AND COALESCE(g.is_archived, false) = false
-         ORDER BY g.room_id, g.name`,
-        [schoolId],
-      ),
-      query(
-        `SELECT l.*, g.name AS group_name, c.name AS course_name, t.full_name AS teacher_name
-         FROM academy_lessons l
-         LEFT JOIN academy_groups g ON g.id = l.group_id
-         LEFT JOIN academy_courses c ON c.id = l.course_id
-         LEFT JOIN academy_teachers t ON t.id = l.teacher_id
-         WHERE l.school_id = $1
-           AND l.status <> 'cancelled'
-           AND COALESCE(g.is_archived, false) = false
-           AND l.scheduled_at >= $2
-           AND l.scheduled_at < $3
-         ORDER BY l.room_id, l.scheduled_at`,
-        [schoolId, selectedDate, nextDate],
-      ),
-      query(
-        `SELECT demo.*, c.name AS course_name, t.full_name AS teacher_name,
-                COUNT(participant.id)::int AS participant_count
-         FROM academy_demo_lessons demo
-         JOIN academy_courses c ON c.id = demo.course_id
-         JOIN academy_teachers t ON t.id = demo.teacher_id
-         LEFT JOIN academy_demo_lesson_participants participant
-           ON participant.demo_lesson_id = demo.id AND participant.status <> 'cancelled'
-         WHERE demo.school_id = $1
-           AND demo.status <> 'cancelled'
-           AND demo.scheduled_at >= $2
-           AND demo.scheduled_at < $3
-         GROUP BY demo.id, c.name, t.full_name
-         ORDER BY demo.room_id, demo.scheduled_at`,
-        [schoolId, selectedDate, nextDate],
-      ),
-    ]);
-    if (!school) return res.status(404).json({ error: 'resourceNotFound' });
-
-    res.json({
-      school,
-      date: selectedDate.toISOString(),
-      rooms: rooms.map((room) => ({
-        ...room,
-        groups: groups.filter((group) => Number(group.roomId) === Number(room.id)),
-        lessons: lessons.filter((lesson) => Number(lesson.roomId) === Number(room.id)),
-        demos: demos.filter((demo) => Number(demo.roomId) === Number(room.id)),
-      })),
-      onlineDemos: demos.filter((demo) => demo.format === 'online'),
-    });
-  } catch (error) {
-    logger.error('Failed to fetch resource schedule', { error });
-    res.status(500).json({ error: 'failedToLoadData' });
   }
 });
 

@@ -46,6 +46,8 @@
     "website": {
       "webhookSecret": "",
       "allowedFormOrigins": [
+        "https://01academy.uz",
+        "https://www.01academy.uz",
         "https://01academy.pro",
         "https://www.01academy.pro"
       ]

@@ -1,3 +1,5 @@
+export { websiteIntegrationProvider } from '@shared/lead-integrations';
+
 export const normalizeWebsiteIntegrationDomain = (value: unknown): string | null => {
   if (typeof value !== 'string' || !value.trim()) return null;
   const candidate = value.trim();
@@ -7,10 +9,9 @@ export const normalizeWebsiteIntegrationDomain = (value: unknown): string | null
     const url = new URL(
       hasProtocol ? candidate : `https://${candidate}`,
     );
-    return url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '') || null;
+    const domain = url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
+    return domain.length <= 71 ? domain || null : null;
   } catch {
     return null;
   }
 };
-
-export const websiteIntegrationProvider = (domain: string) => `website:${domain}`;

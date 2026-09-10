@@ -17,7 +17,10 @@ import {
   verifyMetaLeadWebhookSignature,
 } from '../services/meta-lead-ads';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
-import { normalizeWebsiteIntegrationDomain } from '../services/website-integrations';
+import {
+  normalizeWebsiteIntegrationDomain,
+  websiteIntegrationProvider,
+} from '../services/website-integrations';
 
 const router = Router();
 
@@ -368,6 +371,7 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
     const siteDomain = normalizeWebsiteIntegrationDomain(req.get('origin'))
       ?? normalizeWebsiteIntegrationDomain(pageUrl);
+    const integrationProvider = siteDomain ? websiteIntegrationProvider(siteDomain) : null;
     const integrationPayload = siteDomain ? { ...body, siteDomain } : body;
 
     if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });
@@ -388,11 +392,11 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
       const sourceId = await ensureIncomingSourceId(client, {
-        code: 'website',
-        name: 'Сайт',
+        code: integrationProvider ?? 'website',
+        name: siteDomain ?? 'Сайт',
         channel: 'website',
       });
-      const funnelId = await resolveLeadFunnelId(client, 'website');
+      const funnelId = await resolveLeadFunnelId(client, integrationProvider ?? undefined);
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
@@ -411,11 +415,11 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     });
 
     if (result.duplicate) {
-      await logIntegration('website', 'inbound', 'duplicate', integrationPayload);
+      await logIntegration(integrationProvider ?? 'website', 'inbound', 'duplicate', integrationPayload);
       return res.status(409).json({ error: 'Duplicate lead or student', duplicate: result.duplicate });
     }
 
-    await logIntegration('website', 'inbound', 'received', integrationPayload);
+    await logIntegration(integrationProvider ?? 'website', 'inbound', 'received', integrationPayload);
     return res.status(201).json(result.lead);
   } catch (error) {
     logger.error('Failed to receive website lead', { error });

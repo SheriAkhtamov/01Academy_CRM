@@ -101,7 +101,8 @@ export const DEFAULT_LEAD_SOURCES = [
   { code: "instagram", name: "Instagram", channel: "instagram" },
   { code: "meta_lead_ads", name: "Meta Lead Ads", channel: "instagram" },
   { code: "referral", name: "Рекомендация знакомых", channel: "referral" },
-  { code: "website", name: "Сайт", channel: "website" },
+  { code: "website:01academy.uz", name: "01academy.uz", channel: "website" },
+  { code: "website:01academy.pro", name: "01academy.pro", channel: "website" },
   { code: "telephony", name: "Телефония", channel: "call" },
 ] as const;
 

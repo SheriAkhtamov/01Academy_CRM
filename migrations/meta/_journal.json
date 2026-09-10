@@ -743,6 +743,13 @@
       "when": 1789920000002,
       "tag": "0105_add_sales_funnels",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1789920000003,
+      "tag": "0106_split_website_integrations",
+      "breakpoints": true
     }
   ]
 }

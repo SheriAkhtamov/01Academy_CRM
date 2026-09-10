@@ -41,15 +41,26 @@ import {
 } from '@/components/ui/alert-dialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { EmptyState } from '@/components/ux/EmptyState';
+import {
+  isLeadIntegrationProvider,
+  isWebsiteLeadIntegrationProvider,
+  websiteIntegrationDomain,
+  type LeadIntegrationProvider,
+} from '@shared/lead-integrations';
 
-const LEAD_SOURCE_PROVIDERS = [
-  { provider: 'website', Icon: Globe2 },
+const FIXED_LEAD_SOURCE_PROVIDERS = [
   { provider: 'instagram', Icon: Camera },
   { provider: 'meta', Icon: RadioTower },
   { provider: 'onlinepbx', Icon: PhoneCall },
 ] as const;
 
-type LeadSourceProvider = typeof LEAD_SOURCE_PROVIDERS[number]['provider'];
+type LeadSourceProvider = LeadIntegrationProvider;
+
+type LeadIntegrationStatus = {
+  provider: string;
+  siteDomain?: string | null;
+  acceptsLeads?: boolean;
+};
 
 type FunnelDraft = {
   name: string;
@@ -65,19 +76,19 @@ const emptyDraft = (): FunnelDraft => ({
   integrations: [],
 });
 
-const isLeadSourceProvider = (provider: string): provider is LeadSourceProvider => (
-  LEAD_SOURCE_PROVIDERS.some((entry) => entry.provider === provider)
-);
-
 const integrationKey = (provider: string) => {
   switch (provider) {
-    case 'website': return 'integrationProviderWebsite' as const;
     case 'instagram': return 'instagramIntegration' as const;
     case 'meta': return 'metaIntegration' as const;
     case 'onlinepbx': return 'onlinePbxIntegration' as const;
     default: return 'navIntegrations' as const;
   }
 };
+
+const integrationLabel = (
+  provider: string,
+  t: ReturnType<typeof useTranslation>['t'],
+) => websiteIntegrationDomain(provider) ?? t(integrationKey(provider));
 
 export function SalesFunnelsPanel() {
   const { t } = useTranslation();
@@ -89,6 +100,28 @@ export function SalesFunnelsPanel() {
   const [transferTargetId, setTransferTargetId] = useState('');
 
   const funnels = useQuery<SalesFunnel[]>({ queryKey: ['/api/academy/sales-funnels'] });
+  const integrationStatuses = useQuery<LeadIntegrationStatus[]>({
+    queryKey: ['/api/academy/integrations/status'],
+  });
+  const leadSourceProviders = useMemo(() => {
+    const websiteProviders = new Set<LeadIntegrationProvider>();
+    for (const integration of integrationStatuses.data ?? []) {
+      if (integration.acceptsLeads && isWebsiteLeadIntegrationProvider(integration.provider)) {
+        websiteProviders.add(integration.provider);
+      }
+    }
+    for (const funnel of funnels.data ?? []) {
+      for (const provider of funnel.integrations) {
+        if (isWebsiteLeadIntegrationProvider(provider)) websiteProviders.add(provider);
+      }
+    }
+    return [
+      ...[...websiteProviders]
+        .sort((left, right) => left.localeCompare(right))
+        .map((provider) => ({ provider, Icon: Globe2 })),
+      ...FIXED_LEAD_SOURCE_PROVIDERS,
+    ];
+  }, [funnels.data, integrationStatuses.data]);
   const activeFunnels = useMemo(
     () => (funnels.data ?? []).filter((funnel) => funnel.isActive),
     [funnels.data],
@@ -122,7 +155,7 @@ export function SalesFunnelsPanel() {
         name: funnel.name,
         isActive: funnel.isActive,
         isDefault: funnel.isDefault,
-        integrations: funnel.integrations.filter(isLeadSourceProvider),
+        integrations: funnel.integrations.filter(isLeadIntegrationProvider),
       }
       : emptyDraft());
     setDialogOpen(true);
@@ -209,7 +242,7 @@ export function SalesFunnelsPanel() {
         <div className="flex flex-wrap gap-1.5">
           {funnel.integrations.length > 0
             ? funnel.integrations.map((provider) => (
-              <Badge key={provider} variant="outline">{t(integrationKey(provider))}</Badge>
+              <Badge key={provider} variant="outline">{integrationLabel(provider, t)}</Badge>
             ))
             : <span className="text-muted-foreground">{t('noFunnelIntegrations')}</span>}
         </div>
@@ -348,7 +381,7 @@ export function SalesFunnelsPanel() {
                   integrations: isDefault && editing
                     ? [...new Set([
                       ...current.integrations,
-                      ...editing.integrations.filter(isLeadSourceProvider),
+                      ...editing.integrations.filter(isLeadIntegrationProvider),
                     ])]
                     : current.integrations,
                 }))}
@@ -362,7 +395,7 @@ export function SalesFunnelsPanel() {
                 </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {LEAD_SOURCE_PROVIDERS.map(({ provider, Icon }) => {
+                {leadSourceProviders.map(({ provider, Icon }) => {
                   const isSelected = draft.integrations.includes(provider);
                   const isLockedToDefault = Boolean(
                     draft.isDefault && editing?.integrations.includes(provider),
@@ -378,7 +411,7 @@ export function SalesFunnelsPanel() {
                         className="flex min-w-0 items-center gap-2"
                       >
                         <Icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t(integrationKey(provider))}</span>
+                        <span className="truncate">{integrationLabel(provider, t)}</span>
                       </Label>
                       <Switch
                         id={`sales-funnel-source-${provider}`}

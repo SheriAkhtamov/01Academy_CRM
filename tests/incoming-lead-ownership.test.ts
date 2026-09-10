@@ -84,6 +84,7 @@ describe('external lead ownership', () => {
       .send({
         contactName: 'Website Client',
         phone: '+998 90 444 55 66',
+        pageUrl: 'https://01academy.uz/contact',
       });
 
     expect(response.status).toBe(201);
@@ -128,7 +129,14 @@ describe('external lead ownership', () => {
 
     const leadInsertCall = mocks.clientQuery.mock.calls.find(([sql]) =>
       String(sql).includes('INSERT INTO academy_leads'));
+    const sourceInsertCall = mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO academy_lead_sources'));
     expect(leadInsertCall).toBeDefined();
+    expect(sourceInsertCall?.[1]).toEqual([
+      'website:01academy.pro',
+      '01academy.pro',
+      'website',
+    ]);
     expect(leadInsertCall?.[1]).toEqual([
       'Telegram Client',
       null,
@@ -146,6 +154,7 @@ describe('external lead ownership', () => {
     ]);
     const integrationLogCall = mocks.poolQuery.mock.calls.find(([sql]) =>
       String(sql).includes('INSERT INTO academy_integration_logs'));
+    expect(integrationLogCall?.[1]?.[0]).toBe('website:01academy.pro');
     expect(JSON.parse(String(integrationLogCall?.[1]?.[3]))).toEqual(expect.objectContaining({
       siteDomain: '01academy.pro',
     }));

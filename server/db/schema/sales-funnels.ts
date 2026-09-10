@@ -27,7 +27,8 @@ export function createSalesFunnelTables(user: AnyPgColumn) {
     funnelIdx: index('academy_integration_funnel_settings_funnel_idx').on(table.funnelId),
     providerCheck: check(
       'academy_integration_funnel_settings_provider_check',
-      sql`${table.provider} IN ('website', 'instagram', 'meta', 'onlinepbx')`,
+      sql`${table.provider} IN ('instagram', 'meta', 'onlinepbx')
+        OR ${table.provider} ~ '^website:[a-z0-9]([a-z0-9.-]{0,69}[a-z0-9])?$'`,
     ),
   }));
 

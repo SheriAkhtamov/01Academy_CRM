@@ -20,6 +20,7 @@ import type { TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import type { AcademyModule } from '@shared/academy';
+import { websiteIntegrationDomain } from '@shared/lead-integrations';
 
 interface AuditLog {
   id: number;
@@ -94,7 +95,8 @@ const integrationStatusLabel = (status: string, t: Translate) => ({
 } as Record<string, string>)[status] ?? integrationCodeLabel(status);
 
 const integrationProviderLabel = (provider: string, t: Translate) => (
-  provider === 'website' ? t('integrationProviderWebsite') : integrationCodeLabel(provider)
+  websiteIntegrationDomain(provider)
+  ?? (provider === 'website' ? t('integrationProviderWebsite') : integrationCodeLabel(provider))
 );
 const jsonObject = (value: unknown): Record<string, unknown> => {
   const unwrapped = Array.isArray(value) ? value[0] : value;

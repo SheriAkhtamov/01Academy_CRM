@@ -1,19 +1,15 @@
 import type { Pool, PoolClient } from 'pg';
-
-export const LEAD_INTEGRATION_PROVIDERS = [
-  'website',
-  'instagram',
-  'meta',
-  'onlinepbx',
-] as const;
-
-export type LeadIntegrationProvider = typeof LEAD_INTEGRATION_PROVIDERS[number];
+export {
+  FIXED_LEAD_INTEGRATION_PROVIDERS as LEAD_INTEGRATION_PROVIDERS,
+  isLeadIntegrationProvider,
+  isWebsiteLeadIntegrationProvider,
+  websiteIntegrationDomain,
+  websiteIntegrationProvider,
+  type LeadIntegrationProvider,
+} from '@shared/lead-integrations';
+import type { LeadIntegrationProvider } from '@shared/lead-integrations';
 
 type QueryExecutor = Pick<Pool | PoolClient, 'query'>;
-
-export const isLeadIntegrationProvider = (value: unknown): value is LeadIntegrationProvider => (
-  LEAD_INTEGRATION_PROVIDERS.includes(String(value) as LeadIntegrationProvider)
-);
 
 export const resolveLeadFunnelId = async (
   executor: QueryExecutor,

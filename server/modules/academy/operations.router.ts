@@ -507,6 +507,7 @@ router.get('/integrations/status', async (req, res) => {
                 logs.created_at,
                 LOWER(REGEXP_REPLACE(
                   COALESCE(
+                    NULLIF(SPLIT_PART(logs.provider, ':', 2), ''),
                     NULLIF(logs.payload->>'siteDomain', ''),
                     NULLIF(
                       CASE
@@ -531,7 +532,7 @@ router.get('/integrations/status', async (req, res) => {
                   'i'
                 )) AS site_domain
          FROM academy_integration_logs logs
-         WHERE logs.provider = 'website'
+         WHERE logs.provider = 'website' OR logs.provider LIKE 'website:%'
        ), ranked_website_events AS (
          SELECT website_events.*,
                 BOOL_OR(
@@ -582,12 +583,6 @@ router.get('/integrations/status', async (req, res) => {
     const conversionStages = await query<{ code: string; name: string }>(
       `SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, code`,
     );
-    const hasSuccessfulInboundLog = (provider: string) =>
-      logs.some((log) =>
-        log.provider === provider
-        && log.direction === 'inbound'
-        && ['received', 'duplicate'].includes(String(log.status))
-      );
     const configuredWebsiteDomains = (integ.website?.allowedFormOrigins ?? [])
       .map(normalizeWebsiteIntegrationDomain)
       .filter((domain): domain is string => Boolean(domain));
@@ -595,31 +590,20 @@ router.get('/integrations/status', async (req, res) => {
       ...configuredWebsiteDomains,
       ...websiteLogs.map((log) => log.siteDomain),
     ])].sort((left, right) => left.localeCompare(right));
-    const websiteProviders = websiteDomains.length > 0
-      ? websiteDomains.map((siteDomain) => {
-        const lastLog = websiteLogs.find((log) => log.siteDomain === siteDomain) ?? null;
-        return {
-          provider: websiteIntegrationProvider(siteDomain),
-          connected: configuredWebsiteDomains.includes(siteDomain)
-            || lastLog?.hasSuccessfulInbound === true,
-          requiresReconnect: false,
-          accountId: null,
-          accountUsername: null,
-          siteDomain,
-          details: null,
-          lastLog,
-        };
-      })
-      : [{
-        provider: 'website',
-        connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'),
+    const websiteProviders = websiteDomains.map((siteDomain) => {
+      const lastLog = websiteLogs.find((log) => log.siteDomain === siteDomain) ?? null;
+      return {
+        provider: websiteIntegrationProvider(siteDomain),
+        connected: configuredWebsiteDomains.includes(siteDomain)
+          || lastLog?.hasSuccessfulInbound === true,
         requiresReconnect: false,
         accountId: null,
         accountUsername: null,
-        siteDomain: null,
+        siteDomain,
         details: null,
-        lastLog: logs.find((log) => log.provider === 'website') ?? null,
-      }];
+        lastLog,
+      };
+    });
     const providers = [
       {
         provider: 'instagram',
@@ -683,7 +667,7 @@ router.get('/integrations/status', async (req, res) => {
       `requiresReconnect`.
     */
     res.json(providers.map((entry) => {
-      const routingProvider = entry.siteDomain ? 'website' : entry.provider;
+      const routingProvider = entry.provider;
       const configuredFunnel = funnelSettings.find((setting) => setting.provider === routingProvider);
       const assignedFunnel = isLeadIntegrationProvider(routingProvider)
         ? configuredFunnel ?? fallbackFunnel

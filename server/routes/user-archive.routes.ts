@@ -38,7 +38,11 @@ type RegisterUserArchiveRoutesDependencies = {
   parsePositiveId: (value: unknown) => number | null;
   userAccessAdvisoryLock: number;
   getAssignedWorkload: (userId: number, executor: QueryExecutor) => Promise<Workload>;
-  getActiveSalesManagerForTransfer: (userId: number, executor: QueryExecutor) => Promise<unknown>;
+  getActiveSalesManagerForTransfer: (
+    userId: number,
+    executor: QueryExecutor,
+    fromManagerId?: number,
+  ) => Promise<unknown>;
   transferAssignedSalesLeads: (options: {
     client: PoolClient;
     fromManagerId: number;
@@ -148,7 +152,7 @@ export const registerUserArchiveRoutes = (
                 leadCount: workload.offboardingResponsibilityCount,
               });
             }
-            const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client);
+            const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client, id);
             if (!transferTarget) {
               throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
             }

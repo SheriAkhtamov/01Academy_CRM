@@ -816,10 +816,13 @@ export const mergeLeadDraftIntoExisting = async (
 
   const requestedManagerId = retainedLead.managerId
     ? null
-    : await resolveLeadManagerId(actor, draft.managerId);
+    : await resolveLeadManagerId(actor, draft.managerId, retainedLead.funnelRole, retainedLead.funnelId);
   const assignedManager = requestedManagerId
     ? await getActiveSalesManager(requestedManagerId, true)
     : null;
+  if (assignedManager) {
+    await assertSalesFunnelAssignment(retainedLead.funnelId, assignedManager.id);
+  }
   const nextStudentName = preferLeadValue(retainedLead.studentName, nullableText(draft.studentName));
   const nextStudentAge = preferLeadValue(retainedLead.studentAge, toIntegerOrNull(draft.studentAge));
   const nextCourseId = requestedGroup?.courseId

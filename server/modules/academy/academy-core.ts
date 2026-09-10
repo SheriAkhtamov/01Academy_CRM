@@ -466,7 +466,7 @@ export const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
   } catch (error) {
     const failure = error as { code?: string; message?: string; statusCode?: number };
     if (failure.code === 'P0001' && ['salesFunnelStageUnavailable', 'salesFunnelCloserOnly',
-      'salesFunnelHunterOnly', 'salesWorkflowFunnelProtected'].includes(failure.message ?? '')) {
+      'salesFunnelHunterOnly', 'salesFunnelNotAssigned', 'salesWorkflowFunnelProtected'].includes(failure.message ?? '')) {
       failure.statusCode = 409;
     }
     throw error;
@@ -559,7 +559,12 @@ export const normalizeDbValue = (value: DbValue) => {
   return value;
 };
 
-export const resolveLeadManagerId = async (source: ActorSource, requestedValue: unknown, funnelRole?: string | null): Promise<number> => {
+export const resolveLeadManagerId = async (
+  source: ActorSource,
+  requestedValue: unknown,
+  funnelRole?: string | null,
+  funnelId?: number | null,
+): Promise<number> => {
   const actor = actorContextFrom(source);
   const assignedModules = actor.modules;
   const hasDirectSalesModule = assignedModules.includes('sales');
@@ -580,8 +585,12 @@ export const resolveLeadManagerId = async (source: ActorSource, requestedValue: 
     const manager = await queryOne<{ id: string }>(
       `SELECT id
        FROM users u
-       WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
-      [requestedId],
+       WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true
+         ${funnelId ? `AND EXISTS (
+           SELECT 1 FROM academy_sales_funnel_users assignment
+           WHERE assignment.user_id = u.id AND assignment.funnel_id = $2
+         )` : ''}`,
+      funnelId ? [requestedId, funnelId] : [requestedId],
     );
     if (!manager) {
       throw Object.assign(new Error('Active account manager is required'), { statusCode: 400 });
@@ -609,11 +618,16 @@ export const resolveLeadManagerId = async (source: ActorSource, requestedValue: 
       AND l.status_code NOT IN ('paid', 'not_now')
       AND COALESCE(l.is_archived, false) = false
      WHERE ${salesUserAccessSql} AND u.is_active = true
+       ${funnelId ? `AND EXISTS (
+         SELECT 1 FROM academy_sales_funnel_users assignment
+         WHERE assignment.user_id = u.id AND assignment.funnel_id = $1
+       )` : ''}
        ${funnelRole === 'hunter' ? "AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'"
          : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) = 'closer'" : ''}
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,
+    funnelId ? [funnelId] : [],
   );
   if (!manager) {
     throw Object.assign(new Error('Active account manager is required'), { statusCode: 400 });

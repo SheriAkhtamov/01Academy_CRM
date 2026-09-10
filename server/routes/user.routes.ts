@@ -24,6 +24,12 @@ import { registerUserArchiveRoutes } from './user-archive.routes';
 import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 import { normalizeUserPhoneNumbers, replaceUserPhones } from './user-phone-support';
 import { parseEmployeeKpiRole, readEmployeeKpiAssignments, setEmployeeKpiAssignment } from '../infrastructure/sales-kpi/employee-assignments';
+import {
+    getActiveSalesManagerForFunnelTransfer as getActiveSalesManagerForTransfer,
+    normalizeSalesFunnelIds,
+    readUserSalesFunnelIds,
+    syncUserSalesFunnels,
+} from './user-sales-funnel-support';
 
 const router = Router();
 const primaryModuleSet = new Set<string>(ACADEMY_MODULES);
@@ -340,27 +346,6 @@ const getAssignedWorkload = async (managerId: number, executor: QueryExecutor = 
     };
 };
 
-const getActiveSalesManagerForTransfer = async (managerId: number, executor: QueryExecutor = pool) => {
-    const result = await executor.query<{ id: number; full_name: string }>(
-        `SELECT u.id, u.full_name
-         FROM users u
-         WHERE u.id = $1
-           AND u.is_active = true
-           AND u.is_archived = false
-           AND (
-             u.module = 'sales'
-             OR EXISTS (
-               SELECT 1
-               FROM user_modules uw
-               WHERE uw.user_id = u.id AND uw.module = 'sales'
-             )
-           )
-         FOR UPDATE OF u`,
-        [managerId],
-    );
-    return result.rows[0] ?? null;
-};
-
 const transferAssignedSalesLeads = async ({
     client,
     fromManagerId,
@@ -512,7 +497,8 @@ router.get('/', requireAuth, async (req, res) => {
         if (!hasAdministrationAccess || visibleUsers.length === 0) {
             return res.json(sanitizedUsers);
         }
-        const teacherRows = await pool.query<{
+        const userIds = visibleUsers.map((user) => user.id);
+        const [teacherRows, salesFunnelIdsByUserId, kpiAssignments] = await Promise.all([pool.query<{
             userId: number;
             schoolIds: number[];
             availability: AcademyScheduleItem[];
@@ -522,12 +508,11 @@ router.get('/', requireAuth, async (req, res) => {
                     availability
              FROM academy_teachers
              WHERE user_id = ANY($1::int[])`,
-            [visibleUsers.map((user) => user.id)],
-        );
+            [userIds],
+        ), readUserSalesFunnelIds(pool, userIds), readEmployeeKpiAssignments(pool, userIds)]);
         const teacherSettingsByUserId = new Map(
             teacherRows.rows.map((teacher) => [Number(teacher.userId), teacher]),
         );
-        const kpiAssignments = await readEmployeeKpiAssignments(pool, visibleUsers.map((user) => user.id));
         const kpiByUser = new Map(kpiAssignments.map((assignment) => [assignment.userId, assignment]));
         res.json(sanitizedUsers.map((user) => {
             const teacher = teacherSettingsByUserId.get(Number(user.id));
@@ -535,6 +520,7 @@ router.get('/', requireAuth, async (req, res) => {
                 ...user,
                 teacherSchoolIds: teacher?.schoolIds ?? [],
                 teacherAvailability: teacher?.availability ?? [],
+                salesFunnelIds: salesFunnelIdsByUserId.get(Number(user.id)) ?? [],
                 salesKpi: kpiByUser.get(user.id) ?? null,
             };
         }));
@@ -597,6 +583,7 @@ router.post('/', requireAdministration, async (req, res) => {
         const module = req.body.module as AcademyModule;
         const modules = normalizeRequestedModules(req.body.modules, module);
         const salesKpiRole = parseEmployeeKpiRole(req.body.salesKpiRole);
+        const salesFunnelIds = normalizeSalesFunnelIds(req.body.salesFunnelIds);
         const teacherSettings = readTeacherSettings(req.body);
         const dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
 
@@ -652,10 +639,17 @@ router.post('/', requireAdministration, async (req, res) => {
                 await replaceUserModules(client, newUser.id, modules);
                 await replaceUserPhones(client, newUser.id, phoneNumbers);
                 await setEmployeeKpiAssignment(client, newUser.id, salesKpiRole, modules, req.user!.id);
+                const assignedSalesFunnelIds = await syncUserSalesFunnels(
+                    client,
+                    newUser.id,
+                    modules,
+                    salesFunnelIds,
+                );
                 newUser = {
                     ...newUser,
                     modules,
                     phoneNumbers,
+                    salesFunnelIds: assignedSalesFunnelIds,
                 };
                 await syncAcademyTeacherForUser(newUser, client, teacherSettings);
                 await client.query(
@@ -968,7 +962,11 @@ router.put('/:id', requireAuth, async (req, res) => {
 
         let requestedModules: AcademyAccessModule[] | null = null;
         const salesKpiRole = parseEmployeeKpiRole(req.body.salesKpiRole);
+        const salesFunnelIds = normalizeSalesFunnelIds(req.body.salesFunnelIds);
         if (salesKpiRole !== undefined && !hasLeadershipAccess(currentUser)) {
+            return res.status(403).json({ error: 'adminAccessRequired' });
+        }
+        if (salesFunnelIds !== undefined && !hasLeadershipAccess(currentUser)) {
             return res.status(403).json({ error: 'adminAccessRequired' });
         }
         const teacherSettings = readTeacherSettings(req.body);
@@ -1007,6 +1005,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             && requestedModules === null
             && !teacherSettingsRequested
             && salesKpiRole === undefined
+            && salesFunnelIds === undefined
         ) {
             return res.status(400).json({ error: 'invalidData' });
         }
@@ -1095,7 +1094,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                             leadCount: responsibilityCount,
                         });
                     }
-                    const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client);
+                    const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client, id);
                     if (!transferTarget) {
                         throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
                     }
@@ -1133,6 +1132,7 @@ router.put('/:id', requireAuth, async (req, res) => {
                 isActive: nextIsActive,
             }, client, teacherSettings);
             await setEmployeeKpiAssignment(client, id, salesKpiRole, nextModules, req.user!.id);
+            await syncUserSalesFunnels(client, id, nextModules, salesFunnelIds);
             if (!nextIsActive) await revokeUserAuthenticationArtifacts(id, { executor: client });
             await client.query('COMMIT');
         } catch (error) {
@@ -1247,7 +1247,7 @@ router.delete('/:id', requireAdministration, async (req, res) => {
                         leadCount: workload.offboardingResponsibilityCount,
                     });
                 }
-                const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client);
+                const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client, id);
                 if (!transferTarget) {
                     throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
                 }

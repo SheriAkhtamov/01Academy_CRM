@@ -84,7 +84,8 @@ describe('unviewed lead counter', () => {
     await expect(countUnviewedLeads(salesViewer, { query } as never)).resolves.toBe(2);
 
     const [statement, params] = query.mock.calls[0];
-    expect(statement).toContain('AND (lead.manager_id = $1 OR lead.manager_id IS NULL)');
+    expect(statement).toContain('assignment.user_id = $1');
+    expect(statement).toContain('assignment.funnel_id = lead.funnel_id');
     expect(params).toEqual([7]);
   });
 

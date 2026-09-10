@@ -69,7 +69,13 @@ export const countUnviewedLeads = async (
     `SELECT COUNT(*)::int AS count
      FROM academy_leads lead
      WHERE ${UNVIEWED_LEAD_SQL}
-       ${ownLeadsOnly ? 'AND (lead.manager_id = $1 OR lead.manager_id IS NULL)' : ''}`,
+       ${ownLeadsOnly ? `AND (
+         lead.manager_id = $1
+         OR (lead.manager_id IS NULL AND EXISTS (
+           SELECT 1 FROM academy_sales_funnel_users assignment
+           WHERE assignment.user_id = $1 AND assignment.funnel_id = lead.funnel_id
+         ))
+       )` : ''}`,
     ownLeadsOnly ? [viewer.id] : [],
   );
 

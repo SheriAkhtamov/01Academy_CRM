@@ -23,6 +23,7 @@ const funnelListSql = `
          (funnel.workflow_role = academy_kpi_employee_role($1)) AS is_preferred,
          COUNT(DISTINCT lead.id) FILTER (WHERE lead.manager_id = $1)::int AS own_lead_count,
          COUNT(DISTINCT lead.id)::int AS lead_count,
+         COUNT(DISTINCT assignment.user_id)::int AS employee_count,
          COUNT(DISTINCT setting.provider)::int AS integration_count,
          COALESCE(
            jsonb_agg(DISTINCT setting.provider)
@@ -31,6 +32,7 @@ const funnelListSql = `
          ) AS integrations
   FROM academy_sales_funnels funnel
   LEFT JOIN academy_leads lead ON lead.funnel_id = funnel.id
+  LEFT JOIN academy_sales_funnel_users assignment ON assignment.funnel_id = funnel.id
   LEFT JOIN academy_integration_funnel_settings setting ON setting.funnel_id = funnel.id
   GROUP BY funnel.id
   ORDER BY funnel.is_default DESC, funnel.is_active DESC, funnel.created_at, funnel.id`;
@@ -164,6 +166,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         return {
           ...created,
           leadCount: 0,
+          employeeCount: 0,
           integrationCount: savedIntegrations.length,
           integrations: savedIntegrations,
         };
@@ -191,6 +194,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         const current = await queryOne(
           `SELECT funnel.*,
                   (SELECT COUNT(*)::int FROM academy_leads WHERE funnel_id = funnel.id) AS lead_count,
+                  (SELECT COUNT(*)::int FROM academy_sales_funnel_users WHERE funnel_id = funnel.id) AS employee_count,
                   (SELECT COUNT(*)::int FROM academy_integration_funnel_settings WHERE funnel_id = funnel.id) AS integration_count
            FROM academy_sales_funnels funnel
            WHERE funnel.id = $1
@@ -217,7 +221,8 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         const integrationCountAfterSave = integrations === undefined
           ? Number(current.integrationCount)
           : integrations.length;
-        if (!isActive && (Number(current.leadCount) > 0 || integrationCountAfterSave > 0)) {
+        if (!isActive && (Number(current.leadCount) > 0
+          || Number(current.employeeCount) > 0 || integrationCountAfterSave > 0)) {
           throw Object.assign(new Error('salesFunnelInUseMustRemainActive'), { statusCode: 409 });
         }
         const fallback = integrations === undefined
@@ -253,6 +258,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         return {
           ...updated,
           leadCount: Number(current.leadCount),
+          employeeCount: Number(current.employeeCount),
           integrationCount: savedIntegrations.length,
           integrations: savedIntegrations,
         };
@@ -278,6 +284,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         const funnel = await queryOne(
           `SELECT funnel.*,
                   (SELECT COUNT(*)::int FROM academy_leads WHERE funnel_id = funnel.id) AS lead_count,
+                  (SELECT COUNT(*)::int FROM academy_sales_funnel_users WHERE funnel_id = funnel.id) AS employee_count,
                   (SELECT COUNT(*)::int FROM academy_integration_funnel_settings WHERE funnel_id = funnel.id) AS integration_count
            FROM academy_sales_funnels funnel
            WHERE funnel.id = $1
@@ -286,7 +293,8 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         );
         if (!funnel) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
         if (funnel.workflowRole) throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
-        if (funnel.isDefault === true || Number(funnel.leadCount) > 0 || Number(funnel.integrationCount) > 0) {
+        if (funnel.isDefault === true || Number(funnel.leadCount) > 0
+          || Number(funnel.employeeCount) > 0 || Number(funnel.integrationCount) > 0) {
           throw Object.assign(new Error('salesFunnelTransferRequired'), { statusCode: 409 });
         }
         await query(`DELETE FROM academy_sales_funnels WHERE id = $1`, [id]);
@@ -335,6 +343,22 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
           `SELECT DISTINCT status_code FROM academy_leads WHERE funnel_id = $1`, [id],
         );
         for (const stage of sourceStages) await assertSalesFunnelStage(targetFunnelId, stage.statusCode);
+        const movedEmployees = await queryOne<{ count: number }>(
+          `WITH moved AS (
+             INSERT INTO academy_sales_funnel_users (user_id, funnel_id)
+             SELECT assigned.user_id, $2
+             FROM academy_sales_funnel_users assigned
+             WHERE assigned.funnel_id = $1
+             UNION
+             SELECT lead.manager_id, $2
+             FROM academy_leads lead
+             WHERE lead.funnel_id = $1 AND lead.manager_id IS NOT NULL
+             ON CONFLICT (user_id, funnel_id) DO NOTHING
+             RETURNING user_id
+           )
+           SELECT COUNT(*)::int AS count FROM moved`,
+          [id, targetFunnelId],
+        );
         const movedLeads = await queryOne<{ count: number }>(
           `WITH moved AS (
              UPDATE academy_leads
@@ -374,6 +398,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
           source,
           target,
           movedLeadCount: Number(movedLeads?.count ?? 0),
+          movedEmployeeCount: Number(movedEmployees?.count ?? 0),
           movedIntegrationCount: Number(movedIntegrations?.count ?? 0),
         };
       });

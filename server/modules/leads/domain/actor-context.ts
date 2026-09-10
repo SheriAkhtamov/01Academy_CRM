@@ -11,7 +11,12 @@ export type ActorContext = {
   modules: readonly AcademyAccessModule[];
   isLeadership: boolean;
   displayName?: string;
-  salesWorkflow?: { role: string | null; hunterFunnelId: number | null; closerFunnelId: number | null };
+  salesWorkflow?: {
+    role: string | null;
+    hunterFunnelId: number | null;
+    closerFunnelId: number | null;
+    assignedFunnelIds: number[];
+  };
 };
 
 type ActorIdentitySource = {

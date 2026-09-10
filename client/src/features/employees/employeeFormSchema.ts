@@ -31,13 +31,16 @@ export const createUserSchema = (t: Translate) => z.object({
   module: z.enum(ACADEMY_MODULES),
   modules: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneModule')),
   salesKpiRole: z.enum(['hunter', 'closer']).nullable().default(null),
-  teacherSchoolIds: z.array(z.number().int().positive()).default([]),
-  teacherAvailability: z.array(z.object({
-    dayOfWeek: z.number().int().min(1).max(7),
-    startTime: z.string(),
-    endTime: z.string(),
-    schoolId: z.number().int().positive().nullable().optional(),
-  })).default([]),
+  salesFunnelIds: z.array(z.number().int().positive()).default([]),
+}).superRefine((values, ctx) => {
+  const modules = new Set([values.module, ...values.modules]);
+  if (modules.has('sales') && values.salesFunnelIds.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['salesFunnelIds'],
+      message: t('salesFunnelRequired'),
+    });
+  }
 });
 
 export const createCredentialsSchema = (t: Translate) => z.object({
@@ -90,6 +93,5 @@ export const defaultUserFormValues: UserFormValues = {
   module: 'sales',
   modules: ['sales'],
   salesKpiRole: null,
-  teacherSchoolIds: [],
-  teacherAvailability: [],
+  salesFunnelIds: [],
 };

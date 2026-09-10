@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, integer, pgTable, serial, timestamp, uniqueIndex, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { boolean, check, index, integer, pgTable, primaryKey, serial, timestamp, uniqueIndex, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { SalesFunnelRole } from '../../../shared/sales-funnel-workflow';
 
 export function createSalesFunnelTables(user: AnyPgColumn) {
@@ -37,7 +37,16 @@ export function createSalesFunnelTables(user: AnyPgColumn) {
     ),
   }));
 
-  return { academySalesFunnels, academyIntegrationFunnelSettings };
+  const academySalesFunnelUsers = pgTable('academy_sales_funnel_users', {
+    userId: integer('user_id').notNull().references(() => user, { onDelete: 'cascade' }),
+    funnelId: integer('funnel_id').notNull().references(() => academySalesFunnels.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  }, (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.funnelId] }),
+    funnelIdx: index('academy_sales_funnel_users_funnel_idx').on(table.funnelId),
+  }));
+
+  return { academySalesFunnels, academyIntegrationFunnelSettings, academySalesFunnelUsers };
 }
 
 export function createLeadFunnelHandoffTable(ref: {

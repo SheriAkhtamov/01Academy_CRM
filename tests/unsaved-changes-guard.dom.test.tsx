@@ -45,8 +45,7 @@ const employee = {
   position: 'Менеджер',
   module: 'sales',
   modules: ['sales'],
-  teacherSchoolIds: [],
-  teacherAvailability: [],
+  salesFunnelIds: [1],
   isActive: true,
 };
 
@@ -61,7 +60,20 @@ vi.mock('@tanstack/react-query', async () => {
     useQuery: ({ queryKey }: { queryKey: unknown }) => {
       const key = JSON.stringify(queryKey);
       if (key.includes('/api/users')) return { data: [employee], isLoading: false, isError: false };
-      if (key.includes('schools')) return { data: [], isLoading: false, isError: false };
+      if (key.includes('/api/academy/sales-funnels')) return {
+        data: [{
+          id: 1,
+          name: 'Основная воронка',
+          isActive: true,
+          isDefault: true,
+          leadCount: 0,
+          employeeCount: 1,
+          integrationCount: 0,
+          integrations: [],
+        }],
+        isLoading: false,
+        isError: false,
+      };
       return { data: [], isLoading: false, isError: false };
     },
   };
@@ -222,6 +234,9 @@ describe('employee modal starts every session from a clean form', () => {
       .find((button) => /Редактировать пользователя|Edit User/i.test(button.getAttribute('title') ?? ''));
     fireEvent.click(editButton as HTMLElement);
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    expect(screen.getByText('Основная воронка')).toBeTruthy();
+    expect(screen.queryByText(/Личный добавочный телефонии|Personal telephony extension/i)).toBeNull();
+    expect(screen.queryByText(/Доступность преподавателя|Teacher availability/i)).toBeNull();
 
     const fullName = () => document.querySelector('input[name="fullName"]') as HTMLInputElement;
     fireEvent.change(fullName(), { target: { value: 'Продажник Изменённый' } });

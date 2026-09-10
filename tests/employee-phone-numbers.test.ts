@@ -20,8 +20,7 @@ const baseEmployee = {
   position: '',
   module: 'sales' as const,
   modules: ['sales' as const],
-  teacherSchoolIds: [],
-  teacherAvailability: [],
+  salesFunnelIds: [1],
 };
 
 describe('employee phone numbers', () => {

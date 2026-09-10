@@ -20,10 +20,6 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
-  WeekScheduleEditor,
-  type WeekScheduleItem,
-} from '@/components/ux/WeekScheduleEditor';
-import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
@@ -62,7 +58,6 @@ import {
   Plug,
   SlidersHorizontal,
   KanbanSquare,
-  PhoneCall,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { EmployeeKpiField } from '@/features/sales-kpi/ui/EmployeeKpiField';
@@ -99,6 +94,7 @@ import {
   type UserUpdatePayload,
 } from '@/features/employees/employeeFormSchema';
 import { EmployeePhoneFields } from '@/features/employees/EmployeePhoneFields';
+import type { SalesFunnel } from '@/features/sales-funnels/api';
 
 const formatDateInputValue = (value: unknown) => (
   academyDateInputValue(value as Date | string | number | null | undefined)
@@ -195,12 +191,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers, dataUpdatedAt: usersUpdatedAt } = useQuery<any[]>({
     queryKey: ['/api/users'],
   });
-  const { data: schools = [], isError: schoolsError, refetch: refetchSchools } = useQuery<Array<{
-    id: number;
-    name: string;
-    isActive?: boolean;
-  }>>({
-    queryKey: ['/api/academy/schools'],
+  const {
+    data: salesFunnels = [],
+    isLoading: salesFunnelsLoading,
+    isError: salesFunnelsError,
+    refetch: refetchSalesFunnels,
+  } = useQuery<SalesFunnel[]>({
+    queryKey: ['/api/academy/sales-funnels'],
     enabled: isEmployeesPage,
   });
 
@@ -224,6 +221,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
       setUserCredentials(data);
       setShowCredentialsModal(true);
       toast({
@@ -247,6 +245,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
       toast({
         title: t('userUpdatedSuccessfullyTitle'),
         description: t('userInformationUpdatedDescription'),
@@ -268,6 +267,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
       toast({
         title: t('userDeletedSuccessfullyTitle'),
         description: t('userRemovedFromSystemDescription'),
@@ -466,6 +466,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     const payload = {
       ...data,
       salesKpiRole: modules.includes('sales') ? data.salesKpiRole : null,
+      salesFunnelIds: modules.includes('sales') ? data.salesFunnelIds : [],
       phoneNumbers: data.phoneNumbers.map((phone) => phone.trim()).filter(Boolean),
       modules,
     };
@@ -530,11 +531,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       module: user.module,
       modules: getAssignedModules(user),
       salesKpiRole: (user.salesKpi?.scheduled ?? user.salesKpi?.current)?.role ?? null,
-      teacherSchoolIds: Array.isArray(user.teacherSchoolIds)
-        ? user.teacherSchoolIds.map(Number).filter(Number.isSafeInteger)
-        : [],
-      teacherAvailability: Array.isArray(user.teacherAvailability)
-        ? user.teacherAvailability
+      salesFunnelIds: Array.isArray(user.salesFunnelIds)
+        ? user.salesFunnelIds.map(Number).filter(Number.isSafeInteger)
         : [],
     });
     setShowCreateUserModal(true);
@@ -589,20 +587,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   ] as const;
   const primaryModuleValue = userForm.watch('module');
   const assignedModuleValues = userForm.watch('modules');
-  const teacherModuleEnabled = assignedModuleValues.includes('teacher');
-  const selectedTeacherSchoolIds = userForm.watch('teacherSchoolIds');
-  const teacherScheduleSchools = schools.filter((school) => (
-    school.isActive !== false || selectedTeacherSchoolIds.includes(school.id)
-  ));
-  const teacherScheduleDayNames = [
-    t('monday'),
-    t('tuesday'),
-    t('wednesday'),
-    t('thursday'),
-    t('friday'),
-    t('saturday'),
-    t('sunday'),
-  ];
 
   const administrationSections = [
     {
@@ -846,27 +830,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           />
                         </div>
 
-                        {assignedModuleValues.includes('sales') ? (
-                          <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-primary/5 p-4 dark:bg-primary/10">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
-                              <PhoneCall className="size-4" aria-hidden="true" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-sm font-semibold text-foreground">
-                                  {t('personalTelephonyExtension')}
-                                </p>
-                                <Badge variant="secondary" className="font-mono">
-                                  {selectedUser?.onlinePbxExtension || t('notAssigned')}
-                                </Badge>
-                              </div>
-                              <p className="mt-1 text-xs leading-5 text-slate-600">
-                                {t('personalTelephonyExtensionHint')}
-                              </p>
-                            </div>
-                          </div>
-                        ) : null}
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField
                             control={userForm.control}
@@ -967,94 +930,68 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           )}
                         />
 
-                        {assignedModuleValues.includes('sales') ? <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} /> : null}
-
-                        {teacherModuleEnabled ? (
-                          <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4">
-                            <div>
-                              <h3 className="text-sm font-semibold text-foreground">{t('teacherAvailability')}</h3>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {t('teacherAvailabilityAdminDescription')}
-                              </p>
-                            </div>
-
+                        {assignedModuleValues.includes('sales') ? (
+                          <>
+                            <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} />
                             <FormField
                               control={userForm.control}
-                              name="teacherSchoolIds"
+                              name="salesFunnelIds"
                               render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('availableSchools')}</FormLabel>
-                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    {teacherScheduleSchools.map((school) => {
-                                      const checked = field.value.includes(school.id);
-                                      return (
-                                        <label
-                                          key={school.id}
-                                          className="flex items-center gap-3 rounded-lg border border-border/70 bg-background p-3 text-sm"
-                                        >
-                                          <Checkbox
-                                            checked={checked}
-                                            onCheckedChange={(nextChecked) => {
-                                              if (nextChecked === true) {
-                                                field.onChange([...new Set([...field.value, school.id])]);
-                                                return;
-                                              }
-                                              field.onChange(field.value.filter((id) => id !== school.id));
-                                              const availability = userForm.getValues('teacherAvailability');
-                                              userForm.setValue(
-                                                'teacherAvailability',
-                                                availability.map((item) => (
-                                                  item.schoolId === school.id ? { ...item, schoolId: null } : item
-                                                )),
-                                                { shouldDirty: true, shouldValidate: true },
-                                              );
-                                            }}
-                                          />
-                                          <span className="font-medium text-foreground">{school.name}</span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                  {schoolsError ? (
+                                <FormItem className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                                  <FormLabel required>{t('salesFunnels')}</FormLabel>
+                                  {salesFunnelsLoading ? (
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      <Skeleton className="h-11 rounded-lg" />
+                                      <Skeleton className="h-11 rounded-lg" />
+                                    </div>
+                                  ) : salesFunnelsError ? (
                                     <div className="flex items-center gap-2 text-sm text-destructive">
                                       <span>{t('failedToLoadData')}</span>
-                                      <Button type="button" variant="outline" size="sm" onClick={() => refetchSchools()}>
+                                      <Button type="button" variant="outline" size="sm" onClick={() => refetchSalesFunnels()}>
                                         {t('retry')}
                                       </Button>
                                     </div>
-                                  ) : teacherScheduleSchools.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground">{t('noSchools')}</p>
-                                  ) : null}
+                                  ) : salesFunnels.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">{t('noSalesFunnels')}</p>
+                                  ) : (
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      {salesFunnels.map((funnel) => {
+                                        const checked = field.value.includes(funnel.id);
+                                        return (
+                                          <label
+                                            key={funnel.id}
+                                            className="flex items-center gap-3 rounded-lg border border-border/70 bg-background p-3 text-sm"
+                                          >
+                                            <Checkbox
+                                              checked={checked}
+                                              disabled={!funnel.isActive && !checked}
+                                              onCheckedChange={(nextChecked) => {
+                                                if (nextChecked === true) {
+                                                  field.onChange([...new Set([...field.value, funnel.id])]);
+                                                  return;
+                                                }
+                                                field.onChange(field.value.filter((id) => id !== funnel.id));
+                                              }}
+                                            />
+                                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                                              {funnel.name}
+                                            </span>
+                                            {funnel.workflowRole ? (
+                                              <Badge variant="outline">
+                                                {t(funnel.workflowRole === 'closer' ? 'kpiCloser' : 'kpiHunter')}
+                                              </Badge>
+                                            ) : null}
+                                            {!funnel.isActive ? <Badge variant="secondary">{t('inactive')}</Badge> : null}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                   <FormMessage />
                                 </FormItem>
                               )}
                             />
-
-                            <FormField
-                              control={userForm.control}
-                              name="teacherAvailability"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('workSchedule')}</FormLabel>
-                                  <FormControl>
-                                    <WeekScheduleEditor
-                                      value={field.value as WeekScheduleItem[]}
-                                      onChange={field.onChange}
-                                      dayNames={teacherScheduleDayNames}
-                                      schools={teacherScheduleSchools.filter((school) => (
-                                        selectedTeacherSchoolIds.includes(school.id)
-                                      ))}
-                                      showSchool
-                                      allSchoolsLabel={t('allSchools')}
-                                      startLabel={t('start')}
-                                      endLabel={t('end')}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
+                          </>
                         ) : null}
 
                         </div>

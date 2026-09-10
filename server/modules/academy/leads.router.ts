@@ -335,7 +335,7 @@ router.post('/leads', async (req, res) => {
       if (statusCode === 'paid') {
         throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
       }
-      const managerId = await resolveLeadManagerId(req.actor!, input.managerId, funnel.workflowRole);
+      const managerId = await resolveLeadManagerId(req.actor!, input.managerId, funnel.workflowRole, Number(funnel.id));
       await getActiveSalesManager(managerId, true);
       await assertSalesFunnelAssignment(funnel.id, managerId);
       await assertSalesFunnelStage(funnel.id, statusCode);
@@ -1049,7 +1049,7 @@ router.patch('/leads/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only leadership can assign a lead to another manager' });
     }
     const managerId = requestedManagerId
-      ? await resolveLeadManagerId(req.actor!, requestedManagerId)
+      ? await resolveLeadManagerId(req.actor!, requestedManagerId, oldLead.funnelRole, oldLead.funnelId)
       : undefined;
     if (nextStatus !== oldLead.statusCode && !oldLead.managerId && !managerId) {
       return res.status(409).json({ error: 'leadRequiresResponsibleManager' });

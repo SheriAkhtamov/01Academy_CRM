@@ -40,6 +40,8 @@ describe('missed call notification state', () => {
     expect(statement).toContain('callback.phone = call.phone');
     expect(statement).toContain('(callback.started_at, callback.id) > (call.started_at, call.id)');
     expect(statement).toContain('lead.manager_id = $1');
+    expect(statement).toContain('academy_sales_funnel_users assignment');
+    expect(statement).toContain('assignment.funnel_id = lead.funnel_id');
     expect(params).toEqual([7]);
   });
 

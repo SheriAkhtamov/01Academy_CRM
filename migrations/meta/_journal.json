@@ -757,6 +757,13 @@
       "when": 1789920000004,
       "tag": "0107_hunter_closer_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1789920000005,
+      "tag": "0108_assign_employees_to_sales_funnels",
+      "breakpoints": true
     }
   ]
 }

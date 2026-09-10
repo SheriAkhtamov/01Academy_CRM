@@ -10,7 +10,12 @@ vi.mock('../server/modules/academy/academy-leads', () => mocks);
 import { prepareDemoFunnelHandoff } from '../server/modules/academy/demo-funnel-handoff';
 
 const employee = (role: string, userId: number): ActorContext => ({ ...actorContextFrom({ id: userId, module: 'sales' }),
-  salesWorkflow: { role, hunterFunnelId: 1, closerFunnelId: 2 } });
+  salesWorkflow: {
+    role,
+    hunterFunnelId: 1,
+    closerFunnelId: 2,
+    assignedFunnelIds: role === 'closer' ? [2] : [1, 3],
+  } });
 const hunter = employee('hunter', 7);
 const closer = employee('closer', 8);
 const lead = { id: 10, funnelId: 1, managerId: 7, statusCode: 'demo_invited' };
@@ -32,6 +37,7 @@ describe('hunter/closer pipeline and permissions', () => {
     expect(canActorViewLead(employee('closer', 9), { ...queue, managerId: 8 })).toBe(false);
     expect(canActorViewLead(closer, { ...queue, funnelId: 1 })).toBe(false);
     expect(canActorViewLead(hunter, { ...queue, funnelId: 3 })).toBe(true);
+    expect(canActorViewLead(hunter, { ...queue, funnelId: 4 })).toBe(false);
     expect(actorContextFrom({ actor: closer } as never)).toBe(closer);
   });
   it('retains hunter attendance access after the queue handoff', () => {

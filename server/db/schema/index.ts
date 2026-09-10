@@ -43,7 +43,7 @@ export const users = pgTable("users", {
   moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
 }));
 
-export const { academySalesFunnels, academyIntegrationFunnelSettings } = createSalesFunnelTables(users.id);
+export const { academySalesFunnels, academyIntegrationFunnelSettings, academySalesFunnelUsers } = createSalesFunnelTables(users.id);
 
 export const userPhones = createUserPhonesTable(users.id);
 

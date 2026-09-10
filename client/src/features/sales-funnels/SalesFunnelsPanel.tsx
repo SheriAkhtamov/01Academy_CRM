@@ -132,7 +132,8 @@ export function SalesFunnelsPanel() {
   );
   const deleteNeedsTransfer = Boolean(
     deleteTarget
-    && (deleteTarget.isDefault || deleteTarget.leadCount > 0 || deleteTarget.integrationCount > 0),
+    && (deleteTarget.isDefault || deleteTarget.leadCount > 0
+      || deleteTarget.employeeCount > 0 || deleteTarget.integrationCount > 0),
   );
 
   const invalidate = () => Promise.all([
@@ -140,6 +141,7 @@ export function SalesFunnelsPanel() {
     queryClient.invalidateQueries({ queryKey: ['/api/academy/configuration'] }),
     queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
     queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] }),
+    queryClient.invalidateQueries({ queryKey: ['/api/users'] }),
   ]);
 
   const closeEditor = () => {
@@ -233,6 +235,13 @@ export function SalesFunnelsPanel() {
       accessor: (funnel) => Number(funnel.leadCount),
       sortable: true,
       render: (funnel) => Number(funnel.leadCount).toLocaleString(),
+    },
+    {
+      key: 'employeeCount',
+      header: t('employees'),
+      accessor: (funnel) => Number(funnel.employeeCount),
+      sortable: true,
+      render: (funnel) => Number(funnel.employeeCount).toLocaleString(),
     },
     {
       key: 'integrations',

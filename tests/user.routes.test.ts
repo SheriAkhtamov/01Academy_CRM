@@ -539,6 +539,7 @@ describe('user route validation', () => {
       release: vi.fn(),
       query: vi.fn(async (statement: string, _params?: unknown[]) => {
         if (statement.includes('INSERT INTO users')) return { rows: [createdUser], rowCount: 1 };
+        if (statement.includes('FROM academy_sales_funnels')) return { rows: [{ id: 1 }], rowCount: 1 };
         if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
         return { rows: [], rowCount: 1 };
       }),
@@ -552,6 +553,7 @@ describe('user route validation', () => {
       fullName: 'New Sales User',
       module: 'sales',
       modules: ['sales'],
+      salesFunnelIds: [1],
       onlinePbxExtension: '109',
       isActive: true,
     });

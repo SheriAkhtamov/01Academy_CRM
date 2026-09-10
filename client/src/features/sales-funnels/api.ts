@@ -9,6 +9,7 @@ export interface SalesFunnel {
   workflowRole?: SalesFunnelRole | null;
   isPreferred?: boolean;
   leadCount: number;
+  employeeCount: number;
   integrationCount: number;
   integrations: string[];
 }

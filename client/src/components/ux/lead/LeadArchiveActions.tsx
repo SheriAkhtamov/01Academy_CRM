@@ -134,6 +134,7 @@ export function LeadArchiveActions({
           type="button"
           size="sm"
           variant="outline"
+          className="min-w-0 px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
           disabled={mutation.isPending || paidArchiveBlocked}
           title={paidArchiveBlocked ? t('paidLeadCannotArchive') : undefined}
         >

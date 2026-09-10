@@ -21,7 +21,6 @@ import { cn } from '@/lib/utils';
 import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
-import { LeadNextAction } from '@/components/ux/lead/LeadNextAction';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
@@ -102,7 +101,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
-import { KpiLeadOwnershipCard } from '@/features/sales-kpi/ui/KpiLeadOwnershipCard';
 import { LeadDemoAttendanceCard } from '@/features/leads/ui/LeadDemoAttendanceCard';
 import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
 import type { LeadChannelView } from '@shared/lead-channels';
@@ -948,11 +946,27 @@ export function LeadDetailSheet({
               leadStatusName={(code) => funnelStatuses.find((status) => status.code === code)?.name ?? leadStatusName(code)}
               onlinePbxCall={onlinePbxCall}
               copyPhone={copyPhone}
-              onNote={() => navigateTo('activity', 'comment')}
-              onTask={() => navigateTo('tasks', 'task')}
+              tagsEditor={(
+                <LeadTagsEditor
+                  leadId={lead.id}
+                  automaticTag={lead.sourceName}
+                  tags={lead.tags}
+                  onChanged={onChanged}
+                  onDropdownOpenChange={setTagDropdownOpen}
+                />
+              )}
+              archiveAction={(
+                <LeadArchiveActions
+                  key={`${lead.id}-${Boolean(lead.isArchived)}`}
+                  lead={lead}
+                  statuses={funnelStatuses}
+                  canClaimUnassignedLead={canClaimUnassignedLead}
+                  leadStatusName={leadStatusName}
+                  onChanged={onChanged}
+                />
+              )}
             />
 
-            <div className="shrink-0 px-4 py-3 sm:px-6"><KpiLeadOwnershipCard leadId={lead.id} beforeHandoff={unsavedGuard.requestAction} /></div>
             <fieldset disabled={waitingForCloser} className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Tabs
               value={activeTab}
@@ -1004,18 +1018,6 @@ export function LeadDetailSheet({
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   {!lead.isArchived ? <LeadDemoAttendanceCard leadId={lead.id} dateTime={dateTime}
                     beforeMark={unsavedGuard.requestAction} onTransferred={() => onOpenChange(false)} /> : null}
-                  {!lead.isArchived ? (
-                    <LeadNextAction
-                      tasks={lead.tasks ?? []}
-                      hasContact={Boolean(primaryPhone || messageTarget || lead.channels?.length)}
-                      hasStudents={Boolean(lead.students?.length)}
-                      dateTime={dateTime}
-                      onContact={() => navigateTo('deal', 'contacts')}
-                      onStudent={() => setCreateStudentOpen(true)}
-                      onTask={() => navigateTo('tasks', 'task')}
-                      onViewTasks={() => navigateTo('tasks', 'tasks')}
-                    />
-                  ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <nav aria-label={t('leadWorkspaceSections')} className="flex flex-wrap gap-1">
                       <Button type="button" size="sm" variant="ghost" onClick={() => navigateTo('deal', 'contacts')}>{t('leadWorkspaceContacts')}</Button>
@@ -1166,15 +1168,6 @@ export function LeadDetailSheet({
                             <p className="text-sm text-muted-foreground">{t('leadWorkspaceDealHint')}</p>
                           </CardHeader>
                           <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                            <div className="md:col-span-2">
-                              <LeadTagsEditor
-                  leadId={lead.id}
-                  automaticTag={lead.sourceName}
-                  tags={lead.tags}
-                  onChanged={onChanged}
-                  onDropdownOpenChange={setTagDropdownOpen}
-                />
-                            </div>
                             <FormField
                               control={leadForm.control}
                               name="sourceId"
@@ -1248,20 +1241,6 @@ export function LeadDetailSheet({
                       </fieldset>
                     </form>
                   </Form>
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background p-4">
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <p>{t('leadSheetCreated')}: {dateTime(lead.createdAt)}</p>
-                      {lead.firstContactAt ? <p>{t('leadStatusFirstContact')}: {dateTime(lead.firstContactAt)}</p> : null}
-                    </div>
-                    <LeadArchiveActions
-                  key={`${lead.id}-${Boolean(lead.isArchived)}`}
-                  lead={lead}
-                  statuses={funnelStatuses}
-                  canClaimUnassignedLead={canClaimUnassignedLead}
-                  leadStatusName={leadStatusName}
-                  onChanged={onChanged}
-                />
-                  </div>
                 </TabsContent>
 
                 <TabsContent value="activity" className="mt-0">

@@ -63,39 +63,42 @@ function renderSheet() {
 }
 
 describe('lead workspace navigation and drafts', () => {
-  it('prioritizes the earliest open task and jumps to the task list', async () => {
-    const { user } = renderSheet();
-    await screen.findByText('Overdue callback');
-    expect(screen.queryByText('Finished task')).toBeNull();
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceOpenTask') }));
-    await waitFor(() => expect(document.activeElement?.textContent).toContain('Overdue callback'));
-    expect(screen.getByRole('tab', { name: /Задачи/ }).getAttribute('aria-selected')).toBe('true');
+  it('keeps note and task creation in their tabs instead of duplicate header actions', async () => {
+    renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    const tagsEditor = await screen.findByRole('combobox', { name: i18n.t('leadTags') });
+    const tabList = screen.getByRole('tablist');
+    expect(screen.queryByRole('button', { name: i18n.t('leadWorkspaceNote') })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Задача' })).toBeNull();
+    expect(screen.queryByText('Следующий шаг')).toBeNull();
+    expect(screen.queryByText('Участники KPI')).toBeNull();
+    expect(tagsEditor.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) })).toBeTruthy();
   });
 
-  it('focuses quick note and task inputs and keeps both drafts across tabs', async () => {
+  it('keeps note and task drafts across tabs', async () => {
     const { user } = renderSheet();
-    await user.click(await screen.findByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(await screen.findByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     const note = screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') });
-    await waitFor(() => expect(document.activeElement).toBe(note));
     await user.type(note, 'Call after school');
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceTask') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) }));
     const title = screen.getByRole('textbox', { name: i18n.t('taskTitle') });
-    await waitFor(() => expect(document.activeElement).toBe(title));
     await user.type(title, 'Arrange a demo');
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     expect((screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }) as HTMLTextAreaElement).value).toBe('Call after school');
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceTask') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) }));
     expect((screen.getByRole('textbox', { name: i18n.t('taskTitle') }) as HTMLInputElement).value).toBe('Arrange a demo');
     expect(requests).toHaveLength(0);
   });
 
   it('keeps a note draft when the parent opens another tab for the same lead', async () => {
     const { user, switchTab } = renderSheet();
-    await user.click(await screen.findByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(await screen.findByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     await user.type(screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }), 'Keep this draft');
     switchTab('tasks');
     await screen.findByRole('textbox', { name: i18n.t('taskTitle') });
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     expect((screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }) as HTMLTextAreaElement).value).toBe('Keep this draft');
   });
 
@@ -103,7 +106,7 @@ describe('lead workspace navigation and drafts', () => {
     const { user } = renderSheet();
     const name = await screen.findByLabelText(i18n.t('contactPersonName'));
     fireEvent.change(name, { target: { value: 'Updated parent' } });
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     await user.type(screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }), 'Unsent note');
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -115,7 +118,7 @@ describe('lead workspace navigation and drafts', () => {
   it('returns to an invalid field when saving from another tab', async () => {
     const { user } = renderSheet();
     fireEvent.change(await screen.findByLabelText(i18n.t('contactPersonName')), { target: { value: '' } });
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(i18n.t('contactPersonName'))));
     expect(requests).toHaveLength(0);
@@ -138,7 +141,7 @@ describe('lead workspace navigation and drafts', () => {
   it('confirms discarding card changes and preserves the note draft', async () => {
     const { user } = renderSheet();
     fireEvent.change(await screen.findByLabelText(i18n.t('contactPersonName')), { target: { value: 'Temporary parent' } });
-    await user.click(screen.getByRole('button', { name: i18n.t('leadWorkspaceNote') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     await user.type(screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }), 'Keep this note');
     await user.click(screen.getByRole('button', { name: i18n.t('undoChanges') }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('discardChanges') }));
@@ -174,12 +177,10 @@ describe('lead workspace navigation and drafts', () => {
 });
 
 describe('lead version recovery and completed work', () => {
-  it('keeps accepted tasks out of the next action even if their due date is past', async () => {
+  it('keeps accepted tasks completed in the task list', async () => {
     lead.tasks = [{ id: 9, title: 'Already accepted', status: 'accepted', dueAt: '2000-01-01T00:00:00Z' }];
     const { user } = renderSheet();
-    await screen.findByText(i18n.t('leadWorkspaceNoTask'));
-    expect(screen.queryByText('Already accepted')).toBeNull();
-    await user.click(screen.getByRole('tab', { name: /Задачи/ }));
+    await user.click(await screen.findByRole('tab', { name: /Задачи/ }));
     await screen.findByText('Already accepted');
     expect(screen.queryByRole('button', { name: i18n.t('completeTask') })).toBeNull();
     expect(screen.queryByText(i18n.t('taskOverdue'))).toBeNull();

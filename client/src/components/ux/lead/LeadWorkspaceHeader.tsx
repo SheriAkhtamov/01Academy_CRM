@@ -1,4 +1,5 @@
-import { CheckCircle2, Copy, ExternalLink, Loader2, MessageSquare, Phone, Plus } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { CheckCircle2, Copy, ExternalLink, Loader2, MessageSquare, Phone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,13 +23,13 @@ interface LeadWorkspaceHeaderProps {
   leadStatusName: (code: string) => string;
   onlinePbxCall: ReturnType<typeof useOnlinePbxCall>;
   copyPhone: (phone: string) => void;
-  onNote: () => void;
-  onTask: () => void;
+  tagsEditor: ReactNode;
+  archiveAction: ReactNode;
 }
 
 export function LeadWorkspaceHeader({
   lead, visiblePhoneNumbers, primaryPhone, messageTarget, statuses,
-  leadStatusName, onlinePbxCall, copyPhone, onNote, onTask, actionsDisabled = false,
+  leadStatusName, onlinePbxCall, copyPhone, tagsEditor, archiveAction, actionsDisabled = false,
 }: LeadWorkspaceHeaderProps) {
   const { t } = useTranslation();
   return (
@@ -85,6 +86,10 @@ export function LeadWorkspaceHeader({
             )}
           </div>
 
+          <fieldset disabled={actionsDisabled} className="min-w-0">
+            {tagsEditor}
+          </fieldset>
+
           {/* Quiet single-line meta */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <span>{t('manager')}: {lead.managerName || t('notAssigned')}</span>
@@ -101,7 +106,7 @@ export function LeadWorkspaceHeader({
       />
 
       {/* Quick actions — single prominent CTA + secondary outline buttons */}
-      <div className="grid grid-cols-4 gap-1 sm:flex sm:flex-wrap sm:gap-2">
+      <fieldset disabled={actionsDisabled} className="grid auto-cols-fr grid-flow-col gap-1 sm:flex sm:flex-wrap sm:gap-2">
         {primaryPhone ? (
           <Button
             type="button"
@@ -131,15 +136,8 @@ export function LeadWorkspaceHeader({
             </a>
           </Button>
         ) : null}
-        <Button type="button" disabled={actionsDisabled} size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="ghost" onClick={onNote}>
-          <MessageSquare data-icon="inline-start" />
-          {t('leadWorkspaceNote')}
-        </Button>
-        <Button type="button" disabled={actionsDisabled} size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="ghost" onClick={onTask}>
-          <Plus data-icon="inline-start" />
-          {t('leadWorkspaceTask')}
-        </Button>
-      </div>
+        {archiveAction}
+      </fieldset>
     </SheetHeader>
   );
 }

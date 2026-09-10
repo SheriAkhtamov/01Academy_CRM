@@ -40,6 +40,10 @@ vi.mock('../server/config', () => ({
   appConfig: {
     server: { appUrl: 'https://crm.test', environment: 'test' },
     integrations: {
+      website: {
+        webhookSecret: 'website-secret',
+        allowedFormOrigins: ['https://01academy.pro', 'https://www.01academy.uz'],
+      },
       telegramTasks: {
         botToken: '12345:test-only-token-that-is-long-enough',
         webhookSecret: 'test-webhook-secret-that-is-long-enough',
@@ -231,11 +235,22 @@ describe('academy route logic boundaries', () => {
     }));
     expect(response.body.map((entry: { provider: string }) => entry.provider)).toEqual([
       'instagram',
-      'website',
+      'website:01academy.pro',
+      'website:01academy.uz',
       'meta',
       'onlinepbx',
       'telegram_tasks',
     ]);
+    expect(response.body).toContainEqual(expect.objectContaining({
+      provider: 'website:01academy.pro',
+      siteDomain: '01academy.pro',
+      connected: true,
+    }));
+    expect(response.body).toContainEqual(expect.objectContaining({
+      provider: 'website:01academy.uz',
+      siteDomain: '01academy.uz',
+      connected: true,
+    }));
     expect(response.body).toContainEqual(expect.objectContaining({
       provider: 'meta',
       connected: true,

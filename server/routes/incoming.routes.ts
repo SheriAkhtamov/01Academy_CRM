@@ -17,6 +17,7 @@ import {
   verifyMetaLeadWebhookSignature,
 } from '../services/meta-lead-ads';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
+import { normalizeWebsiteIntegrationDomain } from '../services/website-integrations';
 
 const router = Router();
 
@@ -365,6 +366,9 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     const pageUrl = nullableText(body.pageUrl ?? body.page, 2000);
     const language = nullableText(body.locale ?? body.language, 20) ?? 'ru';
     const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
+    const siteDomain = normalizeWebsiteIntegrationDomain(req.get('origin'))
+      ?? normalizeWebsiteIntegrationDomain(pageUrl);
+    const integrationPayload = siteDomain ? { ...body, siteDomain } : body;
 
     if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });
     if (!phone && !messenger) return res.status(400).json({ error: 'contactRequired' });
@@ -407,11 +411,11 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     });
 
     if (result.duplicate) {
-      await logIntegration('website', 'inbound', 'duplicate', body);
+      await logIntegration('website', 'inbound', 'duplicate', integrationPayload);
       return res.status(409).json({ error: 'Duplicate lead or student', duplicate: result.duplicate });
     }
 
-    await logIntegration('website', 'inbound', 'received', body);
+    await logIntegration('website', 'inbound', 'received', integrationPayload);
     return res.status(201).json(result.lead);
   } catch (error) {
     logger.error('Failed to receive website lead', { error });

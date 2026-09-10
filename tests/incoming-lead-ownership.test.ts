@@ -144,6 +144,11 @@ describe('external lead ownership', () => {
       ].join('\n'),
       1,
     ]);
+    const integrationLogCall = mocks.poolQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO academy_integration_logs'));
+    expect(JSON.parse(String(integrationLogCall?.[1]?.[3]))).toEqual(expect.objectContaining({
+      siteDomain: '01academy.pro',
+    }));
   });
 
   it('does not let an unconfigured browser origin bypass the webhook secret', async () => {

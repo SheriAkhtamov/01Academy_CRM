@@ -26,6 +26,10 @@ import { getMetaMarketingIntegrationConfig } from '../../services/meta-marketing
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { isLeadIntegrationProvider } from '../../services/lead-funnels';
+import {
+  normalizeWebsiteIntegrationDomain,
+  websiteIntegrationProvider,
+} from '../../services/website-integrations';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
   CHURN_REASONS,
@@ -483,6 +487,76 @@ router.get('/integrations/status', async (req, res) => {
     const instagramAccount = instagramAccounts[0] ?? null;
     const instagramRequiresReconnect = instagramAccount?.lastError === 'instagramReauthorizationRequired';
     const integ = appConfig.integrations ?? {};
+    const websiteLogs = await query<{
+      provider: string;
+      direction: string;
+      status: string;
+      errorMessage: string | null;
+      updatedAt: string | null;
+      createdAt: string | null;
+      siteDomain: string;
+      hasSuccessfulInbound: boolean;
+    }>(
+      `WITH website_events AS (
+         SELECT logs.id,
+                logs.provider,
+                logs.direction,
+                logs.status,
+                logs.error_message,
+                logs.updated_at,
+                logs.created_at,
+                LOWER(REGEXP_REPLACE(
+                  COALESCE(
+                    NULLIF(logs.payload->>'siteDomain', ''),
+                    NULLIF(
+                      CASE
+                        WHEN COALESCE(logs.payload->>'pageUrl', logs.payload->>'page', '') ~* '^https?://'
+                          THEN SPLIT_PART(
+                            REGEXP_REPLACE(
+                              COALESCE(logs.payload->>'pageUrl', logs.payload->>'page', ''),
+                              '^https?://',
+                              '',
+                              'i'
+                            ),
+                            '/',
+                            1
+                          )
+                        ELSE ''
+                      END,
+                      ''
+                    )
+                  ),
+                  '^www\\.',
+                  '',
+                  'i'
+                )) AS site_domain
+         FROM academy_integration_logs logs
+         WHERE logs.provider = 'website'
+       ), ranked_website_events AS (
+         SELECT website_events.*,
+                BOOL_OR(
+                  direction = 'inbound'
+                  AND status IN ('received', 'duplicate')
+                ) OVER (PARTITION BY site_domain) AS has_successful_inbound,
+                ROW_NUMBER() OVER (
+                  PARTITION BY site_domain
+                  ORDER BY created_at DESC, id DESC
+                ) AS event_rank
+         FROM website_events
+         WHERE site_domain IS NOT NULL AND site_domain <> ''
+       )
+       SELECT provider,
+              direction,
+              status,
+              error_message,
+              updated_at,
+              created_at,
+              site_domain,
+              has_successful_inbound
+       FROM ranked_website_events
+       WHERE event_rank = 1
+       ORDER BY site_domain`,
+    );
     const telegramBotUsername = integ.telegramTasks?.botUsername?.trim() ?? '';
     const safeTelegramBotUsername = /^[A-Za-z][A-Za-z0-9_]{1,28}bot$/i.test(telegramBotUsername)
       ? telegramBotUsername
@@ -514,6 +588,38 @@ router.get('/integrations/status', async (req, res) => {
         && log.direction === 'inbound'
         && ['received', 'duplicate'].includes(String(log.status))
       );
+    const configuredWebsiteDomains = (integ.website?.allowedFormOrigins ?? [])
+      .map(normalizeWebsiteIntegrationDomain)
+      .filter((domain): domain is string => Boolean(domain));
+    const websiteDomains = [...new Set([
+      ...configuredWebsiteDomains,
+      ...websiteLogs.map((log) => log.siteDomain),
+    ])].sort((left, right) => left.localeCompare(right));
+    const websiteProviders = websiteDomains.length > 0
+      ? websiteDomains.map((siteDomain) => {
+        const lastLog = websiteLogs.find((log) => log.siteDomain === siteDomain) ?? null;
+        return {
+          provider: websiteIntegrationProvider(siteDomain),
+          connected: configuredWebsiteDomains.includes(siteDomain)
+            || lastLog?.hasSuccessfulInbound === true,
+          requiresReconnect: false,
+          accountId: null,
+          accountUsername: null,
+          siteDomain,
+          details: null,
+          lastLog,
+        };
+      })
+      : [{
+        provider: 'website',
+        connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'),
+        requiresReconnect: false,
+        accountId: null,
+        accountUsername: null,
+        siteDomain: null,
+        details: null,
+        lastLog: logs.find((log) => log.provider === 'website') ?? null,
+      }];
     const providers = [
       {
         provider: 'instagram',
@@ -521,16 +627,11 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: instagramRequiresReconnect,
         accountId: instagramAccount?.id ?? null,
         accountUsername: instagramAccount?.username ?? null,
+        siteDomain: null,
         details: null,
+        lastLog: null,
       },
-      {
-        provider: 'website',
-        connected: Boolean(integ.website?.webhookSecret) || hasSuccessfulInboundLog('website'),
-        requiresReconnect: false,
-        accountId: null,
-        accountUsername: null,
-        details: null,
-      },
+      ...websiteProviders,
       {
         provider: 'meta',
         connected: Boolean(
@@ -541,8 +642,10 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: false,
         accountId: null,
         accountUsername: metaMarketing.pageId,
+        siteDomain: null,
         // Surfaced on the Integrations page so the marketing report stays free of admin diagnostics.
         details: { ...metaMarketing, conversionStages },
+        lastLog: null,
       },
       {
         provider: 'onlinepbx',
@@ -550,7 +653,9 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: false,
         accountId: null,
         accountUsername: onlinePbxClient.getDomain() || null,
+        siteDomain: null,
         details: null,
+        lastLog: null,
       },
       {
         provider: 'telegram_tasks',
@@ -561,10 +666,12 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: false,
         accountId: null,
         accountUsername: safeTelegramBotUsername,
+        siteDomain: null,
         externalUrl: safeTelegramBotUsername
           ? `https://t.me/${safeTelegramBotUsername}`
           : null,
         details: null,
+        lastLog: null,
       },
     ];
     /*
@@ -576,8 +683,9 @@ router.get('/integrations/status', async (req, res) => {
       `requiresReconnect`.
     */
     res.json(providers.map((entry) => {
-      const configuredFunnel = funnelSettings.find((setting) => setting.provider === entry.provider);
-      const assignedFunnel = isLeadIntegrationProvider(entry.provider)
+      const routingProvider = entry.siteDomain ? 'website' : entry.provider;
+      const configuredFunnel = funnelSettings.find((setting) => setting.provider === routingProvider);
+      const assignedFunnel = isLeadIntegrationProvider(routingProvider)
         ? configuredFunnel ?? fallbackFunnel
         : null;
       return {
@@ -587,12 +695,13 @@ router.get('/integrations/status', async (req, res) => {
         requiresReconnect: entry.requiresReconnect,
         accountId: entry.accountId,
         accountUsername: entry.accountUsername,
+        siteDomain: entry.siteDomain,
         externalUrl: 'externalUrl' in entry ? entry.externalUrl : null,
         details: entry.details,
         funnelId: assignedFunnel ? Number(assignedFunnel.funnelId ?? assignedFunnel.id) : null,
         funnelName: assignedFunnel?.funnelName ?? assignedFunnel?.name ?? null,
-        acceptsLeads: isLeadIntegrationProvider(entry.provider),
-        lastLog: logs.find((log) => log.provider === entry.provider) ?? null,
+        acceptsLeads: isLeadIntegrationProvider(routingProvider),
+        lastLog: entry.lastLog ?? logs.find((log) => log.provider === routingProvider) ?? null,
       };
     }));
   } catch (error) {

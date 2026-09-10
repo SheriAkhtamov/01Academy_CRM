@@ -2328,6 +2328,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'Lead capture webhook from the Zero One Academy website.',
     ru: 'Webhook заявок с сайта Zero One Academy.',
   },
+  integrationProviderWebsiteSiteDesc: {
+    en: 'Leads from {domain}.',
+    ru: 'Заявки с сайта {domain}.',
+  },
   metaIntegration: { en: 'Meta Ads and Leads', ru: 'Meta: реклама и лиды' },
   metaIntegrationDesc: {
     en: 'Instant Form leads, exact ad attribution, and CRM conversion events through Meta CAPI.',

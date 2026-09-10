@@ -68,6 +68,7 @@ interface AcademyPageProps {
 
 interface IntegrationStatus {
   provider: string;
+  siteDomain?: string | null;
   mode: string;
   connected: boolean;
   requiresReconnect?: boolean;
@@ -151,7 +152,17 @@ const comparableOnlinePbxDraft = (draft: OnlinePbxRoutingDraft) => JSON.stringif
   forwarding: draft.forwarding,
 });
 
-const integrationCopy = (provider: string, t: (key: TranslationKey) => string) => {
+const integrationCopy = (
+  integration: Pick<IntegrationStatus, 'provider' | 'siteDomain'>,
+  t: (key: TranslationKey) => string,
+) => {
+  const { provider, siteDomain } = integration;
+  if (siteDomain) {
+    return {
+      title: siteDomain,
+      description: t('integrationProviderWebsiteSiteDesc').replace('{domain}', siteDomain),
+    };
+  }
   switch (provider) {
     case 'instagram':
       return { title: t('instagramIntegration'), description: t('instagramIntegrationDesc') };
@@ -441,7 +452,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Button>
           </div>
         ) : integrations.isLoading ? (
-          Array.from({ length: 4 }).map((_, index) => (
+          Array.from({ length: 6 }).map((_, index) => (
             <Card key={index}>
               <CardHeader>
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -458,14 +469,14 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Card>
           ))
         ) : orderedIntegrations.map((integration) => {
-          const copy = integrationCopy(integration.provider, t);
+          const copy = integrationCopy(integration, t);
           const statusText = integration.requiresReconnect
             ? t('integrationStatusReconnectRequired')
             : integration.connected
               ? t('integrationStatusConnected')
               : t('integrationStatusNotConfigured');
           const lastLogTime = formatLogTime(integration.lastLog?.createdAt ?? integration.lastLog?.updatedAt, language);
-          const Icon = integration.provider === 'website'
+          const Icon = integration.siteDomain || integration.provider === 'website'
             ? Globe2
             : integration.provider === 'instagram'
               ? Camera

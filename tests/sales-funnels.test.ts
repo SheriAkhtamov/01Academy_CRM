@@ -59,7 +59,8 @@ describe('sales funnel lead routing', () => {
     expect(funnelsPanel).toContain('leadSourceProviders.map');
     expect(funnelsPanel).toContain('websiteIntegrationDomain(provider)');
     expect(funnelsPanel).toContain('sales-funnel-source-${provider}');
-    expect(funnelsPanel).toContain("t('leadSourceDistributionDescription')");
+    expect(funnelsPanel).toContain("t('funnelIntegrations')");
+    expect(funnelsPanel).not.toContain("t('leadSourceDistributionDescription')");
     expect(funnelsPanel).not.toContain('salesFunnelsApi.assignIntegration');
     expect(funnelsPanel).not.toContain('lead-source-funnel-${provider}');
     expect(integrationsPage).not.toContain('salesFunnelsApi.assignIntegration');

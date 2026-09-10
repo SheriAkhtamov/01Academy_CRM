@@ -10,7 +10,7 @@ import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 import { createSalesKpiTables } from "./sales-kpi";
-import { createSalesFunnelTables } from "./sales-funnels";
+import { createLeadFunnelHandoffTable, createSalesFunnelTables } from "./sales-funnels";
 export interface AcademyCourseProgramLesson { lessonNumber: number; topic: string; description?: string | null; materials?: string | null; }
 
 export const users = pgTable("users", {
@@ -569,12 +569,12 @@ export const academyLessons = pgTable("academy_lessons", {
 }));
 
 export const { academyDemoLessons, academyDemoLessonParticipants } = createAcademyDemoTables({
-  courseId: academyCourses.id,
-  schoolId: academySchools.id,
-  roomId: academyRooms.id,
-  teacherId: academyTeachers.id,
-  studentId: academyStudents.id,
-  userId: users.id,
+  courseId: academyCourses.id, schoolId: academySchools.id, roomId: academyRooms.id,
+  teacherId: academyTeachers.id, studentId: academyStudents.id, userId: users.id,
+});
+
+export const academyLeadFunnelHandoffs = createLeadFunnelHandoffTable({
+  lead: academyLeads.id, funnel: academySalesFunnels.id, user: users.id, demo: academyDemoLessons.id,
 });
 
 export const academyLessonStatusHistory = pgTable("academy_lesson_status_history", {

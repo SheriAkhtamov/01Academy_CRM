@@ -750,6 +750,13 @@
       "when": 1789920000003,
       "tag": "0106_split_website_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1789920000004,
+      "tag": "0107_hunter_closer_workflow",
+      "breakpoints": true
     }
   ]
 }

@@ -5,26 +5,33 @@ import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
 
 // Attendance is an explicit participant mark. A scheduled lesson can already
 // have saved attendance; cancelled, not-conducted and future demos cannot.
-// A linked lead owns sales visibility, including when its owner is cleared.
+// Reporting follows frozen KPI ownership, not the current operational owner.
+const attendanceOwnerSql = `CASE WHEN academy_kpi_employee_role($3) = 'closer'
+  THEN COALESCE(trial.closer_id, tracked.closer_id, lead.manager_id, student.manager_id)
+  ELSE COALESCE(trial.hunter_id, tracked.hunter_id, handoff.from_manager_id, lead.manager_id, student.manager_id) END`;
 export const salesDemoAttendanceCte = `WITH attended_demos AS (
   SELECT participant.id AS participant_id, demo.id AS demo_id,
     demo.scheduled_at, demo.duration_minutes, demo.format,
     demo.course_id, demo.school_id, demo.room_id, demo.teacher_id,
-    student.id AS student_id, lead.id AS lead_id,
+    student.id AS student_id,
+    CASE WHEN $3::int IS NULL OR lead.manager_id = $3 THEN lead.id END AS lead_id,
     COALESCE(NULLIF(BTRIM(student.student_name), ''), lead.student_name) AS student_name,
     COALESCE(NULLIF(BTRIM(student.contact_name), ''), lead.contact_name) AS contact_name,
-    COALESCE(NULLIF(BTRIM(student.phone), ''), lead.phone) AS phone,
-    CASE WHEN lead.id IS NOT NULL THEN lead.manager_id ELSE student.manager_id END AS manager_id
+    CASE WHEN $3::int IS NULL OR COALESCE(lead.manager_id, student.manager_id) = $3
+      THEN COALESCE(NULLIF(BTRIM(student.phone), ''), lead.phone) END AS phone,
+    ${attendanceOwnerSql} AS manager_id
   FROM academy_demo_lesson_participants participant
   JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
   JOIN academy_students student ON student.id = participant.student_id
   LEFT JOIN academy_leads lead ON lead.id = student.lead_id
+  LEFT JOIN academy_sales_kpi_trials trial ON trial.participant_id = participant.id
+  LEFT JOIN academy_sales_kpi_leads tracked ON tracked.lead_id = lead.id
+  LEFT JOIN academy_lead_funnel_handoffs handoff ON handoff.lead_id = lead.id
   WHERE participant.status = 'attended'
     AND demo.status IN ('scheduled', 'completed')
     AND demo.scheduled_at <= timezone('UTC', now())
     AND demo.scheduled_at >= $1 AND demo.scheduled_at < $2
-    AND ($3::int IS NULL OR
-      CASE WHEN lead.id IS NOT NULL THEN lead.manager_id ELSE student.manager_id END = $3)
+    AND ($3::int IS NULL OR ${attendanceOwnerSql} = $3)
 )`;
 
 const scopeValues = (actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null) => [

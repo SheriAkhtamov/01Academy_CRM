@@ -31,6 +31,7 @@ import {
 } from './academy-scheduling';
 import { getDemoResourceAvailability } from './demo-resource-availability';
 import { lockDemoParticipantLeads, syncDemoLeadStatuses } from './demo-lead-status';
+import { canManageDemoParticipant, demoAttendanceManagerSql, demoFunnelRoleSql } from './demo-participant-access';
 
 const getDemoLesson = async (id: number) => queryOne(
   `SELECT demo.*,
@@ -50,7 +51,9 @@ const getDemoLesson = async (id: number) => queryOne(
             'noShowReasonNote', participant.no_show_reason_note,
             'contactName', COALESCE(student.contact_name, lead.contact_name),
             'studentName', student.student_name,
-            'managerId', COALESCE(student.manager_id, lead.manager_id)
+            'managerId', COALESCE(student.manager_id, lead.manager_id),
+            'attendanceManagerId', ${demoAttendanceManagerSql()},
+            'funnelRole', ${demoFunnelRoleSql()}
           ) ORDER BY participant.id
         ) FILTER (WHERE participant.id IS NOT NULL),
         '[]'::jsonb
@@ -68,11 +71,7 @@ const getDemoLesson = async (id: number) => queryOne(
   [id],
 );
 
-const canManageParticipant = (req: any, participant: Row) => (
-  hasLeadershipAccess(req.user)
-  || !participant.managerId
-  || Number(participant.managerId) === Number(req.user?.id)
-);
+const canManageParticipant = canManageDemoParticipant;
 
 const presentDemoLesson = (req: any, demo: Row) => {
   const participants = Array.isArray(demo.participants) ? demo.participants as Row[] : [];
@@ -266,7 +265,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
                   'noShowReasonNote', participant.no_show_reason_note,
                   'contactName', COALESCE(student.contact_name, lead.contact_name),
                   'studentName', student.student_name,
-                  'managerId', COALESCE(student.manager_id, lead.manager_id)
+                  'managerId', COALESCE(student.manager_id, lead.manager_id),
+                  'attendanceManagerId', ${demoAttendanceManagerSql()},
+                  'funnelRole', ${demoFunnelRoleSql()}
                 ) ORDER BY participant.id
               ) FILTER (WHERE participant.id IS NOT NULL),
               '[]'::jsonb
@@ -594,7 +595,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         const leads = await lockDemoParticipantLeads(id);
         const lockedParticipant = await queryOne(
           `SELECT participant.*, student.lead_id,
-                  COALESCE(student.manager_id, lead.manager_id) AS manager_id
+                  COALESCE(student.manager_id, lead.manager_id) AS manager_id,
+                  ${demoAttendanceManagerSql()} AS attendance_manager_id,
+                  ${demoFunnelRoleSql()} AS funnel_role
            FROM academy_demo_lesson_participants participant
            JOIN academy_students student ON student.id = participant.student_id
            LEFT JOIN academy_leads lead ON lead.id = student.lead_id
@@ -879,7 +882,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         const leads = await lockDemoParticipantLeads(id);
         const lockedParticipants = await query(
           `SELECT participant.*, student.lead_id,
-                  COALESCE(student.manager_id, lead.manager_id) AS manager_id
+                  COALESCE(student.manager_id, lead.manager_id) AS manager_id,
+                  ${demoAttendanceManagerSql()} AS attendance_manager_id,
+                  ${demoFunnelRoleSql()} AS funnel_role
            FROM academy_demo_lesson_participants participant
            JOIN academy_students student ON student.id = participant.student_id
            LEFT JOIN academy_leads lead ON lead.id = student.lead_id

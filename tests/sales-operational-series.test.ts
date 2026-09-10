@@ -34,7 +34,7 @@ describe('operational chart series', () => {
     expect(bookingRead[0]).toContain('GROUP BY history.lead_id');
     expect(bookingRead[0]).toContain("history.to_status_code = 'demo_invited'");
     for (const [sql, values] of [...db.query.mock.calls, ...db.queryOne.mock.calls]) {
-      expect(sql).toContain(sql.includes('attended_demos') ? 'END = $3' : 'AND lead.manager_id = $3');
+      expect(sql).toContain(sql.includes('attended_demos') ? 'END = $3' : 'THEN tracked.closer_id ELSE tracked.hunter_id');
       expect(values[2]).toBe(7);
     }
   });

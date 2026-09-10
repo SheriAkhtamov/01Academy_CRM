@@ -22,6 +22,7 @@ export const resolveLeadFunnelId = async (
        JOIN academy_sales_funnels funnel ON funnel.id = setting.funnel_id
        WHERE setting.provider = $1
          AND funnel.is_active = true
+         AND funnel.workflow_role IS DISTINCT FROM 'closer'
        LIMIT 1`,
       [provider],
     );
@@ -33,6 +34,7 @@ export const resolveLeadFunnelId = async (
     `SELECT id
      FROM academy_sales_funnels
      WHERE is_active = true
+       AND workflow_role IS DISTINCT FROM 'closer'
      ORDER BY is_default DESC, id
      LIMIT 1`,
   );

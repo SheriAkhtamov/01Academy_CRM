@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertSalesFunnelAssignment, assertSalesFunnelStage } from './sales-funnel-policy';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -313,7 +314,7 @@ router.post('/leads', async (req, res) => {
       }
       const requestedFunnelId = parseId(input.funnelId);
       const funnel = await queryOne(
-        `SELECT id
+        `SELECT id, workflow_role
          FROM academy_sales_funnels
          WHERE is_active = true
            AND ${requestedFunnelId ? 'id = $1' : 'is_default = true'}
@@ -334,8 +335,10 @@ router.post('/leads', async (req, res) => {
       if (statusCode === 'paid') {
         throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
       }
-      const managerId = await resolveLeadManagerId(req.actor!, input.managerId);
+      const managerId = await resolveLeadManagerId(req.actor!, input.managerId, funnel.workflowRole);
       await getActiveSalesManager(managerId, true);
+      await assertSalesFunnelAssignment(funnel.id, managerId);
+      await assertSalesFunnelStage(funnel.id, statusCode);
 
       const enrolledGroupId = parseId(input.enrolledGroupId);
       if (enrolledGroupId) {
@@ -916,6 +919,7 @@ router.post('/leads/:id/restore', async (req, res) => {
     if (validationError) return res.status(400).json({ error: validationError });
 
     const restored = await withTransaction(async () => {
+      await assertSalesFunnelStage(oldLead.funnelId, targetStatusCode);
       if (targetStatusCode !== 'not_now' && oldLead.enrolledGroupId) {
         await validateLeadSelectedGroups(id, Number(oldLead.enrolledGroupId));
       }
@@ -1139,6 +1143,9 @@ router.patch('/leads/:id', async (req, res) => {
             [id],
           )
         : null;
+      if (requestedStatusCode && requestedStatusCode !== lockedLead.statusCode) {
+        await assertSalesFunnelStage(lockedLead.funnelId, requestedStatusCode);
+      }
       const previousVersion = new Date(expectedUpdatedAt ?? oldLead.updatedAt).getTime();
       const lockedVersion = new Date(lockedLead.updatedAt).getTime();
       if (
@@ -1546,6 +1553,7 @@ router.post('/leads/:id/students', async (req, res) => {
         await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
       }
       if (hasEnrollment && !['enrolled', 'paid'].includes(String(lead.statusCode))) {
+        await assertSalesFunnelStage(lead.funnelId, 'enrolled');
         const enrolledStatus = await getActiveLeadStatus('enrolled');
         if (!enrolledStatus) {
           throw Object.assign(new Error('enrolledLeadStatusUnavailable'), { statusCode: 409 });

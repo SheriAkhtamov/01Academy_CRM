@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getCompanyTargets, saveCompanyTargets, getKpiLeadOwnership, getKpiOverview, getKpiPlans, handoffKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
+import { getCompanyTargets, saveCompanyTargets, getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
 import type { KpiSaleReview } from '@shared/sales-kpi';
+import { invalidateSalesLeadData } from '@/features/sales/queries';
 
 export const KPI_QUERY_KEY = ['/api/academy/sales-kpi'] as const;
 export const useCompanyTargets = () => useQuery({ queryKey: ['/api/academy/company-settings'], queryFn: getCompanyTargets });
@@ -39,13 +40,9 @@ export const useRecordKpiOffer = () => {
     ]),
   });
 };
-export const useHandoffKpiLead = () => {
+export const useClaimKpiLead = () => {
   const client = useQueryClient();
-  return useMutation({ mutationFn: ({ leadId, closerId }: { leadId: number; closerId: number }) => handoffKpiLead(leadId, closerId),
-    onSuccess: () => Promise.all([
-      client.invalidateQueries({ queryKey: KPI_QUERY_KEY }),
-      client.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
-      client.invalidateQueries({ queryKey: ['/api/academy/leads'] }),
-    ]),
+  return useMutation({ mutationFn: claimKpiLead,
+    onSuccess: () => invalidateSalesLeadData(client),
   });
 };

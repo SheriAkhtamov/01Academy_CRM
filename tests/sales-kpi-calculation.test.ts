@@ -76,11 +76,11 @@ describe('sales KPI attribution and month accounting', () => {
     expect(metric(other, 'bookings').value).toBe(0);
     expect(other.payLines.find((p) => p.key === 'tier')?.amountUzs).toBe(0);
   });
-  it('does not pay cancelled, uncompleted or future lessons, and allows a cancelled booking to be rescheduled', () => {
+  it('counts explicit attendance before lesson completion, but not cancellations or future lessons', () => {
     const result = calc(facts({ trials: [trial(1, { status: 'cancelled' }), trial(2, { studentId: 1 }),
       trial(3, { lessonStatus: 'scheduled' }), trial(4, { scheduledAt: '2026-10-03T10:00:00+05:00' })] }));
-    expect(result.payLines.find((p) => p.key === 'tier')?.quantity).toBe(1);
-    expect(metric(result, 'attendance')).toMatchObject({ numerator: 1, denominator: 2 });
+    expect(result.payLines.find((p) => p.key === 'tier')?.quantity).toBe(2);
+    expect(metric(result, 'attendance')).toMatchObject({ numerator: 2, denominator: 2 });
   });
   it('includes a prior-month booking in attendance without another booking unit', () => {
     const result = calc(facts({ trials: [trial(1, { bookedAt: '2026-08-31T10:00:00+05:00' })] }));

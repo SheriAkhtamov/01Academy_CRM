@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
+import { canActorAccessFunnel } from '../leads/domain/access-policy';
+import { assertSalesFunnelStage } from './sales-funnel-policy';
 import {
   isLeadIntegrationProvider,
   type LeadIntegrationProvider,
@@ -18,6 +20,8 @@ import {
 
 const funnelListSql = `
   SELECT funnel.*,
+         (funnel.workflow_role = academy_kpi_employee_role($1)) AS is_preferred,
+         COUNT(DISTINCT lead.id) FILTER (WHERE lead.manager_id = $1)::int AS own_lead_count,
          COUNT(DISTINCT lead.id)::int AS lead_count,
          COUNT(DISTINCT setting.provider)::int AS integration_count,
          COALESCE(
@@ -118,7 +122,11 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
   router.get('/sales-funnels', async (req, res) => {
     if (!ensureSalesAccess(req, res)) return;
     try {
-      res.json(await query(funnelListSql));
+      const funnels = await query(funnelListSql, [req.user!.id]);
+      res.json(funnels.filter((funnel) => !req.actor || canActorAccessFunnel(req.actor, {
+        funnelId: Number(funnel.id), funnelRole: funnel.workflowRole,
+        managerId: Number(funnel.ownLeadCount) > 0 ? req.user!.id : null,
+      })));
     } catch (error) {
       logger.error('Failed to fetch sales funnels', { error });
       res.status(500).json({ error: 'failedToLoadData' });
@@ -134,6 +142,9 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         await query(`SELECT pg_advisory_xact_lock(hashtext('academy-sales-funnels'))`);
         const current = await query(`SELECT id FROM academy_sales_funnels ORDER BY id FOR UPDATE`);
         const isDefault = current.length === 0 || req.body.isDefault === true;
+        if (isDefault && await queryOne(`SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter'`)) {
+          throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
+        }
         const isActive = isDefault || req.body.isActive !== false;
         if (!isActive && integrations && integrations.length > 0) {
           throw Object.assign(new Error('salesFunnelInUseMustRemainActive'), { statusCode: 409 });
@@ -190,6 +201,14 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
 
         const name = req.body.name === undefined ? String(current.name) : validateFunnelName(req.body.name);
         const makeDefault = req.body.isDefault === true;
+        if ((current.workflowRole && req.body.isActive === false)
+          || (makeDefault && current.workflowRole !== 'hunter'
+            && await queryOne(`SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter'`))) {
+          throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
+        }
+        if (current.workflowRole === 'closer' && integrations?.length) {
+          throw Object.assign(new Error('salesCloserFunnelIncomingNotAllowed'), { statusCode: 409 });
+        }
         const isActive = makeDefault
           || (req.body.isActive === undefined ? current.isActive === true : req.body.isActive === true);
         if (current.isDefault === true && !isActive) {
@@ -266,6 +285,7 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
           [id],
         );
         if (!funnel) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (funnel.workflowRole) throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
         if (funnel.isDefault === true || Number(funnel.leadCount) > 0 || Number(funnel.integrationCount) > 0) {
           throw Object.assign(new Error('salesFunnelTransferRequired'), { statusCode: 409 });
         }
@@ -303,10 +323,18 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         const source = funnels.find((funnel) => Number(funnel.id) === id);
         const target = funnels.find((funnel) => Number(funnel.id) === targetFunnelId);
         if (!source) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (source.workflowRole) throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
+        if (target?.workflowRole === 'closer') {
+          throw Object.assign(new Error('salesCloserFunnelIncomingNotAllowed'), { statusCode: 409 });
+        }
         if (!target || target.isActive !== true) {
           throw Object.assign(new Error('salesFunnelTransferTargetRequired'), { statusCode: 400 });
         }
 
+        const sourceStages = await query<{ statusCode: string }>(
+          `SELECT DISTINCT status_code FROM academy_leads WHERE funnel_id = $1`, [id],
+        );
+        for (const stage of sourceStages) await assertSalesFunnelStage(targetFunnelId, stage.statusCode);
         const movedLeads = await queryOne<{ count: number }>(
           `WITH moved AS (
              UPDATE academy_leads
@@ -369,13 +397,16 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
       }
       const setting = await withTransaction(async () => {
         const funnel = await queryOne(
-          `SELECT id, name
+          `SELECT id, name, workflow_role
            FROM academy_sales_funnels
            WHERE id = $1 AND is_active = true
            FOR SHARE`,
           [funnelId],
         );
         if (!funnel) throw Object.assign(new Error('salesFunnelRequired'), { statusCode: 400 });
+        if (funnel.workflowRole === 'closer') {
+          throw Object.assign(new Error('salesCloserFunnelIncomingNotAllowed'), { statusCode: 409 });
+        }
         const saved = await queryOne(
           `INSERT INTO academy_integration_funnel_settings (provider, funnel_id, updated_by)
            VALUES ($1, $2, $3)

@@ -25,6 +25,7 @@ import { registerAcademyBulkLeadActionRoutes } from './bulk-lead-actions.router'
 import { registerAcademyLeadSocialAccountRoutes } from './lead-social-accounts.router';
 import { registerAcademyFunnelRoutes } from './funnels.router';
 import { createSalesKpiRouter } from '../sales-kpi/http/kpi-router';
+import { registerLeadDemoParticipantRoutes } from './lead-demo-participants.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -63,5 +64,6 @@ registerAcademyLearningRoutes(router);
 registerAcademyOperationsRoutes(router);
 registerAcademyResourceRoutes(router);
 registerAcademyDemoLessonRoutes(router);
+registerLeadDemoParticipantRoutes(router);
 
 export default router;

@@ -122,7 +122,7 @@ describe('lead modal behavior', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Server parent')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Server parent' })).toBeTruthy();
       expect((nameInput as HTMLInputElement).value).toBe('Local draft');
     });
   });

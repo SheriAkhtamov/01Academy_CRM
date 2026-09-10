@@ -9,6 +9,9 @@ import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
 import { buildSalesDemoAttendanceStats } from './sales-demo-students';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const reportingManagerSql = `COALESCE((SELECT CASE WHEN academy_kpi_employee_role($3) = 'closer'
+  THEN tracked.closer_id ELSE tracked.hunter_id END FROM academy_sales_kpi_leads tracked
+  WHERE tracked.lead_id = lead.id), lead.manager_id)`;
 
 export type SalesDashboardMetricReason = {
   reason: string;
@@ -65,7 +68,7 @@ const buildSalesDashboardPeriodMetrics = async (
   end: Date,
 ): Promise<Omit<SalesDashboardCoreMetrics, 'demoAttendees'>> => {
   const managerFilter = managerId
-    ? 'AND lead.manager_id = $3'
+    ? `AND ${reportingManagerSql} = $3`
     : '';
   const values = managerId
     ? [start, end, managerId]
@@ -255,7 +258,7 @@ const buildSalesDashboardDailySeries = async (
   range: ReportingRange,
 ): Promise<Omit<SalesDashboardDailyPoint, 'demoAttendees'>[]> => {
   const managerFilter = managerId
-    ? 'AND lead.manager_id = $3'
+    ? `AND ${reportingManagerSql} = $3`
     : '';
   const values = managerId
     ? [range.start, range.end, managerId]

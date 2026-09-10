@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { attachSalesWorkflow } from '../../../infrastructure/sales-kpi/sales-workflow-context';
 import {
   actorContextFrom,
   type ActorContext,
@@ -12,13 +13,13 @@ export const actorContextFromRequest = (request: Request): ActorContext => {
   return actor;
 };
 
-export const attachActorContext = (
+export const attachActorContext = async (
   request: Request,
   _response: Response,
   next: NextFunction,
-): void => {
+): Promise<void> => {
   try {
-    request.actor = actorContextFromRequest(request);
+    request.actor = await attachSalesWorkflow(actorContextFromRequest(request));
     next();
   } catch (error) {
     next(error);

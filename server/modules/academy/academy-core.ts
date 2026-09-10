@@ -23,6 +23,7 @@ import { runAutomations } from '../../services/automations';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
+import { attachSalesWorkflow } from '../../infrastructure/sales-kpi/sales-workflow-context';
 import {
   CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
@@ -459,8 +460,17 @@ export const createPipelineStatusCode = async (name: string) => {
 
 export const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
   const executor = transactionContext.getStore() ?? pool;
-  const result = await executor.query(sql, values as any[]);
-  return camelizeRows(result.rows) as T[];
+  try {
+    const result = await executor.query(sql, values as any[]);
+    return camelizeRows(result.rows) as T[];
+  } catch (error) {
+    const failure = error as { code?: string; message?: string; statusCode?: number };
+    if (failure.code === 'P0001' && ['salesFunnelStageUnavailable', 'salesFunnelCloserOnly',
+      'salesFunnelHunterOnly', 'salesWorkflowFunnelProtected'].includes(failure.message ?? '')) {
+      failure.statusCode = 409;
+    }
+    throw error;
+  }
 };
 
 export const withTransaction = async <T>(callback: () => Promise<T>): Promise<T> => {
@@ -549,7 +559,7 @@ export const normalizeDbValue = (value: DbValue) => {
   return value;
 };
 
-export const resolveLeadManagerId = async (source: ActorSource, requestedValue: unknown): Promise<number> => {
+export const resolveLeadManagerId = async (source: ActorSource, requestedValue: unknown, funnelRole?: string | null): Promise<number> => {
   const actor = actorContextFrom(source);
   const assignedModules = actor.modules;
   const hasDirectSalesModule = assignedModules.includes('sales');
@@ -586,7 +596,7 @@ export const resolveLeadManagerId = async (source: ActorSource, requestedValue: 
        WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
       [actor.userId],
     );
-    if (currentManager) {
+    if (currentManager && (!funnelRole || actor.salesWorkflow?.role === funnelRole)) {
       return Number(currentManager.id);
     }
   }
@@ -599,6 +609,8 @@ export const resolveLeadManagerId = async (source: ActorSource, requestedValue: 
       AND l.status_code NOT IN ('paid', 'not_now')
       AND COALESCE(l.is_archived, false) = false
      WHERE ${salesUserAccessSql} AND u.is_active = true
+       ${funnelRole === 'hunter' ? "AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'"
+         : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) = 'closer'" : ''}
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,
@@ -724,7 +736,7 @@ export const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) 
 };
 
 export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefined, leads: Row[]) => {
-  const context = actorContextFrom(actor);
+  const context = await attachSalesWorkflow(actorContextFrom(actor));
   if (!actor || !context.modules.includes('sales') || context.modules.includes('marketing') || context.isLeadership) {
     return leads;
   }
@@ -732,9 +744,7 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
   // A sales employee may work with their own leads and with unassigned leads.
   // Cards assigned to another manager are excluded completely instead of
   // exposing a partially redacted card.
-  const visibleLeads = leads.filter((lead) => (
-    !lead.managerId || Number(lead.managerId) === context.userId
-  ));
+  const visibleLeads = leads.filter((lead) => canActorViewLead(context, lead));
   const policy = await getWorkforcePolicy();
   if (policy.salesPhoneVisibility === 'own_leads') return visibleLeads;
 

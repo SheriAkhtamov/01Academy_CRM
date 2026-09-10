@@ -8,7 +8,7 @@ import { sendHttpError } from '../../../lib/http-errors';
 import { logger } from '../../../lib/logger';
 import { getKpiReportingEmployees, kpiError, listKpiAssignments, listKpiPlans, saveKpiPlan } from '../../../infrastructure/sales-kpi/kpi-repository';
 import { readKpiFacts } from '../../../infrastructure/sales-kpi/kpi-facts';
-import { handoffKpiLead, readKpiLeadOwnership, recordKpiOffer } from '../../../infrastructure/sales-kpi/kpi-handoff';
+import { claimKpiLead, readKpiLeadOwnership, recordKpiOffer } from '../../../infrastructure/sales-kpi/kpi-handoff';
 import { reviewKpiSale } from '../../../infrastructure/sales-kpi/kpi-sales-review';
 
 const idSchema = z.coerce.number().int().positive();
@@ -64,9 +64,11 @@ export function createSalesKpiRouter() {
   router.get('/sales-kpi/leads/:id', endpoint(async (req, res) => {
     res.json(await readKpiLeadOwnership(actor(req), idSchema.parse(req.params.id)));
   }));
-  router.post('/sales-kpi/leads/:id/handoff', endpoint(async (req, res) => {
-    const input = z.object({ closerId: idSchema }).strict().parse(req.body);
-    res.json(await handoffKpiLead(actor(req), req, idSchema.parse(req.params.id), input.closerId));
+  router.post('/sales-kpi/leads/:id/handoff', (_req, res) => {
+    res.status(410).json({ error: 'salesHandoffThroughAttendance' });
+  });
+  router.post('/sales-kpi/leads/:id/claim', endpoint(async (req, res) => {
+    res.json(await claimKpiLead(actor(req), req, idSchema.parse(req.params.id)));
   }));
   router.post('/sales-kpi/leads/:id/offer', endpoint(async (req, res) => {
     await recordKpiOffer(actor(req), req, idSchema.parse(req.params.id));

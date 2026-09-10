@@ -11,6 +11,7 @@ export type ActorContext = {
   modules: readonly AcademyAccessModule[];
   isLeadership: boolean;
   displayName?: string;
+  salesWorkflow?: { role: string | null; hunterFunnelId: number | null; closerFunnelId: number | null };
 };
 
 type ActorIdentitySource = {
@@ -32,6 +33,9 @@ const sourceUser = (source: ActorSource) => (
 );
 
 export const actorContextFrom = (source: ActorSource): ActorContext => {
+  if (source && typeof source === 'object' && 'actor' in source && source.actor) {
+    return source.actor as ActorContext;
+  }
   const user = sourceUser(source);
   const modules = getAssignedModules(user as ModuleAccessSource);
   const sourceRecord = source && typeof source === 'object' && !Array.isArray(source)
@@ -58,6 +62,7 @@ export const actorContextFrom = (source: ActorSource): ActorContext => {
       : modules[0] ?? null,
     modules,
     isLeadership: hasLeadershipAccess(user as ModuleAccessSource),
+    ...(sourceRecord.salesWorkflow ? { salesWorkflow: sourceRecord.salesWorkflow as ActorContext['salesWorkflow'] } : {}),
     ...(typeof userRecord.fullName === 'string' && userRecord.fullName.trim()
       ? { displayName: userRecord.fullName.trim() }
       : {}),

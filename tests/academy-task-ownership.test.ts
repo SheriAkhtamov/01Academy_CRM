@@ -77,6 +77,7 @@ describe("academy task ownership", () => {
           }],
         };
       }
+      if (sql.includes('academy_kpi_employee_role')) return { rows: [{ role: null, hunterFunnelId: 1, closerFunnelId: 2 }] };
       throw new Error(`Unexpected query in test: ${sql}`);
     });
   });

@@ -19,7 +19,8 @@ describe('sales dashboard operational metrics', () => {
     expect(moduleRoutes).toContain('parseReportingRange(req.query.from, req.query.to)');
     expect(moduleRoutes).toContain('parseId(req.query.managerId)');
     expect(moduleRoutes).toContain('buildSalesDashboardMetrics(actor, reportingRange, requestedManagerId)');
-    expect(metrics).toContain('AND lead.manager_id = $3');
+    expect(metrics).toContain('AND ${reportingManagerSql} = $3');
+    expect(metrics).toContain('THEN tracked.closer_id ELSE tracked.hunter_id');
     expect(metrics).not.toContain('lead.manager_id IS NULL');
     expect(salesDashboard).toContain('<SalesOverviewMetrics');
     expect(salesOverviewMetrics).toContain('/api/academy/modules/sales/metrics?${metricsQueryString}');

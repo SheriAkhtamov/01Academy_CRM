@@ -10,7 +10,7 @@ vi.mock('../server/infrastructure/sales-kpi/kpi-repository', () => ({
   kpiError: (error: Error, statusCode = 400) => Object.assign(error, { statusCode }),
 }));
 vi.mock('../server/infrastructure/sales-kpi/kpi-facts', () => ({ readKpiFacts: mocks.facts }));
-vi.mock('../server/infrastructure/sales-kpi/kpi-handoff', () => ({ handoffKpiLead: mocks.handoff, readKpiLeadOwnership: mocks.ownership, recordKpiOffer: mocks.offer }));
+vi.mock('../server/infrastructure/sales-kpi/kpi-handoff', () => ({ claimKpiLead: mocks.handoff, readKpiLeadOwnership: mocks.ownership, recordKpiOffer: mocks.offer }));
 vi.mock('../server/infrastructure/sales-kpi/kpi-sales-review', () => ({ reviewKpiSale: mocks.review }));
 vi.mock('../server/lib/logger', () => ({ logger: { error: vi.fn() } }));
 import { createSalesKpiRouter } from '../server/modules/sales-kpi/http/kpi-router';
@@ -94,5 +94,13 @@ describe('sales KPI HTTP access and version selection', () => {
     const body = { kind: 'renewal', cycleKey: '2026-10', referralInitiated: false, reason: 'Confirmed renewal' };
     expect((await request(app).patch(`${path}/payments/10`).send(body)).status).toBe(200);
     expect(mocks.review).toHaveBeenCalledWith({ id: 7, isAdministration: false }, 10, body);
+  });
+  it('claims for the authenticated closer, never a caller-supplied employee, and retires manual handoff', async () => {
+    mocks.handoff.mockResolvedValue({ id: 10 });
+    const app = appFor();
+    expect((await request(app).post(`${path}/leads/10/claim`).send({ closerId: 999 })).status).toBe(200);
+    expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10);
+    expect((await request(app).post(`${path}/leads/10/handoff`).send({ closerId: 999 })).status).toBe(410);
+    expect(mocks.handoff).toHaveBeenCalledTimes(1);
   });
 });

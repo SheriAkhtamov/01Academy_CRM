@@ -21,6 +21,9 @@ vi.mock('../server/db', () => ({
     connect: mocks.connect,
   },
 }));
+vi.mock('../server/infrastructure/sales-kpi/sales-workflow-context', () => ({
+  attachSalesWorkflow: async (actor: unknown) => actor,
+}));
 
 vi.mock('../server/middleware/auth.middleware', () => ({
   requireAuth: (req: any, _res: any, next: () => void) => {
@@ -165,7 +168,7 @@ describe('academy route logic boundaries', () => {
       expect(sql).toContain("demo.status IN ('scheduled', 'completed')");
       expect(sql).toContain("demo.scheduled_at <= timezone('UTC', now())");
       expect(sql).toContain('demo.scheduled_at >= $1 AND demo.scheduled_at < $2');
-      expect(sql).toContain('CASE WHEN lead.id IS NOT NULL THEN lead.manager_id ELSE student.manager_id END = $3');
+      expect(sql).toContain('COALESCE(trial.hunter_id, tracked.hunter_id, handoff.from_manager_id, lead.manager_id, student.manager_id) END = $3');
       expect(sql).not.toContain('academy_lead_stage_history');
       const row = { student_id: 10, lead_id: 20, student_name: 'Temur', contact_name: 'Parent', phone: '+998901234567',
         manager_id: 7, manager_name: 'Alice', course_name: 'Coding', school_name: 'Cyberpark', room_name: '101',
@@ -346,7 +349,7 @@ describe('academy route logic boundaries', () => {
     const periodMetricCall = mocks.poolQuery.mock.calls.find(([sql]) => (
       String(sql).includes('target_refusal_reason_counts AS')
     ));
-    expect(String(periodMetricCall?.[0])).toContain('AND lead.manager_id = $3');
+    expect(String(periodMetricCall?.[0])).toContain('THEN tracked.closer_id ELSE tracked.hunter_id');
     expect(periodMetricCall?.[1]?.[2]).toBe(7);
   });
 

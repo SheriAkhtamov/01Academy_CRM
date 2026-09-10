@@ -1,10 +1,13 @@
 import { apiRequest } from '@/lib/queryClient';
+import type { SalesFunnelRole } from '@shared/sales-funnel-workflow';
 
 export interface SalesFunnel {
   id: number;
   name: string;
   isActive: boolean;
   isDefault: boolean;
+  workflowRole?: SalesFunnelRole | null;
+  isPreferred?: boolean;
   leadCount: number;
   integrationCount: number;
   integrations: string[];

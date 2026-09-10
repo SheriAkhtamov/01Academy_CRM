@@ -1,3 +1,4 @@
+import { assertSalesFunnelAssignment } from './sales-funnel-policy';
 import {
   LEAD_STATUSES,
   addDays,
@@ -919,6 +920,7 @@ export const getLead = (id: number) =>
   queryOne(
     `SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, sc.name AS school_name,
         u.full_name AS manager_name,
+        (SELECT workflow_role FROM academy_sales_funnels WHERE id = l.funnel_id) AS funnel_role,
         archived_by_user.full_name AS archived_by_name,
         ${leadPhoneNumbersSelect('l')},
         ${leadChannelsSelect('l')},
@@ -1030,7 +1032,7 @@ export const updateLeadManagerRows = async (leads: Row[], managerId: number) => 
 
 export const syncLeadManagerRelations = async (
   leadId: number,
-  managerId: number,
+  managerId: number | null,
 ) => {
   await query(
     `UPDATE academy_students
@@ -1058,7 +1060,7 @@ export const syncLeadManagerRelations = async (
        AND status NOT IN ('done', 'accepted')`,
     [managerId, leadId],
   );
-  await syncLeadOwnedNotifications(managerId, [leadId]);
+  if (managerId !== null) await syncLeadOwnedNotifications(managerId, [leadId]);
 };
 
 export const syncLeadManagerAssignment = async (
@@ -1098,6 +1100,7 @@ export const reassignLead = async (
     if (!canAccessLeadRow(actor, lockedLead)) {
       throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
     }
+    await assertSalesFunnelAssignment(lockedLead.funnelId, lockedManager.id);
     if (Number(lockedLead.managerId) === Number(lockedManager.id)) {
       await syncLeadManagerRelations(Number(lockedLead.id), Number(lockedManager.id));
       return { ...lockedLead, managerName: lockedManager.fullName };

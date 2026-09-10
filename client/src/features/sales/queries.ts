@@ -19,4 +19,6 @@ export const invalidateSalesLeadData = (
 ) => Promise.all([
   invalidateSalesData(queryClient),
   invalidateLeadData(queryClient, leadId),
+  queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-kpi'] }),
+  queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] }),
 ]);

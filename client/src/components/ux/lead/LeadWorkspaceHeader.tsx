@@ -10,6 +10,7 @@ import type { leadMessageTarget } from '@/lib/leadContact';
 import { getInitials } from '@/lib/auth';
 
 interface LeadWorkspaceHeaderProps {
+  actionsDisabled?: boolean;
   lead: {
     contactName: string; statusCode: string; isArchived?: boolean;
     managerName?: string | null; sourceName?: string | null;
@@ -27,7 +28,7 @@ interface LeadWorkspaceHeaderProps {
 
 export function LeadWorkspaceHeader({
   lead, visiblePhoneNumbers, primaryPhone, messageTarget, statuses,
-  leadStatusName, onlinePbxCall, copyPhone, onNote, onTask,
+  leadStatusName, onlinePbxCall, copyPhone, onNote, onTask, actionsDisabled = false,
 }: LeadWorkspaceHeaderProps) {
   const { t } = useTranslation();
   return (
@@ -106,7 +107,7 @@ export function LeadWorkspaceHeader({
             type="button"
             size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
             variant="default"
-            disabled={onlinePbxCall.isPending}
+            disabled={actionsDisabled || onlinePbxCall.isPending}
             onClick={() => onlinePbxCall.startCall(primaryPhone)}
           >
             {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
@@ -117,7 +118,7 @@ export function LeadWorkspaceHeader({
             {t('callShort')}
           </Button>
         ) : null}
-        {messageTarget ? (
+        {messageTarget && !actionsDisabled ? (
           <Button asChild size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="outline">
             <a
               href={messageTarget.href}
@@ -130,11 +131,11 @@ export function LeadWorkspaceHeader({
             </a>
           </Button>
         ) : null}
-        <Button type="button" size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="ghost" onClick={onNote}>
+        <Button type="button" disabled={actionsDisabled} size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="ghost" onClick={onNote}>
           <MessageSquare data-icon="inline-start" />
           {t('leadWorkspaceNote')}
         </Button>
-        <Button type="button" size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="ghost" onClick={onTask}>
+        <Button type="button" disabled={actionsDisabled} size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="ghost" onClick={onTask}>
           <Plus data-icon="inline-start" />
           {t('leadWorkspaceTask')}
         </Button>

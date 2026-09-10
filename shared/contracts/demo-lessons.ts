@@ -154,4 +154,12 @@ export type DemoLessonReschedule = z.infer<typeof demoLessonRescheduleSchema>;
 export type DemoLessonTeacherChange = z.infer<typeof demoLessonTeacherChangeSchema>;
 export type DemoLessonResourceAvailabilityRequest = z.infer<typeof demoLessonResourceAvailabilitySchema>;
 export type DemoNoShowReasonCode = typeof DEMO_NO_SHOW_REASON_CODES[number];
+export type LeadDemoParticipant = {
+  participantId: number; demoLessonId: number; studentId: number;
+  studentName: string | null; courseName: string; scheduledAt: string;
+  status: typeof DEMO_PARTICIPANT_STATUSES[number];
+  lessonStatus: typeof DEMO_LESSON_STATUSES[number];
+  managerId: number | null; attendanceManagerId: number | null;
+  funnelRole: 'hunter' | 'closer' | null; canManage: boolean;
+};
 export type DemoNotConductedReasonCode = typeof DEMO_NOT_CONDUCTED_REASON_CODES[number];

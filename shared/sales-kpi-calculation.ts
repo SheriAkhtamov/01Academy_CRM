@@ -33,11 +33,11 @@ export function calculateSalesKpi(
   const isOurs = (trial: KpiTrialFact) => (role === 'hunter' ? trial.hunterId : trial.closerId) === employeeId;
   const validTrials = facts.trials.filter((trial) => trial.status !== 'cancelled'
     && trial.lessonStatus !== 'cancelled' && trial.lessonStatus !== 'not_conducted');
-  // Keep the first confirmed booking per student/course. A reschedule or a
+  // Keep the first booking per student/course. A reschedule or a
   // second visit must not create another plan unit or attendance bonus.
   const firstBookings = uniqueBy([...validTrials].sort((a, b) => timestamp(b.bookedAt) - timestamp(a.bookedAt)), personCourse);
   const attended = validTrials.filter((trial) => trial.status === 'attended'
-    && trial.lessonStatus === 'completed' && timestamp(trial.scheduledAt) <= now);
+    && ['scheduled', 'completed'].includes(trial.lessonStatus) && timestamp(trial.scheduledAt) <= now);
   const firstAttendance = uniqueBy([...attended].sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt)), personCourse);
   const attendedByCourse = new Map(firstAttendance.map((trial) => [personCourse(trial), trial]));
   const bookings = firstBookings.filter((trial) => isOurs(trial) && inMonth(trial.bookedAt));

@@ -41,7 +41,7 @@ export async function readKpiFacts(employeeIds: number[], month: string, asOf: s
        JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
        JOIN academy_students student ON student.id = participant.student_id
        LEFT JOIN academy_sales_kpi_trials tracked ON tracked.participant_id = participant.id
-       WHERE participant.status IN ('confirmed', 'attended', 'no_show', 'cancelled')
+       WHERE participant.status IN ('invited', 'confirmed', 'attended', 'no_show', 'cancelled')
          AND participant.student_id IN (
            SELECT owned.student_id FROM academy_demo_lesson_participants owned
            JOIN academy_sales_kpi_trials owner ON owner.participant_id = owned.id

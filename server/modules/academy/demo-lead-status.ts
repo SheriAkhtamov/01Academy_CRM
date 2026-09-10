@@ -6,6 +6,7 @@ import {
 import { actorContextFrom, type ActorSource } from '../leads/domain/actor-context';
 import { createAudit, query, updateRow, type Row } from './academy-core';
 import { createStageHistory, handleLeadStatusEffects } from './academy-leads';
+import { prepareDemoFunnelHandoff } from './demo-funnel-handoff';
 
 // Call inside the demo transaction, BEFORE locking students. Payments and lead
 // lifecycle commands also lock parents before their children.
@@ -50,10 +51,11 @@ export const syncDemoLeadStatuses = async (
     // of the changed demo does, and an old edit cannot overrule a newer result.
     const latest = demos[0];
     const resultStage = latest ? demoAttendanceStage(latest.statuses, latest.status) : null;
-    const nextStatus = resultStage ?? (isDemoPipelineStage(lead.statusCode) ? 'demo_invited' : null);
-    if (!nextStatus) continue;
-    const demoAttended = resultStage === 'demo_attended';
-    if (lead.statusCode === nextStatus && lead.demoAttended === demoAttended) continue;
+    const resultStatus = resultStage ?? (isDemoPipelineStage(lead.statusCode) ? 'demo_invited' : null);
+    if (!resultStatus) continue;
+    const changes = await prepareDemoFunnelHandoff(source, lead, resultStatus, latest?.id ?? changedDemoId);
+    const { statusCode: nextStatus, demoAttended } = changes;
+    if (lead.statusCode === nextStatus && lead.demoAttended === demoAttended && changes.funnelId === undefined) continue;
 
     // Protected stages cannot disappear after migration. Check explicitly so a
     // misconfigured deployment rolls back attendance instead of orphaning leads.
@@ -65,10 +67,7 @@ export const syncDemoLeadStatuses = async (
     if (statuses.length === 0) {
       throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 409 });
     }
-    const updated = await updateRow('academy_leads', Number(lead.id), {
-      statusCode: nextStatus,
-      demoAttended,
-    });
+    const updated = await updateRow('academy_leads', Number(lead.id), changes);
     if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
     if (lead.statusCode !== nextStatus) {
       await createStageHistory(

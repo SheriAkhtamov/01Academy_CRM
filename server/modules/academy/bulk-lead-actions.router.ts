@@ -1,4 +1,5 @@
 import type { Router } from 'express';
+import { assertSalesFunnelStage } from './sales-funnel-policy';
 import {
   validateLeadForStatusChange,
   validateLeadStatusTransition,
@@ -182,6 +183,7 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
         }
         const changedLeads = leads.filter((lead) => String(lead.statusCode) !== statusCode);
         for (const lead of changedLeads) {
+          await assertSalesFunnelStage(lead.funnelId, statusCode);
           if (lead.isArchived) {
             throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeUpdate'), { statusCode: 409 });
           }

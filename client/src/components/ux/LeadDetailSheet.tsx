@@ -103,6 +103,8 @@ import {
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 import { KpiLeadOwnershipCard } from '@/features/sales-kpi/ui/KpiLeadOwnershipCard';
+import { LeadDemoAttendanceCard } from '@/features/leads/ui/LeadDemoAttendanceCard';
+import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
 import type { TelephonyCallStatus } from '@/lib/telephony';
@@ -110,6 +112,7 @@ import type { TelephonyCallStatus } from '@/lib/telephony';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 interface LeadDetails {
   id: number;
+  funnelRole?: SalesFunnelRole | null;
   contactName: string;
   courseId?: number | null;
   schoolId?: number | null;
@@ -387,6 +390,9 @@ export function LeadDetailSheet({
   const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
 
   const leadQuery = useLeadDetailsQuery<LeadDetails>(leadId, open);
+  const funnelStatuses = useMemo(() => salesFunnelStages(statuses, leadQuery.data?.funnelRole)
+    .map((status) => leadQuery.data?.funnelRole === 'closer' && status.code === 'demo_attended'
+      ? { ...status, name: t('closerQueueStage') } : status), [statuses, leadQuery.data?.funnelRole, t]);
 
   const leadForm = useForm<LeadFormValues>({
     resolver: zodResolver(leadSchema),
@@ -765,6 +771,7 @@ export function LeadDetailSheet({
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
   const lead = leadQuery.data;
+  const waitingForCloser = lead?.funnelRole === 'closer' && !lead.managerId;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
@@ -933,17 +940,20 @@ export function LeadDetailSheet({
           <>
             <LeadWorkspaceHeader
               lead={lead}
+              actionsDisabled={waitingForCloser}
               visiblePhoneNumbers={visiblePhoneNumbers}
               primaryPhone={primaryPhone}
               messageTarget={messageTarget}
-              statuses={statuses}
-              leadStatusName={leadStatusName}
+              statuses={funnelStatuses}
+              leadStatusName={(code) => funnelStatuses.find((status) => status.code === code)?.name ?? leadStatusName(code)}
               onlinePbxCall={onlinePbxCall}
               copyPhone={copyPhone}
               onNote={() => navigateTo('activity', 'comment')}
               onTask={() => navigateTo('tasks', 'task')}
             />
 
+            <div className="shrink-0 px-4 py-3 sm:px-6"><KpiLeadOwnershipCard leadId={lead.id} beforeHandoff={unsavedGuard.requestAction} /></div>
+            <fieldset disabled={waitingForCloser} className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Tabs
               value={activeTab}
               onValueChange={(value) => navigateTo(value as LeadSheetTab)}
@@ -992,7 +1002,8 @@ export function LeadDetailSheet({
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
-                  <KpiLeadOwnershipCard leadId={lead.id} beforeHandoff={unsavedGuard.requestAction} onHandedOff={() => onOpenChange(false)} />
+                  {!lead.isArchived ? <LeadDemoAttendanceCard leadId={lead.id} dateTime={dateTime}
+                    beforeMark={unsavedGuard.requestAction} onTransferred={() => onOpenChange(false)} /> : null}
                   {!lead.isArchived ? (
                     <LeadNextAction
                       tasks={lead.tasks ?? []}
@@ -1245,7 +1256,7 @@ export function LeadDetailSheet({
                     <LeadArchiveActions
                   key={`${lead.id}-${Boolean(lead.isArchived)}`}
                   lead={lead}
-                  statuses={statuses}
+                  statuses={funnelStatuses}
                   canClaimUnassignedLead={canClaimUnassignedLead}
                   leadStatusName={leadStatusName}
                   onChanged={onChanged}
@@ -1709,6 +1720,7 @@ export function LeadDetailSheet({
                 </TabsContent>
               </div>
             </Tabs>
+            </fieldset>
             <LeadSaveBar
               key={lead.id}
               dirty={dealFormDirty}

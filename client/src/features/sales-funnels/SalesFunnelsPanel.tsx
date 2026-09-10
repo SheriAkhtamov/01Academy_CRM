@@ -127,7 +127,7 @@ export function SalesFunnelsPanel() {
     [funnels.data],
   );
   const activeTransferTargets = useMemo(
-    () => activeFunnels.filter((funnel) => funnel.id !== deleteTarget?.id),
+    () => activeFunnels.filter((funnel) => funnel.id !== deleteTarget?.id && funnel.workflowRole !== 'closer'),
     [activeFunnels, deleteTarget?.id],
   );
   const deleteNeedsTransfer = Boolean(
@@ -273,8 +273,9 @@ export function SalesFunnelsPanel() {
             variant="ghost"
             size="icon"
             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={Boolean(funnel.workflowRole)}
             onClick={() => {
-              const firstTarget = (funnels.data ?? []).find((candidate) => candidate.isActive && candidate.id !== funnel.id);
+              const firstTarget = (funnels.data ?? []).find((candidate) => candidate.isActive && candidate.id !== funnel.id && candidate.workflowRole !== 'closer');
               setDeleteTarget(funnel);
               setTransferTargetId(firstTarget ? String(firstTarget.id) : '');
             }}
@@ -361,19 +362,18 @@ export function SalesFunnelsPanel() {
               <Switch
                 id="sales-funnel-active"
                 checked={draft.isActive}
-                disabled={editing?.isDefault === true || draft.integrations.length > 0}
+                disabled={Boolean(editing?.workflowRole) || editing?.isDefault === true || draft.integrations.length > 0}
                 onCheckedChange={(isActive) => setDraft((current) => ({ ...current, isActive }))}
               />
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
               <div>
                 <Label htmlFor="sales-funnel-default">{t('salesFunnelDefault')}</Label>
-                <p className="mt-1 text-xs text-muted-foreground">{t('salesFunnelDefaultDescription')}</p>
               </div>
               <Switch
                 id="sales-funnel-default"
                 checked={draft.isDefault}
-                disabled={editing?.isDefault === true}
+                disabled={editing?.isDefault === true || (funnels.data ?? []).some((funnel) => funnel.workflowRole === 'hunter')}
                 onCheckedChange={(isDefault) => setDraft((current) => ({
                   ...current,
                   isDefault,
@@ -390,9 +390,6 @@ export function SalesFunnelsPanel() {
             <div className="space-y-3">
               <div>
                 <p className="text-sm font-medium text-foreground">{t('funnelIntegrations')}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t('leadSourceDistributionDescription')}
-                </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {leadSourceProviders.map(({ provider, Icon }) => {
@@ -416,7 +413,7 @@ export function SalesFunnelsPanel() {
                       <Switch
                         id={`sales-funnel-source-${provider}`}
                         checked={isSelected}
-                        disabled={isLockedToDefault}
+                        disabled={isLockedToDefault || editing?.workflowRole === 'closer'}
                         onCheckedChange={(checked) => setDraft((current) => ({
                           ...current,
                           isActive: checked ? true : current.isActive,

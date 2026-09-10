@@ -169,10 +169,10 @@ export type KpiPlanSettings = {
 export type KpiLeadOwnership = {
   hunter: { id: number; name: string } | null;
   closer: { id: number; name: string } | null;
-  canHandoff: boolean;
+  inCloserQueue: boolean;
+  canClaim: boolean;
   canRecordOffer: boolean;
   offerAt: string | null;
-  closers: { id: number; name: string }[];
 };
 export const kpiSaleReviewSchema = z.object({
   kind: z.enum(['new', 'renewal', 'upsell', 'installment']),

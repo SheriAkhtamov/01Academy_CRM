@@ -14,6 +14,10 @@ const studentDialog = readFileSync(
   new URL('../client/src/components/ux/CreateLeadStudentDialog.tsx', import.meta.url),
   'utf8',
 );
+const leadStudentsCard = readFileSync(
+  new URL('../client/src/components/ux/lead/LeadStudentsCard.tsx', import.meta.url),
+  'utf8',
+);
 const leadsApi = readFileSync(
   new URL('../client/src/features/leads/api.ts', import.meta.url),
   'utf8',
@@ -40,18 +44,20 @@ describe('lead and student UX separation', () => {
     expect(leadSheet).toContain('channels={lead.channels}');
   });
 
-  it('provides an explicit multi-student creation flow with group enrollment', () => {
-    expect(leadSheet).toContain('<CreateLeadStudentDialog');
+  it('provides an explicit multi-student creation flow with optional group enrollment', () => {
+    expect(leadSheet).toContain('<LeadStudentsCard');
+    expect(leadStudentsCard).toContain('<CreateLeadStudentDialog');
     expect(studentDialog).toContain('groupIds: z.array(z.string())');
-    expect(studentDialog).toContain('value.groupIds.length === 0');
+    expect(studentDialog).toContain('value.groupIds.length > 0');
     expect(studentDialog).toContain('leadsApi.createStudent<CreatedLeadStudent>');
     expect(leadsApi).toContain('`/api/academy/leads/${leadId}/students`');
-    expect(studentDialog).toContain('primaryGroupId: values.demoOnly ? null : Number(values.primaryGroupId)');
+    expect(studentDialog).toContain("t('studentGroupCanBeAssignedLater')");
+    expect(studentDialog).toContain('values.demoOnly || !values.primaryGroupId ? null : Number(values.primaryGroupId)');
     expect(studentDialog).toContain("t('createAndAddAnotherStudent')");
     expect(studentDialog).toContain('createAnother: true');
   });
 
-  it('allows a group-free trial profile only for demo enrollment', () => {
+  it('allows regular and demo student profiles to be created without a group', () => {
     expect(createLeadStudentRequestSchema.safeParse({
       studentName: 'Trial child',
       demoOnly: true,
@@ -60,7 +66,19 @@ describe('lead and student UX separation', () => {
       studentName: 'Regular child',
       groupIds: [],
       demoOnly: false,
+    }).success).toBe(true);
+    expect(createLeadStudentRequestSchema.safeParse({
+      studentName: 'Invalid primary group',
+      groupIds: [2],
+      primaryGroupId: 3,
     }).success).toBe(false);
+  });
+
+  it('opens student group editing from every student in the lead modal', () => {
+    expect(leadStudentsCard).toContain("t('edit')");
+    expect(leadStudentsCard).toContain('<StudentDetailSheet');
+    expect(leadStudentsCard).toContain('initialTab="schedule"');
+    expect(leadStudentsCard).toContain('studentsApi.addGroup');
   });
 
   it('keeps telephony above page content but below dialogs and sheets', () => {

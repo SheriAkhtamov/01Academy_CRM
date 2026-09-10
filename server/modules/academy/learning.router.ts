@@ -93,6 +93,7 @@ import {
   ensureLeadMutationAccess,
   ensureOperationsAccess,
   ensureModuleAccess,
+  getActiveLeadStatus,
   insertRow,
   nullableText,
   parseId,
@@ -103,7 +104,9 @@ import {
   withTransaction,
 } from './academy-core';
 import {
+  createStageHistory,
   getLead,
+  handleLeadStatusEffects,
   recalculateStudentMetrics,
   validateEnrollmentGroup,
 } from './academy-leads';
@@ -738,15 +741,15 @@ router.post('/students/:id/groups', async (req, res) => {
     }
     const initialStudent = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
     if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+    const initialLead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
     if (!hasLeadershipAccess(req.user)) {
-      const lead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
-      if (!lead || !ensureLeadMutationAccess(req, res, lead)) return;
+      if (!initialLead || !ensureLeadMutationAccess(req, res, initialLead)) return;
     }
 
     const student = await withTransaction(async () => {
-      if (initialStudent.leadId) {
-        await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId]);
-      }
+      const lockedLead = initialStudent.leadId
+        ? await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId])
+        : null;
       const lockedStudent = await queryOne(
         `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
         [studentId],
@@ -792,11 +795,28 @@ router.post('/students/:id/groups', async (req, res) => {
           nextPaymentAt: activatesTrialStudent ? addDays(enrolledAt, 30) : lockedStudent.nextPaymentAt,
         });
         if (lockedStudent.leadId) {
-          await updateRow('academy_leads', Number(lockedStudent.leadId), {
+          const leadUpdates: Row = {
             enrolledGroupId: groupId,
             courseId: Number(group.courseId),
             schoolId: Number(group.schoolId),
-          });
+          };
+          if (activatesTrialStudent && lockedLead && !['enrolled', 'paid'].includes(String(lockedLead.statusCode))) {
+            const enrolledStatus = await getActiveLeadStatus('enrolled');
+            if (!enrolledStatus) {
+              throw Object.assign(new Error('enrolledLeadStatusUnavailable'), { statusCode: 409 });
+            }
+            leadUpdates.statusCode = 'enrolled';
+          }
+          await updateRow('academy_leads', Number(lockedStudent.leadId), leadUpdates);
+          if (leadUpdates.statusCode === 'enrolled' && lockedLead) {
+            await createStageHistory(
+              Number(lockedStudent.leadId),
+              String(lockedLead.statusCode),
+              'enrolled',
+              req.user!.id,
+              `Ученик зачислен в группу: ${String(group.name ?? groupId)}`,
+            );
+          }
         }
         if (previousGroupId !== groupId) {
           await insertRow('academy_student_transfers', {
@@ -821,6 +841,12 @@ router.post('/students/:id/groups', async (req, res) => {
       }
       return lockedStudent;
     });
+    if (initialLead) {
+      const updatedLead = await getLead(Number(initialLead.id));
+      if (updatedLead && String(updatedLead.statusCode) !== String(initialLead.statusCode)) {
+        await handleLeadStatusEffects(req.actor!, updatedLead, String(initialLead.statusCode));
+      }
+    }
     res.status(201).json(student);
   } catch (error: any) {
     logger.error('Failed to add student group', { error });

@@ -22,7 +22,7 @@ import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadNextAction } from '@/components/ux/lead/LeadNextAction';
-import { CreateLeadStudentDialog } from '@/components/ux/CreateLeadStudentDialog';
+import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
@@ -50,7 +50,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -73,7 +72,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { getInitials } from '@/lib/auth';
 import {
   compactPhoneNumbers,
   isSyntheticInstagramPhone,
@@ -101,7 +99,6 @@ import {
   Trash2,
   UserRound,
   GraduationCap,
-  Users,
   Wallet,
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
@@ -131,12 +128,19 @@ interface LeadDetails {
   students?: Array<{
     id: number;
     managerId?: number | null;
+    contactName?: string | null;
     studentName?: string | null;
     studentAge?: number | null;
     phone?: string | null;
     status: string;
+    courseId?: number | null;
     courseName?: string | null;
+    schoolId?: number | null;
     schoolName?: string | null;
+    attendancePercent?: number;
+    progressPercent?: number;
+    nextPaymentAt?: string | null;
+    createdAt?: string | null;
     groups?: Array<{
       groupId: number;
       groupName: string;
@@ -1127,64 +1131,20 @@ export function LeadDetailSheet({
                           </CardContent>
                         </Card>
 
-                        <Card ref={studentsCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden shadow-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                          <CardHeader className="flex flex-col items-start justify-between gap-3 space-y-0 sm:flex-row">
-                            <div>
-                              <CardTitle className="flex items-center gap-2 text-base">
-                                <GraduationCap className="size-4 text-muted-foreground" aria-hidden="true" />
-                                {t('students')}
-                                <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
-                              </CardTitle>
-                              <p className="mt-1 text-sm text-muted-foreground">{t('leadStudentsHint')}</p>
-                            </div>
-                            <Button type="button" size="sm" onClick={() => setCreateStudentOpen(true)}>
-                              <Plus data-icon="inline-start" />
-                              {t('createStudent')}
-                            </Button>
-                          </CardHeader>
-                          <CardContent className="p-0">
-                            {(lead.students ?? []).length === 0 ? (
-                              <div className="flex flex-col items-center px-6 py-8 text-center">
-                                <span className="mb-3 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                                  <Users className="size-5" />
-                                </span>
-                                <p className="font-medium">{t('noStudentsForLead')}</p>
-                                <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('noStudentsForLeadHint')}</p>
-                              </div>
-                            ) : (
-                              <div className="divide-y divide-border">
-                                {lead.students?.map((student) => {
-                                  const studentGroups = student.groups ?? [];
-                                  return (
-                                    <div key={student.id} className="flex items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/30">
-                                      <Avatar className="size-10 border border-border bg-primary/5">
-                                        <AvatarFallback className="text-primary">{getInitials(student.studentName || t('student'))}</AvatarFallback>
-                                      </Avatar>
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <p className="font-medium">{student.studentName || t('student')}</p>
-                                          {student.studentAge ? <Badge variant="outline">{t('ageLabel')} {student.studentAge}</Badge> : null}
-                                        </div>
-                                        <p className="mt-1 text-sm text-muted-foreground">
-                                          {[student.courseName, student.schoolName, student.phone].filter(Boolean).join(' · ') || t('noData')}
-                                        </p>
-                                        {studentGroups.length > 0 ? (
-                                          <div className="mt-2 flex flex-wrap gap-1.5">
-                                            {studentGroups.map((group) => (
-                                              <Badge key={group.groupId} variant={group.isPrimary ? 'secondary' : 'outline'}>
-                                                {group.groupName}
-                                              </Badge>
-                                            ))}
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                        <LeadStudentsCard
+                          cardRef={studentsCardRef}
+                          createStudentOpen={createStudentOpen}
+                          onCreateStudentOpenChange={setCreateStudentOpen}
+                          lead={lead}
+                          groups={groups}
+                          dateTime={dateTime}
+                          onRefresh={async () => {
+                            hydratedTransientKey.current = null;
+                            await leadQuery.refetch();
+                            onChanged();
+                          }}
+                          onRecordPayment={() => setActiveTab('payment')}
+                        />
 
                         <Card ref={detailsCardRef} tabIndex={-1} className="scroll-mt-4 shadow-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                           <CardHeader>
@@ -1815,20 +1775,6 @@ export function LeadDetailSheet({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {lead ? (
-        <CreateLeadStudentDialog
-          open={createStudentOpen}
-          onOpenChange={setCreateStudentOpen}
-          leadId={lead.id}
-          contactName={lead.contactName}
-          groups={groups}
-          onCreated={async () => {
-            hydratedTransientKey.current = null;
-            await leadQuery.refetch();
-            onChanged();
-          }}
-        />
-      ) : null}
       {lead ? (
         <DemoLessonEnrollmentDialog
           open={demoEnrollmentOpen}

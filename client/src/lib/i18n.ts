@@ -803,8 +803,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   contactInformation: { en: 'Contact information', ru: 'Информация о контакте' },
   createStudent: { en: 'Create student', ru: 'Создать ученика' },
   createStudentForContact: {
-    en: 'Create a separate student profile linked to {name}. A contact can have several students.',
-    ru: 'Создайте отдельную карточку ученика для контакта «{name}». У одного контакта может быть несколько учеников.',
+    en: 'Create a separate student profile linked to {name}. You can assign a group now or later.',
+    ru: 'Создайте отдельную карточку ученика для контакта «{name}». Группу можно назначить сейчас или позже.',
   },
   enrollmentDate: { en: 'Enrollment date', ru: 'Дата зачисления' },
   invalidStudentAge: { en: 'Enter an age from 1 to 120', ru: 'Укажите возраст от 1 до 120 лет' },
@@ -826,6 +826,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   studentCreatedFromLead: {
     en: 'The profile is linked to the contact and enrolled in the selected groups.',
     ru: 'Карточка привязана к контакту, ученик зачислен в выбранные группы.',
+  },
+  studentCreatedWithoutGroup: {
+    en: 'The profile is linked to the contact. You can assign a group later from the student card.',
+    ru: 'Карточка привязана к контакту. Группу можно назначить позже в карточке ученика.',
   },
   demoStudentCreatedFromLead: {
     en: 'The trial student profile is linked to the contact and ready for demo enrollment.',
@@ -1869,7 +1873,11 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   addStudentToGroup: { en: 'Enroll in group', ru: 'Зачислить в группу' },
   chooseGroup: { en: 'Choose a group', ru: 'Выберите группу' },
   studentGroups: { en: 'Student groups', ru: 'Группы ученика' },
-  chooseGroups: { en: 'Select one or more groups', ru: 'Выберите одну или несколько групп' },
+  chooseGroupsOptional: { en: 'Groups (optional)', ru: 'Группы (необязательно)' },
+  studentGroupCanBeAssignedLater: {
+    en: 'You can create the student without a group and assign one later.',
+    ru: 'Ученика можно создать без группы и назначить её позже.',
+  },
   primaryGroup: { en: 'Primary group', ru: 'Основная группа' },
   makePrimaryGroup: { en: 'Make primary', ru: 'Сделать основной' },
   removeFromGroup: { en: 'Remove', ru: 'Убрать' },

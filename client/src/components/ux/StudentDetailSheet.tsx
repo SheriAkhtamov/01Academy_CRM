@@ -40,10 +40,13 @@ import {
   Users,
 } from 'lucide-react';
 
+type StudentDetailTab = 'info' | 'schedule' | 'attendance' | 'progress' | 'portfolio' | 'payments' | 'nps' | 'referrals' | 'history';
+
 interface StudentDetailSheetProps {
   student: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialTab?: StudentDetailTab;
   onRecordPayment?: (leadId: number) => void;
   onUpdateStatus?: (studentId: number, status: string, exitReason?: string) => Promise<unknown>;
   onAddGroup?: (studentId: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
@@ -61,6 +64,7 @@ export function StudentDetailSheet({
   student,
   open,
   onOpenChange,
+  initialTab = 'info',
   onRecordPayment,
   onUpdateStatus,
   onAddGroup,
@@ -71,7 +75,7 @@ export function StudentDetailSheet({
   const { t, language } = useTranslation();
   const ceoCopy = useCeoCopy();
   const onlinePbxCall = useOnlinePbxCall();
-  const [activeTab, setActiveTab] = useState('info');
+  const [activeTab, setActiveTab] = useState<StudentDetailTab>(initialTab);
   const [statusDraft, setStatusDraft] = useState(String(student?.status ?? 'studying'));
   const [exitReason, setExitReason] = useState(String(student?.exitReason ?? ''));
   const [savingStatus, setSavingStatus] = useState(false);
@@ -87,11 +91,11 @@ export function StudentDetailSheet({
   }, [student]);
 
   useEffect(() => {
-    if (open) setActiveTab('info');
+    if (open) setActiveTab(initialTab);
     setSelectedGroupId('');
     setConfirmRemoveGroupId(null);
     setConfirmStatus(null);
-  }, [open, student?.id]);
+  }, [initialTab, open, student?.id]);
 
   /*
     Seed the status drafts from server data without wiping an in-progress edit:
@@ -278,7 +282,7 @@ export function StudentDetailSheet({
         </SheetHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudentDetailTab)}>
           <TabsList className="grid grid-cols-3 h-auto mb-4">
             {tabs.map((tab) => {
               const Icon = tab.icon;

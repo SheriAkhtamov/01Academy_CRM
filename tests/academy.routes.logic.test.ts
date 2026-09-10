@@ -1598,6 +1598,80 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
+  it('enrolls a group-free student and advances the linked lead when the first group is added', async () => {
+    const initialLead = leadFixture({ status_code: 'qualified' });
+    const enrolledLead = leadFixture({
+      status_code: 'enrolled',
+      enrolled_group_id: 20,
+      course_id: 9,
+      school_id: 4,
+    });
+    let leadReadCount = 0;
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: null, status: 'trial' }] };
+      }
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        leadReadCount += 1;
+        return { rows: [leadReadCount === 1 ? initialLead : enrolledLead] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [initialLead] };
+      }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: null, status: 'trial' }] };
+      }
+      if (sql.includes('SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 20 }] };
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) {
+        return { rows: [{ id: 20, name: 'Group 20', status: 'open', max_students: 12, course_id: 9, school_id: 4 }] };
+      }
+      if (sql.includes('AS resources_active')) return { rows: [{ resources_active: true }] };
+      if (sql.includes('COUNT(DISTINCT s.id)::int AS current_students')) {
+        return { rows: [{ current_students: 0, reserved_students: 0, max_students: 12 }] };
+      }
+      if (sql.includes('SELECT code') && sql.includes('FROM academy_lead_statuses')) {
+        return { rows: [{ code: 'enrolled' }] };
+      }
+      if (sql.includes('UPDATE "academy_students"') && sql.includes('"group_id"')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: 20, status: 'studying' }] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [enrolledLead] };
+      if (sql.includes('INSERT INTO "academy_student_transfers"')) return { rows: [{ id: 1 }] };
+      if (sql.includes('INSERT INTO "academy_student_status_history"')) return { rows: [{ id: 2 }] };
+      if (sql.includes('INSERT INTO "academy_lead_stage_history"')) return { rows: [{ id: 3 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/students/5/groups')
+      .send({ groupId: 20 });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_students"')
+      && String(sql).includes('"status" =')
+      && String(sql).includes('"group_id" =')
+    ))).toBe(true);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"')
+      && String(sql).includes('"status_code" =')
+      && String(sql).includes('"enrolled_group_id" =')
+    ))).toBe(true);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_lead_stage_history"')
+    ))).toBe(true);
+    expect(mocks.poolQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_payments"')
+    ))).toBe(true);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('adds a secondary group directly to an unpaid lead without replacing its primary group', async () => {
     const lead = leadFixture({ enrolled_group_id: 10 });
     mocks.poolQuery.mockImplementation(async (sql: string) => {
@@ -2103,6 +2177,65 @@ describe('academy route logic boundaries', () => {
         studentName: 'Trial child',
         studentAge: 8,
         demoOnly: true,
+      });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    const studentInsert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO "academy_students"'));
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'status')).toBe('trial');
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'group_id')).toBeNull();
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'next_payment_at')).toBeNull();
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO academy_student_group_enrollments')
+    ))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"') && String(sql).includes('"status_code"')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('creates a regular student without a group and keeps the lead ready for later enrollment', async () => {
+    const lead = leadFixture({
+      status_code: 'qualified',
+      phone: '+998901234567',
+      course_id: 3,
+      school_id: 2,
+      is_archived: false,
+    });
+    const student = {
+      id: 79,
+      lead_id: 42,
+      student_name: 'Future student',
+      student_age: 9,
+      group_id: null,
+      course_id: 3,
+      school_id: 2,
+      status: 'trial',
+    };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [lead] };
+      }
+      if (sql.includes('FROM academy_students student') && sql.includes('WHERE student.id = $1')) {
+        return { rows: [{ ...student, groups: [] }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [lead] };
+      if (sql.includes('SELECT COUNT(*)::int AS count FROM academy_students')) return { rows: [{ count: 0 }] };
+      if (sql.includes('INSERT INTO "academy_students"')) return { rows: [student] };
+      if (sql.includes('INSERT INTO "academy_student_status_history"')) return { rows: [{ id: 91 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads/42/students')
+      .send({
+        studentName: 'Future student',
+        studentAge: 9,
+        groupIds: [],
+        demoOnly: false,
       });
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);

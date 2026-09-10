@@ -60,14 +60,11 @@ const studentSchema = z.object({
   enrolledAt: z.string(),
   demoOnly: z.boolean(),
 }).superRefine((value, context) => {
-  if (value.demoOnly) return;
-  if (value.groupIds.length === 0) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['groupIds'],
-    });
-  }
-  if (!value.primaryGroupId || !value.groupIds.includes(value.primaryGroupId)) {
+  if (
+    !value.demoOnly
+    && value.groupIds.length > 0
+    && (!value.primaryGroupId || !value.groupIds.includes(value.primaryGroupId))
+  ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['primaryGroupId'],
@@ -153,8 +150,8 @@ export function CreateLeadStudentDialog({
         studentAge: values.studentAge ? Number(values.studentAge) : null,
         phone: values.phone || null,
         groupIds: values.demoOnly ? [] : values.groupIds.map(Number),
-        primaryGroupId: values.demoOnly ? null : Number(values.primaryGroupId),
-        enrolledAt: values.demoOnly ? null : values.enrolledAt,
+        primaryGroupId: values.demoOnly || !values.primaryGroupId ? null : Number(values.primaryGroupId),
+        enrolledAt: values.demoOnly || values.groupIds.length === 0 ? null : values.enrolledAt,
         demoOnly: values.demoOnly,
       },
     ),
@@ -165,7 +162,9 @@ export function CreateLeadStudentDialog({
         title: t('studentCreated'),
         description: purpose === 'demo'
           ? t('demoStudentCreatedFromLead')
-          : t('studentCreatedFromLead'),
+          : variables.values.groupIds.length > 0
+            ? t('studentCreatedFromLead')
+            : t('studentCreatedWithoutGroup'),
       });
       if (!variables.createAnother) {
         onOpenChange(false);
@@ -253,7 +252,7 @@ export function CreateLeadStudentDialog({
                 </FormItem>
               )}
             />
-            {purpose === 'enrollment' ? (
+            {purpose === 'enrollment' && selectedGroupIds.length > 0 ? (
               <FormField
                 control={form.control}
                 name="enrolledAt"
@@ -268,7 +267,7 @@ export function CreateLeadStudentDialog({
 
             {purpose === 'enrollment' ? <div className="md:col-span-2">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <FormLabel>{t('chooseGroups')}</FormLabel>
+                <FormLabel>{t('chooseGroupsOptional')}</FormLabel>
                 <Badge variant="secondary">{t('selectedGroupsCount').replace('{count}', String(selectedGroupIds.length))}</Badge>
               </div>
               <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-border bg-muted/20 p-2 md:grid-cols-2">
@@ -312,6 +311,7 @@ export function CreateLeadStudentDialog({
                   );
                 })}
               </div>
+              <p className="mt-2 text-sm text-muted-foreground">{t('studentGroupCanBeAssignedLater')}</p>
               {groupError ? <p className="mt-2 text-sm font-medium text-destructive">{t('studentGroupRequired')}</p> : null}
             </div> : null}
 
@@ -345,13 +345,13 @@ export function CreateLeadStudentDialog({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={createStudent.isPending || (purpose === 'enrollment' && availableGroups.length === 0)}
+                disabled={createStudent.isPending}
                 onClick={() => form.handleSubmit((values) => createStudent.mutate({ values, createAnother: true }))()}
               >
                 <Plus data-icon="inline-start" />
                 {t('createAndAddAnotherStudent')}
               </Button>
-              <Button type="submit" disabled={createStudent.isPending || (purpose === 'enrollment' && availableGroups.length === 0)}>
+              <Button type="submit" disabled={createStudent.isPending}>
                 {createStudent.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
                 {createStudent.isPending ? t('saving') : t('createStudent')}
               </Button>

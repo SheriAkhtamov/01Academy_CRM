@@ -162,15 +162,10 @@ export const createLeadStudentRequestSchema = z.object({
   demoOnly: z.boolean().optional().default(false),
   marketingConsent: z.boolean().optional(),
 }).superRefine((value, context) => {
-  if (value.demoOnly) return;
-  if (value.groupIds.length === 0) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['groupIds'],
-      message: 'studentGroupRequired',
-    });
-  }
-  if (!value.primaryGroupId || !value.groupIds.includes(value.primaryGroupId)) {
+  if (
+    value.groupIds.length > 0
+    && (!value.primaryGroupId || !value.groupIds.includes(value.primaryGroupId))
+  ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['primaryGroupId'],

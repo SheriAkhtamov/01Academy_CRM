@@ -33,7 +33,9 @@ export function SalesKpiOverview({ month, employees, loading, failed, onRetry }:
   const [metric, setMetric] = useState<KpiMetric | null>(null);
   const employee = employees.length === 1 ? employees[0] : null;
   const selected = employees.find((item) => item.id === selectedId);
-  const primaryIds: KpiMetricId[] = employee?.role === 'hunter' ? ['bookings', 'attendance', 'response'] : ['newStudents', 'trialConversion', 'renewalConversion'];
+  const primaryIds: KpiMetricId[] = employee?.role === 'hunter' ? ['bookings', 'attendance', 'response']
+    : employee?.role === 'full_cycle' ? ['bookings', 'attendance', 'newStudents']
+      : ['newStudents', 'trialConversion', 'renewalConversion'];
   const primary = primaryIds.flatMap((id) => employee?.calculation.metrics.find((item) => item.id === id) ?? []);
   if (!loading && !failed && !employees.length) return null;
   return <section className="min-w-0 border-b border-border/60 py-7 xl:col-span-12" aria-label={t('salesMonthPlan')}>

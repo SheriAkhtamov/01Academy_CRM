@@ -1,22 +1,31 @@
 import type { Control } from 'react-hook-form';
 import type { UserFormValues } from '@/features/employees/employeeFormSchema';
-import type { KpiEmployeeAssignment } from '@shared/sales-kpi';
+import type { KpiEmployeeAssignment, KpiRole } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { roleKeys } from '../copy';
 
-export function EmployeeKpiField({ control, assignment }: { control: Control<UserFormValues>; assignment?: KpiEmployeeAssignment | null }) {
+export function EmployeeKpiField({ control, assignment, onRoleChange }: {
+  control: Control<UserFormValues>;
+  assignment?: KpiEmployeeAssignment | null;
+  onRoleChange?: (role: KpiRole | null) => void;
+}) {
   const { t } = useTranslation();
   return <FormField control={control} name="salesKpiRole" render={({ field }) => (
     <FormItem className="rounded-xl border border-primary/20 bg-primary/5 p-4">
       <FormLabel>{t('kpiSystem')}</FormLabel>
-      <Select value={field.value ?? 'none'} onValueChange={(value) => field.onChange(value === 'none' ? null : value)}>
+      <Select value={field.value ?? 'none'} onValueChange={(value) => {
+        const role = value === 'none' ? null : value as KpiRole;
+        field.onChange(role);
+        onRoleChange?.(role);
+      }}>
         <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
         <SelectContent>
           <SelectItem value="none">{t('kpiNotAssigned')}</SelectItem>
           <SelectItem value="hunter">{t('kpiHunter')}</SelectItem>
           <SelectItem value="closer">{t('kpiCloser')}</SelectItem>
+          <SelectItem value="full_cycle">{t('kpiFullCycle')}</SelectItem>
         </SelectContent>
       </Select>
       <p className="text-xs leading-relaxed text-muted-foreground">{t('kpiAssignmentHint')}</p>

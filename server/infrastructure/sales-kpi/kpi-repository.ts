@@ -1,6 +1,6 @@
 import { pool } from '../../db';
 import type { PoolClient } from 'pg';
-import { kpiConfigSchema, type KpiConfig, type KpiPlanVersion, type KpiRole } from '@shared/sales-kpi';
+import { parseKpiPlanConfig, type KpiPlanConfig, type KpiPlanVersion, type KpiRole } from '@shared/sales-kpi';
 import { kpiMonth, nextKpiMonth } from '@shared/sales-kpi-time';
 import { readEmployeeKpiAssignments } from './employee-assignments';
 
@@ -21,7 +21,7 @@ export async function kpiTransaction<T>(fn: (client: PoolClient) => Promise<T>):
 type PlanRow = { id: number; role: KpiRole; effective_month: string; config: unknown; created_at: Date; created_by: number | null };
 const mapPlan = (row: PlanRow): KpiPlanVersion => ({
   id: row.id, role: row.role, effectiveMonth: row.effective_month,
-  config: kpiConfigSchema.parse(row.config), createdAt: row.created_at.toISOString(), createdBy: row.created_by,
+  config: parseKpiPlanConfig(row.role, row.config), createdAt: row.created_at.toISOString(), createdBy: row.created_by,
 });
 
 export async function listKpiPlans() {
@@ -34,12 +34,16 @@ export async function listKpiPlans() {
     minimumEffectiveMonth: {
       hunter: activeRoles.some((row) => row.role === 'hunter') ? nextKpiMonth(kpiMonth()) : kpiMonth(),
       closer: activeRoles.some((row) => row.role === 'closer') ? nextKpiMonth(kpiMonth()) : kpiMonth(),
+      full_cycle: activeRoles.some((row) => row.role === 'full_cycle') ? nextKpiMonth(kpiMonth()) : kpiMonth(),
     } };
 }
 
-export async function saveKpiPlan(actorId: number, role: KpiRole, config: KpiConfig, effectiveMonth: string, expectedVersionId: number) {
+const roleLock = (role: KpiRole) => role === 'hunter' ? 1 : role === 'closer' ? 2 : 3;
+
+export async function saveKpiPlan(actorId: number, role: KpiRole, config: KpiPlanConfig, effectiveMonth: string, expectedVersionId: number) {
   return kpiTransaction(async (client) => {
-    await client.query('SELECT pg_advisory_xact_lock(10402, $1)', [role === 'hunter' ? 1 : 2]);
+    const validatedConfig = parseKpiPlanConfig(role, config);
+    await client.query('SELECT pg_advisory_xact_lock(10402, $1)', [roleLock(role)]);
     const { rows: [last] } = await client.query<PlanRow>(
       'SELECT * FROM academy_sales_kpi_plans WHERE role = $1 ORDER BY id DESC LIMIT 1', [role],
     );
@@ -52,7 +56,7 @@ export async function saveKpiPlan(actorId: number, role: KpiRole, config: KpiCon
     if (effectiveMonth < minimum) throw kpiError(new Error('kpiFutureRulesRequired'));
     const { rows: [created] } = await client.query<PlanRow>(
       `INSERT INTO academy_sales_kpi_plans (role, effective_month, config, created_by)
-       VALUES ($1, $2, $3::jsonb, $4) RETURNING *`, [role, effectiveMonth, JSON.stringify(config), actorId],
+       VALUES ($1, $2, $3::jsonb, $4) RETURNING *`, [role, effectiveMonth, JSON.stringify(validatedConfig), actorId],
     );
     await client.query(`INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values)
       VALUES ($1, 'UPDATE_SALES_KPI_PLAN', 'sales_kpi_plan', $2, $3::jsonb, $4::jsonb)`,

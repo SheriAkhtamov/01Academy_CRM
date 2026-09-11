@@ -1,4 +1,4 @@
-import type { KpiCalculation, KpiConfig, KpiPayLine, KpiRole } from './sales-kpi';
+import type { KpiCalculation, KpiConfig, KpiPayLine, SingleKpiRole } from './sales-kpi';
 
 /** Each person is paid at exactly one marginal tier. */
 export function calculateKpiTiers(quantity: number, tiers: KpiConfig['tiers']): KpiPayLine[] {
@@ -17,7 +17,7 @@ export type KpiPayInput = {
 };
 
 /** Calculates salary and bonuses for the server KPI report. */
-export function calculateKpiPay(role: KpiRole, config: KpiConfig, input: KpiPayInput): KpiPayLine[] {
+export function calculateKpiPay(role: SingleKpiRole, config: KpiConfig, input: KpiPayInput): KpiPayLine[] {
   const conditions = Object.values(input.baseConditions);
   const baseStatus = config.baseSalaryMode === 'guaranteed' || conditions.every((value) => value === true)
     ? 'earned' : conditions.includes(false) ? 'not_met' : 'pending';

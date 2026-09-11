@@ -1,7 +1,7 @@
 import { Router, type Request, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import { kpiConfigSchema, kpiMonthSchema, kpiRoleSchema, kpiSaleReviewSchema, type KpiOverviewEmployee } from '@shared/sales-kpi';
+import { kpiMonthSchema, kpiRoleSchema, kpiSaleReviewSchema, parseKpiPlanConfig, type KpiOverviewEmployee } from '@shared/sales-kpi';
 import { calculateSalesKpi } from '@shared/sales-kpi-calculation';
 import { kpiMonth } from '@shared/sales-kpi-time';
 import { sendHttpError } from '../../../lib/http-errors';
@@ -37,8 +37,9 @@ export function createSalesKpiRouter() {
   router.get('/sales-kpi/plans', requireAdmin, endpoint(async (_req, res) => { res.json(await listKpiPlans()); }));
   router.post('/sales-kpi/plans/:role', requireAdmin, endpoint(async (req, res) => {
     const role = kpiRoleSchema.parse(req.params.role);
-    const input = z.object({ config: kpiConfigSchema, effectiveMonth: kpiMonthSchema, expectedVersionId: idSchema }).strict().parse(req.body);
-    res.status(201).json(await saveKpiPlan(req.user!.id, role, input.config, input.effectiveMonth, input.expectedVersionId));
+    const input = z.object({ config: z.unknown(), effectiveMonth: kpiMonthSchema, expectedVersionId: idSchema }).strict().parse(req.body);
+    const config = parseKpiPlanConfig(role, input.config);
+    res.status(201).json(await saveKpiPlan(req.user!.id, role, config, input.effectiveMonth, input.expectedVersionId));
   }));
   router.get('/sales-kpi/assignments', requireAdmin, endpoint(async (_req, res) => { res.json(await listKpiAssignments()); }));
   router.get('/sales-kpi/overview', endpoint(async (req, res) => {

@@ -1,7 +1,8 @@
 import type {
   KpiCalculation, KpiConfig, KpiDetail, KpiFacts, KpiLeadFact, KpiMetric,
-  KpiMetricId, KpiRole, KpiSaleFact, KpiTrialFact,
+  KpiMetricId, KpiPlanConfig, KpiRole, KpiSaleFact, KpiTrialFact, SingleKpiRole,
 } from './sales-kpi';
+import { isFullCycleKpiConfig } from './sales-kpi';
 import { calculateKpiPay } from './sales-kpi-pay';
 import { kpiDay, kpiMonthBounds, offerDeadline, workingMinutesBetween } from './sales-kpi-time';
 
@@ -20,8 +21,47 @@ const saleDetail = (sale: KpiSaleFact): KpiDetail => (
 );
 
 export function calculateSalesKpi(
-  role: KpiRole, employeeId: number, month: string, config: KpiConfig,
+  role: KpiRole, employeeId: number, month: string, config: KpiPlanConfig,
   facts: KpiFacts, asOf = new Date().toISOString(),
+): KpiCalculation {
+  if (role === 'full_cycle') {
+    if (!isFullCycleKpiConfig(config)) throw new Error('invalid full-cycle KPI config');
+    const hunter = calculateSingleSalesKpi('hunter', employeeId, month, config.hunter, facts, asOf);
+    const closer = calculateSingleSalesKpi('closer', employeeId, month, config.closer, facts, asOf);
+    const combineCondition = (left: boolean | null, right: boolean | null) => (
+      left === false || right === false ? false : left === null || right === null ? null : true
+    );
+    const crm = hunter.metrics.find((metric) => metric.id === 'crm')
+      ?? closer.metrics.find((metric) => metric.id === 'crm');
+    const metrics = [
+      ...hunter.metrics.filter((metric) => metric.id !== 'crm'),
+      ...(crm ? [crm] : []),
+      ...closer.metrics.filter((metric) => metric.id !== 'crm'),
+    ];
+    const payLines = [
+      ...hunter.payLines.map((line) => ({ ...line, phase: 'hunter' as const })),
+      ...closer.payLines.map((line) => ({ ...line, phase: 'closer' as const })),
+    ];
+    return {
+      metrics,
+      payLines,
+      totalUzs: payLines.reduce((sum, line) => sum + line.amountUzs, 0),
+      baseConditions: {
+        volume: hunter.baseConditions.volume && closer.baseConditions.volume,
+        crm: combineCondition(hunter.baseConditions.crm, closer.baseConditions.crm),
+        timing: combineCondition(hunter.baseConditions.timing, closer.baseConditions.timing),
+      },
+      reviewableSales: closer.reviewableSales,
+      unclassifiedSales: closer.unclassifiedSales,
+    };
+  }
+  if (isFullCycleKpiConfig(config)) throw new Error('invalid single-role KPI config');
+  return calculateSingleSalesKpi(role, employeeId, month, config, facts, asOf);
+}
+
+function calculateSingleSalesKpi(
+  role: SingleKpiRole, employeeId: number, month: string, config: KpiConfig,
+  facts: KpiFacts, asOf: string,
 ): KpiCalculation {
   const { start, end } = kpiMonthBounds(month);
   const now = timestamp(asOf);

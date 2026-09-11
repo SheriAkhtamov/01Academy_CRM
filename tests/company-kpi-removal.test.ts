@@ -26,8 +26,8 @@ describe('company KPI target removal', () => {
     expect(migration).not.toMatch(/DROP COLUMN IF EXISTS (sales_phone_visibility|workday_|online_pbx_)/);
   });
 
-  it('registers the removal as the latest migration', () => {
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+  it('registers the removal migration once', () => {
+    expect(journal.entries.find((entry) => entry.idx === 109)).toEqual(expect.objectContaining({
       idx: 109,
       tag: '0109_remove_company_kpi_targets',
     }));

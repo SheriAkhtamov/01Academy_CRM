@@ -1025,12 +1025,12 @@ export function LeadDetailSheet({
                         disabled={handoffLead.isPending}
                         onClick={() => unsavedGuard.requestAction(() => handoffLead.mutate(lead.id, {
                           onSuccess: () => {
-                            toast({ title: t('leadSentToCloserQueue') });
+                            toast({ title: t('leadAdvancedAfterTrial') });
                             onChanged();
                             onOpenChange(false);
                           },
                           onError: (error) => toast({
-                            title: t('leadCloserTransferFailed'),
+                            title: t('leadAdvanceAfterTrialFailed'),
                             description: error.message,
                             variant: 'destructive',
                           }),
@@ -1038,7 +1038,7 @@ export function LeadDetailSheet({
                       >
                         {handoffLead.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
                           : <ArrowRight data-icon="inline-start" />}
-                        {handoffLead.isPending ? t('saving') : t('sendLeadToClosers')}
+                        {handoffLead.isPending ? t('saving') : t('advanceLeadAfterTrial')}
                       </Button>
                     ) : null}
                     {!lead.isArchived && lead.statusCode !== 'paid' ? (

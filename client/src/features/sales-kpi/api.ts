@@ -1,9 +1,9 @@
 import { apiRequest } from '@/lib/queryClient';
-import type { KpiConfig, KpiLeadOwnership, KpiOverview, KpiPlanSettings, KpiPlanVersion, KpiRole, KpiSaleReview } from '@shared/sales-kpi';
+import type { KpiLeadOwnership, KpiOverview, KpiPlanConfig, KpiPlanSettings, KpiPlanVersion, KpiRole, KpiSaleReview } from '@shared/sales-kpi';
 
 const root = '/api/academy/sales-kpi';
 export const getKpiPlans = (): Promise<KpiPlanSettings> => apiRequest('GET', `${root}/plans`);
-export const saveKpiRules = (input: { role: KpiRole; config: KpiConfig; effectiveMonth: string; expectedVersionId: number }): Promise<KpiPlanVersion> => {
+export const saveKpiRules = (input: { role: KpiRole; config: KpiPlanConfig; effectiveMonth: string; expectedVersionId: number }): Promise<KpiPlanVersion> => {
   const { role, ...body } = input;
   return apiRequest('POST', `${root}/plans/${role}`, body);
 };

@@ -26,7 +26,7 @@ export const assertSalesFunnelAssignment = async (funnelId: unknown, managerId: 
   if (!result?.isAssigned) {
     throw Object.assign(new Error('salesFunnelNotAssigned'), { statusCode: 403 });
   }
-  if (result?.workflowRole === 'closer' && result.employeeRole !== 'closer') {
+  if (result?.workflowRole === 'closer' && !['closer', 'full_cycle'].includes(result.employeeRole ?? '')) {
     throw Object.assign(new Error('salesFunnelCloserOnly'), { statusCode: 403 });
   }
   if (result?.workflowRole === 'hunter' && result.employeeRole === 'closer') {

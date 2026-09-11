@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultKpiConfig, kpiConfigSchema, type KpiFacts, type KpiLeadFact, type KpiSaleFact, type KpiTrialFact } from '../shared/sales-kpi';
+import { defaultKpiConfig, defaultKpiPlanConfig, fullCycleKpiConfigSchema, kpiConfigSchema, type KpiFacts, type KpiLeadFact, type KpiSaleFact, type KpiTrialFact } from '../shared/sales-kpi';
 import { calculateSalesKpi } from '../shared/sales-kpi-calculation';
 import { calculateKpiPay, calculateKpiTiers, type KpiPayInput } from '../shared/sales-kpi-pay';
 import { kpiMonth, kpiMonthBounds, nextKpiMonth, offerDeadline, workingMinutesBetween } from '../shared/sales-kpi-time';
@@ -66,6 +66,24 @@ describe('sales KPI pay rules', () => {
 });
 
 describe('sales KPI attribution and month accounting', () => {
+  it('combines hunter and closer results for one full-cycle owner without duplicate metrics', () => {
+    const data = facts({
+      leads: [lead(1, { closerId: 7, firstResponseAt: at(7, '10:03'), crmCompletedAt: at(7, '10:04') })],
+      trials: [trial(1, { closerId: 7 })],
+      sales: [sale(1, { closerId: 7 })],
+    });
+    const config = fullCycleKpiConfigSchema.parse(defaultKpiPlanConfig('full_cycle'));
+    const result = calculateSalesKpi('full_cycle', 7, '2026-09', config, data, at(30, '23:59'));
+    const hunterResult = calculateSalesKpi('hunter', 7, '2026-09', config.hunter, data, at(30, '23:59'));
+    const closerResult = calculateSalesKpi('closer', 7, '2026-09', config.closer, data, at(30, '23:59'));
+    expect(result.metrics.find((item) => item.id === 'bookings')?.value).toBe(1);
+    expect(result.metrics.find((item) => item.id === 'newStudents')?.value).toBe(1);
+    expect(result.metrics.filter((item) => item.id === 'crm')).toHaveLength(1);
+    expect(new Set(result.metrics.map((item) => item.id)).size).toBe(result.metrics.length);
+    expect(new Set(result.payLines.map((line) => line.phase))).toEqual(new Set(['hunter', 'closer']));
+    expect(result.totalUzs).toBe(hunterResult.totalUzs + closerResult.totalUzs);
+  });
+
   it('counts one booking and attendance per student/course, preserving the original owner', () => {
     const data = facts({ trials: [trial(1), trial(2, { studentId: 1, hunterId: 9, bookedAt: at(4), scheduledAt: at(5), reactivated: true })] });
     const result = calc(data);

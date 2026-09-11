@@ -22,14 +22,14 @@ export function KpiSettingsPanel() {
   return <div className="space-y-7">
     <section aria-label={t('kpiEmployeePlans')} className="space-y-4">
       <h2 className="text-base font-semibold">{t('kpiEmployeePlans')}</h2>
-      {query.isPending ? <div className="grid gap-4 lg:grid-cols-2">{KPI_ROLES.map((role) => <div key={role} className="h-80 animate-pulse rounded-xl bg-muted" aria-busy="true" />)}</div>
+      {query.isPending ? <div className="grid gap-4 lg:grid-cols-2">{KPI_ROLES.map((role) => <div key={role} className={`h-80 animate-pulse rounded-xl bg-muted ${role === 'full_cycle' ? 'lg:col-span-2' : ''}`} aria-busy="true" />)}</div>
         : query.isError ? <div role="alert" className={`${overviewPanel} flex flex-wrap items-center justify-between gap-3 p-5 text-sm`}><p>{t('failedToLoadData')}</p><button type="button" className={overviewButton} onClick={() => query.refetch()}>{t('retry')}</button></div>
           : <div className="grid gap-5 lg:grid-cols-2">{KPI_ROLES.map((role) => {
             const roleVersions = versions.filter((version) => version.role === role);
             const current = roleVersions.find((version) => version.effectiveMonth <= currentMonth) ?? roleVersions[0];
             const latest = [...roleVersions].sort((a, b) => b.id - a.id)[0];
             const scheduled = roleVersions.find((version) => version.effectiveMonth > currentMonth);
-            return <article key={role} className={`${overviewPanel} flex flex-col`} aria-label={t(roleKeys[role])}>
+            return <article key={role} className={`${overviewPanel} flex flex-col ${role === 'full_cycle' ? 'lg:col-span-2' : ''}`} aria-label={t(roleKeys[role])}>
               <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 p-5">
                 <h3 className="text-lg font-semibold">{t(roleKeys[role])}</h3>
                 {latest ? <button type="button" className={`${overviewButton} bg-primary text-primary-foreground hover:bg-primary/90`} onClick={() => setEditing(latest)}><Settings2 className="size-4" aria-hidden="true" />{t('kpiEditPlan')}</button> : null}

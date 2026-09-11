@@ -78,14 +78,14 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) })).toBeTruthy();
   });
 
-  it('replaces the demo attendance block with one direct closer handoff action', async () => {
+  it('replaces the demo attendance block with one direct post-trial action', async () => {
     const { user, onOpenChange } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
 
     expect(screen.queryByRole('heading', { name: i18n.t('demoLesson') })).toBeNull();
     expect(screen.queryByText(i18n.t('demoParticipantAttended'))).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: i18n.t('sendLeadToClosers') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('advanceLeadAfterTrial') }));
     await waitFor(() => expect(requests).toContainEqual({
       url: '/api/academy/sales-kpi/leads/15/handoff',
       method: 'POST',

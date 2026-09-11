@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-export const KPI_ROLES = ['hunter', 'closer'] as const;
+export const SINGLE_KPI_ROLES = ['hunter', 'closer'] as const;
+export type SingleKpiRole = (typeof SINGLE_KPI_ROLES)[number];
+export const KPI_ROLES = [...SINGLE_KPI_ROLES, 'full_cycle'] as const;
 export type KpiRole = (typeof KPI_ROLES)[number];
 export const KPI_METRICS = [
   'response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation',
@@ -11,6 +13,8 @@ export type KpiMetricId = (typeof KPI_METRICS)[number];
 export const ROLE_METRICS: Record<KpiRole, KpiMetricId[]> = {
   hunter: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance'],
   closer: ['newStudents', 'trialConversion', 'offer', 'crm', 'renewals', 'renewalConversion', 'upsells', 'referrals', 'nps'],
+  full_cycle: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
+    'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'referrals', 'nps'],
 };
 
 const money = z.number().int().min(0).max(1_000_000_000);
@@ -60,8 +64,22 @@ export const kpiConfigSchema = z.object({
   });
 });
 export type KpiConfig = z.infer<typeof kpiConfigSchema>;
+export const fullCycleKpiConfigSchema = z.object({
+  hunter: kpiConfigSchema,
+  closer: kpiConfigSchema,
+}).strict();
+export type FullCycleKpiConfig = z.infer<typeof fullCycleKpiConfigSchema>;
+export type KpiPlanConfig = KpiConfig | FullCycleKpiConfig;
 
-export function defaultKpiConfig(role: KpiRole): KpiConfig {
+export const isFullCycleKpiConfig = (config: KpiPlanConfig): config is FullCycleKpiConfig => (
+  'hunter' in config && 'closer' in config
+);
+
+export const parseKpiPlanConfig = (role: KpiRole, config: unknown): KpiPlanConfig => (
+  role === 'full_cycle' ? fullCycleKpiConfigSchema.parse(config) : kpiConfigSchema.parse(config)
+);
+
+export function defaultKpiConfig(role: SingleKpiRole): KpiConfig {
   const hunter = role === 'hunter';
   return {
     baseSalaryUzs: hunter ? 3_000_000 : 3_500_000,
@@ -99,8 +117,14 @@ export function defaultKpiConfig(role: KpiRole): KpiConfig {
   };
 }
 
+export function defaultKpiPlanConfig(role: KpiRole): KpiPlanConfig {
+  return role === 'full_cycle'
+    ? { hunter: defaultKpiConfig('hunter'), closer: defaultKpiConfig('closer') }
+    : defaultKpiConfig(role);
+}
+
 export type KpiPlanVersion = {
-  id: number; role: KpiRole; effectiveMonth: string; config: KpiConfig;
+  id: number; role: KpiRole; effectiveMonth: string; config: KpiPlanConfig;
   createdAt: string; createdBy: number | null;
 };
 export type KpiAssignment = { role: KpiRole | null; effectiveMonth: string; createdAt: string };
@@ -148,7 +172,7 @@ export type KpiMetric = {
 export type KpiPayLine = {
   key: 'base' | 'variable' | 'tier' | 'quality' | 'reactivation' | 'renewal' | 'upsell' | 'referral';
   quantity: number; rateUzs: number; amountUzs: number;
-  status: 'earned' | 'not_met' | 'pending'; from?: number; to?: number;
+  status: 'earned' | 'not_met' | 'pending'; from?: number; to?: number; phase?: SingleKpiRole;
 };
 export type KpiCalculation = {
   metrics: KpiMetric[]; payLines: KpiPayLine[]; totalUzs: number;

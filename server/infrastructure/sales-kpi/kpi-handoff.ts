@@ -62,7 +62,7 @@ export async function recordKpiOffer(actor: KpiActor, source: ActorSource, leadI
 export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadId: number) {
   return withTransaction(async () => {
     const role = await queryOne<{ role: string | null }>('SELECT academy_kpi_employee_role($1) AS role', [actor.id]);
-    if (!actor.isAdministration && role?.role !== 'hunter') {
+    if (!actor.isAdministration && !['hunter', 'full_cycle'].includes(role?.role ?? '')) {
       throw kpiError(new Error('salesFunnelHunterOnly'), 403);
     }
 
@@ -93,22 +93,27 @@ export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadI
       [leadId, lead.funnelId, lead.managerId ?? null],
     );
 
+    const retainsOwner = role?.role === 'full_cycle' && !actor.isAdministration;
+    const nextManagerId = retainsOwner ? actor.id : null;
+    const historyComment = retainsOwner
+      ? 'Продолжил работу с лидом после пробного'
+      : 'Передан в очередь клозеров вручную';
     const updated = await updateRow('academy_leads', leadId, {
       funnelId: closerFunnel.id,
-      managerId: null,
+      managerId: nextManagerId,
       statusCode: 'demo_attended',
       firstViewedAt: null,
       firstViewedBy: null,
     });
     if (!updated) throw kpiError(new Error('resourceNotFound'), 404);
 
-    await syncLeadManagerRelations(leadId, null);
+    await syncLeadManagerRelations(leadId, nextManagerId);
     await insertRow('academy_lead_assignment_history', {
       leadId,
       fromManagerId: lead.managerId ?? null,
-      toManagerId: null,
+      toManagerId: nextManagerId,
       changedBy: actor.id,
-      comment: 'Передан в очередь клозеров вручную',
+      comment: historyComment,
     });
     if (String(lead.statusCode) !== 'demo_attended') {
       await createStageHistory(
@@ -116,19 +121,19 @@ export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadI
         String(lead.statusCode),
         'demo_attended',
         actor.id,
-        'Передан в очередь клозеров вручную',
+        historyComment,
       );
       await handleLeadStatusEffects(source, updated, String(lead.statusCode));
     }
     await createAudit(
       source,
-      'QUEUE_ACADEMY_CLOSER_LEAD',
+      retainsOwner ? 'CONTINUE_FULL_CYCLE_LEAD' : 'QUEUE_ACADEMY_CLOSER_LEAD',
       'academy_lead',
       leadId,
-      { funnelId: closerFunnel.id, managerId: null },
+      { funnelId: closerFunnel.id, managerId: nextManagerId },
       { funnelId: lead.funnelId, managerId: lead.managerId },
     );
-    return { id: Number(updated.id) };
+    return { id: Number(updated.id), mode: retainsOwner ? 'continue' : 'queue' };
   });
 }
 

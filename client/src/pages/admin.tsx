@@ -932,7 +932,16 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
                         {assignedModuleValues.includes('sales') ? (
                           <>
-                            <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} />
+                            <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi}
+                              onRoleChange={(role) => {
+                                if (role !== 'full_cycle') return;
+                                const workflowFunnelIds = salesFunnels.filter((funnel) => funnel.isActive && funnel.workflowRole)
+                                  .map((funnel) => funnel.id);
+                                userForm.setValue('salesFunnelIds', [...new Set([
+                                  ...userForm.getValues('salesFunnelIds'),
+                                  ...workflowFunnelIds,
+                                ])], { shouldDirty: true, shouldValidate: true });
+                              }} />
                             <FormField
                               control={userForm.control}
                               name="salesFunnelIds"

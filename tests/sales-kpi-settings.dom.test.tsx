@@ -3,7 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultKpiConfig, type KpiPlanSettings } from '../shared/sales-kpi';
+import { defaultKpiConfig, defaultKpiPlanConfig, type KpiPlanSettings } from '../shared/sales-kpi';
 import { translations, type TranslationKey } from '../client/src/lib/i18n';
 const hooks = vi.hoisted(() => ({ plans: vi.fn(), save: vi.fn() }));
 vi.mock('../client/src/features/sales-kpi/hooks', () => ({
@@ -16,7 +16,7 @@ vi.mock('../client/src/hooks/useTranslation', () => ({
 vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 import { KpiSettingsPanel } from '../client/src/features/sales-kpi/ui/KpiSettingsPanel';
 
-const settings = (): KpiPlanSettings => ({ currentMonth: '2026-09', minimumEffectiveMonth: { hunter: '2026-10', closer: '2026-10' },
+const settings = (): KpiPlanSettings => ({ currentMonth: '2026-09', minimumEffectiveMonth: { hunter: '2026-10', closer: '2026-10', full_cycle: '2026-09' },
   versions: [{ id: 2, role: 'hunter', config: defaultKpiConfig('hunter'), effectiveMonth: '2026-09', createdAt: '2026-09-01T00:00:00Z', createdBy: 1 }] });
 
 describe('sales KPI settings dialogs', () => {
@@ -75,18 +75,45 @@ describe('sales KPI settings dialogs', () => {
     expect((screen.getByLabelText(translations.kpiBaseSalary.en) as HTMLInputElement).value).toBe('-1');
   });
 
-  it('shows only both employee plans without an inline editor or technical copy', () => {
+  it('shows all three employee plans without an inline editor or technical copy', () => {
     const data = settings();
     data.versions.push({ ...data.versions[0], id: 3, role: 'closer', config: defaultKpiConfig('closer') });
+    data.versions.push({ ...data.versions[0], id: 4, role: 'full_cycle', config: defaultKpiPlanConfig('full_cycle') });
     hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
     render(<KpiSettingsPanel />);
     expect(screen.queryByRole('region', { name: /company goals/i })).toBeNull();
     expect(within(screen.getByRole('article', { name: translations.kpiHunter.en })).getByText('30')).toBeTruthy();
     expect(within(screen.getByRole('article', { name: translations.kpiCloser.en })).getByText('21')).toBeTruthy();
+    expect(screen.getByRole('article', { name: translations.kpiFullCycle.en })).toBeTruthy();
     expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByText(/version|tracking|retroactive|timezone|API|database/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /calculate salary|calculator/i })).toBeNull();
+  });
+
+  it('edits both phases of the full-cycle KPI in one modal and saves one combined plan', async () => {
+    const user = userEvent.setup();
+    const data = settings();
+    data.versions = [{ ...data.versions[0], id: 4, role: 'full_cycle', config: defaultKpiPlanConfig('full_cycle') }];
+    hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
+    render(<KpiSettingsPanel />);
+    await user.click(within(screen.getByRole('article', { name: translations.kpiFullCycle.en }))
+      .getByRole('button', { name: translations.kpiEditPlan.en }));
+    const dialog = screen.getByRole('dialog', { name: `${translations.kpiEditPlan.en} · ${translations.kpiFullCycle.en}` });
+    expect(within(dialog).getByRole('tab', { name: translations.kpiBeforeTrial.en })).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText(translations.kpiMonthlyBookings.en), { target: { value: '40' } });
+    await user.click(within(dialog).getByRole('tab', { name: translations.kpiAfterTrial.en }));
+    fireEvent.change(within(dialog).getByLabelText(translations.kpiMonthlyStudents.en), { target: { value: '25' } });
+    await user.click(within(dialog).getByRole('button', { name: translations.save.en }));
+    await waitFor(() => expect(hooks.save).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'full_cycle',
+      effectiveMonth: '2026-09',
+      expectedVersionId: 4,
+      config: {
+        hunter: { ...defaultKpiConfig('hunter'), volumeTarget: 40 },
+        closer: { ...defaultKpiConfig('closer'), volumeTarget: 25 },
+      },
+    })));
   });
 
   it('preserves edits across tabs and saves only after the explicit save action', async () => {

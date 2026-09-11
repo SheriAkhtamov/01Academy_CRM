@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultKpiConfig } from '../shared/sales-kpi';
+import { defaultKpiConfig, fullCycleKpiConfigSchema } from '../shared/sales-kpi';
 const db = vi.hoisted(() => ({ query: vi.fn(), connect: vi.fn(), release: vi.fn() }));
 vi.mock('../server/db', () => ({ pool: { query: db.query, connect: db.connect } }));
 import { listKpiPlans, saveKpiPlan } from '../server/infrastructure/sales-kpi/kpi-repository';
@@ -39,7 +39,7 @@ describe('sales KPI version and employee transactions', () => {
   });
   it('reports the same minimum month enforced by the plan writer', async () => {
     db.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM academy_sales_kpi_plans') ? [current] : [{ role: 'hunter' }] }));
-    expect((await listKpiPlans()).minimumEffectiveMonth).toEqual({ hunter: '2026-10', closer: '2026-09' });
+    expect((await listKpiPlans()).minimumEffectiveMonth).toEqual({ hunter: '2026-10', closer: '2026-09', full_cycle: '2026-09' });
   });
   it('assigns a first role this month and captures attribution in the supplied employee transaction', async () => {
     const executor = { query: db.query };
@@ -56,6 +56,18 @@ describe('sales KPI version and employee transactions', () => {
     const insert = db.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO academy_sales_kpi_assignments'));
     expect(insert?.[1]).toEqual([7, '2026-10', 'closer', 1]);
     expect(db.query.mock.calls.some(([sql]) => String(sql).includes('academy_kpi_touch_lead'))).toBe(false);
+  });
+  it('uses an independent plan lock for the full-cycle role', async () => {
+    const executor = { query: db.query };
+    await setEmployeeKpiAssignment(executor, 7, 'full_cycle', ['sales'], 1);
+    expect(db.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(10402, $1)', [3]);
+  });
+  it('parses a full-cycle plan as two complete role configurations', async () => {
+    const fullCycle = { hunter: defaultKpiConfig('hunter'), closer: defaultKpiConfig('closer') };
+    db.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM academy_sales_kpi_plans')
+      ? [{ ...current, id: 4, role: 'full_cycle', config: fullCycle }] : [] }));
+    const plans = await listKpiPlans();
+    expect(fullCycleKpiConfigSchema.safeParse(plans.versions[0].config).success).toBe(true);
   });
   it('schedules removal when sales access is removed and rejects assigning KPI without sales access', async () => {
     db.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('SELECT role, effective_month') ? [{ role: 'hunter', effective_month: '2026-09' }] : [] }));

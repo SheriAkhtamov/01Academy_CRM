@@ -24,10 +24,11 @@ const employee = (role: string, userId: number): ActorContext => ({ ...actorCont
     role,
     hunterFunnelId: 1,
     closerFunnelId: 2,
-    assignedFunnelIds: role === 'closer' ? [2] : [1, 3],
+    assignedFunnelIds: role === 'closer' ? [2] : role === 'full_cycle' ? [1, 2, 3] : [1, 3],
   } });
 const hunter = employee('hunter', 7);
 const closer = employee('closer', 8);
+const fullCycle = employee('full_cycle', 9);
 const lead = { id: 10, funnelId: 1, managerId: 7, statusCode: 'demo_invited' };
 
 describe('hunter/closer pipeline and permissions', () => {
@@ -48,6 +49,9 @@ describe('hunter/closer pipeline and permissions', () => {
     expect(canActorViewLead(closer, { ...queue, funnelId: 1 })).toBe(false);
     expect(canActorViewLead(hunter, { ...queue, funnelId: 3 })).toBe(true);
     expect(canActorViewLead(hunter, { ...queue, funnelId: 4 })).toBe(false);
+    expect(canActorViewLead(fullCycle, { ...queue, managerId: 9 })).toBe(true);
+    expect(canActorMutateLead(fullCycle, { ...queue, managerId: 9 })).toBe(true);
+    expect(canActorViewLead(fullCycle, { ...lead, managerId: 9 })).toBe(true);
     expect(actorContextFrom({ actor: closer } as never)).toBe(closer);
   });
   it('retains hunter attendance access after the queue handoff', () => {
@@ -72,7 +76,7 @@ describe('manual closer queue handoff', () => {
       .mockResolvedValueOnce({ ...lead, workflowRole: 'hunter' })
       .mockResolvedValueOnce({ id: 2 });
 
-    await expect(handoffKpiLead({ id: 7, isAdministration: false }, hunter, 10)).resolves.toEqual({ id: 10 });
+    await expect(handoffKpiLead({ id: 7, isAdministration: false }, hunter, 10)).resolves.toEqual({ id: 10, mode: 'queue' });
 
     expect(mocks.query.mock.calls[0]).toEqual(['SELECT academy_kpi_touch_lead($1)', [10]]);
     expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 10, {
@@ -107,5 +111,24 @@ describe('manual closer queue handoff', () => {
     await expect(handoffKpiLead({ id: 7, isAdministration: false }, hunter, 10))
       .rejects.toMatchObject({ message: 'accessDenied', statusCode: 403 });
     expect(mocks.updateRow).not.toHaveBeenCalled();
+  });
+
+  it('moves a full-cycle owner to the closer funnel without releasing the lead', async () => {
+    mocks.queryOne.mockResolvedValueOnce({ role: 'full_cycle' })
+      .mockResolvedValueOnce({ ...lead, managerId: 9, workflowRole: 'hunter' })
+      .mockResolvedValueOnce({ id: 2 });
+    mocks.updateRow.mockResolvedValueOnce({ id: 10, funnelId: 2, managerId: 9, statusCode: 'demo_attended' });
+
+    await expect(handoffKpiLead({ id: 9, isAdministration: false }, fullCycle, 10))
+      .resolves.toEqual({ id: 10, mode: 'continue' });
+    expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 10, expect.objectContaining({
+      funnelId: 2,
+      managerId: 9,
+    }));
+    expect(mocks.syncLeadManagerRelations).toHaveBeenCalledWith(10, 9);
+    expect(mocks.insertRow).toHaveBeenCalledWith('academy_lead_assignment_history', expect.objectContaining({
+      fromManagerId: 9,
+      toManagerId: 9,
+    }));
   });
 });

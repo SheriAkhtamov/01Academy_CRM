@@ -1,8 +1,8 @@
-import type { KpiConfig, KpiRole } from '@shared/sales-kpi';
+import type { KpiConfig, SingleKpiRole } from '@shared/sales-kpi';
 import type { TranslationKey } from '@/lib/i18n';
 
 export type KpiNumberField = { [K in keyof KpiConfig]: KpiConfig[K] extends number ? K : never }[keyof KpiConfig];
-type Field = { name: KpiNumberField; translationKey: TranslationKey; min?: number; max?: number; role?: KpiRole };
+type Field = { name: KpiNumberField; translationKey: TranslationKey; min?: number; max?: number; role?: SingleKpiRole };
 export type KpiPlanSection = 'targets' | 'pay' | 'work' | 'display';
 export const kpiPayFields: Field[] = [
   { name: 'baseSalaryUzs', translationKey: 'kpiBaseSalary' }, { name: 'variableSalaryUzs', translationKey: 'kpiVariableSalary' },
@@ -44,7 +44,7 @@ export function kpiSectionForField(name: string): KpiPlanSection {
   if (['tiers', 'baseSalaryMode', 'qualityThresholdInclusive'].includes(name) || kpiPlanFieldGroups.pay.some((field) => field.name === name)) return 'pay';
   return 'targets';
 }
-export function kpiFieldLabel(field: Field, role: KpiRole): TranslationKey {
+export function kpiFieldLabel(field: Field, role: SingleKpiRole): TranslationKey {
   if (field.name === 'minimumVolume') {
     if (role === 'hunter') return 'kpiMinimumBookings';
     return 'kpiMinimumStudents';

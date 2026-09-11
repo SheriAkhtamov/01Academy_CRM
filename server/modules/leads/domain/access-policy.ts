@@ -14,9 +14,10 @@ export const leadWorkflowRole = (actor: ActorContext, lead: LeadAccessRecord) =>
 export const canActorAccessFunnel = (actor: ActorContext, lead: LeadAccessRecord): boolean => {
   if (!lead.funnelId) return true;
   const role = leadWorkflowRole(actor, lead);
+  const employeeRole = actor.salesWorkflow?.role;
   const assigned = actor.salesWorkflow?.assignedFunnelIds?.includes(Number(lead.funnelId)) === true;
   return actor.isLeadership || Number(lead.managerId) === actor.userId || (assigned && (!role || (role === 'closer'
-    ? actor.salesWorkflow?.role === 'closer' : actor.salesWorkflow?.role !== 'closer')));
+    ? employeeRole === 'closer' || employeeRole === 'full_cycle' : employeeRole !== 'closer')));
 };
 
 export const actorHasModule = (

@@ -1,4 +1,4 @@
-import type { KpiConfig, KpiRole } from '@shared/sales-kpi';
+import { isFullCycleKpiConfig, type KpiConfig, type KpiPlanConfig, type KpiRole, type SingleKpiRole } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { kpiMoney, metricKeys } from '../copy';
 import { kpiDayKeys, kpiFieldLabel, kpiPlanFieldGroups, kpiPlanSectionKeys } from '../config-fields';
@@ -7,8 +7,9 @@ export const kpiMonthLabel = (month: string, language: string) => new Intl.DateT
   month: 'long', year: 'numeric', timeZone: 'UTC',
 }).format(new Date(`${month}-01T00:00:00Z`));
 
-export function KpiPlanSummary({ config, role, full = false }: { config: KpiConfig; role: KpiRole; full?: boolean }) {
+function SingleKpiPlanSummary({ config, kpiRole, full }: { config: KpiConfig; kpiRole: SingleKpiRole; full: boolean }) {
   const { t, language } = useTranslation();
+  const role = kpiRole;
   return <div className="space-y-5">
     <div className="grid grid-cols-2 gap-4 border-b border-border/60 pb-5">
       <div><p className="text-xs text-muted-foreground">{(role === 'hunter' ? t('kpiMonthlyBookings') : t('kpiMonthlyStudents'))}</p><p className="mt-2 text-3xl font-semibold tabular-nums">{config.volumeTarget}</p></div>
@@ -37,4 +38,22 @@ export function KpiPlanSummary({ config, role, full = false }: { config: KpiConf
       </dl>
     </div> : null}
   </div>;
+}
+
+export function KpiPlanSummary({ config, role, full = false }: { config: KpiPlanConfig; role: KpiRole; full?: boolean }) {
+  const { t } = useTranslation();
+  if (role === 'full_cycle' && isFullCycleKpiConfig(config)) {
+    return <div className="grid gap-6 xl:grid-cols-2">
+      <section className="space-y-3"><h4 className="text-sm font-semibold">{t('kpiBeforeTrial')}</h4>
+        <SingleKpiPlanSummary config={config.hunter} kpiRole="hunter" full={full} />
+      </section>
+      <section className="space-y-3"><h4 className="text-sm font-semibold">{t('kpiAfterTrial')}</h4>
+        <SingleKpiPlanSummary config={config.closer} kpiRole="closer" full={full} />
+      </section>
+    </div>;
+  }
+  if (!isFullCycleKpiConfig(config) && role !== 'full_cycle') {
+    return <SingleKpiPlanSummary config={config} kpiRole={role} full={full} />;
+  }
+  return null;
 }

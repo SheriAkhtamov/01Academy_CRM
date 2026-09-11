@@ -20,7 +20,8 @@ import {
 
 const funnelListSql = `
   SELECT funnel.*,
-         (funnel.workflow_role = academy_kpi_employee_role($1)) AS is_preferred,
+         (funnel.workflow_role = academy_kpi_employee_role($1)
+           OR academy_kpi_employee_role($1) = 'full_cycle' AND funnel.workflow_role IS NOT NULL) AS is_preferred,
          COUNT(DISTINCT lead.id) FILTER (WHERE lead.manager_id = $1)::int AS own_lead_count,
          COUNT(DISTINCT lead.id)::int AS lead_count,
          COUNT(DISTINCT assignment.user_id)::int AS employee_count,

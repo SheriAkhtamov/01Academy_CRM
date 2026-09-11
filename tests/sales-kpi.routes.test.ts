@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultKpiConfig, type KpiPlanVersion } from '../shared/sales-kpi';
+import { defaultKpiConfig, defaultKpiPlanConfig, type KpiPlanVersion } from '../shared/sales-kpi';
 
 const mocks = vi.hoisted(() => ({ employees: vi.fn(), plans: vi.fn(), save: vi.fn(), assignments: vi.fn(), facts: vi.fn(),
   claim: vi.fn(), handoff: vi.fn(), ownership: vi.fn(), offer: vi.fn(), review: vi.fn() }));
@@ -90,6 +90,15 @@ describe('sales KPI HTTP access and version selection', () => {
     expect((await request(app).post(`${path}/plans/hunter`).send(body)).status).toBe(201);
     expect(mocks.save).toHaveBeenCalledWith(7, 'hunter', body.config, '2026-10', 3);
     expect((await request(app).post(`${path}/plans/hunter`).send({ ...body, config: { ...body.config, baseSalaryUzs: -1 } })).status).toBe(400);
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+  it('accepts only a complete combined configuration for the full-cycle plan', async () => {
+    const app = appFor('administration');
+    const body = { config: defaultKpiPlanConfig('full_cycle'), effectiveMonth: '2026-09', expectedVersionId: 4 };
+    mocks.save.mockResolvedValue({ ...version(5, '2026-09', 0), role: 'full_cycle', config: body.config });
+    expect((await request(app).post(`${path}/plans/full_cycle`).send(body)).status).toBe(201);
+    expect(mocks.save).toHaveBeenCalledWith(7, 'full_cycle', body.config, '2026-09', 4);
+    expect((await request(app).post(`${path}/plans/full_cycle`).send({ ...body, config: defaultKpiConfig('hunter') })).status).toBe(400);
     expect(mocks.save).toHaveBeenCalledTimes(1);
   });
   it('requires a cycle and an audit reason when classifying a renewal', async () => {

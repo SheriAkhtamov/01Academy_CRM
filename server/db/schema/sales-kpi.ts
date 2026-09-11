@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { KpiConfig, KpiRole, KpiSaleKind } from '../../../shared/sales-kpi';
+import type { KpiPlanConfig, KpiRole, KpiSaleKind } from '../../../shared/sales-kpi';
 
 export function createSalesKpiTables(ref: {
   user: AnyPgColumn; lead: AnyPgColumn; participant: AnyPgColumn;
@@ -14,11 +14,11 @@ export function createSalesKpiTables(ref: {
   }, (t) => [check('academy_sales_kpi_meta_id_check', sql`${t.id} = 1`)]);
   const academySalesKpiPlans = pgTable('academy_sales_kpi_plans', {
     id: serial('id').primaryKey(), role: text('role').$type<KpiRole>().notNull(),
-    effectiveMonth: text('effective_month').notNull(), config: jsonb('config').$type<KpiConfig>().notNull(),
+    effectiveMonth: text('effective_month').notNull(), config: jsonb('config').$type<KpiPlanConfig>().notNull(),
     createdBy: owner('created_by'), createdAt: createdAt(),
   }, (t) => [
     index('academy_sales_kpi_plans_version_idx').on(t.role, t.effectiveMonth.desc(), t.id.desc()),
-    check('academy_sales_kpi_plans_role_check', sql`${t.role} IN ('hunter', 'closer')`),
+    check('academy_sales_kpi_plans_role_check', sql`${t.role} IN ('hunter', 'closer', 'full_cycle')`),
     check('academy_sales_kpi_plans_effective_month_check', sql`${t.effectiveMonth} ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'`),
     check('academy_sales_kpi_plans_config_check', sql`jsonb_typeof(${t.config}) = 'object'`),
   ]);
@@ -28,7 +28,7 @@ export function createSalesKpiTables(ref: {
     createdBy: owner('created_by'), createdAt: createdAt(),
   }, (t) => [
     primaryKey({ columns: [t.userId, t.effectiveMonth] }),
-    check('academy_sales_kpi_assignments_role_check', sql`${t.role} IN ('hunter', 'closer')`),
+    check('academy_sales_kpi_assignments_role_check', sql`${t.role} IN ('hunter', 'closer', 'full_cycle')`),
     check('academy_sales_kpi_assignments_effective_month_check', sql`${t.effectiveMonth} ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'`),
   ]);
   const academySalesKpiLeads = pgTable('academy_sales_kpi_leads', {

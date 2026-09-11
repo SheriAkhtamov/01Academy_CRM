@@ -3,6 +3,7 @@ import { kpiRoleSchema, type KpiEmployeeAssignment, type KpiRole } from '@shared
 import { kpiMonth, nextKpiMonth } from '@shared/sales-kpi-time';
 
 type Executor = Pick<PoolClient, 'query'>;
+const roleLock = (role: KpiRole) => role === 'hunter' ? 1 : role === 'closer' ? 2 : 3;
 export function parseEmployeeKpiRole(value: unknown): KpiRole | null | undefined {
   if (value === undefined || value === null) return value;
   const parsed = kpiRoleSchema.safeParse(value);
@@ -30,7 +31,7 @@ export async function setEmployeeKpiAssignment(
   if ((latest?.role ?? null) === role) return;
   // The first assignment and a rules edit must agree whether this month's
   // plan has already been used. Share the plan writer's role lock.
-  if (role) await executor.query('SELECT pg_advisory_xact_lock(10402, $1)', [role === 'hunter' ? 1 : 2]);
+  if (role) await executor.query('SELECT pg_advisory_xact_lock(10402, $1)', [roleLock(role)]);
   const hasHistory = rows.some((row) => row.effective_month <= currentMonth);
   const effectiveMonth = hasHistory ? nextKpiMonth(currentMonth) : currentMonth;
   await executor.query(

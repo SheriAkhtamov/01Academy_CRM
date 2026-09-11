@@ -600,7 +600,8 @@ export const resolveLeadManagerId = async (
        WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
       [actor.userId],
     );
-    if (currentManager && (!funnelRole || actor.salesWorkflow?.role === funnelRole)) {
+    if (currentManager && (!funnelRole || actor.salesWorkflow?.role === funnelRole
+      || actor.salesWorkflow?.role === 'full_cycle')) {
       return Number(currentManager.id);
     }
   }
@@ -618,7 +619,7 @@ export const resolveLeadManagerId = async (
          WHERE assignment.user_id = u.id AND assignment.funnel_id = $1
        )` : ''}
        ${funnelRole === 'hunter' ? "AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'"
-         : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) = 'closer'" : ''}
+         : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle')" : ''}
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,

@@ -1612,9 +1612,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
 
   // Lead sheet — UX polish
   leadWorkspaceNote: { en: 'Add a note', ru: 'Заметка' },
-  leadWorkspaceSections: { en: 'Jump to section', ru: 'Перейти к разделу' },
-  leadWorkspaceContacts: { en: 'Contacts', ru: 'Контакты' },
-  leadWorkspaceDetails: { en: 'Details', ru: 'Параметры' },
   leadWorkspaceSaved: { en: 'Lead details saved', ru: 'Данные карточки сохранены' },
   leadWorkspaceDraft: { en: 'Unsaved lead details', ru: 'Есть изменения в карточке' },
   leadWorkspaceSaveShortcut: { en: 'Save: Ctrl / ⌘ + S', ru: 'Сохранить: Ctrl / ⌘ + S' },

@@ -72,6 +72,7 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.queryByRole('button', { name: 'Задача' })).toBeNull();
     expect(screen.queryByText('Следующий шаг')).toBeNull();
     expect(screen.queryByText('Участники KPI')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Перейти к разделу' })).toBeNull();
     expect(tagsEditor.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) })).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) })).toBeTruthy();

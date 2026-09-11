@@ -1018,27 +1018,17 @@ export function LeadDetailSheet({
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   {!lead.isArchived ? <LeadDemoAttendanceCard leadId={lead.id} dateTime={dateTime}
                     beforeMark={unsavedGuard.requestAction} onTransferred={() => onOpenChange(false)} /> : null}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <nav aria-label={t('leadWorkspaceSections')} className="flex flex-wrap gap-1">
-                      <Button type="button" size="sm" variant="ghost" onClick={() => navigateTo('deal', 'contacts')}>{t('leadWorkspaceContacts')}</Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={goToStudents}>
-                        {t('students')}<TabCount value={lead.students?.length ?? 0} />
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {!lead.isArchived && lead.statusCode !== 'paid' ? (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
+                        <CalendarPlus2 data-icon="inline-start" />
+                        {t('bookDemoLesson')}
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => navigateTo('deal', 'details')}>{t('leadWorkspaceDetails')}</Button>
-                    </nav>
-                    <div className="flex flex-wrap gap-2">
-                      {!lead.isArchived && lead.statusCode !== 'paid' ? (
-                        <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
-                          <CalendarPlus2 data-icon="inline-start" />
-                          {t('bookDemoLesson')}
-                        </Button>
-                      ) : null}
-                      <Button type="button" variant="outline" size="sm" onClick={() => navigateTo('payment')}>
-                        <CreditCard data-icon="inline-start" />
-                        {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
-                      </Button>
-
-                    </div>
+                    ) : null}
+                    <Button type="button" variant="outline" size="sm" onClick={() => navigateTo('payment')}>
+                      <CreditCard data-icon="inline-start" />
+                      {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
+                    </Button>
                   </div>
                   <Form {...leadForm}>
                     <form id="lead-details-form" onSubmit={saveDeal}>

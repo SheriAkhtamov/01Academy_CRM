@@ -764,6 +764,13 @@
       "when": 1789920000005,
       "tag": "0108_assign_employees_to_sales_funnels",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1789920000006,
+      "tag": "0109_remove_company_kpi_targets",
+      "breakpoints": true
     }
   ]
 }

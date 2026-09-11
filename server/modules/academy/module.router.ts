@@ -102,15 +102,12 @@ import {
   ensureSalesAccess,
   ensureSalesModuleAccess,
   ensureTeacherModuleAccess,
-  getCompanySettings,
   leadPhoneNumbersSelect,
   nullableDate,
   nullableText,
   parseId,
   query,
   queryOne,
-  toAnalyticsTargets,
-  updateRow,
 } from './academy-core';
 import {
   academyDateOnlyKey,
@@ -175,10 +172,7 @@ router.get('/modules/sales', async (req, res) => {
       modules: getAssignedModules(req.user),
       scopeModule: 'sales',
     };
-    const [dataset, companySettings] = await Promise.all([
-      getAcademyDataset(actor, { include: SALES_MODULE_SLICES }),
-      getCompanySettings(),
-    ]);
+    const dataset = await getAcademyDataset(actor, { include: SALES_MODULE_SLICES });
 
     res.json({
       schools: dataset.schools,
@@ -196,7 +190,7 @@ router.get('/modules/sales', async (req, res) => {
       projects: dataset.projects,
       referrals: dataset.referrals,
       referralBenefits: dataset.referralBenefits,
-      constants: { ...academyConstants(), targets: toAnalyticsTargets(companySettings) },
+      constants: academyConstants(),
     });
   } catch (error) {
     logger.error('Failed to fetch sales module', { error });
@@ -387,42 +381,6 @@ router.get('/configuration', async (req, res) => {
   } catch (error) {
     logger.error('Failed to fetch academy configuration', { error });
     res.status(500).json({ error: 'Failed to fetch academy configuration' });
-  }
-});
-
-router.get('/company-settings', async (req, res) => {
-  if (!ensureAdministrationModuleAccess(req, res)) return;
-  try {
-    res.json(await getCompanySettings());
-  } catch (error) {
-    logger.error('Failed to fetch company settings', { error });
-    res.status(500).json({ error: 'Failed to fetch company settings' });
-  }
-});
-
-router.patch('/company-settings', async (req, res) => {
-  if (!ensureAdministrationModuleAccess(req, res)) return;
-  try {
-    const current = await getCompanySettings();
-    const values = {
-      targetRevenueMonthlyUzs: Math.max(0, Number(req.body.targetRevenueMonthlyUzs ?? current.targetRevenueMonthlyUzs) || 0),
-      targetNewLeadsMonthly: Math.max(0, Number(req.body.targetNewLeadsMonthly ?? current.targetNewLeadsMonthly) || 0),
-      maxCacUzs: Math.max(0, Number(req.body.maxCacUzs ?? current.maxCacUzs) || 0),
-      maxCplUzs: Math.max(0, Number(req.body.maxCplUzs ?? current.maxCplUzs) || 0),
-      targetRoas: Math.max(0, Number(req.body.targetRoas ?? current.targetRoas) || 0),
-      targetAttendancePercent: Math.min(100, Math.max(0, Number(req.body.targetAttendancePercent ?? current.targetAttendancePercent) || 0)),
-      targetNps: Math.min(100, Math.max(-100, Number(req.body.targetNps ?? current.targetNps) || 0)),
-      salesPhoneVisibility: ['own_leads', 'mask_until_assigned'].includes(String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility))
-        ? String(req.body.salesPhoneVisibility ?? current.salesPhoneVisibility)
-        : 'own_leads',
-      updatedBy: req.user!.id,
-    };
-    const settings = await updateRow('academy_company_settings', Number(current.id), values);
-    await createAudit(req, 'UPDATE_COMPANY_KPI_TARGETS', 'academy_company_settings', Number(current.id), settings, current);
-    res.json(settings);
-  } catch (error) {
-    logger.error('Failed to update company settings', { error });
-    res.status(500).json({ error: 'Failed to update company settings' });
   }
 });
 

@@ -8,13 +8,10 @@ import { useKpiPlans } from '../hooks';
 import { roleKeys } from '../copy';
 import { KpiRulesDialog } from './KpiRulesDialog';
 import { KpiPlanSummary, kpiMonthLabel } from './KpiPlanSummary';
-import { CompanyGoalsSummary } from './CompanyGoalsSummary';
-import { CompanyTargetsDialog } from './CompanyTargetsDialog';
 
 export function KpiSettingsPanel() {
   const { t, language } = useTranslation();
   const query = useKpiPlans();
-  const [companyOpen, setCompanyOpen] = useState(false);
   const [editing, setEditing] = useState<KpiPlanVersion | null>(null);
   const [historyRole, setHistoryRole] = useState<KpiRole | null>(null);
   const [historyVersion, setHistoryVersion] = useState<number | null>(null);
@@ -23,7 +20,6 @@ export function KpiSettingsPanel() {
   const selectedHistory = versions.find((version) => version.id === historyVersion);
   const period = (version: KpiPlanVersion) => (version.effectiveMonth > currentMonth ? t('kpiScheduledFrom') : t('kpiEffectiveSince')).replace('{month}', kpiMonthLabel(version.effectiveMonth, language));
   return <div className="space-y-7">
-    <CompanyGoalsSummary onEdit={() => setCompanyOpen(true)} />
     <section aria-label={t('kpiEmployeePlans')} className="space-y-4">
       <h2 className="text-base font-semibold">{t('kpiEmployeePlans')}</h2>
       {query.isPending ? <div className="grid gap-4 lg:grid-cols-2">{KPI_ROLES.map((role) => <div key={role} className="h-80 animate-pulse rounded-xl bg-muted" aria-busy="true" />)}</div>
@@ -47,7 +43,6 @@ export function KpiSettingsPanel() {
             </article>;
           })}</div>}
     </section>
-    {companyOpen ? <CompanyTargetsDialog onClose={() => setCompanyOpen(false)} /> : null}
     {editing && query.data ? <KpiRulesDialog version={editing} minimumMonth={query.data.minimumEffectiveMonth[editing.role]} expectedVersionId={editing.id} onClose={() => setEditing(null)} /> : null}
     <Dialog open={Boolean(historyRole)} onOpenChange={(open) => { if (!open) setHistoryRole(null); }}><DialogContent className="max-w-3xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{t('kpiHistory')} · {historyRole ? t(roleKeys[historyRole]) : null}</DialogTitle></DialogHeader>

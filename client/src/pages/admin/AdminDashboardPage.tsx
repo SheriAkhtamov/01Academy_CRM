@@ -132,15 +132,6 @@ interface AdministrationDashboardData {
   trends: DashboardTrendPoint[];
   funnel: DashboardFunnelItem[];
   courseLoad: DashboardCourseLoad[];
-  targets: {
-    attendance: number;
-    revenue: number;
-    newLeads: number;
-    nps: number;
-    cac: number;
-    cpl: number;
-    roas: number;
-  };
   alerts: {
     overduePayments: number;
     lowAttendanceStudents: number;
@@ -395,10 +386,6 @@ export default function AdminDashboardPage() {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(data.generatedAt));
-  const revenuePlan = Number(data.targets.revenue || 0);
-  const leadsPlan = Number(data.targets.newLeads || 0);
-  const revenueProgress = revenuePlan > 0 ? Math.min(100, Math.round((summary.revenueMonth / revenuePlan) * 100)) : 0;
-  const leadsProgress = leadsPlan > 0 ? Math.min(100, Math.round((summary.newLeadsMonth / leadsPlan) * 100)) : 0;
   const churnData = Object.entries(data.churnByReason ?? {}).map(([reason, value], index) => ({
     name: CHURN_LABEL_KEYS[reason] ? t(CHURN_LABEL_KEYS[reason]) : reason,
     value,
@@ -602,51 +589,11 @@ export default function AdminDashboardPage() {
         <KpiCard
           title={t('averageAttendance')}
           value={`${Math.round(summary.avgAttendance || 0)}%`}
-          detail={`${t('adminTarget')}: ${data.targets.attendance}%`}
+          detail={`${t('attendanceMarks')}: ${summary.attendanceMarks}`}
           icon={CheckCircle2}
           tone="bg-emerald-100 text-emerald-600"
         />
       </StaggerGroup>
-
-      {reportingRange.preset === 'thisMonth' || reportingRange.preset === 'previousMonth' ? (
-      <section aria-label={ceoCopy.dashboard.planFact} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {[
-          {
-            title: ceoCopy.dashboard.revenue,
-            fact: fullMoney(summary.revenueMonth),
-            plan: revenuePlan > 0 ? fullMoney(revenuePlan) : ceoCopy.dashboard.planUnset,
-            value: revenueProgress,
-            href: '/admin/sales-settings?tab=kpi',
-          },
-          {
-            title: ceoCopy.dashboard.newLeads,
-            fact: new Intl.NumberFormat(locale).format(summary.newLeadsMonth),
-            plan: leadsPlan > 0 ? new Intl.NumberFormat(locale).format(leadsPlan) : ceoCopy.dashboard.planUnset,
-            value: leadsProgress,
-            href: '/admin/sales-settings?tab=kpi',
-          },
-        ].map((item) => (
-          <button
-            key={item.title}
-            type="button"
-            onClick={() => navigate(item.href)}
-            className="rounded-xl border border-border/60 bg-card p-4 text-left shadow-sm transition-[border-color,box-shadow] hover:border-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-slate-700">{item.title}</p>
-                <p className="mt-1 text-xl font-bold tabular-nums">{item.fact}</p>
-              </div>
-              <span className={cn('text-xl font-semibold tabular-nums', item.value >= 100 ? 'text-emerald-600' : 'text-primary-600')}>
-                {item.value}%
-              </span>
-            </div>
-            <Progress aria-label={item.title} className="mt-3 h-1.5" value={item.value} />
-            <p className="mt-1.5 text-xs text-muted-foreground">{ceoCopy.dashboard.plan} {item.plan}</p>
-          </button>
-        ))}
-      </section>
-      ) : null}
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-6 2xl:grid-cols-12">
         <Card className="min-w-0 self-start border-border/60 shadow-sm xl:col-span-4 2xl:col-span-7">

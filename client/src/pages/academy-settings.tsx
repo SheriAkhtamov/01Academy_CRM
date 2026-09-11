@@ -1320,7 +1320,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <ArrowRightLeft />{t('leadMergeTab')}
               </TabsTrigger>
               <TabsTrigger value="kpi" className="gap-2 pb-2.5 data-[state=active]:text-primary">
-                <Target />{ceoCopy.settings.title}
+                <Target />{t('kpiEmployeePlans')}
               </TabsTrigger>
             </>
           ) : (

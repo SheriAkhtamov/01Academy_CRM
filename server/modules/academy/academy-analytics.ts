@@ -38,10 +38,7 @@ import {
   REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
-  TARGET_CAC_UZS,
-  TARGET_LTV_CAC_RATIO,
   TARGET_NPS,
-  TARGET_ROAS,
   addDays,
   addMinutes,
   buildReferralCode,
@@ -86,13 +83,11 @@ import {
   DatasetActor,
   Row,
   applyLeadVisibilityForActor,
-  getCompanySettings,
   leadPhoneNumbersSelect,
   leadTagsSelect,
   query,
   queryOne,
   studentGroupMembershipsSelect,
-  toAnalyticsTargets,
 } from './academy-core';
 import {
   ReportingRange,
@@ -493,8 +488,7 @@ export const studentBelongsToCourse = (student: Row, courseId: number) => {
 };
 
 export const buildAnalytics = async (reportingRange: ReportingRange | null = null) => {
-  const [data, companySettings] = await Promise.all([getAcademyDataset(), getCompanySettings()]);
-  const targets = toAnalyticsTargets(companySettings);
+  const data = await getAcademyDataset();
   const now = new Date();
   const weekStart = addDays(now, -7);
   const { start: monthStart, end: nextMonthStart } = getZonedMonthRange(
@@ -576,7 +570,7 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     student.status === 'studying'
     && (
       hasStudentRiskFlag(student, 'attendance_below_70')
-      || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < targets.attendance)
+      || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < TARGET_ATTENDANCE_PERCENT)
     )
   ));
   const longThinkingLeads = data.leads.filter((lead) =>
@@ -745,7 +739,7 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
         : 0,
       attendanceMarks: periodAttendance.length,
       nps,
-      npsBelowTarget: nps < targets.nps,
+      npsBelowTarget: nps < TARGET_NPS,
       teacherHours,
       avgDealCycleDays,
       leadToDemoConversion,
@@ -831,7 +825,6 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     byGroupProgress,
     retentionByCourse,
     churnByReason,
-    targets,
     reportingRange: reportingRange
       ? { from: reportingRange.from, to: reportingRange.to }
       : { from: academyDateOnlyKey(monthStart), to: academyDateOnlyKey(new Date(nextMonthStart.getTime() - 1)) },
@@ -1043,7 +1036,6 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
     trends,
     funnel: analytics.funnel,
     courseLoad,
-    targets: analytics.targets,
     alerts: {
       overduePayments: analytics.risks.overduePayments.length,
       lowAttendanceStudents: analytics.risks.lowAttendanceStudents.length,
@@ -1103,6 +1095,5 @@ export const buildMarketingAnalyticsPayload = (analytics: Row) => ({
   leadToPaidConversion: analytics.summary.leadToPaidConversion,
   cpl: analytics.summary.cpl,
   avgDealCycleDays: analytics.summary.avgDealCycleDays,
-  targets: analytics.targets,
   reportingRange: analytics.reportingRange,
 });

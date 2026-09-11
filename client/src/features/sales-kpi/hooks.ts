@@ -1,17 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getCompanyTargets, saveCompanyTargets, getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, handoffKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
+import { getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, handoffKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
 import type { KpiSaleReview } from '@shared/sales-kpi';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 
 export const KPI_QUERY_KEY = ['/api/academy/sales-kpi'] as const;
-export const useCompanyTargets = () => useQuery({ queryKey: ['/api/academy/company-settings'], queryFn: getCompanyTargets });
-export const useSaveCompanyTargets = () => {
-  const client = useQueryClient();
-  return useMutation({ mutationFn: saveCompanyTargets, onSuccess: () => Promise.all([
-    client.invalidateQueries({ queryKey: ['/api/academy/company-settings'] }),
-    client.invalidateQueries({ queryKey: ['/api/academy/modules/administration'] }),
-  ]) });
-};
 export const useKpiPlans = () => useQuery({ queryKey: [...KPI_QUERY_KEY, 'plans'], queryFn: getKpiPlans });
 export const useKpiOverview = (month: string, managerId: number | null) => useQuery({
   queryKey: [...KPI_QUERY_KEY, 'overview', month, managerId],

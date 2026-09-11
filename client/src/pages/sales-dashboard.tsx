@@ -86,6 +86,7 @@ import {
   getAssignedModules,
   hasLeadershipAccess,
   LEAD_ARCHIVE_REASONS,
+  TARGET_ATTENDANCE_PERCENT,
 } from '@shared/academy';
 import {
   AlertCircle,
@@ -577,17 +578,16 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         || Boolean(student.nextPaymentAt && new Date(student.nextPaymentAt) < now));
     }
     if (riskFilter === 'low-attendance') {
-      const attendanceTarget = Number(data?.constants?.targets?.attendance ?? 70);
       return myStudents.filter((student) => (
         student.riskFlags?.includes('attendance_below_70')
         || (
           Number(student.attendancePercent || 0) > 0
-          && Number(student.attendancePercent || 0) < attendanceTarget
+          && Number(student.attendancePercent || 0) < TARGET_ATTENDANCE_PERCENT
         )
       ));
     }
     return myStudents;
-  }, [data?.constants?.targets?.attendance, myStudents, riskFilter]);
+  }, [myStudents, riskFilter]);
 
   const myPayments = useMemo<any[]>(() => {
     if (!data?.payments) return [];

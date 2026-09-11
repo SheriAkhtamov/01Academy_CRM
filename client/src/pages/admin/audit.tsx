@@ -83,7 +83,7 @@ const entityLabel = (entity: string, copy: AuditCopy, t: Translate) => ({
   academy_lead: copy.lead, academy_leads: copy.lead, academy_student: copy.student, academy_students: copy.student,
   academy_payment: copy.payment, academy_payments: copy.payment, academy_group: copy.group, academy_groups: copy.group,
   academy_lesson: copy.schedule, academy_lessons: copy.schedule, academy_marketing_expense: copy.expense,
-  academy_task: copy.task, academy_company_settings: copy.kpi,
+  academy_task: copy.task, academy_company_settings: t('settings'),
 }[entity] ?? `${t('auditObject')} (${entity})`);
 
 const integrationStatusLabel = (status: string, t: Translate) => ({

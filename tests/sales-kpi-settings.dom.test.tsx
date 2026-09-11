@@ -5,19 +5,16 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultKpiConfig, type KpiPlanSettings } from '../shared/sales-kpi';
 import { translations, type TranslationKey } from '../client/src/lib/i18n';
-const hooks = vi.hoisted(() => ({ plans: vi.fn(), save: vi.fn(), company: vi.fn(), saveCompany: vi.fn() }));
+const hooks = vi.hoisted(() => ({ plans: vi.fn(), save: vi.fn() }));
 vi.mock('../client/src/features/sales-kpi/hooks', () => ({
   useKpiPlans: hooks.plans,
   useSaveKpiRules: () => ({ mutateAsync: hooks.save, isPending: false, isError: false }),
-  useCompanyTargets: hooks.company,
-  useSaveCompanyTargets: () => ({ mutateAsync: hooks.saveCompany, isPending: false, isError: false }),
 }));
 vi.mock('../client/src/hooks/useTranslation', () => ({
   useTranslation: () => ({ t: (key: TranslationKey) => translations[key].en, language: 'en' }),
 }));
 vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 import { KpiSettingsPanel } from '../client/src/features/sales-kpi/ui/KpiSettingsPanel';
-import { DEFAULT_COMPANY_SETTINGS } from '../client/src/components/ux/academy/KpiSettingsCard';
 
 const settings = (): KpiPlanSettings => ({ currentMonth: '2026-09', minimumEffectiveMonth: { hunter: '2026-10', closer: '2026-10' },
   versions: [{ id: 2, role: 'hunter', config: defaultKpiConfig('hunter'), effectiveMonth: '2026-09', createdAt: '2026-09-01T00:00:00Z', createdBy: 1 }] });
@@ -27,8 +24,6 @@ describe('sales KPI settings dialogs', () => {
     vi.clearAllMocks();
     hooks.plans.mockReturnValue({ data: settings(), isPending: false, isError: false });
     hooks.save.mockResolvedValue({});
-    hooks.company.mockReturnValue({ data: { ...DEFAULT_COMPANY_SETTINGS, targetRevenueMonthlyUzs: 50000000, targetNewLeadsMonthly: 400 }, isPending: false, isError: false });
-    hooks.saveCompany.mockResolvedValue({});
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     Element.prototype.scrollIntoView = vi.fn();
     Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
@@ -80,12 +75,12 @@ describe('sales KPI settings dialogs', () => {
     expect((screen.getByLabelText(translations.kpiBaseSalary.en) as HTMLInputElement).value).toBe('-1');
   });
 
-  it('shows company goals and both employee plans without an inline editor or technical copy', () => {
+  it('shows only both employee plans without an inline editor or technical copy', () => {
     const data = settings();
     data.versions.push({ ...data.versions[0], id: 3, role: 'closer', config: defaultKpiConfig('closer') });
     hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
     render(<KpiSettingsPanel />);
-    expect(screen.getByRole('region', { name: translations.kpiCompanyGoals.en })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: /company goals/i })).toBeNull();
     expect(within(screen.getByRole('article', { name: translations.kpiHunter.en })).getByText('30')).toBeTruthy();
     expect(within(screen.getByRole('article', { name: translations.kpiCloser.en })).getByText('21')).toBeTruthy();
     expect(screen.queryByRole('spinbutton')).toBeNull();
@@ -122,20 +117,6 @@ describe('sales KPI settings dialogs', () => {
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: translations.keepEditing.en }));
     expect((screen.getByLabelText(translations.kpiMonthlyBookings.en) as HTMLInputElement).value).toBe('45');
     expect(hooks.save).not.toHaveBeenCalled();
-  });
-
-  it('edits company goals in a modal and preserves the other targets and phone access', async () => {
-    const user = userEvent.setup();
-    render(<KpiSettingsPanel />);
-    await user.click(screen.getByRole('button', { name: translations.kpiEditCompanyGoals.en }));
-    const dialog = screen.getByRole('dialog', { name: translations.kpiCompanyGoals.en });
-    expect(within(dialog).getByRole('group', { name: translations.kpiMarketingTargets.en })).toBeTruthy();
-    expect(within(dialog).getByLabelText(translations.kpiCacLabel.en)).toBeTruthy();
-    fireEvent.change(within(dialog).getByLabelText(translations.targetMonthlyRevenue.en), { target: { value: '60000000' } });
-    await user.click(within(dialog).getByRole('button', { name: translations.saveGoals.en }));
-    await waitFor(() => expect(hooks.saveCompany).toHaveBeenCalledWith({ ...DEFAULT_COMPANY_SETTINGS, targetRevenueMonthlyUzs: 60000000, targetNewLeadsMonthly: 400 }));
-    expect(hooks.save).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('keeps the active plan visible when another plan is scheduled and opens its details by date', async () => {

@@ -38,11 +38,6 @@ import {
   REFERRAL_BENEFIT_TYPES,
   REFERRAL_TIERS,
   STUDENT_STATUSES,
-  TARGET_ATTENDANCE_PERCENT,
-  TARGET_CAC_UZS,
-  TARGET_LTV_CAC_RATIO,
-  TARGET_NPS,
-  TARGET_ROAS,
   addDays,
   addMinutes,
   buildReferralCode,
@@ -797,45 +792,10 @@ export const academyConstants = () => ({
   paymentDiscounts: PAYMENT_DISCOUNTS,
   finalProjectStatuses: FINAL_PROJECT_STATUSES,
   referralTiers: REFERRAL_TIERS,
-  targets: {
-    nps: TARGET_NPS,
-    cac: TARGET_CAC_UZS,
-    ltvCac: TARGET_LTV_CAC_RATIO,
-    roas: TARGET_ROAS,
-    attendance: TARGET_ATTENDANCE_PERCENT,
-  },
 });
-
-export const defaultCompanyTargets = {
-  targetRevenueMonthlyUzs: 0,
-  targetNewLeadsMonthly: 0,
-  maxCacUzs: TARGET_CAC_UZS,
-  maxCplUzs: 0,
-  targetRoas: TARGET_ROAS,
-  targetAttendancePercent: TARGET_ATTENDANCE_PERCENT,
-  targetNps: TARGET_NPS,
-  salesPhoneVisibility: 'own_leads',
-};
 
 export const isValidLeadArchiveReason = (value: string | null | undefined) =>
   Boolean(value && (LEAD_ARCHIVE_REASON_CODES as readonly string[]).includes(value));
-
-export const getCompanySettings = async () => {
-  const existing = await queryOne(`SELECT * FROM academy_company_settings ORDER BY id LIMIT 1`);
-  if (existing) return existing;
-  return insertRow('academy_company_settings', defaultCompanyTargets);
-};
-
-export const toAnalyticsTargets = (settings: Row) => ({
-  revenue: Number(settings.targetRevenueMonthlyUzs || 0),
-  newLeads: Number(settings.targetNewLeadsMonthly || 0),
-  nps: Number(settings.targetNps || TARGET_NPS),
-  cac: Number(settings.maxCacUzs || TARGET_CAC_UZS),
-  cpl: Number(settings.maxCplUzs || 0),
-  ltvCac: TARGET_LTV_CAC_RATIO,
-  roas: Number(settings.targetRoas || TARGET_ROAS),
-  attendance: Number(settings.targetAttendancePercent || TARGET_ATTENDANCE_PERCENT),
-});
 
 export const createAudit = async (source: ActorSource, action: string, entityType: string, entityId: number, newValues?: unknown, oldValues?: unknown) => {
   const actor = actorContextFrom(source);

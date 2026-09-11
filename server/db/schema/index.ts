@@ -107,16 +107,9 @@ export const auditLogs = pgTable("audit_logs", {
   createdAtIdx: index("audit_logs_created_at_id_idx").on(table.createdAt.desc(), table.id.desc()),
 }));
 
-/** One-row, academy-wide targets controlled by the CEO. */
+/** One-row operational settings used by workforce and telephony services. */
 export const academyCompanySettings = pgTable("academy_company_settings", {
   id: serial("id").primaryKey(),
-  targetRevenueMonthlyUzs: integer("target_revenue_monthly_uzs").notNull().default(0),
-  targetNewLeadsMonthly: integer("target_new_leads_monthly").notNull().default(0),
-  maxCacUzs: integer("max_cac_uzs").notNull().default(300000),
-  maxCplUzs: integer("max_cpl_uzs").notNull().default(0),
-  targetRoas: integer("target_roas").notNull().default(5),
-  targetAttendancePercent: integer("target_attendance_percent").notNull().default(70),
-  targetNps: integer("target_nps").notNull().default(50),
   salesPhoneVisibility: varchar("sales_phone_visibility", { length: 40 }).notNull().default("own_leads"),
   workdayStartHour: integer("workday_start_hour").notNull().default(8),
   workdayEndHour: integer("workday_end_hour").notNull().default(20),

@@ -832,23 +832,10 @@ async function seedTelephonyCalls(userMap: Record<string, number>, leadIds: numb
   console.log(`[ok] seeded 30 telephony call records`);
 }
 
-// 14. Company Settings & Expenses
-async function seedSettingsAndExpenses(userMap: Record<string, number>, sourceMap: Record<string, number>) {
+// 14. Expenses
+async function seedExpenses(userMap: Record<string, number>, sourceMap: Record<string, number>) {
   const sheriId = userMap['sheri'];
   const farrukhId = userMap['farrukh@01academy.uz'] || sheriId;
-
-  // Company settings - higher targets for active business
-  await exec(
-    `UPDATE academy_company_settings
-     SET target_revenue_monthly_uzs = 200000000,
-         target_new_leads_monthly = 150,
-         max_cac_uzs = 350000,
-         target_roas = 6,
-         target_attendance_percent = 85,
-         target_nps = 70,
-         updated_by = $1`,
-    [sheriId],
-  );
 
   const igSourceId = sourceMap['instagram'];
   const metaSourceId = sourceMap['meta_lead_ads'];
@@ -892,7 +879,7 @@ async function seedSettingsAndExpenses(userMap: Record<string, number>, sourceMa
       );
     }
   }
-  console.log(`[ok] updated company targets and financial expenses`);
+  console.log(`[ok] seeded financial expenses`);
 }
 
 async function main() {
@@ -912,7 +899,7 @@ async function main() {
     await seedPayments(studentIds, groupMap, userMap);
     await seedBoardsAndTasks(userMap, leadIds);
     await seedTelephonyCalls(userMap, leadIds);
-    await seedSettingsAndExpenses(userMap, sourceMap);
+    await seedExpenses(userMap, sourceMap);
 
     const r = await exec(
       `SELECT

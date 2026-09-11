@@ -1,10 +1,7 @@
 import { apiRequest } from '@/lib/queryClient';
-import type { CompanySettings } from '@/components/ux/academy/KpiSettingsCard';
 import type { KpiConfig, KpiLeadOwnership, KpiOverview, KpiPlanSettings, KpiPlanVersion, KpiRole, KpiSaleReview } from '@shared/sales-kpi';
 
 const root = '/api/academy/sales-kpi';
-export const getCompanyTargets = (): Promise<CompanySettings> => apiRequest('GET', '/api/academy/company-settings');
-export const saveCompanyTargets = (values: CompanySettings) => apiRequest('PATCH', '/api/academy/company-settings', values);
 export const getKpiPlans = (): Promise<KpiPlanSettings> => apiRequest('GET', `${root}/plans`);
 export const saveKpiRules = (input: { role: KpiRole; config: KpiConfig; effectiveMonth: string; expectedVersionId: number }): Promise<KpiPlanVersion> => {
   const { role, ...body } = input;

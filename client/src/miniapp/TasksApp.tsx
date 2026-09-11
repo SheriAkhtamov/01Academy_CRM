@@ -135,7 +135,7 @@ export function TasksApp() {
       </div>) : !tasks.isError ? <div className="mini-center"><CheckCheck className="size-10 text-muted-foreground" /><h2 className="text-lg font-medium">{t('miniTasksEmpty')}</h2><p className="text-sm text-muted-foreground">{t('miniTasksEmptyHint')}</p></div> : null}
     </main>
     <div className="mini-create"><Button className="size-12 rounded-full p-0 shadow-lg transition-transform active:scale-95" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-5 animate-spin" /> : <Plus className="size-6" />}</Button></div>
-    <nav className="mini-navigation" aria-label={t('miniTasksNavigation')}>
+    <nav className="mini-navigation bg-background border-t border-border" aria-label={t('miniTasksNavigation')}>
       <div className="mini-navigation-inner">
         <button type="button" aria-label={t('myTasks')} aria-current={tab === 'mine' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('mine'); }}>
           <div className="relative">

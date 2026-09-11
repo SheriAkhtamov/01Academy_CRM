@@ -44,6 +44,7 @@ export function TasksApp() {
   const [pullDistance, setPullDistance] = useState(0);
   const [pullActive, setPullActive] = useState(false);
   const pullStart = useRef<number | null>(null);
+  const counts = useRef({ mine: 0, assigned: 0 });
   const tasks = useQuery<BoardTasksResponse>({
     queryKey: [...boardQueryKeys.all, 'mini', tab === 'archive'],
     queryFn: () => boardRequest('GET', `/api/board/tasks?archived=${tab === 'archive'}`),
@@ -105,7 +106,6 @@ export function TasksApp() {
     setPullDistance(0); setPullActive(false); pullStart.current = null;
   };
 
-  const counts = useRef({ mine: 0, assigned: 0 });
   if (tab !== 'archive' && tasks.data?.tasks && user) {
     counts.current = {
       mine: tasks.data.tasks.filter((task) => task.assignee?.id === user.id && task.status !== 'accepted').length,

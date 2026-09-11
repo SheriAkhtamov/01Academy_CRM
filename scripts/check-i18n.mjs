@@ -30,6 +30,8 @@ const nonLocalizedValueKeys = new Set([
   'uzbekLang',
 ]);
 const hardcodedTextAllowlist = new Set(['.csv', 'Ctrl+', 'Enter', 'K', 'x']);
+// Dev-only preview stubs: their literal strings are mocked data, not UI copy.
+const hardcodedTextFileIgnore = new Set(['dev.tsx']);
 const nonLocalizedContentArrays = new Set(['DEFAULT_QUICK_REPLIES']);
 const uiTextProperties = new Set([
   'alt',
@@ -549,6 +551,7 @@ const collectHardcodedClientText = (files) => {
 
   for (const filePath of files) {
     if (filePath === i18nPath) continue;
+    if (hardcodedTextFileIgnore.has(path.basename(filePath))) continue;
 
     const sourceFile = parseSourceFile(filePath);
     const relativePath = formatPath(filePath);

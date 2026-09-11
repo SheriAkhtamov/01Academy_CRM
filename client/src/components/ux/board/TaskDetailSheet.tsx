@@ -533,11 +533,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                             {/* Tabs */}
                             <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
-                                <TabsList className="w-full sm:grid sm:grid-cols-4">
-                                    <TabsTrigger value="comments">{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
-                                    <TabsTrigger value="checklist">{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
-                                    <TabsTrigger value="attachments">{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>
-                                    <TabsTrigger value="activity">{t('activityTab')}</TabsTrigger>
+                                <TabsList className="grid h-auto w-full grid-cols-4 gap-1">
+                                    <TabsTrigger value="comments" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
+                                    <TabsTrigger value="checklist" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
+                                    <TabsTrigger value="attachments" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>
+                                    <TabsTrigger value="activity" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('activityTab')}</TabsTrigger>
                                 </TabsList>
 
                                 {/* Comments */}
@@ -597,7 +597,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <li key={item.id} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60">
                                                     <Checkbox aria-label={item.content} checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
                                                     <span className={cn('flex-1 text-sm', item.isDone && 'text-muted-foreground line-through')}>{item.content}</span>
-                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-0 group-hover:opacity-100" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'checklist', id: item.id })}><Trash2 className="size-3.5" /></Button>
+                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-100 transition-opacity hover:opacity-100 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" aria-label={t('delete')} onClick={() => setPendingDelete({ kind: 'checklist', id: item.id })}><Trash2 className="size-3.5" /></Button>
                                                 </li>
                                             ))}
                                         </ul>

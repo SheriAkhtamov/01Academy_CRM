@@ -4,7 +4,7 @@
   overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
 }
-.telegram-tasks .mini-shell { max-width: 42rem; margin: auto; padding-top: var(--mini-top); padding-bottom: calc(10rem + var(--mini-bottom)); min-height: var(--tg-viewport-stable-height, 100dvh); }
+.telegram-tasks .mini-shell { max-width: 42rem; margin: auto; padding-top: var(--mini-top); padding-bottom: calc(10rem + 1.5rem + var(--mini-bottom)); min-height: var(--tg-viewport-stable-height, 100dvh); }
 .mini-header { display: grid; gap: 1rem; padding: 1.25rem 1rem; }
 .mini-center { display: flex; min-height: 45dvh; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 2rem; text-align: center; }
 .mini-pull { display: flex; align-items: flex-end; justify-content: center; overflow: hidden; padding-bottom: .5rem; color: hsl(var(--muted-foreground)); }

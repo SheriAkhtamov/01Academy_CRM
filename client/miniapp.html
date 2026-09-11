@@ -10,6 +10,14 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/miniapp/main.tsx"></script>
+    <script type="module">
+      // Dev-only preview entry: runs the miniapp with a mocked Telegram SDK and
+      // stubbed API in a plain browser. Never shipped to production builds.
+      if (new URLSearchParams(window.location.search).has('dev')) {
+        import('/src/miniapp/dev.tsx');
+      } else {
+        import('/src/miniapp/main.tsx');
+      }
+    </script>
   </body>
 </html>

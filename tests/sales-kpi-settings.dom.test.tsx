@@ -16,7 +16,9 @@ vi.mock('../client/src/hooks/useTranslation', () => ({
 vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 import { KpiSettingsPanel } from '../client/src/features/sales-kpi/ui/KpiSettingsPanel';
 
-const settings = (): KpiPlanSettings => ({ currentMonth: '2026-09', minimumEffectiveMonth: { hunter: '2026-10', closer: '2026-10', full_cycle: '2026-09' },
+const settings = (): KpiPlanSettings => ({ currentMonth: '2026-09', minimumEffectiveMonth: {
+  hunter: '2026-10', closer: '2026-10', full_cycle: '2026-09', full_cycle_3500: '2026-09',
+},
   versions: [{ id: 2, role: 'hunter', config: defaultKpiConfig('hunter'), effectiveMonth: '2026-09', createdAt: '2026-09-01T00:00:00Z', createdBy: 1 }] });
 
 describe('sales KPI settings dialogs', () => {
@@ -75,16 +77,18 @@ describe('sales KPI settings dialogs', () => {
     expect((screen.getByLabelText(translations.kpiBaseSalary.en) as HTMLInputElement).value).toBe('-1');
   });
 
-  it('shows all three employee plans without an inline editor or technical copy', () => {
+  it('shows all four employee plans without an inline editor or technical copy', () => {
     const data = settings();
     data.versions.push({ ...data.versions[0], id: 3, role: 'closer', config: defaultKpiConfig('closer') });
     data.versions.push({ ...data.versions[0], id: 4, role: 'full_cycle', config: defaultKpiPlanConfig('full_cycle') });
+    data.versions.push({ ...data.versions[0], id: 5, role: 'full_cycle_3500', config: defaultKpiPlanConfig('full_cycle_3500') });
     hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
     render(<KpiSettingsPanel />);
     expect(screen.queryByRole('region', { name: /company goals/i })).toBeNull();
     expect(within(screen.getByRole('article', { name: translations.kpiHunter.en })).getByText('30')).toBeTruthy();
     expect(within(screen.getByRole('article', { name: translations.kpiCloser.en })).getByText('21')).toBeTruthy();
-    expect(screen.getByRole('article', { name: translations.kpiFullCycle.en })).toBeTruthy();
+    expect(screen.getByRole('article', { name: translations.kpiFullCycle3000.en })).toBeTruthy();
+    expect(screen.getByRole('article', { name: translations.kpiFullCycle3500.en })).toBeTruthy();
     expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByText(/version|tracking|retroactive|timezone|API|database/i)).toBeNull();
@@ -97,9 +101,10 @@ describe('sales KPI settings dialogs', () => {
     data.versions = [{ ...data.versions[0], id: 4, role: 'full_cycle', config: defaultKpiPlanConfig('full_cycle') }];
     hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
     render(<KpiSettingsPanel />);
-    await user.click(within(screen.getByRole('article', { name: translations.kpiFullCycle.en }))
+    await user.click(within(screen.getByRole('article', { name: translations.kpiFullCycle3000.en }))
       .getByRole('button', { name: translations.kpiEditPlan.en }));
-    const dialog = screen.getByRole('dialog', { name: `${translations.kpiEditPlan.en} · ${translations.kpiFullCycle.en}` });
+    const dialog = screen.getByRole('dialog', { name: `${translations.kpiEditPlan.en} · ${translations.kpiFullCycle3000.en}` });
+    expect((within(dialog).getByLabelText(translations.kpiBaseSalary.en) as HTMLInputElement).value).toBe('3000000');
     expect(within(dialog).getByRole('tab', { name: translations.kpiBeforeTrial.en })).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText(translations.kpiMonthlyBookings.en), { target: { value: '40' } });
     await user.click(within(dialog).getByRole('tab', { name: translations.kpiAfterTrial.en }));
@@ -110,9 +115,28 @@ describe('sales KPI settings dialogs', () => {
       effectiveMonth: '2026-09',
       expectedVersionId: 4,
       config: {
+        baseSalaryUzs: 3_000_000,
+        baseSalaryMode: 'guaranteed',
         hunter: { ...defaultKpiConfig('hunter'), volumeTarget: 40 },
         closer: { ...defaultKpiConfig('closer'), volumeTarget: 25 },
       },
+    })));
+  });
+
+  it('opens and saves the 3.5m full-cycle plan as a separate system', async () => {
+    const user = userEvent.setup();
+    const data = settings();
+    data.versions = [{ ...data.versions[0], id: 5, role: 'full_cycle_3500', config: defaultKpiPlanConfig('full_cycle_3500') }];
+    hooks.plans.mockReturnValue({ data, isPending: false, isError: false });
+    render(<KpiSettingsPanel />);
+    await user.click(within(screen.getByRole('article', { name: translations.kpiFullCycle3500.en }))
+      .getByRole('button', { name: translations.kpiEditPlan.en }));
+    const dialog = screen.getByRole('dialog', { name: `${translations.kpiEditPlan.en} · ${translations.kpiFullCycle3500.en}` });
+    expect((within(dialog).getByLabelText(translations.kpiBaseSalary.en) as HTMLInputElement).value).toBe('3500000');
+    await user.click(within(dialog).getByRole('button', { name: translations.save.en }));
+    await waitFor(() => expect(hooks.save).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'full_cycle_3500',
+      config: expect.objectContaining({ baseSalaryUzs: 3_500_000 }),
     })));
   });
 

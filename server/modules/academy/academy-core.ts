@@ -8,6 +8,7 @@ import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
+import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import {
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
@@ -601,7 +602,7 @@ export const resolveLeadManagerId = async (
       [actor.userId],
     );
     if (currentManager && (!funnelRole || actor.salesWorkflow?.role === funnelRole
-      || actor.salesWorkflow?.role === 'full_cycle')) {
+      || isFullCycleKpiRole(actor.salesWorkflow?.role))) {
       return Number(currentManager.id);
     }
   }
@@ -619,7 +620,7 @@ export const resolveLeadManagerId = async (
          WHERE assignment.user_id = u.id AND assignment.funnel_id = $1
        )` : ''}
        ${funnelRole === 'hunter' ? "AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'"
-         : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle')" : ''}
+         : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle', 'full_cycle_3500')" : ''}
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,

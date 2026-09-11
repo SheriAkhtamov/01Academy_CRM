@@ -101,6 +101,13 @@ describe('sales KPI HTTP access and version selection', () => {
     expect((await request(app).post(`${path}/plans/full_cycle`).send({ ...body, config: defaultKpiConfig('hunter') })).status).toBe(400);
     expect(mocks.save).toHaveBeenCalledTimes(1);
   });
+  it('accepts the separate 3.5m full-cycle plan', async () => {
+    const app = appFor('administration');
+    const body = { config: defaultKpiPlanConfig('full_cycle_3500'), effectiveMonth: '2026-09', expectedVersionId: 5 };
+    mocks.save.mockResolvedValue({ ...version(6, '2026-09', 0), role: 'full_cycle_3500', config: body.config });
+    expect((await request(app).post(`${path}/plans/full_cycle_3500`).send(body)).status).toBe(201);
+    expect(mocks.save).toHaveBeenCalledWith(7, 'full_cycle_3500', body.config, '2026-09', 5);
+  });
   it('requires a cycle and an audit reason when classifying a renewal', async () => {
     const app = appFor();
     expect((await request(app).patch(`${path}/payments/10`).send({ kind: 'renewal', cycleKey: null, referralInitiated: false, reason: 'Renewal' })).status).toBe(400);

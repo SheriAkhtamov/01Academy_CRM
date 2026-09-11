@@ -1,6 +1,6 @@
 import { pool } from '../../db';
 import { kpiError, type KpiActor } from './kpi-repository';
-import type { KpiLeadOwnership } from '@shared/sales-kpi';
+import { isFullCycleKpiRole, type KpiLeadOwnership } from '@shared/sales-kpi';
 import type { ActorSource } from '../../modules/leads/domain/actor-context';
 import { createAudit, insertRow, query, queryOne, updateRow, withTransaction } from '../../modules/academy/academy-core';
 import {
@@ -62,7 +62,7 @@ export async function recordKpiOffer(actor: KpiActor, source: ActorSource, leadI
 export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadId: number) {
   return withTransaction(async () => {
     const role = await queryOne<{ role: string | null }>('SELECT academy_kpi_employee_role($1) AS role', [actor.id]);
-    if (!actor.isAdministration && !['hunter', 'full_cycle'].includes(role?.role ?? '')) {
+    if (!actor.isAdministration && role?.role !== 'hunter' && !isFullCycleKpiRole(role?.role)) {
       throw kpiError(new Error('salesFunnelHunterOnly'), 403);
     }
 
@@ -93,7 +93,7 @@ export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadI
       [leadId, lead.funnelId, lead.managerId ?? null],
     );
 
-    const retainsOwner = role?.role === 'full_cycle' && !actor.isAdministration;
+    const retainsOwner = isFullCycleKpiRole(role?.role) && !actor.isAdministration;
     const nextManagerId = retainsOwner ? actor.id : null;
     const historyComment = retainsOwner
       ? 'Продолжил работу с лидом после пробного'

@@ -24,11 +24,12 @@ const employee = (role: string, userId: number): ActorContext => ({ ...actorCont
     role,
     hunterFunnelId: 1,
     closerFunnelId: 2,
-    assignedFunnelIds: role === 'closer' ? [2] : role === 'full_cycle' ? [1, 2, 3] : [1, 3],
+    assignedFunnelIds: role === 'closer' ? [2] : role.startsWith('full_cycle') ? [1, 2, 3] : [1, 3],
   } });
 const hunter = employee('hunter', 7);
 const closer = employee('closer', 8);
 const fullCycle = employee('full_cycle', 9);
+const fullCycle3500 = employee('full_cycle_3500', 10);
 const lead = { id: 10, funnelId: 1, managerId: 7, statusCode: 'demo_invited' };
 
 describe('hunter/closer pipeline and permissions', () => {
@@ -52,6 +53,7 @@ describe('hunter/closer pipeline and permissions', () => {
     expect(canActorViewLead(fullCycle, { ...queue, managerId: 9 })).toBe(true);
     expect(canActorMutateLead(fullCycle, { ...queue, managerId: 9 })).toBe(true);
     expect(canActorViewLead(fullCycle, { ...lead, managerId: 9 })).toBe(true);
+    expect(canActorViewLead(fullCycle3500, { ...queue, managerId: 10 })).toBe(true);
     expect(actorContextFrom({ actor: closer } as never)).toBe(closer);
   });
   it('retains hunter attendance access after the queue handoff', () => {

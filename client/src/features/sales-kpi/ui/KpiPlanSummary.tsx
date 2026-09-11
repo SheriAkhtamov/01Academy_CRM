@@ -1,4 +1,4 @@
-import { isFullCycleKpiConfig, type KpiConfig, type KpiPlanConfig, type KpiRole, type SingleKpiRole } from '@shared/sales-kpi';
+import { isFullCycleKpiConfig, isFullCycleKpiRole, type KpiConfig, type KpiPlanConfig, type KpiRole, type SingleKpiRole } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { kpiMoney, metricKeys } from '../copy';
 import { kpiDayKeys, kpiFieldLabel, kpiPlanFieldGroups, kpiPlanSectionKeys } from '../config-fields';
@@ -7,7 +7,7 @@ export const kpiMonthLabel = (month: string, language: string) => new Intl.DateT
   month: 'long', year: 'numeric', timeZone: 'UTC',
 }).format(new Date(`${month}-01T00:00:00Z`));
 
-function SingleKpiPlanSummary({ config, kpiRole, full }: { config: KpiConfig; kpiRole: SingleKpiRole; full: boolean }) {
+function SingleKpiPlanSummary({ config, kpiRole, full, showBase = true }: { config: KpiConfig; kpiRole: SingleKpiRole; full: boolean; showBase?: boolean }) {
   const { t, language } = useTranslation();
   const role = kpiRole;
   return <div className="space-y-5">
@@ -16,7 +16,7 @@ function SingleKpiPlanSummary({ config, kpiRole, full }: { config: KpiConfig; kp
       <div><p className="text-xs text-muted-foreground">{t(role === 'hunter' ? 'kpiAttendanceMetric' : 'kpiTrialConversionMetric')}</p><p className="mt-2 text-3xl font-semibold tabular-nums">{config.conversionTargetPercent}%</p></div>
     </div>
     <dl className="space-y-3 text-sm">
-      <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-muted-foreground">{t('kpiPayBase')}</dt><dd className="font-medium tabular-nums">{kpiMoney(config.baseSalaryUzs, language)}</dd></div>
+      {showBase ? <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-muted-foreground">{t('kpiPayBase')}</dt><dd className="font-medium tabular-nums">{kpiMoney(config.baseSalaryUzs, language)}</dd></div> : null}
       <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-muted-foreground">{t('kpiPayVariable')}</dt><dd className="font-medium tabular-nums">{kpiMoney(config.variableSalaryUzs, language)}</dd></div>
     </dl>
     <div><h4 className="mb-2 text-sm font-medium">{(role === 'hunter' ? t('kpiTrialBonus') : t('kpiStudentBonus'))}</h4>
@@ -26,12 +26,13 @@ function SingleKpiPlanSummary({ config, kpiRole, full }: { config: KpiConfig; kp
     </div>
     {full ? <div className="space-y-5 border-t pt-5">{Object.entries(kpiPlanFieldGroups).map(([section, fields]) => <section key={section} className="space-y-2">
       <h4 className="font-semibold">{t(kpiPlanSectionKeys[section as keyof typeof kpiPlanFieldGroups])}</h4>
-      <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">{fields.filter((field) => !field.role || field.role === role).map((field) => <div key={field.name} className="flex items-baseline justify-between gap-3 border-b border-border/40 py-2">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">{fields.filter((field) => (!field.role || field.role === role)
+        && (showBase || field.name !== 'baseSalaryUzs')).map((field) => <div key={field.name} className="flex items-baseline justify-between gap-3 border-b border-border/40 py-2">
         <dt className="text-muted-foreground">{t(kpiFieldLabel(field, role))}</dt><dd className="shrink-0 font-medium tabular-nums">{new Intl.NumberFormat(language).format(config[field.name])}</dd>
       </div>)}</dl>
     </section>)}
       <dl className="space-y-3 border-t pt-4 text-sm">
-        <div><dt className="text-muted-foreground">{t('kpiBaseConditions')}</dt><dd className="mt-1 font-medium">{config.baseSalaryMode === 'guaranteed' ? t('kpiGuaranteedShort') : t('kpiConditionalShort')}</dd></div>
+        {showBase ? <div><dt className="text-muted-foreground">{t('kpiBaseConditions')}</dt><dd className="mt-1 font-medium">{config.baseSalaryMode === 'guaranteed' ? t('kpiGuaranteedShort') : t('kpiConditionalShort')}</dd></div> : null}
         {role === 'hunter' ? <div><dt className="text-muted-foreground">{t('kpiQualityEqual').replace('{percent}', String(config.qualityThresholdPercent))}</dt><dd className="mt-1 font-medium">{config.qualityThresholdInclusive ? t('yes') : t('no')}</dd></div> : null}
         <div><dt className="text-muted-foreground">{t('kpiWorkdays')}</dt><dd className="mt-1 font-medium">{config.workdays.map((day) => t(kpiDayKeys[day - 1])).join(', ')}</dd></div>
         <div><dt className="text-muted-foreground">{t('kpiDashboardDisplay')}</dt><dd className="mt-1 font-medium">{config.enabledMetrics.map((metric) => t(metricKeys[metric])).join(', ')}</dd></div>
@@ -41,18 +42,24 @@ function SingleKpiPlanSummary({ config, kpiRole, full }: { config: KpiConfig; kp
 }
 
 export function KpiPlanSummary({ config, role, full = false }: { config: KpiPlanConfig; role: KpiRole; full?: boolean }) {
-  const { t } = useTranslation();
-  if (role === 'full_cycle' && isFullCycleKpiConfig(config)) {
-    return <div className="grid gap-6 xl:grid-cols-2">
-      <section className="space-y-3"><h4 className="text-sm font-semibold">{t('kpiBeforeTrial')}</h4>
-        <SingleKpiPlanSummary config={config.hunter} kpiRole="hunter" full={full} />
-      </section>
-      <section className="space-y-3"><h4 className="text-sm font-semibold">{t('kpiAfterTrial')}</h4>
-        <SingleKpiPlanSummary config={config.closer} kpiRole="closer" full={full} />
-      </section>
+  const { t, language } = useTranslation();
+  if (isFullCycleKpiRole(role) && isFullCycleKpiConfig(config)) {
+    return <div className="space-y-6">
+      <dl className="grid gap-3 rounded-lg bg-muted/30 p-4 text-sm sm:grid-cols-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-muted-foreground">{t('kpiPayBase')}</dt><dd className="font-medium tabular-nums">{kpiMoney(config.baseSalaryUzs, language)}</dd></div>
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-muted-foreground">{t('kpiBaseConditions')}</dt><dd className="font-medium">{config.baseSalaryMode === 'guaranteed' ? t('kpiGuaranteedShort') : t('kpiConditionalShort')}</dd></div>
+      </dl>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section className="space-y-3"><h4 className="text-sm font-semibold">{t('kpiBeforeTrial')}</h4>
+          <SingleKpiPlanSummary config={config.hunter} kpiRole="hunter" full={full} showBase={false} />
+        </section>
+        <section className="space-y-3"><h4 className="text-sm font-semibold">{t('kpiAfterTrial')}</h4>
+          <SingleKpiPlanSummary config={config.closer} kpiRole="closer" full={full} showBase={false} />
+        </section>
+      </div>
     </div>;
   }
-  if (!isFullCycleKpiConfig(config) && role !== 'full_cycle') {
+  if (!isFullCycleKpiConfig(config) && !isFullCycleKpiRole(role)) {
     return <SingleKpiPlanSummary config={config} kpiRole={role} full={full} />;
   }
   return null;

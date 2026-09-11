@@ -39,7 +39,9 @@ describe('sales KPI version and employee transactions', () => {
   });
   it('reports the same minimum month enforced by the plan writer', async () => {
     db.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM academy_sales_kpi_plans') ? [current] : [{ role: 'hunter' }] }));
-    expect((await listKpiPlans()).minimumEffectiveMonth).toEqual({ hunter: '2026-10', closer: '2026-09', full_cycle: '2026-09' });
+    expect((await listKpiPlans()).minimumEffectiveMonth).toEqual({
+      hunter: '2026-10', closer: '2026-09', full_cycle: '2026-09', full_cycle_3500: '2026-09',
+    });
   });
   it('assigns a first role this month and captures attribution in the supplied employee transaction', async () => {
     const executor = { query: db.query };
@@ -61,6 +63,10 @@ describe('sales KPI version and employee transactions', () => {
     const executor = { query: db.query };
     await setEmployeeKpiAssignment(executor, 7, 'full_cycle', ['sales'], 1);
     expect(db.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(10402, $1)', [3]);
+  });
+  it('uses a separate plan lock for the 3.5m full-cycle role', async () => {
+    await setEmployeeKpiAssignment({ query: db.query }, 7, 'full_cycle_3500', ['sales'], 1);
+    expect(db.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(10402, $1)', [4]);
   });
   it('parses a full-cycle plan as two complete role configurations', async () => {
     const fullCycle = { hunter: defaultKpiConfig('hunter'), closer: defaultKpiConfig('closer') };

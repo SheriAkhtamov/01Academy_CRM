@@ -2,8 +2,13 @@ import { z } from 'zod';
 
 export const SINGLE_KPI_ROLES = ['hunter', 'closer'] as const;
 export type SingleKpiRole = (typeof SINGLE_KPI_ROLES)[number];
-export const KPI_ROLES = [...SINGLE_KPI_ROLES, 'full_cycle'] as const;
+export const FULL_CYCLE_KPI_ROLES = ['full_cycle', 'full_cycle_3500'] as const;
+export type FullCycleKpiRole = (typeof FULL_CYCLE_KPI_ROLES)[number];
+export const KPI_ROLES = [...SINGLE_KPI_ROLES, ...FULL_CYCLE_KPI_ROLES] as const;
 export type KpiRole = (typeof KPI_ROLES)[number];
+export const isFullCycleKpiRole = (role: string | null | undefined): role is FullCycleKpiRole => (
+  FULL_CYCLE_KPI_ROLES.includes(role as FullCycleKpiRole)
+);
 export const KPI_METRICS = [
   'response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation',
   'reactivatedAttendance', 'newStudents', 'trialConversion', 'offer',
@@ -14,6 +19,8 @@ export const ROLE_METRICS: Record<KpiRole, KpiMetricId[]> = {
   hunter: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance'],
   closer: ['newStudents', 'trialConversion', 'offer', 'crm', 'renewals', 'renewalConversion', 'upsells', 'referrals', 'nps'],
   full_cycle: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
+    'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'referrals', 'nps'],
+  full_cycle_3500: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
     'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'referrals', 'nps'],
 };
 
@@ -65,6 +72,8 @@ export const kpiConfigSchema = z.object({
 });
 export type KpiConfig = z.infer<typeof kpiConfigSchema>;
 export const fullCycleKpiConfigSchema = z.object({
+  baseSalaryUzs: money,
+  baseSalaryMode: z.enum(['guaranteed', 'conditional']),
   hunter: kpiConfigSchema,
   closer: kpiConfigSchema,
 }).strict();
@@ -75,9 +84,23 @@ export const isFullCycleKpiConfig = (config: KpiPlanConfig): config is FullCycle
   'hunter' in config && 'closer' in config
 );
 
-export const parseKpiPlanConfig = (role: KpiRole, config: unknown): KpiPlanConfig => (
-  role === 'full_cycle' ? fullCycleKpiConfigSchema.parse(config) : kpiConfigSchema.parse(config)
-);
+const legacyFullCycleKpiConfigSchema = z.object({
+  hunter: kpiConfigSchema,
+  closer: kpiConfigSchema,
+}).strict();
+
+export const parseKpiPlanConfig = (role: KpiRole, config: unknown): KpiPlanConfig => {
+  if (!isFullCycleKpiRole(role)) return kpiConfigSchema.parse(config);
+  const current = fullCycleKpiConfigSchema.safeParse(config);
+  if (current.success) return current.data;
+  const legacy = legacyFullCycleKpiConfigSchema.parse(config);
+  return {
+    baseSalaryUzs: legacy.hunter.baseSalaryUzs + legacy.closer.baseSalaryUzs,
+    baseSalaryMode: legacy.hunter.baseSalaryMode === 'guaranteed' && legacy.closer.baseSalaryMode === 'guaranteed'
+      ? 'guaranteed' : 'conditional',
+    ...legacy,
+  };
+};
 
 export function defaultKpiConfig(role: SingleKpiRole): KpiConfig {
   const hunter = role === 'hunter';
@@ -118,8 +141,13 @@ export function defaultKpiConfig(role: SingleKpiRole): KpiConfig {
 }
 
 export function defaultKpiPlanConfig(role: KpiRole): KpiPlanConfig {
-  return role === 'full_cycle'
-    ? { hunter: defaultKpiConfig('hunter'), closer: defaultKpiConfig('closer') }
+  return isFullCycleKpiRole(role)
+    ? {
+      baseSalaryUzs: role === 'full_cycle' ? 3_000_000 : 3_500_000,
+      baseSalaryMode: 'guaranteed',
+      hunter: defaultKpiConfig('hunter'),
+      closer: defaultKpiConfig('closer'),
+    }
     : defaultKpiConfig(role);
 }
 

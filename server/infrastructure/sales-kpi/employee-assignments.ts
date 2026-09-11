@@ -1,9 +1,9 @@
 import type { PoolClient } from 'pg';
-import { kpiRoleSchema, type KpiEmployeeAssignment, type KpiRole } from '@shared/sales-kpi';
+import { KPI_ROLES, kpiRoleSchema, type KpiEmployeeAssignment, type KpiRole } from '@shared/sales-kpi';
 import { kpiMonth, nextKpiMonth } from '@shared/sales-kpi-time';
 
 type Executor = Pick<PoolClient, 'query'>;
-const roleLock = (role: KpiRole) => role === 'hunter' ? 1 : role === 'closer' ? 2 : 3;
+const roleLock = (role: KpiRole) => KPI_ROLES.indexOf(role) + 1;
 export function parseEmployeeKpiRole(value: unknown): KpiRole | null | undefined {
   if (value === undefined || value === null) return value;
   const parsed = kpiRoleSchema.safeParse(value);

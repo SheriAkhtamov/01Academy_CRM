@@ -1,6 +1,6 @@
 import type { Control } from 'react-hook-form';
 import type { UserFormValues } from '@/features/employees/employeeFormSchema';
-import type { KpiEmployeeAssignment, KpiRole } from '@shared/sales-kpi';
+import { KPI_ROLES, type KpiEmployeeAssignment, type KpiRole } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,9 +23,7 @@ export function EmployeeKpiField({ control, assignment, onRoleChange }: {
         <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
         <SelectContent>
           <SelectItem value="none">{t('kpiNotAssigned')}</SelectItem>
-          <SelectItem value="hunter">{t('kpiHunter')}</SelectItem>
-          <SelectItem value="closer">{t('kpiCloser')}</SelectItem>
-          <SelectItem value="full_cycle">{t('kpiFullCycle')}</SelectItem>
+          {KPI_ROLES.map((role) => <SelectItem key={role} value={role}>{t(roleKeys[role])}</SelectItem>)}
         </SelectContent>
       </Select>
       <p className="text-xs leading-relaxed text-muted-foreground">{t('kpiAssignmentHint')}</p>

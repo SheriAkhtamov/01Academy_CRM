@@ -1,4 +1,5 @@
 import type { AcademyAccessModule } from '@shared/academy';
+import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import type { ActorContext } from './actor-context';
 
 export type LeadAccessRecord = {
@@ -17,7 +18,7 @@ export const canActorAccessFunnel = (actor: ActorContext, lead: LeadAccessRecord
   const employeeRole = actor.salesWorkflow?.role;
   const assigned = actor.salesWorkflow?.assignedFunnelIds?.includes(Number(lead.funnelId)) === true;
   return actor.isLeadership || Number(lead.managerId) === actor.userId || (assigned && (!role || (role === 'closer'
-    ? employeeRole === 'closer' || employeeRole === 'full_cycle' : employeeRole !== 'closer')));
+    ? employeeRole === 'closer' || isFullCycleKpiRole(employeeRole) : employeeRole !== 'closer')));
 };
 
 export const actorHasModule = (

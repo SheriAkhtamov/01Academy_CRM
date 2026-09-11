@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpRight } from 'lucide-react';
-import type { KpiMetric, KpiMetricId, KpiOverviewEmployee } from '@shared/sales-kpi';
+import { isFullCycleKpiRole, type KpiMetric, type KpiMetricId, type KpiOverviewEmployee } from '@shared/sales-kpi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { OverviewDialog, overviewButton } from '@/components/ux/sales-overview/OverviewDialog';
 import { SalesTargetBullet } from '@/components/ux/sales-overview/SalesMetricGauge';
@@ -34,7 +34,7 @@ export function SalesKpiOverview({ month, employees, loading, failed, onRetry }:
   const employee = employees.length === 1 ? employees[0] : null;
   const selected = employees.find((item) => item.id === selectedId);
   const primaryIds: KpiMetricId[] = employee?.role === 'hunter' ? ['bookings', 'attendance', 'response']
-    : employee?.role === 'full_cycle' ? ['bookings', 'attendance', 'newStudents']
+    : isFullCycleKpiRole(employee?.role) ? ['bookings', 'attendance', 'newStudents']
       : ['newStudents', 'trialConversion', 'renewalConversion'];
   const primary = primaryIds.flatMap((id) => employee?.calculation.metrics.find((item) => item.id === id) ?? []);
   if (!loading && !failed && !employees.length) return null;

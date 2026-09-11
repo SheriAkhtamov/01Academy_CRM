@@ -1,6 +1,6 @@
 import { pool } from '../../db';
 import type { PoolClient } from 'pg';
-import { parseKpiPlanConfig, type KpiPlanConfig, type KpiPlanVersion, type KpiRole } from '@shared/sales-kpi';
+import { KPI_ROLES, parseKpiPlanConfig, type KpiPlanConfig, type KpiPlanVersion, type KpiRole } from '@shared/sales-kpi';
 import { kpiMonth, nextKpiMonth } from '@shared/sales-kpi-time';
 import { readEmployeeKpiAssignments } from './employee-assignments';
 
@@ -30,15 +30,15 @@ export async function listKpiPlans() {
     pool.query<{ role: KpiRole }>(`SELECT DISTINCT role FROM academy_sales_kpi_assignments
       WHERE effective_month <= $1 AND role IS NOT NULL`, [kpiMonth()]),
   ]);
-  return { versions: rows.map(mapPlan), currentMonth: kpiMonth(),
-    minimumEffectiveMonth: {
-      hunter: activeRoles.some((row) => row.role === 'hunter') ? nextKpiMonth(kpiMonth()) : kpiMonth(),
-      closer: activeRoles.some((row) => row.role === 'closer') ? nextKpiMonth(kpiMonth()) : kpiMonth(),
-      full_cycle: activeRoles.some((row) => row.role === 'full_cycle') ? nextKpiMonth(kpiMonth()) : kpiMonth(),
-    } };
+  const month = kpiMonth();
+  const minimumEffectiveMonth = Object.fromEntries(KPI_ROLES.map((role) => [
+    role,
+    activeRoles.some((row) => row.role === role) ? nextKpiMonth(month) : month,
+  ])) as Record<KpiRole, string>;
+  return { versions: rows.map(mapPlan), currentMonth: month, minimumEffectiveMonth };
 }
 
-const roleLock = (role: KpiRole) => role === 'hunter' ? 1 : role === 'closer' ? 2 : 3;
+const roleLock = (role: KpiRole) => KPI_ROLES.indexOf(role) + 1;
 
 export async function saveKpiPlan(actorId: number, role: KpiRole, config: KpiPlanConfig, effectiveMonth: string, expectedVersionId: number) {
   return kpiTransaction(async (client) => {

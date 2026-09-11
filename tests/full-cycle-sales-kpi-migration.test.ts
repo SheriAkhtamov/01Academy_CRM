@@ -5,6 +5,10 @@ const migration = readFileSync(
   new URL('../migrations/0110_full_cycle_sales_kpi.sql', import.meta.url),
   'utf8',
 );
+const salaryVariantsMigration = readFileSync(
+  new URL('../migrations/0111_full_cycle_salary_variants.sql', import.meta.url),
+  'utf8',
+);
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
   'utf8',
@@ -20,7 +24,7 @@ describe('full-cycle sales KPI migration', () => {
     expect(migration).toContain("jsonb_build_object('hunter', hunter.config, 'closer', closer.config)");
     expect(migration).not.toMatch(/UPDATE academy_sales_kpi_plans SET/);
     expect(migration).not.toMatch(/DELETE FROM academy_sales_kpi_(plans|assignments|leads)/);
-    expect(schema).toContain("IN ('hunter', 'closer', 'full_cycle')");
+    expect(schema).toContain("IN ('hunter', 'closer', 'full_cycle', 'full_cycle_3500')");
   });
 
   it('attributes both KPI phases and permits the same owner in both workflow funnels', () => {
@@ -31,9 +35,30 @@ describe('full-cycle sales KPI migration', () => {
   });
 
   it('registers the migration after the company-target removal', () => {
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+    expect(journal.entries.at(-2)).toEqual(expect.objectContaining({
       idx: 110,
       tag: '0110_full_cycle_sales_kpi',
     }));
+  });
+
+  it('adds two full-cycle salary variants while preserving their shared rules', () => {
+    expect(salaryVariantsMigration).toContain("CHECK (role IN ('hunter', 'closer', 'full_cycle', 'full_cycle_3500'))");
+    expect(salaryVariantsMigration).toContain("SELECT 'full_cycle',");
+    expect(salaryVariantsMigration).toContain("'baseSalaryUzs', 3000000");
+    expect(salaryVariantsMigration).toContain("SELECT 'full_cycle_3500',");
+    expect(salaryVariantsMigration).toContain("'baseSalaryUzs', 3500000");
+    expect(salaryVariantsMigration).not.toMatch(/UPDATE academy_sales_kpi_plans SET/);
+    expect(salaryVariantsMigration).not.toMatch(/DELETE FROM academy_sales_kpi_(plans|assignments|leads)/);
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+      idx: 111,
+      tag: '0111_full_cycle_salary_variants',
+    }));
+  });
+
+  it('gives both full-cycle variants the same workflow permissions and attribution', () => {
+    expect(salaryVariantsMigration).toContain("assigned_role IN ('hunter', 'full_cycle', 'full_cycle_3500')");
+    expect(salaryVariantsMigration).toContain("assigned_role IN ('closer', 'full_cycle', 'full_cycle_3500')");
+    expect(salaryVariantsMigration).toContain("assigned_role IS DISTINCT FROM 'full_cycle_3500'");
+    expect(salaryVariantsMigration).toContain("academy_kpi_employee_role(assigned_manager) IN ('closer', 'full_cycle', 'full_cycle_3500')");
   });
 });

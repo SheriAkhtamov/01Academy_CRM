@@ -1,4 +1,5 @@
 import type { SalesFunnelRole } from '@shared/sales-funnel-workflow';
+import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import { queryOne } from './academy-core';
 
 export const getSalesFunnelRole = async (funnelId: unknown): Promise<SalesFunnelRole | null> => {
@@ -26,7 +27,7 @@ export const assertSalesFunnelAssignment = async (funnelId: unknown, managerId: 
   if (!result?.isAssigned) {
     throw Object.assign(new Error('salesFunnelNotAssigned'), { statusCode: 403 });
   }
-  if (result?.workflowRole === 'closer' && !['closer', 'full_cycle'].includes(result.employeeRole ?? '')) {
+  if (result?.workflowRole === 'closer' && result.employeeRole !== 'closer' && !isFullCycleKpiRole(result.employeeRole)) {
     throw Object.assign(new Error('salesFunnelCloserOnly'), { statusCode: 403 });
   }
   if (result?.workflowRole === 'hunter' && result.employeeRole === 'closer') {

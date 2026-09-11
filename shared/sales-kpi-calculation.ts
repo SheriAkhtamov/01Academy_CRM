@@ -2,7 +2,7 @@ import type {
   KpiCalculation, KpiConfig, KpiDetail, KpiFacts, KpiLeadFact, KpiMetric,
   KpiMetricId, KpiPlanConfig, KpiRole, KpiSaleFact, KpiTrialFact, SingleKpiRole,
 } from './sales-kpi';
-import { isFullCycleKpiConfig } from './sales-kpi';
+import { isFullCycleKpiConfig, isFullCycleKpiRole } from './sales-kpi';
 import { calculateKpiPay } from './sales-kpi-pay';
 import { kpiDay, kpiMonthBounds, offerDeadline, workingMinutesBetween } from './sales-kpi-time';
 
@@ -24,7 +24,7 @@ export function calculateSalesKpi(
   role: KpiRole, employeeId: number, month: string, config: KpiPlanConfig,
   facts: KpiFacts, asOf = new Date().toISOString(),
 ): KpiCalculation {
-  if (role === 'full_cycle') {
+  if (isFullCycleKpiRole(role)) {
     if (!isFullCycleKpiConfig(config)) throw new Error('invalid full-cycle KPI config');
     const hunter = calculateSingleSalesKpi('hunter', employeeId, month, config.hunter, facts, asOf);
     const closer = calculateSingleSalesKpi('closer', employeeId, month, config.closer, facts, asOf);
@@ -38,19 +38,30 @@ export function calculateSalesKpi(
       ...(crm ? [crm] : []),
       ...closer.metrics.filter((metric) => metric.id !== 'crm'),
     ];
+    const baseConditions = {
+      volume: hunter.baseConditions.volume && closer.baseConditions.volume,
+      crm: combineCondition(hunter.baseConditions.crm, closer.baseConditions.crm),
+      timing: combineCondition(hunter.baseConditions.timing, closer.baseConditions.timing),
+    };
+    const conditions = Object.values(baseConditions);
+    const baseStatus: KpiCalculation['payLines'][number]['status'] = config.baseSalaryMode === 'guaranteed' || conditions.every((value) => value === true)
+      ? 'earned' : conditions.includes(false) ? 'not_met' : 'pending';
     const payLines = [
-      ...hunter.payLines.map((line) => ({ ...line, phase: 'hunter' as const })),
-      ...closer.payLines.map((line) => ({ ...line, phase: 'closer' as const })),
+      {
+        key: 'base' as const,
+        quantity: 1,
+        rateUzs: config.baseSalaryUzs,
+        amountUzs: baseStatus === 'earned' ? config.baseSalaryUzs : 0,
+        status: baseStatus,
+      },
+      ...hunter.payLines.filter((line) => line.key !== 'base').map((line) => ({ ...line, phase: 'hunter' as const })),
+      ...closer.payLines.filter((line) => line.key !== 'base').map((line) => ({ ...line, phase: 'closer' as const })),
     ];
     return {
       metrics,
       payLines,
       totalUzs: payLines.reduce((sum, line) => sum + line.amountUzs, 0),
-      baseConditions: {
-        volume: hunter.baseConditions.volume && closer.baseConditions.volume,
-        crm: combineCondition(hunter.baseConditions.crm, closer.baseConditions.crm),
-        timing: combineCondition(hunter.baseConditions.timing, closer.baseConditions.timing),
-      },
+      baseConditions,
       reviewableSales: closer.reviewableSales,
       unclassifiedSales: closer.unclassifiedSales,
     };

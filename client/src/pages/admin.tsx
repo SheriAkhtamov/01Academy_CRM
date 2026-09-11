@@ -86,6 +86,7 @@ import {
   type AcademyAccessModule,
   type AcademyModule,
 } from '@shared/academy';
+import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import {
   createCredentialsSchema,
   createUserSchema,
@@ -934,7 +935,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           <>
                             <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi}
                               onRoleChange={(role) => {
-                                if (role !== 'full_cycle') return;
+                                if (!isFullCycleKpiRole(role)) return;
                                 const workflowFunnelIds = salesFunnels.filter((funnel) => funnel.isActive && funnel.workflowRole)
                                   .map((funnel) => funnel.id);
                                 userForm.setValue('salesFunnelIds', [...new Set([

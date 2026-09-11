@@ -1,7 +1,12 @@
 import { isFullCycleKpiConfig, ROLE_METRICS, type KpiMetricId, type KpiPlanConfig, type KpiRole, type KpiSaleKind } from '@shared/sales-kpi';
 import type { TranslationKey } from '@/lib/i18n';
 
-export const roleKeys = { hunter: 'kpiHunter', closer: 'kpiCloser', full_cycle: 'kpiFullCycle' } satisfies Record<KpiRole, TranslationKey>;
+export const roleKeys = {
+  hunter: 'kpiHunter',
+  closer: 'kpiCloser',
+  full_cycle: 'kpiFullCycle3000',
+  full_cycle_3500: 'kpiFullCycle3500',
+} satisfies Record<KpiRole, TranslationKey>;
 export const metricKeys = {
   response: 'kpiResponseMetric', qualified: 'kpiQualifiedMetric', bookings: 'kpiBookingsMetric',
   attendance: 'kpiAttendanceMetric', crm: 'kpiCrmMetric', reactivation: 'kpiReactivationMetric',

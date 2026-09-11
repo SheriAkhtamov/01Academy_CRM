@@ -84,7 +84,7 @@ describe('employee sales funnel assignments', () => {
 
   it('always assigns both protected workflow funnels to a full-cycle employee', async () => {
     const query = vi.fn(async (statement: string) => {
-      if (statement.includes('FROM academy_sales_kpi_assignments')) return { rows: [{ role: 'full_cycle' }] };
+      if (statement.includes('FROM academy_sales_kpi_assignments')) return { rows: [{ role: 'full_cycle_3500' }] };
       if (statement.includes("workflow_role IN ('hunter', 'closer')")) return { rows: [{ id: 1 }, { id: 2 }] };
       if (statement.includes('id = ANY')) return { rows: [{ id: 1 }, { id: 2 }, { id: 3 }] };
       if (statement.includes('COUNT(*)::int AS count')) return { rows: [{ count: 0 }] };

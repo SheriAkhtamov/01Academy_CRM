@@ -4,10 +4,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, Trash2 } from 'lucide-react';
 import {
   ROLE_METRICS,
+  fullCycleKpiConfigSchema,
   isFullCycleKpiConfig,
+  isFullCycleKpiRole,
   kpiConfigSchema,
   kpiMonthSchema,
   type FullCycleKpiConfig,
+  type FullCycleKpiRole,
   type KpiConfig,
   type KpiPlanVersion,
   type SingleKpiRole,
@@ -47,12 +50,13 @@ const firstErrorSection = (errors: FieldErrors<KpiConfig>) => {
   return first ? kpiSectionForField(first) : 'targets';
 };
 
-function ConfigEditor({ form, kpiRole, section, onSectionChange, idPrefix }: {
+function ConfigEditor({ form, kpiRole, section, onSectionChange, idPrefix, hideFixedSalary = false }: {
   form: UseFormReturn<KpiConfig>;
   kpiRole: SingleKpiRole;
   section: KpiPlanSection;
   onSectionChange: (section: KpiPlanSection) => void;
   idPrefix: string;
+  hideFixedSalary?: boolean;
 }) {
   const { t } = useTranslation();
   const role = kpiRole;
@@ -80,12 +84,13 @@ function ConfigEditor({ form, kpiRole, section, onSectionChange, idPrefix }: {
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
         <TabsContent value="targets" className="mt-0">{fields(kpiPlanFieldGroups.targets)}</TabsContent>
         <TabsContent value="pay" className="mt-0 space-y-6">
-          {fields(kpiPlanFieldGroups.pay.filter((field) => ['baseSalaryUzs', 'variableSalaryUzs'].includes(field.name)))}
+          {fields(kpiPlanFieldGroups.pay.filter((field) => ['baseSalaryUzs', 'variableSalaryUzs'].includes(field.name)
+            && (!hideFixedSalary || field.name !== 'baseSalaryUzs')))}
           <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">{t('kpiBaseConditions')}</legend>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{(['guaranteed', 'conditional'] as const).map((mode) => <label key={mode} className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm ${values.baseSalaryMode === mode ? 'border-primary/50 bg-primary/5' : ''}`}>
+            {!hideFixedSalary ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{(['guaranteed', 'conditional'] as const).map((mode) => <label key={mode} className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm ${values.baseSalaryMode === mode ? 'border-primary/50 bg-primary/5' : ''}`}>
               <input type="radio" className="size-4 accent-primary" name={`${idPrefix}-salary-mode`} value={mode} checked={values.baseSalaryMode === mode} onChange={() => form.setValue('baseSalaryMode', mode, { shouldDirty: true })} />
               {mode === 'guaranteed' ? t('kpiGuaranteedShort') : t('kpiConditionalShort')}
-            </label>)}</div>
+            </label>)}</div> : null}
             {fields(kpiPlanFieldGroups.pay.filter((field) => field.name === 'minimumVolume'))}
           </fieldset>
           <section className="space-y-3"><h3 className="text-sm font-semibold">{role === 'hunter' ? t('kpiTrialBonus') : t('kpiStudentBonus')}</h3>
@@ -188,10 +193,18 @@ function SingleRoleRulesDialog({ version, role, config, minimumMonth, expectedVe
   </>;
 }
 
-function FullCycleRulesDialog({ version, config, minimumMonth, expectedVersionId, onClose }: CommonProps & { config: FullCycleKpiConfig }) {
+const fullCycleSalarySchema = fullCycleKpiConfigSchema.pick({ baseSalaryUzs: true, baseSalaryMode: true });
+type FullCycleSalaryConfig = Pick<FullCycleKpiConfig, 'baseSalaryUzs' | 'baseSalaryMode'>;
+
+function FullCycleRulesDialog({ version, config, minimumMonth, expectedVersionId, onClose }: CommonProps & { version: KpiPlanVersion & { role: FullCycleKpiRole }; config: FullCycleKpiConfig }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const mutation = useSaveKpiRules();
+  const salaryForm = useForm<FullCycleSalaryConfig>({
+    resolver: zodResolver(fullCycleSalarySchema),
+    defaultValues: { baseSalaryUzs: config.baseSalaryUzs, baseSalaryMode: config.baseSalaryMode },
+    shouldFocusError: false,
+  });
   const hunterForm = useForm<KpiConfig>({ resolver: zodResolver(kpiConfigSchema), defaultValues: config.hunter, shouldFocusError: false });
   const closerForm = useForm<KpiConfig>({ resolver: zodResolver(kpiConfigSchema), defaultValues: config.closer, shouldFocusError: false });
   const initialMonth = version.effectiveMonth > minimumMonth ? version.effectiveMonth : minimumMonth;
@@ -199,13 +212,15 @@ function FullCycleRulesDialog({ version, config, minimumMonth, expectedVersionId
   const [monthError, setMonthError] = useState(false);
   const [phase, setPhase] = useState<SingleKpiRole>('hunter');
   const [sections, setSections] = useState<Record<SingleKpiRole, KpiPlanSection>>({ hunter: 'targets', closer: 'targets' });
+  const salaryMode = salaryForm.watch('baseSalaryMode');
   const guard = useUnsavedChangesGuard({ open: true,
-    isDirty: hunterForm.formState.isDirty || closerForm.formState.isDirty || month !== initialMonth,
+    isDirty: salaryForm.formState.isDirty || hunterForm.formState.isDirty || closerForm.formState.isDirty || month !== initialMonth,
     onOpenChange: (open) => { if (!open && !mutation.isPending) onClose(); } });
   const save = async () => {
     if (mutation.isPending) return;
     if (!kpiMonthSchema.safeParse(month).success || month < minimumMonth) { setMonthError(true); return; }
-    const [hunterValid, closerValid] = await Promise.all([hunterForm.trigger(), closerForm.trigger()]);
+    const [salaryValid, hunterValid, closerValid] = await Promise.all([salaryForm.trigger(), hunterForm.trigger(), closerForm.trigger()]);
+    if (!salaryValid) return;
     if (!hunterValid) {
       setPhase('hunter');
       setSections((current) => ({ ...current, hunter: firstErrorSection(hunterForm.formState.errors) }));
@@ -217,7 +232,12 @@ function FullCycleRulesDialog({ version, config, minimumMonth, expectedVersionId
       return;
     }
     try {
-      await mutation.mutateAsync({ role: 'full_cycle', config: { hunter: hunterForm.getValues(), closer: closerForm.getValues() }, effectiveMonth: month, expectedVersionId });
+      await mutation.mutateAsync({
+        role: version.role,
+        config: { ...salaryForm.getValues(), hunter: hunterForm.getValues(), closer: closerForm.getValues() },
+        effectiveMonth: month,
+        expectedVersionId,
+      });
       toast({ title: t('kpiSaved') });
       onClose();
     } catch { /* The draft remains available for retry. */ }
@@ -226,18 +246,34 @@ function FullCycleRulesDialog({ version, config, minimumMonth, expectedVersionId
   return <>
     <Dialog open onOpenChange={guard.handleOpenChange}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0" aria-describedby={undefined}>
-        <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12"><DialogTitle>{t('kpiEditPlan')} · {t('kpiFullCycle')}</DialogTitle></DialogHeader>
+        <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12"><DialogTitle>{t('kpiEditPlan')} · {t(roleKeys[version.role])}</DialogTitle></DialogHeader>
         <form noValidate onSubmit={submit} className="flex min-h-0 flex-1 flex-col" onKeyDown={(event) => {
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }
         }}>
           <MonthField month={month} minimumMonth={minimumMonth} monthError={monthError} onChange={(value) => { setMonth(value); setMonthError(false); }} />
+          <div className="grid shrink-0 gap-4 border-b px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+            <div className="space-y-1.5">
+              <Label htmlFor={`kpi-${version.role}-base-salary`}>{t('kpiBaseSalary')}</Label>
+              <Input id={`kpi-${version.role}-base-salary`} type="number" min={0} max={1_000_000_000}
+                aria-invalid={Boolean(salaryForm.formState.errors.baseSalaryUzs)}
+                aria-describedby={salaryForm.formState.errors.baseSalaryUzs ? `kpi-${version.role}-base-salary-error` : undefined}
+                {...salaryForm.register('baseSalaryUzs', { valueAsNumber: true })} />
+              {salaryForm.formState.errors.baseSalaryUzs ? <p id={`kpi-${version.role}-base-salary-error`} role="alert" className="text-xs text-destructive">{t('invalidData')}</p> : null}
+            </div>
+            <fieldset className="space-y-2"><legend className="text-sm font-medium">{t('kpiBaseConditions')}</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{(['guaranteed', 'conditional'] as const).map((mode) => <label key={mode} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm ${salaryMode === mode ? 'border-primary/50 bg-primary/5' : ''}`}>
+                <input type="radio" className="size-4 accent-primary" name={`kpi-${version.role}-salary-mode`} value={mode} checked={salaryMode === mode} onChange={() => salaryForm.setValue('baseSalaryMode', mode, { shouldDirty: true })} />
+                {mode === 'guaranteed' ? t('kpiGuaranteedShort') : t('kpiConditionalShort')}
+              </label>)}</div>
+            </fieldset>
+          </div>
           <Tabs value={phase} onValueChange={(value) => setPhase(value as SingleKpiRole)} className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="mx-5 mt-4 grid h-auto shrink-0 grid-cols-2" aria-label={t('kpiFullCycle')}>
+            <TabsList className="mx-5 mt-4 grid h-auto shrink-0 grid-cols-2" aria-label={t(roleKeys[version.role])}>
               <TabsTrigger value="hunter">{t('kpiBeforeTrial')}</TabsTrigger>
               <TabsTrigger value="closer">{t('kpiAfterTrial')}</TabsTrigger>
             </TabsList>
-            <TabsContent value="hunter" className="mt-0 flex min-h-0 flex-1 flex-col"><ConfigEditor form={hunterForm} kpiRole="hunter" section={sections.hunter} onSectionChange={(value) => setSections((current) => ({ ...current, hunter: value }))} idPrefix="kpi-full-hunter" /></TabsContent>
-            <TabsContent value="closer" className="mt-0 flex min-h-0 flex-1 flex-col"><ConfigEditor form={closerForm} kpiRole="closer" section={sections.closer} onSectionChange={(value) => setSections((current) => ({ ...current, closer: value }))} idPrefix="kpi-full-closer" /></TabsContent>
+            <TabsContent value="hunter" className="mt-0 flex min-h-0 flex-1 flex-col"><ConfigEditor form={hunterForm} kpiRole="hunter" section={sections.hunter} onSectionChange={(value) => setSections((current) => ({ ...current, hunter: value }))} idPrefix={`kpi-${version.role}-hunter`} hideFixedSalary /></TabsContent>
+            <TabsContent value="closer" className="mt-0 flex min-h-0 flex-1 flex-col"><ConfigEditor form={closerForm} kpiRole="closer" section={sections.closer} onSectionChange={(value) => setSections((current) => ({ ...current, closer: value }))} idPrefix={`kpi-${version.role}-closer`} hideFixedSalary /></TabsContent>
           </Tabs>
           <DialogFooter pending={mutation.isPending} error={mutation.isError ? mutation.error : null} onCancel={() => guard.handleOpenChange(false)} />
         </form>
@@ -249,10 +285,10 @@ function FullCycleRulesDialog({ version, config, minimumMonth, expectedVersionId
 
 export function KpiRulesDialog(props: CommonProps) {
   const { version } = props;
-  if (version.role === 'full_cycle' && isFullCycleKpiConfig(version.config)) {
-    return <FullCycleRulesDialog {...props} config={version.config} />;
+  if (isFullCycleKpiRole(version.role) && isFullCycleKpiConfig(version.config)) {
+    return <FullCycleRulesDialog {...props} version={version as KpiPlanVersion & { role: FullCycleKpiRole }} config={version.config} />;
   }
-  if (version.role !== 'full_cycle' && !isFullCycleKpiConfig(version.config)) {
+  if (!isFullCycleKpiRole(version.role) && !isFullCycleKpiConfig(version.config)) {
     return <SingleRoleRulesDialog {...props} role={version.role} config={version.config} />;
   }
   return null;

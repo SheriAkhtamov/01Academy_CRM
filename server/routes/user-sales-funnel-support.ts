@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { AcademyAccessModule } from '@shared/academy';
+import { isFullCycleKpiRole } from '@shared/sales-kpi';
 
 type QueryExecutor = Pick<PoolClient, 'query'>;
 
@@ -53,7 +54,7 @@ export const syncUserSalesFunnels = async (
      WHERE user_id = $1 ORDER BY effective_month DESC LIMIT 1`,
     [userId],
   );
-  const fullCycle = latestAssignment.rows[0]?.role === 'full_cycle';
+  const fullCycle = isFullCycleKpiRole(latestAssignment.rows[0]?.role);
   let funnelIds = requestedFunnelIds;
   if (funnelIds === undefined) {
     const existing = await executor.query<{ funnel_id: number }>(
@@ -67,7 +68,7 @@ export const syncUserSalesFunnels = async (
       const defaults = await executor.query<{ id: number }>(
         `SELECT id FROM academy_sales_funnels
          WHERE is_active = true AND (workflow_role IS NULL
-           OR academy_kpi_employee_role($1) = 'full_cycle'
+           OR academy_kpi_employee_role($1) IN ('full_cycle', 'full_cycle_3500')
            OR workflow_role = CASE WHEN academy_kpi_employee_role($1) = 'closer' THEN 'closer' ELSE 'hunter' END)
          ORDER BY is_default DESC, id`,
         [userId],
@@ -134,7 +135,7 @@ export const getActiveSalesManagerForFunnelTransfer = async (
            EXISTS (SELECT 1 FROM academy_sales_funnel_users assignment
              WHERE assignment.user_id = u.id AND assignment.funnel_id = lead.funnel_id)
            AND (funnel.workflow_role IS NULL
-             OR (funnel.workflow_role = 'closer' AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle'))
+             OR (funnel.workflow_role = 'closer' AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle', 'full_cycle_3500'))
              OR (funnel.workflow_role = 'hunter' AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'))
          )
        ))

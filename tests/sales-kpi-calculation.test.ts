@@ -80,8 +80,13 @@ describe('sales KPI attribution and month accounting', () => {
     expect(result.metrics.find((item) => item.id === 'newStudents')?.value).toBe(1);
     expect(result.metrics.filter((item) => item.id === 'crm')).toHaveLength(1);
     expect(new Set(result.metrics.map((item) => item.id)).size).toBe(result.metrics.length);
-    expect(new Set(result.payLines.map((line) => line.phase))).toEqual(new Set(['hunter', 'closer']));
-    expect(result.totalUzs).toBe(hunterResult.totalUzs + closerResult.totalUzs);
+    expect(new Set(result.payLines.filter((line) => line.phase).map((line) => line.phase))).toEqual(new Set(['hunter', 'closer']));
+    expect(result.payLines.filter((line) => line.key === 'base')).toEqual([expect.objectContaining({ amountUzs: 3_000_000 })]);
+    expect(result.totalUzs).toBe(hunterResult.totalUzs + closerResult.totalUzs
+      - config.hunter.baseSalaryUzs - config.closer.baseSalaryUzs + config.baseSalaryUzs);
+    const higherSalary = calculateSalesKpi('full_cycle_3500', 7, '2026-09',
+      fullCycleKpiConfigSchema.parse(defaultKpiPlanConfig('full_cycle_3500')), data, at(30, '23:59'));
+    expect(higherSalary.totalUzs - result.totalUzs).toBe(500_000);
   });
 
   it('counts one booking and attendance per student/course, preserving the original owner', () => {

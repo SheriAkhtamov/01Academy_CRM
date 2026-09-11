@@ -18,7 +18,7 @@ export function createSalesKpiTables(ref: {
     createdBy: owner('created_by'), createdAt: createdAt(),
   }, (t) => [
     index('academy_sales_kpi_plans_version_idx').on(t.role, t.effectiveMonth.desc(), t.id.desc()),
-    check('academy_sales_kpi_plans_role_check', sql`${t.role} IN ('hunter', 'closer', 'full_cycle')`),
+    check('academy_sales_kpi_plans_role_check', sql`${t.role} IN ('hunter', 'closer', 'full_cycle', 'full_cycle_3500')`),
     check('academy_sales_kpi_plans_effective_month_check', sql`${t.effectiveMonth} ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'`),
     check('academy_sales_kpi_plans_config_check', sql`jsonb_typeof(${t.config}) = 'object'`),
   ]);
@@ -28,7 +28,7 @@ export function createSalesKpiTables(ref: {
     createdBy: owner('created_by'), createdAt: createdAt(),
   }, (t) => [
     primaryKey({ columns: [t.userId, t.effectiveMonth] }),
-    check('academy_sales_kpi_assignments_role_check', sql`${t.role} IN ('hunter', 'closer', 'full_cycle')`),
+    check('academy_sales_kpi_assignments_role_check', sql`${t.role} IN ('hunter', 'closer', 'full_cycle', 'full_cycle_3500')`),
     check('academy_sales_kpi_assignments_effective_month_check', sql`${t.effectiveMonth} ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'`),
   ]);
   const academySalesKpiLeads = pgTable('academy_sales_kpi_leads', {

@@ -778,6 +778,13 @@
       "when": 1789920000007,
       "tag": "0110_full_cycle_sales_kpi",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1789920000008,
+      "tag": "0111_full_cycle_salary_variants",
+      "breakpoints": true
     }
   ]
 }

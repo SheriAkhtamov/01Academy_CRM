@@ -35,7 +35,7 @@ describe('full-cycle sales KPI migration', () => {
   });
 
   it('registers the migration after the company-target removal', () => {
-    expect(journal.entries.at(-2)).toEqual(expect.objectContaining({
+    expect(journal.entries.find((entry) => entry.idx === 110)).toEqual(expect.objectContaining({
       idx: 110,
       tag: '0110_full_cycle_sales_kpi',
     }));
@@ -49,7 +49,7 @@ describe('full-cycle sales KPI migration', () => {
     expect(salaryVariantsMigration).toContain("'baseSalaryUzs', 3500000");
     expect(salaryVariantsMigration).not.toMatch(/UPDATE academy_sales_kpi_plans SET/);
     expect(salaryVariantsMigration).not.toMatch(/DELETE FROM academy_sales_kpi_(plans|assignments|leads)/);
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+    expect(journal.entries.find((entry) => entry.idx === 111)).toEqual(expect.objectContaining({
       idx: 111,
       tag: '0111_full_cycle_salary_variants',
     }));

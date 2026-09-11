@@ -2566,6 +2566,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   // UX improvements — lead ownership and assignment
   adjustFilters: { en: 'Change the filters to see other leads.', ru: 'Измените фильтры, чтобы увидеть другие лиды.' },
   allManagers: { en: 'All managers', ru: 'Все менеджеры' },
+  allSalesFunnels: { en: 'All sales funnels', ru: 'Все воронки продаж' },
   allStatuses: { en: 'All statuses', ru: 'Все статусы' },
   assignSelected: { en: 'Assign selected', ru: 'Назначить выбранных' },
   massActions: { en: 'Bulk actions', ru: 'Массовые действия' },

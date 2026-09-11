@@ -34,8 +34,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, ArrowRightLeft, Trash2, UsersRound } from 'lucide-react';
 import { getAssignedModules } from '@shared/academy';
+import type { SalesFunnel } from '@/features/sales-funnels/api';
 
-interface AdminLead {
+export interface AdminLead {
   id: number;
   contactName: string;
   phone?: string | null;
@@ -43,10 +44,20 @@ interface AdminLead {
   courseName?: string | null;
   sourceName?: string | null;
   statusCode: string;
+  funnelId: number;
   managerId?: number | null;
   managerName?: string | null;
   createdAt: string;
 }
+
+export const matchesAdminLeadFilters = (
+  lead: AdminLead,
+  filters: { manager: string; status: string; funnel: string },
+) => (
+  (filters.manager === 'all' || String(lead.managerId ?? 'unassigned') === filters.manager)
+  && (filters.status === 'all' || lead.statusCode === filters.status)
+  && (filters.funnel === 'all' || String(lead.funnelId) === filters.funnel)
+);
 
 interface SalesManager {
   id: number;
@@ -67,6 +78,7 @@ export function LeadAssignmentContent() {
   const queryClient = useQueryClient();
   const [managerFilter, setManagerFilter] = useStickyState('leads.admin.managerFilter', 'all');
   const [statusFilter, setStatusFilter] = useStickyState('leads.admin.statusFilter', 'all');
+  const [funnelFilter, setFunnelFilter] = useStickyState('leads.admin.funnelFilter', 'all');
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(() => new Set());
   const [bulkManagerId, setBulkManagerId] = useState('');
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false);
@@ -76,6 +88,7 @@ export function LeadAssignmentContent() {
   const leadsQuery = useQuery<AdminLead[]>({ queryKey: ['/api/academy/leads'] });
   const usersQuery = useQuery<any[]>({ queryKey: ['/api/users'] });
   const statusesQuery = useQuery<PipelineStatus[]>({ queryKey: ['/api/academy/pipeline-statuses'] });
+  const funnelsQuery = useQuery<SalesFunnel[]>({ queryKey: ['/api/academy/sales-funnels'] });
 
   const statuses = useMemo(
     () => [...(statusesQuery.data ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),
@@ -94,11 +107,12 @@ export function LeadAssignmentContent() {
   );
 
   const filteredLeads = useMemo(
-    () => (leadsQuery.data ?? []).filter((lead) => (
-      (managerFilter === 'all' || String(lead.managerId ?? 'unassigned') === managerFilter)
-      && (statusFilter === 'all' || lead.statusCode === statusFilter)
-    )),
-    [leadsQuery.data, managerFilter, statusFilter],
+    () => (leadsQuery.data ?? []).filter((lead) => matchesAdminLeadFilters(lead, {
+      manager: managerFilter,
+      status: statusFilter,
+      funnel: funnelFilter,
+    })),
+    [funnelFilter, leadsQuery.data, managerFilter, statusFilter],
   );
 
   const managerLeadCounts = useMemo(() => {
@@ -347,11 +361,12 @@ export function LeadAssignmentContent() {
     t,
   ]);
 
-  if (leadsQuery.isError || usersQuery.isError || statusesQuery.isError) {
+  if (leadsQuery.isError || usersQuery.isError || statusesQuery.isError || funnelsQuery.isError) {
     const refetchAll = () => Promise.all([
       leadsQuery.refetch(),
       usersQuery.refetch(),
       statusesQuery.refetch(),
+      funnelsQuery.refetch(),
     ]);
     return (
       <div className="flex flex-col items-start gap-3">
@@ -360,7 +375,7 @@ export function LeadAssignmentContent() {
           <AlertTitle>{t('failedToLoadData')}</AlertTitle>
           <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
         </Alert>
-        <Button variant="outline" onClick={() => refetchAll()} disabled={leadsQuery.isFetching || usersQuery.isFetching || statusesQuery.isFetching}>
+        <Button variant="outline" onClick={() => refetchAll()} disabled={leadsQuery.isFetching || usersQuery.isFetching || statusesQuery.isFetching || funnelsQuery.isFetching}>
           {t('retry')}
         </Button>
       </div>
@@ -375,7 +390,7 @@ export function LeadAssignmentContent() {
             <CardTitle>{t('leadFilters')}</CardTitle>
             <CardDescription>{t('leadAssignmentSubtitle')}</CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <Select value={managerFilter} onValueChange={setManagerFilter}>
               <SelectTrigger aria-label={t('responsibleManager')}>
                 <SelectValue />
@@ -402,6 +417,20 @@ export function LeadAssignmentContent() {
                   <SelectItem value="all">{t('allStatuses')}</SelectItem>
                   {statuses.filter((status) => status.isActive !== false).map((status) => (
                     <SelectItem key={status.code} value={status.code}>{statusName(status.code)}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+
+            <Select value={funnelFilter} onValueChange={setFunnelFilter}>
+              <SelectTrigger aria-label={t('salesFunnel')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">{t('allSalesFunnels')}</SelectItem>
+                  {(funnelsQuery.data ?? []).map((funnel) => (
+                    <SelectItem key={funnel.id} value={String(funnel.id)}>{funnel.name}</SelectItem>
                   ))}
                 </SelectGroup>
               </SelectContent>
@@ -441,7 +470,7 @@ export function LeadAssignmentContent() {
 
         <Card>
           <CardContent className="p-0">
-            {leadsQuery.isLoading || usersQuery.isLoading || statusesQuery.isLoading ? (
+            {leadsQuery.isLoading || usersQuery.isLoading || statusesQuery.isLoading || funnelsQuery.isLoading ? (
               <div className="flex flex-col gap-3 p-4">
                 {Array.from({ length: 6 }, (_, index) => (
                   <Skeleton key={index} className="h-14 w-full" />
@@ -464,7 +493,7 @@ export function LeadAssignmentContent() {
                       <h3 className="font-medium text-foreground">{t('noLeadsFound')}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">{t('adjustFilters')}</p>
                     </div>
-                    {(managerFilter !== 'all' || statusFilter !== 'all') ? (
+                    {(managerFilter !== 'all' || statusFilter !== 'all' || funnelFilter !== 'all') ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -472,6 +501,7 @@ export function LeadAssignmentContent() {
                         onClick={() => {
                           setManagerFilter('all');
                           setStatusFilter('all');
+                          setFunnelFilter('all');
                         }}
                       >
                         {t('resetFilters')}

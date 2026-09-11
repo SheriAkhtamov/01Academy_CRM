@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getCompanyTargets, saveCompanyTargets, getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
+import { getCompanyTargets, saveCompanyTargets, getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, handoffKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
 import type { KpiSaleReview } from '@shared/sales-kpi';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 
@@ -43,6 +43,12 @@ export const useRecordKpiOffer = () => {
 export const useClaimKpiLead = () => {
   const client = useQueryClient();
   return useMutation({ mutationFn: claimKpiLead,
+    onSuccess: () => invalidateSalesLeadData(client),
+  });
+};
+export const useHandoffKpiLead = () => {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: handoffKpiLead,
     onSuccess: () => invalidateSalesLeadData(client),
   });
 };

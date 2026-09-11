@@ -28,6 +28,7 @@ import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
 import { LeadSocialAccountsEditor } from '@/components/ux/lead/LeadSocialAccountsEditor';
 import { LeadArchiveActions } from '@/components/ux/lead/LeadArchiveActions';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
+import { useHandoffKpiLead } from '@/features/sales-kpi/hooks';
 import {
   LocalizedFormMessage,
   SegmentedControl,
@@ -101,7 +102,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
-import { LeadDemoAttendanceCard } from '@/features/leads/ui/LeadDemoAttendanceCard';
 import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
@@ -365,6 +365,7 @@ export function LeadDetailSheet({
 }: LeadDetailSheetProps) {
   const { t, language } = useTranslation();
   const onlinePbxCall = useOnlinePbxCall();
+  const handoffLead = useHandoffKpiLead();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
@@ -1016,9 +1017,30 @@ export function LeadDetailSheet({
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
-                  {!lead.isArchived ? <LeadDemoAttendanceCard leadId={lead.id} dateTime={dateTime}
-                    beforeMark={unsavedGuard.requestAction} onTransferred={() => onOpenChange(false)} /> : null}
                   <div className="flex flex-wrap justify-end gap-2">
+                    {!lead.isArchived && lead.funnelRole === 'hunter' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={handoffLead.isPending}
+                        onClick={() => unsavedGuard.requestAction(() => handoffLead.mutate(lead.id, {
+                          onSuccess: () => {
+                            toast({ title: t('leadSentToCloserQueue') });
+                            onChanged();
+                            onOpenChange(false);
+                          },
+                          onError: (error) => toast({
+                            title: t('leadCloserTransferFailed'),
+                            description: error.message,
+                            variant: 'destructive',
+                          }),
+                        }))}
+                      >
+                        {handoffLead.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                          : <ArrowRight data-icon="inline-start" />}
+                        {handoffLead.isPending ? t('saving') : t('sendLeadToClosers')}
+                      </Button>
+                    ) : null}
                     {!lead.isArchived && lead.statusCode !== 'paid' ? (
                       <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
                         <CalendarPlus2 data-icon="inline-start" />

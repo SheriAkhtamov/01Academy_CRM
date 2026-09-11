@@ -1,12 +1,13 @@
 import {
   canAdvanceLeadFromDemo,
+  DEMO_ATTENDED_STAGE,
   demoAttendanceStage,
   isDemoPipelineStage,
 } from '@shared/demo-pipeline';
 import { actorContextFrom, type ActorSource } from '../leads/domain/actor-context';
 import { createAudit, query, updateRow, type Row } from './academy-core';
 import { createStageHistory, handleLeadStatusEffects } from './academy-leads';
-import { prepareDemoFunnelHandoff } from './demo-funnel-handoff';
+import { getSalesFunnelRole } from './sales-funnel-policy';
 
 // Call inside the demo transaction, BEFORE locking students. Payments and lead
 // lifecycle commands also lock parents before their children.
@@ -53,9 +54,16 @@ export const syncDemoLeadStatuses = async (
     const resultStage = latest ? demoAttendanceStage(latest.statuses, latest.status) : null;
     const resultStatus = resultStage ?? (isDemoPipelineStage(lead.statusCode) ? 'demo_invited' : null);
     if (!resultStatus) continue;
-    const changes = await prepareDemoFunnelHandoff(source, lead, resultStatus, latest?.id ?? changedDemoId);
-    const { statusCode: nextStatus, demoAttended } = changes;
-    if (lead.statusCode === nextStatus && lead.demoAttended === demoAttended && changes.funnelId === undefined) continue;
+    const funnelRole = await getSalesFunnelRole(lead.funnelId);
+    const demoAttended = resultStatus === DEMO_ATTENDED_STAGE;
+    // Attendance is an analytics fact, not a funnel transition. Workflow leads
+    // move to the closer queue only through the explicit handoff action.
+    const nextStatus = funnelRole === 'closer'
+      ? String(lead.statusCode)
+      : funnelRole === 'hunter' && resultStatus === DEMO_ATTENDED_STAGE
+        ? (lead.statusCode === 'ne_prishli_na_vstrechu' ? 'demo_invited' : String(lead.statusCode))
+        : resultStatus;
+    if (lead.statusCode === nextStatus && lead.demoAttended === demoAttended) continue;
 
     // Protected stages cannot disappear after migration. Check explicitly so a
     // misconfigured deployment rolls back attendance instead of orphaning leads.
@@ -67,7 +75,7 @@ export const syncDemoLeadStatuses = async (
     if (statuses.length === 0) {
       throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 409 });
     }
-    const updated = await updateRow('academy_leads', Number(lead.id), changes);
+    const updated = await updateRow('academy_leads', Number(lead.id), { statusCode: nextStatus, demoAttended });
     if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
     if (lead.statusCode !== nextStatus) {
       await createStageHistory(

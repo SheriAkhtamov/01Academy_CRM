@@ -8,7 +8,6 @@ import type {
   DemoLessonReschedule,
   DemoLessonResourceAvailabilityRequest,
   DemoLessonTeacherChange,
-  LeadDemoParticipant,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -103,9 +102,6 @@ export const demoLessonQueryKeys = {
 };
 
 export const demoLessonsApi = {
-  leadParticipants: (leadId: number): Promise<LeadDemoParticipant[]> => (
-    apiRequest('GET', `/api/academy/leads/${leadId}/demo-participants`)
-  ),
   list: (params: { from: string; to: string; schoolId?: number | null }) => {
     const query = new URLSearchParams({ from: params.from, to: params.to });
     if (params.schoolId) query.set('schoolId', String(params.schoolId));

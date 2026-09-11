@@ -4,10 +4,20 @@ import { actorContextFrom, type ActorContext } from '../server/modules/leads/dom
 import { canActorMutateLead, canActorViewLead } from '../server/modules/leads/domain/access-policy';
 import { canManageDemoParticipant } from '../server/modules/academy/demo-participant-access';
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), queryOne: vi.fn(), insertRow: vi.fn(), createAudit: vi.fn(), syncLeadManagerRelations: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  query: vi.fn(),
+  queryOne: vi.fn(),
+  insertRow: vi.fn(),
+  updateRow: vi.fn(),
+  createAudit: vi.fn(),
+  createStageHistory: vi.fn(),
+  handleLeadStatusEffects: vi.fn(),
+  syncLeadManagerRelations: vi.fn(),
+  withTransaction: vi.fn(),
+}));
 vi.mock('../server/modules/academy/academy-core', () => mocks);
 vi.mock('../server/modules/academy/academy-leads', () => mocks);
-import { prepareDemoFunnelHandoff } from '../server/modules/academy/demo-funnel-handoff';
+import { handoffKpiLead } from '../server/infrastructure/sales-kpi/kpi-handoff';
 
 const employee = (role: string, userId: number): ActorContext => ({ ...actorContextFrom({ id: userId, module: 'sales' }),
   salesWorkflow: {
@@ -49,38 +59,53 @@ describe('hunter/closer pipeline and permissions', () => {
   });
 });
 
-describe('automatic demo handoff', () => {
-  beforeEach(() => { vi.resetAllMocks(); mocks.query.mockResolvedValue([]); });
-  it('freezes attribution before releasing the lead and its related owners', async () => {
-    mocks.queryOne.mockResolvedValueOnce({ workflowRole: 'hunter' }).mockResolvedValueOnce({ id: 2 });
-    expect(await prepareDemoFunnelHandoff(hunter, lead, 'demo_attended', 3)).toMatchObject({
-      funnelId: 2, managerId: null, statusCode: 'demo_attended', firstViewedAt: null,
-    });
+describe('manual closer queue handoff', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.withTransaction.mockImplementation(async (callback: () => unknown) => callback());
+    mocks.query.mockResolvedValue([]);
+    mocks.updateRow.mockResolvedValue({ id: 10, funnelId: 2, managerId: null, statusCode: 'demo_attended' });
+  });
+
+  it('freezes hunter attribution and releases the lead into the closer funnel', async () => {
+    mocks.queryOne.mockResolvedValueOnce({ role: 'hunter' })
+      .mockResolvedValueOnce({ ...lead, workflowRole: 'hunter' })
+      .mockResolvedValueOnce({ id: 2 });
+
+    await expect(handoffKpiLead({ id: 7, isAdministration: false }, hunter, 10)).resolves.toEqual({ id: 10 });
+
     expect(mocks.query.mock.calls[0]).toEqual(['SELECT academy_kpi_touch_lead($1)', [10]]);
+    expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 10, {
+      funnelId: 2,
+      managerId: null,
+      statusCode: 'demo_attended',
+      firstViewedAt: null,
+      firstViewedBy: null,
+    });
     expect(mocks.syncLeadManagerRelations).toHaveBeenCalledWith(10, null);
-    expect(mocks.insertRow).toHaveBeenCalledWith('academy_lead_assignment_history', expect.objectContaining({ fromManagerId: 7, toManagerId: null }));
+    expect(mocks.insertRow).toHaveBeenCalledWith('academy_lead_assignment_history', expect.objectContaining({
+      fromManagerId: 7,
+      toManagerId: null,
+    }));
+    expect(mocks.createStageHistory).toHaveBeenCalledWith(
+      10,
+      'demo_invited',
+      'demo_attended',
+      7,
+      expect.any(String),
+    );
+    expect(mocks.handleLeadStatusEffects).toHaveBeenCalledOnce();
   });
-  it('does not requeue an already claimed lead on attendance retry', async () => {
-    mocks.queryOne.mockResolvedValueOnce({ workflowRole: 'closer' });
-    expect(await prepareDemoFunnelHandoff(hunter, { ...lead, funnelId: 2, managerId: 8 }, 'demo_attended', 3))
-      .toEqual({ statusCode: 'demo_attended', demoAttended: true });
-    expect(mocks.syncLeadManagerRelations).not.toHaveBeenCalled();
-  });
-  it('does not undo another real attendance when a later demo was missed', async () => {
-    mocks.queryOne.mockResolvedValueOnce({ workflowRole: 'closer' }).mockResolvedValueOnce({ id: 4 });
-    expect(await prepareDemoFunnelHandoff(hunter, { ...lead, funnelId: 2, managerId: null }, 'ne_prishli_na_vstrechu', 3))
-      .toEqual({ statusCode: 'demo_attended', demoAttended: true });
-  });
-  it('returns an unclaimed mistaken attendance to its previous active hunter', async () => {
-    mocks.queryOne.mockResolvedValueOnce({ workflowRole: 'closer' }).mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ fromFunnelId: 1, fromManagerId: 7, activeManagerId: 7 });
-    expect(await prepareDemoFunnelHandoff(hunter, { ...lead, funnelId: 2, managerId: null }, 'ne_prishli_na_vstrechu', 3))
-      .toMatchObject({ funnelId: 1, managerId: 7, demoAttended: false });
-  });
-  it('does not revoke a claimed deal when correcting attendance', async () => {
-    mocks.queryOne.mockResolvedValueOnce({ workflowRole: 'closer' }).mockResolvedValueOnce(null);
-    expect(await prepareDemoFunnelHandoff(hunter, { ...lead, funnelId: 2, managerId: 8, statusCode: 'demo_attended' }, 'ne_prishli_na_vstrechu', 3))
-      .toEqual({ statusCode: 'demo_attended', demoAttended: false });
-    expect(mocks.syncLeadManagerRelations).not.toHaveBeenCalled();
+
+  it('rejects a closer and a hunter who does not own the lead', async () => {
+    mocks.queryOne.mockResolvedValueOnce({ role: 'closer' });
+    await expect(handoffKpiLead({ id: 8, isAdministration: false }, closer, 10))
+      .rejects.toMatchObject({ message: 'salesFunnelHunterOnly', statusCode: 403 });
+
+    mocks.queryOne.mockResolvedValueOnce({ role: 'hunter' })
+      .mockResolvedValueOnce({ ...lead, managerId: 9, workflowRole: 'hunter' });
+    await expect(handoffKpiLead({ id: 7, isAdministration: false }, hunter, 10))
+      .rejects.toMatchObject({ message: 'accessDenied', statusCode: 403 });
+    expect(mocks.updateRow).not.toHaveBeenCalled();
   });
 });

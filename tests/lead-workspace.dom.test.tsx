@@ -11,7 +11,7 @@ vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
 }));
 
 const initialLead = {
-  id: 15, contactName: 'Test parent', statusCode: 'new_request', sourceId: 1,
+  id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelRole: 'hunter' as const, sourceId: 1,
   managerId: 1, managerName: 'Manager', language: 'ru', expectedPaymentUzs: 100_000,
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
@@ -23,7 +23,7 @@ const initialLead = {
     { id: 3, title: 'Finished task', status: 'done', dueAt: '2019-08-01T08:00:00.000Z' },
   ],
 };
-let requests: Array<{ method: string; body: Record<string, unknown> }>;
+let requests: Array<{ url: string; method: string; body: Record<string, unknown> }>;
 let lead: typeof initialLead;
 let queryClient: QueryClient;
 
@@ -36,7 +36,7 @@ beforeEach(() => {
     const method = init?.method ?? 'GET';
     if (method !== 'GET') {
       const body = JSON.parse(String(init?.body ?? '{}'));
-      requests.push({ method, body });
+      requests.push({ url, method, body });
       if (method === 'PATCH') lead = { ...lead, ...body };
     }
     return new Response(JSON.stringify(url.includes('lead-tags') ? [] : lead), {
@@ -76,6 +76,23 @@ describe('lead workspace navigation and drafts', () => {
     expect(tagsEditor.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) })).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) })).toBeTruthy();
+  });
+
+  it('replaces the demo attendance block with one direct closer handoff action', async () => {
+    const { user, onOpenChange } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+
+    expect(screen.queryByRole('heading', { name: i18n.t('demoLesson') })).toBeNull();
+    expect(screen.queryByText(i18n.t('demoParticipantAttended'))).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: i18n.t('sendLeadToClosers') }));
+    await waitFor(() => expect(requests).toContainEqual({
+      url: '/api/academy/sales-kpi/leads/15/handoff',
+      method: 'POST',
+      body: {},
+    }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it('keeps note and task drafts across tabs', async () => {

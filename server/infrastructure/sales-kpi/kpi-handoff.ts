@@ -2,8 +2,14 @@ import { pool } from '../../db';
 import { kpiError, type KpiActor } from './kpi-repository';
 import type { KpiLeadOwnership } from '@shared/sales-kpi';
 import type { ActorSource } from '../../modules/leads/domain/actor-context';
-import { createAudit, query, queryOne, withTransaction } from '../../modules/academy/academy-core';
-import { getActiveSalesManager, reassignLead } from '../../modules/academy/academy-leads';
+import { createAudit, insertRow, query, queryOne, updateRow, withTransaction } from '../../modules/academy/academy-core';
+import {
+  createStageHistory,
+  getActiveSalesManager,
+  handleLeadStatusEffects,
+  reassignLead,
+  syncLeadManagerRelations,
+} from '../../modules/academy/academy-leads';
 
 export async function readKpiLeadOwnership(actor: KpiActor, leadId: number): Promise<KpiLeadOwnership> {
   const { rows: [lead] } = await pool.query<{
@@ -50,6 +56,79 @@ export async function recordKpiOffer(actor: KpiActor, source: ActorSource, leadI
     // records the current event once without pretending it happened earlier.
     await query('UPDATE academy_sales_kpi_leads SET offer_at = COALESCE(offer_at, timezone(\'UTC\', now())) WHERE lead_id = $1', [leadId]);
     await createAudit(source, 'RECORD_SALES_KPI_OFFER', 'academy_lead', leadId, { sent: true });
+  });
+}
+
+export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadId: number) {
+  return withTransaction(async () => {
+    const role = await queryOne<{ role: string | null }>('SELECT academy_kpi_employee_role($1) AS role', [actor.id]);
+    if (!actor.isAdministration && role?.role !== 'hunter') {
+      throw kpiError(new Error('salesFunnelHunterOnly'), 403);
+    }
+
+    const lead = await queryOne(`SELECT lead.*, funnel.workflow_role
+      FROM academy_leads lead
+      JOIN academy_sales_funnels funnel ON funnel.id = lead.funnel_id
+      WHERE lead.id = $1 FOR UPDATE OF lead`, [leadId]);
+    if (!lead) throw kpiError(new Error('resourceNotFound'), 404);
+    if (lead.isArchived || lead.workflowRole !== 'hunter'
+      || (!actor.isAdministration && Number(lead.managerId) !== actor.id)) {
+      throw kpiError(new Error('accessDenied'), 403);
+    }
+
+    const closerFunnel = await queryOne<{ id: number }>(
+      `SELECT id FROM academy_sales_funnels
+       WHERE workflow_role = 'closer' AND is_active = true FOR SHARE`,
+    );
+    if (!closerFunnel) throw kpiError(new Error('salesFunnelRequired'), 409);
+
+    // Freeze hunter attribution before the operational owner is released.
+    await query('SELECT academy_kpi_touch_lead($1)', [leadId]);
+    await query(
+      `INSERT INTO academy_lead_funnel_handoffs(lead_id, from_funnel_id, from_manager_id, demo_lesson_id)
+       VALUES ($1, $2, $3, NULL)
+       ON CONFLICT (lead_id) DO UPDATE SET from_funnel_id = EXCLUDED.from_funnel_id,
+         from_manager_id = EXCLUDED.from_manager_id, demo_lesson_id = NULL,
+         handed_off_at = timezone('UTC', now()), returned_at = NULL`,
+      [leadId, lead.funnelId, lead.managerId ?? null],
+    );
+
+    const updated = await updateRow('academy_leads', leadId, {
+      funnelId: closerFunnel.id,
+      managerId: null,
+      statusCode: 'demo_attended',
+      firstViewedAt: null,
+      firstViewedBy: null,
+    });
+    if (!updated) throw kpiError(new Error('resourceNotFound'), 404);
+
+    await syncLeadManagerRelations(leadId, null);
+    await insertRow('academy_lead_assignment_history', {
+      leadId,
+      fromManagerId: lead.managerId ?? null,
+      toManagerId: null,
+      changedBy: actor.id,
+      comment: 'Передан в очередь клозеров вручную',
+    });
+    if (String(lead.statusCode) !== 'demo_attended') {
+      await createStageHistory(
+        leadId,
+        String(lead.statusCode),
+        'demo_attended',
+        actor.id,
+        'Передан в очередь клозеров вручную',
+      );
+      await handleLeadStatusEffects(source, updated, String(lead.statusCode));
+    }
+    await createAudit(
+      source,
+      'QUEUE_ACADEMY_CLOSER_LEAD',
+      'academy_lead',
+      leadId,
+      { funnelId: closerFunnel.id, managerId: null },
+      { funnelId: lead.funnelId, managerId: lead.managerId },
+    );
+    return { id: Number(updated.id) };
   });
 }
 

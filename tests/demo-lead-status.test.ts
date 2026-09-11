@@ -5,17 +5,20 @@ import { canAdvanceLeadFromDemo, demoAttendanceStage, isDemoPipelineStage } from
 const mocks = vi.hoisted(() => ({
   query: vi.fn(), updateRow: vi.fn(), createAudit: vi.fn(),
   createStageHistory: vi.fn(), handleLeadStatusEffects: vi.fn(),
+  getSalesFunnelRole: vi.fn(),
 }));
 vi.mock('../server/modules/academy/academy-core', () => mocks);
 vi.mock('../server/modules/academy/academy-leads', () => mocks);
+vi.mock('../server/modules/academy/sales-funnel-policy', () => ({ getSalesFunnelRole: mocks.getSalesFunnelRole }));
 import { lockDemoParticipantLeads, syncDemoLeadStatuses } from '../server/modules/academy/demo-lead-status';
 
 const actor = { id: 7, module: 'sales' };
-const lead = { id: 12, statusCode: 'demo_invited', isArchived: false, demoAttended: false };
+const lead = { id: 12, funnelId: 1, statusCode: 'demo_invited', isArchived: false, demoAttended: false };
 
 describe('demo attendance to parent lead stage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.getSalesFunnelRole.mockResolvedValue(null);
     mocks.query.mockResolvedValue([{ code: 'demo_attended' }]);
     mocks.updateRow.mockImplementation(async (_table, id, values) => ({ id, ...values }));
   });
@@ -74,6 +77,33 @@ describe('demo attendance to parent lead stage', () => {
     expect(mocks.updateRow).toHaveBeenCalledOnce();
     expect(mocks.createStageHistory).not.toHaveBeenCalled();
     expect(mocks.handleLeadStatusEffects).not.toHaveBeenCalled();
+  });
+
+  it('records hunter attendance without moving the lead to a closer stage', async () => {
+    mocks.getSalesFunnelRole.mockResolvedValue('hunter');
+    mocks.query.mockResolvedValueOnce([{ id: 3, statuses: ['attended'] }]);
+    await syncDemoLeadStatuses(actor, 3, [lead]);
+    expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 12, {
+      statusCode: 'demo_invited', demoAttended: true,
+    });
+    expect(mocks.createStageHistory).not.toHaveBeenCalled();
+    expect(mocks.handleLeadStatusEffects).not.toHaveBeenCalled();
+  });
+
+  it('does not return a closer lead when attendance is corrected', async () => {
+    mocks.getSalesFunnelRole.mockResolvedValue('closer');
+    mocks.query.mockResolvedValueOnce([{ id: 3, statuses: ['no_show'] }]);
+    await syncDemoLeadStatuses(actor, 3, [{
+      ...lead,
+      funnelId: 2,
+      managerId: null,
+      statusCode: 'demo_attended',
+      demoAttended: true,
+    }]);
+    expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 12, {
+      statusCode: 'demo_attended', demoAttended: false,
+    });
+    expect(mocks.createStageHistory).not.toHaveBeenCalled();
   });
 
   it('corrects attendance from present to absent', async () => {

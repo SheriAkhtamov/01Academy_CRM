@@ -4,13 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultKpiConfig, type KpiPlanVersion } from '../shared/sales-kpi';
 
 const mocks = vi.hoisted(() => ({ employees: vi.fn(), plans: vi.fn(), save: vi.fn(), assignments: vi.fn(), facts: vi.fn(),
-  handoff: vi.fn(), ownership: vi.fn(), offer: vi.fn(), review: vi.fn() }));
+  claim: vi.fn(), handoff: vi.fn(), ownership: vi.fn(), offer: vi.fn(), review: vi.fn() }));
 vi.mock('../server/infrastructure/sales-kpi/kpi-repository', () => ({
   getKpiReportingEmployees: mocks.employees, listKpiPlans: mocks.plans, saveKpiPlan: mocks.save, listKpiAssignments: mocks.assignments,
   kpiError: (error: Error, statusCode = 400) => Object.assign(error, { statusCode }),
 }));
 vi.mock('../server/infrastructure/sales-kpi/kpi-facts', () => ({ readKpiFacts: mocks.facts }));
-vi.mock('../server/infrastructure/sales-kpi/kpi-handoff', () => ({ claimKpiLead: mocks.handoff, readKpiLeadOwnership: mocks.ownership, recordKpiOffer: mocks.offer }));
+vi.mock('../server/infrastructure/sales-kpi/kpi-handoff', () => ({
+  claimKpiLead: mocks.claim,
+  handoffKpiLead: mocks.handoff,
+  readKpiLeadOwnership: mocks.ownership,
+  recordKpiOffer: mocks.offer,
+}));
 vi.mock('../server/infrastructure/sales-kpi/kpi-sales-review', () => ({ reviewKpiSale: mocks.review }));
 vi.mock('../server/lib/logger', () => ({ logger: { error: vi.fn() } }));
 import { createSalesKpiRouter } from '../server/modules/sales-kpi/http/kpi-router';
@@ -95,12 +100,13 @@ describe('sales KPI HTTP access and version selection', () => {
     expect((await request(app).patch(`${path}/payments/10`).send(body)).status).toBe(200);
     expect(mocks.review).toHaveBeenCalledWith({ id: 7, isAdministration: false }, 10, body);
   });
-  it('claims for the authenticated closer, never a caller-supplied employee, and retires manual handoff', async () => {
+  it('claims for the authenticated closer and sends a hunter lead to the closer queue', async () => {
+    mocks.claim.mockResolvedValue({ id: 10 });
     mocks.handoff.mockResolvedValue({ id: 10 });
     const app = appFor();
     expect((await request(app).post(`${path}/leads/10/claim`).send({ closerId: 999 })).status).toBe(200);
+    expect(mocks.claim).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10);
+    expect((await request(app).post(`${path}/leads/10/handoff`).send({ closerId: 999 })).status).toBe(200);
     expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10);
-    expect((await request(app).post(`${path}/leads/10/handoff`).send({ closerId: 999 })).status).toBe(410);
-    expect(mocks.handoff).toHaveBeenCalledTimes(1);
   });
 });

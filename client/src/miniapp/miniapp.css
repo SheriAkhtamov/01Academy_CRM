@@ -10,8 +10,8 @@
 .mini-pull { display: flex; align-items: flex-end; justify-content: center; overflow: hidden; padding-bottom: .5rem; color: hsl(var(--muted-foreground)); }
 .mini-create { position: fixed; bottom: calc(5.5rem + var(--mini-bottom)); right: max(1rem, calc((100vw - 40rem) / 2)); z-index: 20; }
 .mini-navigation { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 42rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: hsl(var(--background)); border-top: 1px solid hsl(var(--border)); padding: .5rem .5rem calc(.5rem + var(--mini-bottom)); z-index: 20; }
-.mini-navigation button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; min-height: 3.5rem; border-radius: .75rem; color: hsl(var(--muted-foreground)); font-size: .75rem; }
-.mini-navigation button[aria-current] { color: hsl(var(--primary)); background: hsl(var(--primary) / .08); font-weight: 600; }
+.mini-navigation button { appearance: none; -webkit-appearance: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; min-height: 3.5rem; padding: 0; border: 0; border-radius: .75rem; background: transparent; color: hsl(var(--muted-foreground)); font-size: .75rem; }
+.mini-navigation button[aria-current] { color: hsl(var(--primary)); background: hsl(221 83% 53% / .08); font-weight: 600; }
 .telegram-tasks button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .telegram-tasks [role="dialog"], .telegram-tasks [role="alertdialog"] { max-height: calc(var(--tg-viewport-height, 100dvh) - var(--mini-top) - var(--mini-bottom) - 1rem); }
 @media (max-width: 640px) {

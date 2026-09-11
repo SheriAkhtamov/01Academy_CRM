@@ -1212,6 +1212,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   archiveSearchPlaceholder: { en: 'Name, phone or contact', ru: 'Имя, телефон или контакт' },
   archiveAllReasons: { en: 'Any reason', ru: 'Любая причина' },
   archiveAllManagers: { en: 'Any manager', ru: 'Любой менеджер' },
+  archiveAllFunnels: { en: 'Any sales funnel', ru: 'Любая воронка продаж' },
   archiveNoMatches: { en: 'No leads match the filters', ru: 'Под фильтры не подошёл ни один лид' },
   archiveNoMatchesDesc: {
     en: 'Change the search text or reset the filters to see the whole archive again.',

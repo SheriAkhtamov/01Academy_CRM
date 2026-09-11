@@ -36,6 +36,7 @@ import type { TranslationKey } from '@/lib/i18n';
  */
 export interface ArchivedLead {
   id: number;
+  funnelId: number;
   contactName: string;
   studentName?: string | null;
   phone?: string | null;
@@ -48,13 +49,43 @@ export interface ArchivedLead {
   archivedByName?: string | null;
 }
 
+export interface ArchiveFunnel {
+  id: number;
+  name: string;
+}
+
 export interface ArchiveRestoreStatus {
   code: string;
 }
 
+export const matchesArchivedLeadFilters = (
+  lead: ArchivedLead,
+  filters: { search: string; reason: string; manager: string; funnel: string },
+) => {
+  if (filters.reason !== 'all' && (lead.archiveReason ?? '') !== filters.reason) return false;
+  if (filters.manager !== 'all' && (lead.managerName ?? '') !== filters.manager) return false;
+  if (filters.funnel !== 'all' && String(lead.funnelId) !== filters.funnel) return false;
+
+  const query = filters.search.trim().toLowerCase();
+  if (!query) return true;
+  return [
+    lead.contactName,
+    lead.studentName,
+    lead.managerName,
+    lead.messenger,
+    lead.phone,
+    ...(lead.phoneNumbers ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(query);
+};
+
 export function ArchiveTab({
   t,
   leads,
+  funnels,
   activePipelineStatuses,
   leadStatusName,
   archiveReasonName,
@@ -65,6 +96,7 @@ export function ArchiveTab({
 }: {
   t: (key: TranslationKey) => string;
   leads: ArchivedLead[];
+  funnels: ArchiveFunnel[];
   activePipelineStatuses: ArchiveRestoreStatus[];
   leadStatusName: (code: string) => string;
   archiveReasonName: (code: string | null | undefined) => string;
@@ -76,6 +108,7 @@ export function ArchiveTab({
   const [search, setSearch] = useStickyState('sales.archive.search', '');
   const [reasonFilter, setReasonFilter] = useStickyState('sales.archive.reasonFilter', 'all');
   const [managerFilter, setManagerFilter] = useStickyState('sales.archive.managerFilter', 'all');
+  const [funnelFilter, setFunnelFilter] = useStickyState('sales.archive.funnelFilter', 'all');
   // Restoring moves a lead back into the live pipeline: like every other
   // archive action it asks for confirmation instead of firing from a menu item.
   const [restoreTarget, setRestoreTarget] = useState<{ lead: ArchivedLead; statusCode: string } | null>(null);
@@ -85,38 +118,33 @@ export function ArchiveTab({
       .sort((a, b) => a.localeCompare(b))
   ), [leads]);
 
+  const funnelOptions = useMemo(() => {
+    const archivedFunnelIds = new Set(leads.map((lead) => lead.funnelId));
+    return funnels
+      .filter((funnel) => archivedFunnelIds.has(funnel.id))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [funnels, leads]);
+
   /*
     Filtering happens here rather than on the server: the archive already
     arrives whole with the rest of the sales dataset, and DataTable pages it
     client-side, so narrowing the array is enough — and it resets to page 1 by
     itself whenever the visible row set changes.
   */
-  const visibleLeads = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return leads.filter((lead) => {
-      if (reasonFilter !== 'all' && (lead.archiveReason ?? '') !== reasonFilter) return false;
-      if (managerFilter !== 'all' && (lead.managerName ?? '') !== managerFilter) return false;
-      if (!query) return true;
-      return [
-        lead.contactName,
-        lead.studentName,
-        lead.managerName,
-        lead.messenger,
-        lead.phone,
-        ...(lead.phoneNumbers ?? []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query);
-    });
-  }, [leads, search, reasonFilter, managerFilter]);
+  const visibleLeads = useMemo(() => leads.filter((lead) => matchesArchivedLeadFilters(lead, {
+    search,
+    reason: reasonFilter,
+    manager: managerFilter,
+    funnel: funnelFilter,
+  })), [funnelFilter, leads, managerFilter, reasonFilter, search]);
 
-  const filtersActive = search.trim() !== '' || reasonFilter !== 'all' || managerFilter !== 'all';
+  const filtersActive = search.trim() !== '' || reasonFilter !== 'all'
+    || managerFilter !== 'all' || funnelFilter !== 'all';
   const resetFilters = () => {
     setSearch('');
     setReasonFilter('all');
     setManagerFilter('all');
+    setFunnelFilter('all');
   };
 
   const columns = [
@@ -269,6 +297,18 @@ export function ArchiveTab({
             <SelectItem value="all">{t('archiveAllManagers')}</SelectItem>
             {managerOptions.map((name) => (
               <SelectItem key={name} value={name}>{name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={funnelFilter} onValueChange={setFunnelFilter}>
+          <SelectTrigger className="h-8 w-[13rem] text-xs" aria-label={t('salesFunnel')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('archiveAllFunnels')}</SelectItem>
+            {funnelOptions.map((funnel) => (
+              <SelectItem key={funnel.id} value={String(funnel.id)}>{funnel.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>

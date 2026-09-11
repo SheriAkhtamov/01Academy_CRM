@@ -1225,6 +1225,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         <ArchiveTab
           t={t}
           leads={archivedLeads}
+          funnels={salesFunnels}
           activePipelineStatuses={activePipelineStatuses}
           leadStatusName={leadStatusName}
           archiveReasonName={archiveReasonName}

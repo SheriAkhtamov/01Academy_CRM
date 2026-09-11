@@ -54,6 +54,9 @@ function MiniApp() {
     theme();
     app?.ready();
     app?.expand();
+    if (app?.isVersionAtLeast?.('7.7')) {
+      try { app.disableVerticalSwipes?.(); } catch { /* unsupported */ }
+    }
     app?.onEvent('themeChanged', theme);
     const expire = () => { clearMiniSession(); setExpired(true); };
     window.addEventListener('miniapp-auth-expired', expire);

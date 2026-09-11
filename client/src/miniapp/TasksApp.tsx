@@ -105,7 +105,15 @@ export function TasksApp() {
     setPullDistance(0); setPullActive(false); pullStart.current = null;
   };
 
-  return <div className="mini-shell">
+  const counts = useRef({ mine: 0, assigned: 0 });
+  if (tab !== 'archive' && tasks.data?.tasks && user) {
+    counts.current = {
+      mine: tasks.data.tasks.filter((task) => task.assignee?.id === user.id && task.status !== 'accepted').length,
+      assigned: tasks.data.tasks.filter((task) => task.creator?.id === user.id && task.status !== 'accepted').length,
+    };
+  }
+
+  return <div className="mini-shell" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
     <div className="mini-pull" style={{ height: pullDistance }} aria-hidden="true">
       {pullDistance > 0 ? (
         <RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin', !tasks.isFetching && !pullActive && 'opacity-50')} />
@@ -119,18 +127,44 @@ export function TasksApp() {
       <div className="relative"><Search className="pointer-events-none absolute left-3 top-3 size-5 text-muted-foreground" /><Input className="h-11 pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('miniTasksSearch')} aria-label={t('miniTasksSearch')} type="search" /></div>
       {tab !== 'archive' ? <Select value={status} onValueChange={(value) => { hapticSelect(); setStatus(value); }}><SelectTrigger className="h-11" aria-label={t('status')}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t('allStatuses')}</SelectItem>{BOARD_COLUMNS.map((column) => <SelectItem key={column.status} value={column.status}>{t(column.labelKey)}</SelectItem>)}</SelectContent></Select> : null}
     </header>
-    <main className="space-y-3 px-4 pb-6" aria-busy={tasks.isFetching} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+    <main className="space-y-3 px-4 pb-6" aria-busy={tasks.isFetching}>
       {tasks.isError || users.isError ? <div role="alert" className="rounded-xl border border-destructive/30 p-4"><p>{t('miniTasksUnavailable')}</p><Button variant="outline" className="mt-3" onClick={refresh}>{t('retry')}</Button></div> : null}
       {tasks.isLoading ? <TaskSkeletons /> : visible.length ? visible.map((task) => <div key={task.id} className="space-y-1.5">
         <div className="flex items-center justify-between gap-3 px-1 text-xs text-muted-foreground"><span>{statusLabel(task.status)}</span><span className="truncate">{task.assignee?.fullName ?? t('unassigned')}</span></div>
         <TaskCard task={task} onClick={() => { hapticSelect(); setTaskId(task.id); }} />
       </div>) : !tasks.isError ? <div className="mini-center"><CheckCheck className="size-10 text-muted-foreground" /><h2 className="text-lg font-medium">{t('miniTasksEmpty')}</h2><p className="text-sm text-muted-foreground">{t('miniTasksEmptyHint')}</p></div> : null}
     </main>
-    <div className="mini-create"><Button className="h-12 rounded-full px-5 shadow-lg" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="mr-2 size-5 animate-spin" /> : <Plus className="mr-2 size-5" />}{users.isLoading ? t('miniTasksPreparing') : t('createTask')}</Button></div>
+    <div className="mini-create"><Button className="size-12 rounded-full p-0 shadow-lg transition-transform active:scale-95" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-5 animate-spin" /> : <Plus className="size-6" />}</Button></div>
     <nav className="mini-navigation" aria-label={t('miniTasksNavigation')}>
-      <button type="button" aria-current={tab === 'mine' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('mine'); }}><ClipboardList className="size-5" /><span>{t('myTasks')}</span></button>
-      <button type="button" aria-current={tab === 'assigned' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('assigned'); }}><Send className="size-5" /><span>{t('miniTasksAssigned')}</span></button>
-      <button type="button" aria-current={tab === 'archive' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('archive'); }}><Archive className="size-5" /><span>{t('taskArchive')}</span></button>
+      <div className="mini-navigation-inner">
+        <button type="button" aria-label={t('myTasks')} aria-current={tab === 'mine' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('mine'); }}>
+          <div className="relative">
+            <ClipboardList className="size-5" />
+            {counts.current.mine > 0 ? (
+              <span className="mini-badge" aria-hidden="true">{counts.current.mine > 99 ? '99+' : counts.current.mine}</span>
+            ) : null}
+          </div>
+          <span>{t('myTasks')}</span>
+        </button>
+        <button type="button" aria-label={t('miniTasksAssigned')} aria-current={tab === 'assigned' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('assigned'); }}>
+          <div className="relative">
+            <Send className="size-5" />
+            {counts.current.assigned > 0 ? (
+              <span className="mini-badge" aria-hidden="true">{counts.current.assigned > 99 ? '99+' : counts.current.assigned}</span>
+            ) : null}
+          </div>
+          <span>{t('miniTasksAssigned')}</span>
+        </button>
+        <button type="button" aria-label={t('taskArchive')} aria-current={tab === 'archive' ? 'page' : undefined} onClick={() => { hapticSelect(); setTab('archive'); }}>
+          <div className="relative">
+            <Archive className="size-5" />
+            {tab === 'archive' && (tasks.data?.tasks?.length ?? 0) > 0 ? (
+              <span className="mini-badge" aria-hidden="true">{(tasks.data?.tasks?.length ?? 0) > 99 ? '99+' : tasks.data?.tasks?.length}</span>
+            ) : null}
+          </div>
+          <span>{t('taskArchive')}</span>
+        </button>
+      </div>
     </nav>
     <CreateTaskDialog open={creating} onOpenChange={setCreating} users={users.data ?? []} currentUser={user} canAssignUsers />
     <TaskDetailSheet open={taskId !== null} taskId={taskId} onOpenChange={(open) => { if (!open) setTaskId(null); }} users={users.data ?? []} tasksOnly />

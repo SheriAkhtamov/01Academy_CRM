@@ -15,6 +15,8 @@ interface TelegramWebApp {
   downloadFile?: (params: { url: string; file_name: string }) => void;
   enableClosingConfirmation: () => void;
   disableClosingConfirmation: () => void;
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
   setHeaderColor?: (params: { color: string }) => void;
   setBackgroundColor?: (params: { color: string }) => void;
   HapticFeedback?: {

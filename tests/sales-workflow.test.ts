@@ -133,4 +133,23 @@ describe('manual closer queue handoff', () => {
       toManagerId: 9,
     }));
   });
+
+  it('keeps an administrator with the 3.5m full-cycle role assigned to their own lead', async () => {
+    mocks.queryOne.mockResolvedValueOnce({ role: 'full_cycle_3500' })
+      .mockResolvedValueOnce({ ...lead, managerId: 10, workflowRole: 'hunter' })
+      .mockResolvedValueOnce({ id: 2 });
+    mocks.updateRow.mockResolvedValueOnce({ id: 10, funnelId: 2, managerId: 10, statusCode: 'demo_attended' });
+
+    await expect(handoffKpiLead({ id: 10, isAdministration: true }, fullCycle3500, 10))
+      .resolves.toEqual({ id: 10, mode: 'continue' });
+    expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 10, expect.objectContaining({
+      funnelId: 2,
+      managerId: 10,
+    }));
+    expect(mocks.syncLeadManagerRelations).toHaveBeenCalledWith(10, 10);
+    expect(mocks.insertRow).toHaveBeenCalledWith('academy_lead_assignment_history', expect.objectContaining({
+      fromManagerId: 10,
+      toManagerId: 10,
+    }));
+  });
 });

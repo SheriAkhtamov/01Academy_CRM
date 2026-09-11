@@ -93,7 +93,7 @@ export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadI
       [leadId, lead.funnelId, lead.managerId ?? null],
     );
 
-    const retainsOwner = isFullCycleKpiRole(role?.role) && !actor.isAdministration;
+    const retainsOwner = isFullCycleKpiRole(role?.role) && Number(lead.managerId) === actor.id;
     const nextManagerId = retainsOwner ? actor.id : null;
     const historyComment = retainsOwner
       ? 'Продолжил работу с лидом после пробного'

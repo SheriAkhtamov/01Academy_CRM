@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { boardRequest as apiRequest } from '@/features/board/transport';
+import { hapticNotify } from '@/features/board/telegram';
 import { boardQueryKeys } from '@/features/board/api';
 import { academyInstant, academyToday } from '@/lib/localeFormat';
 import type { TranslationKey } from '@/lib/i18n';
@@ -121,12 +122,14 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
             }
         },
         onSuccess: () => {
+            hapticNotify('success');
             queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             toast({ title: t('taskCreated') });
             reset();
             onOpenChange(false);
         },
         onError: (error: Error & { status?: number }) => {
+            hapticNotify('error');
             // A definitive validation error did not create anything: allow the
             // user to fix the form. For ambiguous failures retain the same key.
             if (createdTaskId.current === null && error.status && error.status >= 400 && error.status < 500) {

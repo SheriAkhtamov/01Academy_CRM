@@ -190,6 +190,7 @@ export const translations = {
   miniTasksUnavailable: { en: 'Unable to connect. Please try again.', ru: 'Не удалось подключиться. Попробуйте снова.' },
   miniTasksNavigation: { en: 'Task sections', ru: 'Разделы задач' },
   miniTasksRefresh: { en: 'Refresh tasks', ru: 'Обновить задачи' },
+  miniTasksPreparing: { en: 'Preparing…', ru: 'Подготовка…' },
   absent: { en: 'Absent', ru: 'Отсутствовал' },
   accessDenied: { en: 'Access Denied', ru: 'Доступ запрещён' },
   accountSettings: { en: 'Account Settings', ru: 'Настройки аккаунта' },

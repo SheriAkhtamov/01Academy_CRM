@@ -47,6 +47,7 @@ import {
     X,
 } from 'lucide-react';
 import { boardRequest as apiRequest } from '@/features/board/transport';
+import { hapticNotify } from '@/features/board/telegram';
 import { TaskAttachmentDownload } from './TaskAttachmentDownload';
 import {
     attachmentErrorKey,
@@ -203,7 +204,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     const canAcceptReopen = !!task && !!user && user.id === task.creatorId;
     const canDelete = canAcceptReopen || (!!task && isTaskSupervisor);
 
-    const onError = (error: Error) => toast({ title: error.message, variant: 'destructive' });
+    const onError = (error: Error) => { hapticNotify('error'); toast({ title: error.message, variant: 'destructive' }); };
 
     const saveMutation = useMutation({
         mutationFn: () => {
@@ -219,13 +220,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
             }
             return apiRequest('PATCH', `/api/board/tasks/${taskId}`, payload);
         },
-        onSuccess: () => { invalidate(); setEditing(false); toast({ title: t('taskUpdated') }); },
+        onSuccess: () => { hapticNotify('success'); invalidate(); setEditing(false); toast({ title: t('taskUpdated') }); },
         onError,
     });
 
     const statusMutation = useMutation({
         mutationFn: (status: BoardStatus) => apiRequest('PATCH', `/api/board/tasks/${taskId}/status`, { status }),
         onSuccess: (_updated, status) => {
+            hapticNotify('success');
             invalidate();
             if (status === 'accepted') {
                 toast({ title: t('taskAcceptedAndArchived') });
@@ -240,7 +242,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
     const deleteMutation = useMutation({
         mutationFn: () => apiRequest('DELETE', `/api/board/tasks/${taskId}`),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: boardQueryKeys.all }); toast({ title: t('taskDeletedToast') }); onOpenChange(false); },
+        onSuccess: () => { hapticNotify('success'); queryClient.invalidateQueries({ queryKey: boardQueryKeys.all }); toast({ title: t('taskDeletedToast') }); onOpenChange(false); },
         onError,
     });
 

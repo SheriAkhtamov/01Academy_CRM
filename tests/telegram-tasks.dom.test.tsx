@@ -7,7 +7,14 @@ import { i18n } from '../client/src/lib/i18n';
 import { TasksApp } from '../client/src/miniapp/TasksApp';
 const mocks = vi.hoisted(() => ({ board: vi.fn(), mini: vi.fn(), detail: vi.fn(), create: vi.fn() }));
 vi.mock('../client/src/features/board/transport', () => ({ boardRequest: mocks.board }));
-vi.mock('../client/src/features/board/telegram', () => ({ miniRequest: mocks.mini, telegramApp: () => undefined }));
+vi.mock('../client/src/features/board/telegram', () => ({
+  miniRequest: mocks.mini,
+  telegramApp: () => undefined,
+  hapticImpact: () => undefined,
+  hapticNotify: () => undefined,
+  hapticSelect: () => undefined,
+  syncTelegramTheme: () => undefined,
+}));
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 7, fullName: 'Employee', module: 'teacher' }, isLoading: false }) }));
 vi.mock('../client/src/components/ux/board/TaskDetailSheet', () => ({ TaskDetailSheet: (props: unknown) => { mocks.detail(props); return null; } }));
 vi.mock('../client/src/components/ux/board/CreateTaskDialog', () => ({ CreateTaskDialog: (props: unknown) => { mocks.create(props); return null; } }));

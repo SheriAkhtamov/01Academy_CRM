@@ -406,14 +406,10 @@
     @apply border-border;
   }
 
-  /* The shell sizes itself to the viewport, so in normal operation the document
-     has nothing left to scroll and no second scrollbar appears. The document is
-     deliberately left scrollable all the same: capping it with `max-height` +
-     `overflow: hidden` turns any content that escapes a nested scroll container
-     into content the operator can never reach, and the app stacks five or six
-     nested height constraints between <main> and a table row. Vertical overflow
-     must always end up somewhere reachable — horizontal overflow is always a
-     layout mistake, so that axis stays clipped. */
+  /* Outside the authenticated CRM (login, Telegram mini-app), the document owns
+     scrolling. The CRM itself adds `app-shell-active` while mounted and hands
+     vertical scrolling to its permanent <main>; constraining only that state
+     prevents scroll chaining from moving the whole viewport into blank canvas. */
   html {
     height: 100%;
   }
@@ -433,6 +429,21 @@
     overflow-x: clip;
     background: var(--app-bg);
     background-attachment: fixed;
+  }
+
+  html.app-shell-active {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html.app-shell-active body,
+  html.app-shell-active #root {
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
   }
 
   /* Smooth interactions only on interactive elements — avoids the jarring

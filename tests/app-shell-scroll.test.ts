@@ -29,17 +29,20 @@ describe('app shell scrolling', () => {
     expect(cssRuleBody('#root')).not.toContain('min-height: 100vh;');
   });
 
-  /**
-   * The shell nests five or six height constraints between <main> and a table
-   * row. Every one of them used to be paired with a hard clip, so a single
-   * collapsed height anywhere in that chain put the rest of a list permanently
-   * out of reach — no scrollbar, no keyboard scroll, no way back to the rows.
-   * Vertical overflow now always falls through to a real scroller.
-   */
-  it.each(['html', 'body', '#root'])('never height-locks %s out of scrolling', (selector) => {
-    const rule = cssRuleBody(selector);
-    expect(rule).not.toMatch(/overflow(-y)?:\s*hidden/);
-    expect(rule).not.toMatch(/max-height:/);
+  it('locks the browser document only while the authenticated app shell is mounted', () => {
+    expect(layout).toContain("documentRoot.classList.add('app-shell-active')");
+    expect(layout).toContain("documentRoot.classList.remove('app-shell-active')");
+    expect(styles).toMatch(/html\.app-shell-active\s*\{[^}]*height:\s*100dvh;/s);
+    expect(styles).toMatch(/html\.app-shell-active\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(styles).toMatch(/html\.app-shell-active body,\s*html\.app-shell-active #root\s*\{[^}]*overflow:\s*hidden;/s);
+
+    // Login and the Telegram mini-app do not mount Layout, so their base
+    // document rules must remain naturally scrollable.
+    for (const selector of ['html', 'body', '#root']) {
+      const rule = cssRuleBody(selector);
+      expect(rule).not.toMatch(/overflow(-y)?:\s*hidden/);
+      expect(rule).not.toMatch(/max-height:/);
+    }
   });
 
   it('gives every route a vertical scroll owner in the app shell', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -31,6 +31,17 @@ export default function Layout({ children }: LayoutProps) {
   const pageContentRef = useRef<HTMLDivElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const menuToggleRef = useRef<HTMLButtonElement | null>(null);
+
+  // The authenticated CRM is a viewport-sized application with <main> as its
+  // document scroller. Lock the browser document only while this shell is
+  // mounted, otherwise wheel/touch scroll can chain past every inner scroller
+  // and move the entire interface off-screen into an empty canvas. Login and
+  // the Telegram mini-app do not mount Layout and keep normal document scroll.
+  useLayoutEffect(() => {
+    const documentRoot = document.documentElement;
+    documentRoot.classList.add('app-shell-active');
+    return () => documentRoot.classList.remove('app-shell-active');
+  }, []);
 
   useEffect(() => {
     const markPop = () => {

@@ -1017,7 +1017,10 @@ export function LeadDetailSheet({
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
-                  <div className="flex flex-wrap justify-end gap-2">
+                  <div
+                    className="flex flex-wrap justify-end gap-2"
+                    hidden={lead.isArchived || (lead.funnelRole !== 'hunter' && lead.statusCode === 'paid')}
+                  >
                     {!lead.isArchived && lead.funnelRole === 'hunter' ? (
                       <Button
                         type="button"
@@ -1047,10 +1050,6 @@ export function LeadDetailSheet({
                         {t('bookDemoLesson')}
                       </Button>
                     ) : null}
-                    <Button type="button" variant="outline" size="sm" onClick={() => navigateTo('payment')}>
-                      <CreditCard data-icon="inline-start" />
-                      {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('payment')}
-                    </Button>
                   </div>
                   <Form {...leadForm}>
                     <form id="lead-details-form" onSubmit={saveDeal}>

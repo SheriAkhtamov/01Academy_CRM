@@ -1,37 +1,26 @@
 import { useState, type Ref } from 'react';
-import { useMutation } from '@tanstack/react-query';
 import { GraduationCap, Pencil, Plus, Users } from 'lucide-react';
-import { studentsApi } from '@/features/students/api';
-import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
-import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   CreateLeadStudentDialog,
+  EditLeadStudentDialog,
   type LeadStudentGroupOption,
 } from '@/components/ux/CreateLeadStudentDialog';
-import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
 
 type LeadStudent = {
   id: number;
-  managerId?: number | null;
-  contactName?: string | null;
   studentName?: string | null;
   studentAge?: number | null;
   phone?: string | null;
-  status: string;
   courseId?: number | null;
   courseName?: string | null;
   schoolId?: number | null;
   schoolName?: string | null;
-  attendancePercent?: number;
-  progressPercent?: number;
-  nextPaymentAt?: string | null;
-  createdAt?: string | null;
   groups?: Array<{
     groupId: number;
     groupName: string;
@@ -51,12 +40,9 @@ type LeadStudentsCardProps = {
     id: number;
     contactName: string;
     students?: LeadStudent[];
-    payments?: unknown[];
   };
   groups: LeadStudentGroupOption[];
-  dateTime: (value: string | null | undefined) => string;
   onRefresh: () => Promise<void>;
-  onRecordPayment: () => void;
 };
 
 export function LeadStudentsCard({
@@ -65,28 +51,11 @@ export function LeadStudentsCard({
   onCreateStudentOpenChange,
   lead,
   groups,
-  dateTime,
   onRefresh,
-  onRecordPayment,
 }: LeadStudentsCardProps) {
   const { t } = useTranslation();
   const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
   const editingStudent = lead.students?.find((student) => student.id === editingStudentId) ?? null;
-
-  const addStudentGroup = useMutation({
-    mutationFn: ({ studentId, groupId, isPrimary }: { studentId: number; groupId: number; isPrimary?: boolean }) => (
-      studentsApi.addGroup(studentId, groupId, isPrimary)
-    ),
-    onSuccess: async () => {
-      toast({ title: t('studentGroupAdded') });
-      await onRefresh();
-    },
-    onError: (error: Error & { status?: number }) => toast({
-      title: t('studentGroupUpdateFailed'),
-      description: localizeApiErrorMessage(error.message, error.status ?? 0),
-      variant: 'destructive',
-    }),
-  });
 
   return (
     <>
@@ -171,28 +140,19 @@ export function LeadStudentsCard({
       />
 
       {editingStudent ? (
-        <StudentDetailSheet
-          student={{
-            ...editingStudent,
-            leadId: lead.id,
-            contactName: editingStudent.contactName ?? lead.contactName,
-            attendancePercent: editingStudent.attendancePercent ?? 0,
-            progressPercent: editingStudent.progressPercent ?? 0,
-          }}
+        <EditLeadStudentDialog
+          student={editingStudent}
           open={editingStudentId !== null}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) setEditingStudentId(null);
           }}
-          initialTab="schedule"
-          onRecordPayment={() => {
+          leadId={lead.id}
+          contactName={lead.contactName}
+          groups={groups}
+          onUpdated={async () => {
+            await onRefresh();
             setEditingStudentId(null);
-            onRecordPayment();
           }}
-          onAddGroup={(studentId, groupId, isPrimary) => (
-            addStudentGroup.mutateAsync({ studentId, groupId, isPrimary })
-          )}
-          data={{ payments: lead.payments, groups }}
-          dateTime={dateTime}
         />
       ) : null}
     </>

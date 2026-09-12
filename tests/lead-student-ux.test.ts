@@ -22,6 +22,10 @@ const leadsApi = readFileSync(
   new URL('../client/src/features/leads/api.ts', import.meta.url),
   'utf8',
 );
+const studentsApi = readFileSync(
+  new URL('../client/src/features/students/api.ts', import.meta.url),
+  'utf8',
+);
 const telephonyWidget = readFileSync(
   new URL('../client/src/components/telephony/TelephonyWidget.tsx', import.meta.url),
   'utf8',
@@ -74,11 +78,17 @@ describe('lead and student UX separation', () => {
     }).success).toBe(false);
   });
 
-  it('opens student group editing from every student in the lead modal', () => {
+  it('opens the creation-style edit dialog from every student in the lead modal', () => {
     expect(leadStudentsCard).toContain("t('edit')");
-    expect(leadStudentsCard).toContain('<StudentDetailSheet');
-    expect(leadStudentsCard).toContain('initialTab="schedule"');
-    expect(leadStudentsCard).toContain('studentsApi.addGroup');
+    expect(leadStudentsCard).toContain('<EditLeadStudentDialog');
+    expect(leadStudentsCard).not.toContain('<StudentDetailSheet');
+    expect(studentDialog).toContain('return <LeadStudentFormDialog {...props} mode="edit" purpose="enrollment" />');
+    expect(studentDialog).toContain('studentName: editedStudent?.studentName');
+    expect(studentDialog).toContain('studentAge: editedStudent?.studentAge');
+    expect(studentDialog).toContain('phone: editedStudent?.phone');
+    expect(studentDialog).toContain('studentsApi.updateDetails<CreatedLeadStudent>');
+    expect(studentDialog).toContain('await studentsApi.addGroup(');
+    expect(studentsApi).toContain('`/api/academy/students/${studentId}`');
   });
 
   it('keeps telephony above page content but below dialogs and sheets', () => {

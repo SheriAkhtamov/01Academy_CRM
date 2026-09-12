@@ -1,6 +1,13 @@
 import { apiRequest } from '@/lib/queryClient';
 
 export const studentsApi = {
+  updateDetails: <T>(studentId: number, input: {
+    studentName: string;
+    studentAge: number | null;
+    phone: string | null;
+  }) => (
+    apiRequest('PATCH', `/api/academy/students/${studentId}`, input) as Promise<T>
+  ),
   updateStatus: <T>(studentId: number, status: string, exitReason?: string) => (
     apiRequest('PATCH', `/api/academy/students/${studentId}/status`, { status, exitReason }) as Promise<T>
   ),

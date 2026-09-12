@@ -1469,6 +1469,51 @@ describe('academy route logic boundaries', () => {
     expect(response.body.error).toBe('Teacher can update only own students');
   });
 
+  it('updates the student identity fields used by the lead edit dialog', async () => {
+    mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) {
+        return { rows: [{ id: 5, lead_id: 42, student_name: 'Old name', student_age: 11, phone: null }] };
+      }
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [leadFixture({ manager_id: 1 })] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 42 }] };
+      }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, student_name: 'Old name', student_age: 11, phone: null }] };
+      }
+      if (sql.includes('UPDATE "academy_students"')) {
+        return { rows: [{ id: 5, lead_id: 42, student_name: 'New name', student_age: 12, phone: '+998901234567' }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/students/5')
+      .send({ studentName: 'New name', studentAge: 12, phone: '90 123 45 67' });
+
+    expect(response.status).toBe(200);
+    const updateCall = mocks.clientQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('UPDATE "academy_students"')
+    ));
+    expect(updateCall?.[0]).toContain('"student_name"');
+    expect(updateCall?.[0]).toContain('"student_age"');
+    expect(updateCall?.[0]).toContain('"phone"');
+    expect(updateCall?.[1]).toEqual([5, 'New name', 12, '+998901234567']);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'UPDATE_ACADEMY_STUDENT_DETAILS',
+      entityType: 'academy_student',
+      entityId: 5,
+    }));
+  });
+
   it('rolls back a transfer into a completed group before writing transfer history', async () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) {

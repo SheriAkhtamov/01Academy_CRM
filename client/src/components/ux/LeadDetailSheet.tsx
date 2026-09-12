@@ -1161,13 +1161,11 @@ export function LeadDetailSheet({
                           onCreateStudentOpenChange={setCreateStudentOpen}
                           lead={lead}
                           groups={groups}
-                          dateTime={dateTime}
                           onRefresh={async () => {
                             hydratedTransientKey.current = null;
                             await leadQuery.refetch();
                             onChanged();
                           }}
-                          onRecordPayment={() => setActiveTab('payment')}
                         />
 
                         <Card ref={detailsCardRef} tabIndex={-1} className="scroll-mt-4 shadow-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">

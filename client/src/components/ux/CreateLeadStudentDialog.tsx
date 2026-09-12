@@ -3,11 +3,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { GraduationCap, Loader2, Plus, Users } from 'lucide-react';
+import { GraduationCap, Loader2, Plus, Save, Users } from 'lucide-react';
 import { leadsApi } from '@/features/leads/api';
+import { studentsApi } from '@/features/students/api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { academyToday } from '@/lib/localeFormat';
+import { localizeApiErrorMessage } from '@/lib/queryClient';
+import { cn } from '@/lib/utils';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,6 +49,19 @@ export type LeadStudentGroupOption = {
 type CreatedLeadStudent = {
   id: number;
   studentName?: string | null;
+};
+
+export type EditableLeadStudent = CreatedLeadStudent & {
+  studentAge?: number | null;
+  phone?: string | null;
+  groups?: Array<{
+    groupId: number;
+    groupName: string;
+    courseId?: number | null;
+    courseName?: string | null;
+    schoolId?: number | null;
+    isPrimary?: boolean;
+  }>;
 };
 
 const studentSchema = z.object({
@@ -96,41 +112,121 @@ interface CreateLeadStudentDialogProps {
   onCreated: (student: CreatedLeadStudent) => void | Promise<void>;
 }
 
-export function CreateLeadStudentDialog({
+interface EditLeadStudentDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  leadId: number;
+  contactName: string;
+  groups: LeadStudentGroupOption[];
+  student: EditableLeadStudent;
+  onUpdated: (student: CreatedLeadStudent) => void | Promise<void>;
+}
+
+type LeadStudentFormDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  leadId: number;
+  contactName: string;
+  groups: LeadStudentGroupOption[];
+  purpose?: 'enrollment' | 'demo';
+} & (
+  | {
+    mode: 'create';
+    student?: never;
+    onCreated: (student: CreatedLeadStudent) => void | Promise<void>;
+  }
+  | {
+    mode: 'edit';
+    student: EditableLeadStudent;
+    onUpdated: (student: CreatedLeadStudent) => void | Promise<void>;
+  }
+);
+
+export function CreateLeadStudentDialog(props: CreateLeadStudentDialogProps) {
+  return <LeadStudentFormDialog {...props} mode="create" />;
+}
+
+export function EditLeadStudentDialog(props: EditLeadStudentDialogProps) {
+  return <LeadStudentFormDialog {...props} mode="edit" purpose="enrollment" />;
+}
+
+function LeadStudentFormDialog({
   open,
   onOpenChange,
   leadId,
   contactName,
   groups,
   purpose = 'enrollment',
-  onCreated,
-}: CreateLeadStudentDialogProps) {
+  ...modeProps
+}: LeadStudentFormDialogProps) {
   const { t } = useTranslation();
+  const isEditing = modeProps.mode === 'edit';
+  const editedStudent = modeProps.mode === 'edit' ? modeProps.student : null;
+  const currentGroupIds = useMemo(
+    () => (editedStudent?.groups ?? []).map((group) => String(group.groupId)),
+    [editedStudent?.groups],
+  );
+  const currentPrimaryGroupId = String(
+    editedStudent?.groups?.find((group) => group.isPrimary)?.groupId ?? '',
+  );
+  const initialValues = useMemo<StudentFormValues>(() => isEditing ? {
+    studentName: editedStudent?.studentName ?? '',
+    studentAge: editedStudent?.studentAge ? String(editedStudent.studentAge) : '',
+    phone: editedStudent?.phone ?? '',
+    groupIds: currentGroupIds,
+    primaryGroupId: currentPrimaryGroupId,
+    enrolledAt: todayInputValue(),
+    demoOnly: false,
+  } : {
+    ...EMPTY_STUDENT,
+    enrolledAt: todayInputValue(),
+    demoOnly: purpose === 'demo',
+  }, [
+    currentGroupIds,
+    currentPrimaryGroupId,
+    editedStudent?.phone,
+    editedStudent?.studentAge,
+    editedStudent?.studentName,
+    isEditing,
+    purpose,
+  ]);
   const form = useForm<StudentFormValues>({
     resolver: zodResolver(studentSchema),
-    defaultValues: { ...EMPTY_STUDENT, demoOnly: purpose === 'demo' },
+    defaultValues: initialValues,
   });
   const [createdCount, setCreatedCount] = useState(0);
   const selectedGroupIds = form.watch('groupIds');
   const primaryGroupId = form.watch('primaryGroupId');
 
-  const availableGroups = useMemo(() => groups.filter((group) => (
-    ['open', 'in_progress'].includes(String(group.status))
-  )), [groups]);
+  const availableGroups = useMemo(() => {
+    const options = new Map(groups.map((group) => [group.id, group]));
+    if (editedStudent) {
+      for (const group of editedStudent.groups ?? []) {
+        if (!options.has(group.groupId)) {
+          options.set(group.groupId, {
+            id: group.groupId,
+            name: group.groupName,
+            courseId: group.courseId,
+            courseName: group.courseName,
+            schoolId: group.schoolId,
+          });
+        }
+      }
+    }
+    return Array.from(options.values()).filter((group) => (
+      currentGroupIds.includes(String(group.id))
+      || ['open', 'in_progress'].includes(String(group.status))
+    ));
+  }, [currentGroupIds, editedStudent, groups]);
   const selectedGroups = useMemo(() => availableGroups.filter((group) => (
     selectedGroupIds.includes(String(group.id))
   )), [availableGroups, selectedGroupIds]);
 
   useEffect(() => {
-    if (!open) {
-      form.reset({
-        ...EMPTY_STUDENT,
-        enrolledAt: todayInputValue(),
-        demoOnly: purpose === 'demo',
-      });
-      setCreatedCount(0);
-    }
-  }, [form, open, purpose]);
+    if (!open) return;
+    form.reset(initialValues);
+    setCreatedCount(0);
+  }, [form, initialValues, open]);
 
   useEffect(() => {
     if (selectedGroupIds.length === 0) {
@@ -142,10 +238,32 @@ export function CreateLeadStudentDialog({
     }
   }, [form, primaryGroupId, selectedGroupIds]);
 
-  const createStudent = useMutation({
-    mutationFn: ({ values }: { values: StudentFormValues; createAnother: boolean }) => leadsApi.createStudent<CreatedLeadStudent>(
-      leadId,
-      {
+  const saveStudent = useMutation({
+    mutationFn: async ({ values }: { values: StudentFormValues; createAnother: boolean }) => {
+      if (modeProps.mode === 'edit') {
+        const updatedStudent = await studentsApi.updateDetails<CreatedLeadStudent>(
+          modeProps.student.id,
+          {
+            studentName: values.studentName,
+            studentAge: values.studentAge ? Number(values.studentAge) : null,
+            phone: values.phone || null,
+          },
+        );
+        const currentGroupIdSet = new Set(currentGroupIds);
+        for (const groupId of values.groupIds) {
+          const promoteExistingGroup = groupId === values.primaryGroupId
+            && groupId !== currentPrimaryGroupId;
+          if (!currentGroupIdSet.has(groupId) || promoteExistingGroup) {
+            await studentsApi.addGroup(
+              modeProps.student.id,
+              Number(groupId),
+              groupId === values.primaryGroupId,
+            );
+          }
+        }
+        return updatedStudent;
+      }
+      return leadsApi.createStudent<CreatedLeadStudent>(leadId, {
         studentName: values.studentName,
         studentAge: values.studentAge ? Number(values.studentAge) : null,
         phone: values.phone || null,
@@ -153,10 +271,16 @@ export function CreateLeadStudentDialog({
         primaryGroupId: values.demoOnly || !values.primaryGroupId ? null : Number(values.primaryGroupId),
         enrolledAt: values.demoOnly || values.groupIds.length === 0 ? null : values.enrolledAt,
         demoOnly: values.demoOnly,
-      },
-    ),
+      });
+    },
     onSuccess: async (student, variables) => {
-      await onCreated(student);
+      if (modeProps.mode === 'edit') {
+        await modeProps.onUpdated(student);
+        toast({ title: t('studentUpdated') });
+        onOpenChange(false);
+        return;
+      }
+      await modeProps.onCreated(student);
       setCreatedCount((count) => count + 1);
       toast({
         title: t('studentCreated'),
@@ -179,27 +303,29 @@ export function CreateLeadStudentDialog({
       form.setFocus('studentName');
     },
     onError: (error: Error) => toast({
-      title: t('studentCreateFailed'),
-      description: error.message,
+      title: isEditing ? t('studentUpdateFailed') : t('studentCreateFailed'),
+      description: localizeApiErrorMessage(error.message, (error as Error & { status?: number }).status ?? 0),
       variant: 'destructive',
     }),
   });
 
   const groupError = form.formState.errors.groupIds?.message || form.formState.errors.primaryGroupId?.message;
-  const dialogDescription = purpose === 'demo'
-    ? t('createDemoStudentForContact')
-    : t('createStudentForContact');
+  const dialogDescription = isEditing
+    ? t('editStudentForContact')
+    : purpose === 'demo'
+      ? t('createDemoStudentForContact')
+      : t('createStudentForContact');
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !createStudent.isPending && onOpenChange(nextOpen)}>
+    <Dialog open={open} onOpenChange={(nextOpen) => !saveStudent.isPending && onOpenChange(nextOpen)}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <GraduationCap className="size-5" />
             </span>
-            {t('createStudent')}
-            {createdCount > 0 ? (
+            {isEditing ? t('editStudent') : t('createStudent')}
+            {!isEditing && createdCount > 0 ? (
               <Badge variant="secondary">
                 {t('studentsCreatedCount').replace('{count}', String(createdCount))}
               </Badge>
@@ -213,7 +339,7 @@ export function CreateLeadStudentDialog({
         <Form {...form}>
           <form
             className="flex min-h-0 flex-1 flex-col"
-            onSubmit={form.handleSubmit((values) => createStudent.mutate({ values, createAnother: false }))}
+            onSubmit={form.handleSubmit((values) => saveStudent.mutate({ values, createAnother: false }))}
           >
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
             <FormField
@@ -287,11 +413,15 @@ export function CreateLeadStudentDialog({
                     <label
                       key={group.id}
                       id={labelId}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-transparent bg-background p-3 transition-colors hover:border-primary/30 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5 has-[[data-disabled]]:cursor-not-allowed has-[[data-disabled]]:opacity-60"
+                      className={cn(
+                        'flex cursor-pointer items-start gap-3 rounded-lg border border-transparent bg-background p-3 transition-colors hover:border-primary/30 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5',
+                        !checked && full && 'cursor-not-allowed opacity-60',
+                        isEditing && currentGroupIds.includes(value) && 'cursor-default',
+                      )}
                     >
                       <Checkbox
                         checked={checked}
-                        disabled={!checked && full}
+                        disabled={(!checked && full) || (isEditing && currentGroupIds.includes(value))}
                         aria-labelledby={labelId}
                         onCheckedChange={(nextChecked) => {
                           const next = nextChecked
@@ -339,21 +469,25 @@ export function CreateLeadStudentDialog({
             </div>
 
             <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4 sm:flex-wrap">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createStudent.isPending}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saveStudent.isPending}>
                 {t('cancel')}
               </Button>
-              <Button
+              {!isEditing ? <Button
                 type="button"
                 variant="secondary"
-                disabled={createStudent.isPending}
-                onClick={() => form.handleSubmit((values) => createStudent.mutate({ values, createAnother: true }))()}
+                disabled={saveStudent.isPending}
+                onClick={() => form.handleSubmit((values) => saveStudent.mutate({ values, createAnother: true }))()}
               >
                 <Plus data-icon="inline-start" />
                 {t('createAndAddAnotherStudent')}
-              </Button>
-              <Button type="submit" disabled={createStudent.isPending}>
-                {createStudent.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
-                {createStudent.isPending ? t('saving') : t('createStudent')}
+              </Button> : null}
+              <Button type="submit" disabled={saveStudent.isPending}>
+                {saveStudent.isPending
+                  ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                  : isEditing
+                    ? <Save data-icon="inline-start" />
+                    : <Plus data-icon="inline-start" />}
+                {saveStudent.isPending ? t('saving') : isEditing ? t('saveChanges') : t('createStudent')}
               </Button>
             </DialogFooter>
           </form>

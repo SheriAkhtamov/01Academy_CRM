@@ -787,6 +787,11 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   // Separate contact and student profiles
   contactInformation: { en: 'Contact information', ru: 'Информация о контакте' },
   createStudent: { en: 'Create student', ru: 'Создать ученика' },
+  editStudent: { en: 'Edit student', ru: 'Редактировать ученика' },
+  editStudentForContact: {
+    en: 'Update the student details linked to {name} and enroll them in additional groups.',
+    ru: 'Измените данные ученика, связанного с контактом «{name}», и при необходимости запишите его в новые группы.',
+  },
   createStudentForContact: {
     en: 'Create a separate student profile linked to {name}. You can assign a group now or later.',
     ru: 'Создайте отдельную карточку ученика для контакта «{name}». Группу можно назначить сейчас или позже.',
@@ -830,6 +835,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   studentsCreatedCount: { en: 'Created: {count}', ru: 'Создано: {count}' },
   studentCreateFailed: { en: 'Student was not created', ru: 'Не удалось создать ученика' },
+  studentUpdated: { en: 'Student details updated', ru: 'Данные ученика обновлены' },
+  studentUpdateFailed: { en: 'Student details were not updated', ru: 'Не удалось обновить данные ученика' },
   studentGroupRequired: { en: 'Select at least one group', ru: 'Выберите хотя бы одну группу' },
   studentNameRequired: { en: 'Enter the student name', ru: 'Укажите имя ученика' },
   studentPhone: { en: 'Student phone', ru: 'Телефон ученика' },

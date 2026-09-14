@@ -55,7 +55,7 @@ import {
   UserCheck,
   Key,
   ArrowRight,
-  Plug,
+  Settings2,
   SlidersHorizontal,
   KanbanSquare,
 } from 'lucide-react';
@@ -615,10 +615,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       description: t('salesSettingsDescription'),
     },
     {
-      href: '/integrations',
-      icon: Plug,
-      title: t('navIntegrations'),
-      description: t('adminIntegrationsDescription'),
+      href: '/admin/system-management',
+      icon: Settings2,
+      title: t('systemManagement'),
+      description: t('systemManagementDescription'),
     },
   ];
 

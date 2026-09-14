@@ -428,6 +428,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         subtitle={t('adminIntegrationsDescription')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
+          { label: t('systemManagement'), href: '/admin/system-management' },
           { label: t('navIntegrations') },
         ]}
         titleAccessory={integrations.data ? (

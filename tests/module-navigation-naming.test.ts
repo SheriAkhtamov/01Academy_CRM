@@ -53,7 +53,7 @@ describe('module navigation naming', () => {
         'Структура академии',
         'Управление продажами',
         'Журнал действий',
-        'Интеграции',
+        'Управление системой',
       ],
       sales: [
         'Обзор продаж',
@@ -88,6 +88,7 @@ describe('module navigation naming', () => {
     expect(hrefs).toContain('/marketing-module/meta-attribution');
     expect(hrefs).toContain('/marketing-module/meta-events');
     expect(hrefs).toContain('/finance/transactions');
+    expect(hrefs).toContain('/admin/system-management');
     expect(TASKS_NAVIGATION_ITEM.href).toBe('/tasks');
   });
 });

@@ -90,6 +90,9 @@ export function useWebSocket() {
             && (query.queryKey[0].startsWith('/api/academy/') || query.queryKey[0] === 'finance')
           ) });
           break;
+        case 'NEW_NOTIFICATION':
+          queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+          break;
         case 'NEW_MESSAGE':
           if (message.data?.senderId && message.data?.receiverId) {
             queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(Number(message.data.senderId)) });

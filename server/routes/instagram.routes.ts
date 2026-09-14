@@ -136,10 +136,10 @@ router.get('/oauth/callback', async (req, res) => {
     || oauthState.redirectUri !== configuredRedirectUri
     || Date.now() - oauthState.createdAt > 10 * 60 * 1000
   ) {
-    return res.redirect('/integrations?instagram=invalid_state');
+    return res.redirect('/admin/system-management/integrations?instagram=invalid_state');
   }
   if (req.query.error || !code) {
-    return res.redirect('/integrations?instagram=cancelled');
+    return res.redirect('/admin/system-management/integrations?instagram=cancelled');
   }
 
   try {
@@ -148,14 +148,14 @@ router.get('/oauth/callback', async (req, res) => {
       req.user!.id,
       configuredRedirectUri,
     );
-    return res.redirect(`/integrations?instagram=connected&account=${account.id}`);
+    return res.redirect(`/admin/system-management/integrations?instagram=connected&account=${account.id}`);
   } catch (error: any) {
     logger.error('Instagram OAuth callback failed', {
       errorName: error?.name,
       statusCode: error?.statusCode,
       userId: req.user?.id,
     });
-    return res.redirect('/integrations?instagram=error');
+    return res.redirect('/admin/system-management/integrations?instagram=error');
   }
 });
 

@@ -125,7 +125,7 @@ docker compose up -d
 1. Создайте Business-приложение в Meta for Developers
 2. Добавьте продукт Instagram
 3. Заполните `integrations.instagram` в `config/app.config.json`
-4. На странице `/integrations` скопируйте OAuth Redirect URL и Webhook Callback URL
+4. На странице `/admin/system-management/integrations` скопируйте OAuth Redirect URL и Webhook Callback URL
 5. Запросите права: `instagram_business_basic`, `instagram_business_manage_messages`
 6. Подпишите webhook на события: `messages`, `messaging_postbacks`, `messaging_seen`, `message_reactions`
 7. Пройдите App Review и переведите приложение в Live

@@ -112,6 +112,11 @@ class MessageStorage {
         } as Message;
     }
 
+    async createMessages(items: InsertMessage[]): Promise<Message[]> {
+        if (items.length === 0) return [];
+        return db.insert(messages).values(items).returning();
+    }
+
     async markMessageAsRead(messageId: number, userId: number): Promise<Message | null> {
         const [updatedMessage] = await db
             .update(messages)

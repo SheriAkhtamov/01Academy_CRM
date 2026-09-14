@@ -51,6 +51,9 @@ describe('isContainedModuleRoute', () => {
     // Four setting cards: the page scrolls as a document rather than building
     // an inner window inside a frozen viewport.
     '/integrations',
+    '/admin/system-management',
+    '/admin/system-management/integrations',
+    '/admin/system-management/employee-notifications',
   ])('preserves normal page scrolling for %s', (location) => {
     expect(isContainedModuleRoute(location)).toBe(false);
   });

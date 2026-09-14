@@ -32,6 +32,7 @@ export const storage = {
     // Notification operations
     getNotificationsByUser: notificationStorage.getNotificationsByUser.bind(notificationStorage),
     createNotification: notificationStorage.createNotification.bind(notificationStorage),
+    createNotifications: notificationStorage.createNotifications.bind(notificationStorage),
     markNotificationAsRead: notificationStorage.markNotificationAsRead.bind(notificationStorage),
     markAllNotificationsAsRead: notificationStorage.markAllNotificationsAsRead.bind(notificationStorage),
     deleteNotification: notificationStorage.deleteNotification.bind(notificationStorage),
@@ -43,6 +44,7 @@ export const storage = {
     getConversationsByUser: messageStorage.getConversations.bind(messageStorage),
     getMessagesBetweenUsers: messageStorage.getMessagesBetweenUsers.bind(messageStorage),
     createMessage: messageStorage.createMessage.bind(messageStorage),
+    createMessages: messageStorage.createMessages.bind(messageStorage),
     markConversationAsRead: messageStorage.markConversationAsRead.bind(messageStorage),
     markMessageAsRead: async (id: number, userId: number) => {
         if (!userId) {

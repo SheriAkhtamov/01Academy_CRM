@@ -17,6 +17,11 @@ class NotificationStorage {
         return result[0];
     }
 
+    async createNotifications(items: InsertNotification[]): Promise<Notification[]> {
+        if (items.length === 0) return [];
+        return db.insert(notifications).values(items).returning();
+    }
+
     async markNotificationAsRead(id: number, userId: number): Promise<Notification | undefined> {
         const result = await db
             .update(notifications)

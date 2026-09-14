@@ -163,6 +163,9 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
       const activeTab = currentParams.get('tab');
       return currentPath === href && (!activeTab || !['pipeline', 'kpi'].includes(activeTab));
     }
+    if (href === '/admin/system-management') {
+      return currentPath === href || currentPath.startsWith(`${href}/`);
+    }
     return currentPath === href;
   };
 

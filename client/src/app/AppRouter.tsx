@@ -22,6 +22,7 @@ const AdminDashboardPage = lazy(() => import('@/pages/admin/AdminDashboardPage')
 const AcademySettings = lazy(() => import('@/pages/academy-settings'));
 const TasksPage = lazy(() => import('@/pages/tasks'));
 const AuditPage = lazy(() => import('@/pages/admin/audit'));
+const SystemManagementPage = lazy(() => import('@/pages/admin/SystemManagementPage'));
 const FinanceCenter = lazy(() => import('@/pages/finance-center'));
 
 function ModuleBasedHome() {
@@ -143,7 +144,7 @@ export function AppRouter() {
       <Layout>
         <Switch>
         <Route path="/" component={ModuleBasedHome} />
-        <Route path="/integrations" component={() => adminPage('integrations')} />
+        <Route path="/integrations" component={() => <Redirect to="/admin/system-management/integrations" />} />
         <Route path="/sales/leads" component={() => <Redirect to="/sales/pipeline" />} />
         <Route path="/sales/pipeline" component={() => (
           <ModuleGuard module="sales">
@@ -292,6 +293,17 @@ export function AppRouter() {
         <Route path="/admin/audit" component={() => (
           <ModuleGuard module="administration">
             <AuditPage />
+          </ModuleGuard>
+        )} />
+        <Route path="/admin/system-management/integrations" component={() => adminPage('integrations')} />
+        <Route path="/admin/system-management/employee-notifications" component={() => (
+          <ModuleGuard module="administration">
+            <SystemManagementPage section="employee-notifications" />
+          </ModuleGuard>
+        )} />
+        <Route path="/admin/system-management" component={() => (
+          <ModuleGuard module="administration">
+            <SystemManagementPage />
           </ModuleGuard>
         )} />
         <Route component={NotFound} />

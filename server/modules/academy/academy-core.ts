@@ -752,9 +752,9 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
     return leads;
   }
 
-  // A sales employee may work with their own leads and with unassigned leads.
-  // Cards assigned to another manager are excluded completely instead of
-  // exposing a partially redacted card.
+  // A sales employee may work with their own leads and, while automatic
+  // distribution is disabled, the shared unassigned queue. Cards assigned to
+  // another manager are excluded completely instead of exposing a redacted card.
   const visibleLeads = leads.filter((lead) => canActorViewLead(context, lead));
   const policy = await getWorkforcePolicy();
   if (policy.salesPhoneVisibility === 'own_leads') return visibleLeads;

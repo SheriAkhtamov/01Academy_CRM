@@ -69,6 +69,7 @@ import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { KpiSettingsPanel } from '@/features/sales-kpi/ui/KpiSettingsPanel';
 import { SalesFunnelsPanel } from '@/features/sales-funnels/SalesFunnelsPanel';
+import { LeadDistributionPanel } from '@/features/lead-distribution/LeadDistributionPanel';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
   WeekScheduleEditor,
@@ -1342,7 +1343,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsList>
 
         <TabsContent value="lead-assignment" className="mt-0">
-          <LeadAssignmentContent />
+          <div className="flex flex-col gap-5">
+            <LeadDistributionPanel />
+            <LeadAssignmentContent />
+          </div>
         </TabsContent>
 
         <TabsContent value="schools" className="mt-0">

@@ -6,6 +6,7 @@ export type LeadAccessRecord = {
   managerId?: number | null;
   funnelId?: number | null;
   funnelRole?: string | null;
+  statusCode?: string | null;
 };
 
 export const leadWorkflowRole = (actor: ActorContext, lead: LeadAccessRecord) => lead.funnelRole
@@ -29,18 +30,17 @@ export const actorHasModule = (
 export const canActorViewLead = (
   actor: ActorContext,
   lead?: LeadAccessRecord | null,
-): boolean => Boolean(
-  lead
-  && (
-    actor.isLeadership
-    || actorHasModule(actor, 'marketing')
-    || (
-      actorHasModule(actor, 'sales')
-      && canActorAccessFunnel(actor, lead)
-      && (!lead.managerId || Number(lead.managerId) === actor.userId)
-    )
-  ),
-);
+): boolean => {
+  if (!lead) return false;
+  if (actor.isLeadership || actorHasModule(actor, 'marketing')) return true;
+  if (!actorHasModule(actor, 'sales') || !canActorAccessFunnel(actor, lead)) return false;
+  if (lead.managerId) return Number(lead.managerId) === actor.userId;
+
+  const hidesSharedNewLead = actor.salesWorkflow?.autoLeadDistributionEnabled === true
+    && lead.statusCode === 'new_request'
+    && Number(lead.funnelId) === Number(actor.salesWorkflow.defaultFunnelId);
+  return !hidesSharedNewLead;
+};
 
 export const canActorMutateLead = (actor: ActorContext, lead?: LeadAccessRecord | null): boolean =>
   canActorViewLead(actor, lead) && Boolean(lead && (actor.isLeadership

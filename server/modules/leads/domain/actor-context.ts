@@ -15,7 +15,9 @@ export type ActorContext = {
     role: string | null;
     hunterFunnelId: number | null;
     closerFunnelId: number | null;
+    defaultFunnelId?: number | null;
     assignedFunnelIds: number[];
+    autoLeadDistributionEnabled?: boolean;
   };
 };
 

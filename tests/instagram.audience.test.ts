@@ -52,6 +52,17 @@ describe("Instagram realtime audience", () => {
     expect(params).toEqual([4]);
   });
 
+  it("hides an unassigned new lead from sales when automatic distribution is enabled", async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ id: 1 }] });
+
+    await getInstagramConversationAudienceUserIds(null, 4, 'new_request');
+
+    const [sql, params] = mocks.poolQuery.mock.calls[0];
+    expect(String(sql)).toContain('auto_lead_distribution_enabled = true');
+    expect(String(sql)).toContain('distribution_funnel.is_default = true');
+    expect(params).toEqual([4]);
+  });
+
   it("fails closed when audience resolution cannot reach the database", async () => {
     mocks.poolQuery.mockRejectedValue(new Error("database unavailable"));
 

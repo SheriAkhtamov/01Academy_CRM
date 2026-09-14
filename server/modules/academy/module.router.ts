@@ -690,7 +690,8 @@ router.get('/search', async (req, res) => {
       const limitParamIndex = queryParams.length;
 
       const rows = await query(
-        `SELECT l.id, l.contact_name, l.phone, l.student_name, l.is_archived, l.funnel_id, c.name AS course_name,
+        `SELECT l.id, l.contact_name, l.phone, l.student_name, l.is_archived, l.funnel_id, l.status_code,
+            c.name AS course_name,
             ${leadPhoneNumbersSelect('l')}
          FROM academy_leads l
          LEFT JOIN academy_courses c ON c.id = l.course_id

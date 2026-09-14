@@ -111,6 +111,8 @@ export const auditLogs = pgTable("audit_logs", {
 export const academyCompanySettings = pgTable("academy_company_settings", {
   id: serial("id").primaryKey(),
   salesPhoneVisibility: varchar("sales_phone_visibility", { length: 40 }).notNull().default("own_leads"),
+  autoLeadDistributionEnabled: boolean("auto_lead_distribution_enabled").notNull().default(false),
+  autoLeadDistributionCursor: bigint("auto_lead_distribution_cursor", { mode: "number" }).notNull().default(0),
   workdayStartHour: integer("workday_start_hour").notNull().default(8),
   workdayEndHour: integer("workday_end_hour").notNull().default(20),
   workdays: jsonb("workdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5]),

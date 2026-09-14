@@ -24,7 +24,9 @@ const employee = (role: string, userId: number): ActorContext => ({ ...actorCont
     role,
     hunterFunnelId: 1,
     closerFunnelId: 2,
+    defaultFunnelId: 1,
     assignedFunnelIds: role === 'closer' ? [2] : role.startsWith('full_cycle') ? [1, 2, 3] : [1, 3],
+    autoLeadDistributionEnabled: false,
   } });
 const hunter = employee('hunter', 7);
 const closer = employee('closer', 8);

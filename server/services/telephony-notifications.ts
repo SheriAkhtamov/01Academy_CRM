@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { hasLeadershipAccess, type ModuleAccessSource } from '@shared/academy';
 import { pool } from '../db';
+import { unassignedLeadVisibleToSalesSql } from './lead-distribution-visibility';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
@@ -42,7 +43,7 @@ export const buildUnresolvedMissedCallSql = (callAlias: string) => `(
 export const buildTelephonyCallVisibilitySql = (actorParameter: string) => `(
   call.user_id = ${actorParameter}
   OR lead.manager_id = ${actorParameter}
-  OR (lead.id IS NOT NULL AND lead.manager_id IS NULL AND EXISTS (
+  OR (lead.id IS NOT NULL AND ${unassignedLeadVisibleToSalesSql('lead')} AND EXISTS (
     SELECT 1 FROM academy_sales_funnel_users assignment
     WHERE assignment.user_id = ${actorParameter} AND assignment.funnel_id = lead.funnel_id
   ))

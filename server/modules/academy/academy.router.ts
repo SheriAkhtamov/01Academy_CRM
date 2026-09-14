@@ -27,6 +27,7 @@ import { registerAcademyLeadSocialAccountRoutes } from './lead-social-accounts.r
 import { registerAcademyFunnelRoutes } from './funnels.router';
 import { createSalesKpiRouter } from '../sales-kpi/http/kpi-router';
 import { registerLeadDemoParticipantRoutes } from './lead-demo-participants.router';
+import { registerAcademyLeadDistributionRoutes } from './lead-distribution.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -59,6 +60,7 @@ router.use(createLeadLifecycleRouter(
 registerAcademyBulkLeadActionRoutes(router);
 registerAcademyLeadSocialAccountRoutes(router);
 registerAcademyFunnelRoutes(router);
+registerAcademyLeadDistributionRoutes(router);
 registerAcademyModuleRoutes(router);
 registerAcademyLeadRoutes(router);
 registerAcademyStudentProfileRoutes(router);

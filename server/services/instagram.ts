@@ -21,6 +21,7 @@ import {
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { resolveLeadFunnelId } from './lead-funnels';
 import { getInstagramConversationAudienceUserIds } from './instagram-audience';
+import { unassignedLeadVisibleToSalesSql } from './lead-distribution-visibility';
 export { getInstagramConversationAudienceUserIds } from './instagram-audience';
 
 type InstagramUser = {
@@ -1326,7 +1327,7 @@ const ensureLeadForConversation = async (
            messenger = $3,
            updated_at = NOW()
        WHERE id = $1
-       RETURNING id, manager_id, funnel_id, contact_name, messenger, false AS created_lead`,
+       RETURNING id, manager_id, funnel_id, status_code, contact_name, messenger, false AS created_lead`,
       [
         lead.id,
         shouldUpdateName ? contactName : lead.contact_name,
@@ -1338,7 +1339,7 @@ const ensureLeadForConversation = async (
 
   if (conversation.lead_id) {
     const existing = await client.query(
-      `SELECT id, manager_id, funnel_id, contact_name, messenger, false AS created_lead
+      `SELECT id, manager_id, funnel_id, status_code, contact_name, messenger, false AS created_lead
        FROM academy_leads WHERE id = $1`,
       [conversation.lead_id],
     );
@@ -1346,7 +1347,7 @@ const ensureLeadForConversation = async (
   }
 
   const existing = await client.query(
-    `SELECT id, manager_id, funnel_id, contact_name, messenger, false AS created_lead
+    `SELECT id, manager_id, funnel_id, status_code, contact_name, messenger, false AS created_lead
      FROM academy_leads
      WHERE phone = $1
         OR LOWER(BTRIM(messenger)) = LOWER(BTRIM($2))
@@ -1378,7 +1379,7 @@ const ensureLeadForConversation = async (
     `INSERT INTO academy_leads
       (contact_name, phone, messenger, source_id, funnel_id, status_code, manager_id, language, comment, created_by)
      VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'ru',$5,$6)
-     RETURNING id, manager_id, funnel_id, contact_name, messenger, true AS created_lead`,
+     RETURNING id, manager_id, funnel_id, status_code, contact_name, messenger, true AS created_lead`,
     [
       contactName,
       messenger,
@@ -1434,10 +1435,11 @@ const processReceiptEvent = async (account: InstagramAccountRow, event: any) => 
     lead_id: number | null;
     manager_id: number | null;
     funnel_id: number | null;
+    status_code: string | null;
   } | null = null;
   try {
     const conversationResult = await client.query(
-      `SELECT c.id, c.lead_id, l.manager_id, l.funnel_id
+      `SELECT c.id, c.lead_id, l.manager_id, l.funnel_id, l.status_code
        FROM instagram_conversations c
        LEFT JOIN academy_leads l ON l.id = c.lead_id
        WHERE c.account_id = $1 AND c.participant_igsid = $2
@@ -1490,6 +1492,7 @@ const processReceiptEvent = async (account: InstagramAccountRow, event: any) => 
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id,
       conversation.funnel_id,
+      conversation.status_code,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
@@ -1585,6 +1588,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     lead?: any;
     managerId?: number | null;
     funnelId?: number | null;
+    statusCode?: string | null;
     conversationId?: number;
     inserted: boolean;
   } = { inserted: false };
@@ -1616,7 +1620,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     const conversation = conversationResult.rows[0];
     const lead = outbound
       ? conversation.lead_id
-        ? (await client.query(`SELECT id, manager_id, funnel_id FROM academy_leads WHERE id = $1`, [conversation.lead_id])).rows[0]
+        ? (await client.query(`SELECT id, manager_id, funnel_id, status_code FROM academy_leads WHERE id = $1`, [conversation.lead_id])).rows[0]
         : null
       : await ensureLeadForConversation(client, account, conversation, participantIgsid, profile);
 
@@ -1674,6 +1678,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
         lead: lead ? camelize(lead) : null,
         managerId: lead?.manager_id ? Number(lead.manager_id) : null,
         funnelId: lead?.funnel_id ? Number(lead.funnel_id) : null,
+        statusCode: lead?.status_code ? String(lead.status_code) : null,
         conversationId: Number(conversation.id),
         inserted: true,
       };
@@ -1692,7 +1697,11 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
   }
 
   if (result.inserted) {
-    const audienceUserIds = await getInstagramConversationAudienceUserIds(result.managerId, result.funnelId);
+    const audienceUserIds = await getInstagramConversationAudienceUserIds(
+      result.managerId,
+      result.funnelId,
+      result.statusCode,
+    );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
       data: {
@@ -2341,6 +2350,8 @@ const assertConversationAccess = async (conversationId: number, user: InstagramU
   const { rows } = await pool.query(
     `SELECT c.*, a.ig_user_id, a.username AS account_username, a.access_token_encrypted,
             a.status AS account_status, l.manager_id, l.contact_name, l.id AS lead_id, l.funnel_id,
+            l.status_code,
+            ${unassignedLeadVisibleToSalesSql('l')} AS unassigned_visible,
             EXISTS (
               SELECT 1 FROM academy_sales_funnel_users assignment
               WHERE assignment.user_id = $2 AND assignment.funnel_id = l.funnel_id
@@ -2361,7 +2372,10 @@ const assertConversationAccess = async (conversationId: number, user: InstagramU
     !hasLeadershipAccess(user)
     && (
       (assignedManagerId && assignedManagerId !== Number(user.id))
-      || (!assignedManagerId && (!hasSalesAccess || (conversation.lead_id && !conversation.has_funnel_access)))
+      || (!assignedManagerId && (
+        !hasSalesAccess
+        || (conversation.lead_id && (!conversation.has_funnel_access || !conversation.unassigned_visible))
+      ))
     )
   ) {
     throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
@@ -2389,12 +2403,10 @@ export const listInstagramConversations = async (user: InstagramUser) => {
   const params: unknown[] = [user.id];
   const ownershipFilter = hasLeadershipAccess(user)
     ? ''
-    : `AND (l.manager_id = $1 OR (l.manager_id IS NULL AND (
-      l.id IS NULL OR EXISTS (
+    : `AND (l.manager_id = $1 OR l.id IS NULL OR (${unassignedLeadVisibleToSalesSql('l')} AND EXISTS (
         SELECT 1 FROM academy_sales_funnel_users assignment
         WHERE assignment.user_id = $1 AND assignment.funnel_id = l.funnel_id
-      )
-    )))`;
+      )))`;
   const { rows } = await pool.query(
     `SELECT c.id, c.account_id, c.lead_id, c.participant_igsid, c.participant_username,
             c.participant_name, c.participant_profile_picture_url,
@@ -2554,6 +2566,7 @@ export const sendInstagramTextMessage = async (
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id ? Number(conversation.manager_id) : null,
       conversation.funnel_id ? Number(conversation.funnel_id) : null,
+      conversation.status_code ?? null,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
@@ -2589,6 +2602,7 @@ export const sendInstagramTextMessage = async (
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id ? Number(conversation.manager_id) : null,
       conversation.funnel_id ? Number(conversation.funnel_id) : null,
+      conversation.status_code ?? null,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',

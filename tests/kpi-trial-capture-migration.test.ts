@@ -24,12 +24,16 @@ describe('scheduled KPI trial capture migration', () => {
   });
 
   it('registers the migration after the salary variants', () => {
-    expect(journal.entries.at(-1)).toEqual({
+    const entryIndex = journal.entries.findIndex((entry) => (
+      entry.tag === '0112_capture_scheduled_kpi_trials'
+    ));
+    expect(journal.entries[entryIndex]).toEqual({
       idx: 112,
       tag: '0112_capture_scheduled_kpi_trials',
       version: '7',
       when: 1789920000009,
       breakpoints: true,
     });
+    expect(journal.entries[entryIndex - 1]?.tag).toBe('0111_full_cycle_salary_variants');
   });
 });

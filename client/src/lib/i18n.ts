@@ -1421,7 +1421,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   autoLeadDistributionEnabledToast: { en: 'Automatic distribution enabled', ru: 'Автоматическое распределение включено' },
   autoLeadDistributionDisabledToast: { en: 'Automatic distribution disabled', ru: 'Автоматическое распределение выключено' },
   autoLeadDistributionAssignedCount: { en: 'Leads assigned: {count}', ru: 'Распределено лидов: {count}' },
-  autoLeadDistributionManagers: { en: 'Managers in the main funnel', ru: 'Менеджеры основной воронки' },
+  autoLeadDistributionManagers: { en: 'Main-funnel managers with active KPI', ru: 'Менеджеры основной воронки с действующим KPI' },
   autoLeadDistributionManagerListEmpty: { en: 'No managers assigned', ru: 'Менеджеры не назначены' },
   autoLeadDistributionCurrentQueue: { en: 'Unassigned new leads', ru: 'Новые лиды без ответственного' },
   autoLeadDistributionCurrentQueueDescription: {
@@ -1430,8 +1430,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   autoLeadDistributionUnavailable: { en: 'Distribution cannot be enabled', ru: 'Распределение нельзя включить' },
   autoLeadDistributionNoManagers: {
-    en: 'Assign at least one active sales manager to the main funnel.',
-    ru: 'Назначьте в основную воронку хотя бы одного активного менеджера продаж.',
+    en: 'Assign an active KPI and the main funnel to at least one sales manager.',
+    ru: 'Назначьте хотя бы одному менеджеру действующий KPI и основную воронку.',
   },
   autoLeadDistributionDefaultFunnelRequired: {
     en: 'Create and activate the main sales funnel first.',

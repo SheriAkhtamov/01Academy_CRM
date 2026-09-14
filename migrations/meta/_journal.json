@@ -799,6 +799,13 @@
       "when": 1789920000010,
       "tag": "0113_auto_lead_distribution",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1789920000011,
+      "tag": "0114_require_kpi_for_auto_lead_distribution",
+      "breakpoints": true
     }
   ]
 }

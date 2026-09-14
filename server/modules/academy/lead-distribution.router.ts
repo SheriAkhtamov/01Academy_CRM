@@ -39,7 +39,7 @@ const eligibleManagersSql = `
           AND access.module = 'sales'
       )
     )
-    AND academy_kpi_employee_role(employee.id) IS DISTINCT FROM 'closer'
+    AND academy_kpi_employee_role(employee.id) IN ('hunter', 'full_cycle', 'full_cycle_3500')
   ORDER BY employee.id`;
 
 export const readLeadDistributionSettings = async (): Promise<LeadDistributionSettings> => {

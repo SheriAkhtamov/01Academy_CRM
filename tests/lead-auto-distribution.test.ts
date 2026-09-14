@@ -9,6 +9,10 @@ const migration = readFileSync(
   new URL('../migrations/0113_auto_lead_distribution.sql', import.meta.url),
   'utf8',
 );
+const eligibilityMigration = readFileSync(
+  new URL('../migrations/0114_require_kpi_for_auto_lead_distribution.sql', import.meta.url),
+  'utf8',
+);
 const journal = JSON.parse(readFileSync(
   new URL('../migrations/meta/_journal.json', import.meta.url),
   'utf8',
@@ -100,13 +104,16 @@ describe('automatic lead distribution persistence', () => {
     expect(migration).toContain('auto_lead_distribution_cursor = auto_lead_distribution_cursor + 1');
   });
 
-  it('selects only active main-funnel sales managers and excludes closer-only users', () => {
-    expect(migration).toContain("funnel.workflow_role = 'hunter'");
-    expect(migration).toContain('funnel.is_default = true');
-    expect(migration).toContain('employee.is_active = true');
-    expect(migration).toContain('employee.is_archived = false');
-    expect(migration).toContain('academy_sales_funnel_users assignment');
-    expect(migration).toContain("academy_kpi_employee_role(employee.id) IS DISTINCT FROM 'closer'");
+  it('selects only active main-funnel sales managers with an active hunter KPI', () => {
+    expect(eligibilityMigration).toContain('CREATE OR REPLACE FUNCTION academy_next_auto_lead_manager');
+    expect(eligibilityMigration).toContain("funnel.workflow_role = 'hunter'");
+    expect(eligibilityMigration).toContain('funnel.is_default = true');
+    expect(eligibilityMigration).toContain('employee.is_active = true');
+    expect(eligibilityMigration).toContain('employee.is_archived = false');
+    expect(eligibilityMigration).toContain('academy_sales_funnel_users assignment');
+    expect(eligibilityMigration).toContain(
+      "academy_kpi_employee_role(employee.id) IN ('hunter', 'full_cycle', 'full_cycle_3500')",
+    );
   });
 
   it('assigns every unowned new lead source through one database trigger', () => {
@@ -115,15 +122,22 @@ describe('automatic lead distribution persistence', () => {
     expect(migration).toContain('NEW.manager_id := selected_manager');
   });
 
-  it('registers migration 0113 once at the end of the journal', () => {
+  it('registers the base and KPI eligibility migrations once and in order', () => {
     const entries = journal.entries.filter((entry: { tag: string }) => (
       entry.tag === '0113_auto_lead_distribution'
+      || entry.tag === '0114_require_kpi_for_auto_lead_distribution'
     ));
-    expect(entries).toHaveLength(1);
-    expect(journal.entries.at(-1)).toMatchObject({ idx: 113, tag: '0113_auto_lead_distribution' });
+    expect(entries).toHaveLength(2);
+    expect(journal.entries.slice(-2)).toMatchObject([
+      { idx: 113, tag: '0113_auto_lead_distribution' },
+      { idx: 114, tag: '0114_require_kpi_for_auto_lead_distribution' },
+    ]);
   });
 
   it('distributes the current queue on enable and exposes the admin toggle', () => {
+    expect(route).toContain(
+      "academy_kpi_employee_role(employee.id) IN ('hunter', 'full_cycle', 'full_cycle_3500')",
+    );
     expect(route).toContain('WITH candidates AS MATERIALIZED');
     expect(route).toContain('ORDER BY lead.created_at, lead.id');
     expect(route).toContain('academy_next_auto_lead_manager(lead.funnel_id)');

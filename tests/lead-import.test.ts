@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({ broadcast: vi.fn() }));
+
+vi.mock('../server/realtime/realtime-hub', () => ({
+  publishRealtimeEvent: mocks.broadcast,
+}));
+
 import {
   buildLeadImportComment,
   importLeadRecords,
@@ -6,6 +13,10 @@ import {
 } from '../server/services/lead-import';
 
 describe('lead import normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('normalizes supported local and international phone numbers', () => {
     expect(normalizeLeadImportPhone('p:+998 90 123 45 67')).toBe('+998901234567');
     expect(normalizeLeadImportPhone('90 123 45 67')).toBe('+998901234567');
@@ -30,6 +41,42 @@ describe('lead import normalization', () => {
     expect(comment).toContain('Кампания: Июльская кампания');
     expect(comment).toContain('Возраст ребёнка: 8 лет');
     expect(comment).toContain('Заметка: Перезвонить завтра');
+  });
+
+  it('refreshes active sales funnels after a new Meta lead commits', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('RETURNING id') && sql.includes('academy_lead_sources')) {
+        return { rows: [{ id: 1 }], rowCount: 1 };
+      }
+      if (sql.includes('FROM academy_integration_funnel_settings')) {
+        return { rows: [{ id: 3 }], rowCount: 1 };
+      }
+      if (sql.includes('INSERT INTO academy_leads')) {
+        return { rows: [{ id: 42 }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+    const release = vi.fn();
+    const pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    } as any;
+
+    const summary = await importLeadRecords(pool, [{
+      externalId: 'meta-lead-new',
+      contactName: 'New Meta Client',
+      phone: '+998901234567',
+    }], {
+      provider: 'meta_lead_ads_live',
+      allowMissingPhone: true,
+    });
+
+    expect(summary.created).toBe(1);
+    expect(mocks.broadcast).toHaveBeenCalledWith({
+      type: 'ACADEMY_LEAD_CREATED',
+      data: { count: 1 },
+    });
+    expect(query).toHaveBeenCalledWith('COMMIT');
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it('restores a previously archived contact when the same Meta submission is recovered', async () => {
@@ -67,6 +114,10 @@ describe('lead import normalization', () => {
       expect.stringContaining("SET outcome = 'merged'"),
       [7],
     );
+    expect(mocks.broadcast).toHaveBeenCalledWith({
+      type: 'ACADEMY_LEAD_UPDATED',
+      data: { count: 1 },
+    });
     expect(release).toHaveBeenCalledOnce();
   });
 });

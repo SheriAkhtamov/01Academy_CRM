@@ -504,6 +504,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   const { data, error, isError, isLoading, refetch } = useQuery<any>({
     queryKey: salesQueryKeys.module,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ['/api/users'],

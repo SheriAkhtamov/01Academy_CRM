@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { resolveLeadFunnelId } from './lead-funnels';
 
 export type LeadImportRecord = {
@@ -390,6 +391,15 @@ export const importLeadRecords = async (
     }
 
     await client.query('COMMIT');
+    if (summary.created > 0) {
+      publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { count: summary.created } });
+    }
+    if (summary.merged > 0 || summary.mergedArchived > 0) {
+      publishRealtimeEvent({
+        type: 'ACADEMY_LEAD_UPDATED',
+        data: { count: summary.merged + summary.mergedArchived },
+      });
+    }
     return summary;
   } catch (error) {
     await client.query('ROLLBACK');

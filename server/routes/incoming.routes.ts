@@ -6,6 +6,7 @@ import { appConfig, isDevelopmentEnvironment } from '../config';
 import { logger } from '../lib/logger';
 import { inboundWebhookLimiter, websiteLeadLimiter } from '../middleware/rateLimiter';
 import { isAllowedWebsiteLeadFormOrigin } from '../middleware/security.middleware';
+import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import {
   processInstagramWebhook,
   verifyInstagramWebhookChallenge,
@@ -420,6 +421,7 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     }
 
     await logIntegration(integrationProvider ?? 'website', 'inbound', 'received', integrationPayload);
+    publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: result.lead.id } });
     return res.status(201).json(result.lead);
   } catch (error) {
     logger.error('Failed to receive website lead', { error });

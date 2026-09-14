@@ -5,9 +5,14 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  broadcast: vi.fn(),
   clientQuery: vi.fn(),
   poolQuery: vi.fn(),
   release: vi.fn(),
+}));
+
+vi.mock('../server/realtime/realtime-hub', () => ({
+  publishRealtimeEvent: mocks.broadcast,
 }));
 
 vi.mock('../server/config', () => ({
@@ -99,6 +104,10 @@ describe('external lead ownership', () => {
 
     expect(mocks.clientQuery.mock.calls.some(([sql]) =>
       String(sql).includes('INSERT INTO academy_tasks'))).toBe(false);
+    expect(mocks.broadcast).toHaveBeenCalledWith({
+      type: 'ACADEMY_LEAD_CREATED',
+      data: { id: 77 },
+    });
   });
 
   it('rejects unsigned lead webhooks', async () => {
@@ -108,6 +117,7 @@ describe('external lead ownership', () => {
 
     expect(response.status).toBe(401);
     expect(mocks.clientQuery).not.toHaveBeenCalled();
+    expect(mocks.broadcast).not.toHaveBeenCalled();
   });
 
   it('accepts the configured public form origin and stores a Telegram contact', async () => {

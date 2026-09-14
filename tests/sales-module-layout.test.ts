@@ -37,6 +37,12 @@ const heightConstrainedTables = () =>
   });
 
 describe('sales module layout', () => {
+  it('refreshes the lead funnel even when a realtime connection is interrupted', () => {
+    expect(salesDashboard).toContain('refetchInterval: 30_000');
+    expect(salesDashboard).toContain('refetchOnWindowFocus: true');
+    expect(salesDashboard).toContain('staleTime: 10_000');
+  });
+
   it('keeps the archived lead rows scrollable inside their card', () => {
     expect(dataTable).toContain('rootClassName?: string;');
     expect(dataTable).toContain('<div className={cn(rootClassName)} aria-busy={isLoading}>');
